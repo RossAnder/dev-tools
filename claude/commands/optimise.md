@@ -13,11 +13,26 @@ Works in two modes:
 
 Agents must research current best practices using Context7 and WebSearch — do not rely on assumptions about what is or isn't performant. Verify against documentation and real benchmarks.
 
+### CLAUDE.md `## Optimization Focus` (optional convention)
+
+If the project's `CLAUDE.md` includes an `## Optimization Focus` section, its entries are treated as **declared optimization priorities** — explicit directives from the project maintainer about what matters most. These are passed verbatim to every research agent and take precedence over generic heuristics.
+
+Example:
+```markdown
+## Optimization Focus
+- AOT/trimming: All serialization must use source generators. No runtime reflection in hot paths.
+- Compiled queries: Use EF compiled queries for frequently executed database operations.
+- ValueTask: Prefer ValueTask over Task for high-frequency async methods that often complete synchronously.
+- Source generation: Prefer source-generated logging, JSON, and other compile-time patterns.
+```
+
+When this section is present, agents should actively look for violations of these priorities in the scoped files, in addition to their general analysis.
+
 ## Step 1: Determine Scope
 
 **Use extended thinking at maximum depth for scope analysis.** Thoroughly analyse which files are in scope, their technology areas, and what classification each agent needs. This reasoning runs in the main conversation where thinking is available.
 
-**Before classifying files**, read the project's `CLAUDE.md` (if one exists). Use its declared tech stack (runtime, frameworks, build tools, key libraries) as the **authoritative source** for technology classification — it overrides inferences from file extensions or imports. Pass the relevant tech stack context to every research agent.
+**Before classifying files**, read the project's `CLAUDE.md` (if one exists). Use its declared tech stack (runtime, frameworks, build tools, key libraries) as the **authoritative source** for technology classification — it overrides inferences from file extensions or imports. Also extract any `## Optimization Focus` section — these are the project's declared optimization priorities (see convention above). Pass both the tech stack context and optimization priorities to every research agent.
 
 Identify the files to analyse:
 
@@ -29,9 +44,40 @@ Identify the files to analyse:
 
 **Small scope note**: When 3 or fewer files are in scope, still launch all five research agents — their value comes from specialized, parallel research (independent Context7 lookups, WebSearches, and deep lens-specific analysis), not from dividing file reads. Tell each agent the scope is small so it can skip broad exploration and focus its research depth on the specific code paths in those files.
 
+## Step 1.5: Determine Focal Points
+
+Before launching the five research agents, determine the **project-specific optimization focal points** — the runtime, framework, and compilation characteristics that should shape each agent's analysis. This step ensures agents probe for the right things rather than relying on generic heuristics.
+
+### When CLAUDE.md provides sufficient context
+
+If CLAUDE.md declares both a clear tech stack AND an `## Optimization Focus` section, **use extended thinking to derive focal points directly** — no additional agent needed. The declared priorities plus the tech stack are enough to produce targeted agent briefs.
+
+### When CLAUDE.md is absent or incomplete
+
+Launch a single **Explore agent** (subagent_type: "Explore", thoroughness: "quick") to determine the project's runtime-specific characteristics:
+
+The agent MUST:
+- Sample 2-3 representative files from the scope to identify: language version, framework versions, async runtime, serialization approach, database access layer, key libraries
+- Check project configuration files for compilation and optimization settings (e.g. `PublishAot` / `PublishTrimmed` in .csproj, `target` in tsconfig, `[profile.release]` in Cargo.toml, bundler config)
+- Report: languages, runtimes, frameworks, compilation targets (JIT, AOT, WASM, tree-shaken bundle), serialization strategy, async runtime, database access pattern
+- **Keep output under 200 words** — this is a quick classification, not deep analysis
+
+### Synthesize into Focal Points Brief
+
+**Use extended thinking at maximum depth** to combine the Explore agent's findings (if launched), CLAUDE.md's tech stack and optimization priorities (if present), and the file classification from Step 1 into a **Focal Points Brief** — a compact set of project-specific directives for each of the 5 agent lenses.
+
+The brief should specify, per agent, what runtime/framework-specific patterns to prioritize. Example for a .NET 10 AOT project:
+- **Agent 1** (Memory): boxing in hot paths, devirtualization opportunities, JIT vs AOT codegen differences, struct vs class selection for value-like types
+- **Agent 2** (Serialization/AOT): source-generated serialization required, no runtime reflection, trimming-safe attributes, compiled models
+- **Agent 3** (Queries): compiled EF queries for hot paths, async enumerable for large result sets, connection lifecycle
+- **Agent 4** (Algorithm): ValueTask for sync-completing paths, Span\<T\> for buffer operations, frozen collections for read-heavy lookups
+- **Agent 5** (Async): Task vs ValueTask selection, ConfigureAwait, Channel\<T\> for producer-consumer, IHostedService lifecycle, SemaphoreSlim for throttling
+
+Include the relevant focal points in each agent's prompt in Step 2. These are **additive** — agents still apply their general lens, but prioritize the focal points when evaluating the code.
+
 ## Step 2: Launch Parallel Research Agents
 
-Launch **all five** agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the file list and classification from Step 1.
+Launch **all five** agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the file list and classification from Step 1, plus its relevant **focal points** from Step 1.5.
 
 **IMPORTANT: You MUST make all five Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five Agent tool use blocks so they execute concurrently.
 
@@ -51,17 +97,17 @@ Every agent MUST:
 
 ### Agent 1: Memory, Allocations & Runtime
 
-Examine how the changed code allocates and manages memory, and how it interacts with the runtime and compiler. These concerns are deeply connected — allocation strategy, stack vs heap choices, pooling, object lifetime, closure captures, hot/cold path separation, and whether the code helps or hinders compiler optimizations. Leave async runtime and concurrency architecture concerns to Agent 5.
+Examine how the changed code allocates and manages memory, and how it interacts with the runtime and compiler. These concerns are deeply connected — allocation strategy, stack vs heap choices, pooling, boxing, object lifetime, closure captures, inlining behavior, hot/cold path separation, and whether the code helps or hinders compiler optimizations (devirtualization, generic specialization, JIT/AOT). Leave async runtime and concurrency architecture concerns to Agent 5.
 
 Tailor analysis to the project's language and runtime. Consider the idiomatic allocation patterns, zero-cost abstraction opportunities, and runtime-specific performance characteristics relevant to the codebase. On the frontend, consider reactive object overhead, component instance proliferation, bundle size, tree-shaking barriers, and rendering pipeline efficiency.
 
-Research the specific APIs being used via Context7 to understand their allocation profiles and runtime behavior — many framework methods have lower-overhead alternatives that aren't obvious without checking the docs.
+Research the specific APIs being used via Context7 to understand their allocation profiles and runtime behavior — many framework methods have zero-alloc or more JIT-friendly alternatives that aren't obvious without checking the docs.
 
-### Agent 2: Serialization & Data Transfer
+### Agent 2: Serialization, AOT & Data Transfer
 
-Examine how data is serialized, deserialized, and transferred. Consider whether serialization uses code generation or runtime reflection, protocol and payload efficiency, compression, schema evolution, and whether data shapes are optimized for their transport medium. On the frontend, look at response handling, parsing, and whether data transformations could happen server-side.
+Examine how data is serialized, deserialized, and transferred. Consider source-generated vs reflection-based serialization, AOT/trimming compatibility of the patterns used (no runtime code generation, trimming-safe attributes), protocol and payload efficiency, compression, schema evolution, and whether data shapes are optimized for their transport medium. On the frontend, look at response handling, parsing, tree-shaking barriers, and whether data transformations could happen server-side.
 
-Research the current serialization guidance for the specific libraries and framework versions in use via Context7 — recommended patterns evolve rapidly.
+Research the current AOT and serialization guidance for the specific libraries and framework versions in use via Context7 — this area evolves rapidly.
 
 ### Agent 3: Queries & Data Access
 
@@ -87,7 +133,7 @@ Examine how the code structures concurrent and asynchronous work. Consider:
 - **Runtime configuration** — is the runtime configuration appropriate for the workload? Are blocking calls dispatched to a separate thread pool or executor? Is the thread pool sized for the workload?
 - **Contention hotspots** — are shared resources (locks, channels, atomics) accessed at a frequency that could cause contention under load? Could sharding, thread-local caching, or lock-free structures reduce contention?
 
-Focus on the idioms and primitives of the project's async runtime. Research the specific async runtime and concurrency primitives in use via Context7 — correct usage of these APIs is subtle and version-dependent.
+Focus on the idioms and primitives of the project's async runtime. Common runtime-specific concerns include: in .NET — Task vs ValueTask, ConfigureAwait, Channel\<T\>, SemaphoreSlim, IHostedService lifecycle; in Rust — JoinSet vs spawn, select! branches, sync Mutex vs tokio Mutex, blocking in async; on the frontend — request deduplication, race conditions in reactive state, concurrent fetch management. Research the specific async runtime and concurrency primitives in use via Context7 — correct usage of these APIs is subtle and version-dependent.
 
 ## Step 3: Produce Findings Report
 
