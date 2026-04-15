@@ -24,7 +24,7 @@ This command works with any plan format — structured work packages, wave-based
    c. Build a document map and share it with all agents so they understand the plan hierarchy.
 3. If $ARGUMENTS is empty, locate the active plan in this order:
    a. Check if a plan was just produced in the current conversation (look for structured plan content — tasks, phases, work packages). If found, use that directly.
-   b. Check `.claude/plan-context` for the active plan path. If the file exists and the referenced plan file/directory is present, use it.
+   b. Check `.claude/plan-context` for the active plan path. If the file exists and the referenced plan file/directory is present, use it. **Staleness check**: if the `updated` field is more than 14 days old, flag this prominently in the review output — the codebase may have diverged significantly from the plan's assumptions.
    c. Check `docs/plans/` (or the project's established plans directory) for recently modified plan files. If a single plan was modified recently, use it. If multiple candidates exist, list them and ask the user which to review.
    d. If nothing found, ask the user which plan to review.
 4. Read the full plan content — every document in scope. For multi-file plans, agents receive the document map and all file contents, with the outline identified as the primary document.
@@ -43,16 +43,22 @@ Every agent MUST:
 - Return findings as a structured list with references to specific plan sections
 - **Cap output at 10 findings per agent.** Prioritize by impact.
 
-### Agent 1: Feasibility & Codebase Alignment
+### Agent 1: Feasibility, Codebase Alignment & Dependencies
 
-Does the plan match reality? For each task or work package in the plan:
+Does the plan match reality, and is the execution order safe? For each task or work package in the plan:
 - Do the referenced files, classes, methods, and paths actually exist?
-- Does the code currently look the way the plan assumes it does? (Files may have changed since the plan was written)
+- Does the code currently look the way the plan assumes it does? (Files may have changed since the plan was written.) **If a file's current content contradicts the plan's assumptions, include a brief summary of what has changed** — e.g. "Plan assumes `UserService.validate()` takes a single string argument, but it now takes `(userId: string, options: ValidationOptions)` as of the current codebase."
 - Are the proposed code changes technically feasible given the current architecture?
 - Does the plan reference APIs, frameworks, or features that exist in the versions actually used by the project?
 - Are there implicit assumptions the plan makes about the codebase that aren't stated?
+- Are dependencies between tasks/phases/work packages correctly identified? Could something break if executed in the proposed order?
+- Are there hidden dependencies the plan doesn't state? (e.g., a frontend change depends on an API change that's in a later phase)
+- Could any step fail in a way that leaves the system in a broken state? Are rollback procedures adequate?
+- Are there race conditions or conflicts if parallel tasks are executed simultaneously? Specifically: do any parallel tasks modify the same file?
 
-Search the codebase for every file path, class name, and pattern the plan mentions. Flag anything that doesn't match.
+Search the codebase for every file path, class name, and pattern the plan mentions. Flag anything that doesn't match. Map the real dependency graph from the code and compare it to what the plan states.
+
+**This agent covers the broadest scope — if you exceed 10 findings, prioritise those that would cause implementation failure or data loss, and merge related items.**
 
 ### Agent 2: Completeness & Scope
 
@@ -65,18 +71,7 @@ Does the plan cover everything it needs to? Consider:
 
 Search the codebase for usages, references, and dependents of everything the plan touches.
 
-### Agent 3: Risks, Dependencies & Ordering
-
-Is the plan's execution order safe? Consider:
-- Are dependencies between tasks/phases/work packages correctly identified? Could something break if executed in the proposed order?
-- Are there hidden dependencies the plan doesn't state? (e.g., a frontend change depends on an API change that's in a later phase)
-- Could any step fail in a way that leaves the system in a broken state? Are rollback procedures adequate?
-- Are there race conditions or conflicts if parallel tasks are executed simultaneously? Specifically: do any parallel tasks modify the same file?
-- Is the plan's estimate of scope/effort realistic given what the codebase actually looks like?
-
-Map out the real dependency graph from the code and compare it to what the plan states.
-
-### Agent 4: Agent-Executability & Clarity
+### Agent 3: Agent-Executability & Clarity
 
 Could an AI agent (or team of agents) execute this plan without ambiguity? Evaluate:
 - Does each task have a clear, imperative action? ("Add X to Y" not "Consider refactoring Z")
@@ -88,6 +83,16 @@ Could an AI agent (or team of agents) execute this plan without ambiguity? Evalu
 
 If the plan is in prose/narrative format, suggest how it could be restructured for agent execution. If it's already structured, evaluate whether the structure is sufficient.
 
+### Agent 4: Risk & External Validity
+
+Are the plan's technology assumptions current and are risks adequately addressed?
+- Use Context7 to verify that specific API signatures, method parameters, and configuration options referenced in the plan match the library versions in use.
+- Use WebSearch to check for deprecations, security advisories, or breaking changes in dependencies the plan relies on.
+- Are there known pitfalls or anti-patterns for the approach the plan takes?
+- Is the plan's estimate of scope/effort realistic given what the codebase actually looks like?
+- Are rollback and failure recovery strategies adequate for each phase?
+- Are there performance, security, or backward-compatibility risks not addressed?
+
 ## Step 3: Consolidate Results
 
 **Use extended thinking at maximum depth for consolidation.** Carefully cross-reference all agent findings against each other and the plan, resolve conflicting assessments, and synthesize a coherent verdict on plan readiness. This is where the quality of the review is determined.
@@ -98,6 +103,7 @@ After all agents complete, produce a single consolidated report:
 ## Plan Review: [plan name/path]
 
 **Plan scope**: [summary of what the plan covers]
+**Plan age**: [how old the plan is, based on plan-context or file metadata — flag if >14 days]
 **Overall assessment**: [Ready to execute | Needs revision | Major gaps]
 
 ### Critical Issues (must fix before executing)
@@ -108,6 +114,11 @@ After all agents complete, produce a single consolidated report:
 
 ### Suggestions (would improve)
 - [plan section/task] (area) Description — enhancement opportunity
+
+### Stale References
+[List any files, APIs, or interfaces that have changed since the plan was written.
+For each, summarise what the plan assumes vs. what the codebase currently shows.
+If none found, state "All references verified current."]
 
 ### Executability Assessment
 - **File coverage**: [Are all affected files identified?]

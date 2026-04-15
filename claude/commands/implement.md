@@ -25,6 +25,7 @@ Works with:
    - If $ARGUMENTS is an inline task description, explore the codebase to understand the current state and determine what files need changing.
    - If $ARGUMENTS references specific items (e.g. "items 3,4,5"), extract only those from the plan.
    - **Track the plan path**: Note the resolved plan file path — you'll need it for the Phase 4 report and `/plan-update` suggestions. If the work is plan-driven, update `.claude/plan-context` with status `in-progress` and today's date.
+   - **Extract verification commands**: If the plan contains a `## Verification Commands` section, extract the build, test, and lint commands. These will be passed directly to the verification agent in Phase 3 — do not rely on the verification agent to re-discover them.
    - **Read source files selectively** — once scope is determined, read only files needed to resolve ambiguities or make decomposition decisions. Agents will read their own target files in full, so do not pre-read every file that will be modified.
 
 2. **Research novel or complex steps**:
@@ -55,14 +56,15 @@ Launch implementation agents grouped into batches by dependency order. Each batc
 
 Every implementation agent prompt MUST include:
 - The exact files to read and modify (absolute paths)
+- **File read instructions**: "Read every file listed in your Files section in full before making changes. Also read any file you import from or export to, so you understand the integration surface."
 - What the code should do after the change and why it's changing
 - For complex tasks: the research findings and reasoning from Phase 1
 - Specific API signatures or patterns to use (from Context7 research done in Phase 1)
 - Clear success criteria — what "done" looks like
-- Instruction to read target files and surrounding code before making changes
 - Instruction to use Context7 MCP tools to verify any new API usage before writing code
 - Instruction to use WebSearch if uncertain about implementation details
 - Instruction: "Reason through each change step by step before editing" (compensates for no extended thinking)
+- **Plan deviation protocol**: "If you discover that the plan's assumptions are wrong — a file doesn't exist, an API has changed, an interface differs from what the plan describes — do NOT silently improvise. Complete whatever changes you can that are unaffected, then report the deviation clearly in your output: what the plan assumed, what you found, and what was left undone. The orchestrator will decide whether to adapt or abort."
 
 ### Agent tool guidance
 
@@ -78,9 +80,20 @@ Include this tool guidance in each agent's prompt, tailored to its task:
 For each batch:
 1. Update all batch tasks to `in_progress` via TaskUpdate.
 2. Launch all agents in the batch in a single response.
-3. When agents return, update tasks to `completed` via TaskUpdate.
-4. If a task fails, mark it with a comment describing the failure and continue with the next batch (dependent tasks will remain blocked).
+3. When agents return, check for **plan deviations** (see protocol above). If an agent reports a deviation:
+   - Use extended thinking to assess the impact.
+   - If the deviation is minor and the fix is clear, launch a targeted fix agent.
+   - If the deviation is significant (wrong interface, missing file, architectural mismatch), pause execution, report the deviation to the user, and suggest running `/plan-update deviation` before continuing.
+4. Update completed tasks to `completed` via TaskUpdate. If a task failed or reported a deviation, mark it with a comment describing the issue and continue with the next batch (dependent tasks will remain blocked).
 5. **Git checkpoint**: If there are subsequent batches that depend on this one, stage and commit the current batch's changes before proceeding. This makes failures in later batches revertible without losing earlier work.
+6. **Rollback on batch failure**: If a batch fails and cannot be fixed within the retry budget (see below), `git revert` to the last successful batch commit. Report the revert and the failure reason so the user can update the plan.
+
+### Retry budget
+
+When a task fails (build error, test failure, agent-reported issue):
+- **Maximum 2 fix attempts per failure.** Each attempt gets a targeted fix agent with the specific error and file context.
+- After 2 failed attempts, mark the task as failed, revert its changes if they break the build, and continue with unaffected tasks.
+- Report all failures and attempted fixes in the Phase 4 summary.
 
 ### Handling cross-cutting changes
 
@@ -93,7 +106,8 @@ If a change spans many files (e.g. renaming an interface used in 15 places):
 After all batches complete, launch a **verification sub-agent** (keeps verbose build/test output out of the main context):
 
 The verification agent MUST:
-- Determine the project's build and test commands by checking: (a) CLAUDE.md for documented commands, (b) project root files (e.g. Cargo.toml, package.json, *.sln, Makefile, pyproject.toml). If ambiguous, ask the user.
+- **Use the verification commands from the plan** if they were extracted in Phase 1. Do not re-discover commands that are already known.
+- If no commands were provided from the plan, determine the project's build and test commands by checking: (a) CLAUDE.md for documented commands, (b) project root files (e.g. Cargo.toml, package.json, *.sln, Makefile, pyproject.toml). If ambiguous, ask the user.
 - Run the appropriate build commands
 - Run relevant tests
 - If builds or tests fail, report the specific errors with file paths and line numbers
@@ -101,8 +115,9 @@ The verification agent MUST:
 
 If verification fails:
 1. **Use extended thinking at maximum depth to diagnose** in the main conversation. Thoroughly analyse the failure and determine root cause.
-2. Fix the issue directly or launch a targeted fix agent.
+2. Fix the issue directly or launch a targeted fix agent. **This counts against the retry budget** — maximum 2 fix-and-reverify cycles for the entire verification phase.
 3. Re-run verification.
+4. If verification still fails after 2 attempts, report the specific failures and suggest the user investigate manually or update the plan.
 
 ## Phase 4: Report
 
@@ -119,9 +134,13 @@ After successful verification, output:
 ### Failed / Skipped
 - [task] — reason, what needs manual attention
 
+### Plan Deviations
+- [task] — what the plan assumed vs. what was found, and how it was handled (adapted / deferred / reverted)
+
 ### Verification
 - Build: pass/fail
 - Tests: pass/fail (N passed, M failed)
+- Fix attempts used: N/M
 
 ### Plan Updates Needed
 - [items completed — run `/plan-update {plan-path} status` to record]
@@ -140,3 +159,5 @@ If the work was driven by a plan file, include the **exact plan path** in all su
 - **Preserve existing patterns** — agents must read surrounding code and match style, naming, structure.
 - **Do not over-implement** — make the minimum changes to satisfy each task. No bonus refactoring.
 - **Verification is mandatory** — never report success without running build + tests.
+- **Retry budget is strict** — maximum 2 fix attempts per task failure, maximum 2 fix-and-reverify cycles for verification. After that, report and move on.
+- **Plan deviations surface immediately** — agents report mismatches between plan and reality rather than silently adapting. The orchestrator decides whether to proceed, fix, or abort.

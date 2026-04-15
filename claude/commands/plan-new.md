@@ -55,10 +55,14 @@ Report in under 500 words, structured as:
 2. Key interfaces/APIs
 3. Patterns to reuse
 4. Constraints/risks discovered
-5. [Integration agent only] Build/test/lint commands found"
+5. [Integration agent only] Build/test/lint commands found
+
+If you must truncate to stay under 500 words, prioritise file paths and interface signatures over narrative explanation. Never cut a file path or type signature in favour of prose."
 ```
 
 **Checkpoint**: After agents return, persist a brief summary of exploration findings to the plan-mode file as a `## Exploration Notes` section. This serves as a recovery point — if context becomes constrained later, the essential findings survive compaction.
+
+**Early scope check**: Before proceeding, estimate the total file count from exploration findings. If the change is likely to touch more than ~15 unique files, flag this to the user now and recommend splitting into separate plans — before investing in research and design.
 
 **Use extended thinking at maximum depth to synthesize exploration results.** Cross-reference findings from all agents. Identify: reusable patterns, architectural constraints, existing utilities to leverage, gaps in the current codebase, and the verification commands discovered.
 
@@ -72,11 +76,14 @@ Launch up to 2 research agents in parallel using the Agent tool (subagent_type: 
 
 **IMPORTANT: You MUST make all research Agent tool calls in a single response message.**
 
+**Each research agent must have a non-overlapping scope.** Before dispatching, explicitly partition the research topics so no two agents investigate the same library, API, or technology. State the partition in each agent's prompt (e.g., "You are responsible for X and Y. The other agent covers Z and W. Do not research Z or W.").
+
 Every research agent MUST:
 - Use Context7 MCP tools (resolve-library-id then query-docs) to look up API signatures, configuration options, and recommended patterns for the specific libraries and framework versions in use
 - Use WebSearch to find current best practices, migration guides, and known pitfalls
 - Return structured findings with source references (documentation URLs, Context7 query results)
 - **Cap output at 10 findings, under 500 words total**
+- **If truncating, prioritise API signatures, version-specific behaviour, and deprecation warnings over general best-practice narrative.**
 
 Research focus should be tailored to the task — common patterns:
 - **API/library research** — Verify that planned API usage is correct, check for deprecations, find recommended patterns
@@ -174,6 +181,16 @@ Omit this section if Phase 3 was skipped.]
 [The chosen design/architecture. Key decisions with rationale.
 If alternatives were considered, briefly note why they were rejected.
 Reference existing codebase patterns and utilities that should be reused, with file paths.]
+
+## Verification Commands
+[Build, test, and lint commands discovered during exploration.
+These are passed directly to `/implement` so the verification agent does not need to re-discover them.]
+
+```
+build: <command>
+test: <command>
+lint: <command>
+```
 
 ## Tasks
 

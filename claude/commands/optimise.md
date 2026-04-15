@@ -3,7 +3,7 @@ description: Research performance and efficiency opportunities — targets speci
 argument-hint: [file paths, directories, feature name, branch1..branch2, or empty for recent changes]
 ---
 
-# Performance & Efficiency Research
+# Performance and Efficiency Research
 
 Research code for performance and efficiency opportunities. This command is research-only — it produces a structured findings report. Use `/optimise-apply` afterward to implement the findings.
 
@@ -15,24 +15,24 @@ Agents must research current best practices using Context7 and WebSearch — do 
 
 ### CLAUDE.md `## Optimization Focus` (optional convention)
 
-If the project's `CLAUDE.md` includes an `## Optimization Focus` section, its entries are treated as **declared optimization priorities** — explicit directives from the project maintainer about what matters most. These are passed verbatim to every research agent and take precedence over generic heuristics.
+If the project's `CLAUDE.md` includes an `## Optimization Focus` section, its entries describe the project's optimization *posture* — the lenses, scale constraints, and concerns the maintainer wants agents to bring to the analysis. Treat the posture as **framing**, not a closed checklist: it shapes what to look for, but it does not cap the search. Pass it to research agents verbatim alongside the explicit reminder that concerns outside the posture are welcome, and that findings which only restate a posture bullet without independent evidence are weaker than findings that identify something new.
 
-Example:
+Example (posture framing — bullets describe concerns and preferences, not hard rules):
 ```markdown
 ## Optimization Focus
-- AOT/trimming: All serialization must use source generators. No runtime reflection in hot paths.
-- Compiled queries: Use EF compiled queries for frequently executed database operations.
-- ValueTask: Prefer ValueTask over Task for high-frequency async methods that often complete synchronously.
-- Source generation: Prefer source-generated logging, JSON, and other compile-time patterns.
+- AOT/trimming: we care about trim-safety across serialization — source generators preferred, runtime reflection on hot paths is a concern
+- Compiled queries: compiled queries are the house style for frequently executed database operations
+- ValueTask: preferred over Task for high-frequency async methods that often complete synchronously
+- Source generation: source-generated logging, JSON, and other compile-time patterns preferred over runtime equivalents
 ```
 
-When this section is present, agents should actively look for violations of these priorities in the scoped files, in addition to their general analysis.
+When this section is present, agents should use the posture to shape their research — what concerns to bring forward, what scale the project is operating at, what's already been decided. But the posture is not exhaustive: agents should still surface concerns outside it, and findings that only cite "the posture says X" without independent evidence are weaker than findings that identify something new.
 
 ## Step 1: Determine Scope
 
 **Use extended thinking at maximum depth for scope analysis.** Thoroughly analyse which files are in scope, their technology areas, and what classification each agent needs. This reasoning runs in the main conversation where thinking is available.
 
-**Before classifying files**, read the project's `CLAUDE.md` (if one exists). Use its declared tech stack (runtime, frameworks, build tools, key libraries) as the **authoritative source** for technology classification — it overrides inferences from file extensions or imports. Also extract any `## Optimization Focus` section — these are the project's declared optimization priorities (see convention above). Pass both the tech stack context and optimization priorities to every research agent.
+**Before classifying files**, read the project's `CLAUDE.md` (if one exists). Use its declared tech stack (runtime, frameworks, build tools, key libraries) as the **authoritative source** for technology classification — it overrides inferences from file extensions or imports. Also extract any `## Optimization Focus` section — this is the project's optimization *posture* (see convention above). If the posture links to a detailed reference file or skill (e.g., `.claude/skills/<name>/SKILL.md` or `docs/perf-notes.md`), read it too — it typically contains historical context, validated decisions, and in-repo patterns that keep agents from reinventing what already exists. Pass both the tech stack and posture (plus any linked reference) to every research agent, **with the explicit reminder that the posture is framing and not a checklist, and that findings outside it are welcome**.
 
 Identify the files to analyse:
 
@@ -73,7 +73,7 @@ The brief should specify, per agent, what runtime/framework-specific patterns to
 - **Agent 4** (Algorithm): ValueTask for sync-completing paths, Span\<T\> for buffer operations, frozen collections for read-heavy lookups
 - **Agent 5** (Async): Task vs ValueTask selection, ConfigureAwait, Channel\<T\> for producer-consumer, IHostedService lifecycle, SemaphoreSlim for throttling
 
-Include the relevant focal points in each agent's prompt in Step 2. These are **additive** — agents still apply their general lens, but prioritize the focal points when evaluating the code.
+Include the relevant focal points in each agent's prompt in Step 2. These are **additive framing** — agents still apply their full general lens and actively search for concerns outside the focal points. Bring the focal points to the front of the lens without narrowing the search. Explicitly remind each agent: findings that identify new concerns outside the focal points are the highest-value output, and findings that only cite the focal points without fresh evidence are weaker.
 
 ## Step 2: Launch Parallel Research Agents
 
@@ -95,7 +95,7 @@ Every agent MUST:
 - **Do not modify any files** — this is a research-only phase
 - **Cap output at 10 findings per agent.** If you find more, keep the highest-severity ones. Do not include full file contents in your response — reference by file:line only.
 
-### Agent 1: Memory, Allocations & Runtime
+### Agent 1: Memory, Allocations and Runtime
 
 Examine how the changed code allocates and manages memory, and how it interacts with the runtime and compiler. These concerns are deeply connected — allocation strategy, stack vs heap choices, pooling, boxing, object lifetime, closure captures, inlining behavior, hot/cold path separation, and whether the code helps or hinders compiler optimizations (devirtualization, generic specialization, JIT/AOT). Leave async runtime and concurrency architecture concerns to Agent 5.
 
@@ -103,25 +103,25 @@ Tailor analysis to the project's language and runtime. Consider the idiomatic al
 
 Research the specific APIs being used via Context7 to understand their allocation profiles and runtime behavior — many framework methods have zero-alloc or more JIT-friendly alternatives that aren't obvious without checking the docs.
 
-### Agent 2: Serialization, AOT & Data Transfer
+### Agent 2: Serialization, AOT and Data Transfer
 
 Examine how data is serialized, deserialized, and transferred. Consider source-generated vs reflection-based serialization, AOT/trimming compatibility of the patterns used (no runtime code generation, trimming-safe attributes), protocol and payload efficiency, compression, schema evolution, and whether data shapes are optimized for their transport medium. On the frontend, look at response handling, parsing, tree-shaking barriers, and whether data transformations could happen server-side.
 
 Research the current AOT and serialization guidance for the specific libraries and framework versions in use via Context7 — this area evolves rapidly.
 
-### Agent 3: Queries & Data Access
+### Agent 3: Queries and Data Access
 
 Examine database interactions and data access patterns. Look at query efficiency, whether compiled queries or raw SQL would be more appropriate, index utilization, connection and command lifecycle, pagination approaches, and caching strategy. Consider database-specific optimizations and EXPLAIN plan implications.
 
 Research the specific ORM and data access patterns used to check for known performance pitfalls and recommended alternatives. Use Context7 to look up the actual query translation behavior of methods being used.
 
-### Agent 4: Algorithmic & Structural Efficiency
+### Agent 4: Algorithmic and Structural Efficiency
 
 Examine the algorithmic choices and data structures used. Consider time and space complexity, unnecessary iteration or re-computation, data structure fitness for the access pattern, caching of expensive computations, and lazy vs eager evaluation tradeoffs. On the frontend, look at reactive dependency chains, computed property efficiency, reconciliation cost, and whether rendering work can be reduced.
 
 Research whether the frameworks provide built-in optimized alternatives for any patterns found.
 
-### Agent 5: Async & Concurrency Architecture
+### Agent 5: Async and Concurrency Architecture
 
 Examine how the code structures concurrent and asynchronous work. Consider:
 
