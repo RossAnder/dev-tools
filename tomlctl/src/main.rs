@@ -66,7 +66,7 @@ enum Cmd {
     SetJson {
         file: PathBuf,
         path: String,
-        #[arg(long)]
+        #[arg(long, help = "JSON-encoded value; pass `-` to read from stdin")]
         json: String,
     },
 
@@ -95,7 +95,7 @@ enum ItemsOp {
     /// Append a new item. --json is the JSON object payload.
     Add {
         file: PathBuf,
-        #[arg(long)]
+        #[arg(long, help = "JSON object for the new item; pass `-` to read from stdin")]
         json: String,
     },
 
@@ -103,7 +103,7 @@ enum ItemsOp {
     Update {
         file: PathBuf,
         id: String,
-        #[arg(long)]
+        #[arg(long, help = "JSON patch object merged into the item; pass `-` to read from stdin")]
         json: String,
     },
 
@@ -120,7 +120,7 @@ enum ItemsOp {
     /// Apply a batch of add/update/remove operations in a single file rewrite.
     Apply {
         file: PathBuf,
-        #[arg(long)]
+        #[arg(long, help = "JSON array of ops, each `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin")]
         ops: String,
     },
 }

@@ -32,6 +32,16 @@ tomlctl items next-id <file> [--prefix R|O]
 tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]'
 ```
 
+Every `--ops` and `--json` flag also accepts `-` as a sentinel to read the JSON payload from stdin — use this for large batches or payloads containing shell metacharacters:
+
+```bash
+printf '%s' "$ops_json" | tomlctl items apply <file> --ops -
+
+tomlctl items apply <file> --ops - <<'EOF'
+[{"op":"update","id":"R1","json":{"status":"fixed"}}]
+EOF
+```
+
 All commands print JSON on stdout, exit non-zero on failure.
 
 ## Design
