@@ -369,6 +369,8 @@ Apply status updates to the ledger via parse-rewrite per the Ledger TOML read/wr
 1. `tomlctl items apply <ledger> --ops '[...]'` — batch every per-item transition in one atomic, all-or-nothing write. Valid `op` values are `"add"`, `"update"`, and `"remove"`; `/optimise-apply` uses `"update"` for status transitions, and `"add"` when minting a regression item from the Step 5 cross-check.
 2. `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated` to today. `items apply` does not touch file-level scalars, so this second call is required.
 
+**Preferred path for `--ops` — stdin piping**: pipe the JSON payload into `tomlctl` via the `-` sentinel rather than interpolating it into the argv: `printf '%s' "$OPS_JSON" | tomlctl items apply <ledger> --ops -` (bash) or `$ops | tomlctl items apply <ledger> --ops -` (PowerShell). This avoids any shell-quoting surface for agent-produced strings (`resolution`, `wontapply_rationale`) and does not require filesystem-write permission for a tempfile. For small batches (≤ 3 items), a loop of single-item `tomlctl items update` calls is also reasonable — per-call quoting is easier to audit.
+
 Preserve `schema_version` verbatim. **Do NOT delete the findings file.** The ledger persists across runs; stable `O`-IDs, `rounds`, and disposition history depend on it.
 
 ### Final summary

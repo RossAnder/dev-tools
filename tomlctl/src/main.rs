@@ -2,9 +2,26 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::Value as JsonValue;
 use std::fs;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use toml::Value as TomlValue;
+
+/// Resolve a JSON argument: if it's literally "-", read stdin to a String.
+/// Otherwise return the argument as-is.
+fn read_json_arg(arg: &str) -> Result<String> {
+    if arg == "-" {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .context("reading JSON from stdin")?;
+        if buf.trim().is_empty() {
+            bail!("stdin was empty — expected JSON payload");
+        }
+        Ok(buf)
+    } else {
+        Ok(arg.to_string())
+    }
+}
 
 #[derive(Parser)]
 #[command(
@@ -153,6 +170,7 @@ fn main() -> Result<()> {
             println!("{{\"ok\":true}}");
         }
         Cmd::SetJson { file, path, json } => {
+            let json = read_json_arg(&json)?;
             guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
@@ -186,6 +204,7 @@ fn items_dispatch(op: ItemsOp, allow_outside: bool) -> Result<()> {
             print_json(&items_get(&doc, &id)?)?;
         }
         ItemsOp::Add { file, json } => {
+            let json = read_json_arg(&json)?;
             guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
@@ -196,6 +215,7 @@ fn items_dispatch(op: ItemsOp, allow_outside: bool) -> Result<()> {
             println!("{{\"ok\":true}}");
         }
         ItemsOp::Update { file, id, json } => {
+            let json = read_json_arg(&json)?;
             guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
@@ -216,6 +236,7 @@ fn items_dispatch(op: ItemsOp, allow_outside: bool) -> Result<()> {
             println!("{{\"ok\":true}}");
         }
         ItemsOp::Apply { file, ops } => {
+            let ops = read_json_arg(&ops)?;
             guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
@@ -956,6 +977,12 @@ resolution = "fix in abc123"
             serialised.contains("first_flagged = 2026-04-17"),
             "expected date literal for date key, got:\n{serialised}"
         );
+    }
+
+    #[test]
+    fn read_json_arg_returns_literal_when_not_dash() {
+        let got = read_json_arg(r#"{"key":"value"}"#).unwrap();
+        assert_eq!(got, r#"{"key":"value"}"#);
     }
 
     #[test]

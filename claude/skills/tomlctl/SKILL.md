@@ -165,6 +165,27 @@ tomlctl items apply .claude/flows/foo/review-ledger.toml --ops '[
 
 Prefer this over looping single-op invocations — one parse + one write instead of N.
 
+### Stdin input for large JSON payloads
+
+All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`) treat the literal value `-` as "read JSON from stdin". Use this to avoid shell-quoting or tempfile round-trips when the JSON payload is large (batches of 10+ items, or values containing quotes / newlines / dollar signs):
+
+```bash
+# bash — pipe via process substitution or heredoc
+printf '%s' "$OPS_JSON" | tomlctl items apply ledger.toml --ops -
+
+tomlctl items apply ledger.toml --ops - <<'EOF'
+[{"op":"update","id":"R1","json":{"status":"fixed"}}]
+EOF
+```
+
+```powershell
+# PowerShell — pipe a string or file
+$ops | tomlctl items apply ledger.toml --ops -
+Get-Content ops.json | tomlctl items apply ledger.toml --ops -
+```
+
+Empty stdin is an error. Use the literal CLI-argument form for small payloads; use stdin for anything that would require complex shell escaping.
+
 ## Constraints and gotchas
 
 - **No comment preservation.** The schemas forbid inline comments, so this is fine for flow/ledger files. Do not point `tomlctl` at TOML files where comments matter.
