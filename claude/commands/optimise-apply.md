@@ -259,11 +259,21 @@ Implement the optimization findings produced by `/optimise`. This command expect
    5. If still ambiguous or none found, list non-complete flow candidates and ask the user.
 
    Record the resolved flow's `slug`, `scope`, and `context.toml.artifacts.optimise_findings` path for downstream steps. If resolution yields "no flow", remember that this run is flow-less.
-2. Locate the optimise findings ledger. Check in order: (a) conversation context (if the previous `/optimise` run in the same session summarised the ledger inline), (b) parse `artifacts.optimise_findings` from the resolved flow's `context.toml` (typically `.claude/flows/<slug>/optimise-findings.toml`), (c) flow-less fallback at `.claude/optimise-findings/<scope>.toml` — if multiple candidate files exist at the fallback path, list them and ask the user which to apply. If none are found, ask the user to run `/optimise` first. Read the TOML per the Ledger TOML read rules in `## Ledger Schema` (schema_version handling, malformed-item skip, parse-error halt).
+2. Locate the optimise findings ledger. Check in order:
+   - (a) conversation context (if the previous `/optimise` run in the same session summarised the ledger inline),
+   - (b) parse `artifacts.optimise_findings` from the resolved flow's `context.toml` (typically `.claude/flows/<slug>/optimise-findings.toml`),
+   - (c) flow-less fallback at `.claude/optimise-findings/<scope>.toml` — if multiple candidate files exist at the fallback path, list them and ask the user which to apply.
+   - **No-args-on-main special case**: when invoked with empty `$ARGUMENTS` in flow-less mode on a main branch, default to `.claude/optimise-findings/recent.toml` if present.
+
+   If none are found, ask the user to run `/optimise` first. Read the TOML per the Ledger TOML read rules in `## Ledger Schema` (schema_version handling, malformed-item skip, parse-error halt).
 3. **Selector semantics** — `$ARGUMENTS` accepts two forms, disambiguated by prefix:
    - **ID-prefixed (preferred)**: `O1,O3,O5` — refers to ledger IDs directly, regardless of current disposition or report inclusion. Resolves against the parsed ledger's `[[items]]` by `id`. An ID that isn't present in the ledger is reported to the user and skipped.
    - **Numeric-only (legacy)**: `1,3,5` — refers to position in the most recent `/optimise` run's emitted report. Resolve at invocation time by consulting the ledger and filtering to items whose IDs appear in the latest-report set (items sharing the ledger's most recent `last_updated`; if uncertain, prompt the user to confirm which ledger run the numbers refer to).
    - **Strong preference**: use `O{n}` form. Numeric-only remains for backwards compatibility but is ambiguous across disposition transitions (e.g. applying O2 then running `/optimise-apply 2` may select a different item). Recommend `O{n}` to the user in error messages and confirmation prompts.
+   - **Non-open selector behaviour**:
+     - Selected `O{n}` with `status = "deferred"` → **hard error**: "`O{n}` is deferred; run `/optimise` to re-open or use `/optimise`'s disposition protocol." Deferred items require a user-committed re-evaluation trigger before `/optimise-apply` may act on them.
+     - Selected `O{n}` with `status ∈ {applied, wontapply}` → **console warn and skip** (idempotent no-op). Do not re-transition.
+     - Selected `O{n}` not present in the ledger → report to the user and skip.
 4. If $ARGUMENTS is "all", apply every item with `status = "open"` in the ledger, including suggestions.
 5. If $ARGUMENTS is "critical", apply only `status = "open"` items with `severity = "critical"`.
 6. If $ARGUMENTS is "critical,warnings", apply `status = "open"` items with `severity = "critical"` or `severity = "warning"`.
@@ -274,12 +284,16 @@ Implement the optimization findings produced by `/optimise`. This command expect
 
 **Reason thoroughly through pre-analysis.** Front-load analysis here — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times.
 
-Before delegating to agents:
+**Selector cap**: pre-analysis reads are batched in parallel `Read` tool calls. **Cap pre-analysis at 15 selected items per run.** Selectors that exceed this (e.g. `/optimise-apply all` on a 50-item ledger) prompt the user to either batch into sequential sub-runs or tighten the selector.
 
-- For any finding involving novel APIs, complex algorithmic changes, or cross-cutting patterns, reason through the implementation approach NOW. Resolving reasoning here once is cheaper than having every agent re-investigate and lets you verify conclusions before delegating.
-- Verify that target files still match the findings — run a quick check that the code at the referenced lines hasn't changed since `/optimise` ran.
+For each selected finding:
+
+- **Read range**: read ±50 lines around the cited `line`, OR the full enclosing function / struct / trait impl if `symbol` is set.
+- **Deleted-file detection**: use `Test-Path <file>` (or equivalent on non-Windows). If `False`, auto-transition the item to `wontapply` with `wontapply_rationale = "file removed — audited during /optimise-apply <today>"`. No agent dispatch. (Not verified-clean — optimise does not have that state; see Step 4 agent-tag notes and Step 5 applied/skipped decision rule.)
+- **"Already applied" test**: compare the read range against the finding's recommended optimisation literal or symbol. If the recommended form appears **verbatim** in the read range, pre-transition the item to `wontapply` with `wontapply_rationale = "already in place, no byte written — audited during /optimise-apply <today>"`. Semantic-judgement cases (refactor equivalence, moved code, paraphrased recommendations) route to an agent, not the orchestrator.
+- For findings involving novel APIs, complex algorithmic changes, or cross-cutting patterns, reason through the implementation approach NOW and include the pre-analysed reasoning in the agent's prompt so the agent executes rather than deliberates. Resolving reasoning here once is cheaper than having every agent re-investigate and lets you verify conclusions before delegating.
+- Verify that target files still match the findings — if the cited code has shifted or been rewritten since `/optimise` ran, flag for agent re-evaluation rather than treating as already-applied.
 - Resolve any ambiguities in the findings' "Recommended" section. If multiple approaches are possible, decide here.
-- Include the pre-analysed reasoning in each agent's prompt so agents execute rather than deliberate.
 
 ## Step 3: Group by File Cluster
 
@@ -307,7 +321,10 @@ Every agent prompt MUST include:
 - Instruction: "Reason through each change step by step before editing"
 - Instruction: "You MUST use Context7 MCP tools (resolve-library-id then query-docs) to verify API signatures and correct usage for any new APIs before writing code — do not rely on training data alone"
 - Instruction: "You MUST use WebSearch if the recommended approach needs clarification or you are unsure about the correct implementation"
-- Instruction: "When reporting results, tag each applied or skipped item with its ledger `id` (e.g. `applied O3: <summary>` or `skipped O5: <reason>`). The orchestrator uses these IDs to mutate the ledger in Step 5."
+- Instruction: "Tag each result with the ledger `id`. Use exactly one of these two forms per finding — the words are fixed (past-tense `skipped`, never imperative `skip`):
+  - `applied O{n}: <summary of change>` — you wrote bytes that implement the optimisation. For a partial apply, use `applied O{n}: partial — <what was done>; skipped parts: <what wasn't>`.
+  - `skipped O{n}: <reason>` — the finding cannot be safely applied (would break behaviour, unclear semantics, already in place with no byte written, requires deliberate refactor, or needs user confirmation on a public-API or schema change)."
+- Instruction: "**Hard rule**: if you wrote no bytes for a finding (no `Edit` / `Write` / `MultiEdit` tool call), do NOT emit `applied O{n}`. Use `skipped O{n}: already in place, no byte written` instead. The orchestrator transitions such items to `wontapply` with rationale from the skip reason." **Optimise agents do not emit `verified-clean`** (unlike review-apply): optimisations are bytes-written by definition. An already-applied optimisation is either (a) correctly already in place — report as `skipped O{n}: already in place, no byte written` with a `wontapply` rationale recorded in the ledger, or (b) a regression of a prior fix — minted as a new O-item via the Step 5 regression cross-check.
 - Instruction: "If you apply a finding that touches a file matching any `scope` glob in the resolved flow's `context.toml`, classify the change as a plan deviation. Report it in your output with the prefix `deviation:` followed by the item's ledger `id` (e.g. `O3`), file, applied optimisation summary, and what plan expectation it diverges from."
 
 Every agent MUST:
@@ -335,31 +352,50 @@ The verification agent MUST:
 
 If verification fails, **reason thoroughly to diagnose** in the main conversation. Thoroughly analyse the failure, determine root cause, then fix directly or launch a targeted fix agent. Re-run verification.
 
+### Regression cross-check
+
+After agents finish, apply the Ledger Schema's canonical dedup rule (same `file` AND (same non-empty `symbol` OR exact `summary` string match)) against **every** previously-`applied` item in the ledger — not just items already chained via `related`. If a match is found on a file touched in this run, flag it as a regression in the final report and mint a new O-item per the dedup/regression rules, with `related = ["<old id>"]`. Emit a `### Regressions Triggered` section in the summary listing each.
+
+### Ledger mutation
+
+Apply status updates to the ledger via parse-rewrite per the Ledger TOML read/write contract in `## Ledger Schema`. Mutate the same file consumed in Step 1 (flow-dir path from `context.toml.artifacts.optimise_findings`, e.g. `.claude/flows/<slug>/optimise-findings.toml`, or the flow-less fallback `.claude/optimise-findings/<scope>.toml`). For each item:
+
+- **Successfully applied** (agent reported `applied O{n}: ...`): set `status = "applied"`, `resolved = <today, ISO 8601>`, `resolution = "<short description of the change + commit SHA if the apply landed in a commit>"`. For partial applies (`applied O{n}: partial — <done>; skipped parts: <not done>`), write `resolution = "partial: <done> / pending: <not done>"` so the ledger captures the split explicitly.
+- **Agent-intentionally-skipped** (agent reported `skipped O{n}: <reason>` because the finding would break behaviour, had unclear semantics, was already in place with no byte written, or the research didn't hold up): set `status = "wontapply"`, `wontapply_rationale = "<agent's reason, quoted or paraphrased>"`. **Applied/skipped decision rule**: if the agent wrote no bytes for a finding, the correct tag is `skipped O{n}: already in place, no byte written` (never `applied O{n}`); the orchestrator transitions such items to `wontapply` with the skip reason as rationale.
+- **Not selected in `$ARGUMENTS`**: leave `status` untouched. Do not modify `rounds`, `first_flagged`, or any other field on these items.
+
+**Two-call write pattern** (both calls required; omitting either leaves the ledger inconsistent):
+
+1. `tomlctl items apply <ledger> --ops '[...]'` — batch every per-item transition in one atomic, all-or-nothing write. Valid `op` values are `"add"`, `"update"`, and `"remove"`; `/optimise-apply` uses `"update"` for status transitions, and `"add"` when minting a regression item from the Step 5 cross-check.
+2. `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated` to today. `items apply` does not touch file-level scalars, so this second call is required.
+
+Preserve `schema_version` verbatim. **Do NOT delete the findings file.** The ledger persists across runs; stable `O`-IDs, `rounds`, and disposition history depend on it.
+
+### Final summary
+
 **Reason thoroughly through the final summary.** Cross-reference all agent results, verify completeness, and ensure the report accurately reflects what was implemented vs skipped.
 
-Present the final summary:
+Present the final summary. **Omit any sub-section that has no entries** — e.g. a run with no regressions omits the `### Regressions Triggered` block entirely. Note: unlike `/review-apply`, this command does NOT emit a `### Verified Clean` sub-section — optimise findings are bytes-written by definition, so there is no "code already matches" audit state. Already-in-place findings are recorded as `skipped O{n}: already in place, no byte written` and transitioned to `wontapply` per the applied/skipped decision rule above.
 
 ```
 ## Applied Optimizations
 
 ### Implemented
 - [O{n}] [file:line] Summary of what was changed — (severity)
+  - Tag `(partial)` for partial applies (see `resolution` for the split).
+  - Tag `(chronic)` for items whose pre-apply `rounds >= 3` transitioned to `applied` (per Ledger Schema escalation rule).
 
 ### Skipped
-- [O{n}] [file:line] Reason it was skipped
+- [O{n}] [file:line] Reason it was skipped — `wontapply_rationale` captures the same text in the ledger
 
 ### Verification
 - Build: pass/fail
 - Tests: pass/fail/none
+- Concurrency/memory checks: as applicable
+
+### Regressions Triggered
+- [O{m}] [file:line] Regression of [O{n}] — dedup-rule match details
 ```
-
-**Clean up** — Apply status updates to the ledger via parse-rewrite per the Ledger TOML read/write contract in `## Ledger Schema`. Mutate the same file consumed in Step 1 (flow-dir path from `context.toml.artifacts.optimise_findings`, e.g. `.claude/flows/<slug>/optimise-findings.toml`, or the flow-less fallback `.claude/optimise-findings/<scope>.toml`). For each item:
-
-- **Successfully applied** (agent reported `applied O{n}: ...`): set `status = "applied"`, `resolved = <today, ISO 8601>`, `resolution = "<short description of the change + commit SHA if the apply landed in a commit>"`.
-- **Agent-intentionally-skipped** (agent reported `skipped O{n}: <reason>` because the finding would break behaviour, had unclear semantics, or the research didn't hold up): set `status = "wontapply"`, `wontapply_rationale = "<agent's reason, quoted or paraphrased>"`.
-- **Not selected in `$ARGUMENTS`**: leave `status` untouched. Do not modify `rounds`, `first_flagged`, or any other field on these items.
-
-Also set `last_updated = <today>` at the file-level. Preserve `schema_version` verbatim. **Do NOT delete the findings file.** The ledger persists across runs; stable `O`-IDs, `rounds`, and disposition history depend on it.
 
 ## Step 6: Plan Deviation Follow-up
 
@@ -370,6 +406,15 @@ After Step 5 completes, inspect each agent's output for `deviation:` lines (agen
 3. **In-scope deviations**: auto-invoke the `plan-update` skill via the `Skill` tool with the literal argument string `deviation` (same Option A pattern used by `implement.md`). Pass through the agents' deviation details — including the item's `O{n}` ID, file, and applied optimisation summary — so `plan-update deviation` can record them.
 4. **Out-of-scope deviations** (reported `deviation:` lines whose file does not match any `scope` glob, or runs where no flow resolved): do NOT auto-invoke. Report each out-of-scope deviation to the user in the final summary with the item's `O{n}` ID, file path, applied optimisation, and the note that it falls outside the active flow's scope so no automatic plan update was triggered.
 
+### Phase 4.5: Sync plan context
+
+After Step 5 and Step 6 complete, synchronise the resolved flow's `context.toml` with the work just performed.
+
+1. **No-op gate**: if no flow resolved (flow-less run), OR no agent wrote bytes to any file matching the flow's `scope` globs, skip this step entirely.
+2. **Otherwise, auto-invoke `plan-update`**: use the `Skill` tool to call `plan-update` with the literal argument string `status`. The skill will refresh `context.updated` and update `[tasks]` counters if any apply-time transitions affect tracked plan tasks.
+
+Because `plan-update` itself performs the 5-step flow resolution, no arguments pass through — the invocation is literally `Skill("plan-update", "status")`.
+
 ## Important Constraints
 
 - **Front-load complex analysis in the orchestrator** — it has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Give agents pre-digested instructions, not open-ended problems.
@@ -378,3 +423,7 @@ After Step 5 completes, inspect each agent's output for `deviation:` lines (agen
 - **Do not change public API contracts** (method signatures, endpoint shapes, response types) unless the finding explicitly calls for it and the user has confirmed
 - **Preserve behavior** — every optimization must produce the same observable result as the original code. If you're unsure, skip it
 - **One concern per edit** — don't combine an optimization with a refactor or style fix. Keep changes attributable to specific findings
+- **Do not broaden the fix — minimum change per finding.** If a broader refactor is warranted, emit `skipped O{n}: requires deliberate refactor` and let the orchestrator surface the decision rather than widening the edit.
+- **Hard cap: no more than 3 files touched per `O{n}` item** unless the finding's `description` explicitly lists more. Cross-file refactors exceed this cap by definition and must be `skipped O{n}: cross-file refactor exceeds 3-file cap` with a refactor note.
+- **Public API or schema changes** flagged by `concurrency` or `memory` findings require explicit user confirmation. Agents must emit `skipped O{n}: requires user confirmation on public API / schema change` and let the orchestrator surface the decision rather than applying unilaterally.
+- **No auto-commit**. The orchestrator does not invoke `git commit`. `resolution` captures the change description; commit SHA is optional and backfillable by a later `/plan-update status` or manual edit.

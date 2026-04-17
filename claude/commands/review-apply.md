@@ -259,7 +259,13 @@ Implement the review findings produced by `/review`. This command expects a TOML
    5. If still ambiguous or none found, list non-complete flow candidates and ask the user.
 
    Record the resolved flow's `slug`, `scope`, and `context.toml.artifacts.review_ledger` path for downstream steps. If resolution yields "no flow", remember that this run is flow-less.
-2. Locate the review ledger. Check in order: (a) conversation context (if the previous `/review` run in the same session summarised the ledger inline), (b) parse `artifacts.review_ledger` from the resolved flow's `context.toml` (typically `.claude/flows/<slug>/review-ledger.toml`), (c) flow-less fallback at `.claude/reviews/<scope>.toml` — if multiple candidate files exist at the fallback path, list them and ask the user which to apply. **No-args-on-main special case**: when invoked with empty `$ARGUMENTS` in flow-less mode on a main branch, default to `.claude/reviews/recent.toml` if present. If none are found, ask the user to run `/review` first. Read the TOML per the Ledger TOML read rules in `## Ledger Schema` (schema_version handling, malformed-item skip, parse-error halt).
+2. Locate the review ledger. Check in order:
+   - (a) conversation context (if the previous `/review` run in the same session summarised the ledger inline),
+   - (b) parse `artifacts.review_ledger` from the resolved flow's `context.toml` (typically `.claude/flows/<slug>/review-ledger.toml`),
+   - (c) flow-less fallback at `.claude/reviews/<scope>.toml` — if multiple candidate files exist at the fallback path, list them and ask the user which to apply.
+   - **No-args-on-main special case**: when invoked with empty `$ARGUMENTS` in flow-less mode on a main branch, default to `.claude/reviews/recent.toml` if present.
+
+   If none are found, ask the user to run `/review` first. Read the TOML per the Ledger TOML read rules in `## Ledger Schema` (schema_version handling, malformed-item skip, parse-error halt).
 3. **Selector semantics** — `$ARGUMENTS` accepts two forms, disambiguated by prefix:
    - **ID-prefixed (preferred)**: `R1,R3,R5` — refers to ledger IDs directly, regardless of current disposition or report inclusion. Resolves against the parsed ledger's `[[items]]` by `id`.
    - **Numeric-only (legacy)**: `1,3,5` — refers to position in the most recent `/review` run's emitted report. Resolve at invocation time by consulting the ledger and filtering to items whose IDs appear in the latest-report set (items sharing the ledger's most recent `last_updated`; if uncertain, prompt the user to confirm which ledger run the numbers refer to).
@@ -390,6 +396,16 @@ Apply status updates to the ledger via parse-rewrite per the Ledger TOML read/wr
 1. `tomlctl items apply <ledger> --ops '[...]'` — batch every per-item transition in one atomic, all-or-nothing write. Valid `op` values are `"add"`, `"update"`, and `"remove"`; `/review-apply` uses `"update"` for status transitions, and `"add"` when minting a regression item from the Step 5 cross-check.
 2. `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated` to today. `items apply` does not touch file-level scalars, so this second call is required.
 
+Example ops batch for a mixed run (one applied transition, one verified-clean transition, one regression mint):
+
+```bash
+tomlctl items apply .claude/reviews/claude-commands.toml --ops '[
+  {"op":"update","id":"R1","json":{"status":"fixed","resolved":"2026-04-17","resolution":"Normalised shared block in <file>:<lines>"}},
+  {"op":"update","id":"R3","json":{"status":"verified-clean","verified_note":"Already matches recommendation — audited during /review-apply 2026-04-17"}},
+  {"op":"add","json":{"id":"R40","file":"<file>","line":0,"severity":"warning","effort":"trivial","category":"security","summary":"Regression of R4 — <dedup match>","first_flagged":"2026-04-17","rounds":1,"related":["R4"],"status":"open"}}
+]'
+```
+
 **Shell-quoting for agent-supplied JSON payloads**: every agent-produced string that lands in the `--ops` JSON (`resolution`, `wontfix_rationale`, `verified_note`) MUST be RFC-8259 JSON-escaped before interpolation — escape `\`, `"`, control chars, and Unicode line separators (`\u2028` / `\u2029`). Do NOT interpolate agent text directly into a shell-expanded single-quoted literal; embedded `'`, `$`, backticks, or newlines break the shell lexer or enable injection. Construct `--ops` once as a validated JSON string, write it to a tempfile under `.claude/reviews/.ops-<slug>.json`, then pass via `--ops "$(cat <tempfile>)"` (bash) or `--ops @'...'@`-equivalent here-string (PowerShell). Delete the tempfile after the call. For small batches (≤ 3 items) prefer a loop of `tomlctl items update <ledger> <id> --json '{...}'` per item — per-call quoting is easier to audit than one big `--ops` array.
 
 Preserve `schema_version` verbatim. **Do NOT delete the ledger file.** The ledger persists across runs; stable `R`-IDs, `rounds`, and disposition history depend on it.
@@ -434,6 +450,15 @@ After Step 5 completes, inspect each agent's output for `deviation:` lines (agen
 2. For each reported deviation, check whether the cited file matches any `scope` glob in the resolved flow's `context.toml` (use the `Glob` tool with the flow's `scope` patterns).
 3. **In-scope deviations**: auto-invoke the `plan-update` skill via the `Skill` tool with the literal argument string `deviation` (same Option A pattern used by `implement.md`). Pass through the agents' deviation details — including the item's `R{n}` ID, file, and applied fix summary — so `plan-update deviation` can record them.
 4. **Out-of-scope deviations** (reported `deviation:` lines whose file does not match any `scope` glob, or runs where no flow resolved): do NOT auto-invoke. Report each out-of-scope deviation to the user in the final summary with the item's `R{n}` ID, file path, applied fix, and the note that it falls outside the active flow's scope so no automatic plan update was triggered.
+
+### Phase 4.5: Sync plan context
+
+After Step 5 and Step 6 complete, synchronise the resolved flow's `context.toml` with the work just performed.
+
+1. **No-op gate**: if no flow resolved (flow-less run), OR no agent wrote bytes to any file matching the flow's `scope` globs, skip this step entirely.
+2. **Otherwise, auto-invoke `plan-update`**: use the `Skill` tool to call `plan-update` with the literal argument string `status`. The skill will refresh `context.updated` and update `[tasks]` counters if any apply-time transitions affect tracked plan tasks.
+
+Because `plan-update` itself performs the 5-step flow resolution, no arguments pass through — the invocation is literally `Skill("plan-update", "status")`.
 
 ## Important Constraints
 

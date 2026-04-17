@@ -451,12 +451,16 @@ Set `last_updated = today` on the in-memory structure.
 
 ### Write the ledger (parse-rewrite)
 
-Use the **MANDATORY parse-rewrite strategy** from the `## Ledger Schema` "Ledger TOML read/write contract" above:
+Use the **MANDATORY parse-rewrite strategy** from the `## Ledger Schema` "Ledger TOML read/write contract" above.
 
-1. Use `tomlctl items add|update|remove|apply` (preferred) — or parse-rewrite via python3 as the fallback — ending in a single atomic file write.
-2. Preserve `schema_version` on every write.
-3. Follow the key-order convention when the serialiser does not preserve order.
-4. The ledger persists across runs — the `.toml` file is never removed by this command, and `/optimise-apply` mutates statuses in place via the same parse-rewrite contract rather than consuming and discarding the file.
+**Two-call write pattern** (both calls required; omitting either leaves the ledger inconsistent):
+
+1. `tomlctl items apply <ledger> --ops '[...]'` — batch **every** per-item transition from this run in one atomic, all-or-nothing write. Use `"add"` ops for newly-minted O-numbers (new findings with no match, plus regression items with a `related` back-pointer) and `"update"` ops for matched `open` items whose `rounds` / `line` / `description` / `evidence` changed this run. Do **not** loop per-item `items update` calls — one `items apply` pays a single parse + write regardless of how many items transitioned.
+2. `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated` to today. `items apply` does not touch file-level scalars, so this second call is required.
+
+If `tomlctl` is unavailable, fall back to a whole-file parse-rewrite via `python3 -c "import tomllib"` + `Write` — read, mutate in memory (items + `last_updated`), and write once. This path is slower and non-atomic; prefer the two-call `tomlctl` pattern.
+
+Preserve `schema_version` verbatim on every write. Follow the key-order convention when the serialiser does not preserve order. **Do NOT delete the ledger file** — the ledger persists across runs; stable `O`-IDs, `rounds`, and disposition history depend on it, and `/optimise-apply` mutates statuses in place via the same contract rather than consuming and discarding the file.
 
 ### Render the console report from the merged ledger
 

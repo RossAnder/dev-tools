@@ -77,9 +77,11 @@ id = "R5"
 line = 356
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Multi-item ledger mutation never prescribes the `tomlctl items apply --ops` batch — mirror review-apply.md's two-call write pattern (items apply + set last_updated)"
 symbol = "Step 5 — Clean up"
+resolution = "Added the two-call write pattern to optimise-apply.md Step 5 (tomlctl items apply --ops batch + tomlctl set last_updated). Mirrors review-apply.md wording for cross-command consistency."
+resolved = 2026-04-17
 
 [[items]]
 category = "architecture"
@@ -91,9 +93,11 @@ id = "R6"
 line = 450
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Describes full-doc parse + serialise + single `Write` as the primary path, with `tomlctl items update|remove|apply` demoted to an aside — invert the layering so `tomlctl items apply` batch is the primary write and `Write` is the fallback"
 symbol = "Step 3 — Update the Review Ledger"
+resolution = "Inverted review.md Step 3 ledger-write layering: primary path is now the tomlctl items apply --ops batch + tomlctl set last_updated two-call pattern; whole-file Write demoted to python3 fallback. Five mutation classes enumerated as ops in one atomic batch."
+resolved = 2026-04-17
 
 [[items]]
 category = "quality"
@@ -105,9 +109,11 @@ id = "R7"
 line = 452
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Same defect as R6 — `tomlctl items add|update|remove|apply (preferred)` is an undifferentiated list with no prescription to batch — explicitly require `items apply` + `set last_updated`"
 symbol = "Step 3 — Write the ledger"
+resolution = "Same fix as R6 on the optimise producer side — optimise.md Step 3 restructured to prescribe the two-call batch pattern explicitly; per-item items update loops called out as wasteful; whole-file Write demoted to fallback."
+resolved = 2026-04-17
 
 [[items]]
 category = "architecture"
@@ -119,9 +125,11 @@ id = "R8"
 line = 476
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "The 'quick wins' prompt still routes users to `/implement` (with prose expansion of R-numbers) instead of the purpose-built `/review-apply R1,R3` — update to lead with /review-apply"
 symbol = "Step 3 — Prompt for Action"
+resolution = "review.md Step 3 quick-wins action prompt now leads with /review-apply R{n},R{m} (purpose-built consumer) and keeps /implement as a one-line fallback note for plan-task-driven work beyond a single finding."
+resolved = 2026-04-17
 
 [[items]]
 category = "security"
@@ -193,9 +201,11 @@ id = "R13"
 line = 262
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "`No-args-on-main` `recent.toml` clause is buried mid-sentence AND has no equivalent in optimise-apply.md — extract into its own sub-bullet and add the symmetric clause to optimise-apply"
 symbol = "Step 1 — Locate the review ledger"
+resolution = "Extracted the No-args-on-main recent.toml special-case clause from the mid-paragraph buried position into its own dedicated sub-bullet in both review-apply.md and optimise-apply.md Step 1. Optimise-apply now points at .claude/optimise-findings/recent.toml symmetrically."
+resolved = 2026-04-17
 
 [[items]]
 category = "architecture"
@@ -207,9 +217,11 @@ id = "R14"
 line = 362
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Neither apply command has a Phase-4.5-equivalent `Skill('plan-update', 'status')` auto-invoke — only the deviation path fires — flows silently drift when apply runs touch scope without deviations"
 symbol = "Step 5 → Step 6"
+resolution = "Added ### Phase 4.5: Sync plan context subsection at the end of Step 6 in both review-apply.md and optimise-apply.md. No-op gate: skip if no flow resolved OR no bytes written under scope. Otherwise Skill('plan-update', 'status')."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -320,9 +332,11 @@ id = "R22"
 line = 322
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "/optimise-apply has no regression cross-check against previously-`applied` items — regressed optimisations are only detected on the next `/optimise` run"
 symbol = "Step 5"
+resolution = "Added ### Regression cross-check subsection to optimise-apply.md Step 5, symmetric to review-apply.md. Applies canonical dedup rule against previously-applied items; mints new O-items with related=['<old id>'] for matches on files touched in this run."
+resolved = 2026-04-17
 
 [[items]]
 category = "quality"
@@ -334,9 +348,11 @@ id = "R23"
 line = 493
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Single-disposition Edit-fallback escape hatch contradicts the parse-rewrite mandate and invites an LLM to skip tomlctl for 'simple' cases — replace with a concrete `tomlctl items update` example"
 symbol = "Step 4 — Handle Dispositions"
+resolution = "Replaced review.md Step 4's Edit-fallback escape hatch with a concrete tomlctl items update <ledger> R{n} --json '{...}' example. Dropped the Edit clause — Ledger Schema contract already covers it as last-resort fallback."
+resolved = 2026-04-17
 
 [[items]]
 category = "quality"
@@ -348,9 +364,11 @@ id = "R24"
 line = 378
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Add a concrete `--ops` JSON example showing a mixed update+add batch (R{n} transitions plus a regression mint) so LLMs don't fall back to per-item calls"
 symbol = "Step 5 — Two-call write pattern"
+resolution = "Added concrete --ops JSON example under review-apply.md Step 5 Two-call write pattern showing a mixed batch (update applied transition + update verified-clean + add regression mint). Anchors LLMs in the batch shape. NB: shares file+symbol with R3 per coarse dedup rule but is a distinct concern (concrete example vs shell-quoting)."
+resolved = 2026-04-17
 
 [[items]]
 category = "quality"
@@ -362,9 +380,11 @@ id = "R25"
 line = 342
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Final summary template has only Implemented / Skipped / Verification — missing Verified Clean + Regressions Triggered sections that review-apply now emits; align or document the asymmetry"
 symbol = "Step 5 — final summary template"
+resolution = "Updated optimise-apply.md Step 5 final-summary template to add ### Regressions Triggered section (now applicable per R22) plus inline note explaining that ### Verified Clean is intentionally absent — optimise findings are bytes-written by definition. Omit-empty-section rule applied."
+resolved = 2026-04-17
 
 [[items]]
 category = "quality"
@@ -376,9 +396,11 @@ id = "R26"
 line = 273
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Step 2 is a four-bullet paragraph vs review-apply's detailed sub-rules (selector cap, read range, deleted-file detection, already-matches test, hard disambiguation) — port the applicable rules"
 symbol = "Step 2 — Pre-analyse Complex Findings"
+resolution = "Ported review-apply Step 2 rules to optimise-apply Step 2 (selector cap of 15, read range ±50 lines or enclosing symbol, deleted-file auto wontapply, already-applied wontapply pre-check) with optimise-adapted vocabulary (wontapply instead of verified-clean per R34/R37)."
+resolved = 2026-04-17
 
 [[items]]
 category = "quality"
@@ -446,9 +468,11 @@ id = "R31"
 line = 359
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "/optimise-apply lacks parity with /review-apply's security amendments (deferred hard-error, public-API confirmation gate, regression cross-check, partial-apply taxonomy) — factor shared gates into a common embedded block instead of duplicating"
 symbol = "Step 5 — security parity"
+resolution = "Umbrella amendments 7-10 parity. Subordinates R22 (regression cross-check / amendment 7c), R36 (deferred hard-error matrix / amendment 7a), R37 (no-bytes-written rule / hard disambiguation) applied separately. This item covers the remainder: partial-apply taxonomy (amendment 8) in Step 4 + Step 5; three Important Constraints from amendment 9 (minimum change, 3-file cap, public API/schema user confirmation); No auto-commit from amendment 10. Architectural refactor into shared ## Apply Security Gates block intentionally deferred — beyond point-fix scope per minimum-change constraint."
+resolved = 2026-04-17
 
 [[items]]
 category = "architecture"
@@ -488,9 +512,11 @@ id = "R34"
 line = 304
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Agent-tag vocabulary asymmetry (review-apply has 3 tags incl. verified-clean; optimise-apply has 2) should be explicitly documented as intentional"
 symbol = "Step 4 agent instructions"
+resolution = "Added inline sentence to optimise-apply.md Step 4 agent-tag documentation making the 2-tag vs 3-tag asymmetry explicit: optimise agents do not emit verified-clean because optimisations are bytes-written by definition; already-applied findings become either skipped O{n}: already in place, no byte written (→ wontapply) or a regression of a prior fix."
+resolved = 2026-04-17
 
 [[items]]
 category = "architecture"
@@ -516,9 +542,11 @@ id = "R36"
 line = 263
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Missing the explicit deferred-hard-error / fixed-warn-and-skip / missing-ID-skip matrix that review-apply.md amendment 7 adds"
 symbol = "Step 1 — Selector semantics"
+resolution = "Added three-state non-open selector matrix to optimise-apply.md Step 1 (deferred → hard error; applied/wontapply → warn-and-skip; not-in-ledger → report-and-skip). Mirrors review-apply.md amendment 7."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -530,9 +558,11 @@ id = "R37"
 line = 329
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Missing the 'no bytes written → don't tag applied' hard rule that review-apply.md:293 introduces as amendment 1"
 symbol = "Step 5 — applied/skipped decision"
+resolution = "Added symmetric no-bytes-written hard rule to optimise-apply.md Step 5: if you wrote no bytes, use skipped O{n}: already in place, no byte written. Orchestrator transitions to wontapply with skip reason as rationale."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"

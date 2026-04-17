@@ -449,12 +449,20 @@ The TOML ledger (written in the next subsection) is the authoritative artifact. 
 
 Persist the merged state to the ledger file at the path resolved in Step 1 — `context.toml.artifacts.review_ledger` for flows, or `.claude/reviews/<scope>.toml` for flow-less runs. Follow the **Ledger TOML read/write contract** from the `## Ledger Schema` section: **parse-rewrite, not line-edit.**
 
-1. Take the ledger structure loaded in Step 1 (or the empty in-memory ledger if none was loaded).
-2. Apply the mutations below in memory.
-3. Serialise the whole structure back to TOML using the key-order convention from the `## Ledger Schema` section (`id, file, line, symbol, severity, effort, category, summary, description, evidence, first_flagged, rounds, related, status, <disposition-specific fields>, flow`; file-level keys first: `schema_version`, `last_updated`, then `[[items]]`). `schema_version = 1` MUST be present on every write.
-4. Write the serialised TOML over the old file in a single `Write` tool call.
+**Primary write path — the two-call pattern:**
 
-Use `tomlctl items update|remove|apply` (preferred) for every mutation. If `tomlctl` is unavailable, fall back to the python3 parse-rewrite recipe from the contract (`python3 -c "import tomllib; ..."` to load, mutate the Python dict, serialise back with a TOML writer that preserves key order — `tomli_w` or equivalent). If `Edit` is used as the last-resort fallback for a single-field change, include the preceding `id = "R{n}"` line in the match pattern so the change is unique.
+1. Build the full list of mutations in memory from the merged round state — every class below becomes one entry in a single `ops` array:
+   - **New finding, no dedup match** → `add` op for a new `[[items]]` with `id = R{next}`, `first_flagged = <today>`, `rounds = 1`, `status = "open"`.
+   - **New finding matches a prior `open` item** → `update` op on that `id`: increment `rounds`; refresh `line` if it drifted; leave `first_flagged` untouched.
+   - **Regression** (new finding matches a prior `fixed` item) → `add` op with a fresh ID, `related = ["<old id>"]`, `rounds = 1`, `status = "open"`. Do not mutate the prior `fixed` item.
+   - **Prior `open` item confirmed fixed by agents** → `update` op: `status = "fixed"`, `resolved = <today>`, `resolution = "<commit SHA or short description>"`. Keep `first_flagged` and `rounds`.
+   - **Prior `open` item not found in current scope** → no op (item is out of scope for this review, not resolved — leave untouched).
+2. Apply the whole batch in ONE call: `tomlctl items apply <ledger> --ops '[...]'`.
+3. Stamp the header in ONE call: `tomlctl set <ledger> last_updated <YYYY-MM-DD>`.
+
+`schema_version` MUST be preserved verbatim on every write (`tomlctl` does this automatically — never re-emit or modify it). Do NOT delete the ledger file.
+
+**Fallback — if `tomlctl` is unavailable:** use the python3 parse-rewrite recipe from the Ledger Schema contract (`python3 -c "import tomllib; ..."` to load, mutate the Python dict, serialise back with a TOML writer that preserves the key-order convention — `tomli_w` or equivalent — then a single whole-file `Write` call).
 
 **Mutations to apply for this round:**
 
@@ -471,8 +479,9 @@ Use `tomlctl items update|remove|apply` (preferred) for every mutation. If `toml
 
 After presenting the report, prompt the user with actionable next steps based on what was found:
 
-- If there are critical or warning findings with trivial/small effort, generate a concrete `/implement` invocation with the finding descriptions expanded inline (not R-numbers, since `/implement` doesn't understand ledger references):
-  *"Run `/implement fix missing error handling in src/foo.rs:42, add input validation in src/bar.rs:18` to address the quick wins."*
+- If there are critical or warning findings with trivial/small effort, generate a concrete `/review-apply` invocation using the two lowest-hanging R-numbers:
+  *"Run `/review-apply R4,R7` to address the quick wins."*
+  (`/implement` remains available for plan-task-driven work that goes beyond a single review finding.)
 - If there are findings suitable for deferral:
   *"To defer items: reply with `defer R4 — reason — re-evaluate trigger`."*
 - If there are findings to dismiss:
@@ -488,7 +497,7 @@ If the user responds with disposition commands in the same conversation (these a
 - **`wontfix R{n} — rationale`** → locate the item with `id = "R{n}"`; set `status = "wontfix"`, `wontfix_rationale = "<rationale>"`.
 - **`fix R{n}`** → look up the item's `file`, `line`, and `summary` (plus `description` if present) from the ledger; route to `/implement` with the expanded description. **Do NOT mutate `status` here** — the resolution transition (`status = "fixed"` with `resolved` + `resolution`) happens when the fix actually lands, either via the deviation protocol inside `/implement` or via a subsequent `/plan-update` invocation. `/review` only writes the `fixed` status when a later run detects the issue is no longer present (see "Update the Review Ledger").
 
-Apply the mutation to the ledger file immediately when a disposition is given — one parse-rewrite per disposition command is fine for user-driven single edits. If `Edit` is used as a fallback for a single-field change, include the preceding `id = "R{n}"` line in the match pattern for uniqueness.
+Apply the mutation immediately with ONE `tomlctl items update` call per disposition — e.g. `tomlctl items update <ledger> R{n} --json '{"status":"deferred","defer_reason":"...","defer_trigger":"..."}'`. Follow with `tomlctl set <ledger> last_updated <YYYY-MM-DD>`.
 
 ## Important Constraints
 
