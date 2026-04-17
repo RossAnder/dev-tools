@@ -514,9 +514,10 @@ id = "R32"
 line = 78
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "wontfix"
 summary = "tomlctl invocation prose is duplicated across two shared blocks per command (context.toml at line 78 and ledger at line 204) — factor into a third shared '## TOML Write Operations' block"
 symbol = "TOML read/write contract"
+wontfix_rationale = "Architectural refactor deferred by orchestrator decision. The current 2-block arrangement (context.toml write contract at line 78, ledger write contract at line 204) is semantically correct and the two blocks are short. Adding a 3rd shared block adds its own drift risk and coordination cost, which outweighs the DRY win at this scale. If shared-block drift becomes a recurring issue despite the SHA-256 acceptance checks baked into /review-apply Run 1, revisit via a dedicated `plan-new` for a consolidated `## TOML Write Operations` block — not as a point-fix."
 
 [[items]]
 category = "architecture"
@@ -528,9 +529,11 @@ id = "R33"
 line = 292
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Flow-less scope-slug derivation is restated inline in review.md Step 1 and optimise.md Step 3 on top of the shared-block rule — replace inline restatements with a cross-reference"
 symbol = "Flow-less fallback"
+resolution = "Replaced inline flow-less slug-derivation algorithm restatement in review.md (line ~290) and optimise.md (line ~425) with cross-references to the shared Flow Context block (line 87). Example bullets preserved in both files. Eliminates the third copy of the slug-derivation rule; now just shared block + 2 example sets."
+resolved = 2026-04-17
 
 [[items]]
 category = "architecture"
@@ -558,9 +561,11 @@ id = "R35"
 line = 95
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Shared schema intro claims 'embedded verbatim into review.md, optimise.md, and optimise-apply.md' — omits review-apply.md"
 symbol = "## Ledger Schema intro"
+resolution = "Updated shared ## Ledger Schema intro at line 95 across all 4 command files (review.md, review-apply.md, optimise.md, optimise-apply.md) to include review-apply.md in the 'embedded verbatim into ...' enumeration. Shared-block SHA-256 now 54d2514ee8781acb (was 3498e222233b4e69); byte-identical across all 4 files."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -604,9 +609,11 @@ id = "R38"
 line = 300
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "No validation of `last_updated` against clock skew / backdating — a future-dated ledger silently breaks the numeric-legacy selector in /review-apply"
 symbol = "Step 1 — Load Review Ledger"
+resolution = "Added Clock-skew / backdated last_updated validation to review.md Step 1: compares against today + git log latest in-scope commit; warns (not errors) if last_updated is future-dated by more than 1 day and uses today for legacy-numeric selector resolution."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -618,9 +625,11 @@ id = "R39"
 line = 244
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "No upper bound on `rounds` — chronic items escalate at rounds >= 3 but keep growing unboundedly, producing noise forever with no auto-action"
 symbol = "Ledger Schema — Chronic-item escalation"
+resolution = "Added tiered chronic-item prompt to review.md Step 3: at rounds >= 5 (extended chronic), escalation callout includes a concrete defer-or-wontfix recommendation. Existing >= 3 callout preserved unchanged."
+resolved = 2026-04-17
 
 [[items]]
 category = "security"
@@ -633,6 +642,8 @@ line = 363
 related = ["R4"]
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "R4's diff-verification rule checks `git diff HEAD` + `git diff --cached` but misses untracked files — an `applied R{n}` claim on a newly-created (uncommitted) file fails verification and would be incorrectly downgraded"
 symbol = "Verify agent-reported `applied` claims"
+resolution = "Extended R4's Verify agent-reported applied claims diff union to also include `git ls-files --others --exclude-standard` for untracked non-ignored files, closing the self-referentially surfaced gap from Run 1 where newly-created (but-not-yet-added) files would be incorrectly downgraded."
+resolved = 2026-04-17

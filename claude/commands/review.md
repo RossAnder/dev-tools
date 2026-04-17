@@ -92,7 +92,7 @@ Flows with `status = "complete"` are skipped by resolution step 2 (scope glob ma
 
 ## Ledger Schema
 
-All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
+All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `review-apply.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
 
 ### Canonical Ledger Schema (single source of truth)
 
@@ -287,7 +287,7 @@ Skip this check when no flow resolved, when `status != "in-progress"`, or when `
 The ledger path comes from the resolved flow's `context.toml`:
 
 - **Flow resolved** → read the path from `context.toml.artifacts.review_ledger` (canonical location is `.claude/flows/<slug>/review-ledger.toml`). If `[artifacts]` is absent for any reason, compute the path from `slug` as `.claude/flows/<slug>/review-ledger.toml` and write it back on the next TOML write per the Shared Rules contract.
-- **No flow (flow-less fallback)** → write to `.claude/reviews/<scope>.toml`. Derive `<scope>` from the review scope using the preserved rule: lowercase, replace `/` and `\` with `-`, collapse multiple `-` into one, strip leading `-`. Examples:
+- **No flow (flow-less fallback)** → write to `.claude/reviews/<scope>.toml`. Derive `<scope>` per the flow-less slug rule in the Flow Context block above (line 87). Examples:
   - `/review src/api/endpoints/` → `.claude/reviews/src-api-endpoints.toml`
   - `/review auth` → `.claude/reviews/auth.toml`
   - Git-derived scope (no args) → use the branch name; `.claude/reviews/recent.toml` if on the main branch
@@ -301,6 +301,8 @@ Check for the ledger file at the resolved path and load it per the **Ledger TOML
   - `schema_version > 1` → halt and ask the user.
   - Any `[[items]]` entry missing a required field → flag as malformed in console output, exclude it from dedup/resolution for this run, do NOT attempt auto-repair.
   - TOML parse error → report the error location and ask the user to fix or restore from backup; do NOT attempt auto-repair.
+
+**Clock-skew / backdated `last_updated` validation**: after reading the ledger, compare `last_updated` against today's date plus `git log -1 --format=%cI`'s latest in-scope commit. If `last_updated` is more than 1 day ahead of both (i.e. future-dated beyond plausible clock skew), emit a one-line warning to the console (`ledger last_updated=<date> is future-dated; treating as today for filter purposes`) and use today for any legacy-numeric selector resolution in /review-apply. Do not error — the ledger may be correct; just don't let future dates silently drop items from the latest-report filter.
 
 From the loaded ledger, extract all items whose `file` overlaps with the current scope. This is the **prior findings context** — pass it to every agent so they can:
 - Skip items already tracked as `fixed`, `applied`, `wontfix`, `wontapply`, `deferred`, or `verified-clean` (these carry their disposition; do not re-emit them)
@@ -444,6 +446,7 @@ The TOML ledger (written in the next subsection) is the authoritative artifact. 
 - An empty review is a valid outcome — don't invent issues to fill the report.
 - Flag regressions prominently — a previously-fixed item that reappears is always at least a **warning** and always gets `related = ["<old id>"]` on the new item.
 - Any item whose post-merge `rounds >= 3` MUST be escalated in a dedicated callout above the tables, per the chronic-item rule in the `## Ledger Schema` section.
+- For items with `rounds >= 5` (extended chronic — the item has resisted resolution across 5+ review rounds without disposition), the escalation prompt MUST include a concrete recommendation: "R{n} has been flagged in 5+ consecutive reviews without disposition. Either defer with a concrete re-evaluation trigger (`defer R{n} — reason — trigger`) or accept as intentional (`wontfix R{n} — rationale`). Letting chronic items recur indefinitely defeats the dedup/merge logic's signal."
 
 ### Update the Review Ledger
 

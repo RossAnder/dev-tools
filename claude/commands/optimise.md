@@ -92,7 +92,7 @@ Flows with `status = "complete"` are skipped by resolution step 2 (scope glob ma
 
 ## Ledger Schema
 
-All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
+All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `review-apply.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
 
 ### Canonical Ledger Schema (single source of truth)
 
@@ -422,7 +422,7 @@ Focus on the idioms and primitives of the project's async runtime. Common runtim
 The TOML ledger path for this run is determined by the flow resolution performed in Step 1:
 
 - **Flow resolved** → `artifacts.optimise_findings` from the flow's `context.toml` (typically `.claude/flows/<slug>/optimise-findings.toml`). Create the directory if it does not exist.
-- **Flow-less fallback** (user picked "no flow" or no candidates matched) → `.claude/optimise-findings/<scope>.toml` under the subdir convention. Derive `<scope>` from the scope using the preserved rule: lowercase, replace `/` and `\` with `-`, collapse multiple `-` into one, strip leading `-`. Examples:
+- **Flow-less fallback** (user picked "no flow" or no candidates matched) → `.claude/optimise-findings/<scope>.toml` under the subdir convention. Derive `<scope>` per the flow-less slug rule in the Flow Context block above (line 87). Examples:
   - Directory scope → `.claude/optimise-findings/src-prime-api-endpoints.toml`
   - Feature/area scope → `.claude/optimise-findings/auth.toml`
   - Git-derived scope (no args) → `.claude/optimise-findings/{branch-name}.toml`, or `.claude/optimise-findings/recent.toml` on the main branch

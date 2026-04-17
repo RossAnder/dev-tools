@@ -92,7 +92,7 @@ Flows with `status = "complete"` are skipped by resolution step 2 (scope glob ma
 
 ## Ledger Schema
 
-All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
+All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `review-apply.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
 
 ### Canonical Ledger Schema (single source of truth)
 
@@ -378,7 +378,7 @@ The verification agent MUST:
 
 Before constructing the ledger-mutation ops, reconcile each agent's `applied R{n}` tag against the working-tree and index diffs:
 
-- Run `git diff --name-only HEAD` (captures unstaged) and `git diff --name-only --cached` (captures staged). Union the file lists.
+- Run `git diff --name-only HEAD` (captures unstaged modifications), `git diff --name-only --cached` (captures staged modifications), and `git ls-files --others --exclude-standard` (captures untracked, non-ignored files). Union all three lists. Untracked files matter because agents frequently create new files (new test files, new modules, new command files) that haven't been `git add`-ed yet — missing them would wrongly downgrade legitimate `applied` claims.
 - For each `applied R{n}` tag, look up the item's `file` field in the ledger.
   - If `file` appears in the unioned diff → trust the claim; proceed with `status = "fixed"`.
   - If `file` does NOT appear → **downgrade**: rewrite the transition to `status = "wontfix"` with `wontfix_rationale = "claimed-applied but no diff detected — downgraded by /review-apply verification"`. Surface the downgrade prominently in the final summary under a dedicated `### Downgraded` callout so the user can investigate whether the agent was confused or the wrong file was edited.
