@@ -266,14 +266,17 @@ Implement the review findings produced by `/review`. This command expects a TOML
    - **No-args-on-main special case**: when invoked with empty `$ARGUMENTS` in flow-less mode on a main branch, default to `.claude/reviews/recent.toml` if present.
 
    If none are found, ask the user to run `/review` first. Read the TOML per the Ledger TOML read rules in `## Ledger Schema` (schema_version handling, malformed-item skip, parse-error halt).
+
+   **Empty-ledger case**: if the ledger file is present but `items` is empty or has zero items with `status = "open"`, print `ledger present at <path> but has no open items; nothing to apply` and exit cleanly without dispatching agents or calling tomlctl. An empty ledger is a valid outcome (either /review found nothing, or every item has been dispositioned) — do not error.
 3. **Selector semantics** — `$ARGUMENTS` accepts two forms, disambiguated by prefix:
    - **ID-prefixed (preferred)**: `R1,R3,R5` — refers to ledger IDs directly, regardless of current disposition or report inclusion. Resolves against the parsed ledger's `[[items]]` by `id`.
    - **Numeric-only (legacy)**: `1,3,5` — refers to position in the most recent `/review` run's emitted report. Resolve at invocation time by consulting the ledger and filtering to items whose IDs appear in the latest-report set (items sharing the ledger's most recent `last_updated`; if uncertain, prompt the user to confirm which ledger run the numbers refer to).
    - **Strong preference**: use `R{n}` form. Numeric-only remains for backwards compatibility but is ambiguous across disposition transitions (e.g. applying R2 then running `/review-apply 2` may select a different item). Recommend `R{n}` to the user in error messages and confirmation prompts.
    - **Non-open selector behaviour**:
-     - Selected `R{n}` with `status = "deferred"` → **hard error**: "`R{n}` is deferred; run `/review` to re-open or use `/review`'s disposition protocol." Deferred items require a user-committed re-evaluation trigger before `/review-apply` may act on them.
+     - Selected `R{n}` with `status = "deferred"` → **hard error**: "`R{n}` is deferred. Trigger: `<defer_trigger>`. If the trigger has fired, run `/review <file>` to re-scan — the next round will automatically re-`open` the item if still present. If the trigger has not fired, this apply should wait. `/review-apply` does NOT re-open deferred items because the deferral captured a user-committed re-evaluation condition; bypassing it via `/review-apply` would discard that decision." Deferred items require going through `/review`'s disposition protocol to re-open.
      - Selected `R{n}` with `status ∈ {fixed, wontfix, verified-clean}` → **console warn and skip** (idempotent no-op). Do not re-transition.
      - Selected `R{n}` not present in the ledger → report to the user and skip.
+   - **Mixed batches**: when `$ARGUMENTS` contains valid + invalid IDs (e.g. `R1,R99,R3` where R99 doesn't exist), proceed with the valid IDs — do NOT fail-fast the whole run. Record the invalid / missing IDs and surface them in the final summary's `### Unknown IDs` sub-section. Rationale: fail-fast on mixed batches is hostile to users working from a stale or guessed ID list; partial-success with clear reporting is the principle of least surprise (Google AIP-234, AWS partial-batch guidance).
 4. If $ARGUMENTS is "all", apply every item with `status = "open"` in the ledger, including suggestions.
 5. If $ARGUMENTS is "critical", apply only `status = "open"` items with `severity = "critical"`.
 6. If $ARGUMENTS is "critical,warnings", apply `status = "open"` items with `severity = "critical"` or `severity = "warning"`.
@@ -284,12 +287,14 @@ Implement the review findings produced by `/review`. This command expects a TOML
 
 **Reason thoroughly through pre-analysis.** Front-load analysis here — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times.
 
-**Selector cap**: pre-analysis reads are batched in parallel `Read` tool calls. **Cap pre-analysis at 15 selected items per run.** Selectors that exceed this (e.g. `/review-apply all` on a 50-item ledger) prompt the user to either batch into sequential sub-runs or tighten the selector.
+**Selector cap**: pre-analysis reads are batched in parallel `Read` tool calls. **Cap pre-analysis at 15 selected items per run — this cap is non-negotiable.** Selectors that exceed it (e.g. `/review-apply all` on a 30-item ledger) abort with a concrete batching recommendation: "30 items selected but cap is 15; split into two runs, e.g. `/review-apply R1,R2,...,R15` then `/review-apply R16,...,R30`. The ID list can be copy-pasted from the most recent /review report's severity tables." No `--no-cap` override exists — the cap exists because parallel Read exhausts context budget and agent-coordination overhead grows non-linearly beyond 15 items.
 
 For each selected finding:
 
 - **Read range**: read ±50 lines around the cited `line`, OR the full enclosing function / struct / trait impl if `symbol` is set.
-- **Deleted-file detection**: use `Test-Path <file>` (or equivalent on non-Windows). If `False`, auto-transition the item to `verified-clean` with `verified_note = "file removed — audited during /review-apply <today>"`. No agent dispatch.
+- **Deleted-file detection**: use `Test-Path <file>` (or equivalent on non-Windows). If `False`:
+  - **Source files (tracked in git, hand-written)** → auto-transition to `verified-clean` with `verified_note = "file removed — audited during /review-apply <today>"`. No agent dispatch.
+  - **Auto-generated files** (build output, codegen, regenerated migrations — detected by .gitignore membership, by path under `target/`, `build/`, `dist/`, `generated/`, `node_modules/`, or by explicit mention in CLAUDE.md's generated-paths section) → auto-transition to `wontfix` with `wontfix_rationale = "file is auto-generated and will reappear on next build — finding applies to the generator, not this artefact; file the generator fix as a separate item"`. Do NOT use `verified-clean` for generated files: the regression cross-check at Step 5 only walks `fixed`/`applied` items, so a regenerated file with the old bug would evade detection.
 - **"Already matches" test**: compare the read range against the finding's recommended literal or symbol. If the recommended form appears **verbatim** in the read range, the orchestrator may pre-transition the item to `verified-clean` without dispatching an agent. Semantic-judgement cases (refactor equivalence, moved code, paraphrased recommendations) route to an agent, not the orchestrator.
 - **Threat-model / invariant narration** (for `security` and `architecture` categories): the pre-analysis notes must briefly state the threat model or invariant being restored (e.g. "SQLi: untrusted input flows into raw query", "layering: domain module reaching into infrastructure"). This lets downstream agents focus on applying the fix rather than re-litigating intent.
 - For findings involving novel APIs or cross-cutting patterns, reason through the implementation approach NOW and include the pre-analysed reasoning in the agent's prompt so the agent executes rather than deliberates.
@@ -329,7 +334,10 @@ Every agent prompt MUST include:
   - `verified-clean R{n}: <audit note>` — the code already matches the recommendation; you wrote no bytes. Preserve the item's original `category` in your note.
   - `skipped R{n}: <reason>` — the finding cannot be safely applied (would break behaviour, unclear semantics, requires deliberate refactor, or needs user confirmation on a public-API or schema change)."
 - Instruction: "**Hard rule**: if you wrote no bytes (no `Edit` / `Write` / `MultiEdit` tool call for this item), the correct tag is `verified-clean R{n}`, never `applied R{n}`. The orchestrator uses this rule to distinguish `fixed` from `verified-clean` transitions."
+- Instruction: "Do NOT quote diff lines containing credentials, keys, or tokens in resolution / wontfix_rationale / verified_note text. Paraphrase instead — e.g. 'removed hard-coded credential (paraphrased)' rather than quoting the literal value."
 - Instruction: "If you apply a finding that touches a file matching any `scope` glob in the resolved flow's `context.toml`, classify the change as a plan deviation. Report it in your output with the prefix `deviation:` followed by the item's ledger `id` (e.g. `R3`), file, applied fix summary, and what plan expectation it diverges from."
+
+**Partial-apply follow-up**: when an agent emits `applied R{n}: partial — <done>; skipped parts: <not done>`, the orchestrator does two things: (a) marks R{n} as `fixed` with `resolution = "partial: <done> / pending: <not done>"` per the Step 5 mutation table, AND (b) mints a new child item `R{next}` with `file`, `line`, `symbol` copied from R{n}; `summary = "pending parts of R{n}: <not done>"`; `related = ["R{n}"]`; `status = "open"`. This gives pending work a first-class tracked R-ID so it surfaces in future /review rounds and isn't lost to free-prose inside the parent's resolution.
 
 Every agent MUST:
 - Read the target file(s) in full before making any changes
@@ -382,19 +390,27 @@ This verification step closes the chain-of-trust gap described by OWASP LLM01:20
 
 After agents finish, apply the Ledger Schema's canonical dedup rule (same `file` AND (same non-empty `symbol` OR exact `summary` string match)) against **every** previously-`fixed` item in the ledger — not just items already chained via `related`. If a match is found on a file touched in this run, flag it as a regression in the final report and mint a new R-item per the dedup/regression rules, with `related = ["<old id>"]`. Emit a `### Regressions Triggered` section in the summary listing each.
 
+**Ledger integrity note (future enhancement)**: the regression cross-check trusts the ledger bytes blindly — if a previously-`fixed` item's `file` or `summary` is mutated out-of-band between /review-apply runs (manual edit, another command, a buggy tool), the dedup rule silently produces the wrong answer and regressions evade detection. Cheap defence: write a sidecar `<ledger>.sha256` on every `tomlctl items apply` / `tomlctl set` call and verify it at Step 1 load. This is deferred as a tomlctl opt-in (`--verify-integrity`) rather than mandatory — the primary threat model is collaborative-user, not hostile-actor. Track the follow-up as a separate R-item in this ledger under `category = "security"`, `severity = "suggestion"`.
+
 ### Ledger mutation
 
 Apply status updates to the ledger via parse-rewrite per the Ledger TOML read/write contract in `## Ledger Schema`. Mutate the same file consumed in Step 1 (flow-dir path from `context.toml.artifacts.review_ledger`, e.g. `.claude/flows/<slug>/review-ledger.toml`, or the flow-less fallback `.claude/reviews/<scope>.toml`). For each item:
 
 - **Successfully applied** (agent reported `applied R{n}: ...`): set `status = "fixed"`, `resolved = <today, ISO 8601>`, `resolution = "<short description of the change + commit SHA if the apply landed in a commit>"`. For partial applies (`applied R{n}: partial — <done>; skipped parts: <not done>`), write `resolution = "partial: <done> / pending: <not done>"` so the ledger captures the split explicitly.
 - **Verified clean** (agent reported `verified-clean R{n}: ...`, or the orchestrator pre-transitioned the item during Step 2): set `status = "verified-clean"`, `verified_note = "<agent note or orchestrator audit note> — audited during /review-apply <today>"`. **Preserve the item's original `category`** — do NOT reassign the `category` field to `verified-clean`. The `verified-clean` category is reserved for items first flagged as already-clean by `/review` itself, not for post-fix audit transitions via `/review-apply`.
-- **Agent-intentionally-skipped** (agent reported `skipped R{n}: <reason>`): set `status = "wontfix"`, `wontfix_rationale = "<agent's reason, quoted or paraphrased>"`.
+- **Agent-intentionally-skipped** (agent reported `skipped R{n}: <reason>`): set `status = "wontfix"`, `wontfix_rationale = "<agent's reason, quoted or paraphrased>"`. **Critical-finding gate**: if the item has `severity = "critical"` AND `category ∈ {security, db}`, do NOT apply the wontfix transition silently. Surface the skip to the user under a dedicated `### Requires User Confirmation` callout in the final summary with the item's `R{n}`, category, severity, and agent rationale. Wait for the user's explicit `wontfix R{n} — rationale` disposition (per /review Step 4) before writing the transition. This prevents a compromised or confused agent from suppressing a critical finding that dedup would then hide from future rounds.
 - **Not selected in `$ARGUMENTS`**: leave `status` untouched. Do not modify `rounds`, `first_flagged`, or any other field on these items.
+
+**Secret-pattern scan of ledger payload** (mandatory): after constructing the `--ops` JSON but BEFORE invoking `tomlctl items apply`, grep the serialised payload for secret patterns (`AKIA`, `-----BEGIN`, `password\s*=`, `api[_-]?key\s*=`, `secret\s*=`). If any pattern matches, halt and report the item's `R{n}` to the user for manual inspection — the ledger is a committed artefact and must not carry credentials. An agent that quotes a diff line containing a secret into `resolution` or `wontfix_rationale` would otherwise leak it into git history. This check runs in addition to the staged-diff grep in the `security` category sidebar above — the sidebar scans source code; this scans the ledger-write payload.
 
 **Two-call write pattern** (both calls required; omitting either leaves the ledger inconsistent):
 
 1. `tomlctl items apply <ledger> --ops '[...]'` — batch every per-item transition in one atomic, all-or-nothing write. Valid `op` values are `"add"`, `"update"`, and `"remove"`; `/review-apply` uses `"update"` for status transitions, and `"add"` when minting a regression item from the Step 5 cross-check.
 2. `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated` to today. `items apply` does not touch file-level scalars, so this second call is required.
+
+**Atomicity assurance**: `tomlctl items apply` is all-or-nothing — if any op in the batch fails (e.g. updating a non-existent ID, malformed JSON in a sub-op), the tool exits non-zero and the ledger file is unchanged (write via `NamedTempFile::persist`). If step 1 fails, do NOT proceed to step 2 — the file-level `last_updated` bump would create a torn state where the ledger claims a fresh update despite no item transitions landing. On failure, correct the failing op (the error message names the index and reason) and retry the whole batch.
+
+**Concurrent-invocation handling**: `tomlctl` holds an exclusive advisory lock on a sidecar `<ledger>.lock` file for the duration of each write. If another `tomlctl` process holds the lock (e.g. a parallel `/review-apply` run, or an overlapping `/review` + `/review-apply`), the call fails fast with a clear `lock held by PID …` error. Wait for the other process to finish and retry. If the lock appears stranded (no live tomlctl process but the lock persists), see the tomlctl skill's stale-lock recovery guidance — do NOT delete the `.lock` file without confirming no live process holds it.
 
 Example ops batch for a mixed run (one applied transition, one verified-clean transition, one regression mint):
 
@@ -430,8 +446,14 @@ Present the final summary. **Omit any sub-section that has no entries** — e.g.
 ### Skipped
 - [R{n}] [category] Reason it was skipped — `wontfix_rationale` captures the same text in the ledger
 
+### Unknown IDs
+- R{n}: not present in ledger at <path> — check /review's most recent output
+
 ### Downgraded
 - [R{n}] [file:line] [category] Claimed `applied` but no diff detected — transitioned to `wontfix` with rationale. Investigate.
+
+### Requires User Confirmation
+- [R{n}] [file:line] [category] [severity] Agent rationale — awaiting explicit `wontfix R{n} — rationale` disposition before ledger transition.
 
 ### Verification
 - Build: pass/fail

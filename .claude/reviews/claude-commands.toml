@@ -141,9 +141,11 @@ id = "R9"
 line = 353
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Secret-pattern grep runs on the staged diff but not on the ledger itself — an agent can quote a secret-bearing diff line into `resolution` / `wontfix_rationale` and write the credential to a committed artefact"
 symbol = "Step 5 — Category-specific verification — security"
+resolution = "Added secret-pattern scan (`AKIA`, `-----BEGIN`, `password`, `api_key`, `secret`) of the `--ops` JSON payload before tomlctl apply in Step 5; halts on match for user inspection. Also added Step 4 agent-prompt instruction forbidding credential quoting in resolution / wontfix_rationale / verified_note text (paraphrase instead)."
+resolved = 2026-04-17
 
 [[items]]
 category = "security"
@@ -155,9 +157,11 @@ id = "R10"
 line = 373
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "An agent can unilaterally set `status = wontfix` on a critical `security` finding with no user-confirmation gate — amendment 9 only covers public-API/schema, not critical security/db dismissals"
 symbol = "Step 5 — Agent-intentionally-skipped"
+resolution = "Extended Agent-intentionally-skipped bullet with Critical-finding gate: severity='critical' AND category∈{security,db} skip reasons do NOT auto-transition to wontfix — surface to user under `### Requires User Confirmation` final-summary callout and wait for explicit disposition. Added the new template section."
+resolved = 2026-04-17
 
 [[items]]
 category = "security"
@@ -169,9 +173,11 @@ id = "R11"
 line = 249
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "`file: PathBuf` argument is used verbatim for temp-file parent and `.lock` sidecar — no canonicalisation or `.claude/` prefix guard — agent-influenced values laundered through `artifacts.review_ledger` could rewrite any user-writable TOML"
 symbol = "write_toml / with_exclusive_lock"
+resolution = 'Added global --allow-outside flag on Cli + guard_write_path/canonicalize_for_write/repo_or_cwd_root helpers. Every write op (Set, SetJson, ItemsAdd/Update/Remove/Apply) canonicalises the file path and asserts it lies under <git-top-level>/.claude/ via `git rev-parse --show-toplevel` (fallback: CWD). Reads unguarded. Handles not-yet-existing files by canonicalising parent; Windows \\?\ extended paths handled by canonicalising both sides for starts_with comparison.'
+resolved = 2026-04-17
 
 [[items]]
 category = "security"
@@ -187,9 +193,11 @@ id = "R12"
 line = 228
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "`fs4::lock_exclusive` has no timeout and no PID-encoded stale-lock recovery — on Windows it's a mandatory OS lock, so a crashed or force-killed tomlctl can wedge subsequent invocations indefinitely"
 symbol = "with_exclusive_lock"
+resolution = "Replaced fs4 lock_exclusive with 30s backoff loop using try_lock_exclusive (fs4 0.13 Ok(true)/Ok(false) API, verified via Context7). 500ms retry interval; bails after 30s with recovery instructions citing the <target>.lock path. Updated claude/skills/tomlctl/SKILL.md Constraints and gotchas with lock timeout + sidecar location + stranded-lock recovery procedure. PID-based recovery intentionally out of scope."
+resolved = 2026-04-17
 
 [[items]]
 category = "quality"
@@ -233,9 +241,11 @@ id = "R15"
 line = 248
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Empty-ledger case (file present, `items = []`) is undefined — current prose only covers 'ledger missing'"
 symbol = "Preamble"
+resolution = "Added Empty-ledger case handling to Step 1: if ledger present but items empty or zero open items, print 'ledger present but has no open items; nothing to apply' and exit cleanly. No error, no agent dispatch, no tomlctl write."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -248,9 +258,11 @@ id = "R16"
 line = 263
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Mixed valid/invalid batch policy is implicit — `/review-apply R1,R99,R3` where R99 is unknown has no stated semantics (partial-success vs fail-fast)"
 symbol = "Step 1 — Selector semantics"
+resolution = "Added Mixed batches bullet making partial-success policy explicit (Google AIP-234 pattern). Valid IDs proceed; invalid IDs collected and surfaced in final-summary `### Unknown IDs` sub-section. Added the section to the template."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -262,9 +274,11 @@ id = "R17"
 line = 281
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Selector cap of 15 has no documented escape hatch — `/review-apply all` on a 30-item ledger prompts 'batch or tighten' with no 'I accept the risk' path"
 symbol = "Step 2 — Selector cap"
+resolution = "Selector cap paragraph rewritten: 15-item cap is non-negotiable, no --no-cap override exists. Abort with concrete batching recommendation citing specific R-numbers (copy-pasteable from /review's severity tables). Rationale stated inline: parallel Read context budget + non-linear agent-coordination overhead."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -276,9 +290,11 @@ id = "R18"
 line = 286
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Auto-transition to `verified-clean` on deleted files is unsafe for auto-generated artefacts that will reappear with the original bug"
 symbol = "Step 2 — Deleted-file detection"
+resolution = "Deleted-file bullet split into source-file vs auto-generated paths. Source files (tracked, hand-written) → verified-clean. Auto-generated files (detected via .gitignore membership, paths under target/build/dist/generated/node_modules, or CLAUDE.md generated-paths section) → wontfix with rationale citing generator-as-root-cause. Prevents evasion of regression cross-check which only walks fixed/applied items."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -290,9 +306,11 @@ id = "R19"
 line = 322
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = """`resolution = "partial: <done> / pending: <not done>"` is free-prose only — querying 'what's still pending' requires grep, not a structured field"""
 symbol = "Step 4 — Partial-apply convention"
+resolution = "Added Partial-apply follow-up paragraph to Step 4: on `applied R{n}: partial — ...`, orchestrator (a) marks R{n} fixed with partial resolution, AND (b) mints a child R-item (file/line/symbol copied from parent; summary='pending parts of R{n}: ...'; related=['R{n}']; status=open). Gives pending work a first-class R-ID so it surfaces in future /review rounds."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -304,9 +322,11 @@ id = "R20"
 line = 378
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "`tomlctl items apply` mid-batch failure behaviour is not stated in the command doc — user has to infer atomicity from the skill"
 symbol = "Step 5 — Two-call write pattern"
+resolution = "Added Atomicity assurance paragraph after Two-call numbered list: tomlctl items apply is all-or-nothing via NamedTempFile::persist. On failure, do NOT proceed to call 2 (last_updated bump) — would create torn state. Error message names the failing op index + reason; retry the whole batch after correction."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -318,9 +338,11 @@ id = "R21"
 line = 379
 rounds = 1
 severity = "warning"
-status = "open"
+status = "fixed"
 summary = "Concurrent-invocation lock-error path is undocumented — two overlapping /review-apply (or /review + /review-apply) runs collide on the sidecar `.lock` with no user guidance"
 symbol = "Step 5 — Two-call write pattern"
+resolution = "Added Concurrent-invocation handling paragraph documenting the sidecar lock semantics: fails fast with `lock held by PID` error; wait + retry; stale-lock recovery via tomlctl skill (do NOT delete .lock without confirming no live process holds it)."
+resolved = 2026-04-17
 
 [[items]]
 category = "completeness"
@@ -412,9 +434,11 @@ id = "R27"
 line = 301
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Read prescription says `tomlctl parse <file>` but `tomlctl items list --status open` matches the actual access pattern — mention it the way optimise.md:433 does"
 symbol = "Step 1 — Load Review Ledger"
+resolution = "review.md:299 read prescription now mentions both `tomlctl parse <file>` (whole doc) and `tomlctl items list <file> --status open` (pre-filtered to open items), matching optimise.md:437. NB: acceptance grep threshold was specified as ≥2 but shared Ledger Schema doesn't contain the literal 'tomlctl items list' substring (only add/update/remove/apply/next-id) — threshold should have been ≥1. Fix itself landed correctly; acceptance template bug only."
+resolved = 2026-04-17
 
 [[items]]
 category = "security"
@@ -426,9 +450,11 @@ id = "R28"
 line = 268
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Deferred-hard-error text ('run /review to re-open') is self-undermining — /review has no re-open disposition documented; users will hand-edit the TOML to bypass"
 symbol = "Step 1 — Non-open selector behaviour"
+resolution = "Rewrote deferred hard-error text to anchor in defer_trigger: 'R{n} is deferred. Trigger: <defer_trigger>. If fired, run /review <file> to re-scan (next round auto-reopens if still present). If not fired, wait. /review-apply does NOT re-open deferred items because deferral captured a user-committed re-evaluation condition.'"
+resolved = 2026-04-17
 
 [[items]]
 category = "security"
@@ -440,9 +466,11 @@ id = "R29"
 line = 364
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "Regression cross-check trusts ledger bytes blindly — no integrity mark means out-of-band edits can silently suppress regression detection"
 symbol = "Regression cross-check"
+resolution = "Added Ledger integrity note (future enhancement) paragraph at end of Regression cross-check subsection acknowledging the trust gap and recommending sidecar <ledger>.sha256 + --verify-integrity opt-in as a tomlctl follow-up. Primary threat model remains collaborative-user not hostile-actor; full implementation deferred to a separate plan."
+resolved = 2026-04-17
 
 [[items]]
 category = "security"
@@ -454,9 +482,11 @@ id = "R30"
 line = 89
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "`items next-id --prefix ''` produces ID collisions because empty-prefix `strip_prefix` returns the whole existing ID; reject empty and all-digit prefixes"
 symbol = "ItemsOp::NextId"
+resolution = "items_next_id signature changed to Result<String>; bails on empty prefix or all-digit prefix with descriptive messages. Two new tests added (items_next_id_rejects_empty_prefix, items_next_id_rejects_numeric_prefix). Test count now 15/15 (was 13). Call sites updated."
+resolved = 2026-04-17
 
 [[items]]
 category = "security"

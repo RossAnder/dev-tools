@@ -13,6 +13,13 @@ use toml::Value as TomlValue;
     about = "Read and write TOML files used by Claude Code flows and ledgers"
 )]
 struct Cli {
+    /// Allow write operations on files outside the current repo's `.claude/` directory.
+    /// By default, writes are refused if the canonical target path is not under
+    /// `<git-top-level>/.claude/` (or the CWD, if not in a git repo). Use this to
+    /// intentionally edit a flow file in another location.
+    #[arg(long = "allow-outside", global = true)]
+    allow_outside: bool,
+
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -113,6 +120,7 @@ enum ScalarType {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let allow_outside = cli.allow_outside;
     match cli.cmd {
         Cmd::Parse { file } => {
             let doc = read_toml(&file)?;
@@ -134,6 +142,7 @@ fn main() -> Result<()> {
             value,
             ty,
         } => {
+            guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
                 let v = parse_scalar(&value, ty)?;
@@ -144,6 +153,7 @@ fn main() -> Result<()> {
             println!("{{\"ok\":true}}");
         }
         Cmd::SetJson { file, path, json } => {
+            guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
                 let parsed: JsonValue = serde_json::from_str(&json).context("parsing --json")?;
@@ -159,12 +169,12 @@ fn main() -> Result<()> {
             read_toml(&file)?;
             println!("{{\"ok\":true}}");
         }
-        Cmd::Items { op } => items_dispatch(op)?,
+        Cmd::Items { op } => items_dispatch(op, allow_outside)?,
     }
     Ok(())
 }
 
-fn items_dispatch(op: ItemsOp) -> Result<()> {
+fn items_dispatch(op: ItemsOp, allow_outside: bool) -> Result<()> {
     match op {
         ItemsOp::List { file, status } => {
             let doc = read_toml(&file)?;
@@ -176,6 +186,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             print_json(&items_get(&doc, &id)?)?;
         }
         ItemsOp::Add { file, json } => {
+            guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
                 items_add(&mut doc, &json)?;
@@ -185,6 +196,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             println!("{{\"ok\":true}}");
         }
         ItemsOp::Update { file, id, json } => {
+            guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
                 items_update(&mut doc, &id, &json)?;
@@ -194,6 +206,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             println!("{{\"ok\":true}}");
         }
         ItemsOp::Remove { file, id } => {
+            guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
                 items_remove(&mut doc, &id)?;
@@ -203,6 +216,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             println!("{{\"ok\":true}}");
         }
         ItemsOp::Apply { file, ops } => {
+            guard_write_path(&file, allow_outside)?;
             with_exclusive_lock(&file, || {
                 let mut doc = read_toml(&file)?;
                 items_apply(&mut doc, &ops)?;
@@ -213,7 +227,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         }
         ItemsOp::NextId { file, prefix } => {
             let doc = read_toml(&file)?;
-            let id = items_next_id(&doc, &prefix);
+            let id = items_next_id(&doc, &prefix)?;
             println!("{}", serde_json::to_string(&id)?);
         }
     }
@@ -225,8 +239,13 @@ fn read_toml(path: &Path) -> Result<TomlValue> {
     toml::from_str::<TomlValue>(&s).with_context(|| format!("parsing {}", path.display()))
 }
 
+/// Acquire an exclusive sidecar `.lock` file around a write operation, with a
+/// 30-second timeout so a stranded lock (crashed tomlctl, OS-mandatory Windows
+/// lock, heavy contention) produces a clear error instead of hanging forever.
 fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) -> Result<R> {
     use fs4::fs_std::FileExt;
+    use std::time::{Duration, Instant};
+
     let lock_path = path.with_extension(match path.extension().and_then(|s| s.to_str()) {
         Some(ext) => format!("{}.lock", ext),
         None => "lock".to_string(),
@@ -237,13 +256,117 @@ fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) -> Result<
         .write(true)
         .open(&lock_path)
         .with_context(|| format!("opening lock file {}", lock_path.display()))?;
-    lock_file
-        .lock_exclusive()
-        .with_context(|| format!("acquiring exclusive lock on {}", lock_path.display()))?;
+
+    let timeout = Duration::from_secs(30);
+    let retry_delay = Duration::from_millis(500);
+    let start = Instant::now();
+    loop {
+        match lock_file.try_lock_exclusive() {
+            Ok(true) => break,
+            Ok(false) => {
+                if start.elapsed() >= timeout {
+                    bail!(
+                        "lock held on {} for 30 seconds — another tomlctl process may be hanging. If no tomlctl process is running, check for stale lock and delete {} manually.",
+                        lock_path.display(),
+                        lock_path.display()
+                    );
+                }
+                std::thread::sleep(retry_delay);
+            }
+            Err(e) => {
+                return Err(anyhow!(e)).with_context(|| {
+                    format!("acquiring exclusive lock on {}", lock_path.display())
+                });
+            }
+        }
+    }
+
     let result = f();
     // Drop releases the lock automatically; no explicit unlock needed.
     let _ = lock_file;
     result
+}
+
+/// Refuse to write to files outside the current repo's `.claude/` directory
+/// unless `--allow-outside` was passed on this invocation. Protects against
+/// agent-influenced `artifacts.*` paths pointing at e.g. credential files.
+///
+/// Resolution strategy:
+///   1. Canonicalise the target (parent if file doesn't exist yet).
+///   2. Find the git top-level via `git rev-parse --show-toplevel`.
+///      Fall back to CWD if git is missing or we're not inside a repo.
+///   3. Assert canonical target lies under `<root>/.claude/`.
+fn guard_write_path(file: &Path, allow_outside: bool) -> Result<()> {
+    let canonical = canonicalize_for_write(file).with_context(|| {
+        format!("canonicalising write target {}", file.display())
+    })?;
+
+    let root = repo_or_cwd_root()?;
+    let claude_dir = root.join(".claude");
+    // Canonicalise the allowed root too so the prefix comparison is apples-to-apples
+    // (on Windows, canonicalize yields extended-length `\\?\` paths).
+    let claude_canonical = match claude_dir.canonicalize() {
+        Ok(p) => p,
+        Err(_) => claude_dir.clone(),
+    };
+
+    if canonical.starts_with(&claude_canonical) {
+        return Ok(());
+    }
+
+    if allow_outside {
+        eprintln!(
+            "tomlctl: warning: writing outside .claude/ (path resolves to {}) — proceeding because --allow-outside was set",
+            canonical.display()
+        );
+        return Ok(());
+    }
+
+    bail!(
+        "refusing to write outside .claude/ (path resolves to {}); pass --allow-outside to override",
+        canonical.display()
+    )
+}
+
+/// Canonicalise a write target. If the file doesn't exist yet, canonicalise the
+/// parent directory and re-attach the final component. Bails if neither the
+/// file nor its parent directory exists.
+fn canonicalize_for_write(file: &Path) -> Result<PathBuf> {
+    if let Ok(c) = file.canonicalize() {
+        return Ok(c);
+    }
+    let parent = file
+        .parent()
+        .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })
+        .unwrap_or(Path::new("."));
+    let parent_canonical = parent
+        .canonicalize()
+        .with_context(|| format!("parent directory {} not found", parent.display()))?;
+    let name = file
+        .file_name()
+        .ok_or_else(|| anyhow!("write target `{}` has no file name", file.display()))?;
+    Ok(parent_canonical.join(name))
+}
+
+/// Return the git repository top-level directory (canonical), or the current
+/// working directory if git is unavailable or CWD is not inside a repo.
+fn repo_or_cwd_root() -> Result<PathBuf> {
+    let cwd = std::env::current_dir().context("reading current working directory")?;
+    match std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if s.is_empty() {
+                Ok(cwd)
+            } else {
+                let p = PathBuf::from(s);
+                Ok(p.canonicalize().unwrap_or(p))
+            }
+        }
+        _ => Ok(cwd.canonicalize().unwrap_or(cwd)),
+    }
 }
 
 fn write_toml(path: &Path, value: &TomlValue) -> Result<()> {
@@ -571,7 +694,13 @@ fn items_remove(doc: &mut TomlValue, id: &str) -> Result<()> {
     Ok(())
 }
 
-fn items_next_id(doc: &TomlValue, prefix: &str) -> String {
+fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
+    if prefix.is_empty() {
+        bail!("prefix must not be empty — use a letter like R, O, or A");
+    }
+    if prefix.chars().all(|c| c.is_ascii_digit()) {
+        bail!("prefix must not be all-digit — would collide with numeric-suffix parsing");
+    }
     let mut max_n: u64 = 0;
     if let Ok(arr) = items_array(doc) {
         for item in arr {
@@ -586,7 +715,7 @@ fn items_next_id(doc: &TomlValue, prefix: &str) -> String {
             }
         }
     }
-    format!("{}{}", prefix, max_n + 1)
+    Ok(format!("{}{}", prefix, max_n + 1))
 }
 
 #[cfg(test)]
@@ -766,8 +895,30 @@ resolution = "fix in abc123"
     #[test]
     fn items_next_id_respects_max_and_prefix() {
         let doc = led();
-        assert_eq!(items_next_id(&doc, "R"), "R5");
-        assert_eq!(items_next_id(&doc, "O"), "O1");
+        assert_eq!(items_next_id(&doc, "R").unwrap(), "R5");
+        assert_eq!(items_next_id(&doc, "O").unwrap(), "O1");
+    }
+
+    #[test]
+    fn items_next_id_rejects_empty_prefix() {
+        let doc = led();
+        let err = items_next_id(&doc, "").unwrap_err();
+        assert!(
+            err.to_string().contains("prefix must not be empty"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn items_next_id_rejects_numeric_prefix() {
+        let doc = led();
+        let err = items_next_id(&doc, "123").unwrap_err();
+        assert!(
+            err.to_string().contains("prefix must not be all-digit"),
+            "unexpected error: {err}"
+        );
+        // Single digit should also be rejected.
+        assert!(items_next_id(&doc, "1").is_err());
     }
 
     #[test]

@@ -296,7 +296,7 @@ The ledger path comes from the resolved flow's `context.toml`:
 Check for the ledger file at the resolved path and load it per the **Ledger TOML read/write contract** in the `## Ledger Schema` section above:
 
 - **File missing** → this is a first review. Initialise an in-memory ledger with `schema_version = 1`, `last_updated = <today>`, `items = []`. Do not write to disk yet — persistence happens in Step 3 after findings are consolidated.
-- **File present** → parse it via `tomlctl parse <file>` (falls back to `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` if `tomlctl` is unavailable). Apply the read rules from the Ledger TOML read/write contract:
+- **File present** → parse it via `tomlctl parse <file>` (whole doc) or `tomlctl items list <file> --status open` to pre-filter to just the open items this step needs (falls back to `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` if `tomlctl` is unavailable). Apply the read rules from the Ledger TOML read/write contract:
   - Missing `schema_version` → treat as `1`, note that it will be written back on next write.
   - `schema_version > 1` → halt and ask the user.
   - Any `[[items]]` entry missing a required field → flag as malformed in console output, exclude it from dedup/resolution for this run, do NOT attempt auto-repair.
