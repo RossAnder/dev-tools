@@ -1,0 +1,204 @@
+schema_version = 1
+last_updated = 2026-04-17
+
+[[items]]
+id = "O1"
+file = "tomlctl/src/main.rs"
+line = 285
+symbol = "toml_to_json / json_to_toml"
+severity = "warning"
+effort = "medium"
+category = "serialization"
+summary = "Hand-rolled recursive DOM converters allocate a full parallel tree on every read and write"
+description = "Every read path (parse, get, items list, items get, items next-id) builds an owned toml::Value, then toml_to_json clones the whole tree into a serde_json::Value (fresh Map per table, Vec per array, String::clone per key/value), then serde_json::to_string_pretty walks that tree a third time to build a String. Write paths symmetrically parse JSON into a serde_json::Value and then json_to_toml rebuilds a parallel TomlValue before serialise. Replace with serde_transcode: pair a toml::Deserializer over the borrowed source with a serde_json::Serializer::pretty(BufWriter) and transcode streams straight to stdout without an intermediate DOM. For mutation paths keep a single shallow DOM, but bypass the second conversion by deserialising JSON patches directly into TomlValue via serde::Deserialize. Tradeoff: the silent YYYY-MM-DD → Datetime coercion in json_to_toml must move into an explicit adapter (see O6). Combined with O10 (borrowed DeTable), read paths touch zero intermediate allocations."
+evidence = [
+    "https://docs.rs/serde-transcode",
+    "https://serde.rs/transcode.html",
+    "src/main.rs:285-303 (toml_to_json), 305-338 (json_to_toml)",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "applied"
+resolution = "print_json switched to streaming serde_json::to_writer_pretty(BufWriter(stdout)); full serde_transcode deferred (Datetime would flatten to tagged map, breaking test assertions on plain ISO strings)"
+resolved = 2026-04-17
+
+[[items]]
+id = "O2"
+file = "tomlctl/src/main.rs"
+line = 197
+symbol = "write_toml"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "fs::write is non-atomic: a kill, panic, or power loss between truncate and stream-complete leaves a corrupt ledger"
+description = "write_toml calls fs::write(path, s) which opens the target with O_TRUNC|O_WRONLY, destroying the old content before the new bytes land. A Ctrl-C that escalates to SIGKILL, OOM, taskkill /F, or a crash mid-write produces a zero-length or partial file — every subsequent tomlctl call then fails at toml::from_str, blocking the running slash-command flow. Fix with tempfile::NamedTempFile::new_in(parent_dir), write the full output there via a BufWriter, then .persist(path). This maps to atomic rename(2) on POSIX and MoveFileExW(MOVEFILE_REPLACE_EXISTING) on NTFS — readers see either the old complete file or the new complete file, never an interrupted stream. Secondary wins: eliminates the peak-heap bump from to_string_pretty building a full String before the write, and defeats signal-interrupted corruption entirely (F1 covers SIGKILL in a way a ctrlc handler cannot). Combine with panic=unwind or explicit drop(named) on the error path so the tmp file cannot leak if a panic fires between new_in and persist."
+evidence = [
+    "https://docs.rs/tempfile/latest/tempfile/struct.NamedTempFile.html",
+    "https://docs.rs/atomic-write-file",
+    "src/main.rs:195-198",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "applied"
+resolution = "write_toml now uses tempfile::NamedTempFile::new_in(parent) + persist(path) for atomic rename; dep tempfile=^3"
+resolved = 2026-04-17
+
+[[items]]
+id = "O3"
+file = "tomlctl/src/main.rs"
+line = 58
+symbol = "ItemsOp"
+severity = "warning"
+effort = "small"
+category = "algorithm"
+summary = "No batch operation: /optimise-apply with 10 findings spawns 10 tomlctl processes, each full-parsing and full-rewriting the ledger"
+description = """Each items add/update/remove is one CLI invocation doing full fs::read + toml::from_str + O(n) scan + toml::to_string_pretty + fs::write. For a 100-item ledger with a 10-finding apply run: ~10 × (5-15ms process spawn + 0.3-1ms parse + 0.5-1ms serialise + 2-4ms fs I/O) = 100-250ms, vs ~15-30ms for a single batched invocation — an order of magnitude win. The proper fix is a new subcommand tomlctl items apply <file> --ops '[{"op":"update","id":"O1","json":{...}}, {"op":"add","json":{...}}, ...]' that parses once, builds a HashMap<id, patch> (O(k)), makes one pass over items applying matches (O(n+k) instead of O(n·k) in the degenerate branch), then writes once. Pairs with O2's atomic-rename (one atomic rewrite per batch vs N) and enables true cross-op transactional semantics (all-or-nothing: if any op fails the file isn't touched). Per-item commands stay as-is for one-shot use; callers that want batching opt into apply."""
+evidence = [
+    "src/main.rs:163-180 dispatch",
+    "src/main.rs:390-423 impl",
+    "claude/skills/tomlctl/SKILL.md shows one-op-per-invocation throughout",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "applied"
+resolution = "Added ItemsOp::Apply { file, --ops <json-array> } with all-or-nothing batch semantics; new test items_apply_runs_batch_atomically"
+resolved = 2026-04-17
+
+[[items]]
+id = "O4"
+file = "tomlctl/src/main.rs"
+line = 0
+symbol = "items_dispatch / Cmd::Set"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "Read-modify-write has no advisory file lock: two concurrent tomlctl invocations silently lose each other's updates"
+description = "Every mutating command (Set, SetJson, items Add/Update/Remove) is a classic RMW sequence (read_toml → mutate in memory → write_toml) with no lock. Two concurrent invocations against the same ledger — e.g. two Claude Code sessions in the same repo, or a future parallel-apply flow — both read the old state, both write their own new state, and the loser's mutations vanish. Symptom is a silent missing ledger row, which is harder to notice than a crash-corrupt file. Fix: wrap the RMW block with an fs4 (maintained successor to fs2) exclusive advisory lock on the target or a sidecar .lock file. fs4 maps to flock(LOCK_EX) on POSIX and LockFileEx(LOCKFILE_EXCLUSIVE_LOCK) on Windows; both are advisory but honoured by every cooperating tomlctl invocation. Helper with_exclusive_lock(path, |file| { read; mutate; write }) keeps the scope tight. Severity is warning, not critical, because realistic usage today is single-user single-session; the scenario is plausible but not default."
+evidence = [
+    "https://lib.rs/crates/fs4",
+    "src/main.rs:129-141 Set/SetJson, 163-180 items ops — none use fs4/fd-lock/file-guard",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "applied"
+resolution = "Added with_exclusive_lock helper using fs4::fs_std::FileExt::lock_exclusive on sidecar <path>.lock file, wrapping every mutating command body; dep fs4=^0.13"
+resolved = 2026-04-17
+
+[[items]]
+id = "O5"
+file = "tomlctl/Cargo.toml"
+line = 17
+symbol = "clap dependency"
+severity = "warning"
+effort = "trivial"
+category = "memory"
+summary = "clap 4 default features (color, suggestions, error-context) add ~80-150KB to cold-start image load"
+description = """clap 4's default feature set is { std, color, help, usage, error-context, suggestions }. Claude Code invokes tomlctl with known-good argument strings — it never sees a typo that suggestions could rescue, never reads colored --help output, never benefits from error-context's inflated messages. Replace features = ["derive"] with default-features = false, features = ["std", "derive", "help", "usage"]. Expected binary drop 80-150KB per clap size sweeps. For a process spawned ~20-40 times per slash-command run at 10ms each, a smaller .text section reduces Windows image-loader work and page faults at cold start — measurable on a real hyperfine run. Tradeoff: plainer help output if a human runs tomlctl --help (acceptable). This is the cheap middle step; the endgame replacement with pico-args or lexopt is a larger refactor for later."""
+evidence = [
+    "https://docs.rs/clap/latest/clap/_features.rs.html",
+    "https://rust-cli-recommendations.sunshowers.io/cli-parser.html",
+    "Cargo.toml:17",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "applied"
+resolution = "clap switched to default-features=false with features=[std,derive,help,usage]"
+resolved = 2026-04-17
+
+[[items]]
+id = "O6"
+file = "tomlctl/src/main.rs"
+line = 318
+symbol = "json_to_toml (string arm)"
+severity = "warning"
+effort = "small"
+category = "serialization"
+summary = "Any JSON string matching YYYY-MM-DD is silently rewritten as a TOML Datetime, risking corruption of non-date strings of that shape"
+description = 'The string arm of json_to_toml unconditionally calls looks_like_date(s) + s.parse::<Datetime>() and promotes to TomlValue::Datetime on success. This is applied everywhere JSON becomes TOML (set-json, items add, items update). A legitimate string that happens to match — short numeric IDs formatted as YYYY-MM-DD, version tags, placeholders like 0000-00-00 — gets silently type-mutated into a TOML date literal. Round-trip then returns it as a string (because toml_to_json stringifies Datetime), masking the loss. Preferred fix: narrow the coercion to a whitelist of known date-valued keys from the ledger/context schema (created, updated, first_flagged, last_updated, resolved, date). Alternative: drop coercion entirely and make callers pass dates via a {"$date":"..."} tagged form. Narrowed whitelist is backwards-compatible, low-risk, and preserves the current ergonomics for the ledger schema. Pairs with O1: if serde_transcode replaces the converters, the coercion moves into a custom serde::de::Deserializer adapter.'
+evidence = [
+    "src/main.rs:318-325 coercion logic",
+    "src/main.rs:275-283 looks_like_date (syntactic only)",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "applied"
+resolution = "Removed unconditional YYYY-MM-DD->Datetime coercion from json_to_toml string arm; added DATE_KEYS whitelist + maybe_date_coerce helper used by items_add/items_update/SetJson; new test items_add_does_not_coerce_non_date_keys"
+resolved = 2026-04-17
+
+[[items]]
+id = "O7"
+file = "tomlctl/Cargo.toml"
+line = 16
+symbol = "serde_json dependency"
+severity = "warning"
+effort = "trivial"
+category = "memory"
+summary = "serde_json preserve_order pulls indexmap and is likely not load-bearing — Claude consumes JSON by key"
+description = "The feature makes serde_json::Map use IndexMap instead of BTreeMap, so JSON output preserves insertion order. TOML on-disk order is what matters for the ledger; JSON is only an output transfer format to Claude, which parses by key. If no existing slash command depends on JSON output field order (verify by reading the calling commands), drop preserve_order: BTreeMap inserts are cheaper, indexmap leaves the dep graph, binary shaves ~10-50KB. Leave the feature on toml — round-trip order there IS load-bearing for human-readable ledger diffs. Partial mooter: if O1 (serde_transcode) lands, transcode preserves source-deserializer iteration order regardless of the feature flag, making this doubly safe to drop."
+evidence = [
+    "Cargo.toml:16",
+    "serde_json preserve_order flips Map backing from BTreeMap to IndexMap",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "applied"
+resolution = "Dropped serde_json preserve_order feature; toml keeps its own preserve_order for on-disk round-trip"
+resolved = 2026-04-17
+
+[[items]]
+id = "O8"
+file = "tomlctl/src/main.rs"
+line = 200
+symbol = "print_json"
+severity = "suggestion"
+effort = "trivial"
+category = "serialization"
+summary = "to_string_pretty + println! allocates a full output String before writing; to_writer_pretty over BufWriter(stdout().lock()) skips it"
+description = '''println!("{}", serde_json::to_string_pretty(v)?) allocates the entire serialised output as a String, then Display copies it to stdout's linewise buffer. serde_json explicitly documents the streaming pattern: let w = BufWriter::new(io::stdout().lock()); serde_json::to_writer_pretty(&mut w, v)?; w.write_all(b"\n")? — skips the intermediate String and the second traversal. Wins are small in absolute terms (printing a ≤100KB ledger dump) but pure upside: less heap pressure, less peak memory, fewer allocations. Error handling shifts to io::Error at the boundary — wrap with anyhow::Context as elsewhere. Pairs naturally with O1 (if transcoding straight to writer, no intermediate at all).'''
+evidence = [
+    "https://docs.rs/serde_json — 'Serialize Data to IO Writers with Serde'",
+    "src/main.rs:200-203",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "open"
+
+[[items]]
+id = "O9"
+file = "tomlctl/Cargo.toml"
+line = 21
+symbol = "[profile.release] + .cargo/config.toml rustflags"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "For a ~10ms cold-start CLI, binary-load cost likely dominates codegen quality — measure opt-level='s'+lto='fat' and reconsider target-cpu=x86-64-v3"
+description = "Current settings (opt-level=3, lto='thin') produce a 752KB binary tuned for throughput. At ~10ms total runtime the image-load-plus-page-fault ratio to hot-loop work is high, and a smaller .text section often wins wall-clock time even at the cost of per-instruction codegen. Run a hyperfine A/B: (current: opt-level=3, lto='thin') vs (opt-level='s', lto='fat', codegen-units=1) vs (opt-level='z', lto='fat'). Start with 's' per the Rust internals consensus — 'z' disables loop vectorization and commonly regresses runtime. Keep strip=true, panic='abort' (but see O2's panic-unwind note if NamedTempFile::persist is adopted). Separately, target-cpu=x86-64-v3 costs portability (AVX2-only CPUs) and can enlarge .text with wider-vector codegen, winning nothing here (no SIMD-vectorizable hot loops). Consider dropping to x86-64-v2 or the Rust default baseline. Keep +crt-static — it's correct for the no-VCRedist portability story."
+evidence = [
+    "https://internals.rust-lang.org/t/should-default-recommended-opt-level-for-minimizing-binary-size-be-s-or-z/19685",
+    "https://github.com/rust-lang/rust/issues/54026",
+    "Cargo.toml:20-26",
+    ".cargo/config.toml:3",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "open"
+
+[[items]]
+id = "O10"
+file = "tomlctl/src/main.rs"
+line = 190
+symbol = "read_toml"
+severity = "suggestion"
+effort = "medium"
+category = "serialization"
+summary = "toml 1.1 exposes a borrowed DeTable whose strings stay Cow::Borrowed for unescaped input — read-only paths can skip half the string allocations"
+description = "read_toml unconditionally returns an owned toml::Value: every key and every TomlValue::String is a freshly-allocated String, even for commands that only peek at the tree (get, parse, validate, items list, items get, items next-id). toml 1.1's DeTable<'i> uses Cow<'i, str> and stays Borrowed whenever the source has no escapes; it converts into a toml::Deserializer<'i> that any serde consumer can drive. Split read_toml into read_toml_owned (for mutation paths, unchanged) and with_borrowed_doc(path, |de| ...) that reads the file into a local String, parses to DeTable, converts to Deserializer, and hands it to a closure. Combined with O1 (serde_transcode), read paths become read-file → transcode-to-stdout with zero intermediate DOM. Not worth doing in isolation — the savings are small relative to process spawn cost — but compounds with O1."
+evidence = [
+    "https://docs.rs/toml/latest/toml/de/type.DeTable.html",
+    "https://docs.rs/toml/latest/toml/struct.Deserializer.html",
+    "https://epage.github.io/blog/2025/07/toml-09/",
+    "src/main.rs:190-193",
+]
+first_flagged = 2026-04-17
+rounds = 1
+status = "open"

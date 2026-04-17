@@ -75,7 +75,8 @@ No additional slugification — the filename is already the slug.
 
 - **Reading**: if `context.toml` is missing required fields (`slug`, `plan_path`, `status`, `created`, `updated`, `scope`, `[tasks]`, `[artifacts]`), prompt the user with the specific missing fields and the plan's current path. Do not synthesise defaults silently.
 - **Reading**: if `context.toml` is syntactically invalid (can't be parsed as TOML), report the parse error and ask the user to fix manually. Do not attempt auto-repair.
-- **Writing**: when updating a field, Read the file, modify only the target line(s), Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
+- **Writing (preferred)**: use `tomlctl` (see skill `tomlctl`) — `tomlctl set <file> <key-path> <value>` for a scalar, `tomlctl set-json <file> <key-path> --json <value>` for arrays or sub-tables. `tomlctl` preserves `created` verbatim, preserves key order, holds an exclusive sidecar `.lock`, and writes atomically via tempfile + rename. One tool call per field — no Read/Edit choreography required.
+- **Writing (fallback)**: if `tomlctl` is unavailable, Read the file, modify only the target line(s) via `Edit`, Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
 
 #### Flow-less fallback
 
@@ -202,17 +203,28 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 
 #### Write strategy (MANDATORY)
 
-**Ledger writes MUST use parse-rewrite, not line-edit.** The required pattern:
+**Ledger writes MUST use parse-rewrite, not line-edit.** Preferred path — `tomlctl` (see skill `tomlctl`):
+
+- `tomlctl items add <ledger> --json '{...}'` — append a new item.
+- `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
+- `tomlctl items remove <ledger> <id>` — delete by id.
+- `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` — batch multiple ops in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N.
+- `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated`.
+- `tomlctl items next-id <ledger> --prefix R|O` — compute the next monotonic id.
+
+`tomlctl` writes go through `tempfile::NamedTempFile::persist` (atomic rename) and hold an exclusive advisory lock on a sidecar `.lock` file, so concurrent invocations are safe and an interrupted write cannot corrupt the ledger.
+
+**Fallback if `tomlctl` is unavailable** (missing binary, Rust not installed):
 
 1. Read the whole ledger file.
-2. Parse it with `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` (or an equivalent available runtime — `python3` is assumed present on Linux; check CLAUDE.md `Build & test` section for alternatives if not).
+2. Parse it with `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` (or an equivalent runtime — `python3` is assumed present on Linux; check CLAUDE.md `Build & test` section for alternatives if not).
 3. Mutate the parsed structure in memory (add an item, change a status, increment `rounds`, etc.).
-4. Serialise the whole structure back to TOML. Use a deterministic serialiser that preserves key order within each item (see fallback below if no library available).
-5. Write the new TOML over the old file in a single `Write` tool call.
+4. Serialise the whole structure back to TOML (preserve key order within each item per the convention below).
+5. `Write` the new TOML over the old file in a single call.
 
-**Fallback if parse-rewrite isn't viable** (e.g. Python unavailable, single trivial edit):
+**Last-resort fallback** (python3 also unavailable, and the change is a single trivial edit):
 - Read → use `Edit` with a unique surrounding context (include the preceding `id = "R{n}"` line in the match pattern to ensure uniqueness within the file).
-- If `Edit` fails due to ambiguity: fall back immediately to the parse-rewrite strategy rather than approximating the match.
+- If `Edit` fails due to ambiguity: escalate to one of the parse-rewrite paths rather than approximating the match.
 
 #### Key-order convention (for serialisers that don't preserve order)
 

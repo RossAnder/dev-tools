@@ -1,0 +1,17 @@
+slug = "auth-overhaul"
+plan_path = "docs/plans/auth-overhaul.md"
+status = "in-progress"
+created = 2026-04-08
+updated = 2026-04-16
+branch = "auth-overhaul"
+
+scope = ["src/auth/**", "src/middleware/auth.rs"]
+
+[tasks]
+total = 10
+completed = 3
+in_progress = 1
+
+[artifacts]
+review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
+optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
