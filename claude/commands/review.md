@@ -5,11 +5,11 @@ argument-hint: [file paths, directories, feature name, or empty for recent chang
 
 ## Flow Context
 
-Every command in this suite reads and writes per-flow state under `.claude/flows/<slug>/`. The blocks below are the canonical schema and shared rules — embedded verbatim in every command file so that behaviour stays consistent.
+All `.claude/...` paths below resolve to the **project-local** `.claude/` directory at the git top-level. If no git top-level is available, refuse rather than fall back to `~/.claude/`.
 
-### Canonical Flow Schema (single source of truth)
+### Canonical Flow Schema
 
-**No inline comments in the schema** — `Edit` tool's exact-string matching clobbers trailing comments during single-field updates. Status values and other enumerations are documented in the Shared Rules section below, not in the schema block.
+**No inline comments in the schema** — `Edit` tool's exact-string matching clobbers trailing comments during single-field updates. Status values and other enumerations are documented in the Shared Rules below, not in the schema block.
 
 ```toml
 slug = "auth-overhaul"
@@ -32,8 +32,6 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 ```
 
 ### Shared Rules
-
-These rules govern how every command reads, writes, and interprets `context.toml`.
 
 #### Status vocabulary
 
@@ -94,7 +92,7 @@ Flows with `status = "complete"` are skipped by resolution step 2 (scope glob ma
 
 ## Ledger Schema
 
-Every command that reads or writes a review or optimise ledger shares the same TOML schema — embedded verbatim in each command file so the format, dedup rules, and read/write contract stay consistent. The blocks below are the single source of truth: the item shape, the read/write discipline for array-of-tables ledgers, and the ID-assignment and dedup rules that govern how new findings merge against prior rounds.
+All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
 
 ### Canonical Ledger Schema (single source of truth)
 

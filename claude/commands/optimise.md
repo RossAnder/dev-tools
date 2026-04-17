@@ -5,9 +5,11 @@ argument-hint: [file paths, directories, feature name, branch1..branch2, or empt
 
 ## Flow Context
 
-All `.claude/...` paths below resolve to the **project-local** `.claude/` directory at the git top-level. If no git top-level is available, refuse rather than fall back to user-level `~/.claude/`.
+All `.claude/...` paths below resolve to the **project-local** `.claude/` directory at the git top-level. If no git top-level is available, refuse rather than fall back to `~/.claude/`.
 
 ### Canonical Flow Schema
+
+**No inline comments in the schema** — `Edit` tool's exact-string matching clobbers trailing comments during single-field updates. Status values and other enumerations are documented in the Shared Rules below, not in the schema block.
 
 ```toml
 slug = "auth-overhaul"
@@ -29,7 +31,9 @@ review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
 optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 ```
 
-### Status vocabulary
+### Shared Rules
+
+#### Status vocabulary
 
 `status` takes one of four string values: `draft`, `in-progress`, `review`, `complete`.
 
@@ -40,7 +44,7 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 
 **Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
 
-### Field responsibilities
+#### Field responsibilities
 
 - `slug` — immutable after creation. Only `plan-new` writes it.
 - `plan_path` — immutable after creation. For multi-file plans, `plan_path` points at the **outline file** (e.g. `docs/plans/auth-overhaul/00-outline.md`), not the directory.
@@ -51,7 +55,7 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
 - `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent when read, commands compute from `slug` but MUST write it back on their next TOML write.
 
-### Slug derivation
+#### Slug derivation
 
 Slug = plan filename minus `.md` extension. Examples:
 - `docs/plans/auth-overhaul.md` → slug `auth-overhaul`
@@ -59,7 +63,7 @@ Slug = plan filename minus `.md` extension. Examples:
 
 No additional slugification — the filename is already the slug.
 
-### Flow resolution order (every command, every invocation)
+#### Flow resolution order (every command, every invocation)
 
 1. **Explicit `--flow <slug>` argument**. If provided, use it verbatim. If `.claude/flows/<slug>/` doesn't exist, error.
 2. **Scope glob match on the path argument**. For each `.claude/flows/*/context.toml` where `status != "complete"`, read the `scope` array. For each pattern, invoke the `Glob` tool with the pattern and check whether the target path appears in the result. If exactly one flow matches, use it. Skip `status == "complete"` flows entirely.
@@ -67,14 +71,14 @@ No additional slugification — the filename is already the slug.
 4. **`.claude/active-flow` fallback**. Read the single-line slug. If `.claude/flows/<slug>/` exists with a valid `context.toml`, use it. If the pointed-at directory is missing or the TOML is malformed, proceed to step 5.
 5. **Ambiguous / none found**: list candidate flows (all non-complete flows with summary: slug, plan_path, status), ask the user.
 
-### TOML read/write contract
+#### TOML read/write contract
 
 - **Reading**: if `context.toml` is missing required fields (`slug`, `plan_path`, `status`, `created`, `updated`, `scope`, `[tasks]`, `[artifacts]`), prompt the user with the specific missing fields and the plan's current path. Do not synthesise defaults silently.
 - **Reading**: if `context.toml` is syntactically invalid (can't be parsed as TOML), report the parse error and ask the user to fix manually. Do not attempt auto-repair.
 - **Writing (preferred)**: use `tomlctl` (see skill `tomlctl`) — `tomlctl set <file> <key-path> <value>` for a scalar, `tomlctl set-json <file> <key-path> --json <value>` for arrays or sub-tables. `tomlctl` preserves `created` verbatim, preserves key order, holds an exclusive sidecar `.lock`, and writes atomically via tempfile + rename. One tool call per field — no Read/Edit choreography required.
 - **Writing (fallback)**: if `tomlctl` is unavailable, Read the file, modify only the target line(s) via `Edit`, Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
 
-### Flow-less fallback
+#### Flow-less fallback
 
 When `/review` or `/optimise` run on code outside any flow (resolution ends at step 5 and user picks "no flow"):
 - `/review` → `.claude/reviews/<scope>.toml`
@@ -82,13 +86,13 @@ When `/review` or `/optimise` run on code outside any flow (resolution ends at s
 
 Slug derivation for flow-less scope: lowercase, replace `/\` with `-`, collapse `--`, strip leading `-` (preserved from pre-redesign).
 
-### Completed-flow handling
+#### Completed-flow handling
 
 Flows with `status = "complete"` are skipped by resolution step 2 (scope glob match). They remain on disk for audit but do not participate in auto-resolution. Users can still target them via explicit `--flow <slug>`.
 
 ## Ledger Schema
 
-All ledger reads and writes performed by this command follow the canonical schema below. The TOML ledger is the authoritative artifact; markdown output exists only for console rendering. This section is the living spec — it is duplicated verbatim across `review.md`, `optimise.md`, and `optimise-apply.md`, and takes precedence over any earlier prose describing ledger format.
+All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
 
 ### Canonical Ledger Schema (single source of truth)
 

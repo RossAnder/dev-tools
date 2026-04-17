@@ -1,0 +1,578 @@
+schema_version = 1
+last_updated = 2026-04-17
+
+[[items]]
+category = "architecture"
+description = "Only the two apply commands are byte-identical. review.md and optimise.md each diverge (different intro paragraphs, different heading depths `###` vs `####`). The block explicitly claims to be 'the single source of truth, embedded verbatim' — the promise is broken. Pick one canonical variant (the apply-pair text is the most complete) and normalise all four files to it. This is the precondition for any future drift-detection automation."
+effort = "medium"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R1"
+line = 6
+rounds = 1
+severity = "critical"
+status = "fixed"
+summary = "Shared `## Flow Context` block has drifted: SHA-256 shows three distinct hashes across review.md / optimise.md / review-apply.md+optimise-apply.md — re-normalise to a single canonical variant"
+symbol = "## Flow Context"
+resolution = "Normalised `## Flow Context` (lines 6-91) in claude/commands/review.md and claude/commands/optimise.md to the apply-pair canonical bytes (sha256:efd5619a706fcc01…). SHA-256 parity verified byte-identical across all 4 command files. No commit yet — working-tree change."
+resolved = 2026-04-17
+
+[[items]]
+category = "architecture"
+description = "Same pattern as R1: review-apply.md and optimise-apply.md share a hash (3498e222…), review.md and optimise.md each have their own. Intro paragraphs differ; a couple of trailing lines differ too. Fix together with R1 — one normalisation pass covers both shared blocks."
+effort = "medium"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R2"
+line = 93
+rounds = 1
+severity = "critical"
+status = "fixed"
+summary = "Shared `## Ledger Schema` block has drifted the same way — three distinct hashes across the four files; re-normalise"
+symbol = "## Ledger Schema"
+resolution = "Normalised `## Ledger Schema` (lines 93-244) in claude/commands/review.md and claude/commands/optimise.md to the apply-pair canonical bytes (sha256:3498e222233b4e69…). SHA-256 parity verified byte-identical across all 4 command files. No commit yet — working-tree change."
+resolved = 2026-04-17
+
+[[items]]
+category = "security"
+description = "Agent-produced strings flow untranslated into the orchestrator's shell call. On PowerShell (the documented platform shell) unescaped `$var` expands; on bash, embedded single quotes terminate the literal. Add a 'Shell-quoting for --ops JSON' subsection: mandate RFC-8259 JSON-escape of every agent string, and pass `--ops` via PowerShell `@'...'@` here-string (or bash `$(cat)` from tempfile) rather than a shell-expanded single-quoted literal. Same defect exists at optimise-apply.md:358."
+effort = "small"
+evidence = ["Trail of Bits — Prompt injection to RCE in AI agents"]
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R3"
+line = 378
+rounds = 1
+severity = "critical"
+status = "fixed"
+summary = "Shell-quoting of agent-supplied JSON inside `tomlctl items apply --ops '[...]'` is unspecified — `resolution` / `wontfix_rationale` / `verified_note` echo agent text verbatim and could carry `'`, `$`, backticks, or newlines that break the shell"
+symbol = "Step 5 — Two-call write pattern"
+resolution = """Added `**Shell-quoting for agent-supplied JSON payloads**` paragraph at review-apply.md:393 under the Two-call write pattern. Mandates RFC-8259 escape + tempfile-based `--ops` passing (`--ops "$(cat tempfile)"` / PowerShell here-string); recommends per-item `tomlctl items update` loop for ≤3 items where per-call quoting is easier to audit. Content grep-verified at line 393. NB: diff-verification per R4 could not confirm because review-apply.md is untracked in git (created this session) — see R40 for the rule's untracked-file gap."""
+resolved = 2026-04-17
+
+[[items]]
+category = "security"
+description = "Before Step 5 ledger mutation, the orchestrator must reconcile each `applied R{n}` claim against `git diff --name-only HEAD` (plus staged). If the cited file appears in neither, downgrade `applied` → `skipped R{n}: claimed-applied but no diff detected` and surface in the final summary. Same concern applies to the 'recommended form appears verbatim' heuristic at line 287 — at minimum log a console warning on every verified-clean pre-transition."
+effort = "small"
+evidence = ["OWASP LLM01:2025 Prompt Injection — Thought/Observation Injection"]
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R4"
+line = 293
+rounds = 1
+severity = "critical"
+status = "fixed"
+summary = "'No new byte written → always verified-clean' is a policy on the agent with no orchestrator-side verification — a confused or hostile agent can mark items `fixed` with a fabricated `resolution` and the regression cross-check then suppresses re-flagging forever"
+symbol = "Hard disambiguation rule for `verified-clean` vs `fixed`"
+resolution = "Added `### Verify agent-reported applied claims` subsection at review-apply.md:363 (immediately before Regression cross-check) and matching `### Downgraded` subsection in the final-summary template. Orchestrator reconciles each `applied R{n}` tag against `git diff --name-only HEAD` ∪ `git diff --name-only --cached`; unbacked tags downgrade to `wontfix` with rationale and surface under the `### Downgraded` callout. Content grep-verified (2 occurrences of `### Downgraded` — one in prose reference, one as template heading, both intended). NB: see R40 — current wording misses untracked files, surfaced self-referentially on this very run."
+resolved = 2026-04-17
+
+[[items]]
+category = "quality"
+description = "Three agents independently flagged this. Step 5 lists three per-item mutation rules plus a separate file-level `last_updated` line. Without explicit 'use items apply for all transitions in one call', an LLM will naturally loop single `items update` invocations, paying N parse+write cycles. Copy review-apply.md lines 376-379 verbatim, retitled for the optimise vocabulary."
+effort = "small"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R5"
+line = 356
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Multi-item ledger mutation never prescribes the `tomlctl items apply --ops` batch — mirror review-apply.md's two-call write pattern (items apply + set last_updated)"
+symbol = "Step 5 — Clean up"
+
+[[items]]
+category = "architecture"
+description = "The tomlctl binary is specifically designed to avoid whole-doc Write (sidecar lock + atomic persist). This step hits every class where batch shines: new finds + rounds++ on matches + regressions + last_updated bump. Restructure Step 3 to prefer `tomlctl items apply --ops '[...]'` + `tomlctl set <ledger> last_updated <today>`, and demote whole-file Write to the python3 fallback only."
+effort = "small"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R6"
+line = 450
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Describes full-doc parse + serialise + single `Write` as the primary path, with `tomlctl items update|remove|apply` demoted to an aside — invert the layering so `tomlctl items apply` batch is the primary write and `Write` is the fallback"
+symbol = "Step 3 — Update the Review Ledger"
+
+[[items]]
+category = "quality"
+description = "Five mutation types enumerated; any non-trivial round hits several. Matching prose to R6 keeps the producer and consumer side consistent."
+effort = "small"
+file = "claude/commands/optimise.md"
+first_flagged = 2026-04-17
+id = "R7"
+line = 452
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Same defect as R6 — `tomlctl items add|update|remove|apply (preferred)` is an undifferentiated list with no prescription to batch — explicitly require `items apply` + `set last_updated`"
+symbol = "Step 3 — Write the ledger"
+
+[[items]]
+category = "architecture"
+description = "`/review-apply` now exists and directly consumes R-IDs with full ledger-state transitions (fixed + resolved + resolution). Leaving the /implement recommendation means users miss the dedicated apply path and the ledger never transitions. Plan flagged this as a follow-up; trivial to fix in one line."
+effort = "trivial"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R8"
+line = 476
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "The 'quick wins' prompt still routes users to `/implement` (with prose expansion of R-numbers) instead of the purpose-built `/review-apply R1,R3` — update to lead with /review-apply"
+symbol = "Step 3 — Prompt for Action"
+
+[[items]]
+category = "security"
+description = '''After constructing the `--ops` JSON but before `tomlctl items apply`, grep the serialised payload for `AKIA|-----BEGIN|password\s*=`; halt on match. Also add an agent-prompt line in Step 4: 'do not quote diff lines containing credentials in resolution text; paraphrase instead.''''
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R9"
+line = 353
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Secret-pattern grep runs on the staged diff but not on the ledger itself — an agent can quote a secret-bearing diff line into `resolution` / `wontfix_rationale` and write the credential to a committed artefact"
+symbol = "Step 5 — Category-specific verification — security"
+
+[[items]]
+category = "security"
+description = "Extend amendment 9: require user confirmation before transitioning any item where `severity = 'critical'` AND `category ∈ {security, db}` to wontfix. Agents emit `skipped R{n}: requires user confirmation on critical <category> dismissal` and the orchestrator surfaces for approval. Once wontfixed, dedup dismisses future re-flags — the gate must be strict."
+effort = "small"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R10"
+line = 373
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "An agent can unilaterally set `status = wontfix` on a critical `security` finding with no user-confirmation gate — amendment 9 only covers public-API/schema, not critical security/db dismissals"
+symbol = "Step 5 — Agent-intentionally-skipped"
+
+[[items]]
+category = "security"
+description = "At the top of every write-op handler, canonicalise `file` and assert it lies under the git top-level's `.claude/` directory (or fail with a clear error unless `--allow-outside` is passed). Document the constraint in SKILL.md Constraints section: 'tomlctl refuses to write outside .claude/ without --allow-outside.'"
+effort = "small"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R11"
+line = 249
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "`file: PathBuf` argument is used verbatim for temp-file parent and `.lock` sidecar — no canonicalisation or `.claude/` prefix guard — agent-influenced values laundered through `artifacts.review_ledger` could rewrite any user-writable TOML"
+symbol = "write_toml / with_exclusive_lock"
+
+[[items]]
+category = "security"
+description = "Wrap lock_exclusive with `try_lock_exclusive` + 30-second backoff loop. On timeout, print a clear error with the lock path and instructions to delete it if no other tomlctl process is running. Document the lock convention in SKILL.md 'Constraints and gotchas'."
+effort = "medium"
+evidence = [
+    "fs2-rs issue #15: Locking on windows is not advisory",
+    "claude-code#22166 stale lock indefinite freeze",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R12"
+line = 228
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "`fs4::lock_exclusive` has no timeout and no PID-encoded stale-lock recovery — on Windows it's a mandatory OS lock, so a crashed or force-killed tomlctl can wedge subsequent invocations indefinitely"
+symbol = "with_exclusive_lock"
+
+[[items]]
+category = "quality"
+description = "LLMs routinely miss late-sentence clauses. Extract to a dedicated bullet. Also mirror to optimise-apply.md:262 so `/optimise-apply` on main (flow-less, no args) auto-selects `.claude/optimise-findings/recent.toml` instead of dropping into the multi-file candidate prompt."
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R13"
+line = 262
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "`No-args-on-main` `recent.toml` clause is buried mid-sentence AND has no equivalent in optimise-apply.md — extract into its own sub-bullet and add the symmetric clause to optimise-apply"
+symbol = "Step 1 — Locate the review ledger"
+
+[[items]]
+category = "architecture"
+description = "implement.md:244-250 defines the auto-invoke pattern. An `all` apply run can transition many items and edit files inside flow scope without producing a single `deviation:` line (all changes aligned with plan). Add a bytes-written-gated invocation at the tail of both apply commands: if any agent wrote bytes under the resolved flow's `scope`, call `Skill('plan-update', 'status')` (no-op gate mirrors implement.md)."
+effort = "small"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R14"
+line = 362
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Neither apply command has a Phase-4.5-equivalent `Skill('plan-update', 'status')` auto-invoke — only the deviation path fires — flows silently drift when apply runs touch scope without deviations"
+symbol = "Step 5 → Step 6"
+
+[[items]]
+category = "completeness"
+description = "review.md Step 3 can persist a ledger with zero findings (schema_version=1, last_updated=<today>, items=[]). /review-apply would then silently select nothing. Specify: empty items → print 'ledger present but has no open items; nothing to apply' and exit 0."
+effort = "small"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R15"
+line = 248
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Empty-ledger case (file present, `items = []`) is undefined — current prose only covers 'ledger missing'"
+symbol = "Preamble"
+
+[[items]]
+category = "completeness"
+description = "'Selected R{n} not present in ledger → report and skip' reads as partial-success but is only on the last sub-bullet. Make the partial-success stance explicit and add a `### Unknown IDs` sub-section to the final summary so the user sees what was dropped."
+effort = "small"
+evidence = ["Google AIP-234 partial_success"]
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R16"
+line = 263
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Mixed valid/invalid batch policy is implicit — `/review-apply R1,R99,R3` where R99 is unknown has no stated semantics (partial-success vs fail-fast)"
+symbol = "Step 1 — Selector semantics"
+
+[[items]]
+category = "completeness"
+description = "Either commit to the cap as non-negotiable (and say 'batch into ≤15 sub-runs') or document an override like `--no-cap`. Current prose leaves the user stuck."
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R17"
+line = 281
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Selector cap of 15 has no documented escape hatch — `/review-apply all` on a 30-item ledger prompts 'batch or tighten' with no 'I accept the risk' path"
+symbol = "Step 2 — Selector cap"
+
+[[items]]
+category = "completeness"
+description = "Build output, codegen, regenerated migrations. Next `/review` won't detect regression because the dedup rule only regresses against `fixed`/`applied`. Options: (a) treat generated files as `wontfix: file auto-regenerated`, or (b) extend the regression cross-check to also walk `verified-clean` items on this specific auto-transition path."
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R18"
+line = 286
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Auto-transition to `verified-clean` on deleted files is unsafe for auto-generated artefacts that will reappear with the original bug"
+symbol = "Step 2 — Deleted-file detection"
+
+[[items]]
+category = "completeness"
+description = "Options: (a) add `pending_parts` optional field to the Ledger Schema; (b) keep the item `status = open` with `description` noting progress; (c) mint a child R-item for pending work with `related = ['<partial id>']`. (c) aligns with regression-style ID minting and makes pending work a first-class tracked finding."
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R19"
+line = 322
+rounds = 1
+severity = "warning"
+status = "open"
+summary = """`resolution = "partial: <done> / pending: <not done>"` is free-prose only — querying 'what's still pending' requires grep, not a structured field"""
+symbol = "Step 4 — Partial-apply convention"
+
+[[items]]
+category = "completeness"
+description = "tomlctl is atomic (NamedTempFile::persist + per-op early-return on error); file stays consistent on partial failure. Add one sentence: 'If items apply fails, the ledger is unchanged — correct the failing op and re-run.' Makes the operational guarantee explicit to readers of the command alone."
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R20"
+line = 378
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "`tomlctl items apply` mid-batch failure behaviour is not stated in the command doc — user has to infer atomicity from the skill"
+symbol = "Step 5 — Two-call write pattern"
+
+[[items]]
+category = "completeness"
+description = "Add: 'If another tomlctl process holds the ledger lock, the run fails fast with a clear error; wait and retry.' Pair with R12's stale-lock recovery guidance."
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R21"
+line = 379
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "Concurrent-invocation lock-error path is undocumented — two overlapping /review-apply (or /review + /review-apply) runs collide on the sidecar `.lock` with no user guidance"
+symbol = "Step 5 — Two-call write pattern"
+
+[[items]]
+category = "completeness"
+description = "Port review-apply's Step 5 'Regression cross-check' section. A stale `Vec::new()` re-introduced in a hot loop touched during apply would silently go untracked until a later /optimise round. Mint O-items with `related = ['<old id>']`."
+effort = "small"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R22"
+line = 322
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "/optimise-apply has no regression cross-check against previously-`applied` items — regressed optimisations are only detected on the next `/optimise` run"
+symbol = "Step 5"
+
+[[items]]
+category = "quality"
+description = """The last-resort Edit fallback is already covered in the Ledger TOML contract (lines 225-227). Duplicating it here creates temptation. Replace with a one-liner: `tomlctl items update <ledger> R{n} --json '{"status":"deferred","defer_reason":"...","defer_trigger":"..."}'`."""
+effort = "trivial"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R23"
+line = 493
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Single-disposition Edit-fallback escape hatch contradicts the parse-rewrite mandate and invites an LLM to skip tomlctl for 'simple' cases — replace with a concrete `tomlctl items update` example"
+symbol = "Step 4 — Handle Dispositions"
+
+[[items]]
+category = "quality"
+description = """Prose-only instructions underperform concrete examples for LLM agents. Show e.g. `--ops '[{"op":"update","id":"R1","json":{"status":"fixed","resolved":"2026-04-17","resolution":"..."}}, {"op":"update","id":"R3","json":{"status":"verified-clean","verified_note":"..."}}, {"op":"add","json":{regression R-item}}]'`."""
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R24"
+line = 378
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Add a concrete `--ops` JSON example showing a mixed update+add batch (R{n} transitions plus a regression mint) so LLMs don't fall back to per-item calls"
+symbol = "Step 5 — Two-call write pattern"
+
+[[items]]
+category = "quality"
+description = "If optimise intentionally lacks verified-clean (bytes-written by definition — see R37), say so inline. Otherwise add the matching sub-sections plus the 'omit empty sections' discipline."
+effort = "trivial"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R25"
+line = 342
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Final summary template has only Implemented / Skipped / Verification — missing Verified Clean + Regressions Triggered sections that review-apply now emits; align or document the asymmetry"
+symbol = "Step 5 — final summary template"
+
+[[items]]
+category = "quality"
+description = "Selector cap, deleted-file detection, and 'recommendation already in place' pre-check apply equally to optimise findings (a vanished file can't be optimised; an already-applied optimisation shouldn't dispatch an agent). Adapt the vocabulary (no verified-clean for optimise per R37 resolution) but keep the operational rules."
+effort = "small"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R26"
+line = 273
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Step 2 is a four-bullet paragraph vs review-apply's detailed sub-rules (selector cap, read range, deleted-file detection, already-matches test, hard disambiguation) — port the applicable rules"
+symbol = "Step 2 — Pre-analyse Complex Findings"
+
+[[items]]
+category = "quality"
+description = "Step 1 only needs items overlapping with current scope; filtering at the tool boundary is cheaper than post-filtering a full parse. Match optimise.md's wording for consistency: '`tomlctl parse <file>` for the whole doc, or `tomlctl items list <file> --status open` for pre-filtered items.'"
+effort = "trivial"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R27"
+line = 301
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Read prescription says `tomlctl parse <file>` but `tomlctl items list --status open` matches the actual access pattern — mention it the way optimise.md:433 does"
+symbol = "Step 1 — Load Review Ledger"
+
+[[items]]
+category = "security"
+description = "Either add a `reopen R{n} — trigger met` disposition to /review Step 4, or rewrite the error to anchor in the business logic: 'R{n} is deferred (trigger: <defer_trigger>). Re-run `/review <file>` if the trigger has fired; otherwise wait.'"
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R28"
+line = 268
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Deferred-hard-error text ('run /review to re-open') is self-undermining — /review has no re-open disposition documented; users will hand-edit the TOML to bypass"
+symbol = "Step 1 — Non-open selector behaviour"
+
+[[items]]
+category = "security"
+description = "Cheap defence: write a sidecar `review-ledger.toml.sha256` on every tomlctl ledger write and verify at Step 1 load. Offer as `--verify-integrity` opt-in since primary threat model is collaborative-user, not hostile."
+effort = "medium"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R29"
+line = 364
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Regression cross-check trusts ledger bytes blindly — no integrity mark means out-of-band edits can silently suppress regression detection"
+symbol = "Regression cross-check"
+
+[[items]]
+category = "security"
+description = "`bail!` on `prefix.is_empty() || prefix.chars().all(char::is_numeric)`. Prevents a whole class of 'agent passed wrong prefix' bugs that violate the Ledger Schema's 'never renumber / never reuse' invariant."
+effort = "trivial"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R30"
+line = 89
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "`items next-id --prefix ''` produces ID collisions because empty-prefix `strip_prefix` returns the whole existing ID; reject empty and all-digit prefixes"
+symbol = "ItemsOp::NextId"
+
+[[items]]
+category = "security"
+description = "Umbrella concern that also surfaces as R22, R36, R37 specifically. Factor amendments 7-10 into a shared `## Apply Security Gates` section both apply commands embed byte-identically (same approach as the existing Flow Context / Ledger Schema shared blocks). Pays off long-term DRY."
+effort = "small"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R31"
+line = 359
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "/optimise-apply lacks parity with /review-apply's security amendments (deferred hard-error, public-API confirmation gate, regression cross-check, partial-apply taxonomy) — factor shared gates into a common embedded block instead of duplicating"
+symbol = "Step 5 — security parity"
+
+[[items]]
+category = "architecture"
+description = "Two parallel write-sub-sections differ only in the operations listed. Given the plan flagged drift-detection CI as out-of-scope, any reduction in the verbatim surface area pays off. Lower priority since both copies are semantically correct today."
+effort = "medium"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R32"
+line = 78
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "tomlctl invocation prose is duplicated across two shared blocks per command (context.toml at line 78 and ledger at line 204) — factor into a third shared '## TOML Write Operations' block"
+symbol = "TOML read/write contract"
+
+[[items]]
+category = "architecture"
+description = '''Shared block defines the rule ('lowercase, replace /\ with -, collapse --, strip leading -'). Three copies (shared + 2 inline) is drift-prone. Review-apply.md correctly references without restating — make review.md and optimise.md follow the same pattern.'''
+effort = "small"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R33"
+line = 292
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Flow-less scope-slug derivation is restated inline in review.md Step 1 and optimise.md Step 3 on top of the shared-block rule — replace inline restatements with a cross-reference"
+symbol = "Flow-less fallback"
+
+[[items]]
+category = "architecture"
+description = "The asymmetry is defensible: optimisations are bytes-written by definition. But an unsuspecting reader will wonder if the gap is a bug. Add one inline sentence: 'Optimise agents do not emit verified-clean: optimisations are bytes-written by definition. An already-optimised finding is either a regression-of-fix (minted as a new item) or a skipped with `already in place, no byte written`.'"
+effort = "small"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R34"
+line = 304
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Agent-tag vocabulary asymmetry (review-apply has 3 tags incl. verified-clean; optimise-apply has 2) should be explicitly documented as intentional"
+symbol = "Step 4 agent instructions"
+
+[[items]]
+category = "architecture"
+description = "Stale enumeration from before review-apply existed. Update the list to all four files, or rephrase as 'embedded verbatim across all review/optimise commands'."
+effort = "trivial"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R35"
+line = 95
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Shared schema intro claims 'embedded verbatim into review.md, optimise.md, and optimise-apply.md' — omits review-apply.md"
+symbol = "## Ledger Schema intro"
+
+[[items]]
+category = "completeness"
+description = "Current prose covers only 'ID not present → skip'. Add the same three-state matrix from review-apply.md:267-270, adapted to the O-prefix and applied vocabulary."
+effort = "trivial"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R36"
+line = 263
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Missing the explicit deferred-hard-error / fixed-warn-and-skip / missing-ID-skip matrix that review-apply.md amendment 7 adds"
+symbol = "Step 1 — Selector semantics"
+
+[[items]]
+category = "completeness"
+description = "For optimise, the equivalent rule is: no bytes written → `skipped O{n}: already in place, no byte written` with resolution handled as part of the future out-of-scope `applied-via-audit` disposition. Document the policy now so agents don't fabricate applied tags with empty resolutions."
+effort = "trivial"
+file = "claude/commands/optimise-apply.md"
+first_flagged = 2026-04-17
+id = "R37"
+line = 329
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "Missing the 'no bytes written → don't tag applied' hard rule that review-apply.md:293 introduces as amendment 1"
+symbol = "Step 5 — applied/skipped decision"
+
+[[items]]
+category = "completeness"
+description = "Add: 'If last_updated is more than 1 day ahead of git log -1 format=%cI, warn and treat as today for filter purposes.'"
+effort = "trivial"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R38"
+line = 300
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "No validation of `last_updated` against clock skew / backdating — a future-dated ledger silently breaks the numeric-legacy selector in /review-apply"
+symbol = "Step 1 — Load Review Ledger"
+
+[[items]]
+category = "completeness"
+description = "At rounds >= 5, the chronic callout should include a concrete prompt: 'R{n} has been chronic for 5 rounds — defer with a trigger or accept as wontfix.' No auto-disposition, just stronger nudging."
+effort = "trivial"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R39"
+line = 244
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "No upper bound on `rounds` — chronic items escalate at rounds >= 3 but keep growing unboundedly, producing noise forever with no auto-action"
+symbol = "Ledger Schema — Chronic-item escalation"
+
+[[items]]
+category = "security"
+description = "Surfaced self-referentially during /review-apply R1-R4 run on 2026-04-17: review-apply.md was untracked (created this session, never `git add`-ed), so the R3/R4 insertion diffs didn't appear in either `git diff HEAD` or `git diff --cached` output. Under a strict reading of R4's rule, R3 and R4 would have been downgraded to wontfix despite being genuinely applied (grep confirmed the inserted content at lines 393 and 363). Fix: extend the R4 verification to union the diff output with `git ls-files --others --exclude-standard` (untracked, non-ignored files). Amended logic: `files_changed = (git diff --name-only HEAD) ∪ (git diff --name-only --cached) ∪ (git ls-files --others --exclude-standard)`. Only downgrade if file is absent from this broader union."
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R40"
+line = 363
+related = ["R4"]
+rounds = 1
+severity = "warning"
+status = "open"
+summary = "R4's diff-verification rule checks `git diff HEAD` + `git diff --cached` but misses untracked files — an `applied R{n}` claim on a newly-created (uncommitted) file fails verification and would be incorrectly downgraded"
+symbol = "Verify agent-reported `applied` claims"
