@@ -29,6 +29,7 @@ tomlctl items add   <file> --json '{"id":"R7",...}'
 tomlctl items update <file> <id> --json '{"status":"fixed"}'
 tomlctl items remove <file> <id>
 tomlctl items next-id <file> [--prefix R|O]
+tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]'
 ```
 
 All commands print JSON on stdout, exit non-zero on failure.

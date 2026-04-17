@@ -151,6 +151,20 @@ tomlctl items next-id .claude/flows/foo/optimise-findings.toml --prefix O  # →
 
 Returns the JSON-encoded string of the next id (prefix + `max(existing numeric suffixes) + 1`). Empty ledger → `<prefix>1`.
 
+### Batch multiple item ops (`items apply`)
+
+For runs that touch several `[[items]]` in the same ledger, use `items apply` to parse + rewrite the file once. `--ops` is a JSON array; each op is `{"op": "add|update|remove", ...}` with the same payload shape as the single-op commands (`json` for add/update, `id` for update/remove). Ops run in array order; any op error aborts the whole batch and the file is left unchanged.
+
+```bash
+tomlctl items apply .claude/flows/foo/review-ledger.toml --ops '[
+  {"op":"add",    "json":{"id":"R24","severity":"minor","summary":"...","status":"open"}},
+  {"op":"update", "id":"R22", "json":{"status":"applied","resolved":"2026-04-17"}},
+  {"op":"remove", "id":"R17"}
+]'
+```
+
+Prefer this over looping single-op invocations — one parse + one write instead of N.
+
 ## Constraints and gotchas
 
 - **No comment preservation.** The schemas forbid inline comments, so this is fine for flow/ledger files. Do not point `tomlctl` at TOML files where comments matter.
