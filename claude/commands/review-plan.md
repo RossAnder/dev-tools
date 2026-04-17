@@ -3,15 +3,97 @@ description: Review an implementation plan for feasibility, completeness, risks,
 argument-hint: <path to plan file or directory>
 ---
 
+## Flow Context
+
+### Canonical Flow Schema
+
+```toml
+slug = "auth-overhaul"
+plan_path = "docs/plans/auth-overhaul.md"
+status = "in-progress"
+created = 2026-04-08
+updated = 2026-04-16
+branch = "auth-overhaul"
+
+scope = ["src/auth/**", "src/middleware/auth.rs"]
+
+[tasks]
+total = 10
+completed = 3
+in_progress = 1
+
+[artifacts]
+review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
+optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
+```
+
+### Status vocabulary
+
+`status` takes one of four string values: `draft`, `in-progress`, `review`, `complete`.
+
+- `draft` — written by `plan-new` at creation.
+- `in-progress` — written by `implement` when it starts a task; written by `plan-update` after work resumes.
+- `review` — written only by `plan-update` when a plan enters a review phase between implementation rounds.
+- `complete` — written only by `plan-update` when all tasks are done or all remainders are deferred.
+
+**Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
+
+### Field responsibilities
+
+- `slug` — immutable after creation. Only `plan-new` writes it.
+- `plan_path` — immutable after creation. For multi-file plans, `plan_path` points at the **outline file** (e.g. `docs/plans/auth-overhaul/00-outline.md`), not the directory.
+- `created` — immutable after creation. **Every command that rewrites `context.toml` MUST preserve `created` verbatim.** Never regenerate it.
+- `updated` — writeable by `plan-new`, `implement`, `plan-update`. Set to today's date (ISO 8601) on every write.
+- `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
+- `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
+- `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent when read, commands compute from `slug` but MUST write it back on their next TOML write.
+
+### Slug derivation
+
+Slug = plan filename minus `.md` extension. Examples:
+- `docs/plans/auth-overhaul.md` → slug `auth-overhaul`
+- `docs/plans/auth-overhaul/00-outline.md` (multi-file) → slug `auth-overhaul` (parent directory name)
+
+No additional slugification — the filename is already the slug.
+
+### Flow resolution order (every command, every invocation)
+
+1. **Explicit `--flow <slug>` argument**. If provided, use it verbatim. If `.claude/flows/<slug>/` doesn't exist, error.
+2. **Scope glob match on the path argument**. For each `.claude/flows/*/context.toml` where `status != "complete"`, read the `scope` array. For each pattern, invoke the `Glob` tool with the pattern and check whether the target path appears in the result. If exactly one flow matches, use it. Skip `status == "complete"` flows entirely.
+3. **Git branch match**. Run `git branch --show-current`. If the output is non-empty, look for a flow whose `context.branch` equals it (exact match, case-sensitive). Skip this step if output is empty (detached HEAD).
+4. **`.claude/active-flow` fallback**. Read the single-line slug. If `.claude/flows/<slug>/` exists with a valid `context.toml`, use it. If the pointed-at directory is missing or the TOML is malformed, proceed to step 5.
+5. **Ambiguous / none found**: list candidate flows (all non-complete flows with summary: slug, plan_path, status), ask the user.
+
+### TOML read/write contract
+
+- **Reading**: if `context.toml` is missing required fields (`slug`, `plan_path`, `status`, `created`, `updated`, `scope`, `[tasks]`, `[artifacts]`), prompt the user with the specific missing fields and the plan's current path. Do not synthesise defaults silently.
+- **Reading**: if `context.toml` is syntactically invalid (can't be parsed as TOML), report the parse error and ask the user to fix manually. Do not attempt auto-repair.
+- **Writing**: when updating a field, Read the file, modify only the target line(s), Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
+
+### Flow-less fallback
+
+When `/review` or `/optimise` run on code outside any flow (resolution ends at step 5 and user picks "no flow"):
+- `/review` → `.claude/reviews/<scope>.toml`
+- `/optimise` → `.claude/optimise-findings/<scope>.toml`
+
+Slug derivation for flow-less scope: lowercase, replace `/\` with `-`, collapse `--`, strip leading `-` (preserved from pre-redesign).
+
+### Completed-flow handling
+
+Flows with `status = "complete"` are skipped by resolution step 2 (scope glob match). They remain on disk for audit but do not participate in auto-resolution. Users can still target them via explicit `--flow <slug>`.
+
 # Plan Review
 
 Review an implementation plan document against the actual codebase. Validate that the plan's assumptions are correct, its scope is complete, its tasks are executable, and its dependencies are properly ordered.
 
 This command works with any plan format — structured work packages, wave-based outlines, task lists, or prose plans. Agents adapt their review to whatever format they encounter.
 
+> **Effort**: Requires `xhigh` or `max` — lower effort may reduce agent spawning and tool usage.
+
 ## Step 1: Load the Plan
 
-**Use extended thinking at maximum depth for plan analysis.** Thoroughly understand the plan structure, document hierarchy, and scope before dispatching agents. This reasoning runs in the main conversation where thinking is available.
+**Reason thoroughly through plan analysis.** Understand the plan structure, document hierarchy, and scope before dispatching agents.
 
 1. If $ARGUMENTS specifies a file path, read that file.
 2. If $ARGUMENTS specifies a directory, treat it as a **multi-file plan**:
@@ -24,7 +106,14 @@ This command works with any plan format — structured work packages, wave-based
    c. Build a document map and share it with all agents so they understand the plan hierarchy.
 3. If $ARGUMENTS is empty, locate the active plan in this order:
    a. Check if a plan was just produced in the current conversation (look for structured plan content — tasks, phases, work packages). If found, use that directly.
-   b. Check `.claude/plan-context` for the active plan path. If the file exists and the referenced plan file/directory is present, use it. **Staleness check**: if the `updated` field is more than 14 days old, flag this prominently in the review output — the codebase may have diverged significantly from the plan's assumptions.
+   b. Resolve the active flow via the 5-step flow resolution order (see Flow Context section above):
+      1. **Explicit `--flow <slug>` argument** — use verbatim; error if `.claude/flows/<slug>/` doesn't exist.
+      2. **Scope glob match on the path argument** — for each `.claude/flows/*/context.toml` where `status != "complete"`, match scope patterns via the `Glob` tool.
+      3. **Git branch match** — run `git branch --show-current` and match against `context.branch`.
+      4. **`.claude/active-flow` fallback** — read the single-line slug and use the referenced flow if valid.
+      5. **Ambiguous / none found** — list candidate non-complete flows and ask the user.
+
+      If a flow resolves, read `plan_path` from that flow's `context.toml` and use it as the plan to review. **Staleness check**: read `context.updated` from the TOML; if it is more than 14 days old, flag this prominently in the review output — the codebase may have diverged significantly from the plan's assumptions.
    c. Check `docs/plans/` (or the project's established plans directory) for recently modified plan files. If a single plan was modified recently, use it. If multiple candidates exist, list them and ask the user which to review.
    d. If nothing found, ask the user which plan to review.
 4. Read the full plan content — every document in scope. For multi-file plans, agents receive the document map and all file contents, with the outline identified as the primary document.
@@ -33,15 +122,15 @@ This command works with any plan format — structured work packages, wave-based
 
 Launch **all four** review agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the full plan content.
 
-**IMPORTANT: You MUST make all four Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing four Agent tool use blocks so they execute concurrently.
+**IMPORTANT: You MUST make all four Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing four Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of four agents. Each agent provides a specialized review perspective that cannot be replicated by fewer passes.
 
 Every agent MUST:
 - Read the plan document(s) in full
 - Explore the actual codebase to validate the plan's claims — read the files the plan references, search for patterns the plan assumes exist, verify paths and line numbers
-- Use Context7 MCP tools to verify that APIs, libraries, and framework features referenced in the plan actually exist and work as described
-- Use WebSearch to check for updated guidance on technologies the plan relies on — the plan may have been written with outdated assumptions
+- You MUST use Context7 MCP tools (resolve-library-id then query-docs) to verify that APIs, libraries, and framework features referenced in the plan actually exist and work as described — do not rely on training data alone
+- You MUST use WebSearch to check for updated guidance on technologies the plan relies on — the plan may have been written with outdated assumptions
 - Return findings as a structured list with references to specific plan sections
-- **Cap output at 10 findings per agent.** Prioritize by impact.
+- **Return at least 3 findings if issues exist. Cap at 10 findings per agent.** Prioritize by impact. Do not self-truncate below the floor — thoroughness is expected.
 
 ### Agent 1: Feasibility, Codebase Alignment & Dependencies
 
@@ -95,7 +184,7 @@ Are the plan's technology assumptions current and are risks adequately addressed
 
 ## Step 3: Consolidate Results
 
-**Use extended thinking at maximum depth for consolidation.** Carefully cross-reference all agent findings against each other and the plan, resolve conflicting assessments, and synthesize a coherent verdict on plan readiness. This is where the quality of the review is determined.
+**Reason thoroughly through consolidation.** Cross-reference all agent findings against the plan, resolve conflicting assessments, and synthesize a coherent verdict on plan readiness.
 
 After all agents complete, produce a single consolidated report:
 
@@ -103,7 +192,7 @@ After all agents complete, produce a single consolidated report:
 ## Plan Review: [plan name/path]
 
 **Plan scope**: [summary of what the plan covers]
-**Plan age**: [how old the plan is, based on plan-context or file metadata — flag if >14 days]
+**Plan age**: [how old the plan is, based on flow `context.updated` or file metadata — flag if >14 days]
 **Overall assessment**: [Ready to execute | Needs revision | Major gaps]
 
 ### Critical Issues (must fix before executing)

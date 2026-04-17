@@ -3,6 +3,88 @@ description: Update plan documents — track progress, deviations, deferrals, an
 argument-hint: [plan path] [operation: status|deviation|defer|reconcile|snapshot|reformat|catchup]
 ---
 
+## Flow Context
+
+Every invocation of this command reads and writes a per-flow `context.toml` at `.claude/flows/<slug>/context.toml` (under the git top-level). Multiple flows may coexist; resolution picks one per invocation. The schema below and the rules that follow it are the single source of truth for how this file is structured and updated — do not deviate.
+
+### Canonical Flow Schema
+
+```toml
+slug = "auth-overhaul"
+plan_path = "docs/plans/auth-overhaul.md"
+status = "in-progress"
+created = 2026-04-08
+updated = 2026-04-16
+branch = "auth-overhaul"
+
+scope = ["src/auth/**", "src/middleware/auth.rs"]
+
+[tasks]
+total = 10
+completed = 3
+in_progress = 1
+
+[artifacts]
+review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
+optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
+```
+
+### Status vocabulary
+
+`status` takes one of four string values: `draft`, `in-progress`, `review`, `complete`.
+
+- `draft` — written by `plan-new` at creation.
+- `in-progress` — written by `implement` when it starts a task; written by `plan-update` after work resumes.
+- `review` — written only by `plan-update` when a plan enters a review phase between implementation rounds.
+- `complete` — written only by `plan-update` when all tasks are done or all remainders are deferred.
+
+**Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
+
+### Field responsibilities
+
+- `slug` — immutable after creation. Only `plan-new` writes it.
+- `plan_path` — immutable after creation. For multi-file plans, `plan_path` points at the **outline file** (e.g. `docs/plans/auth-overhaul/00-outline.md`), not the directory.
+- `created` — immutable after creation. **Every command that rewrites `context.toml` MUST preserve `created` verbatim.** Never regenerate it.
+- `updated` — writeable by `plan-new`, `implement`, `plan-update`. Set to today's date (ISO 8601) on every write.
+- `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
+- `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
+- `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent when read, commands compute from `slug` but MUST write it back on their next TOML write.
+
+### Slug derivation
+
+Slug = plan filename minus `.md` extension. Examples:
+- `docs/plans/auth-overhaul.md` → slug `auth-overhaul`
+- `docs/plans/auth-overhaul/00-outline.md` (multi-file) → slug `auth-overhaul` (parent directory name)
+
+No additional slugification — the filename is already the slug.
+
+### Flow resolution order (every command, every invocation)
+
+1. **Explicit `--flow <slug>` argument**. If provided, use it verbatim. If `.claude/flows/<slug>/` doesn't exist, error.
+2. **Scope glob match on the path argument**. For each `.claude/flows/*/context.toml` where `status != "complete"`, read the `scope` array. For each pattern, invoke the `Glob` tool with the pattern and check whether the target path appears in the result. If exactly one flow matches, use it. Skip `status == "complete"` flows entirely.
+3. **Git branch match**. Run `git branch --show-current`. If the output is non-empty, look for a flow whose `context.branch` equals it (exact match, case-sensitive). Skip this step if output is empty (detached HEAD).
+4. **`.claude/active-flow` fallback**. Read the single-line slug. If `.claude/flows/<slug>/` exists with a valid `context.toml`, use it. If the pointed-at directory is missing or the TOML is malformed, proceed to step 5.
+5. **Ambiguous / none found**: list candidate flows (all non-complete flows with summary: slug, plan_path, status), ask the user.
+
+### TOML read/write contract
+
+- **Reading**: if `context.toml` is missing required fields (`slug`, `plan_path`, `status`, `created`, `updated`, `scope`, `[tasks]`, `[artifacts]`), prompt the user with the specific missing fields and the plan's current path. Do not synthesise defaults silently.
+- **Reading**: if `context.toml` is syntactically invalid (can't be parsed as TOML), report the parse error and ask the user to fix manually. Do not attempt auto-repair.
+- **Writing**: when updating a field, Read the file, modify only the target line(s), Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
+
+### Flow-less fallback
+
+When `/review` or `/optimise` run on code outside any flow (resolution ends at step 5 and user picks "no flow"):
+- `/review` → `.claude/reviews/<scope>.toml`
+- `/optimise` → `.claude/optimise-findings/<scope>.toml`
+
+Slug derivation for flow-less scope: lowercase, replace `/\` with `-`, collapse `--`, strip leading `-` (preserved from pre-redesign).
+
+### Completed-flow handling
+
+Flows with `status = "complete"` are skipped by resolution step 2 (scope glob match). They remain on disk for audit but do not participate in auto-resolution. Users can still target them via explicit `--flow <slug>`.
+
 # Plan Maintenance
 
 Maintain implementation plan documents as living records. Track progress against the codebase, document deviations with rationale, register deferrals with re-evaluation triggers, and reconcile plan expectations against actual code state.
@@ -11,21 +93,39 @@ Works in two modes:
 - **Targeted operation** — `/plan-update docs/plans/todo/prod_preparation/ status` to run a specific operation
 - **Auto-detect** — `/plan-update` after implementation work to update the relevant plan based on what changed
 
+> **Effort**: Requires `xhigh` or `max` — lower effort may reduce agent spawning and reconciliation depth.
+
 ## Step 1: Locate the Plan
 
-**Use extended thinking at maximum depth for plan location and operation analysis.** Thoroughly understand the plan structure, document hierarchy, and what the requested operation needs before dispatching agents. This reasoning runs in the main conversation where thinking is available.
+**Reason thoroughly through plan location and operation analysis.** Understand the plan structure, document hierarchy, and what the requested operation needs before dispatching agents.
 
-1. If $ARGUMENTS specifies a path, use that. If it's a directory, classify all markdown files by role:
+**Flow resolution (run before anything else in this step):** Execute the 5-step flow resolution order described in the `## Flow Context` section above to pick the active flow:
+
+- **(a)** If `--flow <slug>` is provided in $ARGUMENTS, use it verbatim. Error if `.claude/flows/<slug>/` does not exist.
+- **(b)** Otherwise, scope-glob-match the path argument (if any) against each non-complete flow's `scope`. If exactly one matches, use it.
+- **(c)** Otherwise, match `git branch --show-current` against each flow's `context.branch`.
+- **(d)** Otherwise, read `.claude/active-flow` and use that slug if the pointed-at flow dir and `context.toml` are valid.
+- **(e)** Otherwise, list candidate flows and ask the user.
+
+Once a flow is resolved, read its `.claude/flows/<slug>/context.toml` — the `plan_path` field points at the plan (single-file plans) or the outline file (multi-file plans). Honour the TOML read contract from the `## Flow Context` section: if required fields are missing or the file is malformed, prompt the user rather than synthesising defaults.
+
+1. If $ARGUMENTS specifies a plan path (not just `--flow`), use that. If it's a directory, classify all markdown files by role:
    - **Outline/master** — defines structure, phases, references other files
    - **Detail documents** — numbered implementation docs with actionable tasks
    - **Progress log** — `PROGRESS-LOG.md` or equivalent tracking document
    - **Deferrals** — if a dedicated deferrals section/file exists
 2. If no path specified, locate the active plan:
    a. Check conversation context for plan references or recently completed implementation work.
-   b. Check `.claude/plan-context` for the active plan path. If the file exists and the referenced plan file/directory is present, use it.
+   b. Use `plan_path` from the resolved flow's `context.toml` (obtained via the flow resolution above). If the referenced plan file/directory is present, use it.
    c. Check `docs/plans/` (or the project's established plans directory) for recently modified plan files. If a single plan was modified recently, use it. If multiple candidates exist, list them and ask the user.
    d. If ambiguous or nothing found, ask the user which plan to update.
-3. **Update plan context**: Once the plan is located, update `.claude/plan-context` (creating `.claude/` if needed) with the plan's path, today's date, and current status (`draft`, `in-progress`, or `completed`). This keeps the context file current for subsequent commands. If all plan items are now complete, set status to `completed`.
+3. **Update flow context**: Once the plan is located, update the resolved flow's `.claude/flows/<slug>/context.toml`:
+   - Set `updated` to today's date (ISO 8601 date value).
+   - Set `status` according to what this operation determined (see the per-operation rules below). Accepted values: `draft`, `in-progress`, `review`, `complete`.
+   - Update `[tasks]` counts (`total`, `completed`, `in_progress`) to reflect the current plan state after the operation runs.
+   - **Preserve `created` verbatim.** Never regenerate it. Preserve key order. Do not introduce inline comments.
+   - If `[artifacts]` is absent, compute it from `slug` and write it back on this same update.
+   - If all plan items are now complete (or all remaining items are deferred), set `status = "complete"`. If the plan has entered a review phase between implementation rounds, set `status = "review"`.
 4. If no progress log exists for the plan, offer to create one.
 
 ## Step 2: Determine Operation
@@ -40,6 +140,7 @@ Scan plan items against the codebase and git history:
 - Update completion markers (Done/Not Done/Partial) in the progress log and outline.
 - Update the "Last updated" date.
 - Update completion percentages in summary tables.
+- **Update the resolved flow's `context.toml`**: write `[tasks].total` (the count of plan items), `[tasks].completed`, and `[tasks].in_progress` to reflect the current scan results. Set `updated` to today. Preserve `created` verbatim. If every plan item is complete, set `status = "complete"`; otherwise write `status = "in-progress"` (or `"review"` if the plan has explicitly entered a review phase between implementation rounds).
 
 #### `deviation` — Record a deviation
 Capture a deviation from the plan. The agent MUST:
@@ -54,11 +155,12 @@ Move a plan item to the deferrals section. The agent MUST:
 - Assign a DF-number.
 - Record: item description, which plan section/task it was deferred from, reason, date, and a **re-evaluation trigger** (a concrete condition like "when frontend types are next refactored" or "when migrating to .NET 11" — not vague triggers like "later").
 - Update the original item's status to "Deferred → DF{n}".
+- **Update the resolved flow's `context.toml`**: set `updated` to today, preserve `created` verbatim, and adjust `[tasks]` counts (the deferred item drops out of `in_progress`/`total` at your discretion — treat deferrals as removed from the in-flight counter). If every remaining non-complete item is now deferred, set `status = "complete"`.
 
 #### `reconcile` — Full plan-code reconciliation
 The most comprehensive operation. Launch **two** agents in parallel:
 
-**IMPORTANT: You MUST make both Agent tool calls in a single response message.**
+**IMPORTANT: You MUST make both Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch both agents. Each provides a distinct reconciliation perspective (forward vs reverse) that cannot be combined.
 
 **Agent 1: Forward reconciliation (plan → code)**
 - Read all plan items and their expected outcomes.
@@ -74,9 +176,16 @@ The most comprehensive operation. Launch **two** agents in parallel:
 - Check for stale items — plan items marked "In Progress" with no recent commits touching the relevant files.
 - Look for implicit deviations — implementation that differs from what the plan described.
 
-**Use extended thinking at maximum depth for reconciliation synthesis.** Carefully cross-reference both agents' findings, resolve conflicting evidence, and determine the accurate status of every plan item before writing updates.
+**Reason thoroughly through reconciliation synthesis.** Cross-reference both agents' findings, resolve conflicting evidence, and determine the accurate status of every plan item before writing updates.
 
 After both agents return, produce the reconciliation report **and apply all updates in the same response** — do not pause for confirmation. Agent results are in context now and may be lost to compaction if you wait. The user can review and revert via git.
+
+**Update the resolved flow's `context.toml`** as part of the same write batch:
+- Write full `[tasks]` counts (`total`, `completed`, `in_progress`) derived from the reconciled item statuses.
+- Set `updated` to today's date.
+- Preserve `created` verbatim.
+- **Refine `scope`** if reconciliation reveals the plan's actual edits touched paths outside the original `scope` — add the new globs/paths (prefer `<dir>/**` glob form for directories). Never shrink `scope` below its initial derivation unless the user explicitly asks.
+- Set `status` to `complete` if every item reconciled as done (or deferred); otherwise `in-progress` (or `review` if the plan has explicitly entered a review phase).
 
 ```
 ## Reconciliation Report — [plan name]
@@ -111,7 +220,7 @@ Read the entire existing plan (single file or multi-file directory) and rewrite 
 
 Launch **two** agents in parallel:
 
-**IMPORTANT: You MUST make both Agent tool calls in a single response message.**
+**IMPORTANT: You MUST make both Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch both agents.
 
 **Agent 1: Content extraction and classification**
 Read every plan document in scope. Extract and classify every piece of content into:
@@ -134,7 +243,7 @@ For the plan's scope, gather current state to inform the reformat:
 
 Return a concise state snapshot — this is informational for the reformat, not a full reconciliation.
 
-**Use extended thinking at maximum depth for reformat synthesis.** Cross-reference both agents' results to ensure every piece of content from the original plan is accounted for and correctly classified before writing the reformatted output.
+**Reason thoroughly through reformat synthesis.** Cross-reference both agents' results to ensure every piece of content from the original plan is accounted for and correctly classified before writing the reformatted output.
 
 After both agents return, produce the reformatted plan:
 
@@ -242,7 +351,7 @@ For old or unimplemented plans that have fallen behind the codebase. Performs de
 
 **Phase 1: Deep exploration and fresh research** — Launch **three** agents in parallel:
 
-**IMPORTANT: You MUST make all three Agent tool calls in a single response message.**
+**IMPORTANT: You MUST make all three Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch all three agents. Each has a non-overlapping scope (codebase, technology, content).
 
 **Agent 1: Codebase re-exploration**
 Thoroughly explore the current state of the codebase in the plan's scope:
@@ -255,8 +364,8 @@ Thoroughly explore the current state of the codebase in the plan's scope:
 
 **Agent 2: Technology and API research**
 Research the current state of every technology, library, and framework version referenced in the plan:
-- Use Context7 MCP tools (resolve-library-id then query-docs) to look up current API signatures, recommended patterns, and deprecations for every library the plan references
-- Use WebSearch to find current best practices, breaking changes, and migration guides for the framework versions in use
+- You MUST use Context7 MCP tools (resolve-library-id then query-docs) to look up current API signatures, recommended patterns, and deprecations for every library the plan references
+- You MUST use WebSearch to find current best practices, breaking changes, and migration guides for the framework versions in use
 - Check whether the plan's technical approach is still valid or has been superseded by newer patterns
 - Flag anything in the plan that references deprecated APIs, removed features, or outdated guidance
 - Return a technology assessment with specific corrections needed
@@ -266,7 +375,7 @@ Same as the `reformat` Agent 1 — read every plan document and extract the full
 
 **Phase 2: Synthesize and rewrite** — After all three agents return:
 
-**Use extended thinking at maximum depth for catchup synthesis.** Cross-reference all three agents' results — codebase state, technology research, and content inventory — to determine accurate status for every plan item, identify which research notes are stale, and resolve any conflicts between the plan's expectations and codebase reality. This is the most complex synthesis across all commands; thorough reasoning here prevents errors in the rewritten plan.
+**Reason thoroughly through catchup synthesis.** Cross-reference all three agents' results — codebase state, technology research, and content inventory — to determine accurate status for every plan item, identify which research notes are stale, and resolve conflicts between the plan's expectations and codebase reality.
 
 Using all three agents' results together, produce the reformatted plan following the same structure and rules as the `reformat` operation (outline, detail docs, PROGRESS-LOG.md, RESEARCH-NOTES.md). Additionally:
 
@@ -324,7 +433,15 @@ After determining what needs to change:
 2. **Update the outline** if completion markers or wave status changed.
 3. **Do NOT update detail documents** unless a deviation fundamentally changes the implementation approach described there.
 4. **Always update the "Last updated" date** on any modified plan file.
-5. Present a summary of changes made to plan documents.
+5. **Update the resolved flow's `context.toml`** at `.claude/flows/<slug>/context.toml`. This file is always touched whenever `plan-update` runs an operation that changes plan state (`status`, `reconcile`, `defer`, `deviation`, `reformat`, `catchup`). Rules:
+   - **Preserve `created` verbatim.** Never regenerate it.
+   - Set `updated` to today's ISO 8601 date on every write.
+   - Write `[tasks].total`, `[tasks].completed`, `[tasks].in_progress` per the per-operation rules above.
+   - Write `status` as one of `draft`, `in-progress`, `review`, `complete` — use `review` when the plan has entered a review phase between implementation rounds, `complete` when every item is done or all remainders are deferred.
+   - `reconcile` may refine `scope`; other operations leave `scope` alone.
+   - If `[artifacts]` is absent in the existing file, compute from `slug` and write it back.
+   - Preserve key order. Do not introduce inline comments.
+6. Present a summary of changes made to plan documents **and** to the flow's `context.toml`.
 
 ## Important Constraints
 
