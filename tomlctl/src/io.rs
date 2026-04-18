@@ -229,6 +229,47 @@ where
     })
 }
 
+/// T10: live-path wrapper over `compute_* + apply_mutation`. Runs the
+/// standard exclusive-lock → read → compute-via-closure → in-lock
+/// `guard_write_path` / TOCTOU recheck → `write_toml_with_sidecar`
+/// pipeline. Shares the `--dry-run` compute path (`compute_apply_mutation`
+/// / `compute_remove_mutation`) via the closure signature — callers pass
+/// the same helper they'd run on a dry-run, but this wrapper persists
+/// the resulting `MutationPlan.new_doc`.
+///
+/// Equivalent structurally to `mutate_doc` with the closure returning a
+/// fresh `TomlValue` (inside a `MutationPlan`) instead of mutating in
+/// place — a mechanical change that keeps the rest of `mutate_doc`'s
+/// callers unaffected.
+pub(crate) fn mutate_doc_plan<F>(
+    file: &Path,
+    allow_outside: bool,
+    integrity: crate::integrity::IntegrityOpts,
+    f: F,
+) -> Result<()>
+where
+    F: FnOnce(&TomlValue) -> Result<crate::items::MutationPlan>,
+{
+    with_exclusive_lock(file, || {
+        // O17: in-lock guard, same as `mutate_doc`.
+        guard_write_path(file, allow_outside)?;
+        let doc = read_toml(file)?;
+        let plan = f(&doc)?;
+        // R3 TOCTOU narrowing: re-check containment immediately before
+        // the atomic persist. Mirrors `mutate_doc`'s post-mutation check.
+        if !allow_outside {
+            recheck_claude_containment(file)?;
+        }
+        // Delegate the actual bytes-to-disk phase to `apply_mutation`'s
+        // sibling implementation so the sidecar + tempfile semantics are
+        // shared between the in-lock wrapper path and any future caller
+        // that holds the plan outside the lock (e.g. T11's explicit
+        // backfill might do compute + apply separately for reporting).
+        write_toml_with_sidecar(file, &plan.new_doc, integrity)?;
+        Ok(())
+    })
+}
+
 /// Re-canonicalise `file`'s parent and assert it still starts with the
 /// `.claude/` canonical root. Used by `mutate_doc` to narrow the TOCTOU window
 /// described in R3.

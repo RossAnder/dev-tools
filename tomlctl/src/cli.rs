@@ -17,11 +17,15 @@ use crate::convert::{
 };
 use crate::dedup::{DupTier, items_find_duplicates, items_find_duplicates_across};
 use crate::integrity::IntegrityOpts;
-use crate::io::{mutate_doc, mutate_doc_conditional, read_doc, read_doc_borrowed, read_toml_str};
+use crate::io::{
+    mutate_doc, mutate_doc_conditional, mutate_doc_plan, read_doc, read_doc_borrowed,
+    read_toml_str,
+};
 use crate::items::{
-    AddManyOutcome, AddOutcome, array_append, items_add_many, items_add_many_with_dedupe,
-    items_add_to, items_add_value_with_dedupe_to, items_apply_to_opts, items_get_from,
-    items_infer_and_next_id, items_next_id, items_remove_from, items_update_to, parse_ndjson,
+    AddManyOutcome, AddOutcome, MutationPlan, array_append, compute_apply_mutation,
+    compute_remove_mutation, items_add_many, items_add_many_with_dedupe, items_add_to,
+    items_add_value_with_dedupe_to, items_get_from, items_infer_and_next_id, items_next_id,
+    items_update_to, parse_ndjson,
 };
 use crate::orphans::items_orphans;
 use crate::query::{self, OutputShape, Query};
@@ -545,6 +549,16 @@ enum ItemsOp {
         /// R57: target array-of-tables name. See `List --array`.
         #[arg(long, default_value = "items")]
         array: String,
+        /// T10: preview the removal without writing. Emits a
+        /// `would_change` summary (counts + ids) on stdout and leaves
+        /// the ledger + sidecar byte-identical. The compute phase runs
+        /// in full (same validation gates, same errors on missing id)
+        /// so the preview is a faithful rehearsal of the real remove.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the removal without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -609,6 +623,15 @@ enum ItemsOp {
         /// legitimate batch deletions from trusted callers.
         #[arg(long = "no-remove")]
         no_remove: bool,
+        /// T10: preview the batch without writing. Runs every validation
+        /// gate (`--no-remove`, op-shape, missing-id, dedup_id auto-populate)
+        /// so an agent can rehearse the batch shape before committing.
+        /// Emits `{"ok":true,"dry_run":true,"would_change":{...}}`.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the batch without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -997,14 +1020,38 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             })?;
             print_json_compact(&serde_json::json!({"ok": true}))?;
         }
-        ItemsOp::Remove { file, id, array, integrity } => {
+        ItemsOp::Remove { file, id, array, dry_run, integrity } => {
             let opts = write_integrity_opts(&integrity);
-            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
-                items_remove_from(doc, &array, &id)
-            })?;
-            print_json_compact(&serde_json::json!({"ok": true}))?;
+            if dry_run {
+                // T10: dry-run path — compute the plan on a locally-read
+                // doc (no exclusive lock) and emit the would_change
+                // summary. The compute phase runs the same validation
+                // as the live path (`compute_remove_mutation` delegates
+                // to `items_remove_from` on a cloned doc), so a missing
+                // id bails with the identical "no item with id = X"
+                // error a real remove would surface.
+                let read_opts = IntegrityOpts {
+                    write_sidecar: false,
+                    verify_on_read: integrity.verify_integrity,
+                    strict: false,
+                };
+                let plan = read_doc(&file, read_opts, |doc| {
+                    compute_remove_mutation(doc, &array, &id)
+                })?;
+                emit_dry_run_plan(&plan)?;
+            } else {
+                // Live path: compute + apply via the split helpers so
+                // the "live" and "dry-run" branches share the compute
+                // stage byte-for-byte. The read happens inside the
+                // exclusive lock via `mutate_doc_plan` so the same
+                // TOCTOU narrowing as `mutate_doc` holds.
+                mutate_doc_plan(&file, integrity.allow_outside, opts, |doc| {
+                    compute_remove_mutation(doc, &array, &id)
+                })?;
+                print_json_compact(&serde_json::json!({"ok": true}))?;
+            }
         }
-        ItemsOp::Apply { file, ops, array, no_remove, integrity } => {
+        ItemsOp::Apply { file, ops, array, no_remove, dry_run, integrity } => {
             let opts = write_integrity_opts(&integrity);
             let ops = read_json_arg(&ops)?;
             // R44: bound the ops count at the CLI boundary. `MAX_STDIN_BYTES`
@@ -1014,6 +1061,8 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // Check length here (before locking + parsing inside the mutator)
             // so an over-large payload fails fast with a directed message,
             // and the user-visible error predates any disk mutation.
+            // T10: the check also gates `--dry-run`, so an over-large preview
+            // refuses with the same message a real run would emit.
             let parsed_for_count: JsonValue =
                 serde_json::from_str(&ops).context("parsing --ops")?;
             if let JsonValue::Array(arr) = &parsed_for_count
@@ -1027,10 +1076,28 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     MAX_OPS_PER_APPLY
                 );
             }
-            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
-                items_apply_to_opts(doc, &ops, &array, no_remove)
-            })?;
-            print_json_compact(&serde_json::json!({"ok": true}))?;
+            if dry_run {
+                // T10: same compute phase as the live path, but we stop
+                // before the I/O stage. `compute_apply_mutation` runs
+                // `items_apply_to_opts` on a cloned doc, so every
+                // validation gate — `--no-remove`, op-shape, missing id,
+                // dedup_id auto-populate — fires with a byte-identical
+                // error surface.
+                let read_opts = IntegrityOpts {
+                    write_sidecar: false,
+                    verify_on_read: integrity.verify_integrity,
+                    strict: false,
+                };
+                let plan = read_doc(&file, read_opts, |doc| {
+                    compute_apply_mutation(doc, &array, &ops, no_remove)
+                })?;
+                emit_dry_run_plan(&plan)?;
+            } else {
+                mutate_doc_plan(&file, integrity.allow_outside, opts, |doc| {
+                    compute_apply_mutation(doc, &array, &ops, no_remove)
+                })?;
+                print_json_compact(&serde_json::json!({"ok": true}))?;
+            }
         }
         ItemsOp::NextId { file, prefix, infer_from_file, integrity } => {
             // The clap ArgGroup `id_source` guarantees exactly one of
@@ -1144,6 +1211,31 @@ fn print_json(v: &JsonValue) -> Result<()> {
     out.write_all(b"\n")?;
     out.flush()?;
     Ok(())
+}
+
+/// T10: emit the `--dry-run` summary for `items remove --dry-run` and
+/// `items apply --dry-run`. Output shape is a single compact JSON line:
+///
+/// ```text
+/// {"ok":true,"dry_run":true,"would_change":{"added":N,"updated":N,"removed":N,"ids":[...]}}
+/// ```
+///
+/// `ids` is the concatenation `[...added, ...updated, ...removed]` in
+/// that order, matching `MutationPlan::union_ids`. `N` values are plain
+/// integer counts (not arrays) so the output stays stable and terse
+/// across both dispatch arms.
+fn emit_dry_run_plan(plan: &MutationPlan) -> Result<()> {
+    let summary = serde_json::json!({
+        "ok": true,
+        "dry_run": true,
+        "would_change": {
+            "added": plan.added.len(),
+            "updated": plan.updated.len(),
+            "removed": plan.removed.len(),
+            "ids": plan.union_ids(),
+        },
+    });
+    print_json_compact(&summary)
 }
 
 /// Compact single-line sibling of `print_json`, used for the `{"ok":true,...}`

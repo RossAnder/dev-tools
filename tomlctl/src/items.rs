@@ -900,6 +900,151 @@ pub(crate) fn array_append(
     items_add_many(doc, array_name, rows, None)
 }
 
+/// T10: structural summary of what a mutation WOULD change, together with
+/// the mutated `new_doc` ready for persistence. Produced by
+/// `compute_apply_mutation` / `compute_remove_mutation` (pure: no I/O, no
+/// lock, no sidecar), consumed by `apply_mutation` (I/O: lock + atomic
+/// tempfile + sidecar).
+///
+/// `added`, `updated`, `removed` are the ids of items touched by the
+/// operation in **input order**. For `items apply` with a batch that
+/// sequentially adds R5, updates R1, removes R4, the vectors are
+/// `added=["R5"], updated=["R1"], removed=["R4"]`. This is the structural
+/// guarantee that underpins `--dry-run`'s `would_change` output — the
+/// CLI layer serialises these vectors verbatim.
+///
+/// `skipped` reuses T5's `SkippedRow` and stays empty for the `compute_*`
+/// paths in T10 (only the add-many-with-dedupe path populates it, and
+/// that path is not covered by `--dry-run` yet — the dedupe decision is
+/// inside the mutate closure rather than a pre-split plan).
+#[derive(Debug, Clone)]
+pub(crate) struct MutationPlan {
+    pub new_doc: TomlValue,
+    pub added: Vec<String>,
+    pub updated: Vec<String>,
+    pub removed: Vec<String>,
+    /// Reserved for a future dedupe-aware apply path (T5's
+    /// `items_add_many_with_dedupe` already populates a `Vec<SkippedRow>`
+    /// today, but that lives on its own `AddManyOutcome`). Keeping the
+    /// field here lets a later plan reuse the same `MutationPlan` shape
+    /// without an API break. `compute_apply_mutation` /
+    /// `compute_remove_mutation` leave it empty.
+    #[allow(dead_code)]
+    pub skipped: Vec<SkippedRow>,
+}
+
+impl MutationPlan {
+    /// T10: concatenation `[...added, ...updated, ...removed]` for the
+    /// `--dry-run` summary's `ids` field. First-appearance order within
+    /// each category is preserved because the three vectors are built
+    /// in input-order by `compute_apply_mutation`.
+    pub fn union_ids(&self) -> Vec<String> {
+        let mut out =
+            Vec::with_capacity(self.added.len() + self.updated.len() + self.removed.len());
+        out.extend(self.added.iter().cloned());
+        out.extend(self.updated.iter().cloned());
+        out.extend(self.removed.iter().cloned());
+        out
+    }
+}
+
+/// T10: pure sibling of `items_apply_to_opts`. Clones `doc` into
+/// `plan.new_doc`, runs the existing apply pipeline on the clone, and
+/// records touched ids per op in input order. No lock, no sidecar, no
+/// tempfile — the result is a `MutationPlan` the caller either hands to
+/// `apply_mutation` (live path) or serialises for `--dry-run`.
+///
+/// Errors are byte-identical to the live path: `--no-remove` violation,
+/// oversize-ops-count (bounded at the CLI layer via `MAX_OPS_PER_APPLY`
+/// BEFORE this helper runs), bad op shapes, missing ids — every error
+/// message surfaces at the same point in the computation it would on a
+/// real run, just without touching the filesystem.
+///
+/// The add/update/remove id capture walks the parsed ops list once BEFORE
+/// handing it off to `items_apply_to_opts` (which consumes the list by
+/// value via `.into_iter()`). This keeps the capture cost O(ops) with no
+/// structural change to the existing dispatch loop.
+pub(crate) fn compute_apply_mutation(
+    doc: &TomlValue,
+    array_name: &str,
+    ops_json: &str,
+    no_remove: bool,
+) -> Result<MutationPlan> {
+    // Parse first so a bad JSON payload fails fast with the same message
+    // the live path emits (`items_apply_to_opts` uses the same
+    // `parsing --ops` context).
+    let ops: JsonValue = serde_json::from_str(ops_json).context("parsing --ops")?;
+    let JsonValue::Array(arr) = &ops else {
+        bail!("--ops must be a JSON array");
+    };
+    // Walk the ops once to capture per-op ids BEFORE mutation. Update
+    // and remove ops carry `id`; add ops carry `json.id`. An op that
+    // doesn't declare an id still counts as "touched" (represented by
+    // an empty string) so counts stay faithful to the live behaviour.
+    let mut added: Vec<String> = Vec::new();
+    let mut updated: Vec<String> = Vec::new();
+    let mut removed: Vec<String> = Vec::new();
+    for op in arr {
+        let Some(obj) = op.as_object() else { continue };
+        let op_name = obj.get("op").and_then(|v| v.as_str()).unwrap_or("");
+        match op_name {
+            "add" => {
+                let id = obj
+                    .get("json")
+                    .and_then(|j| j.as_object())
+                    .and_then(|o| o.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                added.push(id);
+            }
+            "update" => {
+                let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                updated.push(id);
+            }
+            "remove" => {
+                let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                removed.push(id);
+            }
+            _ => {}
+        }
+    }
+    // Run the existing apply pipeline on a cloned doc so validation gates
+    // (--no-remove, unknown ops, missing ids, dedup_id auto-populate via
+    // items_add_value_to → apply_dedup_id_on_add, etc.) all fire with
+    // byte-identical error surfaces. On error, `added/updated/removed`
+    // above are discarded — the live path likewise would not have persisted.
+    let mut new_doc = doc.clone();
+    items_apply_to_opts(&mut new_doc, ops_json, array_name, no_remove)?;
+    Ok(MutationPlan {
+        new_doc,
+        added,
+        updated,
+        removed,
+        skipped: Vec::new(),
+    })
+}
+
+/// T10: pure sibling of `items_remove_from`. Clones `doc`, runs the
+/// remove on the clone, and records the removed id. Errors identically
+/// to the live path (`no item with id = {id}`). `added` and `updated`
+/// stay empty.
+pub(crate) fn compute_remove_mutation(
+    doc: &TomlValue,
+    array_name: &str,
+    id: &str,
+) -> Result<MutationPlan> {
+    let mut new_doc = doc.clone();
+    items_remove_from(&mut new_doc, array_name, id)?;
+    Ok(MutationPlan {
+        new_doc,
+        added: Vec::new(),
+        updated: Vec::new(),
+        removed: vec![id.to_string()],
+        skipped: Vec::new(),
+    })
+}
+
 /// T5: aggregate result of a dedupe-aware `items add-many` batch. `added`
 /// is the number of rows appended; `skipped_rows` is the per-row skip log
 /// in INPUT ORDER (ascending by 1-indexed row number to match
@@ -2472,5 +2617,125 @@ status = "open"
         let item = items_get(&doc, "R1").unwrap();
         let fp = item["dedup_id"].as_str().expect("dedup_id auto-populated");
         assert_eq!(fp.len(), 16, "dedup_id must be 16 hex chars; got {fp:?}");
+    }
+
+    // ----- T10: compute/apply split invariance ----------------------------
+
+    /// T10 (e) INVARIANCE (unit-level): `compute_apply_mutation`'s
+    /// `plan.new_doc`, when serialised through the same
+    /// `toml::to_string_pretty` emit path that `write_toml_with_sidecar`
+    /// uses, must be byte-identical to the in-place mutated doc produced
+    /// by `items_apply_to_opts` (the live path's mutator) serialised the
+    /// same way. This is the structural guarantee that underpins
+    /// `--dry-run`: if these two bytes ever diverged, the dry-run preview
+    /// would lie about what a real run would write.
+    ///
+    /// Covered op set: mixed add + update + remove, hitting every branch
+    /// in `apply_single_op` and the indexed fast-path trigger (threshold
+    /// is 5 update ops today, so we exercise the linear-scan path only).
+    #[test]
+    fn compute_apply_mutation_new_doc_matches_live_apply_bytes() {
+        let _guard = dedup_env_lock();
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "first"
+severity = "warning"
+category = "quality"
+status = "open"
+
+[[items]]
+id = "R2"
+file = "src/b.rs"
+summary = "second"
+severity = "warning"
+category = "quality"
+status = "open"
+"#;
+        let ops = r#"[
+            {"op":"add","json":{"id":"R3","file":"src/c.rs","summary":"third","severity":"warning","category":"quality","status":"open"}},
+            {"op":"update","id":"R1","json":{"status":"fixed","resolution":"fix in xyz","resolved":"2026-04-18"}},
+            {"op":"remove","id":"R2"}
+        ]"#;
+
+        // Live path: clone + mutate in place.
+        let mut live_doc: TomlValue = toml::from_str(fixture).unwrap();
+        items_apply_to_opts(&mut live_doc, ops, "items", false).unwrap();
+        let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
+
+        // Compute path: pure, returns MutationPlan.
+        let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan = compute_apply_mutation(&plan_doc, "items", ops, false).unwrap();
+        let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
+
+        assert_eq!(
+            live_bytes, plan_bytes,
+            "compute_apply_mutation new_doc must serialise byte-identically to live apply"
+        );
+
+        // ids tracking must match the intended semantics.
+        assert_eq!(plan.added, vec!["R3".to_string()]);
+        assert_eq!(plan.updated, vec!["R1".to_string()]);
+        assert_eq!(plan.removed, vec!["R2".to_string()]);
+        assert_eq!(
+            plan.union_ids(),
+            vec!["R3".to_string(), "R1".to_string(), "R2".to_string()],
+            "union_ids concats added, updated, removed in that order"
+        );
+    }
+
+    /// T10: `compute_remove_mutation` serialises byte-identically to a
+    /// live `items_remove_from` on the same fixture. Mirrors the
+    /// `compute_apply_mutation` invariance above for the single-item
+    /// remove path.
+    #[test]
+    fn compute_remove_mutation_matches_live_remove_bytes() {
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "first"
+status = "open"
+
+[[items]]
+id = "R2"
+summary = "second"
+status = "open"
+"#;
+        let mut live_doc: TomlValue = toml::from_str(fixture).unwrap();
+        items_remove_from(&mut live_doc, "items", "R1").unwrap();
+        let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
+
+        let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan = compute_remove_mutation(&plan_doc, "items", "R1").unwrap();
+        let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
+
+        assert_eq!(live_bytes, plan_bytes);
+        assert_eq!(plan.removed, vec!["R1".to_string()]);
+        assert!(plan.added.is_empty());
+        assert!(plan.updated.is_empty());
+    }
+
+    /// T10: `compute_apply_mutation` with `--no-remove` AND a remove op
+    /// errors with the canonical `--no-remove` message — the gate lives
+    /// inside the compute phase, so dry-run and live apply surface it
+    /// identically.
+    #[test]
+    fn compute_apply_mutation_no_remove_errors_identically() {
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "first"
+"#;
+        let doc: TomlValue = toml::from_str(fixture).unwrap();
+        let ops = r#"[{"op":"remove","id":"R1"}]"#;
+        let err = compute_apply_mutation(&doc, "items", ops, true).unwrap_err();
+        assert!(
+            err.to_string().contains("is a remove op, but --no-remove was set"),
+            "expected --no-remove gate message; got: {err}"
+        );
     }
 }
