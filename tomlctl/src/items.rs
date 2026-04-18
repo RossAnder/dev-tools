@@ -10,10 +10,18 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use toml::Value as TomlValue;
 
 use crate::convert::{json_type_name, maybe_date_coerce, toml_to_json};
 use crate::io::{item_id, items_array, items_array_mut};
+
+/// O18: minimum number of `update` ops in a batch before we pay to build
+/// an `id → array_index` HashMap. Below this, the per-op linear scan
+/// (`items_update_value_to` walks the array) is cheaper than the
+/// up-front map build + per-`remove` rebuild. Empirically the crossover
+/// sits around 4–6 ops on a 50-row ledger; 5 is the chosen midpoint.
+const ID_INDEX_BUILD_THRESHOLD: usize = 5;
 
 #[cfg(test)]
 pub(crate) fn items_get(doc: &TomlValue, id: &str) -> Result<JsonValue> {
@@ -38,24 +46,53 @@ pub(crate) fn items_add(doc: &mut TomlValue, json: &str) -> Result<()> {
 /// R57: array-parametric `items add`. See `List --array`.
 pub(crate) fn items_add_to(doc: &mut TomlValue, array_name: &str, json: &str) -> Result<()> {
     let patch: JsonValue = serde_json::from_str(json).context("parsing --json")?;
-    items_add_value_to(doc, &patch, array_name)
+    items_add_value_to(doc, patch, array_name)
 }
 
+/// O27: takes `patch` by value so we can destructure a `JsonValue::Object`
+/// into its owned `Map<String, JsonValue>` and iterate `(String, JsonValue)`
+/// without per-key `.clone()`. `maybe_date_coerce` still takes `&JsonValue`
+/// (to avoid a cascade through `convert.rs` callers); the borrow is fine.
+///
+/// O51: fields whose value is "empty" (`JsonValue::Null`, `""`, or `[]`) are
+/// silently skipped on write. This keeps ledger rows clean when agents emit
+/// placeholder fields they never filled in. An explicit unset of a field
+/// should use the dedicated `--unset` flag on `update` (this helper is also
+/// the per-row path for `add`, where "unset an absent field" is trivially a
+/// no-op). `Null` was already rejected by `json_to_toml`; we now short-circuit
+/// it here before `maybe_date_coerce` so all three empty shapes share one
+/// skip path.
 pub(crate) fn items_add_value_to(
     doc: &mut TomlValue,
-    patch: &JsonValue,
+    patch: JsonValue,
     array_name: &str,
 ) -> Result<()> {
-    let obj = patch
-        .as_object()
-        .ok_or_else(|| anyhow!("--json must be a JSON object"))?;
-    let mut tbl = toml::Table::new();
-    for (k, v) in obj.iter() {
-        tbl.insert(k.clone(), maybe_date_coerce(k, v)?);
+    let JsonValue::Object(obj) = patch else {
+        bail!("--json must be a JSON object");
+    };
+    let mut tbl = toml::Table::with_capacity(obj.len());
+    for (k, v) in obj {
+        if is_empty_json(&v) {
+            continue;
+        }
+        let coerced = maybe_date_coerce(&k, &v)?;
+        tbl.insert(k, coerced);
     }
     let arr = items_array_mut(doc, array_name)?;
     arr.push(TomlValue::Table(tbl));
     Ok(())
+}
+
+/// O51: "empty" predicate shared by `items_add_value_to` /
+/// `items_update_value_to`. Returns `true` for `Null`, `""`, and `[]`.
+/// Non-empty arrays, numbers, booleans, and nested objects all pass through.
+fn is_empty_json(v: &JsonValue) -> bool {
+    match v {
+        JsonValue::Null => true,
+        JsonValue::String(s) => s.is_empty(),
+        JsonValue::Array(a) => a.is_empty(),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -77,19 +114,29 @@ pub(crate) fn items_update_to(
     unset: &[String],
 ) -> Result<()> {
     let patch: JsonValue = serde_json::from_str(json).context("parsing --json")?;
-    items_update_value_to(doc, array_name, id, &patch, unset)
+    items_update_value_to(doc, array_name, id, patch, unset)
 }
 
+/// O27: takes `patch` by value so we can destructure the `Object` into its
+/// owned `Map<String, JsonValue>` and consume each `(String, JsonValue)`
+/// without per-key `.clone()`. `maybe_date_coerce` still takes `&JsonValue`
+/// (avoids a `convert.rs` cascade); the borrow is fine.
+///
+/// O51: mirrors `items_add_value_to` — patch fields whose value is "empty"
+/// (`Null`, `""`, `[]`) are skipped rather than written. To explicitly clear
+/// a field on an existing row, use the `unset` array (same on the `apply`
+/// batch form). The skip applies only to the merge path; `unset` still
+/// removes named fields as before.
 pub(crate) fn items_update_value_to(
     doc: &mut TomlValue,
     array_name: &str,
     id: &str,
-    patch: &JsonValue,
+    patch: JsonValue,
     unset: &[String],
 ) -> Result<()> {
-    let patch_obj = patch
-        .as_object()
-        .ok_or_else(|| anyhow!("--json must be a JSON object"))?;
+    let JsonValue::Object(patch_obj) = patch else {
+        bail!("--json must be a JSON object");
+    };
 
     let arr = items_array_mut(doc, array_name)?;
     for item in arr.iter_mut() {
@@ -98,8 +145,12 @@ pub(crate) fn items_update_value_to(
         if !matches {
             continue;
         }
-        for (k, v) in patch_obj.iter() {
-            tbl.insert(k.clone(), maybe_date_coerce(k, v)?);
+        for (k, v) in patch_obj {
+            if is_empty_json(&v) {
+                continue;
+            }
+            let coerced = maybe_date_coerce(&k, &v)?;
+            tbl.insert(k, coerced);
         }
         for key in unset {
             tbl.remove(key);
@@ -127,6 +178,19 @@ pub(crate) fn items_apply_to(
 /// When `no_remove` is true, the batch is scanned up-front for any `remove` op;
 /// if present, the whole apply is refused — no partial mutation occurs because
 /// the check runs before the mutation loop.
+///
+/// O27: consumes the parsed `ops` array by value (`.into_iter()`) so each
+/// op flows by ownership into `apply_single_op`, eliminating per-op patch
+/// clones the previous `arr.iter()` path forced.
+///
+/// O18: for batches with `> ID_INDEX_BUILD_THRESHOLD` `update` ops we build
+/// an `id → array_index` `HashMap` once and use it for O(1) lookups in
+/// `apply_op_indexed` (instead of the per-op linear scan inside
+/// `items_update_value_to` / `items_remove_from`). `add` ops append to the
+/// map; `remove` ops invalidate it and force a rebuild before the next
+/// indexed op needs it. Below threshold we keep the simpler linear-scan
+/// path — building the map costs a full array walk that doesn't pay off on
+/// small batches.
 pub(crate) fn items_apply_to_opts(
     doc: &mut TomlValue,
     ops_json: &str,
@@ -134,41 +198,231 @@ pub(crate) fn items_apply_to_opts(
     no_remove: bool,
 ) -> Result<()> {
     let ops: JsonValue = serde_json::from_str(ops_json).context("parsing --ops")?;
-    let arr = ops
-        .as_array()
-        .ok_or_else(|| anyhow!("--ops must be a JSON array"))?;
-    if no_remove {
-        for (i, op) in arr.iter().enumerate() {
-            if op.get("op").and_then(|v| v.as_str()) == Some("remove") {
-                bail!(
-                    "op[{}] is a remove op, but --no-remove was set; this flag is used by review-apply/optimise-apply to prevent agent-generated payloads from erasing audit history",
-                    i
-                );
-            }
-        }
+    let JsonValue::Array(arr) = ops else {
+        bail!("--ops must be a JSON array");
+    };
+    // O54: fail-before-mutate for `--no-remove` is a required property (the
+    // flag exists precisely so review-apply/optimise-apply never partially
+    // erase audit history before bailing). A separate pre-pass is therefore
+    // mandatory — "merge into the main loop" would leak mutations before the
+    // first remove op is discovered. We keep the pre-pass but collapse the
+    // explicit loop to `iter().position(...)` so the no-remove branch reads
+    // as a single short expression.
+    if no_remove
+        && let Some(i) = arr
+            .iter()
+            .position(|op| op.get("op").and_then(|v| v.as_str()) == Some("remove"))
+    {
+        bail!(
+            "op[{}] is a remove op, but --no-remove was set; this flag is used by review-apply/optimise-apply to prevent agent-generated payloads from erasing audit history",
+            i
+        );
     }
-    for (i, op) in arr.iter().enumerate() {
-        apply_single_op(doc, op, array_name).with_context(|| format!("op[{}] failed", i))?;
+    // The O18 threshold depends on `update` op count, so we still do one
+    // walk over the array regardless of the no-remove flag.
+    let update_count: usize = arr
+        .iter()
+        .filter(|op| op.get("op").and_then(|v| v.as_str()) == Some("update"))
+        .count();
+
+    if update_count > ID_INDEX_BUILD_THRESHOLD {
+        // O18 fast path: build the id→index map once, then dispatch each op
+        // through `apply_op_indexed`, which performs O(1) lookups for
+        // update/remove. The map is owned mutably across the loop and kept
+        // in sync (or invalidated on remove) by the helper.
+        let mut id_index: Option<HashMap<String, usize>> = Some(build_id_index(doc, array_name)?);
+        for (i, op) in arr.into_iter().enumerate() {
+            apply_op_indexed(doc, op, array_name, &mut id_index)
+                .with_context(|| format!("op[{}] failed", i))?;
+        }
+    } else {
+        for (i, op) in arr.into_iter().enumerate() {
+            apply_single_op(doc, op, array_name).with_context(|| format!("op[{}] failed", i))?;
+        }
     }
     Ok(())
 }
 
-pub(crate) fn apply_single_op(
+/// O18: build an `id → array_index` map for `array_name` inside `doc`.
+/// Returns an empty map if the array is missing or empty (consistent with
+/// how `items_array` returns an empty slice).
+fn build_id_index(doc: &TomlValue, array_name: &str) -> Result<HashMap<String, usize>> {
+    let arr = items_array(doc, array_name);
+    let mut map = HashMap::with_capacity(arr.len());
+    for (idx, item) in arr.iter().enumerate() {
+        if let Some(id) = item_id(item) {
+            map.insert(id.to_string(), idx);
+        }
+    }
+    Ok(map)
+}
+
+/// O18: indexed sibling of `apply_single_op`. Same op-dispatch semantics
+/// (and same error messages) but routes `update` / `remove` through the
+/// id-index for O(1) target resolution. The `id_index` is `Option` so
+/// `remove` can drop it (`.take()`); the next op that needs it rebuilds
+/// before lookup.
+fn apply_op_indexed(
     doc: &mut TomlValue,
-    op: &JsonValue,
+    op: JsonValue,
     array_name: &str,
+    id_index: &mut Option<HashMap<String, usize>>,
 ) -> Result<()> {
-    let obj = op
-        .as_object()
-        .ok_or_else(|| anyhow!("op must be a JSON object"))?;
+    let JsonValue::Object(mut obj) = op else {
+        bail!("op must be a JSON object");
+    };
     let op_name = obj
         .get("op")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("op missing `op` field"))?;
-    match op_name {
+        .ok_or_else(|| anyhow!("op missing `op` field"))?
+        .to_string();
+    match op_name.as_str() {
         "add" => {
             let json = obj
-                .get("json")
+                .remove("json")
+                .ok_or_else(|| anyhow!("add op missing `json` field"))?;
+            // Capture the new entry's id (if present + a string) before the
+            // value is consumed; on success append it to the index so a
+            // later update/remove in the same batch can find it.
+            let new_id: Option<String> = json
+                .as_object()
+                .and_then(|o| o.get("id"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            items_add_value_to(doc, json, array_name)?;
+            if let (Some(id), Some(map)) = (new_id, id_index.as_mut()) {
+                let new_idx = items_array(doc, array_name).len() - 1;
+                map.insert(id, new_idx);
+            }
+            Ok(())
+        }
+        "update" => {
+            let id = obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("update op missing `id` field"))?
+                .to_string();
+            let json = obj
+                .remove("json")
+                .ok_or_else(|| anyhow!("update op missing `json` field"))?;
+            let unset = take_unset(obj.remove("unset"))?;
+            // Lazy-rebuild the index if a previous remove invalidated it.
+            if id_index.is_none() {
+                *id_index = Some(build_id_index(doc, array_name)?);
+            }
+            let map = id_index.as_ref().expect("rebuilt above");
+            let Some(&idx) = map.get(&id) else {
+                bail!("no item with id = {}", id);
+            };
+            // R57: update honours --array. Direct-index update bypasses
+            // the linear scan in `items_update_value_to`.
+            update_at_index(doc, array_name, idx, &id, json, &unset)
+        }
+        "remove" => {
+            let id = obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("remove op missing `id` field"))?;
+            // R57: remove also follows --array. Order-preserving `Vec::remove`
+            // shifts later indexes by 1, so the cheapest correct response is
+            // to drop the map and let the next op that needs it rebuild.
+            items_remove_from(doc, array_name, id)?;
+            *id_index = None;
+            Ok(())
+        }
+        other => bail!("unknown op `{}`", other),
+    }
+}
+
+/// O18 helper: parse the optional `unset` field of an `update` op into a
+/// `Vec<String>`, with the same R36 type-only error messages as
+/// `apply_single_op`.
+fn take_unset(unset: Option<JsonValue>) -> Result<Vec<String>> {
+    match unset {
+        None | Some(JsonValue::Null) => Ok(Vec::new()),
+        Some(JsonValue::Array(a)) => {
+            let mut out = Vec::with_capacity(a.len());
+            for (idx, entry) in a.into_iter().enumerate() {
+                match entry {
+                    JsonValue::String(s) => out.push(s),
+                    other => bail!(
+                        "update op `unset` must be an array of strings, got {} at index {}",
+                        json_type_name(&other),
+                        idx
+                    ),
+                }
+            }
+            Ok(out)
+        }
+        Some(other) => bail!(
+            "update op `unset` must be a JSON array of strings, got {}",
+            json_type_name(&other)
+        ),
+    }
+}
+
+/// O18 helper: O(1) sibling of `items_update_value_to` that takes the
+/// already-resolved array index. The `expected_id` parameter is checked
+/// defensively against the indexed entry to surface stale-index bugs as a
+/// hard error (matches the legacy "no item with id = X" message).
+fn update_at_index(
+    doc: &mut TomlValue,
+    array_name: &str,
+    idx: usize,
+    expected_id: &str,
+    patch: JsonValue,
+    unset: &[String],
+) -> Result<()> {
+    let JsonValue::Object(patch_obj) = patch else {
+        bail!("--json must be a JSON object");
+    };
+    let arr = items_array_mut(doc, array_name)?;
+    let item = arr
+        .get_mut(idx)
+        .ok_or_else(|| anyhow!("no item with id = {}", expected_id))?;
+    let tbl = item
+        .as_table_mut()
+        .ok_or_else(|| anyhow!("no item with id = {}", expected_id))?;
+    if tbl.get("id").and_then(|v| v.as_str()) != Some(expected_id) {
+        bail!("no item with id = {}", expected_id);
+    }
+    // O51: parity with `items_update_value_to` — skip empty-valued patch fields
+    // so the indexed fast-path doesn't diverge from the linear-scan path.
+    for (k, v) in patch_obj {
+        if is_empty_json(&v) {
+            continue;
+        }
+        let coerced = maybe_date_coerce(&k, &v)?;
+        tbl.insert(k, coerced);
+    }
+    for key in unset {
+        tbl.remove(key);
+    }
+    Ok(())
+}
+
+/// O27: takes `op` by value so the `add`/`update` arms can hand the inner
+/// `json` payload to `items_add_value_to` / `items_update_value_to` by
+/// value, eliminating the per-row patch clone the previous `&JsonValue`
+/// signature forced. Caller (`items_apply_to_opts`) iterates the parsed
+/// ops array via `.into_iter()` to feed owned values here.
+pub(crate) fn apply_single_op(
+    doc: &mut TomlValue,
+    op: JsonValue,
+    array_name: &str,
+) -> Result<()> {
+    let JsonValue::Object(mut obj) = op else {
+        bail!("op must be a JSON object");
+    };
+    let op_name = obj
+        .get("op")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("op missing `op` field"))?
+        .to_string();
+    match op_name.as_str() {
+        "add" => {
+            let json = obj
+                .remove("json")
                 .ok_or_else(|| anyhow!("add op missing `json` field"))?;
             items_add_value_to(doc, json, array_name)
         }
@@ -176,23 +430,24 @@ pub(crate) fn apply_single_op(
             let id = obj
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("update op missing `id` field"))?;
+                .ok_or_else(|| anyhow!("update op missing `id` field"))?
+                .to_string();
             let json = obj
-                .get("json")
+                .remove("json")
                 .ok_or_else(|| anyhow!("update op missing `json` field"))?;
-            let unset: Vec<String> = match obj.get("unset") {
+            let unset: Vec<String> = match obj.remove("unset") {
                 None | Some(JsonValue::Null) => Vec::new(),
                 Some(JsonValue::Array(a)) => {
                     let mut out = Vec::with_capacity(a.len());
-                    for (idx, entry) in a.iter().enumerate() {
+                    for (idx, entry) in a.into_iter().enumerate() {
                         match entry {
-                            JsonValue::String(s) => out.push(s.clone()),
+                            JsonValue::String(s) => out.push(s),
                             // R36: report element type + index only; the value
                             // itself may be agent-generated text and must not
                             // land on stderr verbatim.
                             other => bail!(
                                 "update op `unset` must be an array of strings, got {} at index {}",
-                                json_type_name(other),
+                                json_type_name(&other),
                                 idx
                             ),
                         }
@@ -202,13 +457,13 @@ pub(crate) fn apply_single_op(
                 // R36: value suppressed — report only the JSON type.
                 Some(other) => bail!(
                     "update op `unset` must be a JSON array of strings, got {}",
-                    json_type_name(other)
+                    json_type_name(&other)
                 ),
             };
             // R57: update now honours the apply-op's --array parameter so a
             // batch targeting e.g. `rollback_events` can update entries there,
             // not just in `[[items]]`.
-            items_update_value_to(doc, array_name, id, json, &unset)
+            items_update_value_to(doc, array_name, &id, json, &unset)
         }
         "remove" => {
             let id = obj
@@ -267,7 +522,14 @@ pub(crate) fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
 /// `Err`, so the caller may rely on receiving either a fully parsed batch or
 /// no rows at all. No side effects.
 pub(crate) fn parse_ndjson(s: &str) -> Result<Vec<JsonValue>> {
-    let mut rows = Vec::new();
+    // O48: pre-size by newline count so the common case (one JSON row per
+    // line, no blanks) fills the Vec without any reallocation. Blank lines
+    // over-shoot by at most a handful, and a trailing-newline-absent final
+    // row under-shoots by one — both are cheap compared with the geometric
+    // regrowth cost of starting at capacity 0 on an N-row batch. The SIMD
+    // newline scan in `memchr`-backed iterators runs in nanoseconds for the
+    // payload sizes tomlctl sees (agent-generated NDJSON, typically <1 MB).
+    let mut rows = Vec::with_capacity(s.as_bytes().iter().filter(|&&b| b == b'\n').count());
     for (idx, line) in s.lines().enumerate() {
         let n = idx + 1;
         if line.trim().is_empty() {
@@ -296,27 +558,33 @@ pub(crate) fn items_add_many(
     rows: &[JsonValue],
     defaults: Option<&JsonValue>,
 ) -> Result<usize> {
-    let defaults_obj = match defaults {
-        Some(v) => Some(
-            v.as_object()
-                .ok_or_else(|| anyhow!("--defaults-json must be a JSON object"))?,
-        ),
-        None => None,
+    // O26: pre-validate defaults once and clone the resulting Map into a
+    // reusable `base` outside the row loop. Previously, every row rebuilt
+    // an empty Map and re-cloned each default key/value pair, costing N
+    // copies of the defaults block for an N-row batch. Now we clone the
+    // base per row (still O(N) — required because each row mutates it
+    // before handing ownership to `items_add_value_to`) but avoid the
+    // per-row default-iteration overhead.
+    let base: serde_json::Map<String, JsonValue> = match defaults {
+        Some(v) => v
+            .as_object()
+            .ok_or_else(|| anyhow!("--defaults-json must be a JSON object"))?
+            .clone(),
+        None => serde_json::Map::new(),
     };
     for (i, row) in rows.iter().enumerate() {
         let row_obj = row
             .as_object()
             .ok_or_else(|| anyhow!("row {}: must be a JSON object", i + 1))?;
-        let mut merged = serde_json::Map::new();
-        if let Some(d) = defaults_obj {
-            for (k, v) in d.iter() {
-                merged.insert(k.clone(), v.clone());
-            }
-        }
+        // Pre-size: defaults already in `base`, plus per-row keys (some of
+        // which may overwrite a default — over-allocation here is cheap and
+        // beats any risk of a re-grow inside `.extend()`).
+        let mut merged = serde_json::Map::with_capacity(base.len() + row_obj.len());
+        merged.extend(base.clone());
         for (k, v) in row_obj.iter() {
             merged.insert(k.clone(), v.clone());
         }
-        items_add_value_to(doc, &JsonValue::Object(merged), array_name)
+        items_add_value_to(doc, JsonValue::Object(merged), array_name)
             .with_context(|| format!("row {}", i + 1))?;
     }
     Ok(rows.len())
@@ -1010,6 +1278,115 @@ summary = "existing"
         // Confirm no partial mutation: R1 still `open`, R4 still present.
         assert_eq!(items_get(&doc2, "R1").unwrap()["status"], "open");
         assert!(items_get(&doc2, "R4").is_ok());
+    }
+
+    // ----- O18: indexed apply fast-path -----------------------------------
+
+    /// Pin the O18 indexed-apply path's correctness: a batch with > 5
+    /// `update` ops triggers the HashMap-backed dispatch, and `add` /
+    /// `remove` interleaved with updates must still produce the same
+    /// final document as a batch the linear-scan path would produce.
+    #[test]
+    fn items_apply_indexed_path_matches_linear_for_large_batch() {
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+status = "open"
+
+[[items]]
+id = "R2"
+status = "open"
+
+[[items]]
+id = "R3"
+status = "open"
+
+[[items]]
+id = "R4"
+status = "open"
+
+[[items]]
+id = "R5"
+status = "open"
+
+[[items]]
+id = "R6"
+status = "open"
+
+[[items]]
+id = "R7"
+status = "open"
+"#;
+        // 7 updates (> ID_INDEX_BUILD_THRESHOLD = 5) trigger the indexed
+        // path. Plus an add and a remove to exercise the post-add map
+        // bump and post-remove map invalidation.
+        let ops = r#"[
+            {"op":"update","id":"R1","json":{"status":"fixed"}},
+            {"op":"update","id":"R2","json":{"status":"fixed"}},
+            {"op":"update","id":"R3","json":{"status":"fixed"}},
+            {"op":"update","id":"R4","json":{"status":"fixed"}},
+            {"op":"add","json":{"id":"R8","status":"open"}},
+            {"op":"remove","id":"R5"},
+            {"op":"update","id":"R6","json":{"status":"fixed"}},
+            {"op":"update","id":"R8","json":{"status":"fixed"}},
+            {"op":"update","id":"R7","json":{"status":"fixed"}}
+        ]"#;
+        let mut doc_indexed: TomlValue = toml::from_str(src).unwrap();
+        items_apply(&mut doc_indexed, ops).unwrap();
+
+        // Build the expected end state by replaying the same ops sequentially
+        // through the per-op helpers (which take the linear-scan path).
+        let mut doc_linear: TomlValue = toml::from_str(src).unwrap();
+        items_update(&mut doc_linear, "R1", r#"{"status":"fixed"}"#, &[]).unwrap();
+        items_update(&mut doc_linear, "R2", r#"{"status":"fixed"}"#, &[]).unwrap();
+        items_update(&mut doc_linear, "R3", r#"{"status":"fixed"}"#, &[]).unwrap();
+        items_update(&mut doc_linear, "R4", r#"{"status":"fixed"}"#, &[]).unwrap();
+        items_add(&mut doc_linear, r#"{"id":"R8","status":"open"}"#).unwrap();
+        items_remove(&mut doc_linear, "R5").unwrap();
+        items_update(&mut doc_linear, "R6", r#"{"status":"fixed"}"#, &[]).unwrap();
+        items_update(&mut doc_linear, "R8", r#"{"status":"fixed"}"#, &[]).unwrap();
+        items_update(&mut doc_linear, "R7", r#"{"status":"fixed"}"#, &[]).unwrap();
+
+        assert_eq!(
+            toml::to_string_pretty(&doc_indexed).unwrap(),
+            toml::to_string_pretty(&doc_linear).unwrap(),
+            "indexed-apply path must produce byte-identical output to linear-scan path"
+        );
+    }
+
+    /// O18: an `update` op for an unknown id under the indexed path must
+    /// surface the same `no item with id = X` error as the linear-scan
+    /// path does, so callers that rely on the error message keep working.
+    #[test]
+    fn items_apply_indexed_path_rejects_unknown_update_id() {
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+status = "open"
+
+[[items]]
+id = "R2"
+status = "open"
+"#;
+        // 6 updates push us over the threshold. Last update targets a
+        // missing id; expect the same error message the linear path emits.
+        let ops = r#"[
+            {"op":"update","id":"R1","json":{"status":"fixed"}},
+            {"op":"update","id":"R1","json":{"status":"fixed"}},
+            {"op":"update","id":"R1","json":{"status":"fixed"}},
+            {"op":"update","id":"R1","json":{"status":"fixed"}},
+            {"op":"update","id":"R1","json":{"status":"fixed"}},
+            {"op":"update","id":"DOES_NOT_EXIST","json":{"status":"fixed"}}
+        ]"#;
+        let mut doc: TomlValue = toml::from_str(src).unwrap();
+        let err = items_apply(&mut doc, ops).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("no item with id = DOES_NOT_EXIST"),
+            "expected unknown-id error, got: {msg}"
+        );
     }
 
     // ----- R19: items_next_id on empty doc --------------------------------

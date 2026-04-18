@@ -3,6 +3,16 @@
 // in sibling modules (`items`, `blocks`, `convert`, `io`, …). A single
 // `fn main()` wrapper forwards to `cli::run()` so anyhow's cause chain
 // can render via `{:#}` on exit.
+
+// O56: mimalloc as the global allocator. tomlctl's workload is dominated
+// by small allocations — TomlValue/JsonValue tree clones, per-item
+// serde_json::Map insertions during ledger reads, and per-line Vec<u8>
+// churn in parity hashing. Microsoft's benchmarks show ~5.3× faster
+// small-allocation throughput vs glibc malloc; rust-analyzer landed the
+// same swap in reference PR #19603 for an analogous profile.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod blocks;
 mod cli;
 mod convert;

@@ -2,11 +2,12 @@
 //!
 //! Owns:
 //!   - `read_toml` — parse-only TOML reader
+//!   - `read_toml_str` / `read_doc_borrowed` — O10 borrowed-lifetime fast-path
 //!   - `write_toml_with_sidecar` — atomic write + SHA-256 sidecar refresh
 //!   - `atomic_write` — tempfile + fsync + rename
 //!   - `guard_write_path` / `canonicalize_for_write` — `.claude/` containment
 //!   - `recheck_claude_containment` — TOCTOU narrowing (R3)
-//!   - `with_exclusive_lock` — sidecar-lock-file acquire/release (R25)
+//!   - `with_exclusive_lock` — lock-file acquire/release (R25, O44)
 //!   - `repo_or_cwd_root` + `OnceLock` cache (R46)
 //!   - `mutate_doc` — guard→lock→read→mutate→write pipeline
 //!   - `LOCK_RETRY` / `DEFAULT_LOCK_TIMEOUT` constants
@@ -20,10 +21,15 @@ use toml::Value as TomlValue;
 
 use crate::integrity::{IntegrityOpts, hex_lower, sidecar_path};
 
-/// R25: base retry delay between `try_lock_exclusive` attempts in
+/// R25 / O14: base retry delay between `try_lock_exclusive` attempts in
 /// `with_exclusive_lock`. Jittered ±20% at call time to avoid lockstep retries
-/// between competing writers.
-pub(crate) const LOCK_RETRY: std::time::Duration = std::time::Duration::from_millis(500);
+/// between competing writers. O14 reduced this from 500ms to 50ms so a writer
+/// queueing behind a fast competitor wakes up promptly instead of sitting
+/// idle for nearly half a second between checks. Going blocking-on-thread
+/// (the alternative recommendation) would require threading complexity for
+/// no measurable wall-clock benefit at this contention level — the simpler
+/// delay shrink suffices.
+pub(crate) const LOCK_RETRY: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// R25: default overall timeout for `with_exclusive_lock`. Overridable per
 /// invocation via the `TOMLCTL_LOCK_TIMEOUT` env var (integer seconds).
@@ -84,6 +90,34 @@ pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
     toml::from_str::<TomlValue>(&s).with_context(|| format!("parsing {}", path.display()))
 }
 
+/// O10: raw-bytes sibling of `read_toml`. Returns the on-disk TOML text as a
+/// `String` without parsing, so callers that want a borrowed-lifetime parse
+/// (`read_doc_borrowed`) can own the source buffer themselves — the borrowed
+/// `DeTable<'a>` must not outlive the string it references.
+pub(crate) fn read_toml_str(path: &Path) -> Result<String> {
+    fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
+}
+
+/// O10: borrowed-lifetime TOML read. Parses `source` via
+/// `toml::de::DeTable::parse` and hands the inner (unwrapped-from-`Spanned`)
+/// table to the closure. The `DeTable` ties its lifetime to the source buffer
+/// — strings, floats, and integers remain `Cow::Borrowed` into `source`
+/// whenever no escape decoding is needed, avoiding the per-scalar `String`
+/// clone that `toml::from_str::<TomlValue>` does unconditionally. Callers
+/// that need an owned `TomlValue` should keep using `read_toml` / `read_doc`;
+/// the borrowed path is only useful when the downstream consumer can work
+/// over borrowed slices (e.g. `detable_to_json` emits owned `JsonValue` at
+/// the leaves but avoids the intermediate owned-String allocation inside
+/// the TOML tree).
+pub(crate) fn read_doc_borrowed<'a, R>(
+    source: &'a str,
+    f: impl FnOnce(&toml::de::DeTable<'a>) -> Result<R>,
+) -> Result<R> {
+    let spanned = toml::de::DeTable::parse(source)
+        .map_err(|e| anyhow!("parsing borrowed TOML: {}", e))?;
+    f(spanned.get_ref())
+}
+
 /// Read-side sibling of `mutate_doc` (R93): runs the standard pre-read
 /// ritual — `maybe_verify_integrity` first (so a stale / tampered sidecar
 /// fails fast before the caller works on bad bytes), then `read_toml` —
@@ -96,9 +130,25 @@ pub(crate) fn read_doc<R>(
     integrity: IntegrityOpts,
     f: impl FnOnce(&TomlValue) -> Result<R>,
 ) -> Result<R> {
-    crate::integrity::maybe_verify_integrity(file, integrity)?;
-    let doc = read_toml(file)?;
-    f(&doc)
+    // O13: when `verify_on_read` is set the reader is sensitive to the
+    // two-persist (sidecar + TOML) interleave window in `write_toml_with_sidecar`
+    // — without a shared lock the reader can observe an inconsistent
+    // (NEW sidecar / OLD TOML) pair while a writer is mid-swap, even though
+    // both reads in isolation are race-free. A shared lock coexists with
+    // other readers and conflicts only with the writer's exclusive lock,
+    // so the cost is minimal under read-heavy workloads. Plain reads
+    // (`verify_on_read == false`) skip the lock to avoid taxing every
+    // dispatch path that doesn't care about cross-file consistency.
+    if integrity.verify_on_read {
+        with_shared_lock(file, || {
+            crate::integrity::maybe_verify_integrity(file, integrity)?;
+            let doc = read_toml(file)?;
+            f(&doc)
+        })
+    } else {
+        let doc = read_toml(file)?;
+        f(&doc)
+    }
 }
 
 /// Run a closure that mutates a TOML document at `file` under the standard
@@ -115,16 +165,22 @@ pub(crate) fn mutate_doc<F>(
 where
     F: FnOnce(&mut TomlValue) -> Result<()>,
 {
-    guard_write_path(file, allow_outside)?;
     with_exclusive_lock(file, || {
+        // O17: re-run `guard_write_path` AFTER acquiring the exclusive lock so
+        // the canonical leaf-symlink and parent-containment checks observe the
+        // post-wait filesystem state. A pre-lock guard left a window where a
+        // process competing for the lock could swap a leaf symlink between the
+        // guard and `persist()`; running the guard inside the critical section
+        // closes that window for any actor that respects our lock.
+        guard_write_path(file, allow_outside)?;
         let mut doc = read_toml(file)?;
         f(&mut doc)?;
         // R3 TOCTOU narrowing: re-canonicalise target parent immediately before
         // the atomic persist and re-check that it still lies under `.claude/`.
         // Only enforced when `--allow-outside` was NOT set, since an explicit
-        // opt-out was granted by the user in that case. This narrows (but does
-        // not close) the window between `guard_write_path()` and `persist()`;
-        // closing it fully requires O_NOFOLLOW via nix/rustix.
+        // opt-out was granted by the user in that case. With O17 the inside-lock
+        // `guard_write_path` already covers this case; this call is now a cheap
+        // belt-and-braces and stays to keep the diff narrow.
         if !allow_outside {
             recheck_claude_containment(file)?;
         }
@@ -157,9 +213,62 @@ fn recheck_claude_containment(file: &Path) -> Result<()> {
     )
 }
 
-/// Acquire an exclusive sidecar `.lock` file around a write operation, with a
-/// timeout so a stranded lock (crashed tomlctl, OS-mandatory Windows lock,
-/// heavy contention) produces a clear error instead of hanging forever.
+/// O44: compute the lock-file path for `target` under
+/// `<repo-or-cwd-root>/.claude/.locks/<sha256-of-canonical-path>.lock`.
+///
+/// Keying on the 64-char hex digest of the canonicalised target path
+/// (rather than a sidecar `<file>.lock` next to the target) avoids the
+/// collision class where a user legitimately owns a file literally named
+/// `foo.toml.lock` — the sidecar scheme would then reuse a real file as
+/// the lock coordinate. Centralising the locks under one hidden directory
+/// also consolidates the stray-lockfile noise that previously scattered
+/// across every flow / ledger directory.
+///
+/// Canonicalisation strategy matches `canonicalize_for_write`: if the
+/// target exists we canonicalise directly; otherwise canonicalise the
+/// parent and rejoin the file name. If every canonicalise step fails
+/// (highly unusual — the write-path guard would reject such a target
+/// first), fall back to the raw path's absolute form so the hash still
+/// yields a stable key per unique invocation.
+fn lock_path_for(target: &Path) -> Result<PathBuf> {
+    let canonical_source: PathBuf = match target.canonicalize() {
+        Ok(c) => c,
+        Err(_) => {
+            // Target doesn't exist yet (first write). Canonicalise the
+            // parent and rejoin, matching canonicalize_for_write's shape
+            // so reader + writer derive the same key on a not-yet-created
+            // file.
+            let parent = target
+                .parent()
+                .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })
+                .unwrap_or(Path::new("."));
+            match parent.canonicalize() {
+                Ok(pc) => {
+                    if let Some(name) = target.file_name() {
+                        pc.join(name)
+                    } else {
+                        pc
+                    }
+                }
+                Err(_) => target.to_path_buf(),
+            }
+        }
+    };
+    let digest = Sha256::digest(canonical_source.as_os_str().as_encoded_bytes());
+    let hex = hex_lower(&digest);
+    let root = repo_or_cwd_root()?;
+    let lock_dir = root.join(".claude").join(".locks");
+    fs::create_dir_all(&lock_dir)
+        .with_context(|| format!("creating lock dir {}", lock_dir.display()))?;
+    Ok(lock_dir.join(format!("{}.lock", hex)))
+}
+
+/// Acquire an exclusive lock around a write operation, with a timeout so a
+/// stranded lock (crashed tomlctl, OS-mandatory Windows lock, heavy
+/// contention) produces a clear error instead of hanging forever.
+///
+/// O44: the lock file lives under `<root>/.claude/.locks/<sha>.lock`, keyed
+/// by the SHA-256 of the canonicalised target path. See `lock_path_for`.
 ///
 /// Timeout default is 30 seconds; override with the `TOMLCTL_LOCK_TIMEOUT`
 /// env var (integer seconds). On the first observed contention the function
@@ -171,10 +280,7 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
     use fs4::fs_std::FileExt;
     use std::time::Instant;
 
-    let lock_path = path.with_extension(match path.extension().and_then(|s| s.to_str()) {
-        Some(ext) => format!("{}.lock", ext),
-        None => "lock".to_string(),
-    });
+    let lock_path = lock_path_for(path)?;
     // R39: on unix, open the lock file with 0o600 so it's not world-readable.
     // The lock file is metadata about who holds the write mutex — no reason
     // for it to be group/other-readable. No-op on Windows (OpenOptionsExt is
@@ -249,6 +355,20 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
                 attempt = attempt.wrapping_add(1);
             }
             Err(e) => {
+                // O43: treat EINTR (signal-interrupted syscall) and WouldBlock
+                // as transient — retry without sleeping and without consuming
+                // the retry budget. fs4's `try_lock_exclusive` surfaces the
+                // underlying `io::Error` directly; on unix a signal arriving
+                // mid-flock(2) returns `ErrorKind::Interrupted`. WouldBlock
+                // here is defensive (the `Ok(false)` arm above already handles
+                // the "lock held by another process" case on most platforms,
+                // but some fs4 versions surface it as an Err instead).
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock
+                ) {
+                    continue;
+                }
                 return Err(anyhow!(e)).with_context(|| {
                     format!("acquiring exclusive lock on {}", lock_path.display())
                 });
@@ -258,6 +378,119 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
 
     // R23: the lock_file binding is alive through this point; drop releases
     // the lock after `f()` returns. No explicit `let _ = lock_file;` needed.
+    f()
+}
+
+/// O13: shared sibling of `with_exclusive_lock`. Multiple readers can hold
+/// the shared lock concurrently; the shared lock conflicts only with the
+/// writer's exclusive lock, which is exactly the property `read_doc` needs
+/// to avoid observing the (NEW sidecar / OLD TOML) interleave window inside
+/// `write_toml_with_sidecar`. The lock-file path and open mode mirror
+/// `with_exclusive_lock` byte-for-byte so a writer and reader on the same
+/// target rendezvous on the same `.lock` sidecar.
+///
+/// Times out under contention with the same `TOMLCTL_LOCK_TIMEOUT` /
+/// `MAX_LOCK_TIMEOUT_SECS` envelope as the exclusive variant; under steady
+/// reader-only load shared locks compose without retries, so contention here
+/// only arises against an active writer.
+pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) -> Result<R> {
+    use std::time::Instant;
+
+    // O44: same lock-file path derivation as `with_exclusive_lock` so a
+    // reader and writer on the same target rendezvous on the same
+    // `<root>/.claude/.locks/<sha>.lock` file.
+    let lock_path = lock_path_for(path)?;
+    // R39: same 0o600 open mode as the exclusive helper.
+    #[cfg(unix)]
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut open_opts = std::fs::OpenOptions::new();
+    open_opts
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true);
+    #[cfg(unix)]
+    open_opts.mode(0o600);
+    let lock_file = open_opts
+        .open(&lock_path)
+        .with_context(|| format!("opening lock file {}", lock_path.display()))?;
+
+    let timeout = std::env::var("TOMLCTL_LOCK_TIMEOUT")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(|requested| {
+            if requested > MAX_LOCK_TIMEOUT_SECS {
+                eprintln!(
+                    "tomlctl: TOMLCTL_LOCK_TIMEOUT clamped from {} to {} (24h max)",
+                    requested, MAX_LOCK_TIMEOUT_SECS
+                );
+                MAX_LOCK_TIMEOUT_SECS
+            } else {
+                requested
+            }
+        })
+        .map(std::time::Duration::from_secs)
+        .unwrap_or(DEFAULT_LOCK_TIMEOUT);
+    let base_delay_ms = LOCK_RETRY.as_millis() as u64;
+    let start = Instant::now();
+    let mut announced = false;
+    let mut attempt: u64 = 0;
+    loop {
+        // Use std's inherent `File::try_lock_shared` (stable since 1.89) — it
+        // returns `Result<(), TryLockError>` where `WouldBlock` is "lock held
+        // by another process" and `Error(io::Error)` is a real I/O failure.
+        // The exclusive sibling uses fs4's `try_lock_exclusive` (different
+        // name; no collision with std's inherent `try_lock`); the shared
+        // path can't, because std's inherent `try_lock_shared` shadows the
+        // fs4 trait method by name resolution.
+        match lock_file.try_lock_shared() {
+            Ok(()) => break,
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if !announced {
+                    eprintln!(
+                        "tomlctl: waiting for shared lock on {} …",
+                        lock_path.display()
+                    );
+                    announced = true;
+                }
+                if start.elapsed() >= timeout {
+                    bail!(
+                        "shared lock blocked on {} for {} seconds — a writer may be hanging. If no tomlctl process is running, check for stale lock and delete {} manually.",
+                        lock_path.display(),
+                        timeout.as_secs(),
+                        lock_path.display()
+                    );
+                }
+                let h = attempt
+                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    .wrapping_add(0xD1B5_4A32_D192_ED03);
+                let jitter_pct = (h % 41) as i64 - 20;
+                let delta_ms = (base_delay_ms as i64) * jitter_pct / 100;
+                let delay_ms = (base_delay_ms as i64 + delta_ms).max(1) as u64;
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                attempt = attempt.wrapping_add(1);
+            }
+            Err(std::fs::TryLockError::Error(e)) => {
+                // O43: EINTR is a benign retry signal (the syscall was
+                // interrupted before it could decide; the lock state is
+                // unchanged). Loop back without sleeping and without spending
+                // a retry budget slot. WouldBlock doesn't reach this arm in
+                // the std API — it's a distinct `TryLockError::WouldBlock`
+                // variant handled above — but we match it here defensively
+                // in case a future std revision ever folds it into `Error`.
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock
+                ) {
+                    continue;
+                }
+                return Err(anyhow!(e)).with_context(|| {
+                    format!("acquiring shared lock on {}", lock_path.display())
+                });
+            }
+        }
+    }
+
     f()
 }
 
@@ -468,22 +701,31 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
 ///
 /// R31 (torn-sidecar): the hash is computed in memory from the serialised
 /// bytes BEFORE any rename, so both tempfiles (TOML + sidecar) are staged with
-/// byte-content that is guaranteed consistent. We then `persist()` the TOML
-/// first and the sidecar second, both under the existing `<file>.lock`
-/// exclusive lock. A reader that interleaves between the two `persist()`
-/// calls either:
+/// byte-content that is guaranteed consistent. We then `persist()` the SIDECAR
+/// first and the TOML second (O12 — see below), both under the existing
+/// `<file>.lock` exclusive lock. A reader that interleaves between the two
+/// `persist()` calls either:
 ///   (a) sees the OLD TOML + OLD sidecar — hashes agree, passes integrity;
-///   (b) sees the NEW TOML + OLD sidecar — the OLD sidecar's hash is stale,
-///       reader fails integrity; this matches the outcome readers would see
-///       if a writer crashed after the first persist (desired behaviour);
+///   (b) sees the OLD TOML + NEW sidecar — the NEW sidecar's hash refers to
+///       the not-yet-persisted NEW bytes, reader fails integrity but the next
+///       successful write recomputes the digest against current bytes and the
+///       state recovers naturally (no permanent wedge);
 ///   (c) sees the NEW TOML + NEW sidecar — hashes agree, passes integrity.
-/// The previous hash-after-rename pipeline had a window where a reader could
-/// observe NEW bytes but computed the hash BEFORE the sidecar was refreshed;
-/// that window is now closed.
 ///
-/// Failure to persist the sidecar is reported as a stderr warning but does
-/// not fail the outer write — the primary TOML is already durable. Set
-/// `--strict-integrity` to upgrade that warning to a hard error.
+/// O12: the prior order (TOML first, sidecar second) is unsafe under SIGKILL —
+/// a kill between the two persists left NEW TOML + OLD sidecar, which the
+/// integrity check rejects FOREVER (every retry recomputes against the same
+/// stale sidecar). Reversing the order moves the failure into the recoverable
+/// window: OLD TOML + NEW sidecar still fails verification, but the next
+/// successful write regenerates the sidecar from the current on-disk bytes
+/// and clears the inconsistency.
+///
+/// Failure to persist the TOML (the SECOND persist after O12) is reported as
+/// a stderr warning but does not fail the outer write under `!strict` —
+/// O16 adds a single retry that recomputes the sidecar against the current
+/// on-disk TOML before warning, so a transient EIO doesn't leave the sidecar
+/// pointing at bytes the TOML never received. Set `--strict-integrity` to
+/// upgrade the warning to a hard error.
 pub(crate) fn write_toml_with_sidecar(
     path: &Path,
     value: &TomlValue,
@@ -506,26 +748,52 @@ pub(crate) fn write_toml_with_sidecar(
         .into_owned();
     let sidecar_contents = format!("{}  {}\n", hex, basename);
 
-    // Persist TOML first; if this fails, the sidecar never appeared on disk
-    // at all. If it succeeds, we immediately persist the sidecar — under the
-    // same exclusive lock there is no concurrent writer, and any reader
-    // observing a mid-swap state lands on the consistent combinations
-    // documented above.
-    atomic_write(path, bytes)?;
-    if let Err(e) = atomic_write(&sidecar, sidecar_contents.as_bytes()) {
+    // O12: persist SIDECAR first; if this fails, the TOML was never updated and
+    // the on-disk pair stays internally consistent (OLD + OLD). If sidecar
+    // succeeds, persist the TOML — under the same exclusive lock there is no
+    // concurrent writer, and any reader observing a mid-swap state lands on
+    // the recoverable combinations documented above.
+    atomic_write(&sidecar, sidecar_contents.as_bytes())?;
+    if let Err(e) = atomic_write(path, bytes) {
         if integrity.strict {
             return Err(e).with_context(|| {
                 format!(
-                    "wrote {} but failed to refresh integrity sidecar (--strict-integrity was set, so this is a hard error)",
+                    "refreshed integrity sidecar but failed to persist {} (--strict-integrity was set, so this is a hard error)",
                     path.display()
                 )
             });
         }
-        eprintln!(
-            "tomlctl: warning: wrote {} but failed to refresh integrity sidecar: {:#}",
-            path.display(),
-            e
-        );
+        // O16 (adapted for O12's reversed order): the second persist (TOML)
+        // failed under !strict. We hold the exclusive lock so the on-disk
+        // TOML cannot have been modified by another writer; the on-disk
+        // pair is now (OLD TOML + NEW sidecar), which fails verification.
+        // Recompute the sidecar against the current on-disk TOML and rewrite
+        // it once to restore an internally consistent (OLD TOML + OLD
+        // sidecar) pair before warning. This avoids leaving the file pair
+        // in a wedged state when the TOML failure is transient (e.g. EIO,
+        // ENOSPC clearing) — the next successful write still proceeds
+        // through the standard NEW-sidecar / NEW-TOML path.
+        let recovery: Result<()> = (|| {
+            let on_disk = fs::read(path)
+                .with_context(|| format!("re-reading {} for sidecar recovery", path.display()))?;
+            let recovery_hex = hex_lower(&Sha256::digest(&on_disk));
+            let recovery_contents = format!("{}  {}\n", recovery_hex, basename);
+            atomic_write(&sidecar, recovery_contents.as_bytes())
+        })();
+        if let Err(re) = recovery {
+            eprintln!(
+                "tomlctl: warning: failed to persist {}: {:#}; sidecar recovery also failed: {:#} (on-disk pair may now be inconsistent — verify-integrity will fail until the next successful write)",
+                path.display(),
+                e,
+                re
+            );
+        } else {
+            eprintln!(
+                "tomlctl: warning: failed to persist {}: {:#}; sidecar rewritten against current on-disk bytes to restore consistency",
+                path.display(),
+                e
+            );
+        }
     }
     Ok(())
 }
@@ -536,11 +804,19 @@ pub(crate) fn write_toml_with_sidecar(
 /// The `sync_all` call is load-bearing — without it, a crash between rename and
 /// fsync can leave the target empty on some filesystems. See the tempfile crate
 /// docs (`/stebalien/tempfile`) for the canonical pattern.
+///
+/// O15: the tempfile is sited under the CANONICALISED parent so a symlinked
+/// parent directory pointing to a different mount can't trigger EXDEV at
+/// `persist()` time. Falls back to the raw parent when canonicalisation fails
+/// (e.g. parent missing — `NamedTempFile::new_in` then surfaces the same
+/// underlying ENOENT with a clearer-context error message).
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path
+    let raw_parent = path
         .parent()
         .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })
         .unwrap_or(Path::new("."));
+    let parent_buf = raw_parent.canonicalize().unwrap_or_else(|_| raw_parent.to_path_buf());
+    let parent: &Path = &parent_buf;
     let mut tmp = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("creating temp file in {}", parent.display()))?;
     tmp.as_file_mut()
@@ -551,6 +827,20 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         .with_context(|| format!("fsync temp file for {}", path.display()))?;
     tmp.persist(path)
         .map_err(|e| anyhow!("atomic rename to {} failed: {}", path.display(), e.error))?;
+    // O11: fsync the parent directory so the dirent update made by `persist()`
+    // is durable across power loss. `tempfile::NamedTempFile::persist` performs
+    // the rename but does NOT sync the parent — without this call a crash
+    // between rename and the kernel's eventual writeback can leave the target
+    // looking unchanged on the next boot. Gated to unix because Windows NTFS
+    // already journals dirent updates aggressively (the directory-handle
+    // sync_all() pattern there is awkward and largely a no-op).
+    #[cfg(unix)]
+    {
+        let dir = std::fs::File::open(parent)
+            .with_context(|| format!("opening parent {} for fsync after persist", parent.display()))?;
+        dir.sync_all()
+            .with_context(|| format!("fsync parent directory {} after persist", parent.display()))?;
+    }
     Ok(())
 }
 
@@ -729,7 +1019,14 @@ resolution = "fix in abc123"
         }
 
         let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("ledger.toml");
+        let canonical = dir.path().canonicalize().unwrap();
+        // O44: the lock directory is resolved via `repo_or_cwd_root()`.
+        // Anchor it under the tempdir so the test leaves no stray
+        // `.claude/.locks/*.lock` files in the real repo tree.
+        unsafe {
+            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
+        }
+        let target = canonical.join("ledger.toml");
         fs::write(&target, LEDGER).unwrap();
 
         // Thread A takes the lock and sleeps long enough for thread B to
@@ -762,6 +1059,7 @@ resolution = "fix in abc123"
 
         unsafe {
             std::env::remove_var("TOMLCTL_LOCK_TIMEOUT");
+            std::env::remove_var("TOMLCTL_ROOT");
         }
 
         assert!(b_res.is_err(), "thread B must time out under contention");
@@ -846,6 +1144,57 @@ resolution = "fix in abc123"
         unsafe {
             std::env::remove_var("TOMLCTL_LOCK_TIMEOUT");
         }
+    }
+
+    /// O44: lock files live under `<root>/.claude/.locks/<sha256>.lock`,
+    /// NOT next to the target as `<file>.toml.lock`. Pin both properties so
+    /// a silent regression (e.g. reverting to `path.with_extension("lock")`)
+    /// trips a clear failure.
+    #[test]
+    fn lock_path_goes_under_claude_locks_and_not_sidecar() {
+        let _guard = env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let canonical = dir.path().canonicalize().unwrap();
+        unsafe {
+            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
+        }
+        let claude_dir = canonical.join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        let target = claude_dir.join("ledger.toml");
+        fs::write(&target, LEDGER).unwrap();
+
+        let lock = super::lock_path_for(&target).unwrap();
+
+        unsafe {
+            std::env::remove_var("TOMLCTL_ROOT");
+        }
+
+        let expected_dir = canonical.join(".claude").join(".locks");
+        assert!(
+            lock.starts_with(&expected_dir),
+            "lock path must live under {}, got {}",
+            expected_dir.display(),
+            lock.display()
+        );
+        let fname = lock.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        assert!(
+            fname.ends_with(".lock"),
+            "lock filename must end in .lock, got {fname}"
+        );
+        // Stem must be a 64-char lowercase hex digest (SHA-256).
+        let stem = &fname[..fname.len() - ".lock".len()];
+        assert_eq!(stem.len(), 64, "digest length: {}", stem.len());
+        assert!(
+            stem.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "digest must be lowercase hex: {stem}"
+        );
+        // The old sidecar location must not be what we return.
+        assert!(
+            !lock.to_string_lossy().ends_with("ledger.toml.lock"),
+            "O44 regression: lock path must not be sidecar `<file>.toml.lock`"
+        );
+        // Directory must actually exist on disk — lock_path_for creates it.
+        assert!(expected_dir.is_dir(), "lock dir must be created on demand");
     }
 
     #[test]

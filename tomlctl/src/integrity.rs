@@ -14,6 +14,8 @@
 use anyhow::{Context, Result, anyhow, bail};
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 /// Pair of integrity-sidecar-related global flags, bundled to shorten call
@@ -38,20 +40,44 @@ pub(crate) fn sidecar_path(file: &Path) -> PathBuf {
 
 /// Lowercase hex encoding of a byte slice. Replaces the `{:x}` formatter for
 /// digest outputs, which stopped implementing `LowerHex` in sha2 0.11.
+///
+/// Uses a byte-wise lookup table rather than `write!("{:02x}")` in a loop —
+/// the formatter path dominated hot paths that hash payloads repeatedly
+/// (e.g. `blocks.rs`, `io.rs`). Output is byte-for-byte identical.
 pub(crate) fn hex_lower(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        let _ = write!(s, "{:02x}", b);
+    const LUT: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(LUT[(b >> 4) as usize] as char);
+        out.push(LUT[(b & 0x0f) as usize] as char);
     }
-    s
+    out
 }
 
 /// Compute the SHA-256 hex digest of a file's current bytes.
+///
+/// Streams the file through a 64 KiB-buffered reader and feeds chunks into
+/// the `Sha256` hasher via incremental `update` — sha2 0.11 dropped the
+/// `io::Write` blanket impl on `Sha256`, so we drive the read loop manually
+/// rather than via `io::copy`. Peak memory stays bounded by the read
+/// buffer rather than the file size.
 pub(crate) fn sha256_hex_of_file(file: &Path) -> Result<String> {
-    let bytes =
-        fs::read(file).with_context(|| format!("reading {} for hashing", file.display()))?;
-    Ok(hex_lower(&Sha256::digest(&bytes)))
+    use std::io::Read;
+    let f = File::open(file)
+        .with_context(|| format!("opening {} for hashing", file.display()))?;
+    let mut r = BufReader::with_capacity(64 * 1024, f);
+    let mut h = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = r
+            .read(&mut buf)
+            .with_context(|| format!("reading {} for hashing", file.display()))?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    Ok(hex_lower(&h.finalize()))
 }
 
 /// If `--verify-integrity` was set, verify the target against its sidecar.

@@ -1,0 +1,9 @@
+# Rust build output
+/target/
+/tomlctl/target/
+
+# tomlctl advisory-lock sidecars (O45 — ephemeral coordination files;
+# automatic cleanup not yet implemented in tomlctl).
+*.toml.lock
+*.lock
+!Cargo.lock

@@ -651,19 +651,23 @@ If the user responds with disposition commands in the same conversation (these a
 - **`wontfix R{n} — rationale`** → locate the item with `id = "R{n}"`; set `status = "wontfix"`, `wontfix_rationale = "<rationale>"`.
 - **`fix R{n}`** → look up the item's `file`, `line`, and `summary` (plus `description` if present) from the ledger; route to `/implement` with the expanded description. **Do NOT mutate `status` here** — the resolution transition (`status = "fixed"` with `resolved` + `resolution`) happens when the fix actually lands, either via the deviation protocol inside `/implement` or via a subsequent `/plan-update` invocation. `/review` only writes the `fixed` status when a later run detects the issue is no longer present (see "Update the Review Ledger").
 
-Apply the mutation immediately with ONE `tomlctl items update` call per disposition, using the stdin form to avoid shell-quoting issues when user-supplied `reason` / `trigger` / `rationale` strings contain `'`, `$`, `` ` ``, or newlines:
+Apply the mutations as a single atomic batch via `tomlctl items apply <ledger> --ops -` — one heredoc payload covering ALL dispositions in the user's reply, regardless of count or mix (defer / wontfix). This mirrors the bulk-transition pattern already used by `/review-apply` and `/optimise-apply` at their interim checkpoint, and follows the batch-op rationale recorded in ledger item **O3** (per-item `tomlctl items update` spawns N processes and N parse/serialize/hash/write cycles; `items apply --ops -` does it in one). Stdin form also sidesteps shell-quoting hazards when user-supplied `reason` / `trigger` / `rationale` strings contain `'`, `$`, `` ` ``, or newlines.
+
+Construct one `update` op per disposition decision; the per-disposition `json` payload carries the same fields as the previous per-call form (`status` plus the disposition-specific keys):
 
 ```bash
-# defer
-printf '%s' '{"status":"deferred","defer_reason":"...","defer_trigger":"..."}' \
-  | tomlctl items update <ledger> R{n} --json -
-
-# wontfix
-printf '%s' '{"status":"wontfix","wontfix_rationale":"..."}' \
-  | tomlctl items update <ledger> R{n} --json -
+tomlctl items apply <ledger> --ops - <<'EOF'
+[
+  {"op":"update","id":"R{a}","json":{"status":"deferred","defer_reason":"...","defer_trigger":"..."}},
+  {"op":"update","id":"R{b}","json":{"status":"wontfix","wontfix_rationale":"..."}},
+  {"op":"update","id":"R{c}","json":{"status":"deferred","defer_reason":"...","defer_trigger":"..."}}
+]
+EOF
 ```
 
-Follow with `tomlctl set <ledger> last_updated <YYYY-MM-DD>`.
+If the user's reply contains exactly one disposition, still use the `items apply --ops -` form with a one-element array — do not fall back to per-item `items update`. Both `defer_reason` and `defer_trigger` remain required for `defer`; `wontfix_rationale` remains required for `wontfix`; `fix R{n}` writes no ledger ops (route to `/implement` per the bullet above).
+
+Follow the batch with `tomlctl set <ledger> last_updated <YYYY-MM-DD>`.
 
 ## Important Constraints
 

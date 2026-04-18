@@ -17,10 +17,13 @@
 use anyhow::{Result, bail};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value as JsonValue;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use toml::Value as TomlValue;
 
-use crate::convert::{TypeHint, compare_typed, parse_typed_value, split_type_hint, toml_to_json};
+use crate::convert::{
+    TypeHint, compare_typed, json_type_name, parse_typed_value, split_type_hint, toml_to_json,
+};
 
 /// Per-compile memory cap for user-supplied regex patterns (R72). Chosen to
 /// bound a pathological pattern's NFA compile / DFA cache at ~1 MiB each,
@@ -149,13 +152,68 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
 /// pipeline, and return the requested JSON shape.
 pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonValue> {
     validate_query(q)?;
-    let items: Vec<&TomlValue> = match doc.get(array_name).and_then(|v| v.as_array()) {
-        Some(arr) => arr.iter().collect(),
-        None => Vec::new(),
+    let items: &[TomlValue] = match doc.get(array_name).and_then(|v| v.as_array()) {
+        Some(arr) => arr.as_slice(),
+        None => &[],
     };
 
     // 1. Filter
-    let filtered = apply_filters(&items, &q.predicates)?;
+    // O47: pass the array slice directly instead of materialising a
+    // Vec<&TomlValue> first. `apply_filters` borrows through the slice.
+    let filtered = apply_filters(items, &q.predicates)?;
+
+    // O21/O55: Count / Pluck / CountBy fast-paths. When the user wants one
+    // of these shapes with no sort/distinct/window mutations downstream,
+    // the per-item `toml_to_json` materialisation of every field is pure
+    // waste — Count only needs `filtered.len()`; Pluck and CountBy only
+    // need ONE field per item. The guard checks every state that could
+    // change the post-pipeline composition: sort doesn't (stable
+    // permutation) but distinct, offset, and limit all do. validate_query
+    // has already rejected --count/--pluck/--count-by + --select/--exclude,
+    // so projection can't interact with the output either. GroupBy is not
+    // fast-pathed — its grouped item bodies still need full materialisation.
+    let window_untouched = q.sort_by.is_empty()
+        && !q.distinct
+        && q.offset.is_none()
+        && q.limit.is_none();
+    if window_untouched {
+        match &q.shape {
+            OutputShape::Count => {
+                return Ok(serde_json::json!({ "count": filtered.len() }));
+            }
+            OutputShape::Pluck(field) => {
+                let mut out = Vec::with_capacity(filtered.len());
+                for t in &filtered {
+                    match t.get(field).map(toml_to_json) {
+                        None | Some(JsonValue::Null) => {}
+                        Some(v) => out.push(v),
+                    }
+                }
+                return Ok(JsonValue::Array(out));
+            }
+            OutputShape::CountBy(field) => {
+                let mut counts: serde_json::Map<String, JsonValue> = serde_json::Map::new();
+                for t in &filtered {
+                    let key = match t.get(field).map(toml_to_json) {
+                        None | Some(JsonValue::Null) => String::new(),
+                        Some(JsonValue::String(s)) => s,
+                        Some(other) => other.to_string(),
+                    };
+                    match counts.get_mut(&key) {
+                        Some(JsonValue::Number(n)) => {
+                            let new = n.as_u64().unwrap_or(0) + 1;
+                            *n = serde_json::Number::from(new);
+                        }
+                        _ => {
+                            counts.insert(key, JsonValue::from(1_u64));
+                        }
+                    }
+                }
+                return Ok(JsonValue::Object(counts));
+            }
+            _ => {}
+        }
+    }
 
     // 2. Project (select/exclude) before shaping for Array/Pluck/Distinct
     // so distinct/pluck see the already-narrowed shape. Aggregations
@@ -207,12 +265,86 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     }
 }
 
+/// O34: streaming NDJSON sibling of `run()`. For `OutputShape::Array` with
+/// `q.ndjson == true`, emits one compact JSON object per line directly to
+/// `writer`, avoiding the `Vec<JsonValue>` that `run()` would otherwise
+/// materialise only to have the CLI iterate and re-serialise it. For every
+/// other shape/encoding combination, this delegates to `run()` and
+/// serialises the single resulting value to `writer` in one shot — the
+/// caller (cli.rs NDJSON branch) is only invoked on the Array+ndjson path
+/// in practice, but the fallback keeps the contract total and testable.
+pub(crate) fn run_streaming<W: Write>(
+    doc: &TomlValue,
+    array_name: &str,
+    q: &Query,
+    writer: &mut W,
+) -> Result<()> {
+    // Non-Array shapes (and Array without ndjson encoding) don't benefit
+    // from streaming — the final value is a single object/scalar. Delegate
+    // to `run()` and serialise once.
+    if !q.ndjson || !matches!(q.shape, OutputShape::Array) {
+        let out = run(doc, array_name, q)?;
+        serde_json::to_writer(writer, &out)?;
+        return Ok(());
+    }
+
+    // Array + ndjson streaming path. Mirrors the Array arm of `run()`:
+    // filter → (project/sort/distinct/window) → emit each element with a
+    // trailing newline as it's produced. We still need the full in-memory
+    // pipeline up to the final emit because sort/distinct are inherently
+    // non-streaming; the win is in avoiding the terminal `Vec<JsonValue>`
+    // that `run()` returns when the caller wants line-per-item output.
+    validate_query(q)?;
+    let items: &[TomlValue] = match doc.get(array_name).and_then(|v| v.as_array()) {
+        Some(arr) => arr.as_slice(),
+        None => &[],
+    };
+    let filtered = apply_filters(items, &q.predicates)?;
+
+    // Fast-path: no sort/distinct/window, pure Array shape. Stream directly
+    // from the filtered items through projection — one JsonValue per item,
+    // emitted and dropped before the next is built. This is the single
+    // biggest reduction in peak memory vs `run()`.
+    let window_untouched = q.sort_by.is_empty()
+        && !q.distinct
+        && q.offset.is_none()
+        && q.limit.is_none();
+    if window_untouched {
+        for t in &filtered {
+            let v = toml_to_json(t);
+            let projected = apply_projection(&v, q);
+            serde_json::to_writer(&mut *writer, &projected)?;
+            writer.write_all(b"\n")?;
+        }
+        return Ok(());
+    }
+
+    // Slow path (sort/distinct/window touched): mirror the full pipeline
+    // from `run()` but emit per-item at the tail rather than collecting.
+    let for_shape: Vec<JsonValue> = filtered.iter().map(|t| toml_to_json(t)).collect();
+    let sorted = apply_sort(for_shape, &q.sort_by);
+    let deduped = if q.distinct {
+        let projected: Vec<JsonValue> =
+            sorted.iter().map(|v| apply_projection(v, q)).collect();
+        dedup_preserve_first(&sorted, &projected)
+    } else {
+        sorted
+    };
+    let windowed = apply_window(deduped, q.offset, q.limit);
+    for v in &windowed {
+        let projected = apply_projection(v, q);
+        serde_json::to_writer(&mut *writer, &projected)?;
+        writer.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
 // -----------------------------------------------------------------------
 // Filtering
 // -----------------------------------------------------------------------
 
 pub(crate) fn apply_filters<'a>(
-    items: &[&'a TomlValue],
+    items: &'a [TomlValue],
     preds: &[Predicate],
 ) -> Result<Vec<&'a TomlValue>> {
     // R72: compile every `WhereRegex` pattern once, up-front, before we
@@ -229,10 +361,42 @@ pub(crate) fn apply_filters<'a>(
         })
         .collect::<Result<Vec<_>>>()?;
 
+    // O19/O20: pre-parse every type-coercive RHS once, up-front, parallel to
+    // the regex hoist above. A typed-prefix RHS (`@int:5`, `@date:2026-04-18`)
+    // is otherwise parsed via `parse_typed_value` once per (item × predicate)
+    // inside `eq_typed` / `compare_typed`. With the cache, the parse runs
+    // O(P) instead of O(N × P). Bare-RHS predicates fall through to the
+    // existing per-item native-type coercion path (encoded as
+    // `ParsedRhs::Untyped`); the cache buys nothing there but costs nothing
+    // either. WhereIn pre-parses every list element.
+    let rhs_cache: Vec<PredicateCache> = preds
+        .iter()
+        .map(|p| -> Result<PredicateCache> {
+            match p {
+                Predicate::Where { key, rhs }
+                | Predicate::WhereNot { key, rhs }
+                | Predicate::WhereGt { key, rhs }
+                | Predicate::WhereGte { key, rhs }
+                | Predicate::WhereLt { key, rhs }
+                | Predicate::WhereLte { key, rhs } => {
+                    Ok(PredicateCache::Single(parse_rhs_for_cache(rhs, key)?))
+                }
+                Predicate::WhereIn { key, rhs } => {
+                    let mut v = Vec::with_capacity(rhs.len());
+                    for r in rhs {
+                        v.push(parse_rhs_for_cache(r, key)?);
+                    }
+                    Ok(PredicateCache::Multi(v))
+                }
+                _ => Ok(PredicateCache::None),
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+
     let mut out = Vec::with_capacity(items.len());
-    'item: for &it in items {
+    'item: for it in items {
         for (i, p) in preds.iter().enumerate() {
-            if !eval_predicate(it, p, compiled[i].as_ref())? {
+            if !eval_predicate(it, p, compiled[i].as_ref(), &rhs_cache[i])? {
                 continue 'item;
             }
         }
@@ -241,24 +405,119 @@ pub(crate) fn apply_filters<'a>(
     Ok(out)
 }
 
+/// O19/O20: per-RHS pre-parse. One enum per recognised TypeHint variant plus
+/// `Untyped` for the bare-string fallback path. Field-side native-coercion
+/// (Integer field + bare RHS → parse as i64) intentionally remains per-item;
+/// the cache only short-circuits the typed-prefix path because that's where
+/// every RHS parse is identical across items and the only thing varying is
+/// the field. See `eq_typed` / `cmp_pred` for the dispatch.
+#[derive(Clone, Debug)]
+enum ParsedRhs {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Datetime(toml::value::Datetime),
+    /// Body for `@string:` / `@str:` prefix. Stored separately from the raw
+    /// RHS so the eq path can borrow it without re-stripping the prefix.
+    Str(String),
+    /// No `@type:` prefix; per-item native-coercion path runs as before.
+    Untyped,
+}
+
+/// O19/O20: per-predicate cache aligned with `preds`. Single-RHS predicates
+/// store one entry; WhereIn stores a Vec aligned with its RHS list.
+#[derive(Clone, Debug)]
+enum PredicateCache {
+    Single(ParsedRhs),
+    Multi(Vec<ParsedRhs>),
+    /// Predicate has no type-coercive RHS (Has/Missing/Contains/Prefix/Suffix/Regex).
+    None,
+}
+
+/// O19/O20: parse one RHS string into a `ParsedRhs` for the cache. `key` is
+/// only used to make `@type:` parse failures actionable (mirrors the error
+/// shape `eq_typed` raised before the cache was introduced — R73).
+fn parse_rhs_for_cache(rhs: &str, key: &str) -> Result<ParsedRhs> {
+    let Some((hint, body)) = split_type_hint(rhs) else {
+        return Ok(ParsedRhs::Untyped);
+    };
+    match hint {
+        TypeHint::Int => {
+            let n: i64 = body.parse().map_err(|e| {
+                anyhow::anyhow!(
+                    "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                    rhs,
+                    key,
+                    e
+                )
+            })?;
+            Ok(ParsedRhs::Int(n))
+        }
+        TypeHint::Float => {
+            let f: f64 = body.parse().map_err(|e| {
+                anyhow::anyhow!(
+                    "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                    rhs,
+                    key,
+                    e
+                )
+            })?;
+            Ok(ParsedRhs::Float(f))
+        }
+        TypeHint::Bool => {
+            let b: bool = body.parse().map_err(|e| {
+                anyhow::anyhow!(
+                    "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                    rhs,
+                    key,
+                    e
+                )
+            })?;
+            Ok(ParsedRhs::Bool(b))
+        }
+        TypeHint::Date | TypeHint::DateTime => {
+            let dt: toml::value::Datetime = body.parse().map_err(|e| {
+                anyhow::anyhow!(
+                    "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                    rhs,
+                    key,
+                    e
+                )
+            })?;
+            Ok(ParsedRhs::Datetime(dt))
+        }
+        TypeHint::Str => Ok(ParsedRhs::Str(body.to_string())),
+    }
+}
+
 fn eval_predicate(
     item: &TomlValue,
     p: &Predicate,
     compiled_regex: Option<&Regex>,
+    cache: &PredicateCache,
 ) -> Result<bool> {
     let tbl = match item.as_table() {
         Some(t) => t,
         None => return Ok(false),
     };
+    // O19/O20: pull the pre-parsed RHS out of the cache; helpers below take
+    // it instead of re-parsing per item. `expect_single` / `expect_multi`
+    // panic on cache/predicate mismatch — that's an internal invariant
+    // violation in `apply_filters`, not user input.
     match p {
-        Predicate::Where { key, rhs } => eq_typed(tbl.get(key), rhs, key),
-        Predicate::WhereNot { key, rhs } => Ok(!eq_typed(tbl.get(key), rhs, key)?),
+        Predicate::Where { key, rhs } => eq_typed(tbl.get(key), rhs, key, expect_single(cache)),
+        Predicate::WhereNot { key, rhs } => {
+            Ok(!eq_typed(tbl.get(key), rhs, key, expect_single(cache))?)
+        }
         Predicate::WhereIn { key, rhs } => {
             let field = tbl.get(key);
+            let parsed = expect_multi(cache);
             // Any-match with error propagation: bail on the first malformed
-            // RHS rather than silently skipping it.
-            for v in rhs {
-                if eq_typed(field, v, key)? {
+            // RHS rather than silently skipping it. (RHS validity was already
+            // checked at cache-build time; the per-item call here can only
+            // surface fresh errors from the field side.)
+            for (raw, pre) in rhs.iter().zip(parsed.iter()) {
+                if eq_typed(field, raw, key, pre)? {
                     return Ok(true);
                 }
             }
@@ -266,28 +525,37 @@ fn eval_predicate(
         }
         Predicate::WhereHas { key } => Ok(field_present_nonempty(tbl.get(key))),
         Predicate::WhereMissing { key } => Ok(!field_present_nonempty(tbl.get(key))),
-        Predicate::WhereGt { key, rhs } => cmp_pred(tbl.get(key), rhs, key, |o| {
-            matches!(o, std::cmp::Ordering::Greater)
-        }),
-        Predicate::WhereGte { key, rhs } => cmp_pred(tbl.get(key), rhs, key, |o| {
-            matches!(o, std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
-        }),
-        Predicate::WhereLt { key, rhs } => cmp_pred(tbl.get(key), rhs, key, |o| {
-            matches!(o, std::cmp::Ordering::Less)
-        }),
-        Predicate::WhereLte { key, rhs } => cmp_pred(tbl.get(key), rhs, key, |o| {
-            matches!(o, std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
-        }),
-        Predicate::WhereContains { key, sub } => {
-            Ok(tbl.get(key).and_then(|v| v.as_str()).is_some_and(|s| s.contains(sub)))
+        Predicate::WhereGt { key, rhs } => {
+            cmp_pred(tbl.get(key), rhs, key, expect_single(cache), |o| {
+                matches!(o, std::cmp::Ordering::Greater)
+            })
         }
-        Predicate::WherePrefix { key, prefix } => Ok(tbl
-            .get(key)
-            .and_then(|v| v.as_str())
+        Predicate::WhereGte { key, rhs } => {
+            cmp_pred(tbl.get(key), rhs, key, expect_single(cache), |o| {
+                matches!(o, std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+            })
+        }
+        Predicate::WhereLt { key, rhs } => {
+            cmp_pred(tbl.get(key), rhs, key, expect_single(cache), |o| {
+                matches!(o, std::cmp::Ordering::Less)
+            })
+        }
+        Predicate::WhereLte { key, rhs } => {
+            cmp_pred(tbl.get(key), rhs, key, expect_single(cache), |o| {
+                matches!(o, std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            })
+        }
+        // O37: stringify non-string scalars (Int/Float/Bool/Datetime) before
+        // running substring/prefix/suffix — previously a `--where-contains`
+        // against e.g. an Integer field silently returned false for every
+        // row because `TomlValue::as_str` only matches TOML Strings. Behaviour
+        // change: `--where-contains line=00` against `line=100` now matches
+        // where it silently missed before (release-note worthy).
+        Predicate::WhereContains { key, sub } => Ok(value_as_string(tbl.get(key))
+            .is_some_and(|s| s.contains(sub))),
+        Predicate::WherePrefix { key, prefix } => Ok(value_as_string(tbl.get(key))
             .is_some_and(|s| s.starts_with(prefix))),
-        Predicate::WhereSuffix { key, suffix } => Ok(tbl
-            .get(key)
-            .and_then(|v| v.as_str())
+        Predicate::WhereSuffix { key, suffix } => Ok(value_as_string(tbl.get(key))
             .is_some_and(|s| s.ends_with(suffix))),
         Predicate::WhereRegex { key, .. } => {
             // R72: the regex was compiled once in `apply_filters`; we just
@@ -301,6 +569,20 @@ fn eval_predicate(
             let s = value_as_string(tbl.get(key));
             Ok(s.as_deref().is_some_and(|s| re.is_match(s)))
         }
+    }
+}
+
+fn expect_single(cache: &PredicateCache) -> &ParsedRhs {
+    match cache {
+        PredicateCache::Single(p) => p,
+        _ => panic!("internal: predicate cache expected Single variant"),
+    }
+}
+
+fn expect_multi(cache: &PredicateCache) -> &[ParsedRhs] {
+    match cache {
+        PredicateCache::Multi(v) => v.as_slice(),
+        _ => panic!("internal: predicate cache expected Multi variant"),
     }
 }
 
@@ -322,9 +604,43 @@ fn field_present_nonempty(v: Option<&TomlValue>) -> bool {
 /// `key` is only used to build a user-facing error when the RHS carries a
 /// `@type:` prefix but fails to parse — previously this was swallowed as
 /// `return false`, which silently dropped the query row (R73).
-fn eq_typed(field: Option<&TomlValue>, rhs: &str, key: &str) -> Result<bool> {
+///
+/// O19/O20: `pre` carries the cached pre-parsed RHS built once in
+/// `apply_filters`. When it's a typed variant, dispatch goes through the
+/// cached value and skips the per-item `parse_typed_value` round-trip
+/// entirely. `Untyped` falls through to the existing native-coercion path.
+fn eq_typed(field: Option<&TomlValue>, rhs: &str, key: &str, pre: &ParsedRhs) -> Result<bool> {
     let Some(field) = field else { return Ok(false) };
-    // 1. Explicit @type: prefix drives parsing. Compare apples-to-apples.
+    // 1. Cached typed-prefix dispatch — no per-item parse.
+    match pre {
+        ParsedRhs::Int(n) => {
+            return Ok(matches!(field, TomlValue::Integer(i) if i == n));
+        }
+        ParsedRhs::Float(f) => {
+            return Ok(matches!(field, TomlValue::Float(g) if g == f));
+        }
+        ParsedRhs::Bool(b) => {
+            return Ok(matches!(field, TomlValue::Boolean(c) if c == b));
+        }
+        ParsedRhs::Datetime(dt) => {
+            return Ok(
+                matches!(field, TomlValue::Datetime(field_dt) if field_dt.to_string() == dt.to_string()),
+            );
+        }
+        ParsedRhs::Str(body) => {
+            // `@string:` / `@str:` — match TOML String exactly, otherwise
+            // stringify the field for cross-type compare (matches the prior
+            // `json_matches_toml` Str fallback).
+            return Ok(match field {
+                TomlValue::String(f) => f == body,
+                other => stringify_scalar(other) == *body,
+            });
+        }
+        ParsedRhs::Untyped => {}
+    }
+    // Defensive: if a typed-prefix RHS slipped past cache-build (shouldn't
+    // happen because `parse_rhs_for_cache` validates), still surface a parse
+    // error in the same shape as before so the R73 contract holds.
     if let Some((hint, _rest)) = split_type_hint(rhs) {
         let parsed = parse_typed_value(rhs).map_err(|e| {
             anyhow::anyhow!(
@@ -388,12 +704,67 @@ fn cmp_pred(
     field: Option<&TomlValue>,
     rhs: &str,
     key: &str,
+    pre: &ParsedRhs,
     check: impl Fn(std::cmp::Ordering) -> bool,
 ) -> Result<bool> {
+    use std::cmp::Ordering;
     let Some(f) = field else { return Ok(false) };
-    // R73: surface parse errors up to the caller rather than silently
-    // treating the item as non-matching. A malformed `@date:not-a-date` RHS
-    // is a user bug worth failing loudly on.
+    // O19/O20: cached typed-prefix dispatch. When the cache holds a parsed
+    // numeric / bool / datetime, compare directly against the field's native
+    // representation — no per-item `compare_typed` round-trip through the
+    // RHS parser. A type-hint vs field-type mismatch surfaces as the same
+    // shape of error that `compare_typed` produced before the cache.
+    let ord_opt: Option<Result<Ordering>> = match pre {
+        ParsedRhs::Int(n) => match f {
+            TomlValue::Integer(i) => Some(Ok(i.cmp(n))),
+            _ => Some(Err(anyhow::anyhow!(
+                "invalid typed RHS `{}` for --where predicate on key `{}`: type hint `int` doesn't match field type",
+                rhs,
+                key
+            ))),
+        },
+        ParsedRhs::Float(x) => match f {
+            TomlValue::Float(g) => Some(Ok(g.partial_cmp(x).unwrap_or(Ordering::Equal))),
+            _ => Some(Err(anyhow::anyhow!(
+                "invalid typed RHS `{}` for --where predicate on key `{}`: type hint `float` doesn't match field type",
+                rhs,
+                key
+            ))),
+        },
+        ParsedRhs::Bool(b) => match f {
+            TomlValue::Boolean(c) => Some(Ok(c.cmp(b))),
+            _ => Some(Err(anyhow::anyhow!(
+                "invalid typed RHS `{}` for --where predicate on key `{}`: bool RHS not comparable against non-bool field",
+                rhs,
+                key
+            ))),
+        },
+        ParsedRhs::Datetime(dt) => match f {
+            TomlValue::Datetime(field_dt) => {
+                Some(Ok(field_dt.to_string().cmp(&dt.to_string())))
+            }
+            _ => Some(Err(anyhow::anyhow!(
+                "invalid typed RHS `{}` for --where predicate on key `{}`: datetime RHS not comparable against non-datetime field",
+                rhs,
+                key
+            ))),
+        },
+        ParsedRhs::Str(body) => match f {
+            TomlValue::String(s) => Some(Ok(s.as_str().cmp(body.as_str()))),
+            _ => Some(Err(anyhow::anyhow!(
+                "invalid typed RHS `{}` for --where predicate on key `{}`: string RHS not comparable against non-string field",
+                rhs,
+                key
+            ))),
+        },
+        ParsedRhs::Untyped => None,
+    };
+    if let Some(res) = ord_opt {
+        return Ok(check(res?));
+    }
+    // R73 / Untyped: surface parse errors up to the caller rather than
+    // silently treating the item as non-matching. A malformed RHS is a user
+    // bug worth failing loudly on.
     let ord = compare_typed(f, rhs).map_err(|e| {
         anyhow::anyhow!(
             "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
@@ -423,9 +794,17 @@ pub(crate) fn apply_projection(item: &JsonValue, q: &Query) -> JsonValue {
         return JsonValue::Object(out);
     }
     if let Some(drop) = &q.exclude {
-        let mut out = obj.clone();
-        for k in drop {
-            out.remove(k);
+        // O25: avoid the clone-then-remove allocation churn (full Map clone
+        // followed by per-key removal). Build the kept-keys map directly with
+        // a HashSet membership probe — same allocation shape as the select
+        // branch above, and preserves insertion order via the indexmap-backed
+        // Map (preserve_order feature on serde_json).
+        let drop_set: HashSet<&str> = drop.iter().map(String::as_str).collect();
+        let mut out = serde_json::Map::with_capacity(obj.len().saturating_sub(drop.len()));
+        for (k, v) in obj {
+            if !drop_set.contains(k.as_str()) {
+                out.insert(k.clone(), v.clone());
+            }
         }
         return JsonValue::Object(out);
     }
@@ -440,21 +819,25 @@ fn apply_sort(mut items: Vec<JsonValue>, sort_by: &[(String, SortDir)]) -> Vec<J
     if sort_by.is_empty() {
         return items;
     }
-    // Stable multi-key: sort by least-significant key first, most-significant
-    // last. Caller gives us (primary, secondary, ...) so reverse.
-    for (key, dir) in sort_by.iter().rev() {
-        let dir_copy = *dir;
-        let key_copy = key.clone();
-        items.sort_by(|a, b| {
-            let av = a.get(&key_copy);
-            let bv = b.get(&key_copy);
-            let ord = cmp_json_scalars(av, bv);
-            match dir_copy {
-                SortDir::Asc => ord,
-                SortDir::Desc => ord.reverse(),
-            }
-        });
-    }
+    // O23: single O(N log N) pass using a composed comparator instead of K
+    // separate stable sorts (one per key). Walks the sort_by spec in
+    // primary-first order and folds per-key Orderings via `Ordering::then_with`,
+    // so a tie on the primary key falls through to the next-most-significant
+    // tiebreaker. Behaviourally equivalent to the previous LSB-first repeated
+    // sort, but does the work in one pass.
+    items.sort_by(|a, b| {
+        sort_by
+            .iter()
+            .fold(std::cmp::Ordering::Equal, |acc, (key, dir)| {
+                acc.then_with(|| {
+                    let ord = cmp_json_scalars(a.get(key), b.get(key));
+                    match dir {
+                        SortDir::Asc => ord,
+                        SortDir::Desc => ord.reverse(),
+                    }
+                })
+            })
+    });
     items
 }
 
@@ -473,9 +856,12 @@ fn cmp_json_scalars(a: Option<&JsonValue>, b: Option<&JsonValue>) -> std::cmp::O
             (JsonValue::Bool(p), JsonValue::Bool(q)) => p.cmp(q),
             (JsonValue::String(s1), JsonValue::String(s2)) => s1.cmp(s2),
             _ => {
-                // Fallback: compare stringified forms so mixed types still
-                // produce a deterministic order.
-                x.to_string().cmp(&y.to_string())
+                // O24: mixed-type fallback. Compare type-name discriminants
+                // (cheap &'static str lex order from `convert::json_type_name`)
+                // instead of materialising both values via `to_string()` —
+                // saves two allocations per cross-type comparison and still
+                // yields a deterministic stable order across runs.
+                json_type_name(x).cmp(json_type_name(y))
             }
         },
     }
@@ -485,15 +871,94 @@ fn dedup_preserve_first(source: &[JsonValue], shape: &[JsonValue]) -> Vec<JsonVa
     // R67: `HashSet::insert` returns `true` on first sight of a key, which
     // is exactly the keep-decision we want. O(n) amortised instead of the
     // previous O(n²) Vec-scan.
-    let mut seen: HashSet<String> = HashSet::with_capacity(shape.len());
+    //
+    // O22: structurally hash each shape value into a u64 instead of fully
+    // serialising to a JSON string. `serde_json::to_string` allocates a
+    // fresh String per item plus all the formatting machinery; the
+    // structural-hash walk just feeds bytes into a DefaultHasher and stores
+    // the resulting 64-bit digest. `serde_json::Value` deliberately does not
+    // implement `Hash` (Number's float interior + Map's key ordering
+    // semantics make a derived impl unsafe), so we walk by hand.
+    let mut seen: HashSet<u64> = HashSet::with_capacity(shape.len());
     let mut out = Vec::with_capacity(shape.len());
     for (i, s) in shape.iter().enumerate() {
-        let key = serde_json::to_string(s).unwrap_or_default();
+        let key = json_structural_hash(s);
         if seen.insert(key) {
             out.push(source[i].clone());
         }
     }
     out
+}
+
+/// O22: structurally hash a `serde_json::Value` into a `u64` digest. Walks
+/// the value recursively, feeding a per-variant tag byte and the contained
+/// scalar (or recursively-hashed children) into a `DefaultHasher`. Hash
+/// collisions across distinct structural values would only cause dedup to
+/// drop a non-equal item; in practice DefaultHasher's 64-bit output makes
+/// that vanishingly unlikely on the corpora `tomlctl` operates on (ledger
+/// rows in the low thousands).
+///
+/// Floats hash via `to_bits()` so that `NaN != NaN` doesn't get coerced into
+/// equality, matching the existing JSON-string serialisation behaviour where
+/// `NaN` simply isn't representable. Object keys are walked in iteration
+/// order — with `serde_json/preserve_order` enabled (Cargo.toml) this is
+/// insertion order, mirroring how the old `to_string` key was constructed.
+fn json_structural_hash(v: &JsonValue) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    fn walk(v: &JsonValue, h: &mut DefaultHasher) {
+        match v {
+            JsonValue::Null => {
+                0u8.hash(h);
+            }
+            JsonValue::Bool(b) => {
+                1u8.hash(h);
+                b.hash(h);
+            }
+            JsonValue::Number(n) => {
+                2u8.hash(h);
+                if let Some(i) = n.as_i64() {
+                    b'i'.hash(h);
+                    i.hash(h);
+                } else if let Some(u) = n.as_u64() {
+                    b'u'.hash(h);
+                    u.hash(h);
+                } else if let Some(f) = n.as_f64() {
+                    b'f'.hash(h);
+                    f.to_bits().hash(h);
+                } else {
+                    // Numbers that are neither i64/u64/f64 representable
+                    // are extremely rare; fall back to the textual form.
+                    b's'.hash(h);
+                    n.to_string().hash(h);
+                }
+            }
+            JsonValue::String(s) => {
+                3u8.hash(h);
+                s.hash(h);
+            }
+            JsonValue::Array(a) => {
+                4u8.hash(h);
+                (a.len() as u64).hash(h);
+                for it in a {
+                    walk(it, h);
+                }
+            }
+            JsonValue::Object(m) => {
+                5u8.hash(h);
+                (m.len() as u64).hash(h);
+                for (k, v) in m {
+                    k.hash(h);
+                    walk(v, h);
+                }
+            }
+        }
+    }
+
+    let mut h = DefaultHasher::new();
+    walk(v, &mut h);
+    h.finish()
 }
 
 fn apply_window(
@@ -505,11 +970,13 @@ fn apply_window(
     if off >= items.len() {
         return Vec::new();
     }
-    let tail: Vec<JsonValue> = items.into_iter().skip(off).collect();
-    match limit {
-        Some(n) => tail.into_iter().take(n).collect(),
-        None => tail,
-    }
+    // O49: fuse skip+take into a single iterator chain so we only allocate
+    // the output Vec once instead of materialising an intermediate `tail`.
+    items
+        .into_iter()
+        .skip(off)
+        .take(limit.unwrap_or(usize::MAX))
+        .collect()
 }
 
 // -----------------------------------------------------------------------
@@ -521,24 +988,39 @@ pub(crate) fn apply_aggregation_count(items: &[JsonValue]) -> JsonValue {
 }
 
 pub(crate) fn apply_aggregation_count_by(items: &[JsonValue], field: &str) -> JsonValue {
-    // R68: `serde_json::Map` with the `preserve_order` feature (toml already
-    // pulls it in transitively via the indexmap-backed Map) keeps insertion
-    // order — which matches the old Vec<(k, v)> behaviour — while giving us
-    // O(1) `entry()` lookup.
-    let mut counts: serde_json::Map<String, JsonValue> = serde_json::Map::new();
+    // R68 + O53: `HashMap<String, u64>` accumulator combined with a
+    // parallel `Vec<String>` first-occurrence tracker. The prior
+    // `serde_json::Map::get_mut` path still allocated a fresh `String`
+    // key per item even on a hit (the `bucket_key` call materialises the
+    // owned key before the hash lookup, then drops it). Using the `entry`
+    // API on a plain HashMap isn't enough on its own — entry still takes
+    // the key by value — so we peek with `get_mut` first and only clone
+    // the key on a genuine insert. The `Vec::contains` for order tracking
+    // is O(M) where M is distinct buckets (typically <20 for ledger fields
+    // like status/category/tier); the net walk is still a large win vs
+    // N×`String` alloc-then-drop.
+    let mut counts: HashMap<String, u64> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
     for it in items {
         let key = bucket_key(it.get(field));
-        match counts.get_mut(&key) {
-            Some(JsonValue::Number(n)) => {
-                let new = n.as_u64().unwrap_or(0) + 1;
-                *n = serde_json::Number::from(new);
-            }
-            _ => {
-                counts.insert(key, JsonValue::from(1_u64));
-            }
+        // Track insertion order on the miss path so the rebuild below can
+        // reproduce the indexmap-backed Map's insertion-order contract.
+        // `order.contains(&key)` is O(M) where M is distinct buckets —
+        // typically <20 for ledger fields like status/category/tier — so
+        // the linear scan is cheaper than a second HashSet.
+        if !order.contains(&key) {
+            order.push(key.clone());
         }
+        *counts.entry(key).or_insert(0) += 1;
     }
-    JsonValue::Object(counts)
+    // Rebuild the serde_json::Map in first-occurrence order — this is the
+    // public contract preserved by the earlier indexmap-backed Map impl.
+    let mut out: serde_json::Map<String, JsonValue> = serde_json::Map::with_capacity(order.len());
+    for k in order {
+        let n = counts.get(&k).copied().unwrap_or(0);
+        out.insert(k, JsonValue::from(n));
+    }
+    JsonValue::Object(out)
 }
 
 pub(crate) fn apply_aggregation_group_by(

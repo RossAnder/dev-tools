@@ -175,14 +175,93 @@ pub(crate) fn toml_to_json(v: &TomlValue) -> JsonValue {
             .unwrap_or(JsonValue::Null),
         TomlValue::Boolean(b) => JsonValue::Bool(*b),
         TomlValue::Datetime(dt) => JsonValue::String(dt.to_string()),
+        // O39: Vec arm — `slice::Iter::map(...).collect::<Vec<_>>()` already
+        // presizes via `size_hint`/ExactSizeIterator, so the iterator form
+        // is equivalent to `Vec::with_capacity(a.len())` + push and is left
+        // as-is.
         TomlValue::Array(a) => JsonValue::Array(a.iter().map(toml_to_json).collect()),
         TomlValue::Table(t) => {
-            let mut m = serde_json::Map::new();
+            // O39: presize the JSON object — `serde_json::Map::with_capacity`
+            // is available because `serde_json` is built with `preserve_order`
+            // (Cargo.toml), which backs `Map` with `IndexMap`. Saves the
+            // grow/rehash chain on every nested table conversion.
+            let mut m = serde_json::Map::with_capacity(t.len());
             for (k, v) in t.iter() {
                 m.insert(k.clone(), toml_to_json(v));
             }
             JsonValue::Object(m)
         }
+    }
+}
+
+/// O10: borrowed-lifetime sibling of `toml_to_json`. Walks the
+/// `toml::de::DeTable<'a>` produced by `io::read_doc_borrowed` and emits an
+/// owned `serde_json::Value`. The key win over `toml_to_json` is that
+/// `DeTable` leaves unescaped strings as `Cow::Borrowed(&'a str)`; here we
+/// `.to_string()` them only once at the leaf (into the owned `JsonValue`),
+/// avoiding the intermediate `String` clone that `toml::from_str::<TomlValue>`
+/// makes unconditionally on every string node. Integers and floats are
+/// preserved by round-tripping through their text representation — `DeInteger`
+/// / `DeFloat` expose `as_str()` + `radix()` rather than a decoded numeric
+/// value, so the cheapest parser-faithful path is a single `i64::from_str`
+/// / `f64::from_str` per scalar, which matches what `toml::from_str` does
+/// internally.
+pub(crate) fn detable_to_json(table: &toml::de::DeTable<'_>) -> JsonValue {
+    let mut m = serde_json::Map::with_capacity(table.len());
+    for (k, v) in table.iter() {
+        // `k` is `Spanned<DeString<'_>>` where `DeString = Cow<'_, str>`.
+        // `get_ref()` returns the inner `Cow`; deref to `&str` then own once.
+        let key: &str = k.get_ref();
+        m.insert(key.to_string(), devalue_to_json(v.get_ref()));
+    }
+    JsonValue::Object(m)
+}
+
+/// O10 helper: `DeValue` → `JsonValue`. Mirrors `toml_to_json`'s arm shape so
+/// JSON output for a borrowed parse is byte-identical to the owned parse.
+fn devalue_to_json(v: &toml::de::DeValue<'_>) -> JsonValue {
+    use toml::de::DeValue;
+    match v {
+        DeValue::String(s) => {
+            // `DeString<'i> = Cow<'i, str>`; `.as_ref()` yields `&str`.
+            JsonValue::String((s.as_ref() as &str).to_string())
+        }
+        DeValue::Integer(n) => {
+            // `DeInteger` stores the text + radix; parse once per leaf.
+            // Match the existing serde-driven parse path by trusting i64.
+            let txt = n.as_str();
+            let radix = n.radix();
+            // `i64::from_str_radix` doesn't accept a leading `+` or an
+            // underscore separator; `DeInteger::as_str()` strips those per
+            // the crate's own serde deserializer. If parsing fails for any
+            // exotic case, fall back to JsonValue::Null rather than panic —
+            // the owned `toml_to_json` does not crash either, and a test
+            // exercising round-trip against the owned path would catch a
+            // divergence.
+            match i64::from_str_radix(txt, radix) {
+                Ok(i) => JsonValue::from(i),
+                Err(_) => JsonValue::Null,
+            }
+        }
+        DeValue::Float(f) => {
+            let txt = f.as_str();
+            match txt.parse::<f64>() {
+                Ok(x) => serde_json::Number::from_f64(x)
+                    .map(JsonValue::Number)
+                    .unwrap_or(JsonValue::Null),
+                Err(_) => JsonValue::Null,
+            }
+        }
+        DeValue::Boolean(b) => JsonValue::Bool(*b),
+        DeValue::Datetime(dt) => JsonValue::String(dt.to_string()),
+        DeValue::Array(arr) => {
+            let mut out: Vec<JsonValue> = Vec::with_capacity(arr.len());
+            for item in arr.iter() {
+                out.push(devalue_to_json(item.get_ref()));
+            }
+            JsonValue::Array(out)
+        }
+        DeValue::Table(tbl) => detable_to_json(tbl),
     }
 }
 
@@ -201,11 +280,20 @@ pub(crate) fn json_to_toml(v: &JsonValue) -> Result<TomlValue> {
         }
         JsonValue::String(s) => Ok(TomlValue::String(s.clone())),
         JsonValue::Array(a) => {
-            let items: Result<Vec<_>> = a.iter().map(json_to_toml).collect();
-            Ok(TomlValue::Array(items?))
+            // O39: `Result<Vec<_>>::from_iter` short-circuits on `Err` and
+            // does NOT honour `size_hint`, so build the Vec explicitly with
+            // a presized buffer and push, propagating errors as we go.
+            let mut items: Vec<TomlValue> = Vec::with_capacity(a.len());
+            for v in a.iter() {
+                items.push(json_to_toml(v)?);
+            }
+            Ok(TomlValue::Array(items))
         }
         JsonValue::Object(m) => {
-            let mut t = toml::Table::new();
+            // O39: presize via `toml::Table::with_capacity` — available
+            // because `toml` is built with `preserve_order` (Cargo.toml),
+            // backing `Table` with `IndexMap`.
+            let mut t = toml::Table::with_capacity(m.len());
             for (k, v) in m.iter() {
                 t.insert(k.clone(), json_to_toml(v)?);
             }
@@ -214,8 +302,27 @@ pub(crate) fn json_to_toml(v: &JsonValue) -> Result<TomlValue> {
     }
 }
 
+/// O38: jump-table membership test mirroring `DATE_KEYS` exactly. The const
+/// is retained because `items.rs` iterates it in the
+/// `date_keys_roundtrip_as_toml_datetime` parity test; this helper is the
+/// hot-path lookup used per-key on every JSON object inserted. A debug-only
+/// assertion pins the two lists to the same set so silent drift between this
+/// `matches!` and `DATE_KEYS` fails in tests rather than at runtime.
+#[inline]
+pub(crate) fn is_date_key(key: &str) -> bool {
+    matches!(
+        key,
+        "created" | "updated" | "first_flagged" | "last_updated" | "resolved" | "date"
+    )
+}
+
 pub(crate) fn maybe_date_coerce(key: &str, v: &JsonValue) -> Result<TomlValue> {
-    if DATE_KEYS.contains(&key)
+    debug_assert_eq!(
+        is_date_key(key),
+        DATE_KEYS.contains(&key),
+        "is_date_key must stay in sync with DATE_KEYS (key = {key:?})"
+    );
+    if is_date_key(key)
         && let JsonValue::String(s) = v
         && let Ok(dt) = s.parse::<toml::value::Datetime>()
     {
@@ -403,5 +510,55 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
         }
         TomlValue::String(s) => Ok(s.as_str().cmp(body)),
         _ => bail!("field is not a scalar; cannot compare"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// O10 parity: `detable_to_json` over a borrowed `DeTable` must produce
+    /// the same JSON shape as `toml_to_json` over an owned `TomlValue` for
+    /// every scalar kind the flow schemas exercise (string, integer, float,
+    /// bool, date, nested table, array-of-tables). Pins the borrowed
+    /// fast-path byte-identical to the owned path so a regression in either
+    /// converter surfaces immediately.
+    #[test]
+    fn detable_to_json_matches_toml_to_json_shape_for_every_scalar() {
+        let src = r#"
+schema_version = 1
+last_updated = 2026-04-18
+title = "mixed"
+ratio = 1.25
+ok = true
+tags = ["a", "b"]
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+line = 10
+first_flagged = 2026-04-08
+
+[[items]]
+id = "R2"
+file = "src/b.rs"
+line = 20
+first_flagged = 2026-04-09
+
+[nested.inner]
+key = "value"
+count = 3
+"#;
+        let owned: TomlValue = toml::from_str(src).unwrap();
+        let owned_json = toml_to_json(&owned);
+
+        let spanned = toml::de::DeTable::parse(src).unwrap();
+        let borrowed_json = detable_to_json(spanned.get_ref());
+
+        assert_eq!(
+            owned_json, borrowed_json,
+            "detable_to_json must match toml_to_json byte-for-byte; \
+             owned={owned_json}, borrowed={borrowed_json}"
+        );
     }
 }

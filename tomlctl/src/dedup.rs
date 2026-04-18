@@ -53,23 +53,20 @@ fn find_duplicates_tier_a(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
     //   by (file, symbol) when symbol is non-empty
     //   by (file, summary) otherwise
     // An item appears in exactly one group (either symbol-keyed or summary-keyed).
-    let mut by_symbol: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
-    let mut by_summary: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
+    // O30: borrow keys from `items` (`str_field` returns `&'a str`) rather than
+    // allocating a `String` per entry; emit-time `format!` still allocates once
+    // per surviving group (O(groups), not O(items)).
+    let mut by_symbol: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
+    let mut by_summary: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
     for (i, item) in items.iter().enumerate() {
         let Some(tbl) = item.as_table() else { continue };
         let file = str_field(tbl, "file");
         let symbol = str_field(tbl, "symbol");
         if !symbol.is_empty() {
-            by_symbol
-                .entry((file.to_string(), symbol.to_string()))
-                .or_default()
-                .push(i);
+            by_symbol.entry((file, symbol)).or_default().push(i);
         } else {
             let summary = str_field(tbl, "summary");
-            by_summary
-                .entry((file.to_string(), summary.to_string()))
-                .or_default()
-                .push(i);
+            by_summary.entry((file, summary)).or_default().push(i);
         }
     }
     let mut out = Vec::new();
@@ -107,12 +104,24 @@ fn find_duplicates_tier_b(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
         let severity = str_field(tbl, "severity");
         let category = str_field(tbl, "category");
         let symbol = str_field(tbl, "symbol");
-        let canonical = format!(
-            "{}|{}|{}|{}|{}",
-            file, summary, severity, category, symbol
-        );
-        let full = hex_lower(&Sha256::digest(canonical.as_bytes()));
-        let short = full[..16].to_string();
+        // O31: feed Sha256 incrementally — avoids the throwaway `canonical`
+        // String, the full 64-char hex String, and the substring `to_string()`
+        // clone. Field order and the `|` separator are preserved exactly, so
+        // the resulting digest (and the 16-hex-char fingerprint) is
+        // byte-identical to the prior one-shot form.
+        let mut h = Sha256::new();
+        h.update(file.as_bytes());
+        h.update(b"|");
+        h.update(summary.as_bytes());
+        h.update(b"|");
+        h.update(severity.as_bytes());
+        h.update(b"|");
+        h.update(category.as_bytes());
+        h.update(b"|");
+        h.update(symbol.as_bytes());
+        let digest = h.finalize();
+        // 8 bytes → 16 hex chars; preserves the prior `full[..16]` truncation.
+        let short = hex_lower(&digest[..8]);
         let basename = Path::new(file)
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
@@ -139,13 +148,16 @@ fn find_duplicates_tier_b(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
 
 fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
     // Candidates: items with empty/missing symbol AND line > 0.
-    #[derive(Clone)]
-    struct Candidate {
+    // O30: `Candidate.file` borrows from `items` via `str_field`'s `&'a str`
+    // return, and the `by_file` map keys off the same borrow — drops the
+    // per-item `String` allocation plus the prior `file.clone()` into the key.
+    #[derive(Clone, Copy)]
+    struct Candidate<'a> {
         idx: usize,
-        file: String,
+        file: &'a str,
         line: i64,
     }
-    let mut by_file: HashMap<String, Vec<Candidate>> = HashMap::new();
+    let mut by_file: HashMap<&str, Vec<Candidate>> = HashMap::new();
     for (i, item) in items.iter().enumerate() {
         let Some(tbl) = item.as_table() else { continue };
         let symbol = str_field(tbl, "symbol");
@@ -156,27 +168,27 @@ fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
         if line <= 0 {
             continue;
         }
-        let file = str_field(tbl, "file").to_string();
-        by_file.entry(file.clone()).or_default().push(Candidate {
+        let file = str_field(tbl, "file");
+        by_file.entry(file).or_default().push(Candidate {
             idx: i,
             file,
             line,
         });
     }
 
+    // O52: sort each per-file Vec in place during the build pass, then iterate
+    // `by_file` read-only at emit time — drops the per-file `to_vec()` clone
+    // and preserves the prior `(line, idx)` sort key exactly.
+    for v in by_file.values_mut() {
+        v.sort_by(|a, b| a.line.cmp(&b.line).then(a.idx.cmp(&b.idx)));
+    }
+
     let mut out = Vec::new();
     // Deterministic order: sort file keys.
-    let mut files: Vec<&String> = by_file.keys().collect();
+    let mut files: Vec<&&str> = by_file.keys().collect();
     files.sort();
     for file in files {
-        let cands = &by_file[file];
-        // Sort by line then idx so sweep is deterministic.
-        // R26: `to_vec()` (clippy-preferred over `iter().cloned().collect()`)
-        // replaces the previous wholesale `cands.clone()` with the same
-        // semantics — we still need a mutable owned Vec for in-place sort,
-        // but without borrowing `by_file` mutably while iterating its keys.
-        let mut sorted: Vec<Candidate> = cands.to_vec();
-        sorted.sort_by(|a, b| a.line.cmp(&b.line).then(a.idx.cmp(&b.idx)));
+        let sorted = &by_file[file];
         let n = sorted.len();
         let mut i = 0;
         while i < n {

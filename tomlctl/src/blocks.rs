@@ -36,7 +36,10 @@ pub(crate) fn extract_block(contents: &str, name: &str) -> Option<Vec<u8>> {
     let mut in_block = false;
     let mut saw_start = false;
     let mut saw_end = false;
-    let mut out = Vec::new();
+    // The extracted block is a subset of `contents`, so `contents.len()` is a
+    // trivially correct upper bound that eliminates reallocations during the
+    // per-line `extend_from_slice` + `push(b'\n')` loop below.
+    let mut out = Vec::with_capacity(contents.len());
     for line in contents.split('\n') {
         if line == start {
             in_block = true;

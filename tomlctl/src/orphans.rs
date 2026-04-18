@@ -8,8 +8,9 @@
 //!   - `dangling-dep`     — `depends_on` names an id not in the ledger
 
 use anyhow::Result;
+use regex::Regex;
 use serde_json::Value as JsonValue;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use toml::Value as TomlValue;
@@ -23,7 +24,8 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
     let items = items_array(doc, "items");
 
     // Build set of known IDs for dangling-dep check.
-    let mut known_ids: HashSet<String> = HashSet::new();
+    // O28 freebie: pre-size to items.len() — upper bound on distinct ids.
+    let mut known_ids: HashSet<String> = HashSet::with_capacity(items.len());
     for item in items {
         if let Some(id) = item_id(item) {
             known_ids.insert(id.to_string());
@@ -31,6 +33,29 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
     }
 
     let root = repo_or_cwd_root()?;
+    // O42: hoist `root.canonicalize()` out of the per-item loop. The root is
+    // process-invariant; canonicalising it once per call removes a syscall
+    // per item. Fall back to the un-canonicalised root if canonicalize fails
+    // (matches the pre-O42 (Some(c), None) arm).
+    let canonical_root: Option<PathBuf> = root.canonicalize().ok();
+    // O42: cache `(exists, contained)` per unique resolved path so repeated
+    // ledger entries pointing at the same file each cost one `canonicalize` +
+    // one `exists` regardless of how many items reference them.
+    let mut path_cache: HashMap<PathBuf, (bool, bool)> = HashMap::new();
+    // O28: sibling cache so `fs::read_to_string` runs at most once per unique
+    // resolved path. We store `Result<String, io::ErrorKind>` rather than
+    // `Result<String, io::Error>` because `io::Error` is not `Clone`; the
+    // existing call site only inspects success/failure to choose between
+    // `symbol-missing` and `io-error`, so kind-only round-tripping preserves
+    // behaviour. Same key (`PathBuf`) as the path_cache.
+    let mut read_cache: HashMap<PathBuf, Result<String, std::io::ErrorKind>> = HashMap::new();
+    // O29: per-call cache of compiled word-boundary regexes keyed on the raw
+    // symbol string. Compiling once per distinct symbol keeps the cost flat
+    // even when the same symbol recurs across many ledger entries. `None` is
+    // cached for symbols whose regex compilation fails so we fall back to the
+    // legacy `contents.contains` substring check on every reuse without
+    // re-attempting compilation.
+    let mut symbol_cache: HashMap<String, Option<Regex>> = HashMap::new();
 
     let mut out = Vec::new();
     for item in items {
@@ -51,14 +76,22 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
             // the ledger author (this matches the pre-R38 behaviour on the
             // happy path).
             let is_relative = !Path::new(file).is_absolute();
-            let contained = if is_relative {
-                match (resolved.canonicalize().ok(), root.canonicalize().ok()) {
-                    (Some(c), Some(r)) => c.starts_with(&r),
-                    (Some(c), None) => c.starts_with(&root),
-                    (None, _) => true, // missing target falls through to `missing-file`.
-                }
+            // O42: probe cache; on miss compute (exists, contained) and insert.
+            let (exists, contained) = if let Some(hit) = path_cache.get(&resolved) {
+                *hit
             } else {
-                true
+                let contained = if is_relative {
+                    match (resolved.canonicalize().ok(), canonical_root.as_ref()) {
+                        (Some(c), Some(r)) => c.starts_with(r),
+                        (Some(c), None) => c.starts_with(&root),
+                        (None, _) => true, // missing target falls through to `missing-file`.
+                    }
+                } else {
+                    true
+                };
+                let exists = resolved.exists();
+                path_cache.insert(resolved.clone(), (exists, contained));
+                (exists, contained)
             };
             if !contained {
                 let mut obj = serde_json::Map::new();
@@ -66,7 +99,7 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
                 obj.insert("class".into(), JsonValue::String("outside-repo".into()));
                 obj.insert("file".into(), JsonValue::String(file.into()));
                 out.push(JsonValue::Object(obj));
-            } else if !resolved.exists() {
+            } else if !exists {
                 let mut obj = serde_json::Map::new();
                 obj.insert("id".into(), JsonValue::String(id.into()));
                 obj.insert("class".into(), JsonValue::String("missing-file".into()));
@@ -77,9 +110,35 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
                 // orphan instead of silently treating the file as empty
                 // (which would fire `symbol-missing` spuriously for
                 // unreadable-but-existing files).
-                match fs::read_to_string(&resolved) {
+                // O28: probe read_cache; populate on miss so duplicate ledger
+                // entries pointing at the same file each pay one read.
+                let cached = read_cache.entry(resolved.clone()).or_insert_with(|| {
+                    fs::read_to_string(&resolved).map_err(|e| e.kind())
+                });
+                match cached {
                     Ok(contents) => {
-                        if !contents.contains(symbol) {
+                        // O29: word-boundary match. The previous
+                        // `contents.contains(symbol)` produced false-positives
+                        // when `symbol` appeared as a substring of an unrelated
+                        // identifier, comment, or string literal — a freshly
+                        // renamed `id` symbol would still appear "present" in
+                        // any file containing words like `valid`, `paid`, or
+                        // `lived`. Compile once per distinct symbol, cache the
+                        // Regex, and fall back to the legacy substring check
+                        // when compilation fails (defensive — `regex::escape`
+                        // should make this unreachable). `(?-u:\b)` pins ASCII
+                        // semantics regardless of crate feature flags.
+                        let compiled = symbol_cache
+                            .entry(symbol.to_string())
+                            .or_insert_with(|| {
+                                let pat = format!(r"(?-u:\b){}(?-u:\b)", regex::escape(symbol));
+                                Regex::new(&pat).ok()
+                            });
+                        let present = match compiled {
+                            Some(re) => re.is_match(contents),
+                            None => contents.contains(symbol),
+                        };
+                        if !present {
                             let mut obj = serde_json::Map::new();
                             obj.insert("id".into(), JsonValue::String(id.into()));
                             obj.insert("class".into(), JsonValue::String("symbol-missing".into()));

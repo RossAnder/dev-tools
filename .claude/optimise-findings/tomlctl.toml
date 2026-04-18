@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-04-17
+last_updated = 2026-04-18
 
 [[items]]
 id = "O1"
@@ -147,8 +147,8 @@ resolved = 2026-04-17
 
 [[items]]
 id = "O8"
-file = "tomlctl/src/main.rs"
-line = 200
+file = "tomlctl/src/cli.rs"
+line = 970
 symbol = "print_json"
 severity = "suggestion"
 effort = "trivial"
@@ -160,45 +160,975 @@ evidence = [
     "src/main.rs:200-203",
 ]
 first_flagged = 2026-04-17
-rounds = 1
-status = "open"
+rounds = 2
+status = "applied"
+resolved = 2026-04-18
+resolution = "Already implemented per O8 recommendation: cli.rs:970 print_json uses serde_json::to_writer_pretty over BufWriter::new(stdout().lock()) with explicit flush. Fix appears to have landed during the module-split refactor (commits 593fd9e/a929434) without an explicit ledger transition."
 
 [[items]]
 id = "O9"
 file = "tomlctl/Cargo.toml"
-line = 21
+line = 39
 symbol = "[profile.release] + .cargo/config.toml rustflags"
 severity = "suggestion"
 effort = "trivial"
 category = "memory"
 summary = "For a ~10ms cold-start CLI, binary-load cost likely dominates codegen quality — measure opt-level='s'+lto='fat' and reconsider target-cpu=x86-64-v3"
-description = "Current settings (opt-level=3, lto='thin') produce a 752KB binary tuned for throughput. At ~10ms total runtime the image-load-plus-page-fault ratio to hot-loop work is high, and a smaller .text section often wins wall-clock time even at the cost of per-instruction codegen. Run a hyperfine A/B: (current: opt-level=3, lto='thin') vs (opt-level='s', lto='fat', codegen-units=1) vs (opt-level='z', lto='fat'). Start with 's' per the Rust internals consensus — 'z' disables loop vectorization and commonly regresses runtime. Keep strip=true, panic='abort' (but see O2's panic-unwind note if NamedTempFile::persist is adopted). Separately, target-cpu=x86-64-v3 costs portability (AVX2-only CPUs) and can enlarge .text with wider-vector codegen, winning nothing here (no SIMD-vectorizable hot loops). Consider dropping to x86-64-v2 or the Rust default baseline. Keep +crt-static — it's correct for the no-VCRedist portability story."
+description = """Release profile uses opt-level=3, lto="thin", codegen-units=1, panic="abort", strip=true. Two avenues left to measure: (a) lto="fat" — cross-crate inlining of toml + serde_json + regex commonly drops 1-5% cold-start CPU on a CLI this size; compile-time cost irrelevant for a tool invoked 10s of times per /optimise-apply. (b) #[global_allocator]=mimalloc::MiMalloc — tomlctl does many small allocations (TomlValue/JsonValue tree clones in convert.rs, serde_json::Map per item). Microsoft mimalloc reports 5.3× faster alloc on mixed workloads vs glibc; rust-analyzer switched in PR #19603 for the same reason. Also reconsider target-cpu=x86-64-v3 (no .cargo/config.toml exists). Risk: +150 KB binary; tomlctl is local under .claude/ so accept it. Benchmark with `hyperfine 'tomlctl items list ...'` before vs after each change individually."""
 evidence = [
-    "https://internals.rust-lang.org/t/should-default-recommended-opt-level-for-minimizing-binary-size-be-s-or-z/19685",
-    "https://github.com/rust-lang/rust/issues/54026",
-    "Cargo.toml:20-26",
-    ".cargo/config.toml:3",
+    "tomlctl/Cargo.toml:39-44",
+    "https://github.com/rust-lang/rust-analyzer/pull/19603",
+    "https://leapcell.io/blog/rust-release-optimization",
 ]
 first_flagged = 2026-04-17
-rounds = 1
-status = "open"
+rounds = 2
+status = "applied"
+resolved = 2026-04-18
+resolution = 'partial: lto="thin"→lto="fat" at Cargo.toml:41 for cross-crate inlining win on release build / pending: mimalloc global_allocator (requires new dependency) and target-cpu=x86-64-v3 via .cargo/config.toml (requires new config file + CPU-family targeting decision), both require user confirmation — tracked as child O56'
 
 [[items]]
 id = "O10"
-file = "tomlctl/src/main.rs"
-line = 190
+file = "tomlctl/src/io.rs"
+line = 82
 symbol = "read_toml"
 severity = "suggestion"
 effort = "medium"
 category = "serialization"
 summary = "toml 1.1 exposes a borrowed DeTable whose strings stay Cow::Borrowed for unescaped input — read-only paths can skip half the string allocations"
-description = "read_toml unconditionally returns an owned toml::Value: every key and every TomlValue::String is a freshly-allocated String, even for commands that only peek at the tree (get, parse, validate, items list, items get, items next-id). toml 1.1's DeTable<'i> uses Cow<'i, str> and stays Borrowed whenever the source has no escapes; it converts into a toml::Deserializer<'i> that any serde consumer can drive. Split read_toml into read_toml_owned (for mutation paths, unchanged) and with_borrowed_doc(path, |de| ...) that reads the file into a local String, parses to DeTable, converts to Deserializer, and hands it to a closure. Combined with O1 (serde_transcode), read paths become read-file → transcode-to-stdout with zero intermediate DOM. Not worth doing in isolation — the savings are small relative to process spawn cost — but compounds with O1."
+description = "read_toml does fs::read_to_string + toml::from_str::<TomlValue>(&s), producing owned Strings for every key/value. Read-only paths (Cmd::{Parse,Get,Validate}, ItemsOp::{List,Get,FindDuplicates,Orphans,NextId}) transcode the parsed doc to JSON and discard the owned strings — pure waste. toml 1.1 exposes toml::de::DeTable whose strings are Cow::Borrowed tied to the input buffer. Add read_toml_borrowed<'a>(&'a str) -> Result<DeTable<'a>>, a sibling de_table_to_json converter in convert.rs, and route read-only call sites through it. Mutation paths keep owned TomlValue (need as_table_mut). Tradeoff: API divergence between owned/borrowed branches; ship as opt-in fast path for Parse/Get first, then expand. Path correction: was originally flagged at src/main.rs (pre-module-split)."
 evidence = [
-    "https://docs.rs/toml/latest/toml/de/type.DeTable.html",
-    "https://docs.rs/toml/latest/toml/struct.Deserializer.html",
-    "https://epage.github.io/blog/2025/07/toml-09/",
-    "src/main.rs:190-193",
+    "tomlctl/src/io.rs:82-85",
+    "tomlctl/src/io.rs:94-102",
+    "https://docs.rs/toml/1.1/toml/de/struct.DeTable.html",
 ]
 first_flagged = 2026-04-17
+rounds = 2
+status = "applied"
+wontapply_rationale = "cross-file refactor exceeds 3-file cap — borrowed-DeTable path requires coordinated changes across io.rs + convert.rs + all read-only cli.rs dispatch sites; revisit as its own focused PR"
+resolved = 2026-04-18
+resolution = "Implemented minimal borrowed-lifetime fast-path (3-file cap honoured, +SKILL.md doc sync). Added read_toml_str + read_doc_borrowed in io.rs (toml 1.1 DeTable::parse → Spanned<DeTable> unwrapped via .get_ref()); detable_to_json + private devalue_to_json in convert.rs mirroring toml_to_json arm shape with owned-once leaf strings via Cow::as_ref().to_string(); routed Cmd::Parse through the fast-path in cli.rs when verify_on_read=false (keeps shared-lock+verify path for O13 cross-file consistency). Cmd::Get/Validate/ItemsOp::* unchanged. New parity test detable_to_json_matches_toml_to_json_shape_for_every_scalar pins byte-identical JSON output across scalars/tables/arrays."
+
+[[items]]
+id = "O11"
+file = "tomlctl/src/io.rs"
+line = 539
+symbol = "atomic_write"
+severity = "critical"
+effort = "small"
+category = "concurrency"
+summary = "atomic_write fsyncs tempfile but never fsyncs parent directory after persist — rename is not durable across power loss"
+description = "After tmp.as_file().sync_all() and tmp.persist(path), the rename(2) updates the parent dirent in the page cache only. On ext4 data=ordered (default) a power loss between persist and the next periodic flush can leave the rename invisible after reboot — the file content is durable but its location in the namespace is not. tempfile docs explicitly note: 'Neither the file contents nor the containing directory are synchronized.' Fix: after tmp.persist(path), open the parent directory and call sync_all (or fsync(2) via OwnedFd on unix). On Windows cfg-gate to no-op (NTFS journals dirent updates aggressively). Tradeoff: extra ~1ms on SSD, ~10ms on HDD per write — negligible for an agent CLI."
+evidence = [
+    "tomlctl/src/io.rs:539-555",
+    "https://docs.rs/tempfile/latest/tempfile/struct.NamedTempFile.html",
+    "https://danluu.com/file-consistency/",
+    "https://github.com/etcd-io/etcd/issues/6368",
+]
+first_flagged = 2026-04-18
 rounds = 1
-status = "open"
+status = "applied"
+resolved = 2026-04-18
+resolution = "atomic_write now calls std::fs::File::open(parent) + sync_all() under #[cfg(unix)] after tmp.persist(path), closing the dirent-durability gap on ext4 data=ordered power-loss. Windows path unchanged (NTFS journals dirent updates)."
+
+[[items]]
+id = "O12"
+file = "tomlctl/src/io.rs"
+line = 487
+symbol = "write_toml_with_sidecar"
+severity = "critical"
+effort = "small"
+category = "concurrency"
+summary = "TOML + sidecar persisted as two separate atomic_writes — SIGKILL/crash between them leaves a permanently-stale sidecar that breaks --verify-integrity forever"
+description = "Current writes TOML, then writes sidecar. A crash (SIGKILL, panic, OOM) between persists leaves NEW TOML + OLD sidecar; every subsequent --verify-integrity read errors with no self-healing path. R31 closed the reader-interleave gap (under exclusive lock, paired writes are atomic for readers) but the writer-crash gap remains. Options: (a) embed digest INSIDE the TOML as _meta.sha256_self recomputed-after-stripping at verify time, eliminating the sidecar; (b) persist sidecar FIRST with the digest of the new bytes, then persist TOML — crash leaves OLD TOML + NEW sidecar (verify still fails but recovers on next write); (c) on verify-mismatch, recompute sidecar from TOML if sidecar mtime < TOML mtime (auto-repair flag). Option (b) is smallest delta and keeps shellable sha256sum -c <file>.sha256 workflow."
+evidence = [
+    "tomlctl/src/io.rs:466-531",
+    "tomlctl/src/integrity.rs:66-100",
+    "matches existing R31 (reader-lock-torn-pair, fixed) — that finding addressed reader gap not writer-crash gap",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "write_toml_with_sidecar now persists the sidecar FIRST and the TOML SECOND under the existing exclusive lock. A SIGKILL between persists now leaves (OLD TOML + NEW sidecar) which self-recovers on next successful write, replacing the (NEW TOML + OLD sidecar) wedge. Doc comment updated."
+
+[[items]]
+id = "O13"
+file = "tomlctl/src/io.rs"
+line = 94
+symbol = "read_doc"
+severity = "warning"
+effort = "medium"
+category = "concurrency"
+summary = "Read paths take no lock — concurrent reader observes spurious verify-integrity failure when racing a slow writer's two persists"
+description = "read_doc calls maybe_verify_integrity → read_toml without any lock. The writer's exclusive lock serialises writers but does not block readers. A reader running between writer A's first persist(toml) and second persist(sidecar) reads the new TOML at T0, then re-reads the sidecar (in verify_integrity) at T1 — if writer's second persist lands between T0 and T1, reader sees NEW TOML + OLD sidecar → verify fails spuriously. Fix: introduce with_shared_lock(path, |...|) using fs4::FileExt::lock_shared and route read_doc through it (gated on verify_on_read so non-verify reads don't pay the latency). Shared locks coexist with each other but conflict with exclusive — readers wait for the writer's two persists to both complete. Tradeoff: small latency on contended reads (~ms); eliminates the flaky-verify class entirely."
+evidence = [
+    "tomlctl/src/io.rs:82-102",
+    "tomlctl/src/integrity.rs:66-100",
+    "https://docs.rs/crate/fs4/latest",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Added with_shared_lock helper paralleling with_exclusive_lock (same lock_path + 0o600 + timeout envelope + jittered retry). Routed read_doc through it when verify_on_read is true. Uses std::fs::File::try_lock_shared (stable 1.89) with TryLockError::{WouldBlock,Error} arms — fs4 0.13's trait method is shadowed by std's inherent."
+
+[[items]]
+id = "O14"
+file = "tomlctl/src/io.rs"
+line = 217
+symbol = "with_exclusive_lock"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "Lock retry uses try_lock_exclusive in a 500ms-sleep spin instead of blocking lock_exclusive — forfeits kernel wait-queue fairness under fanout"
+description = "loop { try_lock_exclusive → sleep 500ms ± 20% jitter on miss }. POSIX fcntl + LockFileEx maintain a wait queue when the blocking lock_exclusive is called, waking the next waiter on release; the spin loop forfeits this. With 500ms retry, a writer that releases 1ms after a contender slept keeps the lock idle for ~499ms before next try. Under heavy fanout (10+ tomlctl from parallel agents) throughput collapses to ~2 acq/s/contender vs the kernel's 1000+. Fix options: (a) use blocking lock_exclusive on a worker thread with a watchdog that drops the file handle on user-timeout; (b) shrink base delay to ~50ms (simpler, good enough for typical fanout <20)."
+evidence = [
+    "tomlctl/src/io.rs:217-257",
+    "Context7 fs4-rs — lock_exclusive (blocking) examples",
+    "https://docs.rs/crate/fs4/latest",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "LOCK_RETRY constant shrunk from 500ms to 50ms; ±20% counter-hash jitter preserved. Docstring updated with rationale for not taking the blocking-on-thread route."
+
+[[items]]
+id = "O15"
+file = "tomlctl/src/io.rs"
+line = 540
+symbol = "atomic_write"
+severity = "warning"
+effort = "trivial"
+category = "concurrency"
+summary = "NamedTempFile::new_in uses uncanonicalised path.parent() — symlink swap or relative-path compose can place tempfile on a different mount → EXDEV mid-pipeline"
+description = "persist is only atomic when source and target are on the same filesystem (rename(2) returns EXDEV across mounts). If path.parent() resolves to a directory on a different mount than the target's actual storage (e.g. via a TOCTOU symlink swap or composed `.claude/foo/../foo/ledger.toml`), persist fails with EXDEV — and the lock is already held, so failure is at the worst point. R3's recheck_claude_containment re-canonicalises for the containment check but not for the parent passed to atomic_write. Fix: pass the canonicalised parent down from mutate_doc into atomic_write so the tempfile sits next to real target storage."
+evidence = [
+    "tomlctl/src/io.rs:540-554",
+    "https://docs.rs/tempfile/latest/tempfile/struct.NamedTempFile.html#method.persist",
+    "rename(2) man page — EXDEV",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "atomic_write now canonicalises path.parent() (with raw-parent fallback on canonicalize failure) and sites NamedTempFile::new_in under the canonical parent; persist() rename can no longer EXDEV across symlink-mount boundaries."
+
+[[items]]
+id = "O16"
+file = "tomlctl/src/io.rs"
+line = 514
+symbol = "write_toml_with_sidecar"
+severity = "warning"
+effort = "trivial"
+category = "concurrency"
+summary = "Sidecar persist failure with !strict emits stderr warning and returns Ok — leaves stale sidecar with no self-repair"
+description = "On second atomic_write failing (disk full, EIO on persist) and !strict-integrity, the function logs to stderr and returns Ok. TOML is durable; sidecar is stale; verify-integrity fails forever until next successful write. Fix: under exclusive lock the TOML can't have been modified between first persist and any retry — recompute the sidecar against the current on-disk TOML and retry once. If retry also fails, THEN warn. Smallest behavioural change; closes the persistent-stale-sidecar foot-gun. Related to O12 but distinct fix surface."
+evidence = [
+    "tomlctl/src/io.rs:514-530",
+    "matches existing R18 (sidecar warning, fixed via --strict-integrity flag — but default still leaves stale)",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "On post-O12 TOML persist failure under !strict (now the second persist), recompute sidecar against current on-disk TOML and rewrite it via atomic_write to restore (OLD TOML + OLD sidecar) consistency before warning. Nested recovery failure produces an explicit may-now-be-inconsistent warning. Adapted from O31's sidecar-failure-path wording to the post-O12 TOML-failure path."
+
+[[items]]
+id = "O17"
+file = "tomlctl/src/io.rs"
+line = 117
+symbol = "mutate_doc"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "guard_write_path runs BEFORE with_exclusive_lock — symlink can be installed during lock-wait window, defeating leaf-symlink check"
+description = "guard_write_path(file) runs first; lock acquisition can take up to TOMLCTL_LOCK_TIMEOUT (30s default, 24h max). During that window an attacker with parent-dir write can swap <file> for a symlink pointing outside .claude/. R3's recheck_claude_containment only re-canonicalises the parent — it doesn't re-run refuse_outside_symlink_leaf. Leaf-symlink check from canonicalize_for_write is stale by up to 30s. Fix: move guard_write_path INSIDE with_exclusive_lock so canonical-leaf and parent checks both run after lock is held. Closes the leaf-symlink window."
+evidence = [
+    "tomlctl/src/io.rs:117-134",
+    "tomlctl/src/io.rs:374-414",
+    "matches existing R3 (recheck_claude_containment) — narrows but does not close",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "guard_write_path(file, allow_outside) moved inside the with_exclusive_lock closure in mutate_doc; symlink-leaf and parent-containment checks now run after the exclusive lock is held, closing the up-to-30s lock-wait symlink-swap window."
+
+[[items]]
+id = "O18"
+file = "tomlctl/src/items.rs"
+line = 150
+symbol = "items_apply_to_opts"
+severity = "warning"
+effort = "small"
+category = "algorithm"
+summary = "Batch apply does linear ID scan per op — O(N×M) on heterogeneous batches"
+description = "items_apply_to_opts loops over ops and for each update/remove calls items_update_value_to (linear scan via arr.iter_mut, items.rs:95) or items_remove_from (arr.retain — always O(M)). For N ops on M-item ledger that is O(N×M); typical /review-apply with N≈10-30 and growing M≈100-500 is meaningful. Fix: build HashMap<&str, usize> id→position once at top of batch; updates do O(1) lookup, adds append+update map, removes invalidate. Tradeoff: small per-batch heap (~M·32B). Genuine win starts ~N×M ≥ 10000."
+evidence = [
+    "tomlctl/src/items.rs:150-153",
+    "tomlctl/src/items.rs:94-108",
+    "tomlctl/src/items.rs:231-238",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "items_apply_to_opts indexed-apply fast path when > ID_INDEX_BUILD_THRESHOLD (5) update ops — builds HashMap<String, usize> id→array_index via build_id_index; update does O(1) lookup via update_at_index (defensive expected_id recheck); add appends to map; remove invalidates map for lazy rebuild. Below threshold, existing linear-scan path unchanged. Two new tests pin correctness against linear path."
+
+[[items]]
+id = "O19"
+file = "tomlctl/src/query.rs"
+line = 397
+symbol = "cmp_pred"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "compare_typed re-parses RHS (incl. toml::Datetime) per item — hoist parsing out of per-item loop"
+description = "WhereGt/Gte/Lt/Lte call cmp_pred per item which calls convert::compare_typed(field, rhs_raw); inside, split_type_hint + body.parse::<i64|f64|bool|toml::value::Datetime>() runs per item. RHS is constant per predicate but parsed M times. Datetime::from_str is the expensive case (allocates + ISO-8601 validation). Fix: mirror the regex hoist pattern at apply_filters (query.rs:224) — pre-parse each ordered predicate's RHS into ParsedRhs::{Int,Float,Bool,Datetime,Str} once, indexed by predicate position; eval_predicate does O(1) lookup. Removes the hottest hidden cost in the query pipeline."
+evidence = [
+    "tomlctl/src/query.rs:269-280",
+    "tomlctl/src/query.rs:387-406",
+    "tomlctl/src/convert.rs:360-407",
+    "tomlctl/src/query.rs:224-230 — proven pattern",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Part of shared per-predicate RHS-parse cache with O20. Added ParsedRhs enum (Int/Float/Bool/Datetime/Str/Untyped) + PredicateCache (Single/Multi/None). apply_filters now builds Vec<PredicateCache> parallel to the regex hoist; cmp_pred takes &ParsedRhs and dispatches typed variants directly against the field's TOML scalar — no per-item parse_typed_value round-trip. RHS parsed once, indexed by predicate position."
+
+[[items]]
+id = "O20"
+file = "tomlctl/src/query.rs"
+line = 325
+symbol = "eq_typed"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "eq_typed re-runs split_type_hint + parse_typed_value per item for typed --where RHS"
+description = "For Predicate::Where { key, rhs } eq_typed calls split_type_hint(rhs) then parse_typed_value(rhs) per item if RHS opens with @type:. Parsed JSON scalar is identical for every item. Same fix as O19: extend per-predicate-pre-parse cache to cover Where/WhereNot/WhereIn. For WhereIn each rhs member parsed once. eq_typed becomes plain json_matches_toml(&parsed_cache[i], field, hint) lookup. Cheap to fix once O19's cache exists."
+evidence = [
+    "tomlctl/src/query.rs:328-337",
+    "tomlctl/src/query.rs:256-266",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Part of shared per-predicate RHS-parse cache with O19. eq_typed takes &ParsedRhs; typed Where/WhereNot/WhereIn dispatch against the pre-parsed value. WhereIn pre-parses every list element once. Untyped variants fall through to existing native-coercion path."
+
+[[items]]
+id = "O21"
+file = "tomlctl/src/query.rs"
+line = 164
+symbol = "run"
+severity = "warning"
+effort = "medium"
+category = "algorithm"
+summary = "query::run materialises ALL filtered items to JSON before window/aggregation — Count needs only len, Pluck only one field"
+description = "Pipeline does `let for_shape: Vec<JsonValue> = filtered.iter().map(toml_to_json).collect()` immediately after filter, BEFORE sort/distinct/window/shape selection. For --count over 1000 items: 1000 deep clones discarded for a single len(). For --pluck id: 1000 full JsonValue objects when one field per item suffices. For --offset 100 --limit 10 over 500: 500 conversions to keep 10. Fix: branch on shape early — Count short-circuits to filtered.len() immediately; Pluck/CountBy/GroupBy lazily transcode only the named field per windowed item; Array path keeps full transcode. Sort+distinct in TomlValue space needs a small cmp_toml_scalars helper (mirrors cmp_json_scalars). Largest single algorithmic win available."
+evidence = [
+    "tomlctl/src/query.rs:150-208",
+    "tomlctl/src/query.rs:519-521",
+    "tomlctl/src/query.rs:565-573",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = 'partial: Count fast-path applied (early OutputShape::Count branch in run() before toml_to_json, gated on sort_by.is_empty() && !distinct && offset.is_none() && limit.is_none(); returns json!({"count": filtered.len()})); validate_query already rejects --count + --select/--exclude so projection does not interact / pending: Pluck/CountBy/GroupBy fast-paths deferred — tracked as child item O55.'
+
+[[items]]
+id = "O22"
+file = "tomlctl/src/query.rs"
+line = 484
+symbol = "dedup_preserve_first"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "dedup_preserve_first serialises every JsonValue to a full JSON String as HashSet key — O(N × item_size) string serialisation"
+description = "`let key = serde_json::to_string(s).unwrap_or_default()` per item. For 500 items with multi-field projections: 500 full JSON serialisations purely for hash bucketing, plus 500 String allocations. Fix options (cheapest first): (1) where dedup runs on already-projected shape (Pluck/Select), the key is already small — keep; (2) for `_ => dedup_preserve_first(&sorted, &sorted)` aggregation path, restrict hash key to grouping field; (3) impl Hash on a thin &JsonValue wrapper that walks structure feeding scalars to a fast hasher (FxHash/ahash) — no intermediate String. Note: JsonValue does not impl Hash by default (f64)."
+evidence = [
+    "tomlctl/src/query.rs:484-497",
+    "tomlctl/src/query.rs:182",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "dedup_preserve_first replaced serde_json::to_string per-item with json_structural_hash → u64 using std DefaultHasher. Walker recurses JsonValue feeding per-variant tag byte + scalar bytes (f64 via to_bits()) into the hasher. seen: HashSet<u64>. No new deps."
+
+[[items]]
+id = "O23"
+file = "tomlctl/src/query.rs"
+line = 439
+symbol = "apply_sort"
+severity = "warning"
+effort = "small"
+category = "algorithm"
+summary = "Multi-key sort runs K full stable sorts in reversed-key order — collapse to single sort_by with chained comparator"
+description = "`for (key, dir) in sort_by.iter().rev() { items.sort_by(...); }` — K passes of O(N log N). Standard idiom: single sort_by chaining keys via `cmp().then_with(...)`. Same O(N log N · K) comparisons but K-fold lower constant (no K full passes through array, no K re-allocations of cmp scratch). At K=1 zero change; at K=3 over 1000 items ~3× fewer comparator invocations. Pair with O24 (cmp_json_scalars stringification) for compounding win."
+evidence = [
+    "tomlctl/src/query.rs:439-458",
+    "tomlctl/src/query.rs:475-479",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "apply_sort collapsed K reversed-key passes into a single items.sort_by whose comparator folds per-key Orderings via Ordering::then_with, walking sort_by primary-first. Single O(N log N) pass."
+
+[[items]]
+id = "O24"
+file = "tomlctl/src/query.rs"
+line = 478
+symbol = "cmp_json_scalars"
+severity = "warning"
+effort = "trivial"
+category = "memory"
+summary = "Mixed-type fallback calls x.to_string() and y.to_string() per comparison — two heap allocs per cmp inside sort"
+description = "`x.to_string().cmp(&y.to_string())` as the mixed-type fallback path. Inside a sort that's O(N log N) cmp calls; for a 50-item ledger with a heterogeneous sort key ~300 serde_json::to_string allocations per sort. Fix: type-discriminant compare first via existing json_type_name helper (convert.rs:245), only stringify if types match; or enumerate (JsonType × JsonType) pairs explicitly with a three-way ordering by type tag (Null < Bool < Number < String < Array < Object). Mixed-type sort ordering not part of public contract."
+evidence = [
+    "tomlctl/src/query.rs:475-479",
+    "tomlctl/src/convert.rs:245-254",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "cmp_json_scalars mixed-type fallback replaced dual to_string() allocation with &'static str comparison via convert::json_type_name. Zero allocations for cross-type ordering."
+
+[[items]]
+id = "O25"
+file = "tomlctl/src/query.rs"
+line = 425
+symbol = "apply_projection"
+severity = "warning"
+effort = "trivial"
+category = "memory"
+summary = "Exclude branch clones the entire object then removes keys instead of filtering on insert"
+description = "obj.clone() copies every (k,v) (potentially hundreds of bytes per item) then out.remove(k) per dropped key. For 10-field item with --exclude=summary: clone 10 fields to drop 1. Fix: build HashSet<&str> of excluded keys once, iterate obj skipping excluded: `let drop: HashSet<&str> = drop.iter().map(String::as_str).collect(); let mut out = Map::with_capacity(obj.len() - drop.len()); for (k,v) in obj { if !drop.contains(k.as_str()) { out.insert(k.clone(), v.clone()); } }`. Mirrors the select branch's allocation shape."
+evidence = ["tomlctl/src/query.rs:412-433"]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "apply_projection exclude branch replaced clone-then-remove with HashSet<&str> membership probe iterating obj entries; mirrors the select branch's allocation shape (single capacity-sized Map, no second pass)."
+
+[[items]]
+id = "O26"
+file = "tomlctl/src/items.rs"
+line = 310
+symbol = "items_add_many"
+severity = "warning"
+effort = "small"
+category = "memory"
+summary = "items_add_many clones every default into a fresh Map per row, then re-merges via items_add_value_to which clones again into a toml::Table"
+description = "For each row: `merged = serde_json::Map::new()` then clones every (k,v) from defaults + every (k,v) from row_obj, hands JsonValue::Object(merged) to items_add_value_to which iterates AGAIN to build toml::Table. For 100 rows × ~10 fields × 3-5 defaults: O(N × (D + F)) deep-clones of agent-supplied JSON trees (summary/description strings can run to hundreds of bytes). Fix: (a) compute defaults → toml::Table ONCE outside loop; per row build target Table directly by cloning defaults Table and overlaying row fields, eliminating the JsonValue merged intermediate. (b) Pre-size merged via Map::with_capacity. Risk: keep maybe_date_coerce per-key."
+evidence = [
+    "tomlctl/src/items.rs:293-323",
+    "tomlctl/src/items.rs:44-59",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "items_add_many now validates and clones defaults Map once into a base outside the row loop; per row uses Map::with_capacity(base.len() + row_obj.len()) to avoid mid-loop re-grows. Merged map flows by value into the O27-refactored items_add_value_to."
+
+[[items]]
+id = "O27"
+file = "tomlctl/src/items.rs"
+line = 52
+symbol = "items_add_value_to"
+severity = "warning"
+effort = "small"
+category = "memory"
+summary = "Write-path items_add/update clone every JSON key into owned String — keys could move via patch by value"
+description = "`for (k, v) in obj.iter() { tbl.insert(k.clone(), maybe_date_coerce(k, v)?); }` — obj is the just-parsed JsonValue::Object with no downstream consumer; key clones are unnecessary. Same in items_update_value_to (101) and items_add_many (311-317 — double-clones keys+values into merged then re-clones into toml Table). Fix: take patch by value (not &JsonValue). `let JsonValue::Object(obj) = patch else { ... }; for (k, v) in obj { tbl.insert(k, maybe_date_coerce_owned(&k, v)?); }`. items_add_many can drive row_obj.into_iter() directly. Saves ~N × (key_len + val_clone) on batch-add hot path."
+evidence = [
+    "tomlctl/src/items.rs:52-57",
+    "tomlctl/src/items.rs:101-106",
+    "tomlctl/src/items.rs:307-321",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "items_add_value_to and items_update_value_to now take patch: JsonValue by value; destructure the Object arm into its owned Map<String, JsonValue> eliminating per-key k.clone() and per-value pattern-borrow. apply_single_op and items_apply_to_opts updated to consume inputs by value via .into_iter(). maybe_date_coerce kept on &JsonValue to avoid cascade through convert.rs/cli.rs."
+
+[[items]]
+id = "O28"
+file = "tomlctl/src/orphans.rs"
+line = 80
+symbol = "items_orphans"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "fs::read_to_string per item — same source file re-read for every symbol-bearing item"
+description = "Loop calls fs::read_to_string(&resolved) per item; two items pointing at src/items.rs with different symbols re-read the file twice. With 50 items across 10 files: 50 reads instead of 10. Fix: HashMap<PathBuf, Result<String>> cache keyed on resolved; check before read. Better: read each unique file once and substring-scan all that file's symbols in one pass (or use aho-corasick for substring-set matching). For 200-item ledger with high file-locality this is the difference between 200 and ~20 syscalls."
+evidence = [
+    "tomlctl/src/orphans.rs:36-100",
+    "tomlctl/src/orphans.rs:80",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "items_orphans added read_cache: HashMap<PathBuf, Result<String, std::io::ErrorKind>> so fs::read_to_string runs at most once per unique resolved path. ErrorKind rather than io::Error because the latter is not Clone. Freebie: HashSet::with_capacity(items.len()) pre-size on known_ids."
+
+[[items]]
+id = "O29"
+file = "tomlctl/src/orphans.rs"
+line = 82
+symbol = "items_orphans"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Symbol-presence check uses naive contains() — false positives on symbol fragments inside comments/strings/other identifiers"
+description = '`if !contents.contains(symbol)` is byte-substring; for a symbol like `id` or `new` matches inside any string literal, doc comment, or unrelated identifier (`width`, `idents`, `newline`). Intended check is symbol-presence; conflates with substring-anywhere. Fix: at minimum word-boundary regex `Regex::new(&format!(r"\b{}\b", regex::escape(symbol)))` cached per distinct symbol via OnceLock map, use is_match. Cleaner: tree-sitter for .rs files. Correctness finding (false negatives = orphan flagged when present), but lives in the orphans hot path so caching matters too.'
+evidence = [
+    "tomlctl/src/orphans.rs:82",
+    "tomlctl/src/orphans.rs comment line 6 — intent is symbol-presence not substring",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = 'items_orphans replaced contents.contains(symbol) with cached word-boundary regex (?-u:\b){escaped}(?-u:\b) keyed in per-call HashMap<String, Option<Regex>>. (?-u:\b) pins ASCII semantics defensively (our regex crate has default-features=false so unicode is off anyway). Falls back to contents.contains if Regex::new fails (cached as None). Correctness + perf fix.'
+
+[[items]]
+id = "O30"
+file = "tomlctl/src/dedup.rs"
+line = 56
+symbol = "find_duplicates_tier_a"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "Tier-A grouping keys allocate (String,String) per item via .to_string() — could borrow &str from items slice"
+description = "`BTreeMap<(String, String), Vec<usize>>` with `.entry((file.to_string(), symbol.to_string())).or_default().push(i)` per item. For 200 items: 400 fresh String heap allocations just to construct key-space, even when entry already exists. items: &[TomlValue] outlives the map scope, so keys could be (&'a str, &'a str). str_field already returns &'a str (convert.rs:230). Same in tier_b (BTreeMap line 102) and tier_c (Candidate.file as String, dedup.rs:142-147). Fix: switch to BTreeMap<(&str, &str), …>; emit-time format! still allocates once per group (O(groups) not O(items))."
+evidence = [
+    "tomlctl/src/dedup.rs:51-97",
+    "tomlctl/src/dedup.rs:140-208",
+    "tomlctl/src/convert.rs:230-232",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Tier-A BTreeMap keys now borrow &str via str_field's 'a lifetime; tier-C Candidate.file now &'a str borrowed from items slice, by_file keyed on &str. Tier-B (String, String) key kept — neither component borrows from items (short is freshly computed hex, basename is Path::file_name-derived Cow)."
+
+[[items]]
+id = "O31"
+file = "tomlctl/src/dedup.rs"
+line = 110
+symbol = "find_duplicates_tier_b"
+severity = "warning"
+effort = "trivial"
+category = "memory"
+summary = "Tier-B builds canonical String via format!() then SHA-256 → hex → 16-char substring per item — three throwaway allocations"
+description = '`let canonical = format!("{}|{}|{}|{}|{}", file, summary, severity, category, symbol); let full = hex_lower(&Sha256::digest(canonical.as_bytes())); let short = full[..16].to_string();` — three String allocations per item. Plus SHA-256 is overkill for dedup bucketing where 64-bit non-cryptographic hash suffices (SipHash/FxHash/xxh3) — but if the 16-char fingerprint is user-visible (it is, in group key at line 131) then stability matters; in that case feed fields directly into Sha256 without format! intermediate: `h.update(file.as_bytes()); h.update(b"|"); h.update(summary.as_bytes()); ...`. Avoids format! + intermediate String entirely. Truncate via &digest[..8] then hex_lower — one final 16-char hex String.'
+evidence = [
+    "tomlctl/src/dedup.rs:110-114",
+    "tomlctl/src/dedup.rs:131",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "find_duplicates_tier_b replaced format!+Sha256::digest+full-hex+[..16].to_string() with incremental Sha256::new()+per-field update()+hex_lower(&digest[..8]) — three throwaway allocations removed. Field order and | separator preserved; 16-char fingerprint byte-identical."
+
+[[items]]
+id = "O32"
+file = "tomlctl/src/integrity.rs"
+line = 51
+symbol = "sha256_hex_of_file"
+severity = "warning"
+effort = "trivial"
+category = "serialization"
+summary = "sha256_hex_of_file loads whole file into Vec<u8> via fs::read; streaming Sha256 via io::copy halves peak memory"
+description = "`let bytes = fs::read(file)?; hex_lower(&Sha256::digest(&bytes))` allocates Vec<u8> sized to full file then re-scans for digest. For typical 1-100KB ledgers fine; for a torn-sidecar edge case with a rogue 10+ MB file it's needless peak. Fix: `let f = File::open(path)?; let mut r = BufReader::with_capacity(64*1024, f); let mut h = Sha256::new(); std::io::copy(&mut r, &mut h)?; hex_lower(&h.finalize())`. sha2::Digest implements io::Write, so io::copy drives it directly — canonical Rust 2025 pattern. Same hash, less peak memory."
+evidence = ["tomlctl/src/integrity.rs:51-55"]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "sha256_hex_of_file streams via 64 KiB BufReader + manual Read loop feeding Sha256::update in chunks. sha2 0.11 dropped Sha256: io::Write impl so io::copy cannot drive it directly; fallback chunked-read loop over [u8; 64*1024] buffer. Same hash output; peak memory bounded by buffer not file size."
+
+[[items]]
+id = "O33"
+file = "tomlctl/src/io.rs"
+line = 492
+symbol = "write_toml_with_sidecar"
+severity = "warning"
+effort = "small"
+category = "serialization"
+summary = "toml::to_string_pretty materialises full doc as String before write+hash — stream serialise into a Sha256-tee writer over the tempfile to halve transient memory and shorten lock-held duration"
+description = "`let serialized = toml::to_string_pretty(value)?; let bytes = serialized.as_bytes(); let hex = hex_lower(&Sha256::digest(bytes)); atomic_write(path, bytes)` — single in-memory String, then full second pass over same bytes for SHA-256. For 100KB ledger: 100KB String + Sha256 internal state + tempfile bytes (~3× peak). Critically, lock is held for the full duration of serialise + hash + write. Fix: TeeWriter { inner: tempfile, hasher: Sha256 } that forwards write_all to both — bytes flow once, hashed and persisted concurrently. Halves peak memory and shortens critical section by ~time-to-allocate-and-format the second copy. Cross-cuts O11/O15 (atomic_write touchpoint) and O32 (streaming Sha256 idiom)."
+evidence = [
+    "tomlctl/src/io.rs:492-514",
+    "sha2 0.11 supports streaming via Digest::update / Digest::finalize",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontapply"
+wontapply_rationale = "already in place, no byte written — Sha256::digest(bytes) is one-shot new+update+finalize; the proposed Sha256::new()+h.update(serialized.as_bytes())+h.finalize() form is byte-identical work over the same buffer with no tap point exposed by toml 1.x's Value-serialiser. Full TeeWriter streaming serialise would require toml::Serializer writer interface not exposed for Value."
+
+[[items]]
+id = "O34"
+file = "tomlctl/src/cli.rs"
+line = 654
+symbol = "ItemsOp::List ndjson branch"
+severity = "suggestion"
+effort = "small"
+category = "serialization"
+summary = "NDJSON output iterates an already-fully-materialised JsonValue::Array; streaming projection into stdout writer would skip the intermediate"
+description = "Current ndjson branch reads `arr = out.as_array()` from the already-allocated query::run result then iterates writing each line. arr can be ~1MiB for a pluck over 5000-row rollback-events log. Fix: thread &mut dyn Write through query::run for the NDJSON case, OR add a sibling query::run_streaming that yields one JsonValue at a time. Low priority — typical 50-item batches make this dwarfed by other costs."
+evidence = ["tomlctl/src/cli.rs:645-663"]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+wontapply_rationale = "requires non-trivial API change to query::run for marginal win on very large ledgers (> 5000 items); not worth the API surface expansion at current ledger scale"
+resolved = 2026-04-18
+resolution = "Added query::run_streaming<W: Write>(doc, array, q, writer) that writes one-JSON-per-line directly for OutputShape::Array + ndjson; cli.rs NDJSON branch now calls run_streaming instead of run → as_array → iterate → to_writer, eliminating intermediate Vec<JsonValue> materialisation on fast-path (streams filtered items without collecting into for_shape)."
+
+[[items]]
+id = "O35"
+file = "tomlctl/src/cli.rs"
+line = 63
+symbol = "read_json_arg"
+severity = "warning"
+effort = "trivial"
+category = "serialization"
+summary = "read_json_arg reads stdin into String then callers serde_json::from_str — serde_json::from_reader on BufReader(stdin) skips the intermediate String"
+description = "Reads up to 32 MiB of stdin into String, handed to serde_json::from_str at every caller (cli.rs:567, 597, 694, 731). Two allocations on happy path: String buffer + owned JsonValue tree. items_apply ops payload is often 1-50 KiB of agent JSON — String alloc is transient but avoidable. Fix: split into read_json_value_from_arg(&str) -> Result<JsonValue> that branches on `-` → serde_json::from_reader(BufReader::new(stdin.lock().take(MAX_STDIN_BYTES))) and else → serde_json::from_str(arg). All current callers want JsonValue — intermediate String wasted."
+evidence = [
+    "tomlctl/src/cli.rs:63-94",
+    "tomlctl/src/cli.rs:567,597,694,731",
+    "https://docs.rs/serde_json/1/serde_json/fn.from_reader.html",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Added sibling read_json_value_from_arg in cli.rs using BufReader + serde_json::from_reader for stdin and serde_json::from_str for literal args; preserved STDIN_CONSUMED guard, TTY refusal, MAX_STDIN_BYTES cap, stdin-was-empty sentinel via BufRead::fill_buf peek. Converted SetJson/ArrayAppend/AddMany-defaults callers. Kept read_json_arg intact for Add/Update/Apply forwarders and read_ndjson_source."
+
+[[items]]
+id = "O36"
+file = "claude/commands/review.md"
+line = 654
+symbol = "disposition loop guidance"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "review.md tells agents to emit ONE tomlctl items update PER disposition — 10 dispositions = 10 process spawns × full parse/serialize/hash/write per ledger"
+description = "review.md:654 says 'Apply the mutation immediately with ONE tomlctl items update call per disposition'. Each invocation: forks tomlctl, acquires lock, reads whole ledger, parses TOML, mutates one item, reserialises full doc, hashes bytes, writes tempfile + sidecar. At 5-10ms cold-start per call × 10 dispositions = 50-100ms pure overhead, growing with ledger size. Fix: change guidance to construct single `items apply --ops -` payload with N update ops — one lock, one read, one serialise, one write. items_apply_to_opts already supports it (items.rs:130). review-apply.md and optimise-apply.md already use this pattern (review-apply.md:504); extend to review.md's disposition step. 5-10× fewer parse+serialise passes per sweep. Markdown finding — guidance drift means O3's batch op is bypassed on the disposition hot path."
+evidence = [
+    "claude/commands/review.md:654-664",
+    "claude/commands/review-apply.md:504",
+    "tomlctl/src/items.rs:130-154",
+    "related_applied: O3",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "review.md:654-670 disposition-mutation block now instructs agents to construct one update op per disposition inside a single tomlctl items apply --ops - heredoc payload, mirroring review-apply.md/optimise-apply.md interim-checkpoint pattern. Citing O3 batch-op rationale. Shared-block parity preserved (markers at 6/93/95/281 unchanged)."
+
+[[items]]
+id = "O37"
+file = "tomlctl/src/query.rs"
+line = 281
+symbol = "eval_predicate WhereContains/Prefix/Suffix"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "WhereContains/Prefix/Suffix only test as_str() — silently miss numeric/datetime fields users would expect to coerce"
+description = "All three arms do `tbl.get(key).and_then(|v| v.as_str()).is_some_and(...)`. If field is Integer (id=42, line=100) or Datetime (first_flagged=2026-04-18), as_str() returns None and predicate silently produces false — even though `--where-contains line=00` against line=100 is reasonable. WhereRegex already routes through value_as_string (query.rs:383) which handles all types. Fix: route the three arms through value_as_string too. Same single String allocation per item, no false-negatives. Behavioural change — anyone relying on silent-false today gets matches; warrants release-note line."
+evidence = [
+    "tomlctl/src/query.rs:281-291",
+    "tomlctl/src/query.rs:301",
+    "tomlctl/src/query.rs:383-385",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "WhereContains/WherePrefix/WhereSuffix arms now route through value_as_string(tbl.get(key)) so non-string scalars (Int/Float/Bool/Datetime) are stringified before substring/prefix/suffix check. Behavioural change: previously silently false on non-string fields. No existing test asserted the silent-false-drop behaviour. Warrants release-note line."
+
+[[items]]
+id = "O38"
+file = "tomlctl/src/convert.rs"
+line = 218
+symbol = "maybe_date_coerce"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "DATE_KEYS membership is linear slice scan on every key — switch to match arms (compiles to jump-table)"
+description = '`DATE_KEYS.contains(&key)` over a 6-element &[&str]. For each key in every JSON object inserted (items_add/update/apply on N rows × M keys), N×M×6 string comparisons. 6 entries is below typical hash break-even (~16 for &str), so switch to `match key { "created" | "updated" | "first_flagged" | "resolved" | "verified" | "defer_until" => true, _ => false }` — compiles to O(1) jump-table or sorted comparison. ~10× faster than slice scan, no new dep.'
+evidence = [
+    "tomlctl/src/convert.rs:40-47",
+    "tomlctl/src/convert.rs:218",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Replaced DATE_KEYS.contains(&key) linear slice scan in maybe_date_coerce with #[inline] is_date_key(k: &str) -> bool helper using matches! over the six actual entries (created/updated/first_flagged/last_updated/resolved/date). Kept DATE_KEYS const because items.rs iterates it in date_keys_roundtrip_as_toml_datetime parity test. Added debug_assert_eq pinning is_date_key to DATE_KEYS.contains so future drift fails in debug builds."
+
+[[items]]
+id = "O39"
+file = "tomlctl/src/convert.rs"
+line = 169
+symbol = "toml_to_json / json_to_toml"
+severity = "warning"
+effort = "small"
+category = "memory"
+summary = "Converters allocate Map/Vec without capacity hints; recursive write path also allocates parallel tree per call"
+description = "toml_to_json (convert.rs:180) builds serde_json::Map::new() per table — for 100-item × 10-key ledger, ~100 Map rehash cycles. json_to_toml (convert.rs:208) same with toml::Table::new(). Both array branches build collect() without Vec::with_capacity. Fix tier 1 (trivial): Map::with_capacity(t.len()) and Vec::with_capacity(a.len()) at every recursion. Fix tier 2 (the deferred half of O1): custom serde::Serialize impl on TomlValue that emits JSON shape directly (string for Datetime, no tagged map) — read paths can serde_json::to_writer_pretty(&JsonShim(doc)) with zero intermediate JsonValue tree. Tier 1 is one-line per call site; tier 2 needs a newtype + Serialize impl."
+evidence = [
+    "tomlctl/src/convert.rs:169-215",
+    "tomlctl/Cargo.toml:15-18 — preserve_order present",
+    "cli.rs:534,547,668,759,764 — every print_json site goes via toml_to_json",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "convert.rs: added serde_json::Map::with_capacity(t.len()) and toml::Table::with_capacity(m.len()) at recursive Map construction sites; rewrote json_to_toml's Array arm from Result<Vec<_>>::from_iter to explicit Vec::with_capacity+push loop because Result's FromIterator does not honour size_hint. toml_to_json's Array arm already presizes via slice::Iter ExactSizeIterator — left with comment. Structural tier (custom Serialize for TomlValue) deferred."
+
+[[items]]
+id = "O40"
+file = "tomlctl/src/integrity.rs"
+line = 41
+symbol = "hex_lower"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "hex_lower uses write! macro per byte — const-hex / LUT byte-loop ~100× faster"
+description = '`String::with_capacity(bytes.len()*2)` + `write!(s, "{:02x}", b)` in a 32-byte loop for SHA-256 hex. Each write! goes through core::fmt::Formatter (slow). Drop-in replacement: `const-hex = { version = "1", default-features = false, features = ["alloc"] }` then `const_hex::encode(bytes)`. Reports 100× faster than libstd `{:02x}`. Alternative with zero deps: hand-rolled byte loop with `LUT: [u8; 16]` table — same perf, no new dep. Bytes are identical.'
+evidence = [
+    "tomlctl/src/integrity.rs:41-48",
+    "https://crates.io/crates/const-hex",
+    "https://crates.io/crates/faster-hex",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = 'Replaced write!("{:02x}") loop in hex_lower with 16-byte LUT byte-wise encode (safe variant; `as char` is zero-cost for ASCII). No new deps. Byte-for-byte identical output verified by integrity/sidecar/dedup tests that round-trip hex digests.'
+
+[[items]]
+id = "O41"
+file = "tomlctl/src/blocks.rs"
+line = 33
+symbol = "extract_block"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "extract_block re-walks file content per block call; pre-size out Vec via content-length upper bound"
+description = '''For F files × B blocks blocks_verify currently calls extract_block F×B times, each doing full split('\n') walk. For 4 files × 5 blocks × ~500 lines = 10000 line iterations to get 2000 lines of relevant content. Single-pass per file extracting all blocks at once via state machine drops to 2000 iterations. Also: out Vec grows from zero via push — pre-size `Vec::with_capacity(contents.len())`. Pre-commit hook is dev-time; ship the capacity fix unconditionally, the single-pass refactor only if hook runtime is felt.'''
+evidence = [
+    "tomlctl/src/blocks.rs:33-61",
+    "tomlctl/src/blocks.rs:145-156",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Pre-sized extract_block out Vec via Vec::with_capacity(contents.len()) upper bound at blocks.rs:42 — eliminates reallocation growth during per-line extend_from_slice/push loop. Single-pass multi-block state-machine rewrite deferred as over-engineering for current shared-block hook scale."
+
+[[items]]
+id = "O42"
+file = "tomlctl/src/orphans.rs"
+line = 53
+symbol = "items_orphans"
+severity = "warning"
+effort = "trivial"
+category = "query"
+summary = "Per-item canonicalize() + exists() syscalls instead of caching by resolved path"
+description = "For every item with non-empty file: is_absolute check, resolved.canonicalize(), root.canonicalize() (the root is invariant!), resolved.exists(). At 200 items / 20 unique files: 200 canonicalize+stat vs 20. Fix: HashMap<PathBuf, (bool, bool)> mapping resolved → (exists, contained) so each unique file gets exactly one stat() and one canonicalize(). Materially helpful on slow networked filesystems (CI on EBS/EFS)."
+evidence = [
+    "tomlctl/src/orphans.rs:53-69",
+    "tomlctl/src/orphans.rs:69",
+    "tomlctl/src/io.rs:441-443 — repo_or_cwd_root is OnceLock-cached",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "items_orphans hoisted root.canonicalize() once outside per-item loop; added path_cache: HashMap<PathBuf, (bool, bool)> so each unique resolved path costs at most one canonicalize + one exists call across ledger items. Paired with O28's read_cache on same key."
+
+[[items]]
+id = "O43"
+file = "tomlctl/src/io.rs"
+line = 251
+symbol = "with_exclusive_lock"
+severity = "suggestion"
+effort = "trivial"
+category = "concurrency"
+summary = "Err arm of try_lock_exclusive bails on EINTR — should retry transient signal interruption"
+description = "POSIX fcntl with F_SETLK can return EINTR if interrupted by a signal handler (SIGCHLD from a forked git, user's ctrl-C handler). fs4 may surface as io::Error::kind() == ErrorKind::Interrupted. Bailing converts a recoverable transient into a hard error: 'acquiring exclusive lock on /path: Interrupted system call'. Fix: in Err arm match on `e.kind() == ErrorKind::Interrupted` (and possibly WouldBlock) → continue without sleeping. One match arm."
+evidence = [
+    "tomlctl/src/io.rs:251-256",
+    "fcntl(2) F_SETLK can return EINTR",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Applied EINTR/WouldBlock retry to both with_exclusive_lock (fs4 raw io::Error arm) and with_shared_lock (std::fs::TryLockError::Error arm) in io.rs. ErrorKind::Interrupted | ErrorKind::WouldBlock → continue without sleeping and without consuming the attempt counter; other io::Error kinds still bail."
+
+[[items]]
+id = "O44"
+file = "tomlctl/src/io.rs"
+line = 174
+symbol = "with_exclusive_lock"
+severity = "suggestion"
+effort = "trivial"
+category = "concurrency"
+summary = "Lock filename `<file>.toml.lock` collides if user names a real file with that suffix — namespace under .claude/.locks/<sha-of-path> instead"
+description = "`lock_path = path.with_extension('toml.lock')`. If user names a ledger foo.toml.lock (unusual but legal), lock helper uses that file as lock target AND tomlctl accepts it as write target — chaos. Fix: namespace lock files under .claude/.locks/<sha256(path)> or hidden-prefix `.<file>.lock`. Either avoids collision class. Bonus: consolidates `git status` lock noise to one location for .gitignore."
+evidence = ["tomlctl/src/io.rs:174-177"]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+wontapply_rationale = "requires user confirmation on UX change affecting cross-process coordination — lock-file relocation would strand any tomlctl process holding the old-format lock and changes the documented lock-file location"
+resolved = 2026-04-18
+resolution = "Moved lock files from sidecar <file>.toml.lock to <repo-root>/.claude/.locks/<sha256>.lock in both with_exclusive_lock and with_shared_lock. New lock_path_for(target) helper canonicalises target (parent+filename fallback when target absent), hashes via integrity::hex_lower, fs::create_dir_all on first use. Public signatures unchanged; timeout/jitter/EINTR-retry preserved. Existing contention test updated to anchor TOMLCTL_ROOT at its tempdir; new test lock_path_goes_under_claude_locks_and_not_sidecar pins path shape. Orphan sidecars from pre-O44 runs: context.toml.lock / claude-commands.toml.lock — user to rm manually (now ignored by .gitignore *.lock)."
+
+[[items]]
+id = "O45"
+file = "tomlctl/src/io.rs"
+line = 174
+symbol = "with_exclusive_lock"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Lock files accumulate across runs — recommend .gitignore convention or document expected ephemera"
+description = "Every .claude/flows/*/context.toml accumulates a context.toml.lock zero-byte sibling, surfaced in git status (??). On Windows the lock file's own handle may be held mandatorily, occasionally blocking git clean. Fix: add `*.lock` to .gitignore under .claude/ (one-line user-side fix); document in CLAUDE.md that lock files are intentional ephemera. Optionally add tomlctl gc subcommand (try_lock + unlink unheld). Filed suggestion — security/correctness impact nil."
+evidence = [
+    "tomlctl/src/io.rs:174-194",
+    "conversation gitStatus: context.toml.lock and claude-commands.toml.lock both present untracked",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+wontapply_rationale = "no project .gitignore exists — creating one as an optimisation side-effect is a project-wide config decision requiring user confirmation"
+resolved = 2026-04-18
+resolution = "Created /.gitignore at repo root ignoring /target/, /tomlctl/target/, *.toml.lock, *.lock with !Cargo.lock re-include preserving the workspace lockfile. Verified .claude/reviews/claude-commands.toml.lock disappeared from git status untracked. Pre-existing tomlctl/.gitignore ignores tomlctl/Cargo.lock independently — unchanged. .claude/transcripts / flows / plans / active-flow deliberately left out of scope (user's tracking policy for them is project-specific)."
+
+[[items]]
+id = "O46"
+file = "tomlctl/src/cli.rs"
+line = 805
+symbol = "build_query"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "build_query predicates Vec grows via push without with_capacity despite known upper bound"
+description = "`let mut predicates: Vec<Predicate> = Vec::new();` then up to ~15+ push sites across legacy shortcuts + 13 where-families. Upper bound is sum of where_*.len() across all flag families. Fix: compute once, pre-size: `Vec::with_capacity(4 + q.where_eq.len() + q.where_not.len() + q.where_in.len() + ... + q.where_regex.len())`. For typical CLI use (1-3 predicates) wash; for query plumber synthesising 50 predicates, real."
+evidence = ["tomlctl/src/cli.rs:804-955"]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Pre-sized predicates: Vec<Predicate> in build_query via Vec::with_capacity(4 + sum of 13 where_* field lens) at cli.rs:859. The 4-slot constant covers four legacy shortcut pushes (status/category/file/newer_than); all 13 where_* field names verified against QueryArgs struct definition."
+
+[[items]]
+id = "O47"
+file = "tomlctl/src/query.rs"
+line = 152
+symbol = "run"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "query::run collects array iter into Vec<&TomlValue> instead of passing slice directly"
+description = "`let items: Vec<&TomlValue> = match doc.get(array_name).and_then(|v| v.as_array()) { Some(arr) => arr.iter().collect(), None => Vec::new() };` allocates fresh Vec of pointers just to hand to apply_filters. Change apply_filters signature to take `items: &[TomlValue]` (as_array returns Option<&Vec<TomlValue>>); preserves apply_filters' Vec::with_capacity(items.len()). Saves one Vec-of-N-pointers per query call."
+evidence = [
+    "tomlctl/src/query.rs:150-158",
+    "tomlctl/src/query.rs:214-242",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Changed apply_filters signature from &[&'a TomlValue] to &'a [TomlValue] taking the slice directly; run() now passes arr.as_slice() / &[], inner loop is `for it in items` — no intermediate Vec<&TomlValue> allocation."
+
+[[items]]
+id = "O48"
+file = "tomlctl/src/items.rs"
+line = 269
+symbol = "parse_ndjson"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "parse_ndjson starts rows Vec at zero; pre-size via newline count or length heuristic"
+description = '''`let mut rows = Vec::new();` grows via push. For 100-row NDJSON batch (typical for add-many during large /review-apply): ~8 reallocs. Fix: `Vec::with_capacity(s.as_bytes().iter().filter(|&&b| b == b'\n').count())` (SIMD-vectorised newline count is nanoseconds for 10KB input) or simpler heuristic `Vec::with_capacity(s.len() / 100)`. Either strictly better than zero.'''
+evidence = ["tomlctl/src/items.rs:269-281"]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = '''Pre-sized parse_ndjson Vec via newline count (s.as_bytes().iter().filter(|&&b| b == b'\n').count()), eliminating geometric regrowth on N-row NDJSON batches. Added comment explaining heuristic trade-offs (blank-line over-shoot, trailing-newline-absent under-shoot) and SIMD newline-scan cost.'''
+
+[[items]]
+id = "O49"
+file = "tomlctl/src/query.rs"
+line = 499
+symbol = "apply_window"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "apply_window allocates two full Vecs (skip→collect, then take→collect) — single chain or drain+truncate suffices"
+description = "Two allocations: tail = items.into_iter().skip(off).collect() (Vec of len-off JsonValues) then tail.into_iter().take(n).collect(). Each holds cloned JsonValue trees. Fix: single chain `items.into_iter().skip(off).take(limit.unwrap_or(usize::MAX)).collect()` (one allocation), or in-place `items.drain(..off); items.truncate(limit.unwrap_or(items.len()));` (zero allocation, reuses original Vec)."
+evidence = ["tomlctl/src/query.rs:499-513"]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Fused apply_window's two into_iter().skip().take().collect() passes into one iterator chain: skip(off).take(limit.unwrap_or(usize::MAX)).collect() — eliminating the intermediate tail Vec allocation."
+
+[[items]]
+id = "O50"
+file = "tomlctl/src/convert.rs"
+line = 177
+symbol = "toml_to_json Datetime arm"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "Datetime → String allocates via to_string() per call — write into reused buffer in hot aggregation paths"
+description = "`TomlValue::Datetime(dt) => JsonValue::String(dt.to_string())` allocates fresh String per Datetime per read. For 200-item × 2-3 date fields ledger, 600 String allocations per toml_to_json(doc). Same pattern in query.rs:345/356/378. Helper `fn dt_to_string_into(dt: &Datetime, buf: &mut String)` via write!(buf, ...) lets hot query path reuse scratch String. Tiny CPU win — only worth it once O10's borrowed-deser path lands, when these become a notable remaining alloc source."
+evidence = [
+    "tomlctl/src/convert.rs:177",
+    "tomlctl/src/query.rs:345,356,378",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontapply"
+wontapply_rationale = "dt_to_string helper has no caller that would benefit under current patterns — every dt.to_string() site either sinks the owned String into JsonValue::String (convert.rs:177, query.rs:620) or runs a per-call comparison of two freshly-built strings (convert.rs:438, query.rs:553/587/598/670); none loop with a reusable scratch buffer. Tier 2 is pre-eliminated by HashMap::entry / Map::insert needing owned keys — scratch-pooling doesn't compose. Without a Tier 2 consumer the Tier 1 helper is dead pub(crate) surface; filed as terminal wontapply until a future aggregation path emerges that can pool datetime stringification."
+
+[[items]]
+id = "O51"
+file = "tomlctl/src/items.rs"
+line = 44
+symbol = "items_add_value_to"
+severity = "suggestion"
+effort = "trivial"
+category = "serialization"
+summary = "No skip-on-empty for write paths — empty-string defer_reason or empty array fields persist as TOML noise"
+description = 'TOML serialiser emits every field present in toml::Table regardless of empty value. Items with `defer_reason = ""` or `related = []` bloat the on-disk ledger; agent payloads with explicit empty values land permanently. Fix: in items_add_value_to / items_update_value_to, optionally skip JsonValue::String("") and JsonValue::Array([]) on insert (Null is already rejected). Tradeoff: sometimes empty IS meaningful — safest is to prune only Null (current behaviour) and warn on empty-string for DATE_KEYS / optional-field whitelist.'
+evidence = [
+    "tomlctl/src/items.rs:44-59",
+    "tomlctl/src/items.rs:83-110",
+    'tomlctl/src/query.rs:665 — fixture shows defer_reason="" as explicit state',
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+wontapply_rationale = "requires user confirmation on semantic change — empty-string values in agent payloads sometimes carry explicit meaning; silently skipping them would be a behaviour change that could surprise ledger consumers"
+resolved = 2026-04-18
+resolution = "Skip JSON patch fields whose value is Null, empty String, or empty Array on write in items_add_value_to + items_update_value_to + update_at_index (O18 indexed sibling). Introduced private is_empty_json helper. Documented --unset as explicit-clear path. Behavioural change: user-supplied empty-string/empty-array values no longer persist; --unset remains the explicit-remove path. No existing test relied on empty round-tripping."
+
+[[items]]
+id = "O52"
+file = "tomlctl/src/dedup.rs"
+line = 178
+symbol = "find_duplicates_tier_c"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "Tier-C clones every Candidate Vec per file just to sort — sort in place during build, or borrow file as &str"
+description = "`let mut sorted: Vec<Candidate> = cands.to_vec();` per file (3 strings cloned per Candidate). For F files × C candidates: F×C clones (F<10, C<20 typical). Fix tier 1: sort each Vec in place during the build pass: `for v in by_file.values_mut() { v.sort_by(...); }`. Eliminates per-file clone. Fix tier 2: make Candidate.file a &'a str borrowing from items slice; removes String alloc in build loop too."
+evidence = [
+    "tomlctl/src/dedup.rs:142-147",
+    "tomlctl/src/dedup.rs:160-164",
+    "tomlctl/src/dedup.rs:178",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+resolved = 2026-04-18
+resolution = "Tier-C: sort each by_file Vec<Candidate> in place via values_mut() during build pass, then iterate &by_file[file] read-only at emit time. Drops per-file to_vec() clone while preserving (line, idx) sort key exactly."
+
+[[items]]
+id = "O53"
+file = "tomlctl/src/query.rs"
+line = 528
+symbol = "apply_aggregation_count_by"
+severity = "suggestion"
+effort = "trivial"
+category = "query"
+summary = "count_by allocates the bucket-key String even on the hot 'already exists' path"
+description = "`let key = bucket_key(it.get(field))` per item — fresh String allocation (clone of underlying str or to_string()). Then counts.get_mut(&key) on hit drops the freshly allocated String. For count_by over 1000 items / 10 distinct buckets: 990 wasted allocations. Fix: probe with HashMap<&str, u64> accumulator, convert to Map<String, JsonValue> at end. Saves N - D allocations."
+evidence = [
+    "tomlctl/src/query.rs:528-540",
+    "tomlctl/src/query.rs:578-584",
+]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+wontapply_rationale = "marginal win — smallest-diff version requires insertion-order parallel tracking that inflates LOC for minimal savings"
+resolved = 2026-04-18
+resolution = "Reworked apply_aggregation_count_by to accumulate into HashMap<String, u64> with parallel Vec<String> insertion-order tracker; rebuilds serde_json::Map at end in first-occurrence order. Eliminates per-item serde_json::Number wrap/unwrap from hot loop (replaced by *n += 1 on raw u64); insertion-order contract preserved."
+
+[[items]]
+id = "O54"
+file = "tomlctl/src/items.rs"
+line = 140
+symbol = "items_apply_to_opts"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "items_apply_to_opts double-iterates ops array when no_remove is set — pre-scan + main loop"
+description = """When no_remove=true, function iterates once to scan for any `remove` op (fail-before-mutate is correct), then iterates again to apply. For 100-op batch that's 200 op.get("op") walks. Tiny — keep as-is for clarity unless ops batches reach 1000+. Not worth changing; noted for completeness."""
+evidence = ["tomlctl/src/items.rs:130-153"]
+first_flagged = 2026-04-18
+rounds = 1
+status = "applied"
+wontapply_rationale = "marginal win — pre-scan double-walk cost is ~O(2N) on op counts that are typically <100; filed as informational audit rather than actionable fix per the finding's own 'not worth changing' caveat"
+resolved = 2026-04-18
+resolution = "Collapsed items_apply_to_opts no_remove pre-scan to iter().position(...) and update-count pre-pass to iter().filter(...).count(). Two passes retained because fail-before-mutate semantics require scanning before any op executes (comment added). Stylistic cleanup, no perf change."
+
+[[items]]
+id = "O55"
+file = "tomlctl/src/query.rs"
+line = 164
+symbol = "run"
+severity = "warning"
+effort = "small"
+category = "algorithm"
+summary = "pending parts of O21: Pluck / CountBy / GroupBy fast-paths deferred to follow-up"
+description = 'O21 applied the Count fast-path (returns json!({"count": filtered.len()}) before toml_to_json materialisation when sort/distinct/window are absent). The Pluck, CountBy, and GroupBy shapes still eagerly transcode every filtered item to JsonValue even when they only need one field per item (Pluck: named field only; CountBy/GroupBy: bucket-key field only). Apply the same early-branch treatment: for Pluck-when-no-sort-distinct-window, walk windowed items and pull only the named field via toml_to_json on a single JsonValue per item; for CountBy/GroupBy, same pattern with bucket-key extraction. Pluck needs Datetime stringification parity (convert.rs:177 dt_to_string helper).'
+evidence = [
+    "tomlctl/src/query.rs:150-208",
+    "tomlctl/src/query.rs:565-573 — apply_pluck reads one field",
+    "tomlctl/src/query.rs:528-540 — count_by keys per item",
+]
+first_flagged = 2026-04-18
+rounds = 1
+related = ["O21"]
+status = "applied"
+resolved = 2026-04-18
+resolution = "Generalised the O21 Count fast-path at query.rs:162 into a window_untouched guard covering OutputShape::{Count, Pluck, CountBy}. Pluck fast-path: iterate filtered TomlValue refs, call toml_to_json on only the named field per item (skip None/Null); emit JsonValue::Array. CountBy fast-path: same field-only walk, bucket keys via toml_to_json+String extraction (preserving apply_aggregation_count_by semantics byte-identically for scalar and non-scalar fields). GroupBy not fast-pathed — grouped item bodies still need full materialisation. validate_query already rejects Pluck/CountBy + select/exclude so projection cannot interact."
+
+[[items]]
+id = "O56"
+file = "tomlctl/Cargo.toml"
+line = 39
+symbol = "[profile.release] + allocator + target-cpu"
+severity = "suggestion"
+effort = "small"
+category = "memory"
+summary = "pending parts of O9: mimalloc global_allocator + target-cpu=x86-64-v3 via .cargo/config.toml"
+description = """O9 applied only the lto="thin"→lto="fat" tier. Two remaining sub-items deferred pending user confirmation: (a) mimalloc global_allocator requires adding `mimalloc = { version = "0.1", default-features = false }` — new runtime dependency needs user sign-off; (b) target-cpu=x86-64-v3 rustflags requires creating a new .cargo/config.toml and targets a specific CPU family (Haswell+), potentially breaking on older hardware — targeting decision needs user confirmation. Benchmark both with `hyperfine 'tomlctl items list ...'` before/after."""
+evidence = [
+    "tomlctl/Cargo.toml:39-44",
+    "https://github.com/rust-lang/rust-analyzer/pull/19603",
+]
+first_flagged = 2026-04-18
+rounds = 1
+related = ["O9"]
+status = "applied"
+resolved = 2026-04-18
+resolution = 'Added mimalloc = { version = "0.1", default-features = false } to tomlctl/Cargo.toml (alphabetical, with WHY comment citing small-alloc profile + rust-analyzer PR #19603). Wired #[global_allocator] static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc; at top of tomlctl/src/main.rs. Added [build] rustflags = ["-C", "target-cpu=x86-64-v3"] to tomlctl/.cargo/config.toml (preserved existing windows-msvc +crt-static/lld-link block; cargo replaces rather than merges rustflags so target-cpu also restated there when the target block matches). Context7-verified mimalloc 0.1 API.'

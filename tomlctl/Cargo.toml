@@ -25,6 +25,14 @@ clap = { version = "^4", default-features = false, features = [
 anyhow = "^1"
 tempfile = "^3"
 fs4 = "^0.13"
+# O56: mimalloc as the global allocator. tomlctl's hot paths are
+# small-allocation-heavy — TomlValue/JsonValue tree clones plus per-item
+# serde_json::Map allocations during ledger reads and parity hashing. Microsoft's
+# benchmarks show ~5.3× faster small-allocation throughput vs glibc malloc, and
+# rust-analyzer adopted mimalloc as default for the same profile (PR #19603).
+# `default-features = false` skips the optional `secure` mode; we want raw speed,
+# not the ~10% guard-page/encrypted-free-list overhead.
+mimalloc = { version = "0.1", default-features = false }
 sha2 = "^0.11"
 # Default features trimmed: no Unicode classes — query predicates target ASCII identifiers/paths
 regex = { version = "^1", default-features = false, features = ["std", "perf"] }
@@ -38,7 +46,7 @@ predicates = "^3"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true

@@ -7,16 +7,17 @@
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand};
 use serde_json::Value as JsonValue;
-use std::io::{BufWriter, IsTerminal, Read, Write};
+use std::io::{BufRead, BufWriter, IsTerminal, Read, Write};
 use std::path::PathBuf;
 
 use crate::blocks::blocks_verify;
 use crate::convert::{
-    ScalarType, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json,
+    ScalarType, detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path,
+    toml_to_json,
 };
 use crate::dedup::{DupTier, items_find_duplicates};
 use crate::integrity::IntegrityOpts;
-use crate::io::{mutate_doc, read_doc};
+use crate::io::{mutate_doc, read_doc, read_doc_borrowed, read_toml_str};
 use crate::items::{
     array_append, items_add_many, items_add_to, items_apply_to_opts, items_get_from,
     items_next_id, items_remove_from, items_update_to, parse_ndjson,
@@ -90,6 +91,57 @@ fn read_json_arg(arg: &str) -> Result<String> {
         Ok(buf)
     } else {
         Ok(arg.to_string())
+    }
+}
+
+/// O35: parse a JSON `--json`/`--ops`/`--defaults-json` argument directly
+/// into a `JsonValue`, skipping the intermediate `String` allocation that
+/// the `read_json_arg` + `serde_json::from_str(&s)` two-step would incur.
+///
+/// Mirrors `read_json_arg`'s stdin discipline exactly:
+///
+/// - Honours STDIN_CONSUMED (R32): a second `-` sentinel on the same
+///   invocation bails with the identical "already consumed" message.
+/// - Refuses to block on a TTY (R7) with the identical guidance message.
+/// - Caps the read at `MAX_STDIN_BYTES` via the same `take(...)` wrapper.
+/// - Reports the same "stdin was empty — expected JSON payload" error when
+///   stdin closes immediately, rather than letting serde surface its own
+///   EOF message (which would silently change the public-facing error
+///   text).
+///
+/// Callers add their own per-flag `.with_context("parsing --json"|"parsing
+/// --ops"|"parsing --defaults-json")` so the user-visible error chain stays
+/// byte-identical to the pre-O35 behaviour where each call site wrapped
+/// `serde_json::from_str(&text).context("parsing --<flag>")`.
+fn read_json_value_from_arg(arg: &str) -> Result<JsonValue> {
+    if arg == "-" {
+        // R32: identical swap-and-mark check as `read_json_arg`.
+        if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            bail!(
+                "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call"
+            );
+        }
+        if std::io::stdin().is_terminal() {
+            bail!(
+                "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`) or pass `--json '<literal>'`"
+            );
+        }
+        let stdin = std::io::stdin();
+        let lock = stdin.lock();
+        let mut r = std::io::BufReader::new(lock.take(MAX_STDIN_BYTES));
+        // Preserve the "stdin was empty" sentinel: peek the first buffered
+        // chunk; if it never arrives, stdin closed before sending anything
+        // and we want our own message rather than serde's EOF wording.
+        let initial = r.fill_buf().context("reading JSON from stdin")?;
+        if initial.is_empty() {
+            bail!("stdin was empty — expected JSON payload");
+        }
+        // `from_reader` consumes the BufReader's internal buffer before
+        // refilling from the underlying `Take<StdinLock>`, so the peek
+        // above does not strand any bytes.
+        Ok(serde_json::from_reader(r)?)
+    } else {
+        Ok(serde_json::from_str(arg)?)
     }
 }
 
@@ -531,7 +583,24 @@ pub(crate) fn run() -> Result<()> {
     match cli.cmd {
         Cmd::Parse { file, integrity } => {
             let opts = read_integrity_opts(&integrity);
-            let out = read_doc(&file, opts, |doc| Ok(toml_to_json(doc)))?;
+            // O10: `parse` is the single dispatch arm whose whole output is
+            // "the entire TOML doc as JSON" — no dotted-path navigation, no
+            // per-item filtering — so it benefits most from the borrowed
+            // DeTable fast-path that skips the per-scalar `String` clone
+            // done inside `toml::from_str::<TomlValue>`. When
+            // `--verify-integrity` is requested we still need the shared
+            // lock + sidecar verify dance from `read_doc`, so the owned
+            // path is retained for that case. All other read dispatch arms
+            // (`get`, `validate`, every `items *` op) stay on the owned
+            // path — they either need `navigate` / TomlValue-level helpers
+            // or the borrowed-lifetime plumbing doesn't yet cover their
+            // downstream consumers.
+            let out = if opts.verify_on_read {
+                read_doc(&file, opts, |doc| Ok(toml_to_json(doc)))?
+            } else {
+                let source = read_toml_str(&file)?;
+                read_doc_borrowed(&source, |table| Ok(detable_to_json(table)))?
+            };
             print_json(&out)?;
         }
         Cmd::Get { file, path, integrity } => {
@@ -562,9 +631,12 @@ pub(crate) fn run() -> Result<()> {
         }
         Cmd::SetJson { file, path, json, integrity } => {
             let opts = write_integrity_opts(&integrity);
-            let json = read_json_arg(&json)?;
+            // O35: parse stdin/literal JSON straight into a `JsonValue`,
+            // skipping the intermediate String allocation. The parse moves
+            // out of the `mutate_doc` closure, which is a side-benefit:
+            // a malformed payload now fails before we open the doc.
+            let parsed: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
             mutate_doc(&file, integrity.allow_outside, opts, |doc| {
-                let parsed: JsonValue = serde_json::from_str(&json).context("parsing --json")?;
                 let last_key = path.rsplit_once('.').map(|(_, k)| k).unwrap_or(path.as_str());
                 let v = maybe_date_coerce(last_key, &parsed)?;
                 set_at_path(doc, &path, v)
@@ -593,9 +665,10 @@ pub(crate) fn run() -> Result<()> {
             }
             let opts = write_integrity_opts(&integrity);
             let rows: Vec<JsonValue> = if let Some(j) = json {
-                let text = read_json_arg(&j)?;
+                // O35: parse straight to `JsonValue`, dropping the prior
+                // `read_json_arg` String + `serde_json::from_str` two-step.
                 let parsed: JsonValue =
-                    serde_json::from_str(&text).context("parsing --json")?;
+                    read_json_value_from_arg(&j).context("parsing --json")?;
                 if !parsed.is_object() {
                     bail!("--json must be a JSON object");
                 }
@@ -638,27 +711,22 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 count,
             };
             let q = build_query(&legacy, &query)?;
-            let out = read_doc(&file, opts, |doc| query::run(doc, &array, &q))?;
             // R82: `ndjson` is an output-encoding choice, not a shape. Only
             // the Array shape + ndjson encoding combination is meaningful;
             // `validate_query` (called inside `run`) rejects other combos.
             if q.ndjson && matches!(q.shape, OutputShape::Array) {
-                // `out` is guaranteed to be a JSON array here: `query::run`
-                // on `OutputShape::Array` returns `JsonValue::Array(...)`
-                // unconditionally (see the Array arm in query::run), and
-                // validate_query would have rejected any shape/encoding
-                // mismatch. Emit one compact JSON value per line so the
-                // output pipes cleanly into `items add-many --ndjson -` /
-                // `items apply --ops -`.
-                let arr = out.as_array().expect("Array shape returns JsonValue::Array");
+                // O34: stream one compact JSON value per line directly via
+                // `query::run_streaming`, avoiding the `Vec<JsonValue>` that
+                // `query::run` would otherwise materialise only for us to
+                // iterate and re-serialise. The streaming path walks the
+                // same pipeline and emits per-item — peak memory scales with
+                // the filtered set, not the full output array.
                 let stdout = std::io::stdout();
                 let mut h = stdout.lock();
-                for v in arr {
-                    serde_json::to_writer(&mut h, v)?;
-                    h.write_all(b"\n")?;
-                }
+                read_doc(&file, opts, |doc| query::run_streaming(doc, &array, &q, &mut h))?;
                 h.flush()?;
             } else {
+                let out = read_doc(&file, opts, |doc| query::run(doc, &array, &q))?;
                 print_json(&out)?;
             }
         }
@@ -689,12 +757,11 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let ndjson_text = read_ndjson_source(&ndjson)?;
             let rows = parse_ndjson(&ndjson_text)?;
             let defaults: Option<JsonValue> = match defaults_json.as_deref() {
-                Some(s) => {
-                    let text = read_json_arg(s)?;
-                    Some(
-                        serde_json::from_str(&text).context("parsing --defaults-json")?,
-                    )
-                }
+                // O35: parse straight to `JsonValue`, dropping the prior
+                // `read_json_arg` String + `serde_json::from_str` two-step.
+                Some(s) => Some(
+                    read_json_value_from_arg(s).context("parsing --defaults-json")?,
+                ),
                 None => None,
             };
             let mut added: usize = 0;
@@ -802,7 +869,26 @@ struct LegacyShortcuts<'a> {
 /// back-compat shortcut flags + the full `QueryArgs` bundle) so the dispatch
 /// site is a one-line call rather than a 26-line arg spray.
 fn build_query(legacy: &LegacyShortcuts<'_>, q: &QueryArgs) -> Result<Query> {
-    let mut predicates: Vec<Predicate> = Vec::new();
+    // O46: pre-size the predicate vec. The `4` covers the four legacy shortcut
+    // slots (`status`, `category`, `file`, `newer_than`); the remaining terms
+    // sum the upper bound for every `--where-*` family. Slight over-allocation
+    // when legacy shortcuts are absent is fine; this avoids the 4+ realloc-
+    // grow cycles of pushing into an empty `Vec::new()` on busy list calls.
+    let mut predicates: Vec<Predicate> = Vec::with_capacity(
+        4 + q.where_eq.len()
+            + q.where_not.len()
+            + q.where_in.len()
+            + q.where_has.len()
+            + q.where_missing.len()
+            + q.where_gt.len()
+            + q.where_gte.len()
+            + q.where_lt.len()
+            + q.where_lte.len()
+            + q.where_contains.len()
+            + q.where_prefix.len()
+            + q.where_suffix.len()
+            + q.where_regex.len(),
+    );
 
     // Legacy shortcut flags — map onto the new predicate surface so the
     // query engine has a single filter list to evaluate. Duplicating a

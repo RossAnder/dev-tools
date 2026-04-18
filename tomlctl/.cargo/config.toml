@@ -1,3 +1,16 @@
+# O56: Targets x86-64-v3 (Haswell+, 2013+) — AVX2/BMI2 enables autovectorisation
+# in toml/serde_json/regex hot paths. Accepts that older CPUs (pre-2013) won't
+# run the resulting binary; this is an agent-internal tool, not a distributed
+# binary. Scoped to `tomlctl/.cargo/config.toml` (not the workspace root) so it
+# only affects this crate's builds.
+[build]
+rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+# Windows-MSVC keeps its per-target block so `+crt-static` and lld-link survive
+# — cargo merges `[build]` rustflags with per-target rustflags by REPLACING, not
+# appending, when a per-target block is selected, so target-cpu must be restated
+# here. (See cargo reference: "build.rustflags" is overridden by
+# "target.<triple>.rustflags" when the triple matches.)
 [target.x86_64-pc-windows-msvc]
 rustflags = [
     "-C", "target-cpu=x86-64-v3",
