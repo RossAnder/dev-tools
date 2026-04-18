@@ -259,6 +259,15 @@ pub(crate) fn parse_error_format() -> ErrorFormat {
 /// `--no-write-integrity`, `--strict-integrity`) are write-side concepts
 /// that would be silently no-ops on a read, so they're structurally kept
 /// off read subcommands.
+///
+/// T9: `--strict-read` turns the "missing file → silent default" branches
+/// (today only `items next-id --prefix <P>`) into a tagged `kind=not_found`
+/// error. On every other read subcommand the flag is a benign no-op —
+/// `io::read_toml` already surfaces `kind=not_found` on a missing file via
+/// the T8 tagging, so passing `--strict-read` there changes nothing. The
+/// flag lives here (rather than only on `NextId`) so `ReadIntegrityArgs`
+/// retains its "every read subcommand carries the same read-side switches"
+/// contract; adding the bit to a single variant would fork that surface.
 #[derive(Args, Clone)]
 #[command(next_help_heading = "Integrity options")]
 struct ReadIntegrityArgs {
@@ -267,6 +276,21 @@ struct ReadIntegrityArgs {
     /// digest disagrees. Never auto-repairs.
     #[arg(long = "verify-integrity")]
     verify_integrity: bool,
+
+    /// Error on a missing target file (`kind=not_found`) instead of returning
+    /// an empty default. Default behaviour is unchanged for every read path:
+    /// `items list` / `items orphans` already error on a missing file today,
+    /// but `items next-id --prefix R` returns `"R1"` as a bootstrapping fast
+    /// path. Pass `--strict-read` when the caller needs to distinguish
+    /// "no matches in an existing ledger" from "ledger does not exist".
+    ///
+    /// T9: fires BEFORE `--verify-integrity` — a missing file yields
+    /// `kind=not_found`, not `kind=integrity`, even when both flags are set.
+    #[arg(
+        long = "strict-read",
+        help = "Error on missing file instead of returning empty default (kind=not_found)"
+    )]
+    strict_read: bool,
 }
 
 /// R74 (and prior R60): write-side integrity/containment flags. Writers
@@ -801,6 +825,31 @@ fn read_integrity_opts(args: &ReadIntegrityArgs) -> IntegrityOpts {
     }
 }
 
+/// T9: single gate applied at every read dispatch site so `--strict-read`
+/// fires BEFORE `read_doc` (and therefore before `maybe_verify_integrity`).
+/// This is the ordering guarantee documented in the README's "File state
+/// contract" subsection: a missing file under `--strict-read
+/// --verify-integrity` surfaces `kind=not_found`, not `kind=integrity`.
+///
+/// Called at every dispatch arm that flattens `ReadIntegrityArgs`. On
+/// paths whose default already errors on missing file (everything except
+/// `items next-id --prefix <P>`) the call is a defensive duplicate — a
+/// benign extra stat before the real read — and the downstream
+/// `read_toml` NotFound tag would fire regardless. Keeping it centralised
+/// means future read arms that add a "missing → silent default" fast path
+/// (e.g. an eventual `items list --or-default '[]'`) inherit the gate for
+/// free.
+fn strict_read_check(file: &std::path::Path, strict_read: bool) -> Result<()> {
+    if !strict_read || file.exists() {
+        return Ok(());
+    }
+    Err(crate::errors::tagged_err(
+        crate::errors::ErrorKind::NotFound,
+        Some(file.to_path_buf()),
+        format!("file does not exist: {}", file.display()),
+    ))
+}
+
 fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
     IntegrityOpts {
         write_sidecar: !args.no_write_integrity,
@@ -816,6 +865,7 @@ pub(crate) fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Parse { file, integrity } => {
+            strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             // O10: `parse` is the single dispatch arm whose whole output is
             // "the entire TOML doc as JSON" — no dotted-path navigation, no
@@ -838,6 +888,7 @@ pub(crate) fn run() -> Result<()> {
             print_json(&out)?;
         }
         Cmd::Get { file, path, integrity } => {
+            strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let out = read_doc(&file, opts, |doc| {
                 Ok(match path.as_deref() {
@@ -878,6 +929,7 @@ pub(crate) fn run() -> Result<()> {
             print_json_compact(&serde_json::json!({"ok": true}))?;
         }
         Cmd::Validate { file, integrity } => {
+            strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             read_doc(&file, opts, |_doc| Ok(()))?;
             print_json_compact(&serde_json::json!({"ok": true}))?;
@@ -936,6 +988,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             query,
             integrity,
         } => {
+            strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let legacy = LegacyShortcuts {
                 status: &status,
@@ -965,6 +1018,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             }
         }
         ItemsOp::Get { file, id, array, integrity } => {
+            strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let out = read_doc(&file, opts, |doc| items_get_from(doc, &array, &id))?;
             print_json(&out)?;
@@ -1193,6 +1247,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // `--prefix` / `--infer-from-file` reaches us; no runtime
             // "both unset" or "both set" check is needed.
             //
+            // T9: `--strict-read` fires BEFORE R19's missing-file fast path,
+            // so a caller who opted out of the bootstrap default on this
+            // subcommand gets `kind=not_found` instead of the `"<prefix>1"`
+            // fallback. `strict_read_check` returns `Ok(())` when the flag
+            // is absent OR the file exists, so the default (non-strict)
+            // invocation flows straight into the R19 branch below unchanged.
+            strict_read_check(&file, integrity.strict_read)?;
             // R19: if the target ledger doesn't exist yet, there's nothing to
             // parse or verify — the "next" id is trivially `<prefix>1`. This
             // lets flows call `items next-id` before the ledger is initialised
@@ -1228,6 +1289,10 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             }
         }
         ItemsOp::FindDuplicates { file, tier, across, integrity } => {
+            strict_read_check(&file, integrity.strict_read)?;
+            if let Some(other) = across.as_ref() {
+                strict_read_check(other, integrity.strict_read)?;
+            }
             let opts = read_integrity_opts(&integrity);
             let groups = match across {
                 None => read_doc(&file, opts, |doc| items_find_duplicates(doc, tier))?,
@@ -1258,6 +1323,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             print_json(&JsonValue::Array(groups))?;
         }
         ItemsOp::Orphans { file, integrity } => {
+            strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let orphans = read_doc(&file, opts, items_orphans)?;
             print_json(&JsonValue::Array(orphans))?;

@@ -117,3 +117,32 @@ assumes one source file) and errors under `--across`:
 ```
 tier C is file-scoped; use --tier A or --tier B with --across
 ```
+
+### File state contract
+
+`tomlctl` distinguishes three states for a target file:
+
+| State                     | Default mode                              | `--strict-read` mode         |
+|---------------------------|-------------------------------------------|------------------------------|
+| Missing                   | Empty-default (e.g. `items next-id --prefix R` → `"R1"`) | Error `kind=not_found`       |
+| Zero-byte                 | Treated as a minimal valid doc            | Same (no error)              |
+| Exists but malformed TOML | Error `kind=parse`                        | Same                         |
+
+Today the only read subcommand with a "missing file → silent default" branch
+is `items next-id --prefix <P>`, which returns `"<P>1"` as a bootstrapping fast
+path for flows that mint the first id before the ledger file exists. Every
+other read subcommand (`parse`, `get`, `validate`, `items list`, `items get`,
+`items find-duplicates`, `items orphans`) already errors on a missing file with
+`kind=not_found` — `--strict-read` is a no-op there, but the flag is accepted
+on every read subcommand so a caller can pass it uniformly without branching
+on subcommand name.
+
+Pass `--strict-read` when an agent needs to distinguish "no matches in an
+existing ledger" from "ledger does not exist" — e.g. when a flow expects a
+specific file to have been bootstrapped by `/plan-new` or `/implement` before
+proceeding.
+
+`--strict-read` fires **before** `--verify-integrity`: a missing file under
+both flags produces `kind=not_found`, not `kind=integrity` (the sidecar check
+would also have failed, but the underlying state is "file missing", not
+"file tampered").

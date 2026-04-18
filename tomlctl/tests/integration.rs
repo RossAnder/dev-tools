@@ -3395,3 +3395,219 @@ fn error_format_json_flag_position_is_global() {
         "flag position must not affect the JSON envelope"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 9 (plan `docs/plans/tomlctl-capability-gaps.md`): `--strict-read` on
+// every read subcommand — surface `kind=not_found` on a missing file instead
+// of returning an empty default. Today the only read path with a "missing →
+// silent default" branch is `items next-id --prefix <P>` (returns `"<P>1"`);
+// every other read subcommand already errors on a missing file via
+// `read_toml`'s T8-tagged NotFound, so `--strict-read` is a no-op there but
+// accepted uniformly so callers can pass it without branching on subcommand.
+//
+// Default (flag absent) behaviour must stay byte-identical to pre-T9:
+// `items next-id --prefix R <missing>` still mints `"R1"` for flows that
+// bootstrap the ledger lazily. Pinned in `items_next_id_on_missing_file_prints_prefix_one`
+// above; the (a) test below re-asserts it for the T9 section's completeness.
+//
+// Layering: `--strict-read` fires BEFORE `--verify-integrity`, so
+// `items list <missing> --strict-read --verify-integrity` produces
+// `kind=not_found`, NOT `kind=integrity`. This is the ordering the README's
+// "File state contract" subsection guarantees.
+// ---------------------------------------------------------------------------
+
+/// T9 (a): default (flag absent) behaviour on `items next-id` with a missing
+/// ledger stays byte-identical to pre-T9 — `"R1"` is the R19 bootstrapping
+/// fast path, and nothing about the T9 addition is allowed to disturb it.
+/// Duplicates `items_next_id_on_missing_file_prints_prefix_one` in spirit
+/// but lives in the T9 section so a regression in the strict-read gate
+/// surfaces alongside the T9 tests instead of in the far-away R58 block.
+#[test]
+fn strict_read_default_preserves_next_id_missing_file_fast_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-ledger.toml");
+    assert!(!missing.exists());
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&missing)
+        .arg("--prefix")
+        .arg("R")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("\"R1\""),
+        "default (non-strict) next-id on missing file must still mint \"R1\", got:\n{stdout}"
+    );
+}
+
+/// T9 (b): `--strict-read` on a missing-file `items next-id` errors with the
+/// documented "file does not exist" prose on stderr and exits 1. Without the
+/// flag the command succeeds with `"R1"` (covered above).
+#[test]
+fn strict_read_next_id_missing_file_errors_with_not_found_prose() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-ledger.toml");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&missing)
+        .arg("--prefix")
+        .arg("R")
+        .arg("--strict-read")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("file does not exist:"),
+        "stderr must carry the T9 not_found prose, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("no-such-ledger.toml"),
+        "stderr must name the missing path, got:\n{stderr}"
+    );
+}
+
+/// T9 (c): `--strict-read` composes with `--error-format json` — the stderr
+/// envelope's `error.kind` is `"not_found"` and the `file` field is populated
+/// with the missing path. Uses `items list` to cover the "benign no-op"
+/// dispatch arm: today `items list` already errors on a missing file via
+/// `read_toml`, so `--strict-read` doesn't change the outcome there, but it
+/// MUST still surface `kind=not_found` through the T9 gate (rather than
+/// letting `read_toml`'s own NotFound win, which would be behaviourally
+/// identical but bypass the T9 ordering contract in (d) below).
+#[test]
+fn strict_read_items_list_missing_file_json_envelope_is_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-ledger.toml");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("list")
+        .arg(&missing)
+        .arg("--strict-read")
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], serde_json::json!("not_found"));
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.contains("file does not exist:"),
+        "message must be the T9 strict-read prose, got: {message}"
+    );
+    let file_field = err["file"].as_str().expect("file must be populated");
+    assert!(
+        file_field.contains("no-such-ledger.toml"),
+        "file field must carry the missing path, got: {file_field}"
+    );
+}
+
+/// T9 (d): layering — `--strict-read` fires BEFORE `--verify-integrity`.
+/// A missing file under both flags surfaces `kind=not_found`, NOT
+/// `kind=integrity`, even though the sidecar verify would also have failed
+/// (the sidecar is trivially missing too). Pins the ordering documented in
+/// the README's "File state contract" subsection so a future refactor that
+/// reordered `strict_read_check` past `maybe_verify_integrity` trips this
+/// test rather than silently reclassifying the error.
+#[test]
+fn strict_read_fires_before_verify_integrity_on_missing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-ledger.toml");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("list")
+        .arg(&missing)
+        .arg("--strict-read")
+        .arg("--verify-integrity")
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(
+        err["kind"],
+        serde_json::json!("not_found"),
+        "strict-read must win over verify-integrity on a missing file"
+    );
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        !message.contains("sidecar") && !message.contains("integrity check failed"),
+        "message must be the not_found prose, not an integrity-sidecar message, got: {message}"
+    );
+}
+
+/// T9 (e): `--strict-read` is accepted on every read subcommand and emits
+/// a consistent `kind=not_found` envelope. Spot-check `parse`, `get`,
+/// `validate`, `items get`, `items orphans`, and `items find-duplicates`
+/// — each is a different dispatch arm that flattens `ReadIntegrityArgs`.
+/// A single array-driven test keeps the arity manageable and pins the
+/// uniform surface without bloating the test count.
+#[test]
+fn strict_read_uniform_across_read_subcommands() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-ledger.toml");
+
+    // Each entry is the argv after the binary name. `--strict-read`
+    // `--error-format json` are appended inside the loop so the test
+    // body reads flat.
+    let cases: &[&[&str]] = &[
+        &["parse", ""],
+        &["get", "", "some.path"],
+        &["validate", ""],
+        &["items", "get", "", "R1"],
+        &["items", "orphans", ""],
+        &["items", "find-duplicates", ""],
+    ];
+
+    for argv in cases {
+        let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+        cmd.env("TOMLCTL_ROOT", dir.path());
+        // Replace the empty-string placeholder with the missing path. The
+        // argv shape above pins placement (file arg is always the first
+        // empty string) so a future subcommand added with a different
+        // layout would need an explicit entry.
+        for a in *argv {
+            if a.is_empty() {
+                cmd.arg(&missing);
+            } else {
+                cmd.arg(a);
+            }
+        }
+        cmd.arg("--strict-read")
+            .arg("--error-format")
+            .arg("json")
+            .write_stdin("");
+        let out = cmd.assert().failure().code(1);
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        let err = parse_json_error_envelope(&stderr);
+        assert_eq!(
+            err["kind"],
+            serde_json::json!("not_found"),
+            "subcommand {:?} must surface kind=not_found under --strict-read, got envelope: {err}",
+            argv
+        );
+    }
+}
