@@ -376,27 +376,41 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
 /// serialises the single resulting value to `writer` in one shot — the
 /// caller (cli.rs NDJSON branch) is only invoked on the Array+ndjson path
 /// in practice, but the fallback keeps the contract total and testable.
+///
+/// T3: extended to also stream `OutputShape::Pluck(field)` when ndjson is
+/// set. Each surviving plucked value is emitted on its own line using the
+/// compact `serde_json::to_writer` encoding (strings quoted, numbers bare,
+/// etc.). Null/missing values are dropped to match `apply_pluck`'s
+/// semantics byte-for-byte — the streaming path MUST preserve which values
+/// land in the output (or we'd break the `--pluck x --lines` vs
+/// `--pluck x` parity contract that lets agents blanket-add the flag).
+/// Aggregation shapes (Count/CountBy/CountDistinct/GroupBy) still fall
+/// through to the single-shot delegation — a single JSON value has no
+/// sensible "one per line" decomposition.
 pub(crate) fn run_streaming<W: Write>(
     doc: &TomlValue,
     array_name: &str,
     q: &Query,
     writer: &mut W,
 ) -> Result<()> {
-    // Non-Array shapes (and Array without ndjson encoding) don't benefit
-    // from streaming — the final value is a single object/scalar. Delegate
-    // to `run()` and serialise once.
-    if !q.ndjson || !matches!(q.shape, OutputShape::Array) {
+    // Non-streamable shapes (Count/CountBy/CountDistinct/GroupBy, or Array
+    // / Pluck without ndjson encoding) don't benefit from streaming — the
+    // final value is a single object/scalar, or the caller explicitly
+    // chose the batched array encoding. Delegate to `run()` and serialise
+    // once.
+    if !q.ndjson || !matches!(q.shape, OutputShape::Array | OutputShape::Pluck(_)) {
         let out = run(doc, array_name, q)?;
         serde_json::to_writer(writer, &out)?;
         return Ok(());
     }
 
-    // Array + ndjson streaming path. Mirrors the Array arm of `run()`:
-    // filter → (project/sort/distinct/window) → emit each element with a
-    // trailing newline as it's produced. We still need the full in-memory
-    // pipeline up to the final emit because sort/distinct are inherently
-    // non-streaming; the win is in avoiding the terminal `Vec<JsonValue>`
-    // that `run()` returns when the caller wants line-per-item output.
+    // Array/Pluck + ndjson streaming path. Mirrors the Array/Pluck arms of
+    // `run()`: filter → (project/sort/distinct/window) → emit each element
+    // with a trailing newline as it's produced. We still need the full
+    // in-memory pipeline up to the final emit because sort/distinct are
+    // inherently non-streaming; the win is in avoiding the terminal
+    // `Vec<JsonValue>` that `run()` returns when the caller wants
+    // line-per-item output.
     validate_query(q)?;
     let items: &[TomlValue] = match doc.get(array_name).and_then(|v| v.as_array()) {
         Some(arr) => arr.as_slice(),
@@ -404,14 +418,70 @@ pub(crate) fn run_streaming<W: Write>(
     };
     let filtered = apply_filters(items, &q.predicates)?;
 
-    // Fast-path: no sort/distinct/window, pure Array shape. Stream directly
-    // from the filtered items through projection — one JsonValue per item,
-    // emitted and dropped before the next is built. This is the single
-    // biggest reduction in peak memory vs `run()`.
     let window_untouched = q.sort_by.is_empty()
         && !q.distinct
         && q.offset.is_none()
         && q.limit.is_none();
+
+    // T3: Pluck streaming. The structure mirrors the Array branch below —
+    // a fast-path that skips the full Vec<JsonValue> materialisation when
+    // sort/distinct/window are all disengaged, and a slow-path that walks
+    // the full pipeline but emits per-item at the tail. Null/missing
+    // plucked values are dropped in both paths so the output is byte-for-
+    // byte equivalent (ignoring array brackets and separators) to the
+    // array produced by `apply_pluck`.
+    if let OutputShape::Pluck(field) = &q.shape {
+        if window_untouched {
+            // Fast-path: never materialise the full row — pluck the field
+            // straight off the TomlValue and convert only the plucked
+            // value. This matches the fast-path in `run()` at lines
+            // 235-244, keeping streaming and non-streaming membership
+            // identical.
+            for t in &filtered {
+                match t.get(field).map(toml_to_json) {
+                    None | Some(JsonValue::Null) => {}
+                    Some(v) => {
+                        serde_json::to_writer(&mut *writer, &v)?;
+                        writer.write_all(b"\n")?;
+                    }
+                }
+            }
+            return Ok(());
+        }
+        // Slow path: full pipeline up to the pluck tail. Distinct on Pluck
+        // uses the plucked-field key — this mirrors the `run()` logic at
+        // lines 321-333 exactly, so --distinct dedupes by the plucked
+        // field rather than by the whole row (R9). The final emit
+        // replicates `apply_pluck`'s null/missing drop.
+        let for_shape: Vec<JsonValue> =
+            filtered.iter().map(|t| toml_to_json(t)).collect();
+        let sorted = apply_sort(for_shape, &q.sort_by);
+        let deduped = if q.distinct {
+            let projected: Vec<JsonValue> = sorted
+                .iter()
+                .map(|v| v.get(field).cloned().unwrap_or(JsonValue::Null))
+                .collect();
+            dedup_preserve_first(&sorted, &projected)
+        } else {
+            sorted
+        };
+        let windowed = apply_window(deduped, q.offset, q.limit);
+        for v in &windowed {
+            match v.get(field) {
+                None | Some(JsonValue::Null) => {}
+                Some(item_val) => {
+                    serde_json::to_writer(&mut *writer, item_val)?;
+                    writer.write_all(b"\n")?;
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    // Array fast-path: no sort/distinct/window. Stream directly from the
+    // filtered items through projection — one JsonValue per item, emitted
+    // and dropped before the next is built. This is the single biggest
+    // reduction in peak memory vs `run()`.
     if window_untouched {
         for t in &filtered {
             let v = toml_to_json(t);
@@ -422,8 +492,9 @@ pub(crate) fn run_streaming<W: Write>(
         return Ok(());
     }
 
-    // Slow path (sort/distinct/window touched): mirror the full pipeline
-    // from `run()` but emit per-item at the tail rather than collecting.
+    // Array slow path (sort/distinct/window touched): mirror the full
+    // pipeline from `run()` but emit per-item at the tail rather than
+    // collecting.
     let for_shape: Vec<JsonValue> = filtered.iter().map(|t| toml_to_json(t)).collect();
     let sorted = apply_sort(for_shape, &q.sort_by);
     let deduped = if q.distinct {
@@ -1400,7 +1471,16 @@ impl Query {
             offset: q.offset,
             distinct: q.distinct,
             shape,
-            ndjson: q.ndjson,
+            // T3: `--lines` and `--ndjson` both map onto the same internal
+            // boolean — the spellings differ only at the CLI surface. `--lines`
+            // is the discoverable spelling for the Pluck case; `--ndjson` is
+            // the historic spelling for the Array case. Both enable the
+            // streaming per-line encoding for Array and Pluck shapes; for
+            // aggregation shapes (Count/CountBy/CountDistinct/GroupBy) the
+            // bit is silently ignored (single-value output — "one per line"
+            // collapses to the same bytes). This keeps downstream pipeline
+            // logic inspecting a single boolean.
+            ndjson: q.ndjson || q.lines,
         })
     }
 }
@@ -2258,6 +2338,137 @@ v = 42
         assert!(
             err.contains("first_flagged") && err.contains("not-a-date"),
             "error must name the key + the bad RHS; got: {err}"
+        );
+    }
+
+    // -- T3: streaming Pluck ------------------------------------------
+
+    /// T3 fast-path: `run_streaming` on Pluck+ndjson with no
+    /// sort/distinct/window should emit one compact JSON value per line,
+    /// dropping null/missing plucked fields to match `apply_pluck`.
+    #[test]
+    fn run_streaming_pluck_fast_path_emits_one_per_line() {
+        let src = r#"
+[[items]]
+id = "R1"
+x = "v1"
+
+[[items]]
+id = "R2"
+# x missing — must drop
+
+[[items]]
+id = "R3"
+x = "v3"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let q = Query {
+            shape: OutputShape::Pluck("x".into()),
+            ndjson: true,
+            ..Default::default()
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        run_streaming(&doc, "items", &q, &mut buf).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "\"v1\"\n\"v3\"\n");
+    }
+
+    /// T3 slow-path: with sort/distinct engaged, the Pluck streaming
+    /// branch falls into the full-pipeline arm. The emitted byte stream
+    /// must still be one-per-line, respect sort order, and dedupe by the
+    /// plucked field (R9 parity with `run()`).
+    #[test]
+    fn run_streaming_pluck_slow_path_sort_and_distinct() {
+        let src = r#"
+[[items]]
+id = "R1"
+x = "gamma"
+
+[[items]]
+id = "R2"
+x = "alpha"
+
+[[items]]
+id = "R3"
+x = "alpha"
+
+[[items]]
+id = "R4"
+x = "beta"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let q = Query {
+            shape: OutputShape::Pluck("x".into()),
+            ndjson: true,
+            distinct: true,
+            sort_by: vec![("x".into(), SortDir::Asc)],
+            ..Default::default()
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        run_streaming(&doc, "items", &q, &mut buf).unwrap();
+        assert_eq!(
+            String::from_utf8(buf).unwrap(),
+            "\"alpha\"\n\"beta\"\n\"gamma\"\n"
+        );
+    }
+
+    /// T3 parity: streaming and non-streaming Pluck must emit the same
+    /// set of values in the same order. Proves the null/missing-drop and
+    /// windowing logic is byte-aligned with `apply_pluck` + the
+    /// non-streaming slow-path.
+    #[test]
+    fn run_streaming_pluck_matches_non_streaming_run() {
+        let src = r#"
+[[items]]
+id = "R1"
+x = "v1"
+
+[[items]]
+id = "R2"
+# x missing
+
+[[items]]
+id = "R3"
+x = "v3"
+
+[[items]]
+id = "R4"
+x = "v4"
+
+[[items]]
+id = "R5"
+x = "v5"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let q_stream = Query {
+            shape: OutputShape::Pluck("x".into()),
+            ndjson: true,
+            limit: Some(2),
+            offset: Some(1),
+            sort_by: vec![("x".into(), SortDir::Desc)],
+            ..Default::default()
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        run_streaming(&doc, "items", &q_stream, &mut buf).unwrap();
+        let streamed_lines: Vec<&str> = std::str::from_utf8(&buf)
+            .unwrap()
+            .lines()
+            .filter(|l| !l.is_empty())
+            .collect();
+        let streamed_values: Vec<JsonValue> = streamed_lines
+            .iter()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+
+        let q_run = Query { ndjson: false, ..q_stream.clone() };
+        let non_streamed = run(&doc, "items", &q_run).unwrap();
+        let non_streamed_array: Vec<JsonValue> = non_streamed
+            .as_array()
+            .expect("non-streaming pluck returns JSON array")
+            .clone();
+
+        assert_eq!(
+            streamed_values, non_streamed_array,
+            "streaming and non-streaming pluck must emit identical value sequences"
         );
     }
 

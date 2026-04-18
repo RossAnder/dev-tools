@@ -1775,6 +1775,207 @@ fn count_distinct_with_select_errors_via_validate_query() {
 }
 
 // ---------------------------------------------------------------------------
+// Task 3 (plan `docs/plans/tomlctl-capability-gaps.md`): `--lines` and
+// `--pluck` + `--ndjson` composition. `--lines` is a discoverable spelling
+// of `--ndjson` for the Pluck case; both flags enable one-value-per-line
+// streaming. Aggregation shapes silently treat the bit as a no-op.
+// ---------------------------------------------------------------------------
+
+/// 4-row fixture whose items each carry a `x` string field. Kept as a
+/// module-local const to avoid dragging the generic `QUERY_FIXTURE` into
+/// tests that only need a tiny pluck surface.
+const PLUCK_FIXTURE: &str = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+x = "v1"
+
+[[items]]
+id = "R2"
+x = "v2"
+
+[[items]]
+id = "R3"
+x = "v3"
+
+[[items]]
+id = "R4"
+x = "v4"
+"#;
+
+/// Helper: run `items list <args>` against a seeded fixture string and
+/// return stdout. Mirrors `run_list_query` but accepts an arbitrary fixture
+/// so Pluck-specific layouts don't need to fit the shared QUERY_FIXTURE.
+fn run_list_query_with(fixture: &str, args: &[&str]) -> String {
+    let (dir, ledger) = seed_ledger(fixture);
+    let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+    cmd.env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger);
+    for a in args {
+        cmd.arg(a);
+    }
+    let out = cmd.write_stdin("").assert().success();
+    String::from_utf8_lossy(&out.get_output().stdout).to_string()
+}
+
+/// T3-1: `--pluck x --lines` emits one quoted JSON string per line. Asserts
+/// the exact byte sequence so a future refactor that e.g. emits bare
+/// strings (T2's `--raw` territory) trips this test rather than silently
+/// changing the contract.
+#[test]
+fn lines_with_pluck_emits_one_json_value_per_line() {
+    let stdout = run_list_query_with(PLUCK_FIXTURE, &["--pluck", "x", "--lines"]);
+    assert_eq!(stdout, "\"v1\"\n\"v2\"\n\"v3\"\n\"v4\"\n");
+}
+
+/// T3-2: `--pluck x --ndjson` is byte-identical to `--pluck x --lines`.
+/// The two spellings are aliases at the semantic level — this test pins
+/// the identity so future work can't accidentally diverge them.
+#[test]
+fn ndjson_with_pluck_is_byte_identical_to_lines_with_pluck() {
+    let lines_out = run_list_query_with(PLUCK_FIXTURE, &["--pluck", "x", "--lines"]);
+    let ndjson_out = run_list_query_with(PLUCK_FIXTURE, &["--pluck", "x", "--ndjson"]);
+    assert_eq!(
+        lines_out, ndjson_out,
+        "--lines and --ndjson must be byte-identical on --pluck"
+    );
+}
+
+/// T3-3: `--lines` composes with `--distinct` and `--sort-by`. The slow-path
+/// branch of `run_streaming` handles these; this test pins that sort/distinct
+/// still apply in the streaming emit order.
+#[test]
+fn lines_with_pluck_distinct_and_sort() {
+    let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+x = "gamma"
+
+[[items]]
+id = "R2"
+x = "alpha"
+
+[[items]]
+id = "R3"
+x = "alpha"
+
+[[items]]
+id = "R4"
+x = "beta"
+"#;
+    let stdout = run_list_query_with(
+        fixture,
+        &["--pluck", "x", "--lines", "--distinct", "--sort-by", "x:asc"],
+    );
+    assert_eq!(stdout, "\"alpha\"\n\"beta\"\n\"gamma\"\n");
+}
+
+/// T3-4: `--lines` composes with `--limit` — exactly N lines in the output.
+/// Catches a regression where the streaming slow path fails to honour
+/// `apply_window`.
+#[test]
+fn lines_with_pluck_and_limit() {
+    let stdout = run_list_query_with(
+        PLUCK_FIXTURE,
+        &["--pluck", "x", "--lines", "--limit", "2"],
+    );
+    let line_count = stdout.lines().count();
+    assert_eq!(line_count, 2, "expected 2 lines with --limit 2; got:\n{stdout}");
+    assert_eq!(stdout, "\"v1\"\n\"v2\"\n");
+}
+
+/// T3-5: `--lines` shows up in `items list --help` as a discrete entry.
+/// Clap aliases don't render in help, so this test is the structural guard
+/// against someone "simplifying" the flag into `alias = "lines"`.
+#[test]
+fn lines_flag_listed_in_items_list_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("list")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--lines"),
+        "items list --help must list --lines as a discrete flag; got:\n{stdout}"
+    );
+    // Both flags should be visible — the point of T3 is that --ndjson and
+    // --lines coexist, not that one replaces the other.
+    assert!(
+        stdout.contains("--ndjson"),
+        "items list --help must still list --ndjson alongside --lines; got:\n{stdout}"
+    );
+}
+
+/// T3-6: `--lines` on a non-Pluck/non-Array shape is a silent no-op. For
+/// Count the output is a single `{"count": N}` object regardless — per-line
+/// decomposition has no meaning. Agents can blanket-add `--lines` to
+/// scripts without branching on shape.
+#[test]
+fn lines_on_count_shape_is_noop_single_object() {
+    let stdout = run_list_query_with(PLUCK_FIXTURE, &["--count", "--lines"]);
+    let v: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must parse as a single JSON value: {e}; stdout:\n{stdout}"));
+    assert_eq!(
+        v.get("count").and_then(|n| n.as_u64()),
+        Some(4),
+        "expected {{count: 4}}; got:\n{stdout}"
+    );
+    // Structural guard: the whole stdout is a single parseable JSON object,
+    // not a sequence of per-line JSON values. The pretty-print formatter
+    // splits the object across multiple display lines — that's fine, what
+    // matters is that there's exactly one top-level JSON value.
+    assert!(
+        v.is_object(),
+        "Count + --lines must emit a single top-level JSON object; got:\n{stdout}"
+    );
+    // Byte-identical parity vs the same query without `--lines` — proves
+    // --lines is a true no-op on Count.
+    let stdout_no_lines = run_list_query_with(PLUCK_FIXTURE, &["--count"]);
+    assert_eq!(
+        stdout, stdout_no_lines,
+        "--lines on --count must be a byte-identical no-op"
+    );
+}
+
+/// T3-7: null/missing plucked values are dropped in streaming — same
+/// contract as `apply_pluck` in the non-streaming path. Pins the parity
+/// constraint that motivated mirroring the `None | Some(JsonValue::Null)`
+/// match in `run_streaming`.
+#[test]
+fn lines_with_pluck_drops_null_and_missing_fields() {
+    let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+x = "v1"
+
+[[items]]
+id = "R2"
+
+[[items]]
+id = "R3"
+x = "v3"
+"#;
+    // R2 is missing `x` entirely — it must not appear as `null\n` or as an
+    // empty line in the output.
+    let stdout = run_list_query_with(fixture, &["--pluck", "x", "--lines"]);
+    assert_eq!(stdout, "\"v1\"\n\"v3\"\n");
+    // Non-streaming path must drop the same items (byte-set parity).
+    let stdout_array = run_list_query_with(fixture, &["--pluck", "x"]);
+    let arr: serde_json::Value = serde_json::from_str(&stdout_array)
+        .unwrap_or_else(|e| panic!("--pluck x (no lines) must be JSON: {e}; stdout:\n{stdout_array}"));
+    assert_eq!(arr, serde_json::json!(["v1", "v3"]));
+}
+
+// ---------------------------------------------------------------------------
 // Task 5 (plan `docs/plans/tomlctl-capability-gaps.md`): `items add` and
 // `items add-many` grow `--dedupe-by <F1,F2,...>`. Callers who pass
 // identical payloads twice get one insert on the first call and a skip

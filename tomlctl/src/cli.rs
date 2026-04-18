@@ -404,6 +404,22 @@ pub(crate) struct QueryArgs {
     pub(crate) count_distinct: Option<String>,
     #[arg(long = "ndjson", help = "Output one JSON value per line (for piping into add-many/apply)")]
     pub(crate) ndjson: bool,
+    /// T3: discoverable spelling of `--ndjson` for the `--pluck` case. A clap
+    /// `alias` wouldn't appear in `items list --help`, defeating the whole
+    /// point of exposing the flag — agents need to see it at a glance.
+    /// `Query::from_cli_args` merges this with `ndjson` (`lines || ndjson`),
+    /// so downstream pipeline logic still inspects a single boolean.
+    ///
+    /// For non-Pluck/non-Array shapes (Count, CountBy, CountDistinct,
+    /// GroupBy) this is a silent no-op — the output is a single JSON value
+    /// regardless, so "one value per line" collapses to the same bytes.
+    /// This keeps scripts free to blanket-add `--lines` without branching
+    /// on shape.
+    #[arg(
+        long = "lines",
+        help = "Emit one JSON value per line on --pluck (alias-of-semantics for --ndjson). No-op on --count/--count-by/--count-distinct/--group-by."
+    )]
+    pub(crate) lines: bool,
 }
 
 // The CLI subcommand enums carry a lot of `Vec<String>` / nested-struct
@@ -1019,9 +1035,18 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             };
             let q = Query::from_cli_args(&legacy, &query)?;
             // R82: `ndjson` is an output-encoding choice, not a shape. Only
-            // the Array shape + ndjson encoding combination is meaningful;
-            // `validate_query` (called inside `run`) rejects other combos.
-            if q.ndjson && matches!(q.shape, OutputShape::Array) {
+            // the Array and Pluck shape + ndjson encoding combinations are
+            // meaningful; for aggregation shapes (Count/CountBy/
+            // CountDistinct/GroupBy) the ndjson bit is silently ignored
+            // since the output is a single JSON value that has no per-line
+            // decomposition.
+            //
+            // T3: added Pluck to the streaming-eligible set. `--pluck f
+            // --lines` (or `--pluck f --ndjson`) streams one plucked JSON
+            // value per line; `run_streaming` mirrors `apply_pluck`'s
+            // null/missing-drop so the set of emitted values is identical
+            // to the non-streaming path.
+            if q.ndjson && matches!(q.shape, OutputShape::Array | OutputShape::Pluck(_)) {
                 // O34: stream one compact JSON value per line directly via
                 // `query::run_streaming`, avoiding the `Vec<JsonValue>` that
                 // `query::run` would otherwise materialise only for us to
