@@ -2970,3 +2970,428 @@ fn items_backfill_dedup_id_idempotent_second_run_skips_write() {
         "idempotent backfill must not bump sidecar mtime"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 8 (plan `docs/plans/tomlctl-capability-gaps.md`): `--error-format
+// {text,json}` global flag + closed `ErrorKind` taxonomy. Tagged call sites:
+//   - io.rs `read_toml` / `read_toml_str` missing-file      -> kind=not_found
+//   - io.rs `read_toml` / `read_doc_borrowed` TOML parse    -> kind=parse
+//   - integrity.rs `verify_integrity` sidecar failure       -> kind=integrity
+//   - query.rs `validate_query` mutex violations            -> kind=validation
+//   - items.rs `items_next_id` prefix-shape validation      -> kind=validation
+// Every other `bail!` / `anyhow!` falls through to kind=other. Exit code
+// stays 1 regardless of format. Text-mode output is byte-identical to the
+// pre-T8 `eprintln!("tomlctl: {:#}", err)` stream.
+// ---------------------------------------------------------------------------
+
+/// T8 helper: parse the one-line JSON error envelope tomlctl emits on
+/// stderr when `--error-format json` is active. Returns the `error` object
+/// so each test can assert on `kind` / `message` / `file` independently.
+fn parse_json_error_envelope(stderr: &str) -> serde_json::Value {
+    let line = stderr.trim();
+    assert!(
+        !line.is_empty(),
+        "stderr is empty — expected a JSON error envelope"
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(line).expect("stderr must be a single JSON line");
+    let err = v
+        .get("error")
+        .cloned()
+        .expect("envelope must have top-level `error` key");
+    assert!(
+        err.get("kind").and_then(|k| k.as_str()).is_some(),
+        "error.kind must be a string, got: {err}"
+    );
+    assert!(
+        err.get("message").and_then(|m| m.as_str()).is_some(),
+        "error.message must be a string, got: {err}"
+    );
+    assert!(
+        err.get("file").is_some(),
+        "error.file key must always be present (null when unknown), got: {err}"
+    );
+    err
+}
+
+/// T8 Test 1: missing-file path -> `kind=not_found`. `items get` on a
+/// nonexistent file is the cleanest trigger — it goes straight through
+/// `read_toml`'s NotFound arm with the path known, so the envelope also
+/// carries a non-null `file` field.
+#[test]
+fn error_format_json_missing_file_tagged_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let missing = claude.join("nope.toml");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("get")
+        .arg(&missing)
+        .arg("R1")
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], serde_json::json!("not_found"));
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.contains("No such file") || message.contains("not found"),
+        "expected missing-file prose in message, got: {message}"
+    );
+    let file = err["file"].as_str().expect("file must be populated on not_found");
+    assert!(
+        file.contains("nope.toml"),
+        "file field must carry the target path, got: {file}"
+    );
+}
+
+/// T8 Test 2: sidecar hash mismatch -> `kind=integrity`. Write a valid TOML
+/// with a deliberately-wrong sidecar; `--verify-integrity` triggers
+/// `integrity.rs::verify_integrity` which tags the mismatch.
+#[test]
+fn error_format_json_sidecar_mismatch_tagged_integrity() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let file = claude.join("data.toml");
+    fs::write(&file, "key = \"value\"\n").unwrap();
+    // A 64-hex-char digest that will NEVER match the real hash of the file.
+    let mut sidecar = file.clone().into_os_string();
+    sidecar.push(".sha256");
+    fs::write(
+        &sidecar,
+        "deadbeef00000000000000000000000000000000000000000000000000000000  data.toml\n",
+    )
+    .unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("get")
+        .arg(&file)
+        .arg("key")
+        .arg("--verify-integrity")
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], serde_json::json!("integrity"));
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.contains("integrity check failed")
+            && message.contains("expected")
+            && message.contains("actual"),
+        "expected dual-digest message, got: {message}"
+    );
+    let file_field = err["file"].as_str().unwrap();
+    assert!(
+        file_field.contains("data.toml"),
+        "file must name the verified path, got: {file_field}"
+    );
+}
+
+/// T8 Test 3: TOML parse error -> `kind=parse`. Malformed TOML, `parse`
+/// subcommand. Exercises the borrowed fast-path (`read_doc_borrowed`) since
+/// `--verify-integrity` is absent. Owned path (`read_toml`) is covered
+/// transitively by any `items list` / `get` / `items get` on the same bad
+/// fixture; the parse subcommand is the cleanest fixture here.
+#[test]
+fn error_format_json_bad_toml_tagged_parse() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let file = claude.join("bad.toml");
+    // A clearly invalid TOML: bare `=` with no RHS.
+    fs::write(&file, "malformed = =\n").unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("parse")
+        .arg(&file)
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], serde_json::json!("parse"));
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.contains("parse")
+            && (message.contains("borrowed TOML")
+                || message.contains("parsing")),
+        "expected TOML parse prose, got: {message}"
+    );
+}
+
+/// T8 Test 4: query mutex violation -> `kind=validation`. `items list
+/// --select x --exclude y` is rejected inside `validate_query`'s first
+/// branch. Uses an existing (empty-items) ledger so the file read succeeds
+/// and the error genuinely comes from `validate_query`, not `read_toml`.
+#[test]
+fn error_format_json_query_mutex_tagged_validation() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let file = claude.join("empty.toml");
+    fs::write(&file, "schema_version = 1\n").unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("list")
+        .arg(&file)
+        .arg("--select")
+        .arg("a")
+        .arg("--exclude")
+        .arg("b")
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], serde_json::json!("validation"));
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.contains("--select and --exclude are mutually exclusive"),
+        "expected validate_query mutex prose, got: {message}"
+    );
+    assert!(err["file"].is_null(), "query validation has no file hint");
+}
+
+/// T8 Test 5: `items_next_id` prefix validation -> `kind=validation`. Pass
+/// `--prefix ""` against an EXISTING (empty-items) ledger so control reaches
+/// `items_next_id`'s empty-prefix check (the cli.rs missing-file fast path
+/// has its own untagged bail, which isn't the plan's tag site).
+#[test]
+fn error_format_json_next_id_empty_prefix_tagged_validation() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let file = claude.join("ledger.toml");
+    fs::write(&file, "schema_version = 1\n").unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&file)
+        .arg("--prefix")
+        .arg("")
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], serde_json::json!("validation"));
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.contains("prefix must not be empty"),
+        "expected prefix-empty validation message, got: {message}"
+    );
+}
+
+/// T8 Test 6: untagged error -> `kind=other`. `items get <file> <missing-id>`
+/// errors inside `items_get_from` (not on the plan's closed list), so it
+/// should fall through to the generic `other` bucket. Confirms the default
+/// fallback works for every un-annotated bail in the codebase.
+#[test]
+fn error_format_json_untagged_fallback_kind_other() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let file = claude.join("ledger.toml");
+    fs::write(
+        &file,
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "present"
+"#,
+    )
+    .unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("get")
+        .arg(&file)
+        .arg("R999")
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(
+        err["kind"],
+        serde_json::json!("other"),
+        "untagged errors must fall through to kind=other"
+    );
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.contains("no item with id = R999"),
+        "expected item-not-found prose in other-kind message, got: {message}"
+    );
+    assert!(
+        err["file"].is_null(),
+        "other-kind errors have no file hint (no TaggedError in chain)"
+    );
+}
+
+/// T8 Test 7: text-mode regression — when `--error-format` is absent the
+/// stderr stream is byte-identical to the pre-T8 `tomlctl: {:#}` line. Spot
+/// checks three of the tagged kinds (not_found, validation-query,
+/// validation-next-id) to pin no-prefix / no-bracketed-annotation rendering.
+#[test]
+fn error_format_text_mode_byte_identical_across_tag_kinds() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let empty_ledger = claude.join("empty.toml");
+    fs::write(&empty_ledger, "schema_version = 1\n").unwrap();
+    let missing = claude.join("missing.toml");
+
+    // Spot 1: not_found — missing-file path via items get.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("get")
+        .arg(&missing)
+        .arg("R1")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.starts_with("tomlctl: reading "),
+        "pre-T8 prefix must be unchanged, got: {stderr:?}"
+    );
+    assert!(
+        !stderr.contains("[not_found]") && !stderr.contains("{\"error\""),
+        "text mode must NOT leak tag prefix or JSON envelope, got: {stderr:?}"
+    );
+
+    // Spot 2: validation — query mutex.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("list")
+        .arg(&empty_ledger)
+        .arg("--select")
+        .arg("a")
+        .arg("--exclude")
+        .arg("b")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert_eq!(
+        stderr.trim_end(),
+        "tomlctl: --select and --exclude are mutually exclusive",
+        "text-mode validation output must be byte-identical"
+    );
+
+    // Spot 3: validation — next-id empty prefix on existing file.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&empty_ledger)
+        .arg("--prefix")
+        .arg("")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert_eq!(
+        stderr.trim_end(),
+        "tomlctl: prefix must not be empty — use a letter like R, O, or A",
+        "text-mode next-id validation output must be byte-identical"
+    );
+}
+
+/// T8: `--error-format json` is a global flag — caller can place it BEFORE
+/// or AFTER the subcommand name with identical behaviour. Pin both positions
+/// against a missing-file trigger so the `global = true` attribute doesn't
+/// silently regress.
+#[test]
+fn error_format_json_flag_position_is_global() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let missing = claude.join("missing.toml");
+
+    // Flag BEFORE subcommand.
+    let out_before = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("--error-format")
+        .arg("json")
+        .arg("items")
+        .arg("get")
+        .arg(&missing)
+        .arg("R1")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr_before =
+        String::from_utf8_lossy(&out_before.get_output().stderr).to_string();
+    let env_before = parse_json_error_envelope(&stderr_before);
+    assert_eq!(env_before["kind"], serde_json::json!("not_found"));
+
+    // Flag AFTER subcommand (and after the file/id args).
+    let out_after = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("get")
+        .arg(&missing)
+        .arg("R1")
+        .arg("--error-format")
+        .arg("json")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr_after = String::from_utf8_lossy(&out_after.get_output().stderr).to_string();
+    let env_after = parse_json_error_envelope(&stderr_after);
+    assert_eq!(env_after["kind"], serde_json::json!("not_found"));
+
+    // Envelopes match byte-for-byte: both placements produce the same JSON.
+    assert_eq!(
+        stderr_before, stderr_after,
+        "flag position must not affect the JSON envelope"
+    );
+}

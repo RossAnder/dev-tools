@@ -19,6 +19,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use toml::Value as TomlValue;
 
+use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::{IntegrityOpts, hex_lower, sidecar_path};
 
 /// R25 / O14: base retry delay between `try_lock_exclusive` attempts in
@@ -86,8 +87,37 @@ pub(crate) fn item_id(item: &TomlValue) -> Option<&str> {
 }
 
 pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
-    let s = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    toml::from_str::<TomlValue>(&s).with_context(|| format!("parsing {}", path.display()))
+    // T8: split the two failure modes so each gets the correct tag. A
+    // `fs::read_to_string` failure whose inner `io::Error` is `NotFound` is
+    // tagged `NotFound`; any other I/O error is untagged and falls through
+    // to `kind=other`. Once the bytes are in hand, a TOML syntax failure is
+    // tagged `Parse`. Text output is byte-identical to the pre-T8 chain —
+    // `tagged_err` builds an `anyhow::Error` whose inner `TaggedError`
+    // renders its message verbatim (no tag prefix), so `{:#}` sees exactly
+    // the same "reading <path>: <os error>" / "parsing <path>: <toml err>"
+    // as the pre-T8 `with_context(...)` path produced.
+    let s = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(tagged_err(
+                ErrorKind::NotFound,
+                Some(path.to_owned()),
+                format!("reading {}: {}", path.display(), e),
+            ));
+        }
+        Err(e) => {
+            return Err(anyhow::Error::new(e))
+                .with_context(|| format!("reading {}", path.display()));
+        }
+    };
+    match toml::from_str::<TomlValue>(&s) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(tagged_err(
+            ErrorKind::Parse,
+            Some(path.to_owned()),
+            format!("parsing {}: {}", path.display(), e),
+        )),
+    }
 }
 
 /// O10: raw-bytes sibling of `read_toml`. Returns the on-disk TOML text as a
@@ -95,7 +125,22 @@ pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
 /// (`read_doc_borrowed`) can own the source buffer themselves — the borrowed
 /// `DeTable<'a>` must not outlive the string it references.
 pub(crate) fn read_toml_str(path: &Path) -> Result<String> {
-    fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
+    // T8: mirror `read_toml`'s NotFound tagging so the borrowed path (used by
+    // `Cmd::Parse` when `--verify-integrity` is off) emits `kind=not_found`
+    // rather than falling through to `other`. Any other read error stays
+    // untagged.
+    match fs::read_to_string(path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(tagged_err(
+                ErrorKind::NotFound,
+                Some(path.to_owned()),
+                format!("reading {}: {}", path.display(), e),
+            ))
+        }
+        Err(e) => Err(anyhow::Error::new(e))
+            .with_context(|| format!("reading {}", path.display())),
+    }
 }
 
 /// O10: borrowed-lifetime TOML read. Parses `source` via
@@ -113,8 +158,13 @@ pub(crate) fn read_doc_borrowed<'a, R>(
     source: &'a str,
     f: impl FnOnce(&toml::de::DeTable<'a>) -> Result<R>,
 ) -> Result<R> {
+    // T8: tag the borrowed-parse error with `kind=parse` so the JSON envelope
+    // matches the owned-parse tag from `read_toml`. No `file` hint — this helper
+    // receives a `&str`, so we don't know the source path at this layer. The
+    // message prose ("parsing borrowed TOML: <err>") is byte-identical to the
+    // pre-T8 `anyhow!(...)` form.
     let spanned = toml::de::DeTable::parse(source)
-        .map_err(|e| anyhow!("parsing borrowed TOML: {}", e))?;
+        .map_err(|e| tagged_err(ErrorKind::Parse, None, format!("parsing borrowed TOML: {}", e)))?;
     f(spanned.get_ref())
 }
 

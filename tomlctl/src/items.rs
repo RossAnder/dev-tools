@@ -15,6 +15,7 @@ use toml::Value as TomlValue;
 
 use crate::convert::{json_type_name, maybe_date_coerce, str_field, toml_to_json, walk_json_path};
 use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint, tier_b_fingerprint_json};
+use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{item_id, items_array, items_array_mut};
 
 /// T6b: env-var kill switch for every `dedup_id` auto-populate path. Any
@@ -756,11 +757,24 @@ pub(crate) fn items_remove_from(doc: &mut TomlValue, array_name: &str, id: &str)
 }
 
 pub(crate) fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
+    // T8: both prefix-shape rejections are CLI-surface validation failures —
+    // tag them `Validation` so `--error-format json` reports the same `kind`
+    // regardless of which rule fired. Text output is byte-identical to the
+    // pre-T8 `bail!(...)` form; `tagged_err`'s `TaggedError` renders its
+    // message verbatim under `{:#}` (see `errors.rs` Display note).
     if prefix.is_empty() {
-        bail!("prefix must not be empty — use a letter like R, O, or A");
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "prefix must not be empty — use a letter like R, O, or A",
+        ));
     }
     if prefix.chars().all(|c| c.is_ascii_digit()) {
-        bail!("prefix must not be all-digit — would collide with numeric-suffix parsing");
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "prefix must not be all-digit — would collide with numeric-suffix parsing",
+        ));
     }
     let mut max_n: u64 = 0;
     for item in items_array(doc, "items") {

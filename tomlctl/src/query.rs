@@ -24,6 +24,7 @@ use toml::Value as TomlValue;
 use crate::convert::{
     TypeHint, compare_typed, json_type_name, parse_typed_value, split_type_hint, toml_to_json,
 };
+use crate::errors::{ErrorKind, tagged_err};
 
 /// Per-compile memory cap for user-supplied regex patterns (R72). Chosen to
 /// bound a pathological pattern's NFA compile / DFA cache at ~1 MiB each,
@@ -120,32 +121,44 @@ pub(crate) struct Query {
 /// call keeps clap-level help-text lean (no need for clap's
 /// `conflicts_with` on every pair) and centralises the rules.
 pub(crate) fn validate_query(q: &Query) -> Result<()> {
+    // T8: every mutex violation in this function is a CLI-surface validation
+    // failure — tag the whole `bail!` set with `kind=validation` so
+    // `--error-format json` surfaces the same kind regardless of which
+    // specific pair collided. The `validation_bail!` macro keeps the prose
+    // byte-identical to the pre-T8 `bail!(...)` form — `tagged_err` builds an
+    // anyhow::Error with `TaggedError` as the innermost layer whose `Display`
+    // is the formatted message, so text-mode `{:#}` rendering is unchanged.
+    macro_rules! validation_bail {
+        ($($arg:tt)*) => {
+            return Err(tagged_err(ErrorKind::Validation, None, format!($($arg)*)))
+        };
+    }
     if q.select.is_some() && q.exclude.is_some() {
-        bail!("--select and --exclude are mutually exclusive");
+        validation_bail!("--select and --exclude are mutually exclusive");
     }
     match &q.shape {
         OutputShape::Pluck(_) => {
             if q.select.is_some() {
-                bail!("--select and --pluck are mutually exclusive");
+                validation_bail!("--select and --pluck are mutually exclusive");
             }
             if q.exclude.is_some() {
-                bail!("--exclude and --pluck are mutually exclusive");
+                validation_bail!("--exclude and --pluck are mutually exclusive");
             }
         }
         OutputShape::Count => {
             if q.select.is_some() {
-                bail!("--count and --select are mutually exclusive");
+                validation_bail!("--count and --select are mutually exclusive");
             }
             if q.exclude.is_some() {
-                bail!("--count and --exclude are mutually exclusive");
+                validation_bail!("--count and --exclude are mutually exclusive");
             }
         }
         OutputShape::CountBy(_) => {
             if q.select.is_some() {
-                bail!("--count-by and --select are mutually exclusive");
+                validation_bail!("--count-by and --select are mutually exclusive");
             }
             if q.exclude.is_some() {
-                bail!("--count-by and --exclude are mutually exclusive");
+                validation_bail!("--count-by and --exclude are mutually exclusive");
             }
         }
         OutputShape::GroupBy(_) => {

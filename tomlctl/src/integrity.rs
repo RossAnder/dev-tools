@@ -11,12 +11,14 @@
 //! fields (no `from_cli` constructor here), so the root module constructs
 //! instances wherever the CLI is parsed.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+
+use crate::errors::{ErrorKind, tagged_err};
 
 /// Pair of integrity-sidecar-related global flags, bundled to shorten call
 /// signatures for read/write paths.
@@ -92,35 +94,56 @@ pub(crate) fn maybe_verify_integrity(file: &Path, integrity: IntegrityOpts) -> R
 pub(crate) fn verify_integrity(file: &Path) -> Result<()> {
     let sidecar = sidecar_path(file);
     if !sidecar.exists() {
-        bail!(
-            "integrity check failed: sidecar {} is missing (expected `<hex>  <basename>` format — rewrite the file without --no-write-integrity to regenerate)",
-            sidecar.display()
-        );
+        // T8: missing sidecar is a sidecar-surface failure — tag it as
+        // `Integrity` so `--error-format json` surfaces `kind=integrity`.
+        // The message prose is byte-identical to the pre-T8 `bail!(...)`
+        // form; `tagged_err` builds the anyhow::Error with TaggedError as
+        // the innermost layer whose `Display` emits the message verbatim.
+        return Err(tagged_err(
+            ErrorKind::Integrity,
+            Some(file.to_owned()),
+            format!(
+                "integrity check failed: sidecar {} is missing (expected `<hex>  <basename>` format — rewrite the file without --no-write-integrity to regenerate)",
+                sidecar.display()
+            ),
+        ));
     }
     let sidecar_text = fs::read_to_string(&sidecar)
         .with_context(|| format!("reading sidecar {}", sidecar.display()))?;
     let expected = sidecar_text.split_whitespace().next().ok_or_else(|| {
-        anyhow!(
-            "integrity sidecar {} is empty or malformed",
-            sidecar.display()
+        tagged_err(
+            ErrorKind::Integrity,
+            Some(file.to_owned()),
+            format!("integrity sidecar {} is empty or malformed", sidecar.display()),
         )
     })?;
     if expected.len() != 64 || !expected.chars().all(|c| c.is_ascii_hexdigit()) {
-        bail!(
-            "integrity sidecar {} does not contain a 64-hex-char digest (got `{}`)",
-            sidecar.display(),
-            expected
-        );
+        return Err(tagged_err(
+            ErrorKind::Integrity,
+            Some(file.to_owned()),
+            format!(
+                "integrity sidecar {} does not contain a 64-hex-char digest (got `{}`)",
+                sidecar.display(),
+                expected
+            ),
+        ));
     }
     let actual = sha256_hex_of_file(file)?;
     if !expected.eq_ignore_ascii_case(&actual) {
-        bail!(
-            "integrity check failed for {}: expected {}, actual {} (sidecar: {})",
-            file.display(),
-            expected,
-            actual,
-            sidecar.display()
-        );
+        // T8: the canonical hash-mismatch case — tag `Integrity` so
+        // downstream callers can distinguish "file tampered" from generic
+        // I/O errors without regexing prose.
+        return Err(tagged_err(
+            ErrorKind::Integrity,
+            Some(file.to_owned()),
+            format!(
+                "integrity check failed for {}: expected {}, actual {} (sidecar: {})",
+                file.display(),
+                expected,
+                actual,
+                sidecar.display()
+            ),
+        ));
     }
     Ok(())
 }

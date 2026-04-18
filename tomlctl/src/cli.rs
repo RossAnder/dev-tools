@@ -5,7 +5,7 @@
 //! that own the underlying behaviour. Pure plumbing; no business logic.
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde_json::Value as JsonValue;
 use std::io::{BufRead, BufWriter, IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -208,8 +208,50 @@ fn read_json_value_from_arg(arg: &str) -> Result<JsonValue> {
     about = "Read and write TOML files used by Claude Code flows and ledgers"
 )]
 struct Cli {
+    /// T8: stderr error rendering format. `text` (default) is byte-identical
+    /// to the pre-T8 `tomlctl: <anyhow chain>` line. `json` emits a single
+    /// compact JSON envelope (`{"error":{"kind":...,"message":...,"file":...}}`)
+    /// so downstream agents can branch on `kind` without regexing prose. Exit
+    /// code stays 1 regardless; this flag only affects stderr shape. `global`
+    /// so the flag can appear either before or after the subcommand name.
+    #[arg(
+        long = "error-format",
+        value_enum,
+        default_value_t = ErrorFormat::Text,
+        global = true,
+        help = "Stderr error format on failure (text|json)"
+    )]
+    error_format: ErrorFormat,
+
     #[command(subcommand)]
     cmd: Cmd,
+}
+
+/// T8: stderr-format selector surfaced via `--error-format`. `pub(crate)` so
+/// `main.rs` can pattern-match on the variant before dispatching to `run()`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ErrorFormat {
+    /// Default — byte-identical to pre-T8 output: `tomlctl: <anyhow chain>`.
+    Text,
+    /// Single compact JSON line with `error.kind` taxonomy.
+    Json,
+}
+
+/// T8: pre-dispatch parse of `--error-format` so `main.rs` can format the
+/// top-level error correctly WITHOUT re-implementing the clap plumbing. Returns
+/// `ErrorFormat::Text` on any parse failure — clap itself emits its own error
+/// message before `run()` surfaces a bail, and we never want the format
+/// selector to panic or swallow output en route to exit.
+pub(crate) fn parse_error_format() -> ErrorFormat {
+    // `try_parse` returns `Err` for `--help` / `--version` / bad args, all of
+    // which clap handles via its own stderr writer. We fall back to `Text` in
+    // those cases; the real error-surfacing path is `run()` calling `parse()`
+    // a moment later, which will emit clap's native error with its native
+    // format (not our JSON envelope — clap errors are a separate surface
+    // that predates the anyhow chain).
+    Cli::try_parse()
+        .map(|c| c.error_format)
+        .unwrap_or(ErrorFormat::Text)
 }
 
 /// R74: read-only integrity options. Read paths honour only
