@@ -55,7 +55,7 @@ execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
 - `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
 - `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the full bootstrap sequence (zero-byte `Write` + `tomlctl set <path> schema_version 1` + `tomlctl set <path> last_updated <today>`) before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a readable log file in one step rather than erroring with `No such file or directory`.
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the **atomic 2-line bootstrap**: a single `Write` tool call whose content is exactly `schema_version = 1\nlast_updated = <today>\n` (literal newlines; `<today>` is ISO 8601), before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a valid-TOML log file in one step rather than erroring with `No such file or directory`. The bootstrap is **atomic**: a single `Write` materialises a parseable file, so a concurrent writer that observes the file between the initial `Write` and the first `tomlctl` call never sees the zero-byte-then-partial intermediate state the legacy 3-step sequence could produce.
 
 #### Slug derivation
 
@@ -96,7 +96,7 @@ Flows with `status = "complete"` are skipped by resolution step 2 (scope glob ma
 <!-- SHARED-BLOCK:execution-record-schema START -->
 ## Execution Record Schema
 
-Per-flow append-only log at `.claude/flows/<slug>/execution-record.toml`. Records every task-completion, verification, deviation, deferral, decision, reconcile, status-transition, and checkpoint emitted by `/plan-new`, `/implement`, and `/plan-update` against the flow. `PROGRESS-LOG.md` is a rendered view of this log, and `[tasks].completed` is derived from it. This section is the single source of truth for the file's shape and contract.
+Per-flow append-only log at `.claude/flows/<slug>/execution-record.toml`. Records every task-completion, verification, deviation, deferral, reconcile, status-transition, and checkpoint emitted by `/plan-new`, `/implement`, and `/plan-update` against the flow. `PROGRESS-LOG.md` is a rendered view of this log, and `[tasks].completed` is derived from it. This section is the single source of truth for the file's shape and contract.
 
 ### Canonical schema
 
@@ -147,7 +147,6 @@ legacy_id = "D3"
 | `verification` | `command`, `outcome` ∈ {`pass`, `fail`} |
 | `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
 | `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
-| `decision` | `alternatives[]`, `chosen`, `rationale` |
 | `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |
 | `status-transition` | `from_status`, `to_status` |
 | `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured |
@@ -181,27 +180,96 @@ Entries are never mutated after write. Corrections append a new entry carrying `
 
 Every op that mutates the log (i.e. appends an entry) regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` as its last step via the render-from-log routine. `PROGRESS-LOG.md` is a pure function of `execution-record.toml` — no timestamp substitution, no date-of-run leakage. The top of the rendered file carries the literal marker `<!-- Generated from execution-record.toml. Do not edit by hand. -->`.
 
-The render emits four tables: **Completed Items** (from `type=task-completion` + `status=done`), **Deviations** (from `type=deviation`), **Deferrals** (from `type=deferral`), and **Session Log** (grouped by `date`).
+The render emits four tables: **Completed Items** (from `type=task-completion` + `status=done`), **Deviations** (from `type=deviation`), **Deferrals** (from `type=deferral`), and **Session Log** (grouped by `date`). The full routine is defined at `### Render-from-log routine` within this block.
 
 **Session Log columns** — `| Date | Changes | Commits |`:
-- Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
+- Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc --verify-integrity`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
 - **Date** = `YYYY-MM-DD` bucket key.
 - **Changes** = `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the bucket entry count. The word is `entry` when N == 1 (singular), `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in first-appearance order within the bucket. Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN). Example: a bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`. A singleton deviation renders `1 entry: deviation × 1`.
 - **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). First-appearance SHA order (do NOT sort lexicographically). Empty when the bucket has no commits.
 
 Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency via the pre-sort + count-based Changes column).
 
+### Render-from-log routine
+
+Every op that mutates `<record>` (`status`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) calls this routine as its **last step**. `snapshot` also calls it (read-only refresh). `/implement` Phase 3 also calls it at end-of-phase. The routine is a **pure function of the log** — no `<today>` / `<now>` substitution, no date-of-run leakage. Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency, achieved by the pre-sort and the count-based Changes column).
+
+The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwriting the previous content) with the following structure:
+
+1. **Top-of-file marker** — the literal first line is:
+   ```
+   <!-- Generated from execution-record.toml. Do not edit by hand. -->
+   ```
+   No timestamps, no slug substitution — the marker is a fixed string.
+
+2. **Completed Items table** — sourced from
+   ```
+   tomlctl items list <record> --where type=task-completion --where status=done --verify-integrity
+   ```
+   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by entry append order.
+
+3. **Deviations table** — sourced from
+   ```
+   tomlctl items list <record> --where type=deviation --verify-integrity
+   ```
+   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
+
+4. **Deferrals table** — sourced from
+   ```
+   tomlctl items list <record> --where type=deferral --verify-integrity
+   ```
+   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`.
+
+5. **Session Log table** with the literal column header `| Date | Changes | Commits |`:
+
+   - **Pre-sort step (mandatory).** Run
+     ```
+     tomlctl items list <record> --sort-by date:asc --verify-integrity
+     ```
+     **before** the group operation. Without this pre-sort, `--group-by date` buckets the log in *insertion order* — empirically confirmed: `--group-by` does not re-order; it just collapses adjacent matches by the bucket key. Documenting the pre-sort here so future maintainers don't drop it as "redundant".
+   - **Group step.** Apply `--group-by date` to the sorted result. `date` is in `DATE_KEYS`, so each YYYY-MM-DD calendar day produces one bucket. No `@date:` projection is needed.
+   - For each bucket, render one row:
+     - **Date** = the YYYY-MM-DD bucket key.
+     - **Changes** = the literal format `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the integer entry count in the bucket; the word is `entry` when N == 1 (singular) and `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in **first-appearance order** within the bucket (not alphabetical, not count-sorted). Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN, NOT ASCII `x`). EXAMPLES (both verbatim, both required):
+       - A bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`.
+       - A singleton deviation renders `1 entry: deviation × 1`.
+     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **first-appearance SHA order** (the order the SHAs appear when iterating bucket entries chronologically) — do NOT sort lexicographically. Empty when no entry in the bucket has a `commits` array.
+
+The count-based Changes column is what gives cross-reorder idempotency: swapping two same-date entries in the source log doesn't change the per-type counts in the bucket, so the rendered row is identical. Combined with the pre-sort fixing bucket order, the routine is a true pure function of the log's *contents* (not its insertion sequence within a date).
+
 ### `[tasks].completed` derivation
 
 `[tasks].completed` in `context.toml` is derived from the log on every write that touches `[tasks]`:
 
 ```
-completed = tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref | jq -r '.[]' | sort -u | wc -l
+completed = tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref --verify-integrity | jq -r '.[]' | sort -u | wc -l
 ```
 
 Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `total` remains plan-document-driven; `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
 
 Before relying on the pipe above, verify `--pluck`'s output shape against the installed `tomlctl`: if it emits a JSON array (`["a","b"]`), keep `jq -r '.[]'`; if it emits newline-delimited strings, drop the `jq` step and pipe straight to `sort -u | wc -l`.
+
+#### Read-path integrity contract
+
+Every read of `execution-record.toml` or `context.toml` by `/plan-new`, `/plan-update`, or `/implement` MUST pass `--verify-integrity` when a `.sha256` sidecar exists. Explicit opt-out is permitted ONLY at bootstrap time when the sidecar is known-absent (the very first writer's initial atomic `Write` that materialises the 2-line TOML file, and the first read that follows it before any subsequent write has produced the sidecar). On sidecar digest mismatch, tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt.
+
+Invocation form: the flag is a per-subcommand option (not a global one), appended to the read subcommand: `tomlctl items list <record> --where ... --verify-integrity` or `tomlctl get <file> <path> --verify-integrity`.
+
+#### Field length caps
+
+Writer commands (`/plan-new`, `/plan-update`, `/implement`) MUST cap agent-supplied string fields before passing to `tomlctl items add` / `items apply`:
+
+- `summary` ≤ 1 KiB (1024 bytes)
+- `description`, `rationale`, `original_intent`, `reason`, `reevaluate_when` ≤ 8 KiB (8192 bytes)
+
+Truncate overlong strings with a trailing ` (truncated)` marker; do NOT refuse the write. Rationale: the append-only log grows indefinitely, and a 5 MiB rationale permanently inflates every downstream read and renders into `PROGRESS-LOG.md` verbatim.
+
+#### Read rules
+
+- Missing `schema_version` → treat as `1` and write it back on the next write (silent default).
+- `schema_version > 1` → halt and ask the user.
+- Missing required item field → flag the item as malformed, skip it for filtering / reconciliation, do NOT auto-repair.
+- TOML parse error → report the error location, ask the user to fix; do NOT attempt auto-repair.
 <!-- SHARED-BLOCK:execution-record-schema END -->
 
 # Structured Plan Creation
@@ -402,11 +470,16 @@ optimise_findings = ".claude/flows/<slug>/optimise-findings.toml"
 execution_record = ".claude/flows/<slug>/execution-record.toml"
 ```
 
-7. **Bootstrap the execution record**. The execution record is the per-flow append-only log defined in the `## Execution Record Schema` shared block above; `/implement` and `/plan-update` append entries to it via `tomlctl items add`, and `tomlctl set` errors on non-existent targets. To make the file safely writable from any later command, perform these three steps in order:
+7. **Bootstrap the execution record**. The execution record is the per-flow append-only log defined in the `## Execution Record Schema` shared block above; `/implement` and `/plan-update` append entries to it via `tomlctl items add`, and `tomlctl set` errors on non-existent targets. Perform **a single atomic step**:
 
-   a. **Use the `Write` tool** to create `.claude/flows/<slug>/execution-record.toml` as a **zero-byte file** (empty content — pass an empty string as the file body). This zero-byte `Write` is a required bootstrap step, NOT an optimisation target: `tomlctl set` refuses to operate on a path that does not exist, so the empty file must be materialised first. Future readers / refactorers MUST NOT "simplify" this step away by collapsing it into the first `tomlctl set` call — doing so reintroduces the `No such file or directory` failure mode.
-   b. Run `tomlctl set .claude/flows/<slug>/execution-record.toml schema_version 1`.
-   c. Run `tomlctl set .claude/flows/<slug>/execution-record.toml last_updated <today>` — use the same ISO 8601 date written for `created` / `updated` in `context.toml` above.
+   **Use the `Write` tool** to create `.claude/flows/<slug>/execution-record.toml` with the literal content:
+
+   ```
+   schema_version = 1
+   last_updated = <today>
+   ```
+
+   (two lines, trailing newline; `<today>` is the same ISO 8601 date written for `created` / `updated` in `context.toml` above.) This single `Write` materialises a valid-TOML file in one filesystem operation, so the bootstrap is atomic: a concurrent writer that observes the file between this `Write` and the next `tomlctl items add` never sees a zero-byte or partial-TOML intermediate state. **Future readers / refactorers MUST NOT split this into a zero-byte `Write` followed by `tomlctl set` calls** — the legacy 3-step form was non-atomic (between steps, a concurrent reader could parse a zero-byte file as invalid TOML), and the 2-line direct `Write` was introduced specifically to close that TOCTOU window. The single-`Write` form also avoids the `tomlctl set`-on-non-existent-path error mode without re-introducing the zero-byte intermediate.
 
    Do NOT add any `[[items]]` entries here — the empty-log state (no `items` key present, or an empty `items` array) is the canonical initial state, and the first `tomlctl items add` call from `/implement` or `/plan-update` will create the `[[items]]` table-array implicitly. Refer to the `## Execution Record Schema` block for the field contract; do not duplicate the schema here.
 

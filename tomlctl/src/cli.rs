@@ -1258,7 +1258,7 @@ body
         expect_hash(
             &report,
             "flow-context",
-            "d17fb08499bc3dd32903443ab2d2d84b89f7f879dda98bd317b45e58e16f5b2e",
+            "a94ba352d70255eb8d2683a4182e16a06ef24507dca19b71660433381edc351e",
         );
 
         // --- 4-file ledger-schema block ---
@@ -1284,7 +1284,7 @@ body
         expect_hash(
             &report,
             "execution-record-schema",
-            "1fc617622831d98685de90b7461b7a1e90179a2ad55e7c4ac13743db9852f414",
+            "68985704e8d5828a40acc040fc46f3b8fea69d9a740fe3799b86fb5221554a6d",
         );
 
         // --- 2-file apply-only blocks ---
