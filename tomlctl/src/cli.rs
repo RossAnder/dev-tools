@@ -23,7 +23,7 @@ use crate::items::{
     items_next_id, items_remove_from, items_update_to, parse_ndjson,
 };
 use crate::orphans::items_orphans;
-use crate::query::{self, OutputShape, Predicate, Query, SortDir};
+use crate::query::{self, OutputShape, Query};
 
 
 /// Maximum JSON payload accepted from stdin via the `-` sentinel. 32 MiB is
@@ -219,53 +219,53 @@ struct WriteIntegrityArgs {
 /// translate into `Predicate` entries in `build_query`.
 #[derive(Args, Clone)]
 #[command(next_help_heading = "Query options")]
-struct QueryArgs {
+pub(crate) struct QueryArgs {
     #[arg(long = "where", value_name = "KEY=VAL", help = "Filter: field equals value (repeatable)")]
-    where_eq: Vec<String>,
+    pub(crate) where_eq: Vec<String>,
     #[arg(long = "where-not", value_name = "KEY=VAL", help = "Filter: field does not equal value (repeatable)")]
-    where_not: Vec<String>,
+    pub(crate) where_not: Vec<String>,
     #[arg(long = "where-in", value_name = "KEY=V1,V2,...", help = "Filter: field in comma-separated set (repeatable)")]
-    where_in: Vec<String>,
+    pub(crate) where_in: Vec<String>,
     #[arg(long = "where-has", value_name = "KEY", help = "Filter: field is present (repeatable)")]
-    where_has: Vec<String>,
+    pub(crate) where_has: Vec<String>,
     #[arg(long = "where-missing", value_name = "KEY", help = "Filter: field is absent (repeatable)")]
-    where_missing: Vec<String>,
+    pub(crate) where_missing: Vec<String>,
     #[arg(long = "where-gt", value_name = "KEY=VAL", help = "Filter: field > value (repeatable)")]
-    where_gt: Vec<String>,
+    pub(crate) where_gt: Vec<String>,
     #[arg(long = "where-gte", value_name = "KEY=VAL", help = "Filter: field >= value (repeatable)")]
-    where_gte: Vec<String>,
+    pub(crate) where_gte: Vec<String>,
     #[arg(long = "where-lt", value_name = "KEY=VAL", help = "Filter: field < value (repeatable)")]
-    where_lt: Vec<String>,
+    pub(crate) where_lt: Vec<String>,
     #[arg(long = "where-lte", value_name = "KEY=VAL", help = "Filter: field <= value (repeatable)")]
-    where_lte: Vec<String>,
+    pub(crate) where_lte: Vec<String>,
     #[arg(long = "where-contains", value_name = "KEY=SUB", help = "Filter: field string contains SUB (repeatable)")]
-    where_contains: Vec<String>,
+    pub(crate) where_contains: Vec<String>,
     #[arg(long = "where-prefix", value_name = "KEY=S", help = "Filter: field string starts with S (repeatable)")]
-    where_prefix: Vec<String>,
+    pub(crate) where_prefix: Vec<String>,
     #[arg(long = "where-suffix", value_name = "KEY=S", help = "Filter: field string ends with S (repeatable)")]
-    where_suffix: Vec<String>,
+    pub(crate) where_suffix: Vec<String>,
     #[arg(long = "where-regex", value_name = "KEY=PAT", help = "Filter: field string matches regex PAT (repeatable)")]
-    where_regex: Vec<String>,
+    pub(crate) where_regex: Vec<String>,
     #[arg(long = "select", value_name = "F1,F2,...", help = "Projection: keep only the listed fields")]
-    select: Option<String>,
+    pub(crate) select: Option<String>,
     #[arg(long = "exclude", value_name = "F1,F2,...", help = "Projection: drop the listed fields")]
-    exclude: Option<String>,
+    pub(crate) exclude: Option<String>,
     #[arg(long = "pluck", value_name = "FIELD", help = "Projection: return a flat [value, ...] array of FIELD")]
-    pluck: Option<String>,
+    pub(crate) pluck: Option<String>,
     #[arg(long = "sort-by", value_name = "FIELD[:asc|desc]", help = "Sort by FIELD (repeatable for tiebreakers)")]
-    sort_by: Vec<String>,
+    pub(crate) sort_by: Vec<String>,
     #[arg(long = "limit", value_name = "N", help = "Return at most N items")]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[arg(long = "offset", value_name = "N", help = "Skip the first N items")]
-    offset: Option<usize>,
+    pub(crate) offset: Option<usize>,
     #[arg(long = "distinct", help = "Dedup on the projected shape")]
-    distinct: bool,
+    pub(crate) distinct: bool,
     #[arg(long = "group-by", value_name = "FIELD", help = "Aggregate: emit {value: [item, ...], ...}")]
-    group_by: Option<String>,
+    pub(crate) group_by: Option<String>,
     #[arg(long = "count-by", value_name = "FIELD", help = "Aggregate: emit {value: N, ...}")]
-    count_by: Option<String>,
+    pub(crate) count_by: Option<String>,
     #[arg(long = "ndjson", help = "Output one JSON value per line (for piping into add-many/apply)")]
-    ndjson: bool,
+    pub(crate) ndjson: bool,
 }
 
 // The CLI subcommand enums carry a lot of `Vec<String>` / nested-struct
@@ -710,7 +710,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 newer_than: &newer_than,
                 count,
             };
-            let q = build_query(&legacy, &query)?;
+            let q = Query::from_cli_args(&legacy, &query)?;
             // R82: `ndjson` is an output-encoding choice, not a shape. Only
             // the Array shape + ndjson encoding combination is meaningful;
             // `validate_query` (called inside `run`) rejects other combos.
@@ -834,210 +834,18 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
     Ok(())
 }
 
-/// Split a `KEY=VAL` string on the first `=`. Empty keys are rejected. The
-/// value is returned verbatim (no trimming) so callers that care about
-/// whitespace-significant RHS values (e.g. `--where-prefix name= foo`) keep
-/// their payload intact. Used by `build_query` for every `--where-*` family.
-fn split_kv(s: &str) -> Result<(String, String)> {
-    let Some((k, v)) = s.split_once('=') else {
-        bail!("expected KEY=VAL, got `{}`", s);
-    };
-    if k.is_empty() {
-        bail!("KEY=VAL has empty key in `{}`", s);
-    }
-    Ok((k.to_string(), v.to_string()))
-}
-
 /// Legacy shortcut flags that predate the `--where-*` family on `items list`.
 /// Kept on the CLI for back-compat (`--status`, `--category`, `--file`,
 /// `--newer-than`) but translated into equivalent `Predicate` entries in
-/// `build_query` so the query engine only sees one predicate list. R69:
-/// bundled into a small struct so `build_query` can take `(legacy, query)`
-/// rather than the prior 26-positional-arg signature.
-struct LegacyShortcuts<'a> {
-    status: &'a Option<String>,
-    category: &'a Option<String>,
-    file: &'a Option<String>,
-    newer_than: &'a Option<String>,
-    count: bool,
-}
-
-/// Build a `query::Query` from the clap flag values on `ItemsOp::List`.
-/// Validation is handled by `query::run` itself — the first thing it does
-/// is call `validate_query` on the spec, so callers don't need to (R88).
-/// R69: signature collapsed to two references (a `LegacyShortcuts` for the
-/// back-compat shortcut flags + the full `QueryArgs` bundle) so the dispatch
-/// site is a one-line call rather than a 26-line arg spray.
-fn build_query(legacy: &LegacyShortcuts<'_>, q: &QueryArgs) -> Result<Query> {
-    // O46: pre-size the predicate vec. The `4` covers the four legacy shortcut
-    // slots (`status`, `category`, `file`, `newer_than`); the remaining terms
-    // sum the upper bound for every `--where-*` family. Slight over-allocation
-    // when legacy shortcuts are absent is fine; this avoids the 4+ realloc-
-    // grow cycles of pushing into an empty `Vec::new()` on busy list calls.
-    let mut predicates: Vec<Predicate> = Vec::with_capacity(
-        4 + q.where_eq.len()
-            + q.where_not.len()
-            + q.where_in.len()
-            + q.where_has.len()
-            + q.where_missing.len()
-            + q.where_gt.len()
-            + q.where_gte.len()
-            + q.where_lt.len()
-            + q.where_lte.len()
-            + q.where_contains.len()
-            + q.where_prefix.len()
-            + q.where_suffix.len()
-            + q.where_regex.len(),
-    );
-
-    // Legacy shortcut flags — map onto the new predicate surface so the
-    // query engine has a single filter list to evaluate. Duplicating a
-    // legacy flag with an equivalent `--where` is a no-op (same predicate
-    // runs twice; same result).
-    if let Some(v) = legacy.status {
-        predicates.push(Predicate::Where {
-            key: "status".into(),
-            rhs: v.clone(),
-        });
-    }
-    if let Some(v) = legacy.category {
-        predicates.push(Predicate::Where {
-            key: "category".into(),
-            rhs: v.clone(),
-        });
-    }
-    if let Some(v) = legacy.file {
-        predicates.push(Predicate::Where {
-            key: "file".into(),
-            rhs: v.clone(),
-        });
-    }
-    if let Some(v) = legacy.newer_than {
-        // `--newer-than` semantically means "first_flagged > v" where v is
-        // a YYYY-MM-DD. The `@date:` prefix tells `parse_typed_value` to
-        // coerce the RHS to a TOML date rather than comparing as a string.
-        predicates.push(Predicate::WhereGt {
-            key: "first_flagged".into(),
-            rhs: format!("@date:{}", v),
-        });
-    }
-
-    for s in &q.where_eq {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::Where { key, rhs });
-    }
-    for s in &q.where_not {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereNot { key, rhs });
-    }
-    for s in &q.where_in {
-        let (key, rhs) = split_kv(s)?;
-        let values: Vec<String> = rhs.split(',').map(|s| s.to_string()).collect();
-        predicates.push(Predicate::WhereIn { key, rhs: values });
-    }
-    for s in &q.where_has {
-        if s.is_empty() {
-            bail!("--where-has expects a KEY, got empty string");
-        }
-        predicates.push(Predicate::WhereHas { key: s.clone() });
-    }
-    for s in &q.where_missing {
-        if s.is_empty() {
-            bail!("--where-missing expects a KEY, got empty string");
-        }
-        predicates.push(Predicate::WhereMissing { key: s.clone() });
-    }
-    for s in &q.where_gt {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereGt { key, rhs });
-    }
-    for s in &q.where_gte {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereGte { key, rhs });
-    }
-    for s in &q.where_lt {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereLt { key, rhs });
-    }
-    for s in &q.where_lte {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereLte { key, rhs });
-    }
-    for s in &q.where_contains {
-        let (key, sub) = split_kv(s)?;
-        predicates.push(Predicate::WhereContains { key, sub });
-    }
-    for s in &q.where_prefix {
-        let (key, prefix) = split_kv(s)?;
-        predicates.push(Predicate::WherePrefix { key, prefix });
-    }
-    for s in &q.where_suffix {
-        let (key, suffix) = split_kv(s)?;
-        predicates.push(Predicate::WhereSuffix { key, suffix });
-    }
-    for s in &q.where_regex {
-        let (key, pattern) = split_kv(s)?;
-        predicates.push(Predicate::WhereRegex { key, pattern });
-    }
-
-    // Projection: parse `--select a,b` / `--exclude a,b` into Vec<String>.
-    // `validate_query` enforces `select` / `exclude` / `pluck` mutual
-    // exclusion; we just populate the struct.
-    let select_fields: Option<Vec<String>> = q
-        .select
-        .as_deref()
-        .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
-    let exclude_fields: Option<Vec<String>> = q
-        .exclude
-        .as_deref()
-        .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
-
-    // Sort: each entry is `FIELD` or `FIELD:asc` or `FIELD:desc`. Unknown
-    // suffix defaults to `asc` (matches the plan).
-    let mut sort_list: Vec<(String, SortDir)> = Vec::new();
-    for entry in &q.sort_by {
-        let (field, dir) = match entry.split_once(':') {
-            Some((f, d)) => {
-                let dir = match d {
-                    "desc" => SortDir::Desc,
-                    _ => SortDir::Asc,
-                };
-                (f.to_string(), dir)
-            }
-            None => (entry.clone(), SortDir::Asc),
-        };
-        sort_list.push((field, dir));
-    }
-
-    // OutputShape priority (plan): count > count-by > group-by > pluck >
-    // default Array. `ndjson` is an *encoding* choice (R82), not a shape —
-    // it lives on `Query.ndjson` and only applies when the chosen shape is
-    // Array. Multiple shape flags would typically collapse to the
-    // highest-priority one here; `validate_query` (inside `query::run`)
-    // then rejects any shape-vs-projection conflict with a clear error.
-    let shape = if legacy.count {
-        OutputShape::Count
-    } else if let Some(f) = q.count_by.as_deref() {
-        OutputShape::CountBy(f.to_string())
-    } else if let Some(f) = q.group_by.as_deref() {
-        OutputShape::GroupBy(f.to_string())
-    } else if let Some(f) = q.pluck.as_deref() {
-        OutputShape::Pluck(f.to_string())
-    } else {
-        OutputShape::Array
-    };
-
-    Ok(Query {
-        predicates,
-        select: select_fields,
-        exclude: exclude_fields,
-        sort_by: sort_list,
-        limit: q.limit,
-        offset: q.offset,
-        distinct: q.distinct,
-        shape,
-        ndjson: q.ndjson,
-    })
+/// `Query::from_cli_args` so the query engine only sees one predicate list.
+/// R69: bundled into a small struct so `from_cli_args` can take
+/// `(legacy, query)` rather than the prior 26-positional-arg signature.
+pub(crate) struct LegacyShortcuts<'a> {
+    pub(crate) status: &'a Option<String>,
+    pub(crate) category: &'a Option<String>,
+    pub(crate) file: &'a Option<String>,
+    pub(crate) newer_than: &'a Option<String>,
+    pub(crate) count: bool,
 }
 
 fn blocks_dispatch(op: BlocksOp) -> Result<()> {
@@ -1284,7 +1092,7 @@ body
         expect_hash(
             &report,
             "execution-record-schema",
-            "68985704e8d5828a40acc040fc46f3b8fea69d9a740fe3799b86fb5221554a6d",
+            "5406d254e15adb8567fdb375501fb5ab62f7b6897b4a713f686a5814419b26ea",
         );
 
         // --- 2-file apply-only blocks ---

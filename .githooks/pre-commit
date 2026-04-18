@@ -3,7 +3,7 @@ set -euo pipefail
 
 STAGED=$(git diff --cached --name-only)
 
-if ! grep -qE '^claude/commands/(optimise|review|optimise-apply|review-apply|plan-new|plan-update|implement|review-plan)\.md$' <<< "$STAGED"; then
+if [ -z "$STAGED" ]; then
   exit 0
 fi
 

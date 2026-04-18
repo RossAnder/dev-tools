@@ -229,12 +229,29 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     // on projected shape for array/pluck paths).
     let deduped = if q.distinct {
         // For aggregation shapes (count/count-by/group-by), dedup on raw item
-        // shape so grouping keys stay intact. For Array/Pluck, dedup on
-        // projected shape so "select a,b --distinct" dedupes by (a,b).
+        // shape so grouping keys stay intact. For Array, dedup on projected
+        // shape so "select a,b --distinct" dedupes by (a,b). For Pluck, the
+        // user expectation is that `--pluck f --distinct` dedupes by the
+        // plucked field f — `apply_projection` only honours --select/--exclude
+        // and does not narrow to the pluck field, so we build the dedup key
+        // from just that field here (R9).
         match &q.shape {
-            OutputShape::Array | OutputShape::Pluck(_) => {
+            OutputShape::Array => {
                 let projected: Vec<JsonValue> =
                     sorted.iter().map(|v| apply_projection(v, q)).collect();
+                dedup_preserve_first(&sorted, &projected)
+            }
+            OutputShape::Pluck(field) => {
+                // Narrow the dedup key to the plucked field. Items whose
+                // plucked field is missing/null are dropped downstream by
+                // `apply_pluck`; we keep them here so first-occurrence order
+                // stays aligned with the pre-dedup sequence, and use
+                // `JsonValue::Null` as the sentinel key (identical missing
+                // fields dedupe to one, matching scalar-array expectations).
+                let projected: Vec<JsonValue> = sorted
+                    .iter()
+                    .map(|v| v.get(field).cloned().unwrap_or(JsonValue::Null))
+                    .collect();
                 dedup_preserve_first(&sorted, &projected)
             }
             _ => dedup_preserve_first(&sorted, &sorted),
@@ -1065,6 +1082,209 @@ fn bucket_key(v: Option<&JsonValue>) -> String {
     }
 }
 
+/// Split a `KEY=VAL` string on the first `=`. Empty keys are rejected. The
+/// value is returned verbatim (no trimming) so callers that care about
+/// whitespace-significant RHS values (e.g. `--where-prefix name= foo`) keep
+/// their payload intact. Used by `Query::from_cli_args` for every
+/// `--where-*` family.
+fn split_kv(s: &str) -> Result<(String, String)> {
+    let Some((k, v)) = s.split_once('=') else {
+        bail!("expected KEY=VAL, got `{}`", s);
+    };
+    if k.is_empty() {
+        bail!("KEY=VAL has empty key in `{}`", s);
+    }
+    Ok((k.to_string(), v.to_string()))
+}
+
+impl Query {
+    /// Build a `Query` from the clap flag values on `ItemsOp::List`.
+    /// Validation is handled by `run` itself — the first thing it does is
+    /// call `validate_query` on the spec, so callers don't need to (R88).
+    /// R69: signature takes two references (a `LegacyShortcuts` for the
+    /// back-compat shortcut flags + the full `QueryArgs` bundle) so the
+    /// dispatch site is a one-line call rather than a 26-line arg spray.
+    ///
+    /// R30: moved here from `cli.rs` because the translation from clap args
+    /// into domain-level `Predicate` / `OutputShape` values is business
+    /// logic tightly coupled to `query`'s types, not pure CLI plumbing.
+    pub(crate) fn from_cli_args(
+        legacy: &crate::cli::LegacyShortcuts<'_>,
+        q: &crate::cli::QueryArgs,
+    ) -> Result<Self> {
+        // O46: pre-size the predicate vec. The `4` covers the four legacy
+        // shortcut slots (`status`, `category`, `file`, `newer_than`); the
+        // remaining terms sum the upper bound for every `--where-*` family.
+        // Slight over-allocation when legacy shortcuts are absent is fine;
+        // this avoids the 4+ realloc-grow cycles of pushing into an empty
+        // `Vec::new()` on busy list calls.
+        let mut predicates: Vec<Predicate> = Vec::with_capacity(
+            4 + q.where_eq.len()
+                + q.where_not.len()
+                + q.where_in.len()
+                + q.where_has.len()
+                + q.where_missing.len()
+                + q.where_gt.len()
+                + q.where_gte.len()
+                + q.where_lt.len()
+                + q.where_lte.len()
+                + q.where_contains.len()
+                + q.where_prefix.len()
+                + q.where_suffix.len()
+                + q.where_regex.len(),
+        );
+
+        // Legacy shortcut flags — map onto the new predicate surface so the
+        // query engine has a single filter list to evaluate. Duplicating a
+        // legacy flag with an equivalent `--where` is a no-op (same predicate
+        // runs twice; same result).
+        if let Some(v) = legacy.status {
+            predicates.push(Predicate::Where {
+                key: "status".into(),
+                rhs: v.clone(),
+            });
+        }
+        if let Some(v) = legacy.category {
+            predicates.push(Predicate::Where {
+                key: "category".into(),
+                rhs: v.clone(),
+            });
+        }
+        if let Some(v) = legacy.file {
+            predicates.push(Predicate::Where {
+                key: "file".into(),
+                rhs: v.clone(),
+            });
+        }
+        if let Some(v) = legacy.newer_than {
+            // `--newer-than` semantically means "first_flagged > v" where v is
+            // a YYYY-MM-DD. The `@date:` prefix tells `parse_typed_value` to
+            // coerce the RHS to a TOML date rather than comparing as a string.
+            predicates.push(Predicate::WhereGt {
+                key: "first_flagged".into(),
+                rhs: format!("@date:{}", v),
+            });
+        }
+
+        for s in &q.where_eq {
+            let (key, rhs) = split_kv(s)?;
+            predicates.push(Predicate::Where { key, rhs });
+        }
+        for s in &q.where_not {
+            let (key, rhs) = split_kv(s)?;
+            predicates.push(Predicate::WhereNot { key, rhs });
+        }
+        for s in &q.where_in {
+            let (key, rhs) = split_kv(s)?;
+            let values: Vec<String> = rhs.split(',').map(|s| s.to_string()).collect();
+            predicates.push(Predicate::WhereIn { key, rhs: values });
+        }
+        for s in &q.where_has {
+            if s.is_empty() {
+                bail!("--where-has expects a KEY, got empty string");
+            }
+            predicates.push(Predicate::WhereHas { key: s.clone() });
+        }
+        for s in &q.where_missing {
+            if s.is_empty() {
+                bail!("--where-missing expects a KEY, got empty string");
+            }
+            predicates.push(Predicate::WhereMissing { key: s.clone() });
+        }
+        for s in &q.where_gt {
+            let (key, rhs) = split_kv(s)?;
+            predicates.push(Predicate::WhereGt { key, rhs });
+        }
+        for s in &q.where_gte {
+            let (key, rhs) = split_kv(s)?;
+            predicates.push(Predicate::WhereGte { key, rhs });
+        }
+        for s in &q.where_lt {
+            let (key, rhs) = split_kv(s)?;
+            predicates.push(Predicate::WhereLt { key, rhs });
+        }
+        for s in &q.where_lte {
+            let (key, rhs) = split_kv(s)?;
+            predicates.push(Predicate::WhereLte { key, rhs });
+        }
+        for s in &q.where_contains {
+            let (key, sub) = split_kv(s)?;
+            predicates.push(Predicate::WhereContains { key, sub });
+        }
+        for s in &q.where_prefix {
+            let (key, prefix) = split_kv(s)?;
+            predicates.push(Predicate::WherePrefix { key, prefix });
+        }
+        for s in &q.where_suffix {
+            let (key, suffix) = split_kv(s)?;
+            predicates.push(Predicate::WhereSuffix { key, suffix });
+        }
+        for s in &q.where_regex {
+            let (key, pattern) = split_kv(s)?;
+            predicates.push(Predicate::WhereRegex { key, pattern });
+        }
+
+        // Projection: parse `--select a,b` / `--exclude a,b` into Vec<String>.
+        // `validate_query` enforces `select` / `exclude` / `pluck` mutual
+        // exclusion; we just populate the struct.
+        let select_fields: Option<Vec<String>> = q
+            .select
+            .as_deref()
+            .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
+        let exclude_fields: Option<Vec<String>> = q
+            .exclude
+            .as_deref()
+            .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
+
+        // Sort: each entry is `FIELD` or `FIELD:asc` or `FIELD:desc`. Unknown
+        // suffix defaults to `asc` (matches the plan).
+        let mut sort_list: Vec<(String, SortDir)> = Vec::new();
+        for entry in &q.sort_by {
+            let (field, dir) = match entry.split_once(':') {
+                Some((f, d)) => {
+                    let dir = match d {
+                        "desc" => SortDir::Desc,
+                        _ => SortDir::Asc,
+                    };
+                    (f.to_string(), dir)
+                }
+                None => (entry.clone(), SortDir::Asc),
+            };
+            sort_list.push((field, dir));
+        }
+
+        // OutputShape priority (plan): count > count-by > group-by > pluck >
+        // default Array. `ndjson` is an *encoding* choice (R82), not a shape
+        // — it lives on `Query.ndjson` and only applies when the chosen shape
+        // is Array. Multiple shape flags would typically collapse to the
+        // highest-priority one here; `validate_query` (inside `run`) then
+        // rejects any shape-vs-projection conflict with a clear error.
+        let shape = if legacy.count {
+            OutputShape::Count
+        } else if let Some(f) = q.count_by.as_deref() {
+            OutputShape::CountBy(f.to_string())
+        } else if let Some(f) = q.group_by.as_deref() {
+            OutputShape::GroupBy(f.to_string())
+        } else if let Some(f) = q.pluck.as_deref() {
+            OutputShape::Pluck(f.to_string())
+        } else {
+            OutputShape::Array
+        };
+
+        Ok(Query {
+            predicates,
+            select: select_fields,
+            exclude: exclude_fields,
+            sort_by: sort_list,
+            limit: q.limit,
+            offset: q.offset,
+            distinct: q.distinct,
+            shape,
+            ndjson: q.ndjson,
+        })
+    }
+}
+
 // =======================================================================
 // Tests
 // =======================================================================
@@ -1653,5 +1873,39 @@ defer_reason = ""
             err.contains("first_flagged") && err.contains("not-a-date"),
             "error must name the key + the bad RHS; got: {err}"
         );
+    }
+
+    // -- R9 regression ------------------------------------------------
+
+    /// R9: `--pluck <field> --distinct` must dedupe by the plucked field,
+    /// not by the full source item. Previously `apply_projection` only
+    /// honoured --select/--exclude, so two items sharing `task_ref` but
+    /// differing in other fields yielded duplicate values in the output.
+    #[test]
+    fn pluck_distinct_dedupes_on_plucked_field_not_whole_item() {
+        let src = r#"
+[[items]]
+id = "i1"
+task_ref = "alpha"
+
+[[items]]
+id = "i2"
+task_ref = "alpha"
+
+[[items]]
+id = "i3"
+task_ref = "beta"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let q = Query {
+            distinct: true,
+            shape: OutputShape::Pluck("task_ref".into()),
+            // Sort keeps the assertion deterministic; the bug is present
+            // regardless of sort order.
+            sort_by: vec![("task_ref".into(), SortDir::Asc)],
+            ..Default::default()
+        };
+        let out = run(&doc, "items", &q).unwrap();
+        assert_eq!(out, serde_json::json!(["alpha", "beta"]));
     }
 }

@@ -186,9 +186,9 @@ The render emits four tables: **Completed Items** (from `type=task-completion` +
 - Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc --verify-integrity`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
 - **Date** = `YYYY-MM-DD` bucket key.
 - **Changes** = `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the bucket entry count. The word is `entry` when N == 1 (singular), `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in first-appearance order within the bucket. Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN). Example: a bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`. A singleton deviation renders `1 entry: deviation × 1`.
-- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). First-appearance SHA order (do NOT sort lexicographically). Empty when the bucket has no commits.
+- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). Alphabetical first-appearance (sort the resulting SHA set lexicographically) — this preserves cross-reorder idempotency across same-date entries. Empty when the bucket has no commits.
 
-Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency via the pre-sort + count-based Changes column).
+Render-then-render MUST be byte-identical (idempotency). Reordering two same-date entries in the source MUST NOT change the output: the pre-sort by `(date asc, id asc)` fixes bucket order, the count-based Changes column is order-insensitive within a bucket, and the lexicographic Commits sort is order-insensitive within a bucket.
 
 ### Render-from-log routine
 
@@ -204,21 +204,21 @@ The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
 
 2. **Completed Items table** — sourced from
    ```
-   tomlctl items list <record> --where type=task-completion --where status=done --verify-integrity
+   tomlctl items list <record> --where type=task-completion --where status=done --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by entry append order.
+   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by `(date asc, id asc)` — deterministic across migrate back-fills that insert out of chronological order.
 
 3. **Deviations table** — sourced from
    ```
-   tomlctl items list <record> --where type=deviation --verify-integrity
+   tomlctl items list <record> --where type=deviation --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
+   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Rows ordered by `(date asc, id asc)`. Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
 
 4. **Deferrals table** — sourced from
    ```
-   tomlctl items list <record> --where type=deferral --verify-integrity
+   tomlctl items list <record> --where type=deferral --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`.
+   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`. Rows ordered by `(date asc, id asc)`.
 
 5. **Session Log table** with the literal column header `| Date | Changes | Commits |`:
 
@@ -233,9 +233,9 @@ The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
      - **Changes** = the literal format `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the integer entry count in the bucket; the word is `entry` when N == 1 (singular) and `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in **first-appearance order** within the bucket (not alphabetical, not count-sorted). Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN, NOT ASCII `x`). EXAMPLES (both verbatim, both required):
        - A bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`.
        - A singleton deviation renders `1 entry: deviation × 1`.
-     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **first-appearance SHA order** (the order the SHAs appear when iterating bucket entries chronologically) — do NOT sort lexicographically. Empty when no entry in the bucket has a `commits` array.
+     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **alphabetical first-appearance** — collect the SHA set from the bucket, then sort lexicographically before join. This preserves cross-reorder idempotency across same-date entries (chronological-appearance order would change if two same-date entries were swapped in the source). Empty when no entry in the bucket has a `commits` array.
 
-The count-based Changes column is what gives cross-reorder idempotency: swapping two same-date entries in the source log doesn't change the per-type counts in the bucket, so the rendered row is identical. Combined with the pre-sort fixing bucket order, the routine is a true pure function of the log's *contents* (not its insertion sequence within a date).
+Cross-reorder idempotency comes from three order-insensitive operations: the count-based Changes column (swapping two same-date entries in the source log doesn't change the per-type counts in the bucket), the lexicographic Commits sort (SHA order is independent of entry order), and the pre-sort fixing bucket order. Combined, the routine is a true pure function of the log's *contents* — not its insertion sequence within a date.
 
 ### `[tasks].completed` derivation
 
@@ -338,6 +338,11 @@ Scan plan items against the codebase and git history. For each plan task/item, c
 3. **Status-transition writes are change-gated.** Append a `type=status-transition` entry (with `from_status` and `to_status`) ONLY when the flow's `status` field actually changes value (e.g. `in-progress` → `complete`). Never on every invocation. If `status` is unchanged, skip the transition append entirely.
 4. **Never silently back-fill.** The `status` op NEVER appends `type=task-completion` entries — those are exclusively written by `/implement` Phase 2. If reconciliation surfaces an unrecorded completion (e.g. files modified, tests pass, but no matching log entry exists), the op MUST **flag the gap in its reconciliation report** rather than silently appending. Only the `migrate` op (below) is authorised to back-fill `task-completion` entries from a legacy `PROGRESS-LOG.md`.
 5. **Render after any appends.** After the (possibly zero) appends complete, call the render-from-log routine to regenerate `PROGRESS-LOG.md`. The render is always run, even when no entries were appended, so the rendered file stays a pure function of the log.
+6. **Reconcile entries dedupe by (date, agent).** Before appending a `type=reconcile` entry, query the log for any existing `type=reconcile` entry on the same `date` with the same `agent`. If found, **supersede** it: set `supersedes_entry = "<old id>"` on the new entry. Do NOT leave both live. Rationale: reconcile is idempotent — the same reconcile fired twice on the same day from the same agent should not double-count. The supersession chain preserves the audit trail; the render surfaces only the latest per chain.
+7. **Deviation entries dedupe by (task_ref, original_intent, rationale).** Before appending a `type=deviation` entry from any writer (`deviation` op, `reconcile`, `reformat`, `catchup`), query the log for existing `type=deviation` entries matching the same `(task_ref, original_intent, rationale)` triple. If found, **supersede** rather than duplicate: set `supersedes_entry = "<old id>"` on the new entry. Rationale: re-recording an already-captured deviation pollutes the rendered Deviations table and breaks the "latest-per-chain" render guarantee.
+8. **Deferral entries dedupe by (task_ref, reason).** Before appending a `type=deferral` entry from any writer (`defer` op, `reconcile`, `reformat`, `catchup`), query the log for existing `type=deferral` entries matching the same `(task_ref, reason)` pair. If found, **supersede** rather than duplicate: set `supersedes_entry = "<old id>"` on the new entry. Rationale: deferring the same task for the same reason twice is a no-op; recording it twice just inflates the rendered Deferrals table.
+
+The contract applies to **every writer** that can emit these types — not just `/plan-update status`. `/plan-update reconcile`, `/plan-update deviation`, `/plan-update defer`, `/plan-update reformat`, `/plan-update catchup`, and `/implement` (when it routes deviations/deferrals through plan-update patterns) all honour rules 6–8. Enforcement lives in each writer's body; this section is the contract writers must follow.
 
 #### `deviation` — Record a deviation
 
@@ -495,18 +500,9 @@ Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md i
 **PROGRESS-LOG.md format** (this is the rendered shape — `reformat` MUST regenerate it via the **render-from-log routine** rather than hand-authoring it; row identifiers come from the log's `id` field, i.e. `E<n>`. Migrated entries also carry `legacy_id = "D<n>"` / `"DF<n>"` for back-compat, but it does not appear in the `#` column):
 
 ```markdown
+<!-- Generated from execution-record.toml. Do not edit by hand. -->
+
 # {Plan Name} — Progress Log
-
-> Tracks implementation against plan documents `00` through `XX`.
-> Last updated: {date from agent 2's snapshot}
-
----
-
-## Status Summary
-
-| # | Phase/Wave | Status | Completion | Last Activity |
-|---|-----------|--------|------------|---------------|
-| ... | ... | ... | ...% | {date} |
 
 ---
 
@@ -540,11 +536,6 @@ Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md i
 | Date | Changes | Commits |
 |------|---------|---------|
 | ... | ... | ... |
-
----
-
-## Next Actions
-(prioritized, with blocking relationships noted)
 ```
 
 **RESEARCH-NOTES.md format:**
@@ -571,6 +562,8 @@ Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md i
 - Entries carry `legacy_id` for back-compat; no renumbering is required because E-numbers are monotonic.
 - **Preserve task headings verbatim** — `task_ref` is an opaque title slug derived from each task's heading text. If `reformat`'s classification agent rephrases a heading (e.g. "Add retry logic" → "Add retry with exponential backoff"), the derived slug changes and `/implement`'s idempotency skip-list misses the completed task, causing the task to re-execute. Therefore `reformat` MUST preserve each task's heading text **exactly as it appeared in the source plan**, byte-for-byte. Rephrasing is allowed ONLY as an explicit deviation recorded via the `deviation` op (which preserves `supersedes_entry` chains). The classification agent may reorder, regroup, or recategorize tasks freely — but heading text is immutable.
 - **Heading-equality assertion (mandatory).** Before writing the reformatted output, compare the set of pre-reformat task heading strings against the set of post-reformat task heading strings. On any mismatch (added, removed, or rephrased headings), error and require user intervention rather than writing the reformatted plan. Show the diff so the user can decide whether the change is intentional (record as a `deviation`) or accidental (regenerate with stricter heading preservation).
+
+  **Heading extraction rule** (for the equality assertion): from each `### N. Name [S|M|L]` line, extract the `Name` substring — split on `. ` once from the left (after the `### ` prefix), then strip any trailing ` [S]` / ` [M]` / ` [L]` effort tag. Normalise internal whitespace by collapsing runs of ` ` (U+0020) and `\t` (U+0009) to a single space. The assertion compares the **set** of extracted `Name` strings pre- vs post-reformat. Renumbering alone does NOT fail the assertion (numbers are stripped before comparison); rephrasing a heading DOES fail it (explicit deviation required via the `deviation` op). If the source uses a heading style that doesn't match the `### N. Name [S|M|L]` pattern (e.g. legacy plans without effort tags, or `##` instead of `###`), accept it by the same extraction logic: the leading `### ` / `## ` / `#### ` prefix is stripped, the `N. ` numbering prefix is stripped if present, and the trailing effort tag is stripped if present — everything remaining after whitespace normalisation is the `Name`.
 - **Infer deferrals** — items described as "deferred", "future", "nice-to-have", "not needed yet" in the original should be formalized as `type=deferral` E-entries (via the `defer` op pattern) with concrete re-evaluation triggers. If the source row carried a legacy `DF<n>` ID, copy it into `legacy_id`.
 - **Infer deviations** — prose that describes "we did X instead of Y" or "the plan said X but actually Y" should be formalized as `type=deviation` E-entries (via the `deviation` op pattern). If the source row carried a legacy `D<n>` ID, copy it into `legacy_id`; supersession is by `supersedes_entry = "E<n>"`, not by re-using legacy numbers.
 - **PROGRESS-LOG.md is regenerated, not hand-authored.** The reformat MUST regenerate `PROGRESS-LOG.md` via the **render-from-log routine** (see above) — NOT by hand-authoring D/DF-numbered markdown. After the inferred deviation/deferral entries are appended to `<record>` and any new completed-items entries are migrated, append exactly **one `type=checkpoint` entry** tagging the restructure (`summary` should describe what changed: "Restructured plan into outline + detail docs + RESEARCH-NOTES.md", etc.). Then call the render-from-log routine.
@@ -668,7 +661,7 @@ Generate a compact progress summary suitable for standup notes, PR descriptions,
 - What's next (prioritized remaining plan items)
 - Any blockers or deferred items (read `type=deferral` entries)
 
-`snapshot` does not append entries by default, but it MUST call the **render-from-log routine** as its final step so the on-disk `PROGRESS-LOG.md` reflects the latest log state when the user reads the snapshot. This op MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field).
+`snapshot` is **read-only**: it emits nothing to disk. The most recent render of `PROGRESS-LOG.md` already reflects the log state because every mutating op (`status`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) re-renders on every append, and `snapshot` is only invoked between mutations. Calling the render-from-log routine here would be redundant at best and would break the "does not append entries" / "no filesystem writes" invariant at worst. `snapshot` returns a summary of the current log state to the caller for inspection only. This op MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field).
 
 #### `migrate` — Back-fill execution-record.toml from a legacy hand-authored `PROGRESS-LOG.md`
 

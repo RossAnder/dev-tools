@@ -186,9 +186,9 @@ The render emits four tables: **Completed Items** (from `type=task-completion` +
 - Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc --verify-integrity`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
 - **Date** = `YYYY-MM-DD` bucket key.
 - **Changes** = `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the bucket entry count. The word is `entry` when N == 1 (singular), `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in first-appearance order within the bucket. Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN). Example: a bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`. A singleton deviation renders `1 entry: deviation × 1`.
-- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). First-appearance SHA order (do NOT sort lexicographically). Empty when the bucket has no commits.
+- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). Alphabetical first-appearance (sort the resulting SHA set lexicographically) — this preserves cross-reorder idempotency across same-date entries. Empty when the bucket has no commits.
 
-Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency via the pre-sort + count-based Changes column).
+Render-then-render MUST be byte-identical (idempotency). Reordering two same-date entries in the source MUST NOT change the output: the pre-sort by `(date asc, id asc)` fixes bucket order, the count-based Changes column is order-insensitive within a bucket, and the lexicographic Commits sort is order-insensitive within a bucket.
 
 ### Render-from-log routine
 
@@ -204,21 +204,21 @@ The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
 
 2. **Completed Items table** — sourced from
    ```
-   tomlctl items list <record> --where type=task-completion --where status=done --verify-integrity
+   tomlctl items list <record> --where type=task-completion --where status=done --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by entry append order.
+   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by `(date asc, id asc)` — deterministic across migrate back-fills that insert out of chronological order.
 
 3. **Deviations table** — sourced from
    ```
-   tomlctl items list <record> --where type=deviation --verify-integrity
+   tomlctl items list <record> --where type=deviation --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
+   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Rows ordered by `(date asc, id asc)`. Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
 
 4. **Deferrals table** — sourced from
    ```
-   tomlctl items list <record> --where type=deferral --verify-integrity
+   tomlctl items list <record> --where type=deferral --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`.
+   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`. Rows ordered by `(date asc, id asc)`.
 
 5. **Session Log table** with the literal column header `| Date | Changes | Commits |`:
 
@@ -233,9 +233,9 @@ The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
      - **Changes** = the literal format `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the integer entry count in the bucket; the word is `entry` when N == 1 (singular) and `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in **first-appearance order** within the bucket (not alphabetical, not count-sorted). Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN, NOT ASCII `x`). EXAMPLES (both verbatim, both required):
        - A bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`.
        - A singleton deviation renders `1 entry: deviation × 1`.
-     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **first-appearance SHA order** (the order the SHAs appear when iterating bucket entries chronologically) — do NOT sort lexicographically. Empty when no entry in the bucket has a `commits` array.
+     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **alphabetical first-appearance** — collect the SHA set from the bucket, then sort lexicographically before join. This preserves cross-reorder idempotency across same-date entries (chronological-appearance order would change if two same-date entries were swapped in the source). Empty when no entry in the bucket has a `commits` array.
 
-The count-based Changes column is what gives cross-reorder idempotency: swapping two same-date entries in the source log doesn't change the per-type counts in the bucket, so the rendered row is identical. Combined with the pre-sort fixing bucket order, the routine is a true pure function of the log's *contents* (not its insertion sequence within a date).
+Cross-reorder idempotency comes from three order-insensitive operations: the count-based Changes column (swapping two same-date entries in the source log doesn't change the per-type counts in the bucket), the lexicographic Commits sort (SHA order is independent of entry order), and the pre-sort fixing bucket order. Combined, the routine is a true pure function of the log's *contents* — not its insertion sequence within a date.
 
 ### `[tasks].completed` derivation
 
@@ -438,12 +438,21 @@ Determine the plan file location:
 **Create the flow directory**: After writing the plan, create `.claude/flows/<slug>/` under the git top-level and populate it so that `/review-plan`, `/implement`, `/plan-update`, `/review`, `/optimise`, and `/optimise-apply` can locate the flow without requiring the path each time.
 
 1. **Derive the slug** per the Shared Rules: plan filename minus `.md`. For multi-file plans where `plan_path` points at `docs/plans/<feature>/00-outline.md`, the slug is the parent directory name (`<feature>`).
+
+   **Slug sanitiser (local guard, applied BEFORE any filesystem op that uses the slug)**: the derived slug MUST match the regex `^[a-z0-9][a-z0-9-]{0,63}$`. If the derived slug contains `/`, `\`, `..`, `.`, a leading `-`, or exceeds 64 characters, refuse to proceed and prompt the user via `AskUserQuestion` with: "Derived slug `<bad-slug>` is unsafe (contains path-traversal components, slashes, or exceeds 64 chars). Please provide a replacement slug matching `^[a-z0-9][a-z0-9-]{0,63}$`." Use the user-supplied replacement in place of the derived slug for all subsequent steps. This sanitiser exists because `.claude/flows/<slug>/` is path-joined in later steps; an unsanitised slug (e.g. from a plan named `..md` or a symlink trick) could escape the flows directory.
 2. **Check for slug collision**: if `.claude/flows/<slug>/` already exists, read its `context.toml` and compare `plan_path`. If it matches the plan being created, proceed (idempotent). If `plan_path` differs, prompt the user via `AskUserQuestion` to disambiguate (rename the new plan, pick a suffixed slug, or abort). Do not silently overwrite another flow's context.
 3. **Create the directory**: `.claude/flows/<slug>/` (create the parent `.claude/flows/` and `.claude/` as needed — all paths are relative to the git top-level).
 4. **Derive `scope`** from the plan document's "Affected areas" field:
    - For each named area that is a directory, write `<dir>/**` as a glob pattern.
    - For each named file, write the literal repo-relative path.
    - If the "Affected areas" field is empty or nothing parseable can be extracted, prompt the user (via `AskUserQuestion`) for scope patterns before writing the TOML. `scope` must never be empty after creation.
+
+   **Scope entry validation (applied to each derived entry BEFORE writing `scope`)**: each entry MUST satisfy ALL of:
+   - Repo-relative path — MUST NOT start with `/` (absolute paths forbidden).
+   - No `..` path components anywhere in the entry (path-traversal forbidden).
+   - For directory entries, the pre-glob `<dir>` (i.e. the entry before appending `/**`) MUST exist as a directory under the repo root so the resulting glob resolves within the repo.
+
+   If any entry fails validation, refuse to write `scope` and prompt the user via `AskUserQuestion` with: "Affected-areas entry `<bad-entry>` cannot be used as a scope glob — it's outside the repo root or contains path-traversal components. Please provide a repo-relative path or remove the entry." This validation prevents a plan with `../../../` or leading `/` from producing `../../../**` or `/**` patterns in `context.toml`, which would collapse flow-resolution step 2's scope-glob matching across every flow in the repo.
 5. **Derive `branch`**: run `git branch --show-current`. If the output is a non-empty string, set `branch = "<value>"`. If the output is empty (detached HEAD, worktree oddity), **omit the `branch` key entirely** — do not write it as an empty string.
 6. **Write `.claude/flows/<slug>/context.toml`**. Use today's date (ISO 8601) as an unquoted TOML date for both `created` and `updated`. `[artifacts]` paths are computed from the slug and must be persisted in the file.
 
@@ -471,6 +480,12 @@ execution_record = ".claude/flows/<slug>/execution-record.toml"
 ```
 
 7. **Bootstrap the execution record**. The execution record is the per-flow append-only log defined in the `## Execution Record Schema` shared block above; `/implement` and `/plan-update` append entries to it via `tomlctl items add`, and `tomlctl set` errors on non-existent targets. Perform **a single atomic step**:
+
+   **Pre-Write defensive guard** (the `Write` tool bypasses tomlctl's `.claude/` containment check and `.sha256` sidecar, so we enforce the invariants inline here):
+   - The target path MUST be `.claude/flows/<slug>/execution-record.toml` under the git top-level, AND `<slug>` MUST be the value that already passed the slug sanitiser in step 1. Do not skip the sanitiser and hope for the best — an unsanitised slug could escape the flows directory via `/` or `..`.
+   - The target path MUST NOT already exist on disk. Check via `[ -e <path> ]` (or equivalent) before calling `Write`; the `Write` tool truncates its target, so a pre-existing file would silently lose its contents. If the file exists, refuse and halt with the message: "Bootstrap target already exists — refusing to truncate. Did a prior bootstrap partially complete?" The user can then inspect the existing file (legitimate re-run of an idempotent bootstrap, or collision from a spoofed slug) and decide whether to remove it manually.
+   
+   Only after both checks pass, proceed with the `Write`.
 
    **Use the `Write` tool** to create `.claude/flows/<slug>/execution-record.toml` with the literal content:
 

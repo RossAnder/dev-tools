@@ -19,6 +19,7 @@ Do not bypass the hook with `--no-verify` on these files — shared-block drift 
 ## Build & test
 
 - `cargo build --manifest-path tomlctl/Cargo.toml` — build tomlctl
+- `cargo install --path tomlctl` — install the `tomlctl` binary onto your PATH (run once per clone; rerun when the tomlctl binary version bumps)
 - `cargo test --manifest-path tomlctl/Cargo.toml` — run tomlctl tests
 - `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` — lint
 - `cargo audit --file tomlctl/Cargo.lock` — RUSTSEC advisory check (install once via `cargo install cargo-audit`; run before releases and when updating dependencies)

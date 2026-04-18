@@ -186,9 +186,9 @@ The render emits four tables: **Completed Items** (from `type=task-completion` +
 - Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc --verify-integrity`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
 - **Date** = `YYYY-MM-DD` bucket key.
 - **Changes** = `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the bucket entry count. The word is `entry` when N == 1 (singular), `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in first-appearance order within the bucket. Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN). Example: a bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`. A singleton deviation renders `1 entry: deviation × 1`.
-- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). First-appearance SHA order (do NOT sort lexicographically). Empty when the bucket has no commits.
+- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). Alphabetical first-appearance (sort the resulting SHA set lexicographically) — this preserves cross-reorder idempotency across same-date entries. Empty when the bucket has no commits.
 
-Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency via the pre-sort + count-based Changes column).
+Render-then-render MUST be byte-identical (idempotency). Reordering two same-date entries in the source MUST NOT change the output: the pre-sort by `(date asc, id asc)` fixes bucket order, the count-based Changes column is order-insensitive within a bucket, and the lexicographic Commits sort is order-insensitive within a bucket.
 
 ### Render-from-log routine
 
@@ -204,21 +204,21 @@ The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
 
 2. **Completed Items table** — sourced from
    ```
-   tomlctl items list <record> --where type=task-completion --where status=done --verify-integrity
+   tomlctl items list <record> --where type=task-completion --where status=done --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by entry append order.
+   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by `(date asc, id asc)` — deterministic across migrate back-fills that insert out of chronological order.
 
 3. **Deviations table** — sourced from
    ```
-   tomlctl items list <record> --where type=deviation --verify-integrity
+   tomlctl items list <record> --where type=deviation --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
+   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Rows ordered by `(date asc, id asc)`. Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
 
 4. **Deferrals table** — sourced from
    ```
-   tomlctl items list <record> --where type=deferral --verify-integrity
+   tomlctl items list <record> --where type=deferral --sort-by date:asc,id:asc --verify-integrity
    ```
-   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`.
+   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`. Rows ordered by `(date asc, id asc)`.
 
 5. **Session Log table** with the literal column header `| Date | Changes | Commits |`:
 
@@ -233,9 +233,9 @@ The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
      - **Changes** = the literal format `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the integer entry count in the bucket; the word is `entry` when N == 1 (singular) and `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in **first-appearance order** within the bucket (not alphabetical, not count-sorted). Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN, NOT ASCII `x`). EXAMPLES (both verbatim, both required):
        - A bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`.
        - A singleton deviation renders `1 entry: deviation × 1`.
-     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **first-appearance SHA order** (the order the SHAs appear when iterating bucket entries chronologically) — do NOT sort lexicographically. Empty when no entry in the bucket has a `commits` array.
+     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **alphabetical first-appearance** — collect the SHA set from the bucket, then sort lexicographically before join. This preserves cross-reorder idempotency across same-date entries (chronological-appearance order would change if two same-date entries were swapped in the source). Empty when no entry in the bucket has a `commits` array.
 
-The count-based Changes column is what gives cross-reorder idempotency: swapping two same-date entries in the source log doesn't change the per-type counts in the bucket, so the rendered row is identical. Combined with the pre-sort fixing bucket order, the routine is a true pure function of the log's *contents* (not its insertion sequence within a date).
+Cross-reorder idempotency comes from three order-insensitive operations: the count-based Changes column (swapping two same-date entries in the source log doesn't change the per-type counts in the bucket), the lexicographic Commits sort (SHA order is independent of entry order), and the pre-sort fixing bucket order. Combined, the routine is a true pure function of the log's *contents* — not its insertion sequence within a date.
 
 ### `[tasks].completed` derivation
 
@@ -301,7 +301,7 @@ Works with:
    - If $ARGUMENTS points to a single plan file, read that file. If a flow also resolved, prefer the explicit plan-file argument but retain the flow context for Phase 4.5 writes.
    - If $ARGUMENTS is an inline task description, explore the codebase to understand the current state and determine what files need changing.
    - If $ARGUMENTS references specific items (e.g. "items 3,4,5"), extract only those from the plan.
-   - **Track the flow context**: Note the resolved plan file path and flow `slug` — you'll need them for the Phase 4 report, Phase 4.5 sync, and `/plan-update` suggestions. If a flow resolved, update its `context.toml` now: set `status = "in-progress"`, set `updated` to today's ISO 8601 date, and increment `[tasks].in_progress`. **Preserve `created` verbatim** and preserve key order per the TOML read/write contract.
+   - **Track the flow context**: Note the resolved plan file path and flow `slug` — you'll need them for the Phase 4 report, Phase 4.5 sync, and `/plan-update` suggestions. If a flow resolved, update its `context.toml` now: **first, read the pre-update `status` value** via `tomlctl get .claude/flows/<slug>/context.toml status --verify-integrity` and retain it as `<old_status>` — you'll need it for the status-transition log entry below. Then set `status = "in-progress"`, set `updated` to today's ISO 8601 date, and increment `[tasks].in_progress`. **Preserve `created` verbatim** and preserve key order per the TOML read/write contract.
 
      **`[tasks].in_progress` is derived from live TaskCreate state during `/implement` execution only**; writers outside an `/implement` session MUST leave `[tasks].in_progress` untouched. The counter reflects live TaskCreate state only — `/plan-update` and `/plan-new` never write it. Increment on TaskCreate (Phase 1, step 4); decrement on task completion / failure / skip in Phase 2; reconcile to zero in Phase 4.5 once all tasks have terminated.
    - **Resolve `<record>` (the per-flow execution-record path)** once, immediately after the flow context update above. Read `[artifacts].execution_record` from the resolved `context.toml`:
@@ -311,6 +311,16 @@ Works with:
      If the key is absent (legacy flow), fall back to the computed path `.claude/flows/<slug>/execution-record.toml` per the absent-block contract in the `## Flow Context` section above, and write the computed path back into `[artifacts].execution_record` on the next `context.toml` write. If the resolved file does not yet exist on disk, perform the **atomic single-step bootstrap** before any subsequent `tomlctl items add` / `list` / `get` against it: a single `Write` tool call to `<record>` with the literal content `schema_version = 1\nlast_updated = <today>\n` (two lines, trailing newline). This materialises a valid-TOML file in one filesystem operation. Do NOT use the legacy 3-step (zero-byte `Write` + two `tomlctl set`) form — it is non-atomic and a concurrent reader could observe a zero-byte file between steps.
 
      Use `<record>` as shorthand throughout the rest of the command for this fully-qualified path. Every `tomlctl items …` / `tomlctl set …` call against the execution record below MUST use `<record>` — never the bare filename `execution-record.toml` (which would resolve relative to CWD and silently create a stray file at repo root). See the `## Execution Record Schema` shared block for the full schema, type vocabulary, write contract, and `[[items]]` subcommand restrictions.
+   - **Log the status transition** (if the pre-update `<old_status>` captured above differs from `"in-progress"`). Mint the id with `tomlctl items next-id <record> --prefix E` and append a `type=status-transition` entry using the canonical heredoc form:
+
+     ```
+     cat <<'EOF' | tomlctl items add <record> --json -
+     {"id":"<E{n}>","type":"status-transition","date":"<today>","agent":"implement","summary":"status <old_status> → in-progress","from_status":"<old_status>","to_status":"in-progress"}
+     EOF
+     tomlctl set <record> last_updated <today>
+     ```
+
+     If `<old_status>` already equals `"in-progress"` (e.g. a resumed run after a prior `/implement` crash), skip the append — a no-op transition generates no log entry.
    - **Build the idempotency skip-list** before agent dispatch. Query the log for already-completed tasks:
      ```
      tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref --verify-integrity
@@ -376,9 +386,19 @@ For each batch:
 3. When agents return, check for **plan deviations** (see protocol above). If an agent reports a deviation:
    - Reason through the impact.
    - If the deviation is minor and the fix is clear, launch a targeted fix agent.
-   - If the deviation is significant (wrong interface, missing file, architectural mismatch), pause execution and surface the deviation to the user as an informational reminder before continuing. Do NOT advise the user to run `/plan-update deviation` — the deviation is persisted to `<record>` by step 4b below, so a follow-up writer command would create a duplicate entry.
+   - If the deviation is significant (wrong interface, missing file, architectural mismatch), pause execution and surface the deviation to the user as an informational reminder before continuing. Do NOT advise the user to run `/plan-update deviation` — the deviation is persisted to `<record>` by the append in this step, so a follow-up writer command would create a duplicate entry.
 
-   **Per detected deviation, append a `type=deviation` entry to `<record>`** (one entry per distinct deviation, regardless of severity) using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields: `original_intent` (one line summarising what the plan called for), `rationale` (one line explaining the chosen alternative), `commits` (SHAs from this batch's git checkpoint, or `[]` if no checkpoint was made yet). Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
+   **Per detected deviation, append a `type=deviation` entry to `<record>`** (one entry per distinct deviation, regardless of severity) using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields: `original_intent` (one line summarising what the plan called for), `rationale` (one line explaining the chosen alternative), `commits` (SHAs from this batch's git checkpoint, or `[]` if no checkpoint was made yet).
+
+   **Pre-append dedupe guard (mandatory, mid-batch-crash safety).** Unlike `task-completion` (which the reconciler contract dedupes by `task_ref`), `deviation` has no reconciler-level dedupe — a mid-batch crash followed by a rerun would double-write every surviving deviation. Before appending, query the log for an existing match on the `(task_ref, original_intent, rationale)` triple:
+
+   ```
+   tomlctl items list <record> --where type=deviation --where task_ref=<slug> --where original_intent=<intent> --where rationale=<rationale> --count --verify-integrity
+   ```
+
+   If the returned count is ≥ 1, skip the append and log a console note: `deviation already recorded — skipping duplicate`. Only append when the count is 0. (Fallback if the multi-`--where` form is unwieldy for the shell-escaping of long strings: compute a `deviation_fingerprint = sha256(task_ref || original_intent || rationale)` and dedupe on that single field instead. The prose describes the triple-match approach; the fingerprint variant is semantically equivalent.)
+
+   Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
 
    ```json
    {"id":"E12","type":"deviation","date":"2026-04-18","agent":"implement","task_ref":"add-redis-cache","summary":"Used existing LruCache util rather than introducing Redis","original_intent":"Add Redis dependency for caching","rationale":"src/util/cache.rs already covers the use case","commits":["def5678"]}
@@ -386,12 +406,13 @@ For each batch:
 
    Always conclude the two-call pattern with `tomlctl set <record> last_updated <today>`.
 4. Update completed tasks to `completed` via TaskUpdate. If a task failed or reported a deviation, mark it with a comment describing the issue and continue with the next batch (dependent tasks will remain blocked).
+5. **Git checkpoint**: If there are subsequent batches that depend on this one, stage and commit the current batch's changes before proceeding (this must run BEFORE the step 5b task-completion append so the entry can carry the real commit SHA). This makes failures in later batches revertible without losing earlier work. Capture the resulting SHA with `git rev-parse HEAD` immediately after the commit lands. If no subsequent batch depends on this one, skip the commit — the task-completion entry in step 5b will carry an empty `commits[]` and the next batch's commit will cover this batch's work. **If `git commit` fails** (e.g. a pre-commit hook rejects the change): do NOT proceed to step 5b — the task is not complete. Surface the hook failure to the user and halt; the task-completion entry must not be appended for an uncommitted terminal state.
 
-   **4b. Per task that reached a terminal state in this batch, append a `type=task-completion` entry to `<record>`** using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields:
+   **5b. Per task that reached a terminal state in this batch, append a `type=task-completion` entry to `<record>`** using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields:
    - `task_ref` — the task-heading slug (opaque, lowercased, hyphenated; the same shape used in the Phase 1 skip-list query).
    - `status` ∈ {`done`, `failed`, `skipped`} — `done` for clean completion, `failed` for tasks that exhausted the retry budget, `skipped` for tasks the orchestrator chose not to dispatch (e.g. blocked-by-failure cascade).
    - `files` — array of file paths the agent reported touching, taken verbatim from the agent's return summary.
-   - `commits` — array of SHAs from this batch's git checkpoint (step 5 below). If no checkpoint was made for this batch (e.g. the batch was the final one and no subsequent batch depends on it yet), pass `[]`.
+   - `commits` — array containing the SHA captured from `git rev-parse HEAD` after step 5's commit landed. If step 5 skipped the commit (no dependent batch follows), pass `[]`.
 
    Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
 
@@ -400,7 +421,6 @@ For each batch:
    ```
 
    Always conclude the two-call pattern with `tomlctl set <record> last_updated <today>`. Every call MUST use `<record>` (the fully-qualified `.claude/flows/<slug>/execution-record.toml` path resolved in Phase 1) — never the bare filename.
-5. **Git checkpoint**: If there are subsequent batches that depend on this one, stage and commit the current batch's changes before proceeding. This makes failures in later batches revertible without losing earlier work. (If a checkpoint is made after step 4b ran with empty `commits[]`, that's acceptable — the entries are append-only and the next deviation/completion in the following batch will carry the new SHA. The append-only + supersession contract in the `## Execution Record Schema` shared block covers correction via a new entry, not in-place mutation.)
 6. **Rollback on batch failure**: If a batch fails and cannot be fixed within the retry budget (see below), `git revert` to the last successful batch commit. Report the revert and the failure reason so the user can update the plan.
 
 ### Retry budget
@@ -440,7 +460,13 @@ Conclude the two-call pattern with `tomlctl set <record> last_updated <today>` a
 If verification fails:
 1. **Reason thoroughly to diagnose** in the main conversation. Thoroughly analyse the failure and determine root cause.
 2. Fix the issue directly or launch a targeted fix agent. **This counts against the retry budget** — maximum 2 fix-and-reverify cycles for the entire verification phase.
-3. Re-run verification. (Each re-run appends fresh `type=verification` entries — the log is append-only, so a failed-then-passed sequence yields two entries with the same `command` and different `outcome` values. The render routine surfaces the latest per supersession chain; raw entries remain for audit.)
+3. Re-run verification. Each re-run appends fresh `type=verification` entries — the log is append-only, so a failed-then-passed sequence yields two entries with the same `command` and different `outcome` values. **On a second (or subsequent) verification entry for the same `(command, task_ref)` pair after a fix-and-reverify cycle, the new entry MUST set `supersedes_entry = "<old verification entry id>"` on itself.** Query for the existing entry first:
+
+   ```
+   tomlctl items list <record> --where type=verification --where command=<cmd> --pluck id --verify-integrity | jq -r '.[-1]'
+   ```
+
+   The last element of that array is the most recent prior verification id for the same command; include it as `supersedes_entry` in the new entry's JSON payload. This populates the supersession chain so the render routine's "latest per supersession chain" claim is actually satisfied — without the back-link, the chain is empty and the render would pick an arbitrary raw entry instead of the fix-and-reverify winner. Raw entries remain for audit.
 4. If verification still fails after 2 attempts, report the specific failures and suggest the user investigate manually or update the plan.
 
 **End of Phase 3 — render `PROGRESS-LOG.md` from `<record>`.** Once all verification entries have been appended (and any fix-and-reverify cycles have completed), invoke the render-from-log routine documented in `## Execution Record Schema` above (within the `execution-record-schema` shared block) to regenerate `.claude/flows/<slug>/PROGRESS-LOG.md` from the fresh log state. This guards against PROGRESS-LOG drifting stale between `/implement` completion and the next `/plan-update` invocation. Even though Phase 4.5 below auto-invokes `/plan-update status` (which itself runs the render-from-log routine), `/implement` performs the render here too — the render is cheap and idempotent (render-then-render is byte-identical per the `## Execution Record Schema` shared block), and this guards against the Phase 4.5 no-op gate skipping the render entirely on runs where `[tasks].in_progress == 0` and no scoped files were touched.
