@@ -1,45 +1,44 @@
 ---
 name: tomlctl
-description: Read and write TOML files used by Claude Code flows — `.claude/flows/*/context.toml`, `review-ledger.toml`, `optimise-findings.toml`. Use this skill instead of `python3 -c "import tomllib"` whenever parsing, querying, or mutating these files. Works on Windows and Linux; outputs JSON for easy consumption.
+description: Read and write TOML files used by Claude Code flows — `.claude/flows/*/context.toml`, `review-ledger.toml`, `optimise-findings.toml`. The single blessed path for parsing, querying, and mutating these files. Works on Windows and Linux; outputs JSON for easy consumption.
 ---
 
 # tomlctl
 
 > This document is the authoritative tomlctl reference. The top-level `tomlctl/README.md` is a short human tour that intentionally defers here for anything beyond the quick-tour examples.
 
-A small Rust CLI that reads and writes the TOML files used by the `/plan-new`, `/implement`, `/plan-update`, `/review`, `/optimise`, and `/optimise-apply` commands. It replaces the `python3 -c "import tomllib"` approach that breaks on Windows Git Bash.
+A small Rust CLI that reads and writes the TOML files used by the `/plan-new`, `/implement`, `/plan-update`, `/review`, `/optimise`, `/review-apply`, and `/optimise-apply` commands.
 
 ## When to use this skill
 
 Use `tomlctl` whenever a flow command needs to:
 - Resolve a flow's `scope`, `branch`, `status`, or `artifacts.*` from `context.toml`.
-- Read or filter `[[items]]` in `review-ledger.toml` / `optimise-findings.toml`.
+- Read, filter, project, group, sort, or count `[[items]]` in `review-ledger.toml` / `optimise-findings.toml`.
 - Update a single scalar (`status`, `updated`, `tasks.completed`) in `context.toml`.
-- Append a new `[[items]]` entry, or patch fields on an existing item by `id`.
-- Compute the next `R{n}` / `O{n}` id without loading Python.
+- Append one or many new `[[items]]` entries, or patch fields on an existing item by `id`.
+- Append a record to a non-`items` array-of-tables (e.g. `[[rollback_events]]`).
+- Compute the next `R{n}` / `O{n}` id.
 
-If the binary isn't on PATH, skip this skill and fall back to the `python3` parse-rewrite path described in each command's TOML read/write contract.
+Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` pipelines.
 
 ## Install
 
 One-time, per machine:
 
-```powershell
+```bash
 # from the dev-tools repo root
 cargo install --path tomlctl
 ```
 
 That drops `tomlctl` into `~/.cargo/bin/` (already on PATH if Rust is installed). Verify:
 
-```powershell
+```bash
 tomlctl --version
 ```
 
-On Linux/macOS the same `cargo install --path tomlctl` works.
-
 ## Read operations
 
-All read commands print JSON on stdout. Pipe through `Select-Object` / `jq` / `ConvertFrom-Json` as needed.
+All read commands print JSON on stdout.
 
 ```bash
 # Whole document as JSON (omit the path argument to read the entire file)
@@ -50,44 +49,133 @@ tomlctl get .claude/flows/auth-overhaul/context.toml status
 tomlctl get .claude/flows/auth-overhaul/context.toml tasks.completed
 tomlctl get .claude/flows/auth-overhaul/context.toml artifacts.optimise_findings
 
-# Whole [[items]] array (JSON array of objects)
-tomlctl items list .claude/flows/auth-overhaul/review-ledger.toml
-
-# Filter items by status
-tomlctl items list .claude/flows/auth-overhaul/review-ledger.toml --status open
-
-# Count matching items without serialising them (returns {"count": N})
-tomlctl items list .claude/flows/auth-overhaul/review-ledger.toml --status open --count
-
-# Fetch one item
-tomlctl items get .claude/flows/auth-overhaul/review-ledger.toml R22
-
 # Parse-check (exit 0 on valid)
 tomlctl validate .claude/flows/auth-overhaul/context.toml
 ```
 
 TOML dates render as ISO-8601 strings in the JSON output.
 
-`tomlctl parse <file>` remains accepted as a deprecated alias for `tomlctl get <file>` (no path argument) — it is kept for backward compatibility with older scripts and may be removed in a future version. Prefer `tomlctl get <file>` in new docs and recipes.
+`tomlctl parse <file>` remains accepted as a deprecated alias for `tomlctl get <file>` (no path argument) — kept for backward compatibility with older scripts. Prefer `tomlctl get <file>` in new docs and recipes.
 
-### Compound `items list` filters
+## Query `items` (full query surface)
 
-All filters combine via AND. Any subset may be passed; unset filters are no-ops.
+`tomlctl items list <file>` is the one-stop query tool for `[[items]]` (and any other array-of-tables via `--array <name>`). Every flag below is additive; omit any flag and it contributes nothing. Filters AND-combine; projections, shaping, and aggregation apply after filtering.
+
+### Filters (all repeatable, all AND-combined)
+
+All `KEY=VAL` right-hand sides accept an optional `@type:` prefix to disambiguate native TOML types from string literals:
+
+| RHS form | Meaning |
+|---|---|
+| `@date:2026-04-18` | TOML date literal |
+| `@datetime:2026-04-18T10:00:00Z` | TOML datetime |
+| `@int:42` | integer |
+| `@float:1.5` | float |
+| `@bool:true` | boolean |
+| `@string:foo` / `@str:foo` | explicit string (useful when value looks like a date/int but you need string compare) |
+| `foo` (no prefix) | string; when the item field is natively typed, the RHS is coerced to the field's type before comparison |
 
 ```bash
-# Open quality findings in a single file, flagged since the 10th
-tomlctl items list ledger.toml \
-  --status open \
-  --category quality \
-  --newer-than 2026-04-10 \
-  --file src/auth/session.rs
+# Status/category/file — legacy shortcut flags still work (unchanged semantics)
+tomlctl items list ledger.toml --status open
+tomlctl items list ledger.toml --category quality --status open --file src/auth/session.rs
+
+# Generic equality (exact match; string or native-typed)
+tomlctl items list ledger.toml --where status=open
+tomlctl items list ledger.toml --where severity=critical --where category=memory
+
+# Negated equality
+tomlctl items list ledger.toml --where-not status=fixed
+
+# Set membership
+tomlctl items list ledger.toml --where-in status=open,deferred,wontfix
+
+# Field presence
+tomlctl items list ledger.toml --where-has defer_reason      # field present and non-empty
+tomlctl items list ledger.toml --where-missing resolution    # field absent or empty
+
+# Numeric / date comparison (use @type: when RHS is ambiguous)
+tomlctl items list ledger.toml --where-gte first_flagged=@date:2026-04-01
+tomlctl items list ledger.toml --where-lt line=@int:100
+tomlctl items list ledger.toml --where-gt rounds=@int:1
+
+# String substring / prefix / suffix (case-sensitive)
+tomlctl items list ledger.toml --where-contains summary=allocation
+tomlctl items list ledger.toml --where-prefix id=R2
+tomlctl items list ledger.toml --where-suffix file=.rs
+
+# Regex (caller-supplied anchors — does NOT auto-anchor)
+tomlctl items list ledger.toml --where-regex symbol='^old::'
 ```
 
-- `--status <name>` — exact match on `status`.
-- `--category <name>` — exact match on `category`.
-- `--newer-than <YYYY-MM-DD>` — include items whose `first_flagged` is **strictly** after the given ISO date. The flag value is parsed as a TOML date at CLI-parse time; malformed dates error with a clear message.
-- `--file <path>` — exact match on the item's `file` field (no globbing).
-- `--count` — emit `{"count": N}` instead of the items array. Combines with the other filters; useful for gate checks such as `[ "$(tomlctl items list ledger.toml --status open --count | jq -r .count)" = "0" ]`.
+Legacy shortcut flags preserved (use `--where` for anything new):
+
+- `--status <name>` — same as `--where status=<name>`
+- `--category <name>` — same as `--where category=<name>`
+- `--file <path>` — same as `--where file=<path>`
+- `--newer-than <YYYY-MM-DD>` — same as `--where-gt first_flagged=@date:<d>`
+
+### Projection (mutually exclusive within this group)
+
+```bash
+# Keep only these keys per item
+tomlctl items list ledger.toml --status open --select id,file,summary
+
+# Drop these keys per item
+tomlctl items list ledger.toml --status open --exclude description,evidence
+
+# Flat list of one field's values
+tomlctl items list ledger.toml --where-has defer_reason --pluck id
+# → ["R3","R7","R22"]
+```
+
+`--select` + `--exclude`, `--select` + `--pluck`, and `--exclude` + `--pluck` are rejected at parse time.
+
+### Shaping
+
+```bash
+# Sort ascending (default) or descending, tiebreakers via repeated flag
+tomlctl items list ledger.toml --sort-by first_flagged
+tomlctl items list ledger.toml --sort-by severity:desc --sort-by first_flagged:asc
+
+# Paginate
+tomlctl items list ledger.toml --limit 10
+tomlctl items list ledger.toml --offset 20 --limit 10
+
+# Dedup on the projected shape (preserve first occurrence)
+tomlctl items list ledger.toml --select category --distinct
+```
+
+### Aggregation (short-circuits projection / group-by)
+
+```bash
+# Count matching items
+tomlctl items list ledger.toml --status open --count
+# → {"count": 7}
+
+# Bucket by a field, emit counts
+tomlctl items list ledger.toml --count-by status
+# → {"open": 7, "fixed": 12, "wontfix": 1}
+
+# Bucket by a field, emit item lists
+tomlctl items list ledger.toml --group-by file
+# → {"src/a.rs": [item, ...], "src/b.rs": [item, ...]}
+```
+
+`--count`, `--count-by`, and `--group-by` are mutually exclusive.
+
+### NDJSON output
+
+```bash
+# Newline-delimited one-per-line output — pipes cleanly into items add-many / apply
+tomlctl items list ledger.toml --status open --ndjson
+```
+
+### Single-item fetch
+
+```bash
+tomlctl items get .claude/flows/auth-overhaul/review-ledger.toml R22
+```
 
 ### Find duplicates (read-only)
 
@@ -174,9 +262,9 @@ tomlctl set-json .claude/flows/auth/context.toml artifacts \
   --json '{"review_ledger":"x.toml","optimise_findings":"y.toml"}'
 ```
 
-### Append a new item
+### Append a single new item
 
-`--json` takes a single JSON object representing the new `[[items]]` entry. Field order in the JSON becomes field order in the emitted TOML, so pass fields in the canonical key order from `## Ledger Schema`:
+`--json` takes one JSON object representing the new `[[items]]` entry. Field order in the JSON becomes field order in the emitted TOML, so pass fields in the canonical key order from `## Ledger Schema`:
 `id, file, line, symbol, severity, effort, category, summary, description, evidence, first_flagged, rounds, related, status, <disposition-specific>, flow`.
 
 ```bash
@@ -194,7 +282,27 @@ tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{
 }'
 ```
 
-Date-shaped strings (`YYYY-MM-DD`) are automatically promoted to TOML date literals.
+Date-shaped strings (`YYYY-MM-DD`) in the `DATE_KEYS` set (`created`, `updated`, `first_flagged`, `last_updated`, `resolved`, `date`) are automatically promoted to TOML date literals.
+
+### Batch append many items — `items add-many`
+
+For runs that need to append many new items at once (e.g. a 50-finding review batch), assemble NDJSON line-by-line in bash and pipe to `items add-many`. Each line is one JSON object; blank lines are ignored; any malformed line aborts the whole batch pre-mutation and names the offending line number.
+
+```bash
+# Common fields stamped once via --defaults-json; per-row keys win on conflict.
+tomlctl items add-many .claude/flows/foo/review-ledger.toml \
+  --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
+  --ndjson - <<'EOF'
+{"id":"R1","file":"src/a.rs","line":10,"severity":"minor","category":"quality","summary":"…"}
+{"id":"R2","file":"src/b.rs","line":22,"severity":"major","category":"quality","summary":"…"}
+{"id":"R3","file":"src/c.rs","line":7,"severity":"critical","category":"memory","summary":"…"}
+EOF
+# → {"ok":true,"added":3}
+```
+
+`--ndjson <path>` reads from a file instead of stdin. `--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed.
+
+Prefer `items add-many` over a shell loop of single `items add` calls — one parse, one lock, one rewrite, one sidecar refresh.
 
 ### Patch an existing item
 
@@ -250,9 +358,32 @@ tomlctl items next-id .claude/flows/foo/optimise-findings.toml --prefix O  # →
 
 Returns the JSON-encoded string of the next id (prefix + `max(existing numeric suffixes) + 1`). Empty ledger → `<prefix>1`.
 
-### Batch multiple item ops (`items apply`)
+### Append to an array-of-tables — `array-append`
 
-For runs that touch several `[[items]]` in the same ledger, use `items apply` to parse + rewrite the file once. `--ops` is a JSON array; each op is `{"op": "add|update|remove", ...}` with the same payload shape as the single-op commands (`json` for add/update, `id` for update/remove). Ops run in array order; any op error aborts the whole batch and the file is left unchanged.
+For append-only arrays such as `[[rollback_events]]` (written by `/review-apply` / `/optimise-apply` rollback protocol), use `array-append`. It's a thin shim over `items add-many` that targets an arbitrary array name and doesn't require op-type framing.
+
+```bash
+# Single record
+tomlctl array-append <ledger> rollback_events --json '{
+  "timestamp": "2026-04-18T14:32:00Z",
+  "command": "review-apply",
+  "cause": "build failure",
+  "items": ["R3","R7"],
+  "stash_ref": "stash@{0}"
+}'
+
+# Many records via NDJSON
+tomlctl array-append <ledger> rollback_events --ndjson - <<'EOF'
+{"timestamp":"…","command":"…","cause":"…","items":["…"]}
+{"timestamp":"…","command":"…","cause":"…","items":["…"]}
+EOF
+```
+
+`items apply --array <name>` remains available for heterogeneous batches (add/update/remove on the same array in one parse+write). Use `array-append` when every op is an append.
+
+### Batch multiple mixed item ops (`items apply`)
+
+For runs that mix add/update/remove on `[[items]]` in the same ledger, use `items apply` to parse + rewrite the file once. `--ops` is a JSON array; each op is `{"op": "add|update|remove", ...}` with the same payload shape as the single-op commands (`json` for add/update, `id` for update/remove). Ops run in array order; any op error aborts the whole batch and the file is left unchanged.
 
 ```bash
 tomlctl items apply .claude/flows/foo/review-ledger.toml --ops '[
@@ -262,40 +393,20 @@ tomlctl items apply .claude/flows/foo/review-ledger.toml --ops '[
 ]'
 ```
 
-Prefer this over looping single-op invocations — one parse + one write instead of N.
+Prefer this over looping single-op invocations — one parse + one write instead of N. For homogeneous add-only batches prefer `items add-many` (simpler input shape). For append-only non-`items` arrays prefer `array-append`.
 
 #### Targeting a non-default array-of-tables (`--array`)
 
-`items apply` defaults to mutating the `[[items]]` array at the ledger root. For ledger-level arrays-of-tables other than `items` — notably the append-only `[[rollback_events]]` log that `/review-apply` and `/optimise-apply` Step 5.5 write — pass `--array <name>` to redirect the batch at that table. The flag is apply-only (not accepted on `items add|update|remove|list|get`).
-
-```bash
-# Append a rollback event to the ledger's [[rollback_events]] array
-printf '%s' '[{"op":"add","json":{"timestamp":"2026-04-18T14:32:00Z","command":"review-apply","cause":"build failure","items":["R3","R7"],"stash_ref":"stash@{0}"}}]' \
-  | tomlctl items apply <ledger> --array rollback_events --ops -
-```
-
-Omit `--array` (or pass `--array items`) for normal `[[items]]` batches. The flag exists specifically to support `rollback_events` and any future ledger-level arrays-of-tables without leaving the parse-rewrite contract.
+`items apply` defaults to mutating the `[[items]]` array at the ledger root. Pass `--array <name>` to redirect the batch at a different array-of-tables (e.g. `rollback_events`). The flag is apply-only (not accepted on `items add|update|remove|list|get`).
 
 ### Stdin input for large JSON payloads
 
-All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`) treat the literal value `-` as "read JSON from stdin". Use this to avoid shell-quoting or tempfile round-trips when the JSON payload is large (batches of 10+ items, or values containing quotes / newlines / dollar signs):
+All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) treat the literal value `-` as "read from stdin". Use this to avoid shell-quoting or tempfile round-trips when the payload is large or contains quotes / newlines / dollar signs.
 
-```bash
-# bash — pipe via process substitution or heredoc
-printf '%s' "$OPS_JSON" | tomlctl items apply ledger.toml --ops -
-
-tomlctl items apply ledger.toml --ops - <<'EOF'
-[{"op":"update","id":"R1","json":{"status":"fixed"}}]
-EOF
-```
-
-```powershell
-# PowerShell — pipe a string or file
-$ops | tomlctl items apply ledger.toml --ops -
-Get-Content ops.json | tomlctl items apply ledger.toml --ops -
-```
-
-Empty stdin is an error. Use the literal CLI-argument form for small payloads; use stdin for anything that would require complex shell escaping.
+Stdin consumption rules:
+- Refuses to block on an interactive TTY (so `… --json -` without a pipe errors fast rather than hanging).
+- Caps the read at 32 MiB.
+- Only one flag per invocation may use `-` (reading the same stdin twice returns an empty payload).
 
 ## Integrity sidecar
 
@@ -328,14 +439,14 @@ tomlctl --verify-integrity items list ledger.toml --status open
 ## Constraints and gotchas
 
 - **No comment preservation.** The schemas forbid inline comments, so this is fine for flow/ledger files. Do not point `tomlctl` at TOML files where comments matter.
-- **Whole-file rewrite.** Any write operation reparses, mutates, and re-serialises the whole document — identical to the Python parse-rewrite strategy the commands mandate. Never runs a line-level Edit.
+- **Whole-file rewrite.** Any write operation reparses, mutates, and re-serialises the whole document. Never runs a line-level Edit.
 - **Whitespace may change.** Long inline arrays may be reflowed to multi-line by the serializer. Semantically identical.
 - **`created` is preserved verbatim.** The tool never touches it unless you explicitly `set created <date>` (don't).
 - **Unknown-value rules stay with the caller.** `tomlctl` returns raw values; the command's "unknown status → treat as in-progress" / "unknown category → fail-soft" rules apply in the calling command's logic, not in the tool.
-- **Errors exit non-zero and print to stderr.** Success paths emit either JSON data or `{"ok":true}` to stdout. Always check exit code in scripted flows.
+- **Errors exit non-zero and print to stderr.** Success paths emit either JSON data or `{"ok":true,…}` to stdout. Always check exit code in scripted flows.
 - **Lock timeout: 30 seconds.** Writes acquire an exclusive OS-level lock on a sidecar `.lock` file next to the target (e.g. `review-ledger.toml.lock`). `tomlctl` polls `try_lock_exclusive` every 500 ms and bails after 30 s total with an error naming the lock path. On Windows this is a mandatory lock — a crashed or stuck `tomlctl` leaves the `.lock` file present and the OS keeps the lock until the offending process dies. **Recovery when a lock is stranded:** confirm no live `tomlctl` process holds it (Task Manager / `Get-Process tomlctl` / `ps aux | grep tomlctl`), then delete the `<target>.lock` file. The next invocation will recreate and re-acquire it cleanly.
-- **Write-path safety (best-effort containment guard, not a sandbox).** Write operations (`set`, `set-json`, `items add|update|remove|apply`) reject targets that canonicalise outside the current repo's `.claude/` directory. The guard resolves symlinks and `..` at canonicalisation time and rejects paths not under `<git-top-level>/.claude/`. Read operations are not guarded. Pass `--allow-outside` (a global flag, before the subcommand) to override when you genuinely need to edit a flow TOML elsewhere — e.g. `tomlctl --allow-outside set /tmp/scratch.toml status draft`. Treat this as a best-effort guard against agent/user typos that would otherwise land writes in unintended locations (e.g. an agent-influenced `artifacts.*` path pointing at a credential or config file); it is not a security sandbox and a TOCTOU-race or symlink swap between canonicalisation and open can in principle escape it.
+- **Write-path safety (best-effort containment guard, not a sandbox).** Write operations (`set`, `set-json`, `items add|update|remove|apply|add-many`, `array-append`) reject targets that canonicalise outside the current repo's `.claude/` directory. The guard resolves symlinks and `..` at canonicalisation time and rejects paths not under `<git-top-level>/.claude/`. Read operations are not guarded. Pass `--allow-outside` (a per-subcommand flag) to override when you genuinely need to edit a flow TOML elsewhere — e.g. `tomlctl set /tmp/scratch.toml status draft --allow-outside`. `--allow-outside` is pinned behind an interactive permission prompt at the project settings level — it should never appear in unattended automation. Treat this as a best-effort guard against agent/user typos that would otherwise land writes in unintended locations; it is not a security sandbox and a TOCTOU-race or symlink swap between canonicalisation and open can in principle escape it.
 
-## Fallback
+## Permissions
 
-If `tomlctl` isn't available (missing binary, cargo not installed, etc.), fall back to the `python3 -c "import tomllib"` parse-rewrite strategy documented in each command's `## Ledger Schema` and `### TOML read/write contract` sections. Do not attempt line-level Edits on ledger files with multiple `[[items]]` entries — the uniqueness-of-match constraint is not satisfiable.
+`Bash(tomlctl *)` is pre-approved in the project's `.claude/settings.json`. `Bash(tomlctl --allow-outside *)` is explicitly denied at the same layer, so any invocation passing `--allow-outside` falls through to an interactive permission prompt. Agents should never emit `--allow-outside` unattended — the write-path containment guard is default-on for a reason.

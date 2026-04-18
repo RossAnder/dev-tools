@@ -40,12 +40,3 @@ files = [
   "claude/commands/optimise-apply.md",
   "claude/commands/review-apply.md",
 ]
-
-[[block]]
-name = "python3-fallback"
-files = [
-  "claude/commands/optimise.md",
-  "claude/commands/review.md",
-  "claude/commands/optimise-apply.md",
-  "claude/commands/review-apply.md",
-]

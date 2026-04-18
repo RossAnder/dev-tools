@@ -237,26 +237,30 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 - `tomlctl items add <ledger> --json '{...}'` — append a new item.
 - `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
 - `tomlctl items remove <ledger> <id>` — delete by id.
-- `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` — batch multiple ops in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N.
+- `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N.
+- `tomlctl items add-many <ledger> --ndjson - [--defaults-json '{...}']` — batch-append **homogeneous** new items via newline-delimited JSON on stdin; shared fields go in `--defaults-json` and per-row keys win. Prefer this over a hand-rolled `--ops` array when every op is `"add"`. Example:
+  ```bash
+  tomlctl items add-many <ledger> \
+    --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
+    --ndjson - <<'EOF'
+  {"id":"R40","file":"src/a.rs","line":10,"severity":"warning","effort":"small","category":"quality","summary":"..."}
+  {"id":"R41","file":"src/b.rs","line":22,"severity":"suggestion","effort":"trivial","category":"quality","summary":"..."}
+  EOF
+  ```
+- `tomlctl array-append <ledger> <array-name> --json '{...}'` (or `--ndjson -` for many) — append to an append-only array-of-tables (e.g. `rollback_events`) without op-type JSON framing. Thin shim over `items apply --array <name>`; use this for readable single-entry appends.
 - `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated`.
 - `tomlctl items next-id <ledger> --prefix R|O` — compute the next monotonic id.
-- **Stdin for `--ops` / `--json`**: every JSON-accepting flag above treats `-` as a sentinel meaning "read JSON from stdin" — e.g. `printf '%s' "$OPS" | tomlctl items apply <ledger> --ops -`. Prefer this for large batches or payloads containing shell metacharacters (embedded quotes, `$`, backticks, or newlines in agent-produced `resolution` / `wontfix_rationale` / `verified_note` strings); avoids the tempfile round-trip and eliminates the argv-level quoting surface entirely. Empty stdin errors clearly.
+- **Reads / queries** — `tomlctl items list <ledger>` carries a full query surface; reach for it instead of piping `tomlctl parse` through another language:
+  - `--status open --count` — gate count (emits `{"count": N}`).
+  - `--group-by file --select id,symbol` — regression-style grouping (emits `{"<file>":[{id, symbol}, ...], ...}`).
+  - `--count-by status` — disposition histogram.
+  - `--pluck id` — flat `["R1","R2",...]` list.
+  - `--where KEY=VAL`, `--where-in KEY=V1,V2`, `--where-has KEY`, `--where-gte KEY=@date:YYYY-MM-DD`, `--where-regex KEY=PAT` — filter composition. Typed RHS via `@date:` / `@int:` / `@float:` / `@bool:` prefixes; bare strings otherwise.
+- **Stdin for `--ops` / `--json` / `--ndjson`**: every JSON-accepting flag above treats `-` as a sentinel meaning "read JSON from stdin" — e.g. `printf '%s' "$OPS" | tomlctl items apply <ledger> --ops -`. Prefer this for large batches or payloads containing shell metacharacters (embedded quotes, `$`, backticks, or newlines in agent-produced `resolution` / `wontfix_rationale` / `verified_note` strings); avoids the tempfile round-trip and eliminates the argv-level quoting surface entirely. Empty stdin errors clearly.
 
 `tomlctl` writes go through `tempfile::NamedTempFile::persist` (atomic rename) and hold an exclusive advisory lock on a sidecar `.lock` file, so concurrent invocations are safe and an interrupted write cannot corrupt the ledger.
 
-<!-- SHARED-BLOCK:python3-fallback START -->
-**Fallback if `tomlctl` is unavailable** (missing binary, Rust not installed):
-
-1. Read the whole ledger file.
-2. Parse it with `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` (or an equivalent runtime — `python3` is assumed present on Linux; check CLAUDE.md `Build & test` section for alternatives if not).
-3. Mutate the parsed structure in memory (add an item, change a status, increment `rounds`, etc.).
-4. Serialise the whole structure back to TOML (preserve key order within each item per the convention below).
-5. `Write` the new TOML over the old file in a single call.
-
-**Last-resort fallback** (python3 also unavailable, and the change is a single trivial edit):
-- Read → use `Edit` with a unique surrounding context (include the preceding `id = "R{n}"` line in the match pattern to ensure uniqueness within the file).
-- If `Edit` fails due to ambiguity: escalate to one of the parse-rewrite paths rather than approximating the match.
-<!-- SHARED-BLOCK:python3-fallback END -->
+If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`.
 
 #### Key-order convention (for serialisers that don't preserve order)
 
@@ -608,14 +612,13 @@ Only transitions from THIS run are eligible for rollback. Items resolved in prev
 3. **Restore tracked files**: `git checkout -- <PATHS-that-were-already-tracked>`.
 4. **Remove untracked agent-created files**: for each path in PATHS that is untracked AND was declared in its cluster agent's output as a new file, run `git clean -fd -- <path>` scoped to that single path. NEVER run bare `git clean`. Reject any path not declared by the cluster agent to guard against subverted agent output.
 5. **Reverse ledger transitions**: construct a single `tomlctl items apply --ops -` payload that transitions each affected item back to `status = "open"` with `rollback_rationale = "<concise cause>"`. Do NOT clear `resolved` or `resolution` — leave the prior transition evidence so the audit trail remains intact across reopens.
-6. **Append rollback event**: add one `[[rollback_events]]` entry at the ledger root per the Rollback event log sub-section in `## Ledger Schema`. Include `timestamp` (ISO 8601 date-time), `command = "<apply-command>"`, `cause`, `items` (array of reverted IDs), and the `stash_ref`. Use the `--array` flag on `tomlctl items apply` (apply-only; default `"items"`) to target the `rollback_events` array-of-tables instead of the default `items`:
+6. **Append rollback event**: add one `[[rollback_events]]` entry at the ledger root per the Rollback event log sub-section in `## Ledger Schema`. Include `timestamp` (ISO 8601 date-time), `command = "<apply-command>"`, `cause`, `items` (array of reverted IDs), and the `stash_ref`. Use `tomlctl array-append` to append without op-type JSON framing:
 
    ```bash
-   printf '%s' '[{"op":"add","json":{"timestamp":"2026-04-18T14:32:00Z","command":"<apply-command>","cause":"build failure on <file>:<line>","items":["<id1>","<id2>"],"stash_ref":"stash@{0}"}}]' \
-     | tomlctl items apply <ledger> --array rollback_events --ops -
+   tomlctl array-append <ledger> rollback_events --json '{"timestamp":"2026-04-18T14:32:00Z","command":"<apply-command>","cause":"build failure on <file>:<line>","items":["<id1>","<id2>"],"stash_ref":"stash@{0}"}'
    ```
 
-   The flag exists specifically to support `rollback_events` and any future ledger-level arrays-of-tables; omit it (or pass `--array items`) for normal `[[items]]` batches.
+   For large payloads or shell-metacharacter-heavy `cause` strings, pipe the JSON via stdin: `printf '%s' "$EVENT" | tomlctl array-append <ledger> rollback_events --json -`. The `items apply --array <name> --ops -` form remains the power-tool for batched or mixed-op writes to non-default arrays.
 7. **Surface a prominent `### Rollback` callout** in the final summary: list the reopened items, the cause, and the stash ref so the user can invoke `git stash show stash@{N}` or `git stash pop` to recover.
 
 ### Confirmation prompts

@@ -252,3 +252,130 @@ pub(crate) fn json_type_name(v: &JsonValue) -> &'static str {
         JsonValue::Object(_) => "object",
     }
 }
+
+// `parse_typed_value` and `compare_typed` are wired into the query engine by
+// Task 5 of the agent-native-tomlctl plan. Until that lands, they compile
+// unused; the `#[allow(dead_code)]` silences the warning without hiding any
+// future unused-code drift.
+#[allow(dead_code)]
+/// Parse a query-engine RHS string into a JSON scalar using the `@type:`
+/// prefix convention documented in the plan:
+///
+/// * `@date:YYYY-MM-DD` / `@datetime:…` → JSON string (normalised ISO form —
+///   the query engine compares this against TOML `Datetime::to_string()`).
+/// * `@int:N`                            → JSON integer.
+/// * `@float:X`                          → JSON number (float).
+/// * `@bool:true|false`                  → JSON bool.
+/// * `@string:…` / `@str:…`              → JSON string (explicit opt-out of
+///   native-type coercion on the field side).
+/// * No prefix                           → JSON string; the caller handles
+///   native-type coercion based on the field's actual TOML type.
+pub(crate) fn parse_typed_value(s: &str) -> Result<JsonValue> {
+    if let Some(rest) = s.strip_prefix("@date:") {
+        let _dt: toml::value::Datetime = rest
+            .parse()
+            .with_context(|| format!("`{}` is not a valid ISO date", rest))?;
+        return Ok(JsonValue::String(rest.to_string()));
+    }
+    if let Some(rest) = s.strip_prefix("@datetime:") {
+        let _dt: toml::value::Datetime = rest
+            .parse()
+            .with_context(|| format!("`{}` is not a valid ISO datetime", rest))?;
+        return Ok(JsonValue::String(rest.to_string()));
+    }
+    if let Some(rest) = s.strip_prefix("@int:") {
+        let n: i64 = rest
+            .parse()
+            .with_context(|| format!("`{}` is not a valid int", rest))?;
+        return Ok(JsonValue::from(n));
+    }
+    if let Some(rest) = s.strip_prefix("@float:") {
+        let f: f64 = rest
+            .parse()
+            .with_context(|| format!("`{}` is not a valid float", rest))?;
+        return Ok(JsonValue::from(f));
+    }
+    if let Some(rest) = s.strip_prefix("@bool:") {
+        let b: bool = rest
+            .parse()
+            .with_context(|| format!("`{}` is not a valid bool", rest))?;
+        return Ok(JsonValue::Bool(b));
+    }
+    if let Some(rest) = s.strip_prefix("@string:") {
+        return Ok(JsonValue::String(rest.to_string()));
+    }
+    if let Some(rest) = s.strip_prefix("@str:") {
+        return Ok(JsonValue::String(rest.to_string()));
+    }
+    Ok(JsonValue::String(s.to_string()))
+}
+
+#[allow(dead_code)]
+/// Ordered comparison between a TOML field and a raw RHS string. Used by the
+/// query engine's Gt/Gte/Lt/Lte predicates.
+///
+/// Dispatch:
+///   * RHS has an `@type:` prefix → parse RHS per the prefix, coerce to the
+///     field's native type if possible, compare.
+///   * RHS has no prefix → use the field's native type to drive parsing
+///     (Integer → parse RHS as i64, Datetime → parse RHS as Datetime, etc.).
+///     Strings compare lexicographically.
+pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp::Ordering> {
+    use std::cmp::Ordering;
+
+    // Strip any @type: prefix first so we treat `@int:5` the same as bare
+    // `5` when the field is an Integer.
+    let (hint, body): (Option<&'static str>, &str) = if let Some(rest) = rhs_raw.strip_prefix("@date:") {
+        (Some("date"), rest)
+    } else if let Some(rest) = rhs_raw.strip_prefix("@datetime:") {
+        (Some("datetime"), rest)
+    } else if let Some(rest) = rhs_raw.strip_prefix("@int:") {
+        (Some("int"), rest)
+    } else if let Some(rest) = rhs_raw.strip_prefix("@float:") {
+        (Some("float"), rest)
+    } else if let Some(rest) = rhs_raw.strip_prefix("@bool:") {
+        (Some("bool"), rest)
+    } else if let Some(rest) = rhs_raw.strip_prefix("@string:").or_else(|| rhs_raw.strip_prefix("@str:")) {
+        (Some("string"), rest)
+    } else {
+        (None, rhs_raw)
+    };
+
+    match field {
+        TomlValue::Integer(i) => {
+            let n: i64 = body
+                .parse()
+                .with_context(|| format!("`{}` is not comparable as int", body))?;
+            if hint.is_some() && !matches!(hint, Some("int")) {
+                bail!("type hint `{:?}` doesn't match integer field", hint);
+            }
+            Ok(i.cmp(&n))
+        }
+        TomlValue::Float(f) => {
+            let x: f64 = body
+                .parse()
+                .with_context(|| format!("`{}` is not comparable as float", body))?;
+            if hint.is_some() && !matches!(hint, Some("float")) {
+                bail!("type hint `{:?}` doesn't match float field", hint);
+            }
+            Ok(f.partial_cmp(&x).unwrap_or(Ordering::Equal))
+        }
+        TomlValue::Boolean(b) => {
+            let c: bool = body
+                .parse()
+                .with_context(|| format!("`{}` is not comparable as bool", body))?;
+            Ok(b.cmp(&c))
+        }
+        TomlValue::Datetime(dt) => {
+            // Normalise RHS via a round-trip through toml::Datetime so that
+            // `2026-04-18` and `2026-04-18T00:00:00` both compare correctly
+            // against the stored value's Display form.
+            let parsed: toml::value::Datetime = body
+                .parse()
+                .with_context(|| format!("`{}` is not a valid TOML datetime", body))?;
+            Ok(dt.to_string().cmp(&parsed.to_string()))
+        }
+        TomlValue::String(s) => Ok(s.as_str().cmp(body)),
+        _ => bail!("field is not a scalar; cannot compare"),
+    }
+}

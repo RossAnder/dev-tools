@@ -3,7 +3,6 @@
     "allow": [
       "PowerShell(Get-Item *)",
       "WebSearch",
-      "Bash(tomlctl --version)",
       "Bash(cargo clippy *)",
       "Bash(cargo audit *)",
       "Bash(cargo test *)",
@@ -13,7 +12,9 @@
       "Bash(git -C /home/ross/Dev/dev-tools status --short)",
       "Bash(git -C /home/ross/Dev/dev-tools diff --stat)",
       "mcp__plugin_context7_context7__query-docs",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Read(//home/ross/.claude-work/**)",
+      "Bash(python3 *)"
     ]
   }
 }

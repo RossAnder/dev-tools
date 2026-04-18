@@ -237,26 +237,30 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 - `tomlctl items add <ledger> --json '{...}'` — append a new item.
 - `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
 - `tomlctl items remove <ledger> <id>` — delete by id.
-- `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` — batch multiple ops in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N.
+- `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N.
+- `tomlctl items add-many <ledger> --ndjson - [--defaults-json '{...}']` — batch-append **homogeneous** new items via newline-delimited JSON on stdin; shared fields go in `--defaults-json` and per-row keys win. Prefer this over a hand-rolled `--ops` array when every op is `"add"`. Example:
+  ```bash
+  tomlctl items add-many <ledger> \
+    --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
+    --ndjson - <<'EOF'
+  {"id":"R40","file":"src/a.rs","line":10,"severity":"warning","effort":"small","category":"quality","summary":"..."}
+  {"id":"R41","file":"src/b.rs","line":22,"severity":"suggestion","effort":"trivial","category":"quality","summary":"..."}
+  EOF
+  ```
+- `tomlctl array-append <ledger> <array-name> --json '{...}'` (or `--ndjson -` for many) — append to an append-only array-of-tables (e.g. `rollback_events`) without op-type JSON framing. Thin shim over `items apply --array <name>`; use this for readable single-entry appends.
 - `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated`.
 - `tomlctl items next-id <ledger> --prefix R|O` — compute the next monotonic id.
-- **Stdin for `--ops` / `--json`**: every JSON-accepting flag above treats `-` as a sentinel meaning "read JSON from stdin" — e.g. `printf '%s' "$OPS" | tomlctl items apply <ledger> --ops -`. Prefer this for large batches or payloads containing shell metacharacters (embedded quotes, `$`, backticks, or newlines in agent-produced `resolution` / `wontfix_rationale` / `verified_note` strings); avoids the tempfile round-trip and eliminates the argv-level quoting surface entirely. Empty stdin errors clearly.
+- **Reads / queries** — `tomlctl items list <ledger>` carries a full query surface; reach for it instead of piping `tomlctl parse` through another language:
+  - `--status open --count` — gate count (emits `{"count": N}`).
+  - `--group-by file --select id,symbol` — regression-style grouping (emits `{"<file>":[{id, symbol}, ...], ...}`).
+  - `--count-by status` — disposition histogram.
+  - `--pluck id` — flat `["R1","R2",...]` list.
+  - `--where KEY=VAL`, `--where-in KEY=V1,V2`, `--where-has KEY`, `--where-gte KEY=@date:YYYY-MM-DD`, `--where-regex KEY=PAT` — filter composition. Typed RHS via `@date:` / `@int:` / `@float:` / `@bool:` prefixes; bare strings otherwise.
+- **Stdin for `--ops` / `--json` / `--ndjson`**: every JSON-accepting flag above treats `-` as a sentinel meaning "read JSON from stdin" — e.g. `printf '%s' "$OPS" | tomlctl items apply <ledger> --ops -`. Prefer this for large batches or payloads containing shell metacharacters (embedded quotes, `$`, backticks, or newlines in agent-produced `resolution` / `wontfix_rationale` / `verified_note` strings); avoids the tempfile round-trip and eliminates the argv-level quoting surface entirely. Empty stdin errors clearly.
 
 `tomlctl` writes go through `tempfile::NamedTempFile::persist` (atomic rename) and hold an exclusive advisory lock on a sidecar `.lock` file, so concurrent invocations are safe and an interrupted write cannot corrupt the ledger.
 
-<!-- SHARED-BLOCK:python3-fallback START -->
-**Fallback if `tomlctl` is unavailable** (missing binary, Rust not installed):
-
-1. Read the whole ledger file.
-2. Parse it with `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` (or an equivalent runtime — `python3` is assumed present on Linux; check CLAUDE.md `Build & test` section for alternatives if not).
-3. Mutate the parsed structure in memory (add an item, change a status, increment `rounds`, etc.).
-4. Serialise the whole structure back to TOML (preserve key order within each item per the convention below).
-5. `Write` the new TOML over the old file in a single call.
-
-**Last-resort fallback** (python3 also unavailable, and the change is a single trivial edit):
-- Read → use `Edit` with a unique surrounding context (include the preceding `id = "R{n}"` line in the match pattern to ensure uniqueness within the file).
-- If `Edit` fails due to ambiguity: escalate to one of the parse-rewrite paths rather than approximating the match.
-<!-- SHARED-BLOCK:python3-fallback END -->
+If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`.
 
 #### Key-order convention (for serialisers that don't preserve order)
 
@@ -359,7 +363,7 @@ The ledger path comes from the resolved flow's `context.toml`:
 Check for the ledger file at the resolved path and load it per the **Ledger TOML read/write contract** in the `## Ledger Schema` section above:
 
 - **File missing** → this is a first review. Initialise an in-memory ledger with `schema_version = 1`, `last_updated = <today>`, `items = []`. Do not write to disk yet — persistence happens in Step 3 after findings are consolidated.
-- **File present** → parse it via `tomlctl --verify-integrity get <file>` (whole doc) or `tomlctl --verify-integrity items list <file> --status open` to pre-filter to just the open items this step needs (falls back to `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` if `tomlctl` is unavailable). The `--verify-integrity` global flag checks the `<file>.sha256` sidecar before parsing; on digest mismatch tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. Skip `--verify-integrity` only when the sidecar is known-absent (first-ever run for this ledger; `tomlctl` will have written one on that run's final write). Apply the read rules from the Ledger TOML read/write contract:
+- **File present** → parse it via `tomlctl --verify-integrity get <file>` (whole doc) or `tomlctl --verify-integrity items list <file> --status open` to pre-filter to just the open items this step needs. If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`. The `--verify-integrity` global flag checks the `<file>.sha256` sidecar before parsing; on digest mismatch tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. Skip `--verify-integrity` only when the sidecar is known-absent (first-ever run for this ledger; `tomlctl` will have written one on that run's final write). Apply the read rules from the Ledger TOML read/write contract:
   - Missing `schema_version` → treat as `1`, note that it will be written back on next write.
   - `schema_version > 1` → halt and ask the user.
   - Any `[[items]]` entry missing a required field → flag as malformed in console output, exclude it from dedup/resolution for this run, do NOT attempt auto-repair.
@@ -592,7 +596,7 @@ Persist the merged state to the ledger file at the path resolved in Step 1 — `
 
 `schema_version` MUST be preserved verbatim on every write (`tomlctl` does this automatically — never re-emit or modify it). Do NOT delete the ledger file.
 
-**Fallback — if `tomlctl` is unavailable:** use the python3 parse-rewrite recipe from the Ledger Schema contract (`python3 -c "import tomllib; ..."` to load, mutate the Python dict, serialise back with a TOML writer that preserves the key-order convention — `tomli_w` or equivalent — then a single whole-file `Write` call).
+If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`.
 
 **Mutations to apply for this round:**
 
@@ -643,7 +647,7 @@ Follow with `tomlctl set <ledger> last_updated <YYYY-MM-DD>`.
 
 ## Important Constraints
 
-- **Parse-rewrite, not line-edit** — ledger writes MUST follow the Ledger TOML read/write contract in the `## Ledger Schema` section. `[[items]]` arrays of tables defeat line-based editing uniqueness once more than one `open` / `rounds = 1` item exists. Use `tomlctl items add|update|remove|apply` (preferred) or fall back to `python3 -c "import tomllib; ..."` + mutate + serialise + single `Write` call.
+- **Parse-rewrite, not line-edit** — ledger writes MUST follow the Ledger TOML read/write contract in the `## Ledger Schema` section. `[[items]]` arrays of tables defeat line-based editing uniqueness once more than one `open` / `rounds = 1` item exists. Use `tomlctl items add|update|remove|apply|add-many` and `tomlctl array-append` (see skill `tomlctl`); if the binary is missing, install it via `cargo install --path tomlctl`.
 - **Don't auto-dispose** — never set `status = "wontfix"` or `status = "deferred"` without explicit user instruction. Items stay `status = "open"` until the user dispositions them or a later review run verifies the issue is fixed.
 - **Scope-aware ledger queries** — only surface prior items whose `file` overlaps with the current review scope. Don't report on items outside the current review.
 - **Ledger item is lightweight** — `summary` is the one-line identifier; put longer prose in `description` only when `summary` genuinely isn't enough. Do not store full code snippets — reference by `file` + `line` + `symbol`.

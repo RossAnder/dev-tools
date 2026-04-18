@@ -14,6 +14,7 @@ mod dedup;
 mod integrity;
 mod io;
 mod orphans;
+mod query;
 #[cfg(test)]
 mod test_support;
 
@@ -22,12 +23,14 @@ use blocks::blocks_verify;
 use blocks::scan_block_names_warn;
 use convert::{
     ScalarType, json_type_name, maybe_date_coerce, navigate, parse_scalar, set_at_path,
-    str_field, toml_to_json,
+    toml_to_json,
 };
 // Surfaced to the in-file test module only — dispatch code doesn't call these
-// directly, but several tests do via `use super::*;`.
+// directly, but several tests do via `use super::*;`. `str_field` moved here
+// when task 5 routed `items list` through `query::run`; it's still referenced
+// by the legacy `items_list_from` path kept for the in-file test suite.
 #[cfg(test)]
-use convert::{DATE_KEYS, infer_type, json_to_toml};
+use convert::{DATE_KEYS, infer_type, json_to_toml, str_field};
 #[cfg(test)]
 use io::{guard_write_path, with_exclusive_lock};
 #[cfg(test)]
@@ -38,6 +41,7 @@ use dedup::{DupTier, items_find_duplicates};
 use integrity::{IntegrityOpts, maybe_verify_integrity};
 use io::{mutate_doc, read_toml, repo_or_cwd_root};
 use orphans::items_orphans;
+use query::{OutputShape, Predicate, Query, SortDir, validate_query};
 
 /// Maximum JSON payload accepted from stdin via the `-` sentinel. 32 MiB is
 /// well above any realistic review-ledger / flow-context apply-ops payload
@@ -108,6 +112,7 @@ struct Cli {
 /// / etc. (blocks operates on markdown, not the TOML + sidecar pair), and
 /// documents the contract at the clap layer rather than only in help text.
 #[derive(Args, Clone)]
+#[command(next_help_heading = "Integrity options")]
 struct IntegrityArgs {
     /// Allow write operations on files outside the current repo's `.claude/` directory.
     /// By default, writes are refused if the canonical target path is not under
@@ -140,7 +145,74 @@ struct IntegrityArgs {
     strict_integrity: bool,
 }
 
+/// Flattened bundle of all `items list` query options — predicates,
+/// projection, shaping, aggregation. Lives here rather than as inline
+/// fields on the `List` variant so that `next_help_heading = "Query options"`
+/// groups every flag under one heading in `--help` output (clap only
+/// honours the attribute on a dedicated `Args` struct). Legacy shortcut
+/// flags (`--status` / `--category` / `--file` / `--newer-than`) stay on
+/// the variant so they retain their pre-query-engine help text; they
+/// translate into `Predicate` entries in `build_query`.
+#[derive(Args, Clone)]
+#[command(next_help_heading = "Query options")]
+struct QueryArgs {
+    #[arg(long = "where", value_name = "KEY=VAL", help = "Filter: field equals value (repeatable)")]
+    where_eq: Vec<String>,
+    #[arg(long = "where-not", value_name = "KEY=VAL", help = "Filter: field does not equal value (repeatable)")]
+    where_not: Vec<String>,
+    #[arg(long = "where-in", value_name = "KEY=V1,V2,...", help = "Filter: field in comma-separated set (repeatable)")]
+    where_in: Vec<String>,
+    #[arg(long = "where-has", value_name = "KEY", help = "Filter: field is present (repeatable)")]
+    where_has: Vec<String>,
+    #[arg(long = "where-missing", value_name = "KEY", help = "Filter: field is absent (repeatable)")]
+    where_missing: Vec<String>,
+    #[arg(long = "where-gt", value_name = "KEY=VAL", help = "Filter: field > value (repeatable)")]
+    where_gt: Vec<String>,
+    #[arg(long = "where-gte", value_name = "KEY=VAL", help = "Filter: field >= value (repeatable)")]
+    where_gte: Vec<String>,
+    #[arg(long = "where-lt", value_name = "KEY=VAL", help = "Filter: field < value (repeatable)")]
+    where_lt: Vec<String>,
+    #[arg(long = "where-lte", value_name = "KEY=VAL", help = "Filter: field <= value (repeatable)")]
+    where_lte: Vec<String>,
+    #[arg(long = "where-contains", value_name = "KEY=SUB", help = "Filter: field string contains SUB (repeatable)")]
+    where_contains: Vec<String>,
+    #[arg(long = "where-prefix", value_name = "KEY=S", help = "Filter: field string starts with S (repeatable)")]
+    where_prefix: Vec<String>,
+    #[arg(long = "where-suffix", value_name = "KEY=S", help = "Filter: field string ends with S (repeatable)")]
+    where_suffix: Vec<String>,
+    #[arg(long = "where-regex", value_name = "KEY=PAT", help = "Filter: field string matches regex PAT (repeatable)")]
+    where_regex: Vec<String>,
+    #[arg(long = "select", value_name = "F1,F2,...", help = "Projection: keep only the listed fields")]
+    select: Option<String>,
+    #[arg(long = "exclude", value_name = "F1,F2,...", help = "Projection: drop the listed fields")]
+    exclude: Option<String>,
+    #[arg(long = "pluck", value_name = "FIELD", help = "Projection: return a flat [value, ...] array of FIELD")]
+    pluck: Option<String>,
+    #[arg(long = "sort-by", value_name = "FIELD[:asc|desc]", help = "Sort by FIELD (repeatable for tiebreakers)")]
+    sort_by: Vec<String>,
+    #[arg(long = "limit", value_name = "N", help = "Return at most N items")]
+    limit: Option<usize>,
+    #[arg(long = "offset", value_name = "N", help = "Skip the first N items")]
+    offset: Option<usize>,
+    #[arg(long = "distinct", help = "Dedup on the projected shape")]
+    distinct: bool,
+    #[arg(long = "group-by", value_name = "FIELD", help = "Aggregate: emit {value: [item, ...], ...}")]
+    group_by: Option<String>,
+    #[arg(long = "count-by", value_name = "FIELD", help = "Aggregate: emit {value: N, ...}")]
+    count_by: Option<String>,
+    #[arg(long = "ndjson", help = "Output one JSON value per line (for piping into add-many/apply)")]
+    ndjson: bool,
+}
+
+// The CLI subcommand enums carry a lot of `Vec<String>` / nested-struct
+// fields by design — that's how clap's derive surface encodes a rich flag
+// set. Clippy's `large_enum_variant` lint would have us `Box<…>` every
+// heavy variant; doing that wouldn't improve clarity and would bloat the
+// dispatch match arms. The CLI enums are constructed once per invocation
+// and never collected into a Vec, so the size-asymmetry concern doesn't
+// bite here.
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Cmd {
     /// Parse a TOML file and print the whole document as JSON.
     Parse {
@@ -201,9 +273,28 @@ enum Cmd {
         #[command(subcommand)]
         op: BlocksOp,
     },
+
+    /// Append one or more records to an arbitrary array-of-tables. Thin
+    /// discoverable wrapper over `items apply --array <name> --ops [...]`:
+    /// `--json` appends a single object; `--ndjson` appends one per line
+    /// (from stdin with `-` or from a file path). Primary use: append to
+    /// `[[rollback_events]]` logs from `/review-apply` / `/optimise-apply`
+    /// without constructing the `items apply` op-framing JSON.
+    ArrayAppend {
+        file: PathBuf,
+        #[arg(help = "Array-of-tables name (e.g. rollback_events)")]
+        array: String,
+        #[arg(long, conflicts_with = "ndjson", help = "JSON object for a single record; pass `-` to read from stdin")]
+        json: Option<String>,
+        #[arg(long = "ndjson", conflicts_with = "json", help = "NDJSON source: `-` for stdin, otherwise a file path")]
+        ndjson: Option<String>,
+        #[command(flatten)]
+        integrity: IntegrityArgs,
+    },
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum ItemsOp {
     /// List items as a JSON array. Optional filters combine via AND. With
     /// `--count`, print `{"count": <n>}` instead of the item array.
@@ -230,6 +321,15 @@ enum ItemsOp {
         /// array of records.
         #[arg(long, default_value = "items")]
         array: String,
+
+        // The full predicate/projection/shaping surface defined in the plan
+        // lives on `QueryArgs` so the `next_help_heading = "Query options"`
+        // setting can be applied there (clap forbids it inside a Subcommand
+        // variant field). All repeatable flags AND-combine with the legacy
+        // shortcut flags above.
+        #[command(flatten)]
+        query: QueryArgs,
+
         #[command(flatten)]
         integrity: IntegrityArgs,
     },
@@ -251,6 +351,22 @@ enum ItemsOp {
         #[arg(long, help = "JSON object for the new item; pass `-` to read from stdin")]
         json: String,
         /// R57: target array-of-tables name. See `List --array`.
+        #[arg(long, default_value = "items")]
+        array: String,
+        #[command(flatten)]
+        integrity: IntegrityArgs,
+    },
+
+    /// Append many items in one batch from NDJSON. `--defaults-json` stamps
+    /// common fields on every row (per-row keys win on conflict). One parse,
+    /// one lock, one rewrite. On a malformed line N the batch aborts before
+    /// mutating the file. Output: `{"ok":true,"added":N}`.
+    AddMany {
+        file: PathBuf,
+        #[arg(long = "ndjson", help = "NDJSON source: `-` for stdin, otherwise a file path")]
+        ndjson: String,
+        #[arg(long = "defaults-json", help = "JSON object of default field values; pass `-` to read from stdin")]
+        defaults_json: Option<String>,
         #[arg(long, default_value = "items")]
         array: String,
         #[command(flatten)]
@@ -427,6 +543,45 @@ fn run() -> Result<()> {
         }
         Cmd::Items { op } => items_dispatch(op)?,
         Cmd::Blocks { op } => blocks_dispatch(op)?,
+        Cmd::ArrayAppend {
+            file,
+            array,
+            json,
+            ndjson,
+            integrity,
+        } => {
+            // clap's `conflicts_with` guarantees at most one is set; enforce
+            // "at least one" here since clap has no first-class
+            // required-exactly-one primitive on optional flags.
+            if json.is_none() && ndjson.is_none() {
+                bail!("array-append requires one of --json or --ndjson");
+            }
+            let opts = integrity_opts_from_args(&integrity);
+            let rows: Vec<JsonValue> = if let Some(j) = json {
+                let text = read_json_arg(&j)?;
+                let parsed: JsonValue =
+                    serde_json::from_str(&text).context("parsing --json")?;
+                if !parsed.is_object() {
+                    bail!("--json must be a JSON object");
+                }
+                vec![parsed]
+            } else {
+                let nd = ndjson.expect("checked above");
+                let text = if nd == "-" {
+                    read_json_arg("-")?
+                } else {
+                    std::fs::read_to_string(&nd)
+                        .with_context(|| format!("reading NDJSON file `{}`", nd))?
+                };
+                parse_ndjson(&text)?
+            };
+            let mut appended: usize = 0;
+            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+                appended = array_append(doc, &array, &rows)?;
+                Ok(())
+            })?;
+            println!("{{\"ok\":true,\"appended\":{}}}", appended);
+        }
     }
     Ok(())
 }
@@ -441,31 +596,61 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             file_filter,
             count,
             array,
+            query,
             integrity,
         } => {
             let opts = integrity_opts_from_args(&integrity);
             maybe_verify_integrity(&file, opts)?;
             let doc = read_toml(&file)?;
-            let newer_than_dt = match newer_than.as_deref() {
-                Some(s) => Some(
-                    s.parse::<toml::value::Datetime>()
-                        .with_context(|| format!("--newer-than `{}` is not a valid ISO date", s))?,
-                ),
-                None => None,
-            };
-            let filters = ListFilters {
-                status: status.as_deref(),
-                category: category.as_deref(),
-                newer_than: newer_than_dt.as_ref(),
-                file_filter: file_filter.as_deref(),
-            };
-            let list = items_list_from(&doc, &array, filters)?;
-            if count {
-                let mut obj = serde_json::Map::new();
-                obj.insert("count".into(), JsonValue::from(list.len()));
-                print_json(&JsonValue::Object(obj))?;
-            } else {
-                print_json(&JsonValue::Array(list))?;
+            let q = build_query(
+                &status,
+                &category,
+                &newer_than,
+                &file_filter,
+                count,
+                &query.where_eq,
+                &query.where_not,
+                &query.where_in,
+                &query.where_has,
+                &query.where_missing,
+                &query.where_gt,
+                &query.where_gte,
+                &query.where_lt,
+                &query.where_lte,
+                &query.where_contains,
+                &query.where_prefix,
+                &query.where_suffix,
+                &query.where_regex,
+                query.select.as_deref(),
+                query.exclude.as_deref(),
+                query.pluck.as_deref(),
+                &query.sort_by,
+                query.limit,
+                query.offset,
+                query.distinct,
+                query.group_by.as_deref(),
+                query.count_by.as_deref(),
+                query.ndjson,
+            )?;
+            validate_query(&q)?;
+            let out = query::run(&doc, &array, &q)?;
+            match q.shape {
+                OutputShape::Ndjson => {
+                    // `out` is a JSON array of items; emit one compact JSON
+                    // value per line so the output pipes cleanly into
+                    // `items add-many --ndjson -` / `items apply --ops -`.
+                    let arr = out
+                        .as_array()
+                        .ok_or_else(|| anyhow!("ndjson expects array output"))?;
+                    let stdout = std::io::stdout();
+                    let mut h = stdout.lock();
+                    for v in arr {
+                        serde_json::to_writer(&mut h, v)?;
+                        h.write_all(b"\n")?;
+                    }
+                    h.flush()?;
+                }
+                _ => print_json(&out)?,
             }
         }
         ItemsOp::Get { file, id, array, integrity } => {
@@ -481,6 +666,41 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 items_add_to(doc, &array, &json)
             })?;
             println!("{{\"ok\":true}}");
+        }
+        ItemsOp::AddMany {
+            file,
+            ndjson,
+            defaults_json,
+            array,
+            integrity,
+        } => {
+            let opts = integrity_opts_from_args(&integrity);
+            // NDJSON source: `-` means stdin (routed through `read_json_arg`
+            // so the STDIN_CONSUMED guard refuses a second `-` below when
+            // `--defaults-json -` also wants stdin); any other value is a
+            // file path read verbatim.
+            let ndjson_text = if ndjson == "-" {
+                read_json_arg("-")?
+            } else {
+                std::fs::read_to_string(&ndjson)
+                    .with_context(|| format!("reading NDJSON file `{}`", ndjson))?
+            };
+            let rows = parse_ndjson(&ndjson_text)?;
+            let defaults: Option<JsonValue> = match defaults_json.as_deref() {
+                Some(s) => {
+                    let text = read_json_arg(s)?;
+                    Some(
+                        serde_json::from_str(&text).context("parsing --defaults-json")?,
+                    )
+                }
+                None => None,
+            };
+            let mut added: usize = 0;
+            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+                added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
+                Ok(())
+            })?;
+            println!("{{\"ok\":true,\"added\":{}}}", added);
         }
         ItemsOp::Update {
             file,
@@ -551,6 +771,204 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
     Ok(())
 }
 
+/// Split a `KEY=VAL` string on the first `=`. Empty keys are rejected. The
+/// value is returned verbatim (no trimming) so callers that care about
+/// whitespace-significant RHS values (e.g. `--where-prefix name= foo`) keep
+/// their payload intact. Used by `build_query` for every `--where-*` family.
+fn split_kv(s: &str) -> Result<(String, String)> {
+    let Some((k, v)) = s.split_once('=') else {
+        bail!("expected KEY=VAL, got `{}`", s);
+    };
+    if k.is_empty() {
+        bail!("KEY=VAL has empty key in `{}`", s);
+    }
+    Ok((k.to_string(), v.to_string()))
+}
+
+/// Build a `query::Query` from the flat list of clap flag values on
+/// `ItemsOp::List`. Does not call `validate_query` — the caller does that
+/// so dispatch can surface the error via the same path as other runtime
+/// errors. All legacy shortcut flags (`--status` / `--category` / `--file` /
+/// `--newer-than`) are translated into equivalent `Predicate` entries so
+/// `query::run` sees a single predicate list.
+#[allow(clippy::too_many_arguments)]
+fn build_query(
+    status: &Option<String>,
+    category: &Option<String>,
+    newer_than: &Option<String>,
+    file_filter: &Option<String>,
+    count: bool,
+    where_eq: &[String],
+    where_not: &[String],
+    where_in: &[String],
+    where_has: &[String],
+    where_missing: &[String],
+    where_gt: &[String],
+    where_gte: &[String],
+    where_lt: &[String],
+    where_lte: &[String],
+    where_contains: &[String],
+    where_prefix: &[String],
+    where_suffix: &[String],
+    where_regex: &[String],
+    select: Option<&str>,
+    exclude: Option<&str>,
+    pluck: Option<&str>,
+    sort_by: &[String],
+    limit: Option<usize>,
+    offset: Option<usize>,
+    distinct: bool,
+    group_by: Option<&str>,
+    count_by: Option<&str>,
+    ndjson: bool,
+) -> Result<Query> {
+    let mut predicates: Vec<Predicate> = Vec::new();
+
+    // Legacy shortcut flags — map onto the new predicate surface so the
+    // query engine has a single filter list to evaluate. Duplicating a
+    // legacy flag with an equivalent `--where` is a no-op (same predicate
+    // runs twice; same result).
+    if let Some(v) = status {
+        predicates.push(Predicate::Where {
+            key: "status".into(),
+            rhs: v.clone(),
+        });
+    }
+    if let Some(v) = category {
+        predicates.push(Predicate::Where {
+            key: "category".into(),
+            rhs: v.clone(),
+        });
+    }
+    if let Some(v) = file_filter {
+        predicates.push(Predicate::Where {
+            key: "file".into(),
+            rhs: v.clone(),
+        });
+    }
+    if let Some(v) = newer_than {
+        // `--newer-than` semantically means "first_flagged > v" where v is
+        // a YYYY-MM-DD. The `@date:` prefix tells `parse_typed_value` to
+        // coerce the RHS to a TOML date rather than comparing as a string.
+        predicates.push(Predicate::WhereGt {
+            key: "first_flagged".into(),
+            rhs: format!("@date:{}", v),
+        });
+    }
+
+    for s in where_eq {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::Where { key, rhs });
+    }
+    for s in where_not {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereNot { key, rhs });
+    }
+    for s in where_in {
+        let (key, rhs) = split_kv(s)?;
+        let values: Vec<String> = rhs.split(',').map(|s| s.to_string()).collect();
+        predicates.push(Predicate::WhereIn { key, rhs: values });
+    }
+    for s in where_has {
+        if s.is_empty() {
+            bail!("--where-has expects a KEY, got empty string");
+        }
+        predicates.push(Predicate::WhereHas { key: s.clone() });
+    }
+    for s in where_missing {
+        if s.is_empty() {
+            bail!("--where-missing expects a KEY, got empty string");
+        }
+        predicates.push(Predicate::WhereMissing { key: s.clone() });
+    }
+    for s in where_gt {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereGt { key, rhs });
+    }
+    for s in where_gte {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereGte { key, rhs });
+    }
+    for s in where_lt {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereLt { key, rhs });
+    }
+    for s in where_lte {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereLte { key, rhs });
+    }
+    for s in where_contains {
+        let (key, sub) = split_kv(s)?;
+        predicates.push(Predicate::WhereContains { key, sub });
+    }
+    for s in where_prefix {
+        let (key, prefix) = split_kv(s)?;
+        predicates.push(Predicate::WherePrefix { key, prefix });
+    }
+    for s in where_suffix {
+        let (key, suffix) = split_kv(s)?;
+        predicates.push(Predicate::WhereSuffix { key, suffix });
+    }
+    for s in where_regex {
+        let (key, pattern) = split_kv(s)?;
+        predicates.push(Predicate::WhereRegex { key, pattern });
+    }
+
+    // Projection: parse `--select a,b` / `--exclude a,b` into Vec<String>.
+    // `validate_query` enforces `select` / `exclude` / `pluck` mutual
+    // exclusion; we just populate the struct.
+    let select_fields: Option<Vec<String>> =
+        select.map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
+    let exclude_fields: Option<Vec<String>> =
+        exclude.map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
+
+    // Sort: each entry is `FIELD` or `FIELD:asc` or `FIELD:desc`. Unknown
+    // suffix defaults to `asc` (matches the plan).
+    let mut sort_list: Vec<(String, SortDir)> = Vec::new();
+    for entry in sort_by {
+        let (field, dir) = match entry.split_once(':') {
+            Some((f, d)) => {
+                let dir = match d {
+                    "desc" => SortDir::Desc,
+                    _ => SortDir::Asc,
+                };
+                (f.to_string(), dir)
+            }
+            None => (entry.clone(), SortDir::Asc),
+        };
+        sort_list.push((field, dir));
+    }
+
+    // OutputShape priority (plan): count > count-by > group-by > pluck >
+    // ndjson > default Array. Multiple shape flags would typically collapse
+    // to the highest-priority one here; `validate_query` then rejects any
+    // shape-vs-projection conflict with a clear error.
+    let shape = if count {
+        OutputShape::Count
+    } else if let Some(f) = count_by {
+        OutputShape::CountBy(f.to_string())
+    } else if let Some(f) = group_by {
+        OutputShape::GroupBy(f.to_string())
+    } else if let Some(f) = pluck {
+        OutputShape::Pluck(f.to_string())
+    } else if ndjson {
+        OutputShape::Ndjson
+    } else {
+        OutputShape::Array
+    };
+
+    Ok(Query {
+        predicates,
+        select: select_fields,
+        exclude: exclude_fields,
+        sort_by: sort_list,
+        limit,
+        offset,
+        distinct,
+        shape,
+    })
+}
+
 fn blocks_dispatch(op: BlocksOp) -> Result<()> {
     match op {
         BlocksOp::Verify { files, block } => {
@@ -605,6 +1023,13 @@ pub(crate) fn item_id(item: &TomlValue) -> Option<&str> {
 
 /// Bundle of optional per-field filters for `items list`. All populated filters
 /// combine via logical AND; unset filters are no-ops.
+///
+/// Task 5 rewired the production `items list` dispatch through `query::run`,
+/// so this struct and the legacy `items_list_from` / `datetime_gt` below are
+/// now only reached from the in-file `#[cfg(test)]` suite (the tests still
+/// exercise the legacy filter semantics directly; `query::run` is covered by
+/// its own module tests and by `tests/integration.rs`).
+#[cfg(test)]
 #[derive(Clone, Copy, Default)]
 struct ListFilters<'a> {
     status: Option<&'a str>,
@@ -621,6 +1046,7 @@ fn items_list(doc: &TomlValue, filters: ListFilters<'_>) -> Result<Vec<JsonValue
 /// R57: array-parametric variant of `items_list`. Reads from the named
 /// array-of-tables (default `items`). Filters apply uniformly — there's no
 /// per-array filter-key policy, the same `ListFilters` shape is used.
+#[cfg(test)]
 fn items_list_from(
     doc: &TomlValue,
     array_name: &str,
@@ -661,6 +1087,7 @@ fn items_list_from(
 /// Strict `a > b` comparison for TOML Datetime values. Compares the string
 /// representations, which is correct for ISO-8601 dates and date-times — the
 /// lexicographic order on ISO-8601 matches chronological order.
+#[cfg(test)]
 fn datetime_gt(a: &toml::value::Datetime, b: &toml::value::Datetime) -> bool {
     a.to_string() > b.to_string()
 }
@@ -891,6 +1318,81 @@ fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
         }
     }
     Ok(format!("{}{}", prefix, max_n + 1))
+}
+
+/// Parse NDJSON input (one JSON value per line) into a `Vec<JsonValue>`. Blank
+/// lines (after trimming) are skipped but counted in the 1-indexed line number
+/// used in error messages, so `line N` here matches the source line the caller
+/// typed.
+///
+/// The function is all-or-nothing: on the first malformed line it returns
+/// `Err`, so the caller may rely on receiving either a fully parsed batch or
+/// no rows at all. No side effects.
+fn parse_ndjson(s: &str) -> Result<Vec<JsonValue>> {
+    let mut rows = Vec::new();
+    for (idx, line) in s.lines().enumerate() {
+        let n = idx + 1;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let v: JsonValue = serde_json::from_str(line)
+            .with_context(|| format!("line {}", n))?;
+        rows.push(v);
+    }
+    Ok(rows)
+}
+
+/// Append each row in `rows` to `array_name` inside `doc`, stamping fields
+/// from `defaults` first (when `Some`) and shallow-merging per-row keys on
+/// top (per-row wins on conflict). Each row must be a JSON object; an
+/// array/scalar row is rejected with `row N: must be a JSON object`. Date
+/// coercion for `DATE_KEYS` is inherited from `items_add_value_to` — this
+/// helper does not reimplement it.
+///
+/// The batch aborts on the first bad row. No explicit rollback is needed:
+/// the caller holds the file lock and all mutation is in-memory until the
+/// outer `mutate_doc` persists. Returns the number of rows appended.
+fn items_add_many(
+    doc: &mut TomlValue,
+    array_name: &str,
+    rows: &[JsonValue],
+    defaults: Option<&JsonValue>,
+) -> Result<usize> {
+    let defaults_obj = match defaults {
+        Some(v) => Some(
+            v.as_object()
+                .ok_or_else(|| anyhow!("--defaults-json must be a JSON object"))?,
+        ),
+        None => None,
+    };
+    for (i, row) in rows.iter().enumerate() {
+        let row_obj = row
+            .as_object()
+            .ok_or_else(|| anyhow!("row {}: must be a JSON object", i + 1))?;
+        let mut merged = serde_json::Map::new();
+        if let Some(d) = defaults_obj {
+            for (k, v) in d.iter() {
+                merged.insert(k.clone(), v.clone());
+            }
+        }
+        for (k, v) in row_obj.iter() {
+            merged.insert(k.clone(), v.clone());
+        }
+        items_add_value_to(doc, &JsonValue::Object(merged), array_name)
+            .with_context(|| format!("row {}", i + 1))?;
+    }
+    Ok(rows.len())
+}
+
+/// Append `rows` to `array_name` with no defaults. Thin wrapper over
+/// `items_add_many` so the `array-append` dispatch site (Task 5) stays a
+/// one-liner.
+fn array_append(
+    doc: &mut TomlValue,
+    array_name: &str,
+    rows: &[JsonValue],
+) -> Result<usize> {
+    items_add_many(doc, array_name, rows, None)
 }
 
 #[cfg(test)]
@@ -1362,7 +1864,7 @@ body
         );
         assert_eq!(
             seen.get("ledger-schema").map(String::as_str),
-            Some("4a8920674fffe454fb0c8c21f77e01674a1a65ea2967f62171a71c25bd3725d1")
+            Some("1aaae4568ad16a7cf382af2111fca9e0a4a8700d164619b08211c14b31b95db3")
         );
     }
 
@@ -1843,6 +2345,150 @@ summary = "existing"
             inside_ok.is_ok(),
             "path inside .claude/ must be permitted without --allow-outside"
         );
+    }
+
+    // ----- Task 2: items add-many + array-append helpers ------------------
+
+    #[test]
+    fn items_add_many_merges_defaults() {
+        let mut doc = led();
+        let defaults: JsonValue = serde_json::from_str(
+            r#"{"status":"open","rounds":1,"severity":"warning"}"#,
+        )
+        .unwrap();
+        let rows: Vec<JsonValue> = vec![
+            serde_json::from_str(r#"{"id":"R10","file":"a.rs","line":1,"summary":"a","category":"quality","effort":"small","first_flagged":"2026-04-18"}"#).unwrap(),
+            serde_json::from_str(r#"{"id":"R11","file":"b.rs","line":2,"summary":"b","category":"quality","effort":"small","first_flagged":"2026-04-18","severity":"critical"}"#).unwrap(),
+        ];
+        let n = items_add_many(&mut doc, "items", &rows, Some(&defaults)).unwrap();
+        assert_eq!(n, 2);
+        let r10 = items_get(&doc, "R10").unwrap();
+        assert_eq!(r10["status"], "open");
+        assert_eq!(r10["rounds"], 1);
+        assert_eq!(r10["severity"], "warning");
+        let r11 = items_get(&doc, "R11").unwrap();
+        // Per-row severity wins over default.
+        assert_eq!(r11["severity"], "critical");
+        // Default still stamps non-conflicting fields.
+        assert_eq!(r11["status"], "open");
+    }
+
+    #[test]
+    fn items_add_many_rejects_non_object_row() {
+        let mut doc = led();
+        let rows: Vec<JsonValue> = vec![
+            serde_json::from_str(r#"{"id":"R10","file":"a.rs","line":1,"summary":"a","category":"quality","effort":"small","severity":"warning","first_flagged":"2026-04-18","rounds":1,"status":"open"}"#).unwrap(),
+            serde_json::from_str(r#"[1,2]"#).unwrap(),
+        ];
+        let err = items_add_many(&mut doc, "items", &rows, None).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("row 2"),
+            "expected error to mention row 2, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn items_add_many_preserves_date_coercion_for_first_flagged() {
+        let mut doc = led();
+        let defaults: JsonValue = serde_json::from_str(
+            r#"{"first_flagged":"2026-04-18","status":"open","rounds":1}"#,
+        )
+        .unwrap();
+        let rows: Vec<JsonValue> = vec![serde_json::from_str(
+            r#"{"id":"R20","file":"c.rs","line":3,"severity":"warning","effort":"small","category":"quality","summary":"c"}"#,
+        )
+        .unwrap()];
+        items_add_many(&mut doc, "items", &rows, Some(&defaults)).unwrap();
+        let serialised = toml::to_string_pretty(&doc).unwrap();
+        assert!(
+            serialised.contains("first_flagged = 2026-04-18"),
+            "expected raw TOML date literal for first_flagged, got:\n{serialised}"
+        );
+    }
+
+    #[test]
+    fn items_add_many_into_rollback_events_array() {
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "existing"
+"#;
+        let mut doc: TomlValue = toml::from_str(src).unwrap();
+        let rows: Vec<JsonValue> = vec![
+            serde_json::from_str(r#"{"timestamp":"2026-04-18T00:00:00Z","command":"review-apply","cause":"one","items":["R1"],"stash_ref":"stash@{0}"}"#).unwrap(),
+            serde_json::from_str(r#"{"timestamp":"2026-04-18T00:01:00Z","command":"optimise-apply","cause":"two","items":["R2"],"stash_ref":"stash@{1}"}"#).unwrap(),
+        ];
+        let n = items_add_many(&mut doc, "rollback_events", &rows, None).unwrap();
+        assert_eq!(n, 2);
+        let events = doc
+            .get("rollback_events")
+            .and_then(|v| v.as_array())
+            .expect("rollback_events array");
+        assert_eq!(events.len(), 2);
+        let first = events[0].as_table().unwrap();
+        assert_eq!(first.get("cause").unwrap().as_str(), Some("one"));
+        // `timestamp` is not in DATE_KEYS, so it stays a plain string (JSON
+        // strings pass through `json_to_toml` as TOML strings). This pins
+        // that rollback_events.timestamp is never date-coerced by this path.
+        assert_eq!(
+            first.get("timestamp").unwrap().as_str(),
+            Some("2026-04-18T00:00:00Z")
+        );
+        // `items` array untouched.
+        let items = doc.get("items").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(items.len(), 1);
+        let serialised = toml::to_string_pretty(&doc).unwrap();
+        assert!(
+            serialised.contains("[[rollback_events]]"),
+            "expected [[rollback_events]] header, got:\n{serialised}"
+        );
+    }
+
+    #[test]
+    fn array_append_matches_items_add_many_with_no_defaults() {
+        let src = r#"schema_version = 1
+"#;
+        let mut doc_a: TomlValue = toml::from_str(src).unwrap();
+        let mut doc_b: TomlValue = toml::from_str(src).unwrap();
+        let rows: Vec<JsonValue> = vec![
+            serde_json::from_str(r#"{"id":"E1","kind":"note"}"#).unwrap(),
+            serde_json::from_str(r#"{"id":"E2","kind":"note"}"#).unwrap(),
+        ];
+        let n_a = array_append(&mut doc_a, "events", &rows).unwrap();
+        let n_b = items_add_many(&mut doc_b, "events", &rows, None).unwrap();
+        assert_eq!(n_a, n_b);
+        assert_eq!(
+            toml::to_string_pretty(&doc_a).unwrap(),
+            toml::to_string_pretty(&doc_b).unwrap(),
+            "array_append must be byte-identical to items_add_many(.., None)"
+        );
+    }
+
+    #[test]
+    fn parse_ndjson_reports_line_number_on_bad_json() {
+        let input = "{\"id\":\"R1\"}\n{\"id\":\"R2\"}\n{not json\n";
+        let err = parse_ndjson(input).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("line 3"), "expected 'line 3', got: {msg}");
+    }
+
+    #[test]
+    fn parse_ndjson_skips_blank_lines_but_keeps_line_numbering() {
+        // Line 1: valid, line 2: blank (skipped), line 3: malformed.
+        // Error must still name line 3, not line 2.
+        let input = "{\"id\":\"R1\"}\n\n{bad\n";
+        let err = parse_ndjson(input).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("line 3"), "expected 'line 3', got: {msg}");
+
+        // Happy path with a blank line in the middle: 2 rows out.
+        let ok_input = "{\"id\":\"R1\"}\n\n{\"id\":\"R2\"}\n";
+        let rows = parse_ndjson(ok_input).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["id"], "R1");
+        assert_eq!(rows[1]["id"], "R2");
     }
 
     // Some of the tests above mutate process-wide env vars. Serialise them

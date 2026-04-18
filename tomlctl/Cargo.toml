@@ -24,6 +24,7 @@ anyhow = "^1"
 tempfile = "^3"
 fs4 = "^0.13"
 sha2 = "^0.11"
+regex = "^1"
 
 [dev-dependencies]
 # R41/R58: black-box CLI integration harness. assert_cmd locates the built
