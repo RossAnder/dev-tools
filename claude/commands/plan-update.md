@@ -55,7 +55,7 @@ execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
 - `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
 - `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the **atomic 2-line bootstrap**: a single `Write` tool call whose content is exactly `schema_version = 1\nlast_updated = <today>\n` (literal newlines; `<today>` is ISO 8601), before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a valid-TOML log file in one step rather than erroring with `No such file or directory`. The bootstrap is **atomic**: a single `Write` materialises a parseable file, so a concurrent writer that observes the file between the initial `Write` and the first `tomlctl` call never sees the zero-byte-then-partial intermediate state the legacy 3-step sequence could produce.
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the **atomic 2-line bootstrap**: a single `Write` tool call whose content is exactly `schema_version = 1\nlast_updated = <today>\n` (literal newlines; `<today>` is ISO 8601), before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a valid-TOML log file in one step rather than erroring with `No such file or directory`. The bootstrap is **atomic**: a single `Write` materialises a parseable file, so a concurrent writer that observes the file between the initial `Write` and the first `tomlctl` call never sees the zero-byte-then-partial intermediate state the legacy 3-step sequence could produce. _(Follow-up: consolidate the 3 self-healing prose copies into a `tomlctl flow bootstrap-execution-record` subcommand — tracked under R48's resolution; requires a separate Rust change.)_
 
 #### Slug derivation
 
@@ -143,7 +143,7 @@ legacy_id = "D3"
 
 | Type | Required fields (in addition to the always-required five) |
 |------|-----------------------------------------------------------|
-| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `commits[]` |
+| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`; `commits[]` OPTIONAL (see note below) |
 | `verification` | `command`, `outcome` ∈ {`pass`, `fail`} |
 | `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
 | `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
@@ -152,6 +152,8 @@ legacy_id = "D3"
 | `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured |
 
 **`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). Slugs are derived from the plan document's task heading, lowercased, hyphenated.
+
+**`commits` field** (task-completion, deviation): previously required; now optional. Populated by /implement Phase 2 step 5b after the git checkpoint (R21) — post-R21 entries should always carry it. Older bootstrap-phase entries and entries written before R21 may omit it; render-from-log treats absent `commits[]` as empty.
 
 ### Write contract — two-call pattern (canonical heredoc form)
 
@@ -237,17 +239,19 @@ The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
 
 Cross-reorder idempotency comes from three order-insensitive operations: the count-based Changes column (swapping two same-date entries in the source log doesn't change the per-type counts in the bucket), the lexicographic Commits sort (SHA order is independent of entry order), and the pre-sort fixing bucket order. Combined, the routine is a true pure function of the log's *contents* — not its insertion sequence within a date.
 
+**Empty-state convention**: when a source query returns zero rows, render a single row with `| (none) | | ... | |` matching the column count of that table. Applies to Completed Items, Deviations, Deferrals, and Session Log uniformly. The literal text `(none)` in the first cell signals "no matching entries" to readers.
+
 ### `[tasks].completed` derivation
 
 `[tasks].completed` in `context.toml` is derived from the log on every write that touches `[tasks]`:
 
 ```
-completed = tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref --verify-integrity | jq -r '.[]' | sort -u | wc -l
+completed = tomlctl items list <record> --where type=task-completion --where status=done --count-by task_ref --verify-integrity | jq 'keys | length'
 ```
 
 Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `total` remains plan-document-driven; `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
 
-Before relying on the pipe above, verify `--pluck`'s output shape against the installed `tomlctl`: if it emits a JSON array (`["a","b"]`), keep `jq -r '.[]'`; if it emits newline-delimited strings, drop the `jq` step and pipe straight to `sort -u | wc -l`.
+`--count-by task_ref` emits `{"slug1": N, "slug2": M, ...}`; `jq 'keys | length'` returns the distinct-slug count in one hop, which replaces the earlier pluck→jq-unwrap→sort -u→wc -l chain.
 
 #### Read-path integrity contract
 
@@ -333,7 +337,7 @@ Scan plan items against the codebase and git history. For each plan task/item, c
    ```
    tomlctl items list <record> --where type=task-completion --pluck task_ref --verify-integrity
    ```
-   and treat the result as the skip-set. (If `--pluck` emits a JSON array, parse with `jq -r '.[]'`; if newline-delimited strings, consume directly.)
+   and treat the result as the skip-set. Parse the JSON array with `jq -r '.[]'` (tomlctl's `--pluck` always emits a JSON array — see `query.rs::apply_pluck`).
 2. **Skip duplicates.** For any `task_ref` already present in the skip-set, do not append a new `task-completion` entry. The op never duplicates entries that `/implement` (or any prior writer) has already recorded.
 3. **Status-transition writes are change-gated.** Append a `type=status-transition` entry (with `from_status` and `to_status`) ONLY when the flow's `status` field actually changes value (e.g. `in-progress` → `complete`). Never on every invocation. If `status` is unchanged, skip the transition append entirely.
 4. **Never silently back-fill.** The `status` op NEVER appends `type=task-completion` entries — those are exclusively written by `/implement` Phase 2. If reconciliation surfaces an unrecorded completion (e.g. files modified, tests pass, but no matching log entry exists), the op MUST **flag the gap in its reconciliation report** rather than silently appending. Only the `migrate` op (below) is authorised to back-fill `task-completion` entries from a legacy `PROGRESS-LOG.md`.
@@ -709,12 +713,10 @@ After determining what needs to change:
    - **Derive `[tasks].completed` from `<record>` on every write** using exactly this pipeline:
 
      ```
-     completed = tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref --verify-integrity | jq -r '.[]' | sort -u | wc -l
+     completed = tomlctl items list <record> --where type=task-completion --where status=done --count-by task_ref --verify-integrity | jq 'keys | length'
      ```
 
-     This is a **distinct-slug count** over the `task-completion` entries with `status=done`, not a raw entry count. Counting distinct `task_ref` slugs means a failed attempt followed by a successful retry counts as **one** completion, not two; multiple verification appends against the same task don't inflate the counter. Do NOT reduce to a plain `--count` or `wc -l` over raw rows.
-
-     One-line note for future readers: if the installed `tomlctl --pluck` emits newline-delimited values rather than a JSON array, drop the `jq -r '.[]'` step and pipe straight to `sort -u | wc -l`.
+     This is a **distinct-slug count** over the `task-completion` entries with `status=done`, not a raw entry count. Counting distinct `task_ref` slugs means a failed attempt followed by a successful retry counts as **one** completion, not two; multiple verification appends against the same task don't inflate the counter. Do NOT reduce to a plain `--count` or `wc -l` over raw rows. `--count-by` emits `{"slug1": N, ...}`; `jq 'keys | length'` returns the distinct-slug count in one hop.
    - **`[tasks].in_progress` rule**: this field is written **only by `/implement` during live execution** (when it picks up a task and when it finishes one). Every `/plan-update` op MUST leave `[tasks].in_progress` untouched — read it once if you need to display it, but do not write it back. (The literal phrase appears throughout the per-op bodies above as a regression guard.)
    - Write `status` as one of `draft`, `in-progress`, `review`, `complete` — use `review` when the plan has entered a review phase between implementation rounds, `complete` when every item is done or all remainders are deferred. If `status` changes value, append a `type=status-transition` entry per the reconciler contract.
    - `reconcile` may refine `scope`; other operations leave `scope` alone.
