@@ -26,21 +26,27 @@ tomlctl validate    <file>                            # parse-check
 tomlctl items list  <file> [--status X] [--category Y] [--newer-than YYYY-MM-DD] [--file PATH] [--count]
 tomlctl items get   <file> <id>
 tomlctl items add   <file> --json '{"id":"R7",...}'
+tomlctl items add-many <file> --defaults-json '{...}' --ndjson -    # batched NDJSON append
 tomlctl items update <file> <id> --json '{"status":"fixed"}' [--unset key]...
 tomlctl items remove <file> <id>
 tomlctl items next-id <file> [--prefix R|O]
 tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]' [--array NAME]
 tomlctl items find-duplicates <file> [--tier A|B|C]    # dedup hygiene, read-only JSON array
 tomlctl items orphans  <file>                          # missing-file / symbol-missing / dangling-dep
+tomlctl array-append   <file> <array> --json '{...}'                # append one record
+tomlctl array-append   <file> <array> --ndjson -                    # batched append to e.g. rollback_events
 tomlctl blocks verify  <file>... [--block <marker-name>]...  # cross-file shared-block parity
 
-# Global flags (accepted before or after the subcommand):
+# Integrity flags (accepted after the subcommand name on any TOML-touching command):
 #   --allow-outside           bypass the best-effort .claude/ containment guard (not a sandbox)
 #   --no-write-integrity      suppress the <file>.sha256 sidecar on write
 #   --verify-integrity        verify <file> against <file>.sha256 before any read
+#   --strict-integrity        treat sidecar write failures as hard errors
 ```
 
-**Stdin input** (`-` sentinel on `--json` / `--ops`): see [SKILL.md stdin section](../claude/skills/tomlctl/SKILL.md#stdin-input-for-large-json-payloads) for the full reference.
+`items list` also offers a full query surface — `--where / --where-not / --where-in / --where-has / --where-missing / --where-gt[e] / --where-lt[e] / --where-contains / --where-prefix / --where-suffix / --where-regex`, projections (`--select`, `--exclude`, `--pluck`), shaping (`--sort-by`, `--limit`, `--offset`, `--distinct`), aggregation (`--count`, `--count-by`, `--group-by`), and `--ndjson` output. All `KEY=VAL` right-hand sides accept typed prefixes (`@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`). See [SKILL.md](../claude/skills/tomlctl/SKILL.md#query-items-full-query-surface) for the full reference.
+
+**Stdin input** (`-` sentinel on `--json` / `--ops` / `--ndjson` / `--defaults-json`): see [SKILL.md stdin section](../claude/skills/tomlctl/SKILL.md#stdin-input-for-large-json-payloads) for the full reference.
 
 All commands print JSON on stdout, exit non-zero on failure.
 

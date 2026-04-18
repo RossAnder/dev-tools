@@ -14,14 +14,31 @@
 //! Kept deliberately I/O-free so unit tests can exercise every predicate
 //! and shape on an in-memory fixture.
 
-#![allow(dead_code)] // R-plan: wired up by task 5; keep module self-contained until then.
-
-use anyhow::{Result, anyhow, bail};
-use regex::Regex;
+use anyhow::{Result, bail};
+use regex::{Regex, RegexBuilder};
 use serde_json::Value as JsonValue;
+use std::collections::HashSet;
 use toml::Value as TomlValue;
 
-use crate::convert::{compare_typed, parse_typed_value, toml_to_json};
+use crate::convert::{TypeHint, compare_typed, parse_typed_value, split_type_hint, toml_to_json};
+
+/// Per-compile memory cap for user-supplied regex patterns (R72). Chosen to
+/// bound a pathological pattern's NFA compile / DFA cache at ~1 MiB each,
+/// well above anything a ledger field regex would realistically need.
+const REGEX_COMPILE_SIZE_LIMIT: usize = 1 << 20;
+const REGEX_DFA_SIZE_LIMIT: usize = 1 << 20;
+
+/// Compile a user-supplied regex pattern with memory caps applied so an
+/// adversarial pattern can't consume unbounded memory during compilation
+/// or DFA construction. Factored out so both the per-predicate hoist and
+/// tests can share one configuration (R72).
+fn compile_user_regex(pattern: &str) -> Result<Regex> {
+    RegexBuilder::new(pattern)
+        .size_limit(REGEX_COMPILE_SIZE_LIMIT)
+        .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
+        .build()
+        .map_err(|e| anyhow::anyhow!("invalid regex `{}`: {}", pattern, e))
+}
 
 /// Sort direction for a single `--sort-by` key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,7 +69,8 @@ pub(crate) enum Predicate {
 }
 
 /// Mutually-exclusive output shapes. `Array` is the default when none of the
-/// aggregation/pluck flags are set.
+/// aggregation/pluck flags are set. `ndjson` is an *encoding* choice handled
+/// at the CLI layer (R82) and no longer appears here.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) enum OutputShape {
     #[default]
@@ -61,7 +79,6 @@ pub(crate) enum OutputShape {
     CountBy(String),
     GroupBy(String),
     Pluck(String),
-    Ndjson,
 }
 
 /// Full query spec handed to `run`. `main.rs` builds this from clap args.
@@ -76,6 +93,11 @@ pub(crate) struct Query {
     pub offset: Option<usize>,
     pub distinct: bool,
     pub shape: OutputShape,
+    /// Output encoding: if `true` the CLI emits one compact JSON value per
+    /// line instead of a single pretty-printed JSON array. Only meaningful
+    /// when `shape == Array`; `run()` ignores it (it always returns a
+    /// `JsonValue::Array`).
+    pub ndjson: bool,
 }
 
 /// Reject mutually exclusive flag combinations. The CLI's `validate_query`
@@ -113,7 +135,7 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
         OutputShape::GroupBy(_) => {
             // group-by composes fine with projection; no cross-exclusion here.
         }
-        OutputShape::Array | OutputShape::Ndjson => {}
+        OutputShape::Array => {}
     }
     // Cross-shape pairs. `main.rs` is expected to pick exactly one of the
     // below shapes, but we still double-check so callers with programmatic
@@ -152,7 +174,7 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
         // shape so grouping keys stay intact. For Array/Pluck, dedup on
         // projected shape so "select a,b --distinct" dedupes by (a,b).
         match &q.shape {
-            OutputShape::Array | OutputShape::Pluck(_) | OutputShape::Ndjson => {
+            OutputShape::Array | OutputShape::Pluck(_) => {
                 let projected: Vec<JsonValue> =
                     sorted.iter().map(|v| apply_projection(v, q)).collect();
                 dedup_preserve_first(&sorted, &projected)
@@ -177,7 +199,7 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
             Ok(apply_aggregation_group_by(&windowed, &projected, field))
         }
         OutputShape::Pluck(field) => Ok(apply_pluck(&windowed, field)),
-        OutputShape::Array | OutputShape::Ndjson => {
+        OutputShape::Array => {
             let projected: Vec<JsonValue> =
                 windowed.iter().map(|v| apply_projection(v, q)).collect();
             Ok(JsonValue::Array(projected))
@@ -193,10 +215,24 @@ pub(crate) fn apply_filters<'a>(
     items: &[&'a TomlValue],
     preds: &[Predicate],
 ) -> Result<Vec<&'a TomlValue>> {
+    // R72: compile every `WhereRegex` pattern once, up-front, before we
+    // touch the item loop. A compiled regex is indexed by its position in
+    // `preds` so `eval_predicate` can do an O(1) lookup instead of
+    // recompiling per (item × predicate). We also apply memory caps via
+    // `RegexBuilder::size_limit` / `dfa_size_limit` so a hostile pattern
+    // can't balloon compile-time memory.
+    let compiled: Vec<Option<Regex>> = preds
+        .iter()
+        .map(|p| match p {
+            Predicate::WhereRegex { pattern, .. } => compile_user_regex(pattern).map(Some),
+            _ => Ok(None),
+        })
+        .collect::<Result<Vec<_>>>()?;
+
     let mut out = Vec::with_capacity(items.len());
     'item: for &it in items {
-        for p in preds {
-            if !eval_predicate(it, p)? {
+        for (i, p) in preds.iter().enumerate() {
+            if !eval_predicate(it, p, compiled[i].as_ref())? {
                 continue 'item;
             }
         }
@@ -205,30 +241,41 @@ pub(crate) fn apply_filters<'a>(
     Ok(out)
 }
 
-fn eval_predicate(item: &TomlValue, p: &Predicate) -> Result<bool> {
+fn eval_predicate(
+    item: &TomlValue,
+    p: &Predicate,
+    compiled_regex: Option<&Regex>,
+) -> Result<bool> {
     let tbl = match item.as_table() {
         Some(t) => t,
         None => return Ok(false),
     };
     match p {
-        Predicate::Where { key, rhs } => Ok(eq_typed(tbl.get(key), rhs)),
-        Predicate::WhereNot { key, rhs } => Ok(!eq_typed(tbl.get(key), rhs)),
+        Predicate::Where { key, rhs } => eq_typed(tbl.get(key), rhs, key),
+        Predicate::WhereNot { key, rhs } => Ok(!eq_typed(tbl.get(key), rhs, key)?),
         Predicate::WhereIn { key, rhs } => {
             let field = tbl.get(key);
-            Ok(rhs.iter().any(|v| eq_typed(field, v)))
+            // Any-match with error propagation: bail on the first malformed
+            // RHS rather than silently skipping it.
+            for v in rhs {
+                if eq_typed(field, v, key)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         }
         Predicate::WhereHas { key } => Ok(field_present_nonempty(tbl.get(key))),
         Predicate::WhereMissing { key } => Ok(!field_present_nonempty(tbl.get(key))),
-        Predicate::WhereGt { key, rhs } => cmp_pred(tbl.get(key), rhs, |o| {
+        Predicate::WhereGt { key, rhs } => cmp_pred(tbl.get(key), rhs, key, |o| {
             matches!(o, std::cmp::Ordering::Greater)
         }),
-        Predicate::WhereGte { key, rhs } => cmp_pred(tbl.get(key), rhs, |o| {
+        Predicate::WhereGte { key, rhs } => cmp_pred(tbl.get(key), rhs, key, |o| {
             matches!(o, std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
         }),
-        Predicate::WhereLt { key, rhs } => {
-            cmp_pred(tbl.get(key), rhs, |o| matches!(o, std::cmp::Ordering::Less))
-        }
-        Predicate::WhereLte { key, rhs } => cmp_pred(tbl.get(key), rhs, |o| {
+        Predicate::WhereLt { key, rhs } => cmp_pred(tbl.get(key), rhs, key, |o| {
+            matches!(o, std::cmp::Ordering::Less)
+        }),
+        Predicate::WhereLte { key, rhs } => cmp_pred(tbl.get(key), rhs, key, |o| {
             matches!(o, std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
         }),
         Predicate::WhereContains { key, sub } => {
@@ -242,9 +289,15 @@ fn eval_predicate(item: &TomlValue, p: &Predicate) -> Result<bool> {
             .get(key)
             .and_then(|v| v.as_str())
             .is_some_and(|s| s.ends_with(suffix))),
-        Predicate::WhereRegex { key, pattern } => {
-            let re = Regex::new(pattern)
-                .map_err(|e| anyhow!("invalid regex for --where-regex {}: {}", key, e))?;
+        Predicate::WhereRegex { key, .. } => {
+            // R72: the regex was compiled once in `apply_filters`; we just
+            // look it up here.
+            let re = compiled_regex.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "internal: missing compiled regex for --where-regex on key `{}`",
+                    key
+                )
+            })?;
             let s = value_as_string(tbl.get(key));
             Ok(s.as_deref().is_some_and(|s| re.is_match(s)))
         }
@@ -265,56 +318,53 @@ fn field_present_nonempty(v: Option<&TomlValue>) -> bool {
 /// Typed equality: if RHS has a `@type:` prefix, parse it that way. Otherwise,
 /// if the field is native-typed (Int/Float/Bool/Datetime), parse RHS as the
 /// field's native type. Fall back to string compare.
-fn eq_typed(field: Option<&TomlValue>, rhs: &str) -> bool {
-    let Some(field) = field else { return false };
+///
+/// `key` is only used to build a user-facing error when the RHS carries a
+/// `@type:` prefix but fails to parse — previously this was swallowed as
+/// `return false`, which silently dropped the query row (R73).
+fn eq_typed(field: Option<&TomlValue>, rhs: &str, key: &str) -> Result<bool> {
+    let Some(field) = field else { return Ok(false) };
     // 1. Explicit @type: prefix drives parsing. Compare apples-to-apples.
-    if let Some(rest) = strip_typed_prefix(rhs) {
-        let parsed = match parse_typed_value(rhs) {
-            Ok(v) => v,
-            Err(_) => return false,
-        };
-        return json_matches_toml(&parsed, field, rest.0);
+    if let Some((hint, _rest)) = split_type_hint(rhs) {
+        let parsed = parse_typed_value(rhs).map_err(|e| {
+            anyhow::anyhow!(
+                "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                rhs,
+                key,
+                e
+            )
+        })?;
+        return Ok(json_matches_toml(&parsed, field, hint));
     }
     // 2. No prefix — native-type coercion from the field side.
-    match field {
+    Ok(match field {
         TomlValue::String(s) => s == rhs,
         TomlValue::Integer(i) => rhs.parse::<i64>().map(|r| r == *i).unwrap_or(false),
         TomlValue::Float(f) => rhs.parse::<f64>().map(|r| r == *f).unwrap_or(false),
         TomlValue::Boolean(b) => rhs.parse::<bool>().map(|r| r == *b).unwrap_or(false),
         TomlValue::Datetime(dt) => dt.to_string() == rhs,
         _ => false,
-    }
-}
-
-/// Returns Some((tag, body)) when `s` has a recognised `@<tag>:` prefix.
-fn strip_typed_prefix(s: &str) -> Option<(&'static str, &str)> {
-    for tag in &["date", "datetime", "int", "float", "bool", "string", "str"] {
-        let needle = format!("@{}:", tag);
-        if let Some(rest) = s.strip_prefix(&needle) {
-            return Some((tag, rest));
-        }
-    }
-    None
+    })
 }
 
 /// Compare a typed JSON scalar (from `parse_typed_value`) against a TOML field.
-fn json_matches_toml(parsed: &JsonValue, field: &TomlValue, tag: &str) -> bool {
-    match (parsed, field, tag) {
-        (JsonValue::String(s), TomlValue::String(f), "str" | "string") => s == f,
-        (JsonValue::String(s), TomlValue::Datetime(dt), "date" | "datetime") => {
+fn json_matches_toml(parsed: &JsonValue, field: &TomlValue, hint: TypeHint) -> bool {
+    match (parsed, field, hint) {
+        (JsonValue::String(s), TomlValue::String(f), TypeHint::Str) => s == f,
+        (JsonValue::String(s), TomlValue::Datetime(dt), TypeHint::Date | TypeHint::DateTime) => {
             // Compare ISO-string form. TOML Datetime Display gives ISO-8601.
             dt.to_string() == *s
         }
-        (JsonValue::Number(n), TomlValue::Integer(i), "int") => {
+        (JsonValue::Number(n), TomlValue::Integer(i), TypeHint::Int) => {
             n.as_i64().map(|v| v == *i).unwrap_or(false)
         }
-        (JsonValue::Number(n), TomlValue::Float(f), "float") => {
+        (JsonValue::Number(n), TomlValue::Float(f), TypeHint::Float) => {
             n.as_f64().map(|v| v == *f).unwrap_or(false)
         }
-        (JsonValue::Bool(b), TomlValue::Boolean(f), "bool") => b == f,
+        (JsonValue::Bool(b), TomlValue::Boolean(f), TypeHint::Bool) => b == f,
         // Cross-type compare: string RHS against non-string field (e.g.
         // `@string:42` against an Integer). Compare via stringified field.
-        (JsonValue::String(s), other, "str" | "string") => stringify_scalar(other) == *s,
+        (JsonValue::String(s), other, TypeHint::Str) => stringify_scalar(other) == *s,
         _ => false,
     }
 }
@@ -337,13 +387,22 @@ fn value_as_string(v: Option<&TomlValue>) -> Option<String> {
 fn cmp_pred(
     field: Option<&TomlValue>,
     rhs: &str,
+    key: &str,
     check: impl Fn(std::cmp::Ordering) -> bool,
 ) -> Result<bool> {
     let Some(f) = field else { return Ok(false) };
-    match compare_typed(f, rhs) {
-        Ok(ord) => Ok(check(ord)),
-        Err(_) => Ok(false),
-    }
+    // R73: surface parse errors up to the caller rather than silently
+    // treating the item as non-matching. A malformed `@date:not-a-date` RHS
+    // is a user bug worth failing loudly on.
+    let ord = compare_typed(f, rhs).map_err(|e| {
+        anyhow::anyhow!(
+            "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+            rhs,
+            key,
+            e
+        )
+    })?;
+    Ok(check(ord))
 }
 
 // -----------------------------------------------------------------------
@@ -376,21 +435,6 @@ pub(crate) fn apply_projection(item: &JsonValue, q: &Query) -> JsonValue {
 // -----------------------------------------------------------------------
 // Shaping — sort, limit/offset, distinct
 // -----------------------------------------------------------------------
-
-pub(crate) fn apply_shaping(
-    items: Vec<JsonValue>,
-    sort_by: &[(String, SortDir)],
-    limit: Option<usize>,
-    offset: Option<usize>,
-    distinct: bool,
-) -> Vec<JsonValue> {
-    let mut v = apply_sort(items, sort_by);
-    if distinct {
-        let clones = v.clone();
-        v = dedup_preserve_first(&v, &clones);
-    }
-    apply_window(v, offset, limit)
-}
 
 fn apply_sort(mut items: Vec<JsonValue>, sort_by: &[(String, SortDir)]) -> Vec<JsonValue> {
     if sort_by.is_empty() {
@@ -438,12 +482,14 @@ fn cmp_json_scalars(a: Option<&JsonValue>, b: Option<&JsonValue>) -> std::cmp::O
 }
 
 fn dedup_preserve_first(source: &[JsonValue], shape: &[JsonValue]) -> Vec<JsonValue> {
-    let mut seen: Vec<String> = Vec::new();
-    let mut out = Vec::new();
+    // R67: `HashSet::insert` returns `true` on first sight of a key, which
+    // is exactly the keep-decision we want. O(n) amortised instead of the
+    // previous O(n²) Vec-scan.
+    let mut seen: HashSet<String> = HashSet::with_capacity(shape.len());
+    let mut out = Vec::with_capacity(shape.len());
     for (i, s) in shape.iter().enumerate() {
         let key = serde_json::to_string(s).unwrap_or_default();
-        if !seen.iter().any(|k| k == &key) {
-            seen.push(key);
+        if seen.insert(key) {
             out.push(source[i].clone());
         }
     }
@@ -475,20 +521,24 @@ pub(crate) fn apply_aggregation_count(items: &[JsonValue]) -> JsonValue {
 }
 
 pub(crate) fn apply_aggregation_count_by(items: &[JsonValue], field: &str) -> JsonValue {
-    let mut counts: Vec<(String, u64)> = Vec::new();
+    // R68: `serde_json::Map` with the `preserve_order` feature (toml already
+    // pulls it in transitively via the indexmap-backed Map) keeps insertion
+    // order — which matches the old Vec<(k, v)> behaviour — while giving us
+    // O(1) `entry()` lookup.
+    let mut counts: serde_json::Map<String, JsonValue> = serde_json::Map::new();
     for it in items {
         let key = bucket_key(it.get(field));
-        if let Some(slot) = counts.iter_mut().find(|(k, _)| k == &key) {
-            slot.1 += 1;
-        } else {
-            counts.push((key, 1));
+        match counts.get_mut(&key) {
+            Some(JsonValue::Number(n)) => {
+                let new = n.as_u64().unwrap_or(0) + 1;
+                *n = serde_json::Number::from(new);
+            }
+            _ => {
+                counts.insert(key, JsonValue::from(1_u64));
+            }
         }
     }
-    let mut m = serde_json::Map::new();
-    for (k, v) in counts {
-        m.insert(k, JsonValue::from(v));
-    }
-    JsonValue::Object(m)
+    JsonValue::Object(counts)
 }
 
 pub(crate) fn apply_aggregation_group_by(
@@ -496,21 +546,20 @@ pub(crate) fn apply_aggregation_group_by(
     projected: &[JsonValue],
     field: &str,
 ) -> JsonValue {
-    let mut groups: Vec<(String, Vec<JsonValue>)> = Vec::new();
+    // R68: same Map-backed accumulator as `apply_aggregation_count_by`, but
+    // the slot value is a Vec of grouped items.
+    let mut groups: serde_json::Map<String, JsonValue> = serde_json::Map::new();
     for (i, it) in raw.iter().enumerate() {
         let key = bucket_key(it.get(field));
         let proj = projected[i].clone();
-        if let Some(slot) = groups.iter_mut().find(|(k, _)| k == &key) {
-            slot.1.push(proj);
-        } else {
-            groups.push((key, vec![proj]));
+        match groups.get_mut(&key) {
+            Some(JsonValue::Array(arr)) => arr.push(proj),
+            _ => {
+                groups.insert(key, JsonValue::Array(vec![proj]));
+            }
         }
     }
-    let mut m = serde_json::Map::new();
-    for (k, v) in groups {
-        m.insert(k, JsonValue::Array(v));
-    }
-    JsonValue::Object(m)
+    JsonValue::Object(groups)
 }
 
 pub(crate) fn apply_pluck(items: &[JsonValue], field: &str) -> JsonValue {
@@ -531,21 +580,6 @@ fn bucket_key(v: Option<&JsonValue>) -> String {
         None | Some(JsonValue::Null) => String::new(),
         Some(JsonValue::String(s)) => s.clone(),
         Some(other) => other.to_string(),
-    }
-}
-
-/// Thin entry exposed for symmetry with the plan's `apply_aggregation`
-/// helper name. Dispatches on shape for aggregation variants.
-pub(crate) fn apply_aggregation(
-    raw: &[JsonValue],
-    projected: &[JsonValue],
-    shape: &OutputShape,
-) -> Option<JsonValue> {
-    match shape {
-        OutputShape::Count => Some(apply_aggregation_count(raw)),
-        OutputShape::CountBy(f) => Some(apply_aggregation_count_by(raw, f)),
-        OutputShape::GroupBy(f) => Some(apply_aggregation_group_by(raw, projected, f)),
-        _ => None,
     }
 }
 
@@ -1086,5 +1120,56 @@ defer_reason = ""
         let mut got = ids(&out);
         got.sort();
         assert_eq!(got, vec!["R2", "R3", "R5", "R6"]);
+    }
+
+    // -- R72 / R73 regressions ----------------------------------------
+
+    /// R72: a regex pattern whose compiled NFA would exceed our 1 MiB
+    /// size_limit must fail *at compile time*, not silently expand
+    /// in-process. `a{N}` with N large is the canonical probe.
+    #[test]
+    fn where_regex_pathological_pattern_rejected_by_size_limit() {
+        let doc = fixture();
+        // 2**20 = 1 MiB; `a{1048576}` trivially exceeds 1 MiB NFA size.
+        let q = q_with(vec![Predicate::WhereRegex {
+            key: "id".into(),
+            pattern: "a{1048576}".into(),
+        }]);
+        let err = run(&doc, "items", &q).unwrap_err().to_string();
+        assert!(
+            err.contains("invalid regex"),
+            "error must name the rejection cause; got: {err}"
+        );
+    }
+
+    /// R73: a malformed typed RHS on `--where` must propagate as a
+    /// `Result::Err`, not silently skip every row.
+    #[test]
+    fn where_eq_bad_typed_rhs_propagates_error() {
+        let doc = fixture();
+        let q = q_with(vec![Predicate::Where {
+            key: "first_flagged".into(),
+            rhs: "@date:not-a-date".into(),
+        }]);
+        let err = run(&doc, "items", &q).unwrap_err().to_string();
+        assert!(
+            err.contains("first_flagged") && err.contains("not-a-date"),
+            "error must name the key + the bad RHS; got: {err}"
+        );
+    }
+
+    /// R73: the same contract holds for ordered predicates (Gt/Gte/Lt/Lte).
+    #[test]
+    fn where_gt_bad_typed_rhs_propagates_error() {
+        let doc = fixture();
+        let q = q_with(vec![Predicate::WhereGt {
+            key: "first_flagged".into(),
+            rhs: "@date:not-a-date".into(),
+        }]);
+        let err = run(&doc, "items", &q).unwrap_err().to_string();
+        assert!(
+            err.contains("first_flagged") && err.contains("not-a-date"),
+            "error must name the key + the bad RHS; got: {err}"
+        );
     }
 }

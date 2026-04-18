@@ -237,7 +237,7 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 - `tomlctl items add <ledger> --json '{...}'` — append a new item.
 - `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
 - `tomlctl items remove <ledger> <id>` — delete by id.
-- `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N.
+- `tomlctl items apply <ledger> --ops -` (stdin heredoc — preferred) or `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` (argv; small fixed-string batches only) — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N. Feed the ops array via heredoc — the same `<<'EOF' … EOF` pattern as the `add-many` example below, except the payload is a JSON array of op objects piped into `--ops -` instead of NDJSON. Never stage the ops payload via a tempfile; the `-` sentinel is the agent-native replacement for that round-trip.
 - `tomlctl items add-many <ledger> --ndjson - [--defaults-json '{...}']` — batch-append **homogeneous** new items via newline-delimited JSON on stdin; shared fields go in `--defaults-json` and per-row keys win. Prefer this over a hand-rolled `--ops` array when every op is `"add"`. Example:
   ```bash
   tomlctl items add-many <ledger> \
@@ -615,10 +615,12 @@ Only transitions from THIS run are eligible for rollback. Items resolved in prev
 6. **Append rollback event**: add one `[[rollback_events]]` entry at the ledger root per the Rollback event log sub-section in `## Ledger Schema`. Include `timestamp` (ISO 8601 date-time), `command = "<apply-command>"`, `cause`, `items` (array of reverted IDs), and the `stash_ref`. Use `tomlctl array-append` to append without op-type JSON framing:
 
    ```bash
-   tomlctl array-append <ledger> rollback_events --json '{"timestamp":"2026-04-18T14:32:00Z","command":"<apply-command>","cause":"build failure on <file>:<line>","items":["<id1>","<id2>"],"stash_ref":"stash@{0}"}'
+   tomlctl array-append <ledger> rollback_events --json - <<'EOF'
+   {"timestamp":"2026-04-18T14:32:00Z","command":"<apply-command>","cause":"build failure on <file>:<line>","items":["<id1>","<id2>"],"stash_ref":"stash@{0}"}
+   EOF
    ```
 
-   For large payloads or shell-metacharacter-heavy `cause` strings, pipe the JSON via stdin: `printf '%s' "$EVENT" | tomlctl array-append <ledger> rollback_events --json -`. The `items apply --array <name> --ops -` form remains the power-tool for batched or mixed-op writes to non-default arrays.
+   Stdin-heredoc is the primary form because `cause` is constructed from live verification output and will routinely contain shell metacharacters (backticks, `$`, embedded quotes, newlines from multi-line error text) that break argv-quoting. The argv form `tomlctl array-append <ledger> rollback_events --json '{...}'` is acceptable only when `cause` is a literal fixed string with no shell metacharacters. The `items apply --array <name> --ops -` form remains the power-tool for batched or mixed-op writes to non-default arrays.
 7. **Surface a prominent `### Rollback` callout** in the final summary: list the reopened items, the cause, and the stash ref so the user can invoke `git stash show stash@{N}` or `git stash pop` to recover.
 
 ### Confirmation prompts

@@ -253,11 +253,50 @@ pub(crate) fn json_type_name(v: &JsonValue) -> &'static str {
     }
 }
 
-// `parse_typed_value` and `compare_typed` are wired into the query engine by
-// Task 5 of the agent-native-tomlctl plan. Until that lands, they compile
-// unused; the `#[allow(dead_code)]` silences the warning without hiding any
-// future unused-code drift.
-#[allow(dead_code)]
+/// Recognised `@type:` prefix tags for the query-engine RHS grammar.
+/// Single source of truth shared by `parse_typed_value`, `compare_typed`,
+/// and `query::eq_typed` so the tag list doesn't drift across three call
+/// sites (R66).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TypeHint {
+    Date,
+    DateTime,
+    Int,
+    Float,
+    Bool,
+    Str,
+}
+
+/// If `s` opens with a recognised `@<tag>:` prefix, return
+/// `Some((hint, rest_after_prefix))`. Otherwise `None`.
+///
+/// Tags recognised: `date`, `datetime`, `int`, `float`, `bool`,
+/// `string`, `str`. Both `@string:` and `@str:` map to `TypeHint::Str`.
+pub(crate) fn split_type_hint(s: &str) -> Option<(TypeHint, &str)> {
+    if let Some(rest) = s.strip_prefix("@date:") {
+        return Some((TypeHint::Date, rest));
+    }
+    if let Some(rest) = s.strip_prefix("@datetime:") {
+        return Some((TypeHint::DateTime, rest));
+    }
+    if let Some(rest) = s.strip_prefix("@int:") {
+        return Some((TypeHint::Int, rest));
+    }
+    if let Some(rest) = s.strip_prefix("@float:") {
+        return Some((TypeHint::Float, rest));
+    }
+    if let Some(rest) = s.strip_prefix("@bool:") {
+        return Some((TypeHint::Bool, rest));
+    }
+    if let Some(rest) = s.strip_prefix("@string:") {
+        return Some((TypeHint::Str, rest));
+    }
+    if let Some(rest) = s.strip_prefix("@str:") {
+        return Some((TypeHint::Str, rest));
+    }
+    None
+}
+
 /// Parse a query-engine RHS string into a JSON scalar using the `@type:`
 /// prefix convention documented in the plan:
 ///
@@ -271,46 +310,44 @@ pub(crate) fn json_type_name(v: &JsonValue) -> &'static str {
 /// * No prefix                           → JSON string; the caller handles
 ///   native-type coercion based on the field's actual TOML type.
 pub(crate) fn parse_typed_value(s: &str) -> Result<JsonValue> {
-    if let Some(rest) = s.strip_prefix("@date:") {
-        let _dt: toml::value::Datetime = rest
-            .parse()
-            .with_context(|| format!("`{}` is not a valid ISO date", rest))?;
-        return Ok(JsonValue::String(rest.to_string()));
+    let Some((hint, rest)) = split_type_hint(s) else {
+        return Ok(JsonValue::String(s.to_string()));
+    };
+    match hint {
+        TypeHint::Date => {
+            let _dt: toml::value::Datetime = rest
+                .parse()
+                .with_context(|| format!("`{}` is not a valid ISO date", rest))?;
+            Ok(JsonValue::String(rest.to_string()))
+        }
+        TypeHint::DateTime => {
+            let _dt: toml::value::Datetime = rest
+                .parse()
+                .with_context(|| format!("`{}` is not a valid ISO datetime", rest))?;
+            Ok(JsonValue::String(rest.to_string()))
+        }
+        TypeHint::Int => {
+            let n: i64 = rest
+                .parse()
+                .with_context(|| format!("`{}` is not a valid int", rest))?;
+            Ok(JsonValue::from(n))
+        }
+        TypeHint::Float => {
+            let f: f64 = rest
+                .parse()
+                .with_context(|| format!("`{}` is not a valid float", rest))?;
+            Ok(JsonValue::from(f))
+        }
+        TypeHint::Bool => {
+            let b: bool = rest
+                .parse()
+                .with_context(|| format!("`{}` is not a valid bool", rest))?;
+            Ok(JsonValue::Bool(b))
+        }
+        TypeHint::Str => Ok(JsonValue::String(rest.to_string())),
     }
-    if let Some(rest) = s.strip_prefix("@datetime:") {
-        let _dt: toml::value::Datetime = rest
-            .parse()
-            .with_context(|| format!("`{}` is not a valid ISO datetime", rest))?;
-        return Ok(JsonValue::String(rest.to_string()));
-    }
-    if let Some(rest) = s.strip_prefix("@int:") {
-        let n: i64 = rest
-            .parse()
-            .with_context(|| format!("`{}` is not a valid int", rest))?;
-        return Ok(JsonValue::from(n));
-    }
-    if let Some(rest) = s.strip_prefix("@float:") {
-        let f: f64 = rest
-            .parse()
-            .with_context(|| format!("`{}` is not a valid float", rest))?;
-        return Ok(JsonValue::from(f));
-    }
-    if let Some(rest) = s.strip_prefix("@bool:") {
-        let b: bool = rest
-            .parse()
-            .with_context(|| format!("`{}` is not a valid bool", rest))?;
-        return Ok(JsonValue::Bool(b));
-    }
-    if let Some(rest) = s.strip_prefix("@string:") {
-        return Ok(JsonValue::String(rest.to_string()));
-    }
-    if let Some(rest) = s.strip_prefix("@str:") {
-        return Ok(JsonValue::String(rest.to_string()));
-    }
-    Ok(JsonValue::String(s.to_string()))
 }
 
-#[allow(dead_code)]
 /// Ordered comparison between a TOML field and a raw RHS string. Used by the
 /// query engine's Gt/Gte/Lt/Lte predicates.
 ///
@@ -325,20 +362,9 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
 
     // Strip any @type: prefix first so we treat `@int:5` the same as bare
     // `5` when the field is an Integer.
-    let (hint, body): (Option<&'static str>, &str) = if let Some(rest) = rhs_raw.strip_prefix("@date:") {
-        (Some("date"), rest)
-    } else if let Some(rest) = rhs_raw.strip_prefix("@datetime:") {
-        (Some("datetime"), rest)
-    } else if let Some(rest) = rhs_raw.strip_prefix("@int:") {
-        (Some("int"), rest)
-    } else if let Some(rest) = rhs_raw.strip_prefix("@float:") {
-        (Some("float"), rest)
-    } else if let Some(rest) = rhs_raw.strip_prefix("@bool:") {
-        (Some("bool"), rest)
-    } else if let Some(rest) = rhs_raw.strip_prefix("@string:").or_else(|| rhs_raw.strip_prefix("@str:")) {
-        (Some("string"), rest)
-    } else {
-        (None, rhs_raw)
+    let (hint, body): (Option<TypeHint>, &str) = match split_type_hint(rhs_raw) {
+        Some((h, rest)) => (Some(h), rest),
+        None => (None, rhs_raw),
     };
 
     match field {
@@ -346,7 +372,7 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
             let n: i64 = body
                 .parse()
                 .with_context(|| format!("`{}` is not comparable as int", body))?;
-            if hint.is_some() && !matches!(hint, Some("int")) {
+            if hint.is_some() && !matches!(hint, Some(TypeHint::Int)) {
                 bail!("type hint `{:?}` doesn't match integer field", hint);
             }
             Ok(i.cmp(&n))
@@ -355,7 +381,7 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
             let x: f64 = body
                 .parse()
                 .with_context(|| format!("`{}` is not comparable as float", body))?;
-            if hint.is_some() && !matches!(hint, Some("float")) {
+            if hint.is_some() && !matches!(hint, Some(TypeHint::Float)) {
                 bail!("type hint `{:?}` doesn't match float field", hint);
             }
             Ok(f.partial_cmp(&x).unwrap_or(Ordering::Equal))

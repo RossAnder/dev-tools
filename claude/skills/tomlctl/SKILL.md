@@ -19,7 +19,7 @@ Use `tomlctl` whenever a flow command needs to:
 - Append a record to a non-`items` array-of-tables (e.g. `[[rollback_events]]`).
 - Compute the next `R{n}` / `O{n}` id.
 
-Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` pipelines.
+Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Shell-level scalar extraction from tomlctl's JSON output (e.g. piping `{"count": N}` through `jq -r .count` in a gate condition) remains acceptable as a glue-layer convenience.
 
 ## Install
 
@@ -397,7 +397,7 @@ Prefer this over looping single-op invocations — one parse + one write instead
 
 #### Targeting a non-default array-of-tables (`--array`)
 
-`items apply` defaults to mutating the `[[items]]` array at the ledger root. Pass `--array <name>` to redirect the batch at a different array-of-tables (e.g. `rollback_events`). The flag is apply-only (not accepted on `items add|update|remove|list|get`).
+`items apply` defaults to mutating the `[[items]]` array at the ledger root. Pass `--array <name>` to redirect the batch at a different array-of-tables (e.g. `rollback_events`). `--array` is accepted on `items list`, `items get`, `items add`, `items add-many`, `items update`, `items remove`, and `items apply` — so any of these can target a non-default array such as `rollback_events`. `items next-id`, `items find-duplicates`, and `items orphans` do not take `--array` (they are ledger-schema specific and only reason about `[[items]]`).
 
 ### Stdin input for large JSON payloads
 
@@ -406,7 +406,7 @@ All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `s
 Stdin consumption rules:
 - Refuses to block on an interactive TTY (so `… --json -` without a pipe errors fast rather than hanging).
 - Caps the read at 32 MiB.
-- Only one flag per invocation may use `-` (reading the same stdin twice returns an empty payload).
+- Only one flag per invocation may use `-` — a second `-` on the same call errors with `stdin already consumed by another flag on this invocation`.
 
 ## Integrity sidecar
 

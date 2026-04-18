@@ -237,7 +237,7 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 - `tomlctl items add <ledger> --json '{...}'` — append a new item.
 - `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
 - `tomlctl items remove <ledger> <id>` — delete by id.
-- `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N.
+- `tomlctl items apply <ledger> --ops -` (stdin heredoc — preferred) or `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` (argv; small fixed-string batches only) — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N. Feed the ops array via heredoc — the same `<<'EOF' … EOF` pattern as the `add-many` example below, except the payload is a JSON array of op objects piped into `--ops -` instead of NDJSON. Never stage the ops payload via a tempfile; the `-` sentinel is the agent-native replacement for that round-trip.
 - `tomlctl items add-many <ledger> --ndjson - [--defaults-json '{...}']` — batch-append **homogeneous** new items via newline-delimited JSON on stdin; shared fields go in `--defaults-json` and per-row keys win. Prefer this over a hand-rolled `--ops` array when every op is `"add"`. Example:
   ```bash
   tomlctl items add-many <ledger> \
@@ -566,7 +566,28 @@ Use the **MANDATORY parse-rewrite strategy** from the `## Ledger Schema` "Ledger
 
 **Two-call write pattern** (both calls required; omitting either leaves the ledger inconsistent):
 
-1. `tomlctl items apply <ledger> --ops '[...]'` — batch **every** per-item transition from this run in one atomic, all-or-nothing write. Use `"add"` ops for newly-minted O-numbers (new findings with no match, plus regression items with a `related` back-pointer) and `"update"` ops for matched `open` items whose `rounds` / `line` / `description` / `evidence` changed this run. Do **not** loop per-item `items update` calls — one `items apply` pays a single parse + write regardless of how many items transitioned.
+1. Apply the whole batch in ONE call via stdin heredoc — never stage a tempfile. For pure-add batches (every op is `"add"`, the common case for /optimise's new findings), prefer `items add-many`:
+
+   ```bash
+   tomlctl items add-many <ledger> \
+     --defaults-json '{"first_flagged":"<today>","rounds":1,"status":"open"}' \
+     --ndjson - <<'EOF'
+   {"id":"O{n}","file":"...","line":0,"severity":"warning","effort":"small","category":"memory","summary":"..."}
+   EOF
+   ```
+
+   For heterogeneous batches mixing `"add"` (newly-minted O-numbers, plus regression items with a `related` back-pointer) and `"update"` (matched `open` items whose `rounds` / `line` / `description` / `evidence` changed this run), use `items apply --ops -`:
+
+   ```bash
+   tomlctl items apply <ledger> --ops - <<'EOF'
+   [
+     {"op":"add","json":{"id":"O{n}", ...}},
+     {"op":"update","id":"O{prev}","json":{"rounds":2}}
+   ]
+   EOF
+   ```
+
+   Do **not** loop per-item `items update` calls — one `items apply` pays a single parse + write regardless of how many items transitioned.
 2. `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated` to today. `items apply` does not touch file-level scalars, so this second call is required.
 
 If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`.

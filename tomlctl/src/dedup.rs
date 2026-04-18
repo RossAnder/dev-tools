@@ -14,7 +14,7 @@ use toml::Value as TomlValue;
 
 use crate::convert::{i64_field, str_field, toml_to_json};
 use crate::integrity::hex_lower;
-use crate::items_array;
+use crate::io::items_array;
 
 /// Tier selector for `items find-duplicates`. Each tier has its own grouping
 /// heuristic documented on the individual `find_duplicates_tier_*` functions.

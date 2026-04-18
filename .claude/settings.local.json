@@ -14,7 +14,10 @@
       "mcp__plugin_context7_context7__query-docs",
       "Bash(git *)",
       "Read(//home/ross/.claude-work/**)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(scripts/verify-shared-blocks.sh *)",
+      "Bash(cargo build *)",
+      "Bash(grep -v '^$')"
     ]
   }
 }

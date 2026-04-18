@@ -21,8 +21,11 @@ fn items_next_id_on_missing_file_prints_prefix_one() {
     // `items next-id` doesn't consume stdin, but assert_cmd inherits the
     // parent's stdin by default — pipe an empty string in so nothing blocks
     // if the parent's stdin happens to be a TTY when tests run interactively.
-    // R60: `--allow-outside` is now flattened onto each subcommand variant
-    // rather than global, so it must appear after the subcommand name.
+    // R74: `items next-id` is a read-only path (either `<prefix>1` on a
+    // missing ledger or read-only scan of existing ids), so it carries
+    // `ReadIntegrityArgs` — no `--allow-outside` needed (and no longer
+    // accepted on this subcommand). The test covers the missing-file fast
+    // path which never touches the filesystem past `exists()`.
     Command::cargo_bin("tomlctl")
         .unwrap()
         .env("TOMLCTL_ROOT", dir.path())
@@ -31,7 +34,6 @@ fn items_next_id_on_missing_file_prints_prefix_one() {
         .arg(&missing)
         .arg("--prefix")
         .arg("R")
-        .arg("--allow-outside")
         .write_stdin("")
         .assert()
         .success()
@@ -736,6 +738,441 @@ fn items_list_preserves_legacy_filter_flags() {
     assert_eq!(count, 4, "expected 4 open items in the fixture");
 }
 
+// ---------------- R79: extended query-surface coverage ----------------
+//
+// Each test below exercises one flag of the `items list` query surface that
+// was previously uncovered by the integration harness. They all share the
+// 6-row `QUERY_FIXTURE` plus the `run_list_query` helper defined above, and
+// stay under 25 lines so a CLI-surface break points at a single culprit.
+
+/// Helper: parse `run_list_query` JSON output into a sorted Vec<String> of
+/// `id` fields. Keeps the per-flag tests one-liner-ish without swallowing the
+/// panic-on-bad-JSON contract already baked into `run_list_query`.
+fn ids_from(stdout: &str) -> Vec<String> {
+    let v: serde_json::Value = serde_json::from_str(stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"));
+    let arr = v.as_array().expect("list output is a JSON array");
+    let mut ids: Vec<String> = arr
+        .iter()
+        .map(|el| el.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string())
+        .collect();
+    ids.sort();
+    ids
+}
+
+#[test]
+fn items_list_where_not_excludes_matches() {
+    // status != open leaves only the two fixed rows (R3, R5).
+    let stdout = run_list_query(&["--where-not", "status=open"]);
+    assert_eq!(ids_from(&stdout), vec!["R3", "R5"]);
+}
+
+#[test]
+fn items_list_where_in_matches_either() {
+    // severity ∈ {major, critical} → R2 (major), R3 (critical), R4 (major),
+    // R6 (critical). R1/R5 are `minor` and filtered out.
+    let stdout = run_list_query(&["--where-in", "severity=major,critical"]);
+    assert_eq!(ids_from(&stdout), vec!["R2", "R3", "R4", "R6"]);
+}
+
+#[test]
+fn items_list_where_missing_excludes_present() {
+    // Only R2 carries `symbol`; every other row is missing it.
+    let stdout = run_list_query(&["--where-missing", "symbol"]);
+    assert_eq!(ids_from(&stdout), vec!["R1", "R3", "R4", "R5", "R6"]);
+}
+
+#[test]
+fn items_list_where_lt_strict() {
+    // first_flagged < 2026-03-25 → only R1 (2026-03-10). Boundary is
+    // strict-less, so R3 (exactly 2026-03-25) is excluded.
+    let stdout = run_list_query(&["--where-lt", "first_flagged=@date:2026-03-25"]);
+    assert_eq!(ids_from(&stdout), vec!["R1"]);
+}
+
+#[test]
+fn items_list_where_lte_inclusive() {
+    // first_flagged <= 2026-03-25 → R1 (2026-03-10) and R3 (2026-03-25).
+    let stdout = run_list_query(&["--where-lte", "first_flagged=@date:2026-03-25"]);
+    assert_eq!(ids_from(&stdout), vec!["R1", "R3"]);
+}
+
+#[test]
+fn items_list_where_contains_substring() {
+    // R4's summary is "n^2 loop" — the only row with "loop" in its summary.
+    let stdout = run_list_query(&["--where-contains", "summary=loop"]);
+    assert_eq!(ids_from(&stdout), vec!["R4"]);
+}
+
+#[test]
+fn items_list_where_prefix_starts_with() {
+    // R5's summary ("unused import") is the only one starting with "unused".
+    let stdout = run_list_query(&["--where-prefix", "summary=unused"]);
+    assert_eq!(ids_from(&stdout), vec!["R5"]);
+}
+
+#[test]
+fn items_list_where_suffix_ends_with() {
+    // All six rows have `file` ending in ".rs".
+    let stdout = run_list_query(&["--where-suffix", "file=.rs"]);
+    assert_eq!(ids_from(&stdout), vec!["R1", "R2", "R3", "R4", "R5", "R6"]);
+}
+
+#[test]
+fn items_list_where_regex_matches() {
+    // Only R2 carries `symbol = "old::fn"`. Match any `old::\w+`.
+    let stdout = run_list_query(&["--where-regex", r"symbol=^old::\w+$"]);
+    assert_eq!(ids_from(&stdout), vec!["R2"]);
+}
+
+#[test]
+fn items_list_exclude_drops_fields() {
+    // --exclude summary,symbol must strip those keys from every element while
+    // keeping the rest of the projection intact.
+    let stdout = run_list_query(&["--exclude", "summary,symbol", "--where", "id=R2"]);
+    let v: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"));
+    let arr = v.as_array().expect("list output is a JSON array");
+    assert_eq!(arr.len(), 1);
+    let obj = arr[0].as_object().expect("element is an object");
+    assert!(!obj.contains_key("summary"), "summary must be excluded, got {obj:?}");
+    assert!(!obj.contains_key("symbol"), "symbol must be excluded, got {obj:?}");
+    assert_eq!(obj.get("id").and_then(|v| v.as_str()), Some("R2"));
+    assert_eq!(obj.get("severity").and_then(|v| v.as_str()), Some("major"));
+}
+
+#[test]
+fn items_list_offset_skips_window() {
+    // Sort ascending by first_flagged and skip the first two. Expected order:
+    //   R1, R3, R2, R5, R4, R6  →  after offset=2: R2, R5, R4, R6.
+    let stdout = run_list_query(&["--sort-by", "first_flagged", "--offset", "2"]);
+    let v: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"));
+    let arr = v.as_array().expect("list output is a JSON array");
+    let ids: Vec<&str> = arr
+        .iter()
+        .map(|el| el.get("id").and_then(|v| v.as_str()).unwrap_or(""))
+        .collect();
+    assert_eq!(ids, vec!["R2", "R5", "R4", "R6"]);
+}
+
+#[test]
+fn items_list_sort_by_desc_reverses() {
+    // --sort-by first_flagged:desc — newest first, limit 2 → R6 (2026-04-15),
+    // R4 (2026-04-10). This pins that the `:desc` suffix is honoured end-to-end.
+    let stdout = run_list_query(&["--sort-by", "first_flagged:desc", "--limit", "2"]);
+    let v: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"));
+    let arr = v.as_array().expect("list output is a JSON array");
+    let ids: Vec<&str> = arr
+        .iter()
+        .map(|el| el.get("id").and_then(|v| v.as_str()).unwrap_or(""))
+        .collect();
+    assert_eq!(ids, vec!["R6", "R4"]);
+}
+
+/// Typed-RHS coverage for `@int`, `@float`, `@bool`, `@string`. Uses a
+/// dedicated fixture with non-string scalar fields (the main `QUERY_FIXTURE`
+/// is string-and-date only) so each prefix exercises the apples-to-apples
+/// compare path in `eq_typed` / `json_matches_toml`.
+#[test]
+fn items_list_where_typed_rhs_prefixes_match() {
+    let fixture = r#"schema_version = 1
+
+[[items]]
+id = "A"
+rounds = 3
+weight = 1.5
+active = true
+[[items]]
+id = "B"
+rounds = 42
+weight = 3.14
+active = false
+[[items]]
+id = "C"
+rounds = 7
+weight = 2.0
+active = true
+"#;
+    let (dir, ledger) = seed_ledger(fixture);
+    let run = |flag: &str, val: &str| -> Vec<String> {
+        let out = Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", dir.path())
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .arg("items")
+            .arg("list")
+            .arg(&ledger)
+            .arg(flag)
+            .arg(val)
+            .write_stdin("")
+            .assert()
+            .success();
+        let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+        ids_from(&stdout)
+    };
+    assert_eq!(run("--where", "rounds=@int:42"), vec!["B"]);
+    assert_eq!(run("--where", "weight=@float:3.14"), vec!["B"]);
+    assert_eq!(run("--where", "active=@bool:true"), vec!["A", "C"]);
+    // `@string:"A"` against a string `id` field — the quotes are part of the
+    // RHS value (no JSON-shellquote stripping happens inside tomlctl).
+    assert_eq!(run("--where", r#"id=@string:A"#), vec!["A"]);
+}
+
+/// R73: a malformed typed-RHS must surface as a non-zero exit + a clear
+/// error that names both the bad RHS and the key under predicate. The
+/// old behaviour silently dropped every row, so the user saw an empty
+/// list and had no signal their filter was broken.
+#[test]
+fn items_list_typed_rhs_parse_error_bails_with_clear_message() {
+    let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+first_flagged = 2026-04-18
+"#;
+    let (dir, ledger) = seed_ledger(fixture);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--where-gt")
+        .arg("first_flagged=@date:not-a-date")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("first_flagged"),
+        "error must name the predicate key; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("not-a-date"),
+        "error must echo the bad RHS; stderr:\n{stderr}"
+    );
+}
+
+// ---------------- R80: sidecar coverage on new write paths ----------------
+
+/// Read the `<file>.sha256` sidecar and assert it has the canonical
+/// `sha256sum` format with a digest matching the current file bytes.
+fn assert_sidecar_matches(ledger: &Path) {
+    let sidecar: PathBuf = {
+        let mut s = ledger.as_os_str().to_os_string();
+        s.push(".sha256");
+        PathBuf::from(s)
+    };
+    assert!(
+        sidecar.exists(),
+        "sidecar must exist at {}",
+        sidecar.display()
+    );
+    let raw = fs::read_to_string(&sidecar).unwrap();
+    let basename = ledger.file_name().unwrap().to_string_lossy();
+    assert!(
+        raw.ends_with(&format!("  {basename}\n")),
+        "sidecar must end with `  <basename>\\n`, got: {raw:?}"
+    );
+    let hex = raw.split_whitespace().next().unwrap();
+    assert_eq!(hex.len(), 64, "digest must be 64 hex chars, got {hex:?}");
+    assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+    // Recompute against the live bytes and compare.
+    let bytes = fs::read(ledger).unwrap();
+    use sha2::{Digest, Sha256};
+    let actual = Sha256::digest(&bytes);
+    let mut actual_hex = String::with_capacity(64);
+    for b in actual.iter() {
+        use std::fmt::Write;
+        let _ = write!(actual_hex, "{:02x}", b);
+    }
+    assert_eq!(
+        hex.to_ascii_lowercase(),
+        actual_hex,
+        "sidecar digest must match recomputed file hash"
+    );
+}
+
+#[test]
+fn items_add_many_writes_sidecar() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    let payload = "{\"id\":\"R1\",\"summary\":\"one\"}\n{\"id\":\"R2\",\"summary\":\"two\"}\n";
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add-many")
+        .arg(&ledger)
+        .arg("--ndjson")
+        .arg("-")
+        .arg("--defaults-json")
+        .arg(r#"{"status":"open"}"#)
+        .write_stdin(payload)
+        .assert()
+        .success();
+    assert_sidecar_matches(&ledger);
+}
+
+#[test]
+fn items_add_many_verify_integrity_success() {
+    // After a write, `--verify-integrity items list` on the same ledger must
+    // succeed — the sidecar's digest matches the just-written bytes.
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    let payload = "{\"id\":\"R1\",\"summary\":\"one\"}\n";
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add-many")
+        .arg(&ledger)
+        .arg("--ndjson")
+        .arg("-")
+        .write_stdin(payload)
+        .assert()
+        .success();
+
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--verify-integrity")
+        .write_stdin("")
+        .assert()
+        .success();
+}
+
+#[test]
+fn items_add_many_verify_integrity_detects_tampering() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    let payload = "{\"id\":\"R1\",\"summary\":\"one\"}\n";
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add-many")
+        .arg(&ledger)
+        .arg("--ndjson")
+        .arg("-")
+        .write_stdin(payload)
+        .assert()
+        .success();
+
+    // Flip one hex nibble in the sidecar. The first char is `0-9a-f`; rotate
+    // it by one so the file stays a valid 64-hex-char digest (otherwise the
+    // "does not contain a 64-hex-char digest" branch fires instead of the
+    // mismatch branch we want to exercise).
+    let sidecar: PathBuf = {
+        let mut s = ledger.as_os_str().to_os_string();
+        s.push(".sha256");
+        PathBuf::from(s)
+    };
+    let mut raw = fs::read_to_string(&sidecar).unwrap();
+    let first = raw.as_bytes()[0] as char;
+    let swapped = match first {
+        '0'..='8' => ((first as u8) + 1) as char,
+        '9' => 'a',
+        'a'..='e' => ((first as u8) + 1) as char,
+        'f' => '0',
+        _ => panic!("sidecar does not start with a hex digit: {raw:?}"),
+    };
+    raw.replace_range(0..1, &swapped.to_string());
+    fs::write(&sidecar, &raw).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--verify-integrity")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("expected") && stderr.contains("actual"),
+        "mismatch error must name both digests; got stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn array_append_writes_sidecar() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    let payload = r#"{"timestamp":"2026-04-18T10:00:00Z","command":"review-apply","cause":"first","items":["R1"],"stash_ref":"stash@{0}"}"#;
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("array-append")
+        .arg(&ledger)
+        .arg("rollback_events")
+        .arg("--json")
+        .arg(payload)
+        .write_stdin("")
+        .assert()
+        .success();
+    assert_sidecar_matches(&ledger);
+}
+
+#[test]
+fn array_append_verify_integrity_detects_tampering() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    let payload = r#"{"timestamp":"2026-04-18T10:00:00Z","command":"review-apply","cause":"x","items":["R1"],"stash_ref":"stash@{0}"}"#;
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("array-append")
+        .arg(&ledger)
+        .arg("rollback_events")
+        .arg("--json")
+        .arg(payload)
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let sidecar: PathBuf = {
+        let mut s = ledger.as_os_str().to_os_string();
+        s.push(".sha256");
+        PathBuf::from(s)
+    };
+    let mut raw = fs::read_to_string(&sidecar).unwrap();
+    let first = raw.as_bytes()[0] as char;
+    let swapped = match first {
+        '0'..='8' => ((first as u8) + 1) as char,
+        '9' => 'a',
+        'a'..='e' => ((first as u8) + 1) as char,
+        'f' => '0',
+        _ => panic!("sidecar does not start with a hex digit: {raw:?}"),
+    };
+    raw.replace_range(0..1, &swapped.to_string());
+    fs::write(&sidecar, &raw).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--verify-integrity")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("expected") && stderr.contains("actual"),
+        "mismatch error must name both digests; got stderr:\n{stderr}"
+    );
+}
+
 // ---------------- settings-shape suite ----------------
 
 #[test]
@@ -770,5 +1207,139 @@ fn settings_json_contains_tomlctl_allow_with_outside_deny() {
         deny.iter().any(|s| s.as_str() == Some("Bash(tomlctl --allow-outside *)")),
         "permissions.deny must contain `Bash(tomlctl --allow-outside *)`; got {:?}",
         deny
+    );
+}
+
+/// R74: read-only subcommands (`parse`, `get`, `validate`, `items list`,
+/// `items get`, `items find-duplicates`, `items orphans`, `items next-id`)
+/// must NOT expose the write-side integrity flags (`--allow-outside`,
+/// `--no-write-integrity`, `--strict-integrity`). They still accept
+/// `--verify-integrity` because that's the only read-side integrity
+/// concept. A test-per-flag per-subcommand would be noisy — inspect the
+/// rendered `--help` text and assert the write-side flags don't appear.
+#[test]
+fn read_only_subcommands_hide_write_integrity_flags_in_help() {
+    let read_subs: &[&[&str]] = &[
+        &["parse", "--help"],
+        &["get", "--help"],
+        &["validate", "--help"],
+        &["items", "list", "--help"],
+        &["items", "get", "--help"],
+        &["items", "find-duplicates", "--help"],
+        &["items", "orphans", "--help"],
+        &["items", "next-id", "--help"],
+    ];
+    for path in read_subs {
+        let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+        for a in *path {
+            cmd.arg(a);
+        }
+        let assert = cmd.write_stdin("").assert().success();
+        let stdout =
+            String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        // --verify-integrity is allowed on read paths; present is fine.
+        for banned in ["--allow-outside", "--no-write-integrity", "--strict-integrity"] {
+            assert!(
+                !stdout.contains(banned),
+                "read-only sub `{}` must NOT list `{}` in --help; got:\n{}",
+                path.join(" "),
+                banned,
+                stdout
+            );
+        }
+    }
+}
+
+/// R74 (complement): write subcommands MUST continue to list every integrity
+/// flag in `--help`. Pins the structural guarantee that the split didn't
+/// accidentally strip a flag from a writer.
+#[test]
+fn write_subcommands_expose_all_integrity_flags_in_help() {
+    let write_subs: &[&[&str]] = &[
+        &["set", "--help"],
+        &["set-json", "--help"],
+        &["array-append", "--help"],
+        &["items", "add", "--help"],
+        &["items", "update", "--help"],
+        &["items", "remove", "--help"],
+        &["items", "apply", "--help"],
+        &["items", "add-many", "--help"],
+    ];
+    for path in write_subs {
+        let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+        for a in *path {
+            cmd.arg(a);
+        }
+        let assert = cmd.write_stdin("").assert().success();
+        let stdout =
+            String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        for required in [
+            "--allow-outside",
+            "--no-write-integrity",
+            "--verify-integrity",
+            "--strict-integrity",
+        ] {
+            assert!(
+                stdout.contains(required),
+                "write sub `{}` must list `{}` in --help; got:\n{}",
+                path.join(" "),
+                required,
+                stdout
+            );
+        }
+    }
+}
+
+/// R76: `--count`, `--count-by`, `--group-by`, `--pluck` are declared as a
+/// mutually exclusive clap ArgGroup on `items list`. Two of them on the
+/// same command must fail at parse time with clap's "cannot be used with"
+/// error — not silently collapse to one shape via the `build_query`
+/// priority ladder. `--ndjson` is orthogonal (a separate output encoding,
+/// not a shape) and is NOT in the group.
+#[test]
+fn items_list_shape_flags_are_mutually_exclusive_at_parse_time() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--count")
+        .arg("--count-by")
+        .arg("status")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("cannot be used with")
+            || stderr.contains("argument cannot be used"),
+        "expected clap mutex error, got stderr:\n{stderr}"
+    );
+    // --ndjson + --count-by must still be parse-accepted (they're orthogonal;
+    // the runtime may still reject it via validate_query, but it MUST NOT be
+    // rejected by the ArgGroup). Only assert that stderr does NOT carry the
+    // ArgGroup mutex phrase for this pair.
+    let out2 = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--count-by")
+        .arg("status")
+        .arg("--ndjson")
+        .write_stdin("")
+        .assert();
+    // Accept either success OR a validate-layer runtime error — just not
+    // the clap ArgGroup "cannot be used" phrase, which would mean --ndjson
+    // leaked into the shape group by mistake.
+    let stderr2 = String::from_utf8_lossy(&out2.get_output().stderr).to_string();
+    assert!(
+        !stderr2.contains("cannot be used with"),
+        "--ndjson must stay OUTSIDE the shape ArgGroup (R82 + R76); got stderr:\n{stderr2}"
     );
 }

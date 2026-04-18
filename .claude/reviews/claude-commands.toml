@@ -1112,6 +1112,600 @@ related = [
 ]
 rounds = 1
 severity = "suggestion"
-status = "open"
+status = "fixed"
 summary = "pending parts of R62: extract items.rs (items_* ops + apply_single_op + ListFilters + --array plumbing) and cli.rs (Cli/Cmd/ItemsOp/BlocksOp + run dispatch + read_json_arg + STDIN_CONSUMED static)"
 symbol = "module-split-remainder-v2"
+resolution = "Module split complete — main.rs shrunk from 2516 to 26 lines (mod declarations + fn main() wrapper over cli::run). New tomlctl/src/items.rs (1170 lines) holds items_* ops, apply_single_op, items_add_many, array_append, parse_ndjson, and items-related tests. New tomlctl/src/cli.rs (1247 lines) holds Cli/Cmd/ItemsOp/BlocksOp enums, Read/WriteIntegrityArgs, QueryArgs, LegacyShortcuts, STDIN_CONSUMED, read_json_arg, read_ndjson_source, build_query, print_json, and run() dispatch. 84 unit + 40 integration = 124 tests pass; clippy clean with -D warnings."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "Verified: `tomlctl --allow-outside items add ...` errors at clap parse (unexpected argument); the canonical form is `tomlctl items add <file> --allow-outside`. Claude Code permission globs are positional prefix+wildcard — current deny only fires when the flag sits immediately after `tomlctl`. Both the Security and Architecture agents independently flagged this."
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:116 IntegrityArgs flattened per-variant",
+    "tomlctl/src/main.rs clap help confirms --allow-outside under 'Integrity options' for each subcommand",
+    "https://code.claude.com/docs/en/permissions",
+]
+file = ".claude/settings.json"
+first_flagged = 2026-04-18
+id = "R64"
+line = 9
+rounds = 1
+severity = "critical"
+status = "fixed"
+summary = "deny `Bash(tomlctl --allow-outside *)` bypassed post-R60: --allow-outside is now per-subcommand so real invocations place it after the subcommand (e.g. `tomlctl items add <file> ... --allow-outside`) and fall through to allow `Bash(tomlctl *)` without prompt — add `Bash(tomlctl * --allow-outside)` + `Bash(tomlctl * --allow-outside *)` deny variants, or gate the flag behind a runtime confirmation"
+symbol = "permissions.deny"
+resolution = "Added position-independent deny variants `Bash(tomlctl * --allow-outside)` and `Bash(tomlctl * --allow-outside *)` to .claude/settings.json:8-10 so the flag is blocked regardless of argv position post-R60."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "run() inlines sort/distinct/window/aggregate directly instead of calling apply_shaping / apply_aggregation. Their presence creates a silent semantic fork (e.g. dedup_preserve_first called with different shape args in the two paths). Same stale allows exist on convert.rs:260,313 for parse_typed_value/compare_typed which are now live."
+effort = "small"
+evidence = [
+    "tomlctl/src/query.rs:17",
+    "tomlctl/src/query.rs:380 apply_shaping unreferenced",
+    "tomlctl/src/query.rs:539 apply_aggregation unreferenced",
+]
+file = "tomlctl/src/query.rs"
+first_flagged = 2026-04-18
+id = "R65"
+line = 17
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "stale `#![allow(dead_code)]` on query.rs (comment says 'wired by task 5') — task 5 IS wired (main.rs:636 calls query::run) so the blanket allow now masks real dead helpers `apply_shaping` (380) and `apply_aggregation` (539), both unreferenced by run(); drop the module allow, delete the two orphan wrappers, and narrow any remaining allows to specific items"
+symbol = "module-dead-code-allow"
+resolution = "Removed module-scope `#![allow(dead_code)]` at query.rs:17; deleted apply_shaping and apply_aggregation (both unreferenced by run() post-task-5); removed stale #[allow(dead_code)] attrs on convert::parse_typed_value and compare_typed (both now have live callers)."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+effort = "small"
+evidence = [
+    "tomlctl/src/query.rs:290-298",
+    "tomlctl/src/convert.rs:273-311",
+    "tomlctl/src/convert.rs:328-342",
+]
+file = "tomlctl/src/query.rs"
+first_flagged = 2026-04-18
+id = "R66"
+line = 290
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "triplicated `@type:` prefix taxonomy across `strip_typed_prefix` (query.rs:290), `parse_typed_value` (convert.rs:273), and `compare_typed` (convert.rs:328) — each enumerates the same tags independently, so adding `@uuid:` requires three synchronised edits; extract one `fn split_type_hint(&str) -> Option<(TypeHint, &str)>` in convert.rs and have all three callers share it"
+symbol = "strip_typed_prefix"
+resolution = "Added convert::TypeHint enum + split_type_hint(&str) -> Option<(TypeHint, &str)>. Rewrote parse_typed_value and compare_typed to delegate to split_type_hint. Deleted query::strip_typed_prefix; updated query::eq_typed / json_matches_toml to take TypeHint directly. Single-sourced the @type: tag list across convert.rs + query.rs."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+effort = "trivial"
+evidence = ["tomlctl/src/query.rs:440-451"]
+file = "tomlctl/src/query.rs"
+first_flagged = 2026-04-18
+id = "R67"
+line = 440
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "O(n²) dedup — `seen: Vec<String>` + `seen.iter().any(|k| k == &key)` per item; swap to `HashSet<String>` / `IndexSet<String>` for O(n) and use `insert`'s bool return to drive the keep decision, matching the HashMap/HashSet idiom already used in dedup.rs and orphans.rs"
+symbol = "dedup_preserve_first"
+resolution = "Rewrote query::dedup_preserve_first from Vec<String> + linear scan to HashSet<String> using seen.insert(key) as the keep-decision. Preserves insertion order of out: Vec<JsonValue>."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+effort = "trivial"
+evidence = [
+    "tomlctl/src/query.rs:477",
+    "tomlctl/src/dedup.rs:56",
+]
+file = "tomlctl/src/query.rs"
+first_flagged = 2026-04-18
+id = "R68"
+line = 477
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "`apply_aggregation_count_by` and `apply_aggregation_group_by` accumulate into `Vec<(String, _)>` + `iter_mut().find(...)` — O(n*k) per bucket write; convert to `serde_json::Map<String, Value>` (which preserves insertion order) or `BTreeMap` for deterministic key order, mirroring find_duplicates_tier_a's BTreeMap accumulator in dedup.rs:56"
+symbol = "apply_aggregation_count_by"
+resolution = "Rewrote apply_aggregation_count_by and apply_aggregation_group_by to accumulate into serde_json::Map<String, Value> with O(1) get_mut lookup. Enabled preserve_order feature on serde_json in Cargo.toml so Map preserves insertion order."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+effort = "small"
+evidence = [
+    "tomlctl/src/main.rs:794 clippy allow",
+    "tomlctl/src/main.rs:605-634 dispatch unpacks QueryArgs only to repack",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R69"
+line = 795
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "`build_query` takes 26 positional args under `#[allow(clippy::too_many_arguments)]`; `QueryArgs` already owns 21 of them (main.rs:156) — change signature to `build_query(legacy_shortcuts, &QueryArgs) -> Result<Query>` (or move onto `impl QueryArgs`), dropping the clippy suppression and collapsing dispatch site main.rs:605-634 to two args"
+symbol = "build_query"
+resolution = "Collapsed build_query signature from 26 positional args + #[allow(clippy::too_many_arguments)] to (legacy: &LegacyShortcuts, q: &QueryArgs). Dispatch site shrank from 28 lines to 8."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+effort = "small"
+evidence = [
+    "tomlctl/src/main.rs:1032-1093",
+    "tomlctl/src/main.rs:1534-1556 tests invoke items_list",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R70"
+line = 1042
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "legacy `ListFilters` / `items_list` / `items_list_from` / `datetime_gt` (main.rs:1032-1093) are now `#[cfg(test)]`-only since production dispatches through `query::run`; two list implementations with divergent semantics (datetime_gt string-compares vs query.rs's compare_typed) both claim authority for tests vs prod — migrate the three tests to call `query::run` and delete the legacy helpers, removing a sibling module boundary before the R63 items.rs extraction"
+symbol = "ListFilters-legacy-cfg-test"
+resolution = "Migrated the 5 legacy-path tests (items_list_filters_by_status + 4 siblings) to call query::run(&doc, array, &Query{...}) directly via new local run_filter_query helper. Deleted ListFilters, items_list, items_list_from, datetime_gt entirely. Pruned the cfg(test) convert imports."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:1000-1018",
+    "tomlctl/src/dedup.rs:17",
+    "tomlctl/src/orphans.rs:18",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R71"
+line = 1000
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "`items_array` / `items_array_mut` live in main.rs but are imported across dedup.rs:17 and orphans.rs:18 — sibling modules `use crate::items_array` from the root, a module-boundary smell; move them to io.rs (alongside mutate_doc) or a new items.rs stub (target of R63) so the eventual R63 split is strictly mechanical"
+symbol = "items_array"
+resolution = "Moved items_array, items_array_mut, item_id from main.rs into io.rs. Updated imports: main.rs uses io::{item_id, items_array, items_array_mut}; dedup.rs uses crate::io::items_array; orphans.rs uses crate::io::{item_id, items_array, repo_or_cwd_root}."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "regex crate is DFA-based and ReDoS-immune against backtracking, but compilation cost scales with pattern size and the NFA/DFA cache memory is bounded by size_limit (~10 MB default) / dfa_size_limit (~2 MB). Recompiling N times multiplies this."
+effort = "small"
+evidence = [
+    "tomlctl/src/query.rs:246",
+    "https://docs.rs/regex/latest/regex/struct.RegexBuilder.html#method.size_limit",
+]
+file = "tomlctl/src/query.rs"
+first_flagged = 2026-04-18
+id = "R72"
+line = 246
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "`Regex::new(pattern)` is called inside `eval_predicate` once per item per predicate — for N items × K regex predicates the engine compiles N*K times, amplifying compile cost of adversarial patterns; hoist compile to `apply_filters` entry and set `RegexBuilder::size_limit(1<<20).dfa_size_limit(1<<20)` so agent/user-supplied patterns can't weaponise local-DoS on large ledgers"
+symbol = "WhereRegex-per-row-compile"
+resolution = "Hoisted regex compilation out of the item loop. apply_filters now pre-compiles each Predicate::WhereRegex via a new compile_user_regex(pattern) helper using RegexBuilder::new(pat).size_limit(1<<20).dfa_size_limit(1<<20).build() to cap pathological-pattern memory. eval_predicate takes compiled_regex: Option<&Regex>. Added unit test where_regex_pathological_pattern_rejected_by_size_limit."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "small"
+evidence = [
+    "tomlctl/src/query.rs:272",
+    "tomlctl/src/query.rs:344",
+    "Reproduced: `--where 'status=@date:not-a-date'` returns [] exit 0",
+]
+file = "tomlctl/src/query.rs"
+first_flagged = 2026-04-18
+id = "R73"
+line = 268
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "`eq_typed` (query.rs:272 `Err(_) => return false`) and `cmp_pred` (query.rs:344 `Err(_) => Ok(false)`) silently swallow typed-RHS parse errors — `--where status=@date:not-a-date` returns empty list with exit 0, and agents misinterpret empty as 'no matches'; bail with a clear message naming the bad RHS so malformed queries fail loudly"
+symbol = "eq_typed-silent-parse-err"
+resolution = "eq_typed and cmp_pred now return Result<bool> and bail with `invalid typed RHS ...` on parse failure. Threaded error through eval_predicate -> apply_filters -> run. Added unit tests where_eq_bad_typed_rhs_propagates_error, where_gt_bad_typed_rhs_propagates_error, and integration test items_list_typed_rhs_parse_error_bails_with_clear_message."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "small"
+evidence = [
+    "tomlctl/src/main.rs:122 allow_outside only consumed by mutate_doc",
+    "tomlctl/src/main.rs:519-734 show no read path reads allow_outside",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R74"
+line = 116
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "R60 flattens `IntegrityArgs` onto every TOML-touching subcommand, but `--allow-outside` / `--no-write-integrity` / `--strict-integrity` are write-only and become orphan UI on read-only subcommands (parse / get / validate / items list / items get / items find-duplicates / items orphans) — split into `ReadIntegrityArgs` (just `--verify-integrity`) and `WriteIntegrityArgs` (everything) so help text matches runtime behaviour"
+symbol = "IntegrityArgs-on-read-only"
+resolution = "Split IntegrityArgs into ReadIntegrityArgs (only --verify-integrity) and WriteIntegrityArgs (all four). Read-only variants (Parse/Get/Validate/ItemsOp::{List,Get,FindDuplicates,Orphans,NextId}) carry ReadIntegrityArgs; writers carry WriteIntegrityArgs. integrity_opts_from_args replaced with read_integrity_opts + write_integrity_opts. Added integration tests covering help-text split."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "trivial"
+evidence = [
+    "claude/skills/tomlctl/SKILL.md:400",
+    'tomlctl/src/main.rs:323,343,355,371,389,400 every variant except NextId/FindDuplicates/Orphans carries #[arg(long, default_value="items")] array: String',
+]
+file = "claude/skills/tomlctl/SKILL.md"
+first_flagged = 2026-04-18
+id = "R75"
+line = 400
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "SKILL.md:400 says `--array` is 'apply-only (not accepted on items add|update|remove|list|get)' but clap defines `--array` on list, get, add, add-many, update, remove, and apply — pick one: either fix the docs to match reality or restrict the flag in clap"
+symbol = "array-apply-only-doc-drift"
+resolution = "Rewrote SKILL.md:400 to list every ItemsOp variant that accepts --array (list/get/add/add-many/update/remove/apply) and named the three that don't (next-id, find-duplicates, orphans)."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "small"
+evidence = [
+    "tomlctl/src/main.rs:199-204 QueryArgs shape flags",
+    "tomlctl/src/main.rs:317 --count on ItemsOp::List",
+    "tomlctl/src/main.rs:942-958 comment acknowledges silent collapse",
+    "https://docs.rs/clap/latest/clap/struct.ArgGroup.html",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R76"
+line = 203
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "five shape-producing flags on `items list` (`--count`, `--count-by`, `--group-by`, `--pluck`, `--ndjson`) have no `conflicts_with` or `ArgGroup` declared — `tomlctl items list foo.toml --count --ndjson` silently collapses to count and discards ndjson, instead of erroring at parse time; wire an ArgGroup so mutually exclusive shapes surface as clap parse errors"
+symbol = "shape-flags-no-conflicts"
+resolution = 'Declared #[command(group(clap::ArgGroup::new("shape").multiple(false).args(["count","count_by","group_by","pluck"])))] on ItemsOp::List. Added integration test items_list_shape_flags_are_mutually_exclusive_at_parse_time covering mutex + --ndjson non-interference.'
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "R33 fixed exactly this for `items apply` but the rollback-event array-append example at Step 5.5 step 6 was missed. `cause` is constructed from live verification output and can contain single-quote / backtick / dollar-sign that breaks the shell lexer before tomlctl sees argv."
+effort = "trivial"
+evidence = [
+    "claude/commands/review-apply.md:658",
+    "claude/commands/optimise-apply.md:658",
+    "prior-ledger item R33 resolution",
+]
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-18
+id = "R77"
+line = 658
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = """canonical `array-append ... --json '{...}'` example still places the agent-generated `cause` string inline in argv — same class as R33 regression (agents cargo-cult the first code block); promote the stdin form `printf '%s' "$EVENT" | tomlctl array-append <ledger> rollback_events --json -` to the primary example in both review-apply.md:658 and optimise-apply.md:658"""
+symbol = "array-append-argv-example"
+resolution = "Flipped array-append rollback_events example to stdin-heredoc primary form in apply-rollback-protocol shared block (review-apply.md:658 + optimise-apply.md:658); argv form retained as secondary for fixed-string cause payloads."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+effort = "trivial"
+evidence = [
+    "claude/skills/tomlctl/SKILL.md:409",
+    "tomlctl/src/main.rs:73",
+]
+file = "claude/skills/tomlctl/SKILL.md"
+first_flagged = 2026-04-18
+id = "R78"
+line = 409
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "SKILL.md:409 claims 'reading the same stdin twice returns an empty payload' but main.rs:73 actually bails with `stdin already consumed by another flag on this invocation` — doc/impl drift; update the bullet to reflect the hard-error behaviour"
+symbol = "stdin-twice-bullet"
+resolution = "Updated SKILL.md:409 stdin-twice bullet to reflect actual hard-error behaviour (was 'returns an empty payload')."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "medium"
+evidence = ["tomlctl/tests/integration.rs:547-738 — 8 query tests: group-by+select, count-by, where+where-gte, where-has+pluck, select+distinct, sort-by+limit, ndjson, legacy --status+--count"]
+file = "tomlctl/tests/integration.rs"
+first_flagged = 2026-04-18
+id = "R79"
+line = 547
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "integration suite covers ~40% of the documented query surface — missing end-to-end tests for `--where-not`, `--where-in`, `--where-missing`, `--where-lt`, `--where-lte`, `--where-contains`, `--where-prefix`, `--where-suffix`, `--where-regex`, `--exclude`, `--offset`, `--sort-by:desc`, and typed-RHS `@int:` / `@float:` / `@bool:` / `@string:` through the clap→build_query→query::run path; unit tests cover them in-process but the CLI-string path is the one agents hit"
+symbol = "query-surface-coverage"
+resolution = "Added 13 integration tests covering --where-not, --where-in, --where-missing, --where-lt, --where-lte, --where-contains, --where-prefix, --where-suffix, --where-regex, --exclude, --offset, --sort-by:desc, and typed-RHS prefixes (@int:, @float:, @bool:, @string:). Reuse 6-row QUERY_FIXTURE + run_list_query helper; added ids_from(stdout) helper."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "small"
+evidence = [
+    "tomlctl/tests/integration.rs no 'sha256' matches outside R60 flag-rejection test",
+    "claude/skills/tomlctl/SKILL.md:413-437 documents sidecar invariants untested on new paths",
+]
+file = "tomlctl/tests/integration.rs"
+first_flagged = 2026-04-18
+id = "R80"
+line = 1
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "no integration test covers the sha256 sidecar roundtrip on the new write paths — both `items add-many` and `array-append` route through mutate_doc which manages the sidecar, but neither happy-path sidecar emission nor `--verify-integrity` failure paths are exercised end-to-end for these commands"
+symbol = "sidecar-on-new-write-paths"
+resolution = "Added 5 integration tests + assert_sidecar_matches helper: items_add_many_writes_sidecar, items_add_many_verify_integrity_success, items_add_many_verify_integrity_detects_tampering, array_append_writes_sidecar, array_append_verify_integrity_detects_tampering."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "small"
+evidence = [
+    "tomlctl/README.md:26-41",
+    "tomlctl/README.md:37-40",
+]
+file = "tomlctl/README.md"
+first_flagged = 2026-04-18
+id = "R81"
+line = 26
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "README is stale relative to the CLI rewrite — missing `array-append`, `items add-many`, typed `@type:` RHS family, and the full `items list` query surface; also describes `--allow-outside` / `--no-write-integrity` / `--verify-integrity` as 'Global flags (accepted before or after the subcommand)' but R60 moved them per-subcommand so `tomlctl --allow-outside items add ...` now errors"
+symbol = "stale-quick-tour"
+resolution = "Updated README.md Quick Tour. Added items add-many, array-append to command cheat-sheet. Replaced incorrect 'Global flags (before or after subcommand)' header with 'Integrity flags (accepted after the subcommand name)'; added --strict-integrity. Added query-surface paragraph with pointer to SKILL.md. Net ~14 new lines."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+effort = "small"
+evidence = [
+    "tomlctl/src/query.rs:67",
+    "tomlctl/src/query.rs:180-184",
+    "tomlctl/src/main.rs:638-652",
+]
+file = "tomlctl/src/query.rs"
+first_flagged = 2026-04-18
+id = "R82"
+line = 67
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`OutputShape::Ndjson` leaks output-encoding concerns into a struct the module docs describe as 'JSON shape' — run() returns JsonValue::Array for both Array and Ndjson (180-184) with the one-per-line encoding happening 80 lines away in main.rs:638-652; split into sibling `OutputEncoding` enum (Pretty | Ndjson) orthogonal to shape, or collapse Ndjson into Array and let dispatch pick encoding from a separate flag"
+symbol = "OutputShape-Ndjson-encoding-leak"
+resolution = "Collapsed OutputShape::Ndjson variant — OutputShape is now {Array, Count, CountBy, GroupBy, Pluck}. Added ndjson: bool field to Query. Dispatch reads q.ndjson + shape=Array to emit one-per-line. build_query sets ndjson on Query instead of folding it into shape."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:525,536,583,668,703,718,725,733"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R83"
+line = 525
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = 'six+ dispatch sites hand-construct OK-JSON via `println!("{{\"ok\":true}}")` / `println!("{{\"ok\":true,\"appended\":{}}}", n)` (main.rs:525, 536, 583, 668, 703, 718, 725, 733) — brittle (`{{`/`}}` noise, no string escaping if fields grow) and inconsistent with print_json / serde_json::json! used elsewhere; consolidate to `print_json(&json!({...}))` or a dedicated print_ok helper'
+symbol = "println-ok-json"
+resolution = 'Introduced print_json_compact helper; replaced 9 hand-rolled println!("{{\"ok\":true...}}") sites in Cmd::{Set,SetJson,Validate,ArrayAppend} and ItemsOp::{Add,AddMany,Update,Remove,Apply} with print_json_compact(&serde_json::json!({...}))?. Compact format preserves byte-for-byte output.'
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:569-575",
+    "tomlctl/src/main.rs:682-687",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R84"
+line = 568
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = 'NDJSON source resolution (`if nd == "-" { read_json_arg("-") } else { fs::read_to_string(&nd) }`) is duplicated verbatim between `ArrayAppend` (main.rs:569-575) and `ItemsOp::AddMany` (main.rs:682-687); extract `fn read_ndjson_source(&str) -> Result<String>` so a future stdin-policy change lives in one place'
+symbol = "ndjson-source-reading-dup"
+resolution = "Extracted read_ndjson_source(src) next to read_json_arg; replaced duplicate resolution blocks in Cmd::ArrayAppend and ItemsOp::AddMany."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+effort = "trivial"
+evidence = ["tomlctl/src/io.rs:131-135"]
+file = "tomlctl/src/io.rs"
+first_flagged = 2026-04-18
+id = "R85"
+line = 131
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`TOMLCTL_LOCK_TIMEOUT` env var parsed as `u64` seconds with no upper bound — a setting like `18446744073` causes with_exclusive_lock to hang effectively forever on contention, local-user DoS for wrappers that set env from attacker-influenced data; cap at e.g. 24 h and emit a stderr warning on over-cap"
+symbol = "TOMLCTL_LOCK_TIMEOUT-unbounded"
+resolution = "Added MAX_LOCK_TIMEOUT_SECS = 86400 constant in io.rs; clamp block in with_exclusive_lock emits documented stderr warning on over-cap values. Added unit test tomlctl_lock_timeout_clamps_at_24h."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+effort = "medium"
+evidence = [
+    "tomlctl/src/io.rs:234-265",
+    "claude/skills/tomlctl/SKILL.md:448",
+]
+file = "tomlctl/src/io.rs"
+first_flagged = 2026-04-18
+id = "R86"
+line = 234
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`canonicalize_for_write` canonicalises only the parent when the target is missing, then checks for `..`/RootDir components — a pre-existing symlink at `<parent>/<name>` pointing outside `.claude/` is not followed (SKILL.md:448 disclaims this as 'not a sandbox' but atomic_write rename-replaces through the symlink); at minimum call `symlink_metadata` on the joined path and refuse if it's a symlink targeting outside `.claude_canonical`, or use O_NOFOLLOW-style opens via rustix"
+symbol = "canonicalize_for_write-leaf-symlink"
+resolution = "Added refuse_outside_symlink_leaf(path) helper; both arms of canonicalize_for_write (file-exists / file-missing-parent-exists) now call it. Resolves symlink target once via read_link + canonicalize and requires target to start with .claude/ canonical root. Added #[cfg(unix)] unit test guard_write_path_refuses_symlink_leaf_outside_claude."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+effort = "trivial"
+evidence = [
+    "scripts/shared-blocks.toml",
+    "tomlctl/src/main.rs:1815",
+]
+file = "scripts/shared-blocks.toml"
+first_flagged = 2026-04-18
+id = "R87"
+line = 24
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "shared-blocks.toml enumerates five parity units (flow-context, ledger-schema, apply-dependency-sort, apply-rollback-protocol, apply-constraints) but the in-tree `blocks_verify_reproduces_shell_hashes` test (main.rs:1815) only pins flow-context and ledger-schema — extend the test to assert byte-parity for every entry in shared-blocks.toml, so drift on the three apply-* blocks is caught by `cargo test` too (not only the git hook)"
+symbol = "parity-test-gap"
+resolution = "Extended blocks_verify_reproduces_shell_hashes to pin hashes for all 5 blocks in scripts/shared-blocks.toml. Split into two blocks_verify calls — 4-file set for flow-context + ledger-schema, 2-file set for apply-dependency-sort + apply-rollback-protocol + apply-constraints. Added local expect_hash closure to find-by-name."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:635",
+    "tomlctl/src/query.rs:129",
+    "tomlctl/src/main.rs:789-791",
+]
+file = "tomlctl/src/query.rs"
+first_flagged = 2026-04-18
+id = "R88"
+line = 129
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`validate_query` is called twice for `items list`: once from `items_dispatch::List` (main.rs:635) and once as the first line of `query::run` (query.rs:129); `build_query`'s docstring (main.rs:789-791) even claims 'Does not call validate_query — the caller does that' but the callee validates too — pick one call site"
+symbol = "validate_query-double-call"
+resolution = "Removed validate_query(&q)?; call at main.rs:~635 (keeping single call inside query::run). Removed validate_query from use query::{...} import list. Updated build_query docstring to correctly state validation happens inside query::run."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+effort = "trivial"
+evidence = [
+    "tomlctl/Cargo.toml:27",
+    "tomlctl/src/query.rs:246 sole use site",
+]
+file = "tomlctl/Cargo.toml"
+first_flagged = 2026-04-18
+id = "R89"
+line = 27
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = '`regex = "1"` pulls in the full Unicode-tables feature set (~500 KiB release-binary bloat + cold-build cost) for a query-predicate use case where ASCII identifier/path patterns dominate — consider `regex = { version = "1", default-features = false, features = ["std", "perf"] }`; document the tradeoff (no `\p{}` Unicode classes) either way'
+symbol = "regex-default-features"
+resolution = 'Changed Cargo.toml:27 to regex = { version = "^1", default-features = false, features = ["std", "perf"] } with preceding comment documenting Unicode-omission tradeoff. Context7 on /rust-lang/regex confirmed std + perf cover standard regex functionality. Only use site is query.rs (Regex::new for --where-regex) with no Unicode classes.'
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:638-651",
+    "tomlctl/src/query.rs:180-184",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R90"
+line = 644
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = '`out.as_array().ok_or_else(|| anyhow!("ndjson expects array output"))?` is unreachable — it only runs when `q.shape == OutputShape::Ndjson`, and `query::run` always returns JsonValue::Array for that shape; either drop the guard or convert to `debug_assert!`'
+symbol = "unreachable-ndjson-guard"
+resolution = """Replaced the unreachable out.as_array().ok_or_else(|| anyhow!(...)) guard in items list dispatch's ndjson branch with a documented .expect("Array shape returns JsonValue::Array") since query::run for OutputShape::Array unconditionally returns a JSON array."""
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:74-76",
+    'grep `long = "patch"` → 0 matches',
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R91"
+line = 75
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "STDIN_CONSUMED error names `--json/--ops/--patch` as the `-`-capable flag set, but `--patch` is not a flag in this CLI (actual set: --json, --ops, --ndjson, --defaults-json); fix the string so agents who hit the guard get an accurate hint"
+symbol = "read_json_arg-stale-error-text"
+resolution = "Replaced stale STDIN_CONSUMED error flag list `--json/--ops/--patch` with the actual set `--json/--ops/--ndjson/--defaults-json` at main.rs:75."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "trivial"
+evidence = [
+    "claude/commands/review.md:506",
+    "claude/commands/optimise.md:513",
+    "claude/skills/tomlctl/SKILL.md:22",
+]
+file = "claude/commands/review.md"
+first_flagged = 2026-04-18
+id = "R92"
+line = 506
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "review.md:506 and optimise.md:513 still use `jq -r .count` to extract the integer from `tomlctl ... --count`; commit message and SKILL.md:22 claim 'no jq pipelines' — either add a `--count-value` / reuse `--pluck` semantics that emit a bare integer, or amend SKILL.md to clarify 'no jq for TOML parsing — scalar extraction from tomlctl JSON output is still acceptable'"
+symbol = "jq-contradicts-no-jq-claim"
+resolution = "Amended SKILL.md:22 'no jq pipelines' claim to 'no jq for TOML parsing' with note that shell-level scalar extraction via `jq -r .count` remains acceptable as glue."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+effort = "small"
+evidence = ["tomlctl/src/main.rs:589-770"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R93"
+line = 589
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "every `ItemsOp` read arm repeats `let opts = integrity_opts_from_args(&integrity); maybe_verify_integrity(&file, opts)?; let doc = read_toml(&file)?;` (main.rs:601-603, 656-659, 720-724, 756-760, 763-767) — mirror `mutate_doc` with a `read_doc(file, integrity, |doc| …)` wrapper so R63's items.rs extraction becomes purely mechanical and each op collapses to a one-line body"
+symbol = "items_dispatch-read-boilerplate"
+resolution = "Added io::read_doc<R>(file, integrity, |doc| R) sibling to mutate_doc; rewrote all 7 read arms (Cmd::{Parse,Get,Validate}, ItemsOp::{List,Get,NextId,FindDuplicates,Orphans}) to flow through it. Removed now-unused read_toml / maybe_verify_integrity imports from main.rs."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = "Concrete repro: this /review run consolidated 30 findings in Step 3 and I wrote /tmp/review-findings.ndjson via the Write tool before feeding it to tomlctl — exactly the staging workaround the refactor was meant to kill. Two doc changes close the gap: (1) the ledger-schema shared block's `items apply --ops '[{...}]'` example should be flipped to show the stdin form with a concrete heredoc (this edit affects all 4 command files via shared-block parity and is handled by scripts/verify-shared-blocks.sh); (2) /review's Step 3 Primary write path should explicitly show `items add-many --ndjson -` as the idiomatic primitive for pure-add batches (with `--ops -` reserved for heterogeneous mixed add/update/remove batches per SKILL.md). Mirror the same edits in optimise.md Step 3."
+effort = "small"
+evidence = [
+    "claude/commands/review.md Step 3 'Primary write path' shows argv --ops example",
+    "claude/commands/review.md 'Interim checkpoint' already says `--ops -` but without showing the heredoc",
+    "claude/skills/tomlctl/SKILL.md documents `--ndjson - [--defaults-json '{...}']` + 'Prefer this over a hand-rolled --ops array when every op is add'",
+    "commit a929434 message: 'no Python, no jq pipelines' — the staging-tempfile antipattern is the same class",
+]
+file = "claude/commands/review.md"
+first_flagged = 2026-04-18
+id = "R94"
+line = 610
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "Step 3 `Primary write path` example shows `tomlctl items apply <ledger> --ops '[{...}, ...]'` (argv form) — for the common case of a 10–30 item consolidated batch, this guides agents toward argv-quoting payloads that contain agent-generated backticks / dollar-signs / newlines in `description` / `summary`, and in practice agents escape to a tempfile (`Write /tmp/x.ndjson` → `tomlctl ... --ndjson <path>`) which re-introduces the Python-era staging pattern the agent-native refactor (commit a929434) explicitly eliminated; rewrite the Step 3 example to show the heredoc-stdin form `cat <<'EOF' | tomlctl items add-many <ledger> --defaults-json '...' --ndjson -  ...  EOF` as the canonical primary path, matching the Interim Checkpoint section which already uses `--ops -`"
+symbol = "step3-ops-argv-example"
+resolution = "Flipped ledger-schema shared-block items-apply primary form from argv to stdin-heredoc across all 4 command files; expanded review.md/optimise.md Step 3 Primary write path with concrete heredoc examples for items add-many and items apply. Updated blocks_verify_reproduces_shell_hashes hash fixture in tomlctl/src/main.rs:1867."
+resolved = 2026-04-18

@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use toml::Value as TomlValue;
 
 use crate::convert::str_field;
-use crate::{item_id, items_array, repo_or_cwd_root};
+use crate::io::{item_id, items_array, repo_or_cwd_root};
 
 pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
     // R44: items_array returns an empty slice when missing, so the early-return

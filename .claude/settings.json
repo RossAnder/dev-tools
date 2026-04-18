@@ -6,7 +6,9 @@
       "Bash(tomlctl *)"
     ],
     "deny": [
-      "Bash(tomlctl --allow-outside *)"
+      "Bash(tomlctl --allow-outside *)",
+      "Bash(tomlctl * --allow-outside)",
+      "Bash(tomlctl * --allow-outside *)"
     ]
   }
 }
