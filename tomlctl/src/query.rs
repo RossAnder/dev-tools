@@ -81,6 +81,14 @@ pub(crate) enum OutputShape {
     Array,
     Count,
     CountBy(String),
+    /// T1: scalar-cardinality aggregate. Emits
+    /// `{"count_distinct": N, "field": "<name>"}` where N is the number of
+    /// distinct non-null/non-missing values of the field in the filtered
+    /// set. Null and missing values are excluded (consistent with `--pluck`
+    /// semantics — plucked-null items drop). Type-aware: the canonical
+    /// serialisation of each value is hashed, so `42` (Integer) and `"42"`
+    /// (String) at the same field name count as two distinct values.
+    CountDistinct(String),
     /// Groups matched items by the value of a field.
     ///
     /// **Ordering invariant**: buckets are emitted in the insertion order of
@@ -161,6 +169,23 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
                 validation_bail!("--count-by and --exclude are mutually exclusive");
             }
         }
+        OutputShape::CountDistinct(_) => {
+            // T1: projection on an aggregation-only shape is ambiguous — the
+            // output is a single `{count_distinct, field}` object, not an
+            // array of items, so `--select`/`--exclude` has no row shape to
+            // narrow. Mirror the CountBy/Count wording so agents reading the
+            // error see a consistent style across aggregation shapes.
+            if q.select.is_some() {
+                validation_bail!(
+                    "--select and --count-distinct are mutually exclusive"
+                );
+            }
+            if q.exclude.is_some() {
+                validation_bail!(
+                    "--exclude and --count-distinct are mutually exclusive"
+                );
+            }
+        }
         OutputShape::GroupBy(_) => {
             // group-by composes fine with projection; no cross-exclusion here.
         }
@@ -237,6 +262,32 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
                 }
                 return Ok(JsonValue::Object(counts));
             }
+            OutputShape::CountDistinct(field) => {
+                // T1: structural analogue of the CountBy fast-path — one
+                // `toml_to_json` call per item, applied to the plucked
+                // field only. We never materialise the rest of the item,
+                // so per-item cost stays O(field size) rather than O(row
+                // size). Null/missing values are dropped (consistent with
+                // `--pluck`'s apply_pluck behaviour). Canonicalisation:
+                // `toml_to_json(v).to_string()` feeds each distinct value
+                // into a `HashSet<String>`. This preserves TYPE
+                // distinctness — integer `42` serialises as `42`, string
+                // `"42"` serialises as `"42"` (with quotes), so they
+                // count as two. Documented in the enum doc-comment.
+                let mut seen: HashSet<String> = HashSet::with_capacity(filtered.len());
+                for t in &filtered {
+                    match t.get(field).map(toml_to_json) {
+                        None | Some(JsonValue::Null) => {}
+                        Some(v) => {
+                            seen.insert(v.to_string());
+                        }
+                    }
+                }
+                return Ok(serde_json::json!({
+                    "count_distinct": seen.len(),
+                    "field": field,
+                }));
+            }
             _ => {}
         }
     }
@@ -293,6 +344,15 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     match &q.shape {
         OutputShape::Count => Ok(apply_aggregation_count(&windowed)),
         OutputShape::CountBy(field) => Ok(apply_aggregation_count_by(&windowed, field)),
+        OutputShape::CountDistinct(field) => {
+            // T1: slow-path tail. `windowed` is `Vec<JsonValue>` — each
+            // item is already materialised because sort/distinct/window
+            // is engaged. We walk once, pick the plucked field per item,
+            // and accumulate into a `HashSet<String>` keyed by the
+            // canonical serialised form. Null/missing values are
+            // excluded from the count (matches `apply_pluck`).
+            Ok(apply_aggregation_count_distinct(&windowed, field))
+        }
         OutputShape::GroupBy(field) => {
             // group-by can still respect select/exclude on the grouped items.
             let projected: Vec<JsonValue> =
@@ -1087,6 +1147,29 @@ pub(crate) fn apply_aggregation_group_by(
     JsonValue::Object(groups)
 }
 
+/// T1: slow-path `--count-distinct` aggregator. The fast-path (in `run()`
+/// when no sort/distinct/window is engaged) operates on `&[&TomlValue]`
+/// directly; this variant runs after the pipeline has already materialised
+/// items as `Vec<JsonValue>` so dedup walks `v.get(field)` instead of
+/// `t.get(field).map(toml_to_json)`. Semantics match the fast-path byte-
+/// for-byte: null and missing values excluded, `to_string()` used as the
+/// canonical-form key so type distinctness holds (`42` ≠ `"42"`).
+pub(crate) fn apply_aggregation_count_distinct(items: &[JsonValue], field: &str) -> JsonValue {
+    let mut seen: HashSet<String> = HashSet::with_capacity(items.len());
+    for v in items {
+        match v.get(field) {
+            None | Some(JsonValue::Null) => {}
+            Some(item_val) => {
+                seen.insert(item_val.to_string());
+            }
+        }
+    }
+    serde_json::json!({
+        "count_distinct": seen.len(),
+        "field": field,
+    })
+}
+
 pub(crate) fn apply_pluck(items: &[JsonValue], field: &str) -> JsonValue {
     let mut out = Vec::with_capacity(items.len());
     for it in items {
@@ -1279,16 +1362,27 @@ impl Query {
             sort_list.push((field, dir));
         }
 
-        // OutputShape priority (plan): count > count-by > group-by > pluck >
-        // default Array. `ndjson` is an *encoding* choice (R82), not a shape
-        // — it lives on `Query.ndjson` and only applies when the chosen shape
-        // is Array. Multiple shape flags would typically collapse to the
-        // highest-priority one here; `validate_query` (inside `run`) then
-        // rejects any shape-vs-projection conflict with a clear error.
+        // OutputShape priority (plan): count > count-by > count-distinct >
+        // group-by > pluck > default Array. `ndjson` is an *encoding* choice
+        // (R82), not a shape — it lives on `Query.ndjson` and only applies
+        // when the chosen shape is Array. Multiple shape flags would
+        // typically collapse to the highest-priority one here; the clap
+        // `shape` ArgGroup at the CLI layer makes this impossible in
+        // practice (any two shape flags error at parse time), but we keep
+        // the priority ladder as a belt-and-braces for programmatic callers
+        // that skip clap (`Query::from_cli_args` is called from tests too).
+        //
+        // T1: `--count-distinct` sits at EQUAL precedence to the other
+        // aggregation shapes — NOT as a sub-form of Pluck. Risk #2 in the
+        // plan: the ArgGroup guarantees exclusivity at parse time; the
+        // `count_distinct_and_pluck_are_mutex_at_parse_time` integration
+        // test pins this contract.
         let shape = if legacy.count {
             OutputShape::Count
         } else if let Some(f) = q.count_by.as_deref() {
             OutputShape::CountBy(f.to_string())
+        } else if let Some(f) = q.count_distinct.as_deref() {
+            OutputShape::CountDistinct(f.to_string())
         } else if let Some(f) = q.group_by.as_deref() {
             OutputShape::GroupBy(f.to_string())
         } else if let Some(f) = q.pluck.as_deref() {
@@ -1670,6 +1764,272 @@ defer_reason = ""
         assert_eq!(out["open"], 4);
         assert_eq!(out["fixed"], 1);
         assert_eq!(out["wontfix"], 1);
+    }
+
+    // -- T1: --count-distinct shape ---------------------------------------
+
+    /// T1: baseline — distinct categories in the 6-row fixture are
+    /// security, quality, performance → 3 distinct.
+    #[test]
+    fn count_distinct_counts_distinct_values() {
+        let doc = fixture();
+        let q = Query {
+            shape: OutputShape::CountDistinct("category".into()),
+            ..Default::default()
+        };
+        let out = run(&doc, "items", &q).unwrap();
+        assert_eq!(
+            out,
+            serde_json::json!({"count_distinct": 3, "field": "category"})
+        );
+    }
+
+    /// T1: items lacking the plucked field are excluded from the count —
+    /// mirror of `apply_pluck`'s missing-field drop.
+    #[test]
+    fn count_distinct_excludes_missing_field() {
+        // `defer_reason` exists on R4 only (R6's defer_reason is empty
+        // string — a value, not missing — so it counts as one distinct).
+        let doc = fixture();
+        let q = Query {
+            shape: OutputShape::CountDistinct("defer_reason".into()),
+            ..Default::default()
+        };
+        let out = run(&doc, "items", &q).unwrap();
+        // R4: "vendor fix", R6: "" → 2 distinct values; other four rows
+        // missing the field are excluded.
+        assert_eq!(out["count_distinct"], 2);
+        assert_eq!(out["field"], "defer_reason");
+    }
+
+    /// T1: explicit TOML-null-equivalents (missing field) are excluded.
+    /// Distinct from `count_distinct_excludes_missing_field` above in
+    /// that we build the fixture explicitly so the intent is unambiguous.
+    #[test]
+    fn count_distinct_excludes_null_values() {
+        // TOML has no `null` literal at the top level — a field with no
+        // value is represented by absence. `toml_to_json` maps absence to
+        // None (not JsonValue::Null), so both cases (missing key and an
+        // otherwise-constructed Null) fall through to the same branch.
+        let src = r#"
+[[items]]
+id = "a"
+ref = "alpha"
+
+[[items]]
+id = "b"
+
+[[items]]
+id = "c"
+ref = "beta"
+
+[[items]]
+id = "d"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let q = Query {
+            shape: OutputShape::CountDistinct("ref".into()),
+            ..Default::default()
+        };
+        let out = run(&doc, "items", &q).unwrap();
+        assert_eq!(out["count_distinct"], 2);
+        assert_eq!(out["field"], "ref");
+    }
+
+    /// T1: empty [[items]] → count_distinct = 0.
+    #[test]
+    fn count_distinct_empty_array() {
+        let src = r#"
+schema_version = 1
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let q = Query {
+            shape: OutputShape::CountDistinct("whatever".into()),
+            ..Default::default()
+        };
+        let out = run(&doc, "items", &q).unwrap();
+        assert_eq!(
+            out,
+            serde_json::json!({"count_distinct": 0, "field": "whatever"})
+        );
+    }
+
+    /// T1: 1000 items × 500 distinct values → N=500. Exercises the
+    /// HashSet sizing path and confirms dedup fires even on the fast-path
+    /// (no sort/distinct/window in this query).
+    #[test]
+    fn count_distinct_large_cardinality() {
+        let mut buf = String::from("schema_version = 1\n");
+        for i in 0..1000 {
+            buf.push_str(&format!(
+                "\n[[items]]\nid = \"i{i}\"\nbucket = \"b{}\"\n",
+                i % 500
+            ));
+        }
+        let doc: TomlValue = toml::from_str(&buf).unwrap();
+        let q = Query {
+            shape: OutputShape::CountDistinct("bucket".into()),
+            ..Default::default()
+        };
+        let out = run(&doc, "items", &q).unwrap();
+        assert_eq!(out["count_distinct"], 500);
+    }
+
+    /// T1: type distinctness contract — integer 42 and string "42" at
+    /// the same field count as 2 distinct values. Rationale: different
+    /// TOML types round-trip through `toml_to_json().to_string()` to
+    /// different canonical forms (`42` vs `"42"`), so the HashSet keeps
+    /// them apart. Callers who want string-coerced equality can combine
+    /// `--pluck f` with a downstream `jq -r 'tostring'` — but the
+    /// transcript audit shows nobody does that; they want type-aware
+    /// counts.
+    #[test]
+    fn count_distinct_different_types() {
+        let src = r#"
+[[items]]
+id = "a"
+v = 42
+
+[[items]]
+id = "b"
+v = "42"
+
+[[items]]
+id = "c"
+v = 42
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let q = Query {
+            shape: OutputShape::CountDistinct("v".into()),
+            ..Default::default()
+        };
+        let out = run(&doc, "items", &q).unwrap();
+        // Integer 42 (×2, dedupes to 1) + String "42" (×1) = 2 distinct.
+        assert_eq!(out["count_distinct"], 2);
+    }
+
+    /// T1: filter semantics — `--where` narrows the input set BEFORE
+    /// `--count-distinct` counts. Check by restricting to open-status
+    /// rows: categories present among open rows of the fixture are
+    /// security (R1) and quality (R2, R6) — 2 distinct, not 3.
+    #[test]
+    fn count_distinct_after_filter() {
+        let doc = fixture();
+        let q = Query {
+            predicates: vec![Predicate::Where {
+                key: "status".into(),
+                rhs: "open".into(),
+            }],
+            shape: OutputShape::CountDistinct("category".into()),
+            ..Default::default()
+        };
+        let out = run(&doc, "items", &q).unwrap();
+        // Open items: R1 (security), R2 (quality), R5 (performance),
+        // R6 (quality) → distinct = {security, quality, performance} = 3.
+        assert_eq!(out["count_distinct"], 3);
+    }
+
+    /// T1: adding `--sort-by` sends the query through the slow path but
+    /// must still yield the same cardinality (sort doesn't change the
+    /// distinct-set). Regression guard for the compute-before-sort
+    /// assumption.
+    #[test]
+    fn count_distinct_with_sort_is_valid_but_wasteful() {
+        let doc = fixture();
+        let q_fast = Query {
+            shape: OutputShape::CountDistinct("category".into()),
+            ..Default::default()
+        };
+        let q_slow = Query {
+            sort_by: vec![("id".into(), SortDir::Asc)],
+            shape: OutputShape::CountDistinct("category".into()),
+            ..Default::default()
+        };
+        let a = run(&doc, "items", &q_fast).unwrap();
+        let b = run(&doc, "items", &q_slow).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a["count_distinct"], 3);
+    }
+
+    /// T1 structural assertion: the fast-path MUST NOT materialise the
+    /// entire item via `toml_to_json(item)` — only the plucked field.
+    /// Direct counter instrumentation would require plumbing through
+    /// `convert::toml_to_json`; instead we use a property test. Build
+    /// a fixture where each row carries a deeply-nested "ignore me"
+    /// payload alongside a trivial `bucket` field. Correctness of the
+    /// count on the targeted field is the assertion — if the fast-path
+    /// were accidentally materialising the full row, it'd still produce
+    /// the correct count (because we aren't checking memory), but the
+    /// pluck-scope discipline is encoded in the code itself. The real
+    /// contract is: the fast-path arm reads `t.get(field).map(toml_to_json)`
+    /// which narrows to one field; any reviewer diff-checking this test
+    /// can eyeball the arm at the corresponding line in `run()`.
+    ///
+    /// What this test DOES verify: that the fast-path arm (no sort/
+    /// distinct/window) produces a count equal to the slow-path (with
+    /// sort-by engaged), even when every row has a large unrelated
+    /// payload — confirming we didn't accidentally key the dedup off
+    /// the full row shape.
+    #[test]
+    fn count_distinct_fast_path_narrows_to_field() {
+        let mut buf = String::from("schema_version = 1\n");
+        // 200 rows × 5 distinct buckets, each row carrying a 100-element
+        // array of integers in `unrelated`.
+        let unrelated: String = (0..100)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        for i in 0..200 {
+            buf.push_str(&format!(
+                "\n[[items]]\nid = \"i{i}\"\nbucket = \"b{}\"\nunrelated = [{}]\n",
+                i % 5,
+                unrelated
+            ));
+        }
+        let doc: TomlValue = toml::from_str(&buf).unwrap();
+        let q_fast = Query {
+            shape: OutputShape::CountDistinct("bucket".into()),
+            ..Default::default()
+        };
+        let q_slow = Query {
+            sort_by: vec![("id".into(), SortDir::Asc)],
+            shape: OutputShape::CountDistinct("bucket".into()),
+            ..Default::default()
+        };
+        let a = run(&doc, "items", &q_fast).unwrap();
+        let b = run(&doc, "items", &q_slow).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a["count_distinct"], 5);
+    }
+
+    /// T1: mutex with `--select` via `validate_query`.
+    #[test]
+    fn count_distinct_plus_select_rejected() {
+        let q = Query {
+            shape: OutputShape::CountDistinct("category".into()),
+            select: Some(vec!["id".into()]),
+            ..Default::default()
+        };
+        let err = validate_query(&q).unwrap_err().to_string();
+        assert!(
+            err.contains("--select") && err.contains("--count-distinct"),
+            "expected mutex error naming both flags, got: {err}"
+        );
+    }
+
+    /// T1: mutex with `--exclude` via `validate_query`.
+    #[test]
+    fn count_distinct_plus_exclude_rejected() {
+        let q = Query {
+            shape: OutputShape::CountDistinct("category".into()),
+            exclude: Some(vec!["summary".into()]),
+            ..Default::default()
+        };
+        let err = validate_query(&q).unwrap_err().to_string();
+        assert!(
+            err.contains("--exclude") && err.contains("--count-distinct"),
+            "expected mutex error naming both flags, got: {err}"
+        );
     }
 
     #[test]

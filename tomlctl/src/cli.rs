@@ -386,6 +386,22 @@ pub(crate) struct QueryArgs {
     pub(crate) group_by: Option<String>,
     #[arg(long = "count-by", value_name = "FIELD", help = "Aggregate: emit {value: N, ...}")]
     pub(crate) count_by: Option<String>,
+    /// T1: scalar-cardinality aggregate. Emits
+    /// `{"count_distinct": N, "field": "<name>"}` where N is the number of
+    /// distinct non-null/non-missing values of FIELD in the filtered set.
+    /// Mutually exclusive with the other shape flags via the `shape`
+    /// ArgGroup below (`--count`, `--count-by`, `--group-by`, `--pluck`),
+    /// and mutex with `--select`/`--exclude` at the `validate_query` layer
+    /// (projection on an aggregation-only shape would be ambiguous). The
+    /// whole motivation is to replace the ~140 `--pluck f | jq -r '.[]'
+    /// | sort -u | wc -l` pipe chains that agents were spelling out for
+    /// cardinality readouts.
+    #[arg(
+        long = "count-distinct",
+        value_name = "FIELD",
+        help = "Aggregate: count distinct values of FIELD (excludes null/missing), emit {\"count_distinct\":N,\"field\":\"<name>\"}"
+    )]
+    pub(crate) count_distinct: Option<String>,
     #[arg(long = "ndjson", help = "Output one JSON value per line (for piping into add-many/apply)")]
     pub(crate) ndjson: bool,
 }
@@ -492,7 +508,11 @@ enum ItemsOp {
     /// mismatch visible at parse time with a clean clap error instead
     /// of producing unexpected output. `--ndjson` is a separate encoding
     /// flag (R82), so it stays out of the group.
-    #[command(group(clap::ArgGroup::new("shape").multiple(false).args(["count", "count_by", "group_by", "pluck"])))]
+    ///
+    /// T1: `--count-distinct <FIELD>` joins the same group, so it's also
+    /// parse-time mutex with every other shape flag (pairwise — e.g.
+    /// `--count-distinct x --pluck y` errors at clap).
+    #[command(group(clap::ArgGroup::new("shape").multiple(false).args(["count", "count_by", "group_by", "pluck", "count_distinct"])))]
     List {
         file: PathBuf,
         #[arg(long)]

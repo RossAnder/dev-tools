@@ -1617,6 +1617,164 @@ fn items_list_shape_flags_are_mutually_exclusive_at_parse_time() {
 }
 
 // ---------------------------------------------------------------------------
+// Task 1 (plan `docs/plans/tomlctl-capability-gaps.md`): `items list` grows
+// `--count-distinct <FIELD>`, a scalar-cardinality aggregate that replaces
+// the 4-stage `--pluck X | jq -r '.[]' | sort -u | wc -l` pipe chain agents
+// were spelling out. Output: `{"count_distinct":N,"field":"<name>"}`.
+// Null/missing field values are excluded (`--pluck` semantics). The flag
+// joins the existing `shape` ArgGroup, so pairwise-mutex with every other
+// aggregation shape is enforced at clap parse time.
+// ---------------------------------------------------------------------------
+
+/// T1: end-to-end happy path. Fixture has 3 distinct categories across 6
+/// rows — output shape must be `{count_distinct:3, field:"category"}`.
+#[test]
+fn items_list_count_distinct_emits_expected_object() {
+    let stdout = run_list_query(&["--count-distinct", "category"]);
+    let v: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(
+        v.get("count_distinct").and_then(|n| n.as_u64()),
+        Some(4),
+        "QUERY_FIXTURE has 4 distinct categories (style, bug, perf, security); got stdout:\n{stdout}"
+    );
+    assert_eq!(
+        v.get("field").and_then(|s| s.as_str()),
+        Some("category"),
+        "`field` must echo the flag arg back; got stdout:\n{stdout}"
+    );
+}
+
+/// T1: `--count-distinct` composes with `--where` — the distinct count is
+/// over the FILTERED set. Same contract as Count / CountBy.
+#[test]
+fn items_list_count_distinct_composes_with_where() {
+    // QUERY_FIXTURE open items: R1 (style), R2 (bug), R4 (perf), R6
+    // (security) → 4 distinct categories.
+    let stdout = run_list_query(&["--where", "status=open", "--count-distinct", "category"]);
+    let v: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(
+        v.get("count_distinct").and_then(|n| n.as_u64()),
+        Some(4),
+        "open items span 4 distinct categories; got stdout:\n{stdout}"
+    );
+}
+
+/// T1 / Risk #2: `--count-distinct` and `--pluck` both in the same call
+/// must error at clap parse time (via the `shape` ArgGroup), NOT
+/// silently collapse via the build_query priority ladder.
+#[test]
+fn count_distinct_and_pluck_are_mutex_at_parse_time() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--pluck")
+        .arg("id")
+        .arg("--count-distinct")
+        .arg("category")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("cannot be used with")
+            || stderr.contains("argument cannot be used"),
+        "expected clap ArgGroup mutex error on --pluck + --count-distinct; got stderr:\n{stderr}"
+    );
+}
+
+/// T1: `--count-distinct` + `--count` also errors at clap (same
+/// ArgGroup). Pins that the ArgGroup was extended, not a new disjoint
+/// group created.
+#[test]
+fn count_distinct_with_count_errors_at_clap() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--count")
+        .arg("--count-distinct")
+        .arg("category")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("cannot be used with")
+            || stderr.contains("argument cannot be used"),
+        "expected clap ArgGroup mutex error on --count + --count-distinct; got stderr:\n{stderr}"
+    );
+}
+
+/// T1: `--count-distinct` + `--select` errors via `validate_query`, which
+/// T8 tagged `kind=validation`. Assert both the human-readable mutex
+/// wording and (with `--error-format json`) the structured kind tag.
+#[test]
+fn count_distinct_with_select_errors_via_validate_query() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+
+    // Text mode: anyhow chain contains both flag names.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--count-distinct")
+        .arg("category")
+        .arg("--select")
+        .arg("id")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("--select") && stderr.contains("--count-distinct"),
+        "text-mode error must name both flags; got stderr:\n{stderr}"
+    );
+
+    // JSON mode: `kind=validation` tag surfaces.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("--error-format")
+        .arg("json")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--count-distinct")
+        .arg("category")
+        .arg("--select")
+        .arg("id")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let envelope: serde_json::Value = serde_json::from_str(stderr.trim())
+        .unwrap_or_else(|e| panic!("json-mode stderr must parse: {e}; stderr:\n{stderr}"));
+    assert_eq!(
+        envelope
+            .get("error")
+            .and_then(|e| e.get("kind"))
+            .and_then(|s| s.as_str()),
+        Some("validation"),
+        "expected kind=validation; got stderr:\n{stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Task 5 (plan `docs/plans/tomlctl-capability-gaps.md`): `items add` and
 // `items add-many` grow `--dedupe-by <F1,F2,...>`. Callers who pass
 // identical payloads twice get one insert on the first call and a skip
