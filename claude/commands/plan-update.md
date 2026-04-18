@@ -391,6 +391,7 @@ Read every plan document in scope. Extract and classify every piece of content i
 - **Research notes/corrections** — technical findings, library version notes, API behavior, etc. (e.g. the "Key corrections from research" sections)
 - **Deviations** — anything that records a departure from the original plan, whether previously numbered with legacy `D<n>` IDs (preserved as `legacy_id` on migrated entries) or embedded in prose
 - **Deferrals** — items explicitly deferred or marked as future work, with any stated triggers
+- **User Decisions** — answers captured from `/plan-new` Phase 4 (Directed Questions), recording the question, the chosen answer, and the finding that prompted the question. If the source plan contains a `## User Decisions` section, every entry must survive into the reformatted output as a preserved `## User Decisions` section in the outline (adjacent to `## Approach`). Do not merge into Research Notes or Context — the provenance and question-answer structure must stay intact.
 - **Verification criteria** — checklists, test commands, acceptance conditions
 - **Dependencies** — stated relationships between items, phases, or waves
 - **Context/rationale** — background information, objectives, constraints, scope statements
@@ -497,6 +498,7 @@ Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md i
 
 **Key rules for reformatting:**
 - **Faithful content preservation** — every fact, note, correction, finding, and status marker from the original must appear in the output. Verify by checking the original line count and ensuring no content was silently dropped.
+- **User Decisions survive verbatim** — if the source plan has a `## User Decisions` section, copy it intact into the reformatted outline. Do NOT redistribute entries into Research Notes, Context, or Approach; the question/answer/finding triple is meaningful as a unit and downstream agents (including `/implement` and later `/plan-new` runs on adjacent plans) reference it by section.
 - **Clean the outline** — the outline should contain the sequencing table, dependencies, constraints, and verification checklists. Research notes, verbose corrections, and progress tracking move to their own files. The outline should reference these files where needed (e.g. "See RESEARCH-NOTES.md §{Topic}").
 - Entries carry `legacy_id` for back-compat; no renumbering is required because E-numbers are monotonic.
 - **Preserve task headings verbatim** — `task_ref` is an opaque title slug derived from each task's heading text. If `reformat`'s classification agent rephrases a heading (e.g. "Add retry logic" → "Add retry with exponential backoff"), the derived slug changes and `/implement`'s idempotency skip-list misses the completed task, causing the task to re-execute. Therefore `reformat` MUST preserve each task's heading text **exactly as it appeared in the source plan**, byte-for-byte. Rephrasing is allowed ONLY as an explicit deviation recorded via the `deviation` op (which preserves `supersedes_entry` chains). The classification agent may reorder, regroup, or recategorize tasks freely — but heading text is immutable.
