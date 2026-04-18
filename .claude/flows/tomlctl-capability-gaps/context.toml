@@ -1,0 +1,22 @@
+slug = "tomlctl-capability-gaps"
+plan_path = "docs/plans/tomlctl-capability-gaps.md"
+status = "in-progress"
+created = 2026-04-18
+updated = 2026-04-18
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+]
+
+[tasks]
+total = 11
+completed = 0
+in_progress = 1
+
+[artifacts]
+review_ledger = ".claude/flows/tomlctl-capability-gaps/review-ledger.toml"
+optimise_findings = ".claude/flows/tomlctl-capability-gaps/optimise-findings.toml"
+execution_record = ".claude/flows/tomlctl-capability-gaps/execution-record.toml"
