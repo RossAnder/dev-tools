@@ -1,0 +1,1107 @@
+schema_version = 1
+last_updated = 2026-04-18
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R1"
+file = "claude/commands/plan-update.md"
+line = 617
+symbol = "migrate op — task_ref derivation"
+severity = "critical"
+effort = "small"
+category = "security"
+summary = "migrate op back-fills task_ref from legacy PROGRESS-LOG.md Item column without cross-validating against the current plan's actual task headings — a forged legacy row can spoof the /implement idempotency skip-list"
+description = "A malicious prior commit seeds PROGRESS-LOG.md with an 'Item' cell matching the heading of a real uncompleted task. /plan-update migrate dutifully derives its task_ref slug, inserts a task-completion entry with status=done, and the next /implement run silently skips the genuine task. Cross-validate each derived task_ref against the current plan's task headings before appending; rows that don't correspond to an extant heading must be flagged for user review, not silently back-filled."
+evidence = [
+    "plan-update.md:617 ('Best-effort fill: task_ref (slug derived from the Item column heading text)')",
+    "implement.md:249-253 trusts whatever slugs the log holds",
+]
+wontfix_rationale = "Migrating legacy PROGRESS-LOG.md records is not a current concern; the migrate op is effectively dormant until/unless a legacy ingest is needed. If /plan-update migrate is kept as a future feature, R1 must be re-opened before invocation."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R2"
+file = "claude/commands/plan-update.md"
+line = 605
+symbol = "migrate op — precondition check"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "migrate op has no precondition check: re-invocation on a greenfield flow, or on an already-rendered PROGRESS-LOG.md, will ingest the rendered marker as 'legacy' input"
+description = "No guard for (a) PROGRESS-LOG.md already carries the '<!-- Generated from execution-record.toml. Do not edit by hand. -->' marker; (b) <record> already has [[items]] entries. The idempotency rules (legacy_id dedup, task_ref dedup) paper over re-runs but the 'this PROGRESS-LOG.md was hand-authored, not rendered' invariant is never asserted. Refuse if first non-blank line is the generated marker; refuse if target <record> has any existing [[items]] entries."
+wontfix_rationale = "Migrating legacy PROGRESS-LOG.md records is not a current concern. Re-open if the migrate op is reactivated."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R3"
+file = "claude/commands/plan-update.md"
+line = 99
+symbol = "Execution Record Schema — Read Rules"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "execution-record-schema shared block has no schema_version > 1 / missing-schema_version read rules — unlike the parallel ledger-schema block"
+description = "ledger-schema (review.md:229-230) carries explicit 'Missing schema_version → treat as 1 and write back' and 'schema_version > 1 → halt and ask user' rules. execution-record-schema carries neither. When v2 lands, pre-v2 readers (older /implement, older /plan-update on older branches) will silently parse a v2 file and may miss required fields or drop extension columns. Add the same trio of read rules to the execution-record-schema block before graduating past v1."
+resolved = 2026-04-18
+resolution = "fd0de57 — added Read rules sub-section to execution-record-schema shared block"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R4"
+file = "claude/commands/implement.md"
+line = 236
+symbol = "Phase 1 step 1 — status write without transition entry"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = '/implement writes status="in-progress" to context.toml but never appends a type=status-transition entry to <record>, even though plan-update mandates one on every status-field change'
+description = "plan-update.md:246-247 requires 'Append a type=status-transition entry whenever the value changes.' /implement mutates status without appending — the append-only log will be missing the most common draft→in-progress transition (fired on every first /implement run) and the PROGRESS-LOG's implicit 'when did work start' signal is lost. Add to Phase 1 step 1: if pre-update status differs from in-progress, append a type=status-transition entry via the canonical heredoc before the first items add call."
+evidence = [
+    "implement.md:236 (writes status without logging transition)",
+    "plan-update.md:270 (status-transition change-gate rule)",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — /implement Phase 1 appends type=status-transition when pre-update status differs from in-progress"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R5"
+file = "claude/commands/plan-update.md"
+line = 429
+symbol = "reformat template — Last-updated header contradicts render-from-log"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "reformat template (lines 429-432) shows '> Last updated: {date from agent 2's snapshot}' in the rendered output, but render-from-log (lines 635-641) emits only the literal generated marker — the template misrepresents the pure-function contract"
+description = "Render-to-markdown contract (line 182) explicitly states 'no timestamp substitution, no date-of-run leakage'. Reformat's final step IS the render-from-log routine, which immediately overwrites any header the template showed. Either delete the '> Tracks ...' + '> Last updated: ...' lines from the reformat template, or promote them into the render routine and update the 'no timestamp substitution' contract. Current state leaves readers unable to know what the rendered PROGRESS-LOG.md actually looks like."
+evidence = [
+    "plan-update.md:182 (contract: no timestamp substitution)",
+    "plan-update.md:429-432 (template: shows Last updated header)",
+    "plan-update.md:637-641 (render routine: only marker, no header)",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — removed Last-updated / Tracks header from reformat template; matches render-from-log"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R6"
+file = "claude/commands/plan-update.md"
+line = 436
+symbol = "reformat template — Status Summary + Next Actions tables"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "reformat template shows a Status Summary table and Next Actions block, but the render-from-log routine emits four different tables (Completed Items / Deviations / Deferrals / Session Log) — the template misrepresents what reformat actually produces"
+description = "A user reading reformat's spec thinks 'here's what my PROGRESS-LOG.md will look like' and the rendered output silently differs. Same class as R5 but separate tables. Either add Status Summary + Next Actions as render sections with concrete derivations from the log, or delete them from the reformat template so the template and render stay in sync."
+evidence = [
+    "plan-update.md:436-442 (Status Summary in template)",
+    "plan-update.md:635-676 (render routine: four tables, no Status Summary / Next Actions)",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — removed Status Summary + Next Actions from reformat template"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R7"
+file = "claude/commands/plan-update.md"
+line = 631
+symbol = "render-from-log routine — cross-file reference + drift risk"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Full render-from-log routine (45 lines) lives only in plan-update.md but is invoked by /implement Phase 3 via prose reference; execution-record-schema shared block carries only a summary — cross-file contract is not parity-enforced"
+description = "Caught by multiple lenses: quality (Session-Log column spec duplicated outside parity-enforced shared block between plan-update.md:186-192 and :661-676), architecture (routine lives in plan-update.md only, referenced by name from implement.md:381 without co-located definition), completeness (if plan-update.md's rendering rules change, implement.md's behaviour changes silently). Options: (a) promote full routine into the execution-record-schema shared block so all 3 writers carry it byte-identical; (b) implement render-from-log as a tomlctl subcommand so there's one binary implementation and no prose duplication."
+evidence = [
+    "plan-update.md:186-192 (shared-block short spec)",
+    "plan-update.md:661-676 (local long spec)",
+    "implement.md:381 (cross-file reference)",
+    "scripts/shared-blocks.toml:27-33 (block covers schema, not routine)",
+]
+resolved = 2026-04-18
+resolution = "fd0de57 — promoted render-from-log routine into execution-record-schema shared block; updated implement.md cross-reference"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R8"
+file = "claude/commands/plan-update.md"
+line = 643
+symbol = "render-from-log — table sort keys + Commits column claim"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Completed Items / Deviations / Deferrals tables have no explicit sort key (implicitly 'append order'); after migrate back-fills 40 rows then /implement appends 3 new, rows are non-chronological. Commits column also violates the cross-reorder-idempotency claim"
+description = "Only Session Log has explicit --sort-by date:asc. Other three tables implicitly inherit append order which is non-deterministic after migrate back-fill. The 'first-appearance SHA order' rule on the Commits column produces different output depending on append order of two same-date entries with different SHA orderings, breaking the cross-reorder-idempotency claim at line 192. Add --sort-by date:asc, id:asc to every table; amend the Commits column rule to alphabetical first-appearance, or carve Commits out of the idempotency claim."
+resolved = 2026-04-18
+resolution = "3ef80e7 — added --sort-by date:asc,id:asc to Completed Items / Deviations / Deferrals tables; Commits column now lexicographic first-appearance; pinned hash updated in cli.rs"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R9"
+file = "tomlctl/src/query.rs"
+line = 235
+symbol = "apply_projection + Pluck distinct path"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "tomlctl --distinct combined with --pluck silently does not dedup the plucked field — it dedups the full source item, producing duplicate values in the plucked output"
+description = """In query::run, when shape is Pluck and --distinct is set, line 235 calls dedup_preserve_first on the sorted items, then applies projection. But apply_projection (query.rs:783-812) only honours --select/--exclude; it never narrows to the pluck field. Result: dedup key is the full JSON object, so task_ref=alpha appearing in two different items (different id, different summary) yields two 'alpha' values in the pluck output. Verified: --pluck task_ref --distinct returned ["alpha","alpha","beta"]. Either narrow the dedup key to the plucked field, or reject --pluck+--distinct at validate_query and point users at --count-by. This is the bug the docs work around with the sort -u | wc -l tail."""
+evidence = [
+    "tomlctl/src/query.rs:783-812 apply_projection ignores pluck field",
+    "tomlctl/src/query.rs:235-241 dedup uses projected shape that is the full item",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — Pluck+Distinct path now dedupes on the plucked scalar; regression test pluck_distinct_dedupes_on_plucked_field_not_whole_item added"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R10"
+file = "claude/commands/plan-update.md"
+line = 611
+symbol = "migrate op — legacy string escape"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "migrate op ingests PROGRESS-LOG.md cells (rationale / original_intent / summary) and emits them as JSON payload strings via heredoc — no sanitisation for embedded quotes, backslashes, newlines, or literal EOF markers"
+description = """A legacy row with rationale='foo", "agent":"root' would, if the agent hand-composes JSON by interpolation rather than serialising via jq -Rn --arg or serde, either fail parse (loud, OK) or — if the agent 'smooths the quotes' on retry — inject. A literal 'EOF' line inside a cell would close the heredoc and leak subsequent bytes. Mandate that every extracted string be JSON-serialised via jq -Rn or equivalent before composition; forbid hand-quoting. Same sentence should live in the execution-record-schema shared block: 'agent-supplied strings must be JSON-escaped before composition; do not hand-quote.'"""
+evidence = [
+    "plan-update.md:611-617 Best-effort fill language",
+    "plan-new.md:157-166 canonical heredoc form has no escaping sentence",
+]
+wontfix_rationale = "Migrating legacy PROGRESS-LOG.md records is not a current concern. The escape issue is specific to the migrate op's legacy ingest. Re-open if migrate is reactivated."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R11"
+file = "claude/commands/plan-update.md"
+line = 607
+symbol = "migrate op — round-trip invariant + live+migrate mixed case"
+severity = "warning"
+effort = "medium"
+category = "completeness"
+summary = "migrate op has no post-migration equality assertion (unlike reformat's heading-equality check); best-effort fill + task_ref dedupe with live entries silently drops legacy data"
+description = "Two related gaps. (a) No assertion comparing legacy PROGRESS-LOG.md row counts per section against rendered PROGRESS-LOG.md. If Commit column is 'see above' or comma-joined, commits[] loses data silently. (b) When /implement has already written live task-completion entries AFTER the legacy log was last edited, migrate's task_ref dedupe causes the legacy row to be SKIPPED and legacy_id is never preserved — audit trail loses legacy attribution, any hand-authored Notes column content is dropped. Add a post-migrate row-count assertion + retain legacy data even under dedupe (append a deviation noting the supersession, or store legacy content in a supplementary field)."
+wontfix_rationale = "Migrating legacy PROGRESS-LOG.md records is not a current concern. Round-trip invariant only matters if migrate is invoked. Re-open if migrate is reactivated."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R12"
+file = "claude/commands/implement.md"
+line = 239
+symbol = "Phase 1 — context.toml / <record> reads omit --verify-integrity"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Every read of context.toml / execution-record.toml by writer commands omits --verify-integrity, so a poisoned ledger goes undetected even when .sha256 sidecar exists"
+description = "tomlctl supports --verify-integrity precisely so readers can refuse a file whose sidecar disagrees. The shared-block contract mentions tomlctl for writes but never mandates --verify-integrity on reads. implement.md Phase 1 resolves <record> with tomlctl get (no flag); plan-update.md:268 reconciler skip-set query same; render-from-log queries same. An attacker modifying execution-record.toml out-of-band can silently skip a real task (letting unreviewed change land) or un-skip a completed one. Mandate --verify-integrity on every read where a sidecar is expected to exist; explicit opt-out only when sidecar is known-absent (bootstrap)."
+evidence = [
+    "implement.md:240-248 (no integrity flag)",
+    "plan-update.md:268 (reconciler same)",
+    "plan-update.md:644-668 (render-from-log same)",
+]
+resolved = 2026-04-18
+resolution = "fd0de57 — added Read-path integrity contract to execution-record-schema block; updated call sites in implement.md and plan-update.md to pass --verify-integrity"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R13"
+file = "claude/commands/plan-new.md"
+line = 378
+symbol = "Phase 7 step 4 — scope derivation from 'Affected areas'"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Scope globs are copied verbatim from plan 'Affected areas' prose; a plan with '../../../' or leading '/' would write '../../../**' to context.toml, collapsing flow-resolution step 2 into 'always pick this flow'"
+description = "Flow resolution step 2 invokes Glob with whatever pattern context.toml carries; a '../../../**' pattern will successfully match almost any path, cross-contaminating every flow in the repo's resolution. Validate scope entries before writing: each must be repo-relative (reject leading '/', reject '..' components); directory-form globs must resolve to a real directory under the repo root. tomlctl already refuses writes outside .claude/ for artifacts — this is the same class of constraint for data fields."
+evidence = [
+    "plan-new.md:375-378 derives scope from plan prose",
+    "plan-new.md:71 flow resolution step 2 blindly consumes the pattern",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — /plan-new Phase 7 step 4 validates scope entries (reject leading /, reject .., require existing <dir>)"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R14"
+file = "claude/commands/plan-new.md"
+line = 370
+symbol = "slug derivation — no sanitisation"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "slug = 'plan filename minus .md' with 'no additional slugification' — a plan named docs/plans/..md or containing slashes path-joins out of .claude/flows/"
+description = '''Slug rule is 'the filename is already the slug'. A plan file named docs/plans/.. or docs/plans/nul (Windows reserved) produces a dangerous slug once path-joined with .claude/flows/<slug>/. tomlctl guard_write_path catches the most extreme cases (canonicalised path outside .claude/), but milder cases leak. Add an explicit sanitiser step: slug must match ^[a-z0-9][a-z0-9-]{0,63}$; refuse and prompt the user if the derived slug contains /, \\, .., ., leading ., or exceeds 64 chars.'''
+evidence = [
+    "plan-new.md:60-66 ('No additional slugification')",
+    "plan-new.md:373 ('.claude/flows/<slug>/ already exists')",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — /plan-new Phase 7 step 1 sanitises slug against ^[a-z0-9][a-z0-9-]{0,63}$; prompts via AskUserQuestion on reject"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R15"
+file = "claude/commands/implement.md"
+line = 314
+symbol = "append-only field length caps"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "deviation / task-completion / verification entries carry unbounded rationale / original_intent / summary strings; a verbose agent reports a 5 MiB rationale that permanently inflates the append-only log"
+description = "The schema does not cap per-field string length. Over many runs this becomes a DoS on every reader (read_toml loads the entire file; the MAX_STDIN_BYTES=32MiB cap on tomlctl stdin doesn't apply to persisted writes). Rendered into PROGRESS-LOG.md verbatim, a 5 MiB summary produces a markdown file Edit tool chokes on. Cap per-field string length at the writer (e.g. 1 KiB summary, 8 KiB rationale/original_intent). A --max-string-bytes option on tomlctl items add defaulted for [[items]] would be a local change with no schema impact."
+evidence = [
+    "plan-new.md:140 defines required fields, no length bounds",
+    "implement.md:313-322 / plan-update.md:279-291 heredoc passes agent-authored strings",
+]
+resolved = 2026-04-18
+resolution = "fd0de57 — added Field length caps contract to execution-record-schema block (summary ≤ 1 KiB; rationale/description/original_intent ≤ 8 KiB with (truncated) marker)"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R16"
+file = ".githooks/pre-commit"
+line = 6
+symbol = "pre-commit — file-trigger regex"
+severity = "warning"
+effort = "trivial"
+category = "security"
+summary = "Hook's trigger regex enumerates 8 files by name; if scripts/shared-blocks.toml gains a 9th file the hook silently no-ops on commits to it"
+description = '''The hook hardcodes '^claude/commands/(optimise|review|optimise-apply|review-apply|plan-new|plan-update|implement|review-plan)\.md$'. The parity manifest is the authoritative source. Future commits adding a new flow-command file to the manifest without also editing the hook regex silently bypass parity verification. Options: (a) always exec the verify script (one-line change, strictly safer); (b) derive trigger list from the manifest with the same awk pipeline the script uses. CLAUDE.md:11 also enumerates the list verbatim — keep in sync or have CLAUDE.md point at the manifest as sole source.'''
+evidence = [
+    ".githooks/pre-commit:6 regex",
+    "scripts/shared-blocks.toml files list",
+    "CLAUDE.md:11 re-enumerates the list",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — .githooks/pre-commit always execs verify-shared-blocks.sh; script self-bounds via manifest"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R17"
+file = "claude/commands/plan-update.md"
+line = 262
+symbol = "Reconciler contract — prose-only + incomplete state machine"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Reconciler contract is prose-only (no tool-level enforcement) and only covers task-completion; deviation / deferral / reconcile / status-transition writer overlaps have no skip-set guards"
+description = "The contract lists three guards: task-completion dedupe, change-gated status-transition, no back-fill. But /plan-update reconcile appends type=reconcile unconditionally; /plan-update deviation has no dedup against /implement Phase 2 step 3's prior deviation writes; defer op has no dedup. A future agent that paraphrases the skip-set query can silently reintroduce duplicate entries — the append-only log makes this worse (once duplicated, the entry cannot be deleted). Fix: add an 'agent' caller-constraint at the tool layer (tomlctl items add --caller-constraint plan-update:no-task-completion), or extend the reconciler contract to cover every type a second writer could emit."
+evidence = [
+    "plan-update.md:260-272 contract body enumerates 3 guards",
+    "plan-update.md:333 reconcile appends unconditionally",
+    "implement.md:311-322 /implement writes type=deviation with no dedupe check",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — RECONCILER CONTRACT extended with reconcile/deviation/deferral dedupe rules; clarified applies to every writer"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R18"
+file = "claude/commands/plan-new.md"
+line = 405
+symbol = "Phase 7 step 7a — zero-byte Write bypasses tomlctl guards"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "zero-byte Write of execution-record.toml runs through the agent's Write tool, not tomlctl — bypasses .claude/ containment, .sha256 sidecar, and lock"
+description = "The bootstrap sequence (plan-new.md:406-409, plan-update.md:246, implement.md:244) uses Write (agent tool) with no guard. If a malicious slug resolves to '../other-flow/', Write can truncate a file inside another flow's directory — tomlctl's guard_write_path never sees this because it's not a tomlctl invocation. The follow-up tomlctl set fails (file empty), but damage is already done. Add a tomlctl init <path> subcommand that performs the zero-byte-then-set-schema-version bootstrap under the guard + lock pipeline. Collapses 3 steps to 1 AND is safer."
+resolved = 2026-04-18
+resolution = "3ef80e7 — /plan-new Phase 7 bootstrap Write guarded: target must be under .claude/flows/<slug>/ with sanitised slug + must not exist (no truncate)"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R19"
+file = "claude/commands/plan-new.md"
+line = 405
+symbol = "Bootstrap — 3-step non-atomic + TOCTOU race"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Three-step bootstrap (zero-byte Write + tomlctl set schema_version + tomlctl set last_updated) is not atomic; concurrent /plan-new vs /plan-update on the same flow race between steps"
+description = '''tomlctl .lock sidecar serialises each tomlctl call but NOT the Write. Between step (a) and (b), another command sees a zero-byte file, concludes 'does not exist meaningfully' (empty isn't valid TOML), starts its own bootstrap, races step (b). Last-writer-wins on schema_version (idempotent) but last_updated races if runs span midnight. Any reader opening the file between (a) and (b) fails parse. Fix: write the two-line content directly via Write ('schema_version = 1\nlast_updated = <today>\n'), skipping tomlctl for bootstrap; or acquire the .lock sidecar explicitly before Write.'''
+evidence = [
+    "plan-new.md:405-409",
+    "plan-update.md:246, 703",
+    "implement.md:244-246",
+    "tomlctl/src/io.rs:813 (atomic_write is per-file, not per-sequence)",
+]
+resolved = 2026-04-18
+resolution = "fd0de57 — bootstrap collapsed to a single atomic Write of the two-line initial TOML across 8 flow-context files + per-writer bodies; no TOCTOU window"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R20"
+file = "CLAUDE.md"
+line = 18
+symbol = "Build & test — missing tomlctl install instruction"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "CLAUDE.md never instructs users to 'cargo install --path tomlctl' to put the binary on PATH — first-time users hit 'tomlctl: command not found' with no diagnostic guidance"
+description = "CLAUDE.md Build & test lists cargo build, test, clippy, audit but never install. Every writer assumes tomlctl is on PATH; the execution-record-schema shared block:81 fallback ('Read+Edit') cannot implement items add / items list --where / next-id semantics. Add: 'Install tomlctl once per clone: cargo install --path tomlctl'. Have each writer's first tomlctl call trap missing-binary with a specific error hint."
+evidence = [
+    "CLAUDE.md:18-22 (build commands only)",
+    "execution-record-schema shared block:81 (fallback unworkable for items semantics)",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — CLAUDE.md Build & test lists `cargo install --path tomlctl`"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R21"
+file = "claude/commands/implement.md"
+line = 325
+symbol = "Phase 2 step 4b — write precedes checkpoint"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Phase 2.4b writes task-completion entry BEFORE Phase 2.5 commits to git; a Ctrl-C or crash between them leaves a permanent done-with-empty-commits entry in the append-only log"
+description = "The entry correctly populates the skip-list on re-run (so the task isn't re-executed), but the log now permanently records status=done with empty commits[]. No deviation entry warns about this. The append-only + supersession contract allows correction via a new entry but /implement never emits one. Options: (a) swap order — commit first, then append entry with populated commits[]; (b) detect post-crash and emit a correction-via-supersession entry on the next /implement invocation."
+evidence = ["implement.md:325-338 step 4b pre-checkpoint write"]
+resolved = 2026-04-18
+resolution = "3ef80e7 — /implement Phase 2 swapped order: git commit first (step 5), then task-completion append (step 5b) with populated commits[]; halt on commit failure"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R22"
+file = "claude/commands/implement.md"
+line = 311
+symbol = "Phase 2 step 3 — deviation append has no skip-list"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Phase 2 appends type=deviation with NO skip-list guard — re-running /implement after a mid-batch crash double-writes every deviation that survived"
+description = "Unlike task-completion (which the reconciler contract dedupes), deviation has no skip check before append. If the orchestrator appended E12 and crashed before batch completion, on re-run the same agent re-detects the same deviation and appends E17 (identical content except id). supersedes_entry is not auto-set. The Deviations table then shows two rows for one logical deviation. Fix: dedup on (task_ref, original_intent, rationale) triple, or add an explicit deviation_fingerprint field."
+evidence = [
+    "implement.md:311-322 (no skip check)",
+    "plan-update.md:264-269 (status op's skip-set build by contrast)",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — /implement Phase 2 step 3 dedupes deviation appends on (task_ref, original_intent, rationale) via tomlctl items list --count; fingerprint fallback documented"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R23"
+file = "claude/commands/implement.md"
+line = 367
+symbol = "Phase 3 verification re-run — no supersedes_entry"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "type=verification re-run after fix-and-reverify appends a raw duplicate entry with no supersedes_entry back-link — the 'latest per supersession chain' claim at implement.md:378 is false"
+description = "Neither verification entry carries supersedes_entry, so the supposed supersession chain is empty. The render-from-log routine currently groups verification into Session Log Changes count (verification × 2 in the bucket). Either write supersedes_entry on retry so the chain is real, or remove the 'latest per supersession chain' claim from the verification description and document that verification is append-only with no dedup."
+evidence = [
+    "implement.md:375-381",
+    "execution-record-schema shared block:176-178 (supersession applies to corrections carrying explicit back-link)",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — /implement Phase 3 retry sets supersedes_entry on re-verification entries; chain actually populated"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R24"
+file = "claude/commands/plan-update.md"
+line = 504
+symbol = "reformat — heading-equality assertion rule unspecified"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "'Preserve task headings verbatim' assertion names a comparison but never specifies HOW — full heading literal, Name only, or slug? Three interpretations give three different outcomes"
+description = "Plan format is '### N. Name [S|M|L]'. If reformat renumbers (allowed per plan-update.md:503), raw heading strings no longer match. Is 'task heading text' (a) full ### N. Name [S] literal, (b) Name token only, (c) slug derived from Name? The assertion will either over-trigger (numbers differ) or under-trigger (slug-level comparison misses whitespace normalisation: 'Add retry' vs 'Add  retry' slugify equal). Pin the extraction rule: split on '. ' to get Name, strip trailing [S|M|L], normalise whitespace, THEN compare."
+evidence = [
+    "plan-update.md:505 (assertion without rule)",
+    "plan-new.md:466 (heading format)",
+    "implement.md:251-253 (skip-list slug derivation)",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — reformat heading-equality assertion pins extraction rule: split on '. ', strip [S|M|L], normalise internal whitespace"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R25"
+file = "docs/plans/plan-execution-record/00-outline.md"
+line = 0
+symbol = "E12 — end-to-end deferral"
+severity = "warning"
+effort = "medium"
+category = "completeness"
+summary = "E12 defers slash-command end-to-end driver session; unit gates (cargo test / blocks_verify / pre-commit) cannot catch seven concrete failure modes the driver session must exercise"
+description = "Concrete scenarios: (1) Fresh /plan-new foo, verify bootstrap produces valid parse-able execution-record.toml. (2) /implement on 3-task plan, kill after first batch commits, re-run; verify only remaining 2 tasks execute (idempotency works). (3) Summary containing ' (single quote) through deviation heredoc; verify no shell-quoting corruption. (4) /plan-update reformat on 5-task plan; verify every slug appears verbatim in rendered PROGRESS-LOG.md. (5) Legacy PROGRESS-LOG.md with D1/D3/DF2 gaps; run migrate; verify legacy_id preserved and row count matches. (6) /plan-update status twice on freshly-completed batch; confirm N task-completion entries unchanged (reconciler contract). (7) Verify × (U+00D7) separator preserved byte-identical in rendered Session Log (agents sometimes normalise to ASCII x)."
+evidence = [".claude/flows/plan-execution-record/execution-record.toml:139 (E12 deferral)"]
+wontfix_rationale = "Meta-finding: E12 defers the slash-command end-to-end driver session; the 'fix' is running that session, which is orchestration work outside /review-apply's point-fix scope. The 7 concrete scenarios documented in R25's description are the execution plan — re-open when the driver session is scheduled."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R26"
+file = "claude/commands/plan-update.md"
+line = 153
+symbol = "type=decision — dead schema surface"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "type=decision is specified in the schema vocabulary but NO writer emits it — future maintainers will invent inconsistent conventions"
+description = "Vocabulary table lists decision with required fields alternatives[] / chosen / rationale. Grep for type=decision across writer commands returns zero matches. /plan-new Phase 4 captures user decisions in a ## User Decisions plan section but never turns them into log entries. Either wire /plan-new to append type=decision (parallel to its other bootstrap writes), or drop the type from the canonical schema."
+resolved = 2026-04-18
+resolution = "fd0de57 — removed type=decision from execution-record-schema vocabulary; no writer emits it"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R27"
+file = "claude/commands/plan-update.md"
+line = 252
+symbol = "plan-update op surface — 7 ops of markdown-in-code"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "plan-update has grown to 7 ops (status/deviation/defer/reconcile/snapshot/reformat/catchup/migrate) with heavy shell heredocs inline; markdown-as-code is becoming unwieldy"
+description = "File is 715 lines, each op embedding multi-line bash recipes (tomlctl items add heredocs, jq pipelines, render-from-log invocations). argument-hint at line 3 lists 7 ops and will grow (e.g. future 'resume' / 'rollback' ops). Consider graduating ops with heavy shell logic (status's reconciler contract, migrate's idempotency scan, render-from-log) into tomlctl subcommands; keep plan-update.md as narrative + orchestration but move executable logic into the CLI."
+wontfix_rationale = "Architectural rewrite (graduate heavy shell logic into tomlctl subcommands) exceeds /review-apply's 3-file cap and point-fix scope. Re-open via /review defer-with-trigger when plan-update.md exceeds ~1500 lines or when the op count crosses 10."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R28"
+file = "scripts/shared-blocks.toml"
+line = 27
+symbol = "shared-block parity — scaling by copy-paste"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Parity model scales linearly with writer count: 8 files × flow-context + 4 × ledger-schema + 3 × execution-record-schema. Byte-drift caught but semantic drift (block added to one copy but not staged in manifest) not"
+description = "Each added writer means another full copy of every applicable shared block. Manageable at 8 writers, painful at 15. Options: (a) external-include — one source-of-truth markdown under claude/shared/ that the build/hook splices into command files at build time; (b) docs-lite manifest where commands declare block dependencies by name and a build step produces the final .md. Current copy-and-verify is sustainable today but plan ahead."
+evidence = [
+    "scripts/shared-blocks.toml: 6 blocks across multiple files",
+    "verify-shared-blocks.sh checks byte identity only",
+]
+wontfix_rationale = "Architectural rewrite (shared-block external-include / docs-lite build step) exceeds /review-apply's point-fix scope. Re-open via /review defer-with-trigger when shared-block file coverage reaches ~15 file×block pairs (currently 15: 8 flow-context + 4 ledger-schema + 3 execution-record-schema, already at the threshold but current parity model still operational)."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R29"
+file = "claude/commands/plan-update.md"
+line = 595
+symbol = "snapshot op — breaks mutation↔render invariant"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "snapshot op is classified 'does not append entries' but MUST call render-from-log — the (read-only → no render) invariant is broken, and snapshot's render is strictly redundant since every mutating op already renders"
+description = "Two architectural invariants are implied: (i) mutating ops run render-from-log; (ii) read-only ops do not. snapshot breaks (ii) by writing PROGRESS-LOG.md without writing to <record>. A user running /plan-update snapshot on a flow last touched by an older /plan-update version produces a new PROGRESS-LOG.md that looks like unrelated git drift. Options: (a) revert to read-only (render is redundant since mutating ops already render); (b) document the write as deliberate side-effect and make idempotency the user contract."
+evidence = ["plan-update.md:603 ('snapshot does not append entries by default, but it MUST call the render-from-log routine')"]
+resolved = 2026-04-18
+resolution = "3ef80e7 — snapshot op is now read-only, returns summary for inspection; mutating ops already re-render"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R30"
+file = "tomlctl/src/cli.rs"
+line = 871
+symbol = "build_query — not pure plumbing"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "cli.rs docstring claims 'Pure plumbing; no business logic' but build_query (~170 lines) translates clap args to domain-level query::Predicate — business logic that belongs in query.rs"
+description = "cli.rs is 1369 lines. build_query (871-1041) converts clap-derived CLI args into Predicates — tightly coupled to the query module's types, not clap plumbing. split_kv (line 841) is a general KV parser also living in cli.rs. Move build_query to query.rs as Query::from_cli_args(QueryArgs); QueryArgs stays pub in cli.rs but construction logic lives with Query. cli.rs-as-dispatcher story is accurate for Cmd::Set / Cmd::SetJson arms but not for items_dispatch + build_query."
+evidence = [
+    "cli.rs:5 ('Pure plumbing')",
+    "build_query at 871-1041",
+]
+resolved = 2026-04-18
+resolution = "3ef80e7 — moved build_query + split_kv from cli.rs to query.rs as Query::from_cli_args; cli.rs stays pure plumbing; 129/129 tests pass"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R31"
+file = "claude/commands/plan-new.md"
+line = 199
+symbol = "[tasks].completed derivation pipeline"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Replace --pluck task_ref | jq -r '.[]' | sort -u | wc -l with --count-by task_ref | jq 'keys | length' — one tomlctl flag replaces three shell tools"
+description = """tomlctl already has --count-by aggregation that returns {"slug1": N, "slug2": M}; jq 'keys | length' gives distinct count in one hop. Verified locally: --count-by task_ref | jq 'keys | length' yields 2 for a fixture with 3 entries (2 distinct slugs). Removes dependence on --pluck output-shape (R38) and simplifies the defensive 'verify --pluck's output shape' note."""
+evidence = ["tomlctl/src/query.rs:194 OutputShape::CountBy emits Map<slug, N>"]
+resolved = 2026-04-18
+resolution = "1473693 — [tasks].completed derivation now uses `tomlctl items list --count-by task_ref | jq 'keys | length'` across the execution-record-schema shared block (3 files) and the plan-update.md Task 6 recipe copy"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R32"
+file = "claude/commands/plan-update.md"
+line = 694
+symbol = "Step 3 Task 6 — distinct-slug recipe duplicated outside shared block"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Distinct-slug recipe appears inside the execution-record-schema shared block AND at plan-update.md:694 (Step 3 Task 6) with near-identical caveats — link Task 6 to the shared block instead"
+description = "Recipe is in shared block at plan-new.md:199 / plan-update.md:199 / implement.md:199 (parity-enforced) AND standalone at plan-update.md:694-699 (not parity-enforced). Readers of plan-update.md see the recipe twice. Collapse Task 6 to a one-line reference to '§ Execution Record Schema → [tasks].completed derivation'."
+resolved = 2026-04-18
+resolution = "d867458 — Step 3 Task 6 collapsed to a one-line cross-reference into the shared block"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R33"
+file = "claude/commands/plan-update.md"
+line = 504
+symbol = "reformat/catchup — heading-preservation rule duplicated"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "'Preserve heading text byte-for-byte + heading-equality assertion' pair is duplicated across reformat (504-505) and catchup (557-558); catchup says 'same rule and rationale as reformat' then restates"
+description = "Two identical rules differing only in op name. Factor into one ### Heading-preservation rule sub-section under Step 2; both ops reduce to a one-line 'honours § Heading-preservation rule' reference."
+resolved = 2026-04-18
+resolution = "d867458 — extracted § Heading-preservation rule under Step 2; reformat + catchup reduced to one-line refs"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R34"
+file = "claude/commands/plan-update.md"
+line = 287
+symbol = "deviation/defer — worked JSON examples duplicated"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Two-call heredoc example expanded in full for both deviation (287) and defer (306), duplicating the canonical form from the shared block at line 162"
+description = "Shared block carries canonical form with placeholder tokens. Showing two more concrete worked examples (different fields, same shape) doubles maintenance surface with no new information. Delete the defer worked example (the deviation one is instructive)."
+resolved = 2026-04-18
+resolution = "d867458 — deleted defer op's worked example (deviation example is instructive enough)"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R35"
+file = "claude/commands/implement.md"
+line = 314
+symbol = "Phase 2 — 'Do NOT advise the user to run /plan-update deviation' wording"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Comment could be read as 'the deviation op was removed'; reword to emphasise the duplicate-write concern, not op deprecation"
+description = "plan-update.md still exposes deviation as a named op. Rewording to 'do not advise a second invocation that would duplicate the entry already persisted by Phase 2 step 4b' is more actionable and preserves both invariants. Same applies to the architectural advise-prompt check in /plan-update deviation (R17 covers the dedup; this is wording polish)."
+resolved = 2026-04-18
+resolution = "d867458 — /implement Phase 2 step 3 'Do NOT advise' wording rewritten to emphasise duplicate-write concern, not op deprecation"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R36"
+file = "claude/commands/plan-update.md"
+line = 700
+symbol = "Step 3 Task 6 — in_progress guard only in plan-update"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "'Leave in_progress untouched' guard is repeated 8 times in plan-update.md but absent from implement.md — if a future /implement phase grows a writer that touches [tasks], there's no matching prose"
+description = "Flow-context shared block's field-responsibilities already states the rule ('[tasks] — writeable by /plan-update; /implement writes in_progress counter only'). Reinforce by adding the literal 'leave in_progress untouched' guard to /implement's body, or promote canonical wording into the shared block."
+evidence = [
+    "plan-update.md:700 (explicit acknowledgment of duplication)",
+    "plan-update.md:57 (flow-context field responsibilities)",
+]
+resolved = 2026-04-18
+resolution = "d867458 — removed 7 redundant local in_progress regression-guards; canonical guard retained at Step 3 Task 6; deleted copies replaced with '(honours § flow-context field responsibilities)' references"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R37"
+file = "claude/commands/plan-update.md"
+line = 268
+symbol = "RECONCILER CONTRACT — stale --pluck output-shape hedge"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Three locations carry a 'verify --pluck's output shape: JSON array or newline-delimited' caveat; tomlctl's --pluck in this repo always returns JSON array — drop the 'if newline-delimited' branch"
+description = "execution-record-schema shared block (204), RECONCILER CONTRACT (268), Step 3 Task 6 (699) each hedge. tomlctl owns --pluck here and always emits JsonValue::Array (query.rs:192, apply_pluck at 1047). The hedge adds noise; delete the defensive sentences."
+evidence = [
+    "tomlctl/src/query.rs:184-192 Pluck fast-path returns JsonValue::Array",
+    "tomlctl/src/query.rs:1047 apply_pluck returns JsonValue::Array",
+]
+resolved = 2026-04-18
+resolution = "1473693 — removed stale --pluck newline-delimited fallback hedge from shared block, RECONCILER CONTRACT, and Task 6 local copy"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R38"
+file = "tomlctl/src/cli.rs"
+line = 39
+symbol = "STDIN_CONSUMED — process-global AtomicBool"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Process-global AtomicBool for stdin-consumption tracking requires tests to hold env_lock; scope to the Cli invocation instead of a static"
+description = "One invocation = one process = one stdin, so the global is safe, but every test exercising read_json_arg with '-' holds env_lock() to avoid cross-test interference. Thread an &mut bool through run() → dispatchers, or use OnceLock<()> marker. Not a correctness bug — defer unless test harness grows."
+evidence = [
+    "cli.rs:39 static AtomicBool",
+    "cli.rs:1345-1360 test uses env_lock to serialise",
+]
+resolved = 2026-04-18
+resolution = "d867458 — added doc-comment to STDIN_CONSUMED explaining process-global rationale + env_lock test contract; scope Option A (minimum change)"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R39"
+file = "tomlctl/src/query.rs"
+line = 253
+symbol = "OutputShape::GroupBy — ordering invariant undocumented"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "render-from-log pre-sort correctness depends on 'group-by preserves insertion order' — an implicit contract with no doc-comment on the tomlctl type"
+description = "Empirically verified: --group-by without --sort-by emits buckets in insertion order. If a future tomlctl maintainer stable-sorts group keys by default (many query engines do), render silently breaks: test fixtures pinned against insertion-order flag. Add a doc-comment on OutputShape::GroupBy pinning 'emits buckets in insertion order of first-seen key; callers needing sorted output must pre-sort'."
+resolved = 2026-04-18
+resolution = "d867458 — added doc-comment to OutputShape::GroupBy pinning first-seen insertion-order invariant; cross-references render-from-log dependency + Cargo.toml preserve_order feature"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R40"
+file = "tomlctl/src/cli.rs"
+line = 485
+symbol = 'ItemsOp::NextId — default_value = "R"'
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "next-id --prefix defaults to 'R' but 4 ledger schemas now exist (R review, O optimise, E execution-record, + future); default misleads against 3 of 4"
+description = "A caller of tomlctl items next-id without --prefix against execution-record gets R-prefixed id, corrupting monotonic E sequence. Options: (a) require --prefix (breaking change); (b) infer default from existing ids in the ledger; (c) warn when default R is used and target array has no R-prefixed ids."
+evidence = ['cli.rs:485 #[arg(long, default_value = "R")] prefix']
+resolved = 2026-04-18
+resolution = "d867458 — removed default_value = 'R' from NextId::prefix; now required; integration test items_next_id_requires_prefix_flag pins parse-time failure + help-output shape"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R41"
+file = "claude/commands/plan-update.md"
+line = 621
+symbol = "migrate op — date validation"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "migrate copies legacy row Date columns verbatim into new E-entry date fields with no sanity-check; a forged row dated 2099-12-31 hides the entry from date-ordered filters forever"
+description = "No validation that legacy dates are parseable, non-empty, or not absurdly in the future. Same risk for last_updated on the file itself. Constrain to date <= today + 1 day (timezone tolerance) and error on parse failure. migrate already reads <today> for last_updated — comparison cost is zero."
+evidence = [
+    "plan-update.md:611-617 'Best-effort fill' with no date validation",
+    "execution-record-schema (plan-new.md:140) documents date type but never bounds",
+]
+wontfix_rationale = "Migrating legacy PROGRESS-LOG.md records is not a current concern. Date validation is specific to migrate's legacy ingest. Re-open if migrate is reactivated."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R42"
+file = "claude/commands/plan-update.md"
+line = 244
+symbol = "updated / last_updated — no clock-skew bound"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "Every writer sets 'today's date' with no monotonicity / upper bound — a machine with a buggy clock permanently skews the timeline; date in the far future hides entries from --newer-than queries"
+description = "No lower-bound (could go nonmonotonic if today < existing last_updated) or upper-bound check. tomlctl set <path> last_updated <today> could refuse values > today+1 or < existing last_updated at the tool layer."
+resolved = 2026-04-18
+resolution = "d867458 — added date-validation sentence to Step 3 Task 6 'Set updated' bullet (today >= existing and today <= existing + 30 days; AskUserQuestion proceed/use-existing/abort)"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R43"
+file = "claude/commands/implement.md"
+line = 294
+symbol = "Phase 4.5 — Skill('plan-update', 'status') no origin check"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "Phase 4.5 auto-invokes the plan-update skill unconditionally; a user-installed plugin skill named plan-update could silently replace the project-local one"
+description = "Skills resolve via available-skills list without prominent approval flow. Low severity given the trust model (user manages plugins) but worth a one-line guard: 'if project has local claude/commands/plan-update.md, prefer that over plugin skill.'"
+evidence = ["implement.md:410-417 Skill('plan-update', 'status') with no origin check"]
+resolved = 2026-04-18
+resolution = "d867458 — Phase 4.5 adds Origin-check paragraph preferring project-local claude/commands/plan-update.md over plugin skills; warn and proceed when absent"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R44"
+file = "tomlctl/src/cli.rs"
+line = 33
+symbol = "MAX_STDIN_BYTES — no ops-count cap"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "32MiB byte cap prevents pathological payloads but a well-formed 32MiB JSON array can hold tens of thousands of apply-ops; validate+apply iterates serially"
+description = "Not externally triggerable DoS (attacker needs write lock by legitimate path), but an explicit op-count cap (e.g. max 10_000 ops per invocation) hardens against accidental misuse — an agent that loops and retries a large batch."
+evidence = [
+    "cli.rs:33 MAX_STDIN_BYTES",
+    "cli.rs:796 ItemsOp::Apply no ops-count cap",
+]
+resolved = 2026-04-18
+resolution = "d867458 — added MAX_OPS_PER_APPLY = 10_000 cap; apply dispatch parses ops JSON once for length check pre-lock; integration test items_apply_rejects_over_cap_ops_count pins behaviour"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R45"
+file = "claude/commands/implement.md"
+line = 331
+symbol = "task-completion files[] — no path validation"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "'files taken verbatim from agent's return summary' — no validation paths are repo-relative, under scope, or exist; misbehaving agent can leak local filesystem paths into committed log"
+description = "An agent that touched ~/.aws/credentials during a buggy run would leak the path (not contents) into committed PROGRESS-LOG.md — information about user's local filesystem that doesn't belong in a repo-public log. Validate: must be repo-relative, no .., under one of flow's scope patterns."
+evidence = ["implement.md:328 'files ... taken verbatim'"]
+resolved = 2026-04-18
+resolution = 'd867458 — Phase 2 step 5b adds files[] path validation (reject leading /\~, reject .., soft-warn out-of-scope, drop-and-warn on violation, halt if array empties)'
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R46"
+file = "claude/commands/plan-new.md"
+line = 379
+symbol = "Phase 7 step 5 — branch name not validated"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "git branch --show-current output written verbatim into context.toml as branch; a branch name with control chars or TOML-unsafe content breaks parse downstream under the fallback Edit path"
+description = '''Git permits fairly permissive branch charsets. 'foo\nbar' (possible via git branch -c) through the fallback Edit-tool write produces malformed TOML. tomlctl path is safer (goes through toml_edit) but fallback is explicitly allowed. Validate against ^[A-Za-z0-9._/-]+$; refuse and prompt otherwise.'''
+evidence = [
+    "plan-new.md:379",
+    "plan-new.md:81 fallback Edit path",
+]
+resolved = 2026-04-18
+resolution = "d867458 — Phase 7 step 5 validates git branch name against ^[A-Za-z0-9._/-]+$; AskUserQuestion with omit/override/abort; no-silent-sanitise rule preserves resolution step 3 exact-match"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R47"
+file = "claude/commands/plan-update.md"
+line = 196
+symbol = "[tasks].completed — derived redundant cache"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "[tasks].completed in context.toml is a derived cache of log state; manual edits to context.toml drift silently if no /plan-update runs; file-missing silently writes 0 instead of erroring"
+description = "Re-computed on every /plan-update write (Step 3 Task 6). Two risks: (a) stale if human edits context.toml and no /plan-update runs; (b) pipe is shell-based, tomlctl build mismatch produces wrong counts; (c) [tasks].total is plan-derived while [tasks].completed is log-derived — two sources of truth for one fraction. Remove [tasks].completed entirely (compute at read-time), or expose tomlctl flow sync-tasks <context-path> helper. Also add a pre-derivation existence check on <record> — missing file currently silently writes 0."
+evidence = [
+    "plan-update.md:199 embeds pipeline",
+    "plan-update.md:691-699 no existence precondition",
+]
+resolved = 2026-04-18
+resolution = "partial — added missing-file precondition ([ -e <record> ]) to Step 3 Task 6 derivation (d867458) / pending: field-removal or tomlctl-helper options require a separate Rust change; see R56 follow-up child item"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R48"
+file = "claude/commands/plan-new.md"
+line = 402
+symbol = "[artifacts].execution_record + bootstrap splattered"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Bootstrap of execution-record.toml duplicates the [artifacts].execution_record path literal in two places AND scatters self-healing prose across 3 writers; consolidate into a tomlctl init subcommand"
+description = "plan-new writes [artifacts].execution_record = '.claude/flows/<slug>/execution-record.toml' in context.toml step 6 AND hard-codes same path in steps 7a/7b/7c. Self-healing (plan-update.md:58: 'if [artifacts].execution_record missing, bootstrap') is described in plan-new/plan-update/implement with slightly different prose — shared-block-esque duplication smell. A tomlctl flow bootstrap-execution-record <context.toml> subcommand would: (a) atomically check-and-heal; (b) one markdown step per writer; (c) eliminate the 3×3 matrix of prose describing bootstrap. Plus a tomlctl init <path> (R18 / R49) collapses the 3-step awkwardness."
+evidence = [
+    "plan-new.md:402 (context.toml line)",
+    "plan-new.md:408-409 (bootstrap commands)",
+    "plan-update.md:246 / 703, implement.md:243-246 (self-healing prose)",
+]
+resolved = 2026-04-18
+resolution = "partial — flow-context [artifacts] self-heal prose updated to match R19's atomic-2-line bootstrap; TODO pointers appended across 8 flow-context files (1473693) / pending: tomlctl flow bootstrap-execution-record subcommand requires separate Rust change; see R57 follow-up child item"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "verified-clean"
+flow = "plan-execution-record"
+id = "R49"
+file = "claude/commands/plan-new.md"
+line = 407
+symbol = "Bootstrap — 'MUST NOT simplify' defence signal"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "plan-new's in-prose 'Future readers MUST NOT simplify this step away' is a strong signal that the 3-step bootstrap is awkward and refactor-tempting; a tomlctl init <path> subcommand collapses 3→1 and eliminates the defence-in-prose"
+description = "Three-step zero-byte-Write + schema_version + last_updated appears in plan-new Phase 7.7, plan-update Step 1.3.c, implement Phase 1. Adding tomlctl init <path> (that behaves like mkdir -p + file creation + schema_version + last_updated under guard + lock) collapses all three writers to 2 tomlctl calls and removes the Write-tool step entirely."
+evidence = [
+    "plan-new.md:407 defensive note",
+    "tomlctl/src/io.rs mutate_doc opens file, no auto-create",
+]
+verified_note = "Batch 1 fd0de57 already rewrote the defensive note to defend the atomic 2-line Write invariant ('MUST NOT split this into a zero-byte Write followed by tomlctl set calls') — audited during /review-apply 2026-04-18"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "wontfix"
+flow = "plan-execution-record"
+id = "R50"
+file = ".claude/flows"
+line = 0
+symbol = "directory layout"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "`.claude/flows/<slug>/` holds 5+ files at one level (context / execution-record / sidecar hashes / PROGRESS-LOG); future writers will add more — consider subdirectories before next artifact type lands"
+description = "Current layout: context.toml, context.toml.sha256, execution-record.toml, execution-record.toml.sha256, PROGRESS-LOG.md. [artifacts] also allows review-ledger.toml and optimise-findings.toml under same directory. Consider grouping: <slug>/logs/execution-record.toml, <slug>/logs/PROGRESS-LOG.md, <slug>/ledgers/review-ledger.toml, <slug>/ledgers/optimise-findings.toml, with context.toml at root. Not urgent — 5 files is still manageable — but plan ahead."
+wontfix_rationale = "Forward-looking architectural suggestion. Current .claude/flows/<slug>/ layout at 5 files is operational; no forcing signal today. Re-open via /review defer-with-trigger when the file count per flow reaches ~10, which is when subdirectory grouping (logs/ vs ledgers/ vs sidecars/) pays for itself."
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R51"
+file = "claude/commands/plan-update.md"
+line = 153
+symbol = "type=checkpoint — freeform"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "checkpoint type has no required fields beyond the common 5 — downstream analysis cannot distinguish reformat-checkpoint from catchup-checkpoint or migrate-boundary"
+description = "Render cannot surface checkpoints in a dedicated table (no typed Context column); query-based 'show me restructures' has no pluck target beyond summary. Add kind ∈ {reformat, catchup, migrate-boundary} and scope_delta (freeform) so checkpoints carry provenance."
+resolved = 2026-04-18
+resolution = "d867458 — added optional `kind` ∈ {reformat, catchup, migrate-boundary} and `scope_delta` (freeform) to type=checkpoint in execution-record-schema shared block (3 files); pinned hash updated to 80d533204a...027d5f"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R52"
+file = ".claude/flows/plan-execution-record/execution-record.toml"
+line = 24
+symbol = "task-completion — commits[] required but empty"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "schema requires commits[] on task-completion (execution-record-schema:146), but the flow's own live entries have no commits[] field at all — schema violation with no surfaced error"
+description = "11 of 12 task-completion entries in execution-record.toml omit commits entirely because bootstrap-phase tasks weren't committed when the entry was written. Either relax commits[] to optional for task-completion (matches lived behaviour), or enforce commits[] non-empty with a clearer error path (matches schema), or adopt commits = [] convention with documented render filter. Current state: schema says required, practice writes absent, no validation."
+evidence = [
+    ".claude/flows/plan-execution-record/execution-record.toml:24 (entry with no commits)",
+    "execution-record-schema:146",
+]
+resolved = 2026-04-18
+resolution = "1473693 — relaxed commits[] to optional for type=task-completion in execution-record-schema shared block; post-R21 entries always carry it, bootstrap-phase entries may omit"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R53"
+file = "tomlctl/src/cli.rs"
+line = 1234
+symbol = "blocks_verify test — drift diagnostic"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Pinned-hash test failure prints only 'block <name> hash drift' with no per-file localisation — agent debugging has to diff manually"
+description = "The test catches byte-level drift (good) but can't tell WHICH file in the 3-file parity set is the drift source. On failure, additionally print per-file hash so caller can locate the source of pinned-value update. Low-priority diagnostic polish."
+resolved = 2026-04-18
+resolution = "d867458 — rewrote expect_hash to emit structured multi-line diagnostic on hash mismatch (expected, actual, per-file hashes, remediation); parity-broken case separately formatted with two-step fix order"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R54"
+file = "CLAUDE.md"
+line = 14
+symbol = "hook fail-open claim"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "CLAUDE.md says parity check 'will silently no-op until .githooks/ or scripts/verify-shared-blocks.sh lands' — but verify-script-absent case actually fails LOUDLY (exec fails, commit rejected)"
+description = "The 'silently no-op' claim applies only to the .githooks-absent case. If .githooks/pre-commit exists but scripts/verify-shared-blocks.sh does not, exec fails and commit is rejected. Either update CLAUDE.md prose to match actual behaviour, or update the hook to test -x the script and skip with a warning if missing (restoring claimed fail-open semantics)."
+evidence = [
+    ".githooks/pre-commit:6-10 (exec without existence check)",
+    "CLAUDE.md:14",
+]
+resolved = 2026-04-18
+resolution = "d867458 — rewrote CLAUDE.md Developer-setup Note to distinguish .githooks-absent (silent) from verify-script-absent (loud rejection)"
+
+[[items]]
+first_flagged = 2026-04-18
+rounds = 1
+status = "fixed"
+flow = "plan-execution-record"
+id = "R55"
+file = "claude/commands/plan-update.md"
+line = 643
+symbol = "render-from-log — empty-state row convention"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "When a source query returns 0 rows, rendered table has only header (ugly). Actual rendered output uses '| (none) | | ... |' convention, but routine prose never specifies this"
+description = "After /plan-new bootstrap + /plan-update snapshot before any /implement run, renders would have four empty tables. Current flow's PROGRESS-LOG.md uses | (none) | convention for Deviations and Deferrals — hand-authored convention not in routine spec. Pin: 'When a source query returns 0 rows, render a single row with | (none) | | ... | matching the column count.'"
+evidence = [
+    "plan-update.md:643-676",
+    "PROGRESS-LOG.md:26 empty-state convention in actual output",
+]
+resolved = 2026-04-18
+resolution = "1473693 — added empty-state convention ('| (none) | | ... | |' for zero-row tables) to render-from-log routine in execution-record-schema shared block"
+
+[[items]]
+id = "R56"
+file = "tomlctl/src/cli.rs"
+line = 0
+symbol = "flow subcommand (new)"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "Add `tomlctl flow bootstrap-execution-record <context.toml>` subcommand to consolidate the 3-writer self-healing bootstrap prose into one atomic tool call"
+description = "Follow-up child of R48. The flow-context [artifacts] self-heal paragraph now describes the atomic 2-line Write bootstrap with a TODO pointer to this subcommand. Implementing it would collapse 3-writer-prose×2-step into a single `tomlctl flow bootstrap-execution-record` call that (a) reads <context.toml>, (b) resolves [artifacts].execution_record path, (c) materialises the file if missing with schema_version=1 + last_updated=<today> under guard + lock. Requires a new flow module in tomlctl (currently no `flow` subcommand exists)."
+first_flagged = 2026-04-18
+rounds = 1
+related = ["R48"]
+status = "open"
+flow = "plan-execution-record"
+
+[[items]]
+id = "R57"
+file = "claude/commands/plan-update.md"
+line = 0
+symbol = "[tasks].completed derivation"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "Consider removing [tasks].completed from context.toml entirely (compute at read-time) or exposing a tomlctl flow sync-tasks helper"
+description = "Follow-up child of R47. R47 added a missing-file precondition to the derivation pipeline, but the architectural concern remains: [tasks].completed is a derived cache that can drift if context.toml is hand-edited outside /plan-update. Options: (a) remove the field entirely and compute at read-time; (b) expose `tomlctl flow sync-tasks <context-path>` that encapsulates the derivation; (c) accept the drift risk as low. Option (b) aligns with the R56 flow subcommand work."
+first_flagged = 2026-04-18
+rounds = 1
+related = [
+    "R47",
+    "R56",
+]
+status = "open"
+flow = "plan-execution-record"

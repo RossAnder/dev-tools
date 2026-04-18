@@ -1,0 +1,30 @@
+slug = "plan-execution-record"
+plan_path = "docs/plans/plan-execution-record/00-outline.md"
+status = "complete"
+created = 2026-04-18
+updated = 2026-04-18
+branch = "main"
+scope = [
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/implement.md",
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/review-apply.md",
+    "claude/commands/optimise-apply.md",
+    "claude/commands/review-plan.md",
+    "scripts/shared-blocks.toml",
+    ".githooks/pre-commit",
+    "tomlctl/src/cli.rs",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 12
+completed = 12
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/plan-execution-record/review-ledger.toml"
+optimise_findings = ".claude/flows/plan-execution-record/optimise-findings.toml"
+execution_record = ".claude/flows/plan-execution-record/execution-record.toml"

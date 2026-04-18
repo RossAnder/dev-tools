@@ -1,0 +1,149 @@
+schema_version = 1
+last_updated = 2026-04-18
+
+[[items]]
+id = "E1"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "widen-flow-context-parity-extend-artifacts"
+summary = "Widened flow-context shared block from 4 to 8 files; added execution_record to [artifacts]; tightened absent-block contract with bootstrap-on-missing clause"
+files = [
+    "claude/commands/optimise.md",
+    "claude/commands/review.md",
+    "claude/commands/optimise-apply.md",
+    "claude/commands/review-apply.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/implement.md",
+    "claude/commands/review-plan.md",
+    "scripts/shared-blocks.toml",
+    ".githooks/pre-commit",
+    "tomlctl/src/cli.rs",
+]
+status = "done"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "author-execution-record-schema-shared-block"
+summary = "Authored ## Execution Record Schema shared block (110 lines) across plan-new/plan-update/implement; registered in manifest; updated CLAUDE.md; added third blocks_verify call to test"
+files = [
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/implement.md",
+    "scripts/shared-blocks.toml",
+    "CLAUDE.md",
+    "tomlctl/src/cli.rs",
+]
+status = "done"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "plan-new-phase-5-bootstrap-execution-record"
+summary = "Added execution-record.toml bootstrap step to /plan-new Phase 5: zero-byte Write + tomlctl set schema_version + last_updated"
+files = ["claude/commands/plan-new.md"]
+status = "done"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "implement-read-prior-log-write-entries"
+summary = "Wired /implement to resolve <record> + read idempotency skip-list in Phase 1; append task-completion + deviation entries in Phase 2; append verification entries + render PROGRESS-LOG in Phase 3"
+files = ["claude/commands/implement.md"]
+status = "done"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "rewrite-deviation-defer-ops-to-e-entries"
+summary = "Rewrote /plan-update deviation + defer ops to append type=deviation/type=deferral E-entries via heredoc-stdin; dropped D/DF numbering; supersedes_entry replaces bidirectional D-link"
+files = ["claude/commands/plan-update.md"]
+status = "done"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "rewrite-reconcile-status-with-reconciler-contract"
+summary = "Rewrote /plan-update reconcile to append type=reconcile entries; rewrote status with reconciler contract guarding against /implement Phase 4.5 double-writes; status-transition only on actual change"
+files = ["claude/commands/plan-update.md"]
+status = "done"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "add-render-from-log-routine"
+summary = "Added named render-from-log sub-routine: literal generated marker + four tables (Completed/Deviations/Deferrals/Session Log) with explicit | Date | Changes | Commits | schema, sort-before-group, exact Changes format with required examples"
+files = ["claude/commands/plan-update.md"]
+status = "done"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "add-migrate-op-for-legacy-back-fill"
+summary = "Added /plan-update migrate op: reads legacy PROGRESS-LOG.md, back-fills E-entries with legacy_id preserving D/DF numbers; idempotent via legacy_id scan + task_ref dedupe"
+files = ["claude/commands/plan-update.md"]
+status = "done"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "rewrite-reformat-catchup-scrub-d-numbering"
+summary = "Rewrote /plan-update reformat + catchup to use render-from-log routine + append type=checkpoint; replaced 'Preserve existing deviation numbering' with E-monotonic note; added 'Preserve task headings verbatim' rule + heading-equality assertion"
+files = ["claude/commands/plan-update.md"]
+status = "done"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "derive-tasks-completed-from-log"
+summary = "Derived [tasks].completed in every context.toml-write op via tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref | jq -r '.[]' | sort -u | wc -l (distinct-slug count); documented in_progress untouched rule for /plan-update"
+files = ["claude/commands/plan-update.md"]
+status = "done"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "audit-d-df-references-plan-update"
+summary = "Audited D/DF references via grep anchors. Only remaining D<n> token is legacy_id = D3 inside the shared-block schema example (allowed). Updated D1-D44 parenthetical and Deviations/Deferrals example tables to E-numbered. review-plan.md confirmed clean"
+files = ["claude/commands/plan-update.md"]
+status = "done"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "end-to-end-verification"
+summary = "Build/test/lint/parity/path-discipline gates pass: cargo build OK; 88+40 tests pass; cargo clippy clean; verify-shared-blocks.sh OK; pre-commit hook rejects drift in widened files; no stray execution-record.toml at repo root. Slash-command end-to-end (steps 1-9) deferred to follow-up driver session"
+status = "done"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "cargo build + test + clippy + shared-blocks verify all pass"
+command = "cargo build --manifest-path tomlctl/Cargo.toml && cargo test --manifest-path tomlctl/Cargo.toml && cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets && scripts/verify-shared-blocks.sh"
+outcome = "pass"
