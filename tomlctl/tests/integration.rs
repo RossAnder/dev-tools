@@ -1996,3 +1996,284 @@ fn items_add_dedupe_by_empty_value_is_fail_loud() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Task 6 (plan `docs/plans/tomlctl-capability-gaps.md`): `dedup_id`
+// auto-populate on every write funnel + `find-duplicates --across <other>`
+// for cross-ledger dedup. T6a is helper-level (covered by dedup.rs unit
+// tests); T6b and T6c need end-to-end CLI coverage — that's this block.
+//
+// Acceptance (a)-(h) from the plan are mapped 1:1 onto the tests below so
+// the plan audit trail stays readable.
+// ---------------------------------------------------------------------------
+
+/// T6b acceptance (a): a freshly-added item carries `dedup_id` on disk,
+/// and the digest matches `tier_b_fingerprint` of the fingerprinted fields.
+#[test]
+fn items_add_auto_populates_dedup_id_on_disk() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","file":"src/a.rs","summary":"x","severity":"warning","category":"quality"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+    let contents = fs::read_to_string(&ledger).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
+    let dedup_id = items[0]
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .expect("dedup_id auto-populated");
+    assert_eq!(dedup_id.len(), 16, "must be 16 hex chars; got {dedup_id:?}");
+    assert!(
+        dedup_id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "lowercase hex only; got {dedup_id:?}"
+    );
+}
+
+/// T6b acceptance (b): `items update` with a fingerprinted-field patch
+/// (`summary`) recomputes `dedup_id`. The new digest must differ from
+/// the original (summary changed → fingerprint input changed).
+#[test]
+fn items_update_summary_recomputes_dedup_id() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items").arg("add").arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","file":"src/a.rs","summary":"old","severity":"warning","category":"quality"}"#)
+        .write_stdin("").assert().success();
+    let before: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let dedup_before = before.get("items").and_then(|v| v.as_array()).unwrap()[0]
+        .as_table().unwrap()
+        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items").arg("update").arg(&ledger).arg("R1")
+        .arg("--json").arg(r#"{"summary":"new"}"#)
+        .write_stdin("").assert().success();
+    let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let dedup_after = after.get("items").and_then(|v| v.as_array()).unwrap()[0]
+        .as_table().unwrap()
+        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+    assert_ne!(
+        dedup_before, dedup_after,
+        "summary change must recompute dedup_id"
+    );
+}
+
+/// T6b acceptance (c): `items update` with a non-fingerprint patch
+/// (`status`) preserves `dedup_id` — status is NOT in FINGERPRINTED_FIELDS.
+#[test]
+fn items_update_non_fingerprint_field_preserves_dedup_id() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items").arg("add").arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","file":"src/a.rs","summary":"x","severity":"warning","category":"quality"}"#)
+        .write_stdin("").assert().success();
+    let before: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let dedup_before = before.get("items").and_then(|v| v.as_array()).unwrap()[0]
+        .as_table().unwrap()
+        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items").arg("update").arg(&ledger).arg("R1")
+        .arg("--json").arg(r#"{"status":"fixed"}"#)
+        .write_stdin("").assert().success();
+    let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let dedup_after = after.get("items").and_then(|v| v.as_array()).unwrap()[0]
+        .as_table().unwrap()
+        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+    assert_eq!(
+        dedup_before, dedup_after,
+        "non-fingerprint patch must preserve dedup_id"
+    );
+}
+
+/// T6b acceptance (d): explicit `{"dedup_id":"explicit"}` in an update
+/// patch is preserved regardless of other patch fields.
+#[test]
+fn items_update_explicit_dedup_id_preserved() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items").arg("add").arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","file":"src/a.rs","summary":"x","severity":"warning","category":"quality"}"#)
+        .write_stdin("").assert().success();
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items").arg("update").arg(&ledger).arg("R1")
+        .arg("--json").arg(r#"{"dedup_id":"explicit"}"#)
+        .write_stdin("").assert().success();
+    let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let got = after.get("items").and_then(|v| v.as_array()).unwrap()[0]
+        .as_table().unwrap()
+        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+    assert_eq!(got, "explicit", "explicit dedup_id must win");
+}
+
+/// T6b acceptance (e): explicit `dedup_id` AND a fingerprint-field patch
+/// together — explicit still wins (the recompute must NOT overwrite it).
+#[test]
+fn items_update_explicit_dedup_id_wins_over_fingerprint_patch() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items").arg("add").arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","file":"src/a.rs","summary":"old","severity":"warning","category":"quality"}"#)
+        .write_stdin("").assert().success();
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items").arg("update").arg(&ledger).arg("R1")
+        .arg("--json").arg(r#"{"summary":"new","dedup_id":"explicit"}"#)
+        .write_stdin("").assert().success();
+    let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let got = after.get("items").and_then(|v| v.as_array()).unwrap()[0]
+        .as_table().unwrap()
+        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+    assert_eq!(
+        got, "explicit",
+        "explicit dedup_id must beat recompute even when summary also changes"
+    );
+}
+
+/// T6b acceptance (f): `TOMLCTL_NO_DEDUP_ID=1` suppresses auto-populate.
+/// The resulting item must have NO `dedup_id` field on disk.
+#[test]
+fn items_add_with_kill_switch_produces_no_dedup_id() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    Command::cargo_bin("tomlctl").unwrap()
+        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env("TOMLCTL_NO_DEDUP_ID", "1")
+        .arg("items").arg("add").arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","file":"src/a.rs","summary":"x","severity":"warning","category":"quality"}"#)
+        .write_stdin("").assert().success();
+    let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let item = &after.get("items").and_then(|v| v.as_array()).unwrap()[0];
+    let tbl = item.as_table().unwrap();
+    assert!(
+        tbl.get("dedup_id").is_none(),
+        "kill switch must suppress dedup_id; got: {tbl:?}"
+    );
+}
+
+/// T6c acceptance (g): `find-duplicates --across` with tier B returns
+/// cross-ledger matches, each tagged with `source_file`.
+#[test]
+fn items_find_duplicates_across_tier_b_returns_cross_ledger_matches() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let primary = claude.join("review.toml");
+    let other = claude.join("optimise.toml");
+    // Identical fingerprinted fields across the two ledgers — tier B
+    // must group them together.
+    fs::write(
+        &primary,
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "dup"
+severity = "warning"
+category = "quality"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &other,
+        r#"schema_version = 1
+
+[[items]]
+id = "O1"
+file = "src/a.rs"
+summary = "dup"
+severity = "warning"
+category = "quality"
+"#,
+    )
+    .unwrap();
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("find-duplicates")
+        .arg(&primary)
+        .arg("--across")
+        .arg(&other)
+        .arg("--tier")
+        .arg("b")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let groups = parsed.as_array().unwrap();
+    assert_eq!(groups.len(), 1, "expected one cross-ledger group; got: {stdout}");
+    let items = groups[0].get("items").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(items.len(), 2);
+    let source_files: Vec<&str> = items
+        .iter()
+        .map(|i| i.get("source_file").and_then(|v| v.as_str()).unwrap())
+        .collect();
+    assert!(source_files.contains(&"review.toml"));
+    assert!(source_files.contains(&"optimise.toml"));
+}
+
+/// T6c acceptance (h): `find-duplicates --across ... --tier C` errors
+/// with the exact documented message. Tier C's line-window grouping is
+/// meaningless across two distinct source files.
+#[test]
+fn items_find_duplicates_across_tier_c_errors_with_exact_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let primary = claude.join("x.toml");
+    let other = claude.join("y.toml");
+    fs::write(&primary, "schema_version = 1\n").unwrap();
+    fs::write(&other, "schema_version = 1\n").unwrap();
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("find-duplicates")
+        .arg(&primary)
+        .arg("--across")
+        .arg(&other)
+        .arg("--tier")
+        .arg("c")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("tier C is file-scoped; use --tier A or --tier B with --across"),
+        "expected exact tier-C error; got stderr:\n{stderr}"
+    );
+}

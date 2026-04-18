@@ -13,8 +13,150 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use toml::Value as TomlValue;
 
-use crate::convert::{json_type_name, maybe_date_coerce, toml_to_json, walk_json_path};
+use crate::convert::{json_type_name, maybe_date_coerce, str_field, toml_to_json, walk_json_path};
+use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint_json};
 use crate::io::{item_id, items_array, items_array_mut};
+
+/// T6b: env-var kill switch for every `dedup_id` auto-populate path. Any
+/// value (even empty) disables the hook; the user opts out by simply
+/// exporting the variable. Documented in README as the rollback lever.
+const DEDUP_ID_KILL_SWITCH: &str = "TOMLCTL_NO_DEDUP_ID";
+
+/// T6b: return `true` iff auto-populate of `dedup_id` should be skipped on
+/// this invocation. Checked at every write-funnel hook site.
+fn dedup_id_disabled() -> bool {
+    std::env::var(DEDUP_ID_KILL_SWITCH).is_ok()
+}
+
+/// T6b: auto-populate `dedup_id` on a single-item add. If the caller already
+/// set `dedup_id` on the payload (any non-null JSON value), preserve the
+/// explicit value. Otherwise compute `tier_b_fingerprint_json` from the
+/// payload's fingerprinted fields and insert it.
+///
+/// Honours `TOMLCTL_NO_DEDUP_ID`: when set, returns without touching `obj`.
+///
+/// **Note on PROGRESS-LOG rendering**: `dedup_id` is a string field on the
+/// on-disk TOML row. The render templates in `claude/commands/plan-update.md`
+/// (lines 211-223 at time of writing) hard-code which columns make it into
+/// rendered output, so `dedup_id` never leaks into user-facing progress log
+/// lines despite being present on every new row.
+///
+/// **Ordering vs T5 `--dedupe-by`**: callers go through
+/// `items_add_value_with_dedupe_to`, which runs the pre-scan BEFORE
+/// delegating to `items_add_value_to` (the single write funnel that hooks
+/// into this helper). On a dedupe-match there is no write and no
+/// fingerprint computation; on a miss the auto-populate runs as normal.
+/// The caller never sees an auto-populated `dedup_id` influence its own
+/// pre-scan — preserving `--dedupe-by`'s "raw-equality-on-named-fields"
+/// contract from T5.
+fn apply_dedup_id_on_add(obj: &mut serde_json::Map<String, JsonValue>) {
+    if dedup_id_disabled() {
+        return;
+    }
+    // "Explicit" = caller put a `dedup_id` key in the payload. A null value
+    // is treated as "unset this field" per the rest of the codebase (see
+    // `is_empty_json`): we preserve the existing behaviour (skip) by
+    // leaving the caller's null in place — it gets stripped on merge.
+    if obj.contains_key("dedup_id") {
+        return;
+    }
+    let fp = tier_b_fingerprint_json(obj);
+    obj.insert("dedup_id".to_string(), JsonValue::String(fp));
+}
+
+/// T6b: auto-populate `dedup_id` on a single-item update. Four branches
+/// (documented in the README Contracts section):
+///   1. Patch explicitly sets `dedup_id` (non-empty string): preserve — no recompute.
+///   2. Patch touches a fingerprinted field AND does not set `dedup_id`:
+///      recompute from the merged (patch-over-existing) post-patch state.
+///   3. Patch does NOT touch a fingerprinted field AND existing item lacks
+///      `dedup_id`: leave absent — Task 11's `backfill-dedup-id` is the
+///      explicit upgrade path for legacy ledgers.
+///   4. Patch does NOT touch a fingerprinted field AND existing item HAS
+///      `dedup_id`: preserve existing — the patch can't have changed any
+///      input to the fingerprint, so the existing digest is still correct.
+///
+/// Honours `TOMLCTL_NO_DEDUP_ID`.
+///
+/// `existing_tbl` is the item as it looks BEFORE the merge runs; the patch
+/// is the post-merge delta. Branch 2 builds an in-memory view of "existing
+/// plus patch" restricted to the five fingerprinted fields, hashes that,
+/// and stashes the result back into the patch so the downstream merge
+/// loop writes it as a normal key-value.
+///
+/// **`{"dedup_id": null}` case**: a JSON null on `dedup_id` is NOT "remove
+/// the existing digest" — it's "patch didn't meaningfully touch this
+/// field". `is_empty_json` (O51) already filters null/empty values out of
+/// the merge loop, so the existing value survives untouched. This helper
+/// treats a null or empty-string `dedup_id` as "absent in patch" for
+/// branch-classification purposes, matching the downstream merge behaviour.
+fn apply_dedup_id_on_update(
+    existing_tbl: &toml::Table,
+    patch_obj: &mut serde_json::Map<String, JsonValue>,
+) {
+    if dedup_id_disabled() {
+        return;
+    }
+    // Branch 1: explicit non-empty `dedup_id` in patch — preserve as-is.
+    // Treat null / empty-string as "absent" because `is_empty_json` will
+    // strip them in the merge loop; preservation of the existing value
+    // is what the user ends up seeing either way.
+    let explicit_dedup_id = patch_obj
+        .get("dedup_id")
+        .map(|v| {
+            !matches!(v, JsonValue::Null)
+                && !matches!(v, JsonValue::String(s) if s.is_empty())
+        })
+        .unwrap_or(false);
+    if explicit_dedup_id {
+        return;
+    }
+    // Branch classification by "does the patch touch any fingerprinted field"?
+    // `is_empty_json` would strip null/empty, so those don't count as
+    // touches either — a patch with `{"file": null}` is semantically "don't
+    // change file" and should not trigger a recompute.
+    let touches_fingerprinted = FINGERPRINTED_FIELDS.iter().any(|k| {
+        patch_obj
+            .get(*k)
+            .map(|v| !is_empty_json(v))
+            .unwrap_or(false)
+    });
+    if !touches_fingerprinted {
+        // Branches 3 and 4: no-op — existing value (absent or present)
+        // stays untouched. Branch 3 intentionally does NOT silently
+        // populate on an unrelated update; `items backfill-dedup-id`
+        // (Task 11) is the canonical upgrade path for legacy ledgers.
+        return;
+    }
+    // Branch 2: recompute from the patch-over-existing merged view.
+    let fp = merged_fingerprint(existing_tbl, patch_obj);
+    patch_obj.insert("dedup_id".to_string(), JsonValue::String(fp));
+}
+
+/// T6b: build the fingerprint from the merged (patch-over-existing) view of
+/// the five fingerprinted fields. For each field: if the patch has it as a
+/// non-empty string, use that; otherwise fall back to `existing_tbl`'s
+/// value via `str_field` (empty string on missing / non-string). This is
+/// the recompute branch of `apply_dedup_id_on_update`.
+fn merged_fingerprint(
+    existing_tbl: &toml::Table,
+    patch_obj: &serde_json::Map<String, JsonValue>,
+) -> String {
+    // Build a fresh JSON object holding just the five fingerprinted fields
+    // with their post-merge values, then feed it to the canonical JSON-side
+    // fingerprinter. This stays in sync with `tier_b_fingerprint_json` —
+    // same helper, same field order, same truncation.
+    let mut merged = serde_json::Map::with_capacity(FINGERPRINTED_FIELDS.len());
+    for &key in &FINGERPRINTED_FIELDS {
+        let from_patch = patch_obj.get(key).and_then(|v| match v {
+            JsonValue::String(s) if !s.is_empty() => Some(s.as_str()),
+            _ => None,
+        });
+        let resolved = from_patch.unwrap_or_else(|| str_field(existing_tbl, key));
+        merged.insert(key.to_string(), JsonValue::String(resolved.to_string()));
+    }
+    tier_b_fingerprint_json(&merged)
+}
 
 /// O18: minimum number of `update` ops in a batch before we pay to build
 /// an `id → array_index` HashMap. Below this, the per-op linear scan
@@ -67,9 +209,18 @@ pub(crate) fn items_add_value_to(
     patch: JsonValue,
     array_name: &str,
 ) -> Result<()> {
-    let JsonValue::Object(obj) = patch else {
+    let JsonValue::Object(mut obj) = patch else {
         bail!("--json must be a JSON object");
     };
+    // T6b: auto-populate `dedup_id` from the payload BEFORE conversion to
+    // TOML, unless the caller already set it or the env-var kill switch is
+    // active. Hooking here covers every single-add path: direct `items add`,
+    // `items add-many` (which feeds each merged row through this funnel),
+    // `items apply` add-op (via `apply_single_op` / `apply_op_indexed`),
+    // and T5's `items_add_value_with_dedupe_to` (which delegates here on a
+    // dedupe-miss, so the pre-scan never sees an auto-populated `dedup_id`
+    // on its own payload).
+    apply_dedup_id_on_add(&mut obj);
     let mut tbl = toml::Table::with_capacity(obj.len());
     for (k, v) in obj {
         if is_empty_json(&v) {
@@ -225,7 +376,7 @@ pub(crate) fn items_update_value_to(
     patch: JsonValue,
     unset: &[String],
 ) -> Result<()> {
-    let JsonValue::Object(patch_obj) = patch else {
+    let JsonValue::Object(mut patch_obj) = patch else {
         bail!("--json must be a JSON object");
     };
 
@@ -236,6 +387,13 @@ pub(crate) fn items_update_value_to(
         if !matches {
             continue;
         }
+        // T6b: decide whether to recompute `dedup_id` before the merge loop
+        // runs. `apply_dedup_id_on_update` inspects the existing table +
+        // patch and, for branch 2 (fingerprinted-field patch, no explicit
+        // `dedup_id`), inserts the freshly-computed digest into `patch_obj`
+        // so the downstream merge loop writes it as a normal key. Other
+        // branches leave `patch_obj` untouched.
+        apply_dedup_id_on_update(tbl, &mut patch_obj);
         for (k, v) in patch_obj {
             if is_empty_json(&v) {
                 continue;
@@ -464,7 +622,7 @@ fn update_at_index(
     patch: JsonValue,
     unset: &[String],
 ) -> Result<()> {
-    let JsonValue::Object(patch_obj) = patch else {
+    let JsonValue::Object(mut patch_obj) = patch else {
         bail!("--json must be a JSON object");
     };
     let arr = items_array_mut(doc, array_name)?;
@@ -477,6 +635,11 @@ fn update_at_index(
     if tbl.get("id").and_then(|v| v.as_str()) != Some(expected_id) {
         bail!("no item with id = {}", expected_id);
     }
+    // T6b: parity with `items_update_value_to` — run the recompute-branch
+    // classifier before the merge loop. The indexed and linear-scan paths
+    // share this helper so `dedup_id` never diverges between the two
+    // dispatch paths.
+    apply_dedup_id_on_update(tbl, &mut patch_obj);
     // O51: parity with `items_update_value_to` — skip empty-valued patch fields
     // so the indexed fast-path doesn't diverge from the linear-scan path.
     for (k, v) in patch_obj {
@@ -1836,6 +1999,13 @@ summary = "existing"
 
     #[test]
     fn array_append_matches_items_add_many_with_no_defaults() {
+        // T6b: both paths funnel through `items_add_value_to`, which
+        // reads the `TOMLCTL_NO_DEDUP_ID` env var. A parallel test that
+        // toggles the kill switch would cause one of the two adds here to
+        // observe a different env state and emit a divergent `dedup_id`
+        // key. Holding the dedup-env lock for the whole test keeps the
+        // byte-identity assertion deterministic under `cargo test`.
+        let _guard = dedup_env_lock();
         let src = r#"schema_version = 1
 "#;
         let mut doc_a: TomlValue = toml::from_str(src).unwrap();
@@ -2054,5 +2224,253 @@ status = "open"
         // Doc state: original 2 + 2 added = 4.
         let items = doc.get("items").and_then(|v| v.as_array()).unwrap();
         assert_eq!(items.len(), 4);
+    }
+
+    // ----- T6b: dedup_id auto-populate (helper-level, no I/O) ------------
+
+    /// Helper: build a patch `Map<String, JsonValue>` from a JSON string for
+    /// the dedup_id branch tests. Avoids `.unwrap()` sprawl on each case.
+    fn patch_obj(json: &str) -> serde_json::Map<String, JsonValue> {
+        match serde_json::from_str::<JsonValue>(json).unwrap() {
+            JsonValue::Object(m) => m,
+            _ => panic!("expected object"),
+        }
+    }
+
+    /// Existing-table fixture for the update branch tests — carries all
+    /// five fingerprinted fields plus `status` and an existing
+    /// `dedup_id` placeholder so every branch has concrete data to diff.
+    fn existing_with_dedup_id() -> toml::Table {
+        toml::toml! {
+            id = "R1"
+            file = "src/a.rs"
+            summary = "existing summary"
+            severity = "minor"
+            category = "quality"
+            symbol = "foo::bar"
+            status = "open"
+            dedup_id = "pre_existing_id"
+        }
+    }
+
+    fn existing_without_dedup_id() -> toml::Table {
+        toml::toml! {
+            id = "R1"
+            file = "src/a.rs"
+            summary = "existing summary"
+            severity = "minor"
+            category = "quality"
+            symbol = "foo::bar"
+            status = "open"
+        }
+    }
+
+    /// T6b branch 1: explicit `dedup_id` in the patch (non-empty string) is
+    /// preserved regardless of whether other fingerprinted fields are in
+    /// the patch. This is the "caller knows best" override path.
+    #[test]
+    fn dedup_id_update_branch_1_explicit_preserved_even_with_fingerprint_patch() {
+        let _guard = dedup_env_lock();
+        let existing = existing_with_dedup_id();
+        let mut patch = patch_obj(
+            r#"{"summary":"new-summary","dedup_id":"caller_provided"}"#,
+        );
+        apply_dedup_id_on_update(&existing, &mut patch);
+        assert_eq!(
+            patch.get("dedup_id").and_then(|v| v.as_str()),
+            Some("caller_provided"),
+            "explicit dedup_id must survive a fingerprint-field patch"
+        );
+    }
+
+    /// T6b branch 2: a fingerprinted-field patch with no explicit
+    /// `dedup_id` triggers recompute from the merged (patch-over-existing)
+    /// view. The resulting digest must equal `tier_b_fingerprint_json`
+    /// on the merged view (that's the exact contract of this branch).
+    #[test]
+    fn dedup_id_update_branch_2_fingerprint_field_patch_recomputes() {
+        let _guard = dedup_env_lock();
+        let existing = existing_with_dedup_id();
+        let mut patch = patch_obj(r#"{"summary":"new summary"}"#);
+        apply_dedup_id_on_update(&existing, &mut patch);
+        let got = patch.get("dedup_id").and_then(|v| v.as_str()).unwrap();
+        // Compute expected: merged view's fingerprint.
+        let expected_merged: JsonValue = serde_json::json!({
+            "file": "src/a.rs",
+            "summary": "new summary",
+            "severity": "minor",
+            "category": "quality",
+            "symbol": "foo::bar",
+        });
+        let expected = crate::dedup::tier_b_fingerprint_json(expected_merged.as_object().unwrap());
+        assert_eq!(
+            got, expected,
+            "branch 2 must recompute from the merged view"
+        );
+        assert_ne!(
+            got, "pre_existing_id",
+            "recompute must actually change the digest (summary did change)"
+        );
+    }
+
+    /// T6b branch 3: non-fingerprint patch on an item that LACKS
+    /// `dedup_id` must leave the patch alone — no silent auto-populate
+    /// (that's Task 11's `backfill-dedup-id`).
+    #[test]
+    fn dedup_id_update_branch_3_non_fingerprint_patch_legacy_item_preserves_absence() {
+        let _guard = dedup_env_lock();
+        let existing = existing_without_dedup_id();
+        let mut patch = patch_obj(r#"{"status":"fixed"}"#);
+        apply_dedup_id_on_update(&existing, &mut patch);
+        assert!(
+            !patch.contains_key("dedup_id"),
+            "branch 3 must NOT auto-populate a legacy item on an unrelated patch"
+        );
+    }
+
+    /// T6b branch 4: non-fingerprint patch on an item that already has
+    /// `dedup_id` must leave the existing digest intact (no recompute,
+    /// no patch mutation — the merge loop skips absent keys).
+    #[test]
+    fn dedup_id_update_branch_4_non_fingerprint_patch_existing_digest_preserved() {
+        let _guard = dedup_env_lock();
+        let existing = existing_with_dedup_id();
+        let mut patch = patch_obj(r#"{"status":"fixed"}"#);
+        apply_dedup_id_on_update(&existing, &mut patch);
+        assert!(
+            !patch.contains_key("dedup_id"),
+            "branch 4 must leave the patch alone so existing dedup_id stays untouched"
+        );
+    }
+
+    /// T6b: `dedup_id: null` in the patch is treated as "patch didn't
+    /// mention the field" (preservation path), NOT "remove the existing
+    /// digest". Documented as the less-surprising semantics.
+    #[test]
+    fn dedup_id_update_null_patch_treated_as_absent() {
+        let _guard = dedup_env_lock();
+        let existing = existing_with_dedup_id();
+        // Non-fingerprint patch with explicit null dedup_id — both the
+        // "explicit" check and the "touches fingerprinted" check should
+        // skip, and the patch should end up with null dedup_id that the
+        // merge loop will strip.
+        let mut patch = patch_obj(r#"{"status":"fixed","dedup_id":null}"#);
+        apply_dedup_id_on_update(&existing, &mut patch);
+        assert!(
+            matches!(patch.get("dedup_id"), Some(JsonValue::Null)),
+            "null dedup_id must survive so the merge loop can skip it; got {:?}",
+            patch.get("dedup_id")
+        );
+    }
+
+    /// Serialise every test that touches `TOMLCTL_NO_DEDUP_ID` — the env
+    /// var is process-wide, and `cargo test` parallelises within a process,
+    /// so without a lock two kill-switch tests would race and one would
+    /// observe the wrong state. Used by the kill-switch test below AND by
+    /// the deterministic add/recompute tests to avoid observing a set env
+    /// var from an interleaved run.
+    fn dedup_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        use std::sync::{Mutex, OnceLock};
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// T6b: kill-switch env var short-circuits every hook.
+    #[test]
+    fn dedup_id_kill_switch_disables_auto_populate_on_add() {
+        let _guard_lock = dedup_env_lock();
+        // Serialise against other env-mutating tests — use a guard that
+        // restores the var on drop so cargo-test parallel runs stay
+        // deterministic.
+        struct EnvGuard {
+            key: &'static str,
+            prev: Option<String>,
+        }
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                match &self.prev {
+                    Some(v) => unsafe { std::env::set_var(self.key, v) },
+                    None => unsafe { std::env::remove_var(self.key) },
+                }
+            }
+        }
+        let prev = std::env::var(DEDUP_ID_KILL_SWITCH).ok();
+        unsafe { std::env::set_var(DEDUP_ID_KILL_SWITCH, "1") };
+        let _guard = EnvGuard {
+            key: DEDUP_ID_KILL_SWITCH,
+            prev,
+        };
+
+        let mut obj = patch_obj(r#"{"file":"src/a.rs","summary":"x"}"#);
+        apply_dedup_id_on_add(&mut obj);
+        assert!(
+            !obj.contains_key("dedup_id"),
+            "kill switch must suppress auto-populate on add"
+        );
+
+        let existing = existing_without_dedup_id();
+        let mut patch = patch_obj(r#"{"summary":"new"}"#);
+        apply_dedup_id_on_update(&existing, &mut patch);
+        assert!(
+            !patch.contains_key("dedup_id"),
+            "kill switch must suppress recompute on update"
+        );
+    }
+
+    /// T6b: add with no `dedup_id` auto-populates from the payload's
+    /// fingerprinted fields. Re-adding the same payload produces an
+    /// identical digest (pure function of fields — idempotent).
+    #[test]
+    fn dedup_id_add_auto_populates_deterministically() {
+        let _guard = dedup_env_lock();
+        let mut obj = patch_obj(
+            r#"{"file":"src/a.rs","summary":"x","severity":"warning","category":"bug","symbol":""}"#,
+        );
+        apply_dedup_id_on_add(&mut obj);
+        let fp1 = obj.get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        assert_eq!(fp1.len(), 16);
+
+        let mut obj2 = patch_obj(
+            r#"{"file":"src/a.rs","summary":"x","severity":"warning","category":"bug","symbol":""}"#,
+        );
+        apply_dedup_id_on_add(&mut obj2);
+        let fp2 = obj2.get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        assert_eq!(fp1, fp2, "same payload must produce the same digest");
+    }
+
+    /// T6b: explicit `dedup_id` on the add payload is preserved (no
+    /// fingerprint override). Mirrors branch 1 on the add side.
+    #[test]
+    fn dedup_id_add_preserves_explicit_value() {
+        let _guard = dedup_env_lock();
+        let mut obj = patch_obj(
+            r#"{"file":"src/a.rs","summary":"x","dedup_id":"caller_provided"}"#,
+        );
+        apply_dedup_id_on_add(&mut obj);
+        assert_eq!(
+            obj.get("dedup_id").and_then(|v| v.as_str()),
+            Some("caller_provided"),
+            "explicit dedup_id on add must survive"
+        );
+    }
+
+    /// T6b: `items_add_value_to` funnels through `apply_dedup_id_on_add`,
+    /// so a JSON payload without `dedup_id` lands on disk with one set.
+    /// Integration-style coverage of the full single-add write path.
+    #[test]
+    fn items_add_value_to_writes_dedup_id_onto_disk() {
+        let _guard = dedup_env_lock();
+        let mut doc: TomlValue = toml::from_str("schema_version = 1\n").unwrap();
+        items_add_to(
+            &mut doc,
+            "items",
+            r#"{"id":"R1","file":"src/a.rs","summary":"x","severity":"warning","category":"quality"}"#,
+        )
+        .unwrap();
+        let item = items_get(&doc, "R1").unwrap();
+        let fp = item["dedup_id"].as_str().expect("dedup_id auto-populated");
+        assert_eq!(fp.len(), 16, "dedup_id must be 16 hex chars; got {fp:?}");
     }
 }

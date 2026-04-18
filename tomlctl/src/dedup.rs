@@ -4,7 +4,7 @@
 //! extraction order), and `str_field`/`i64_field` from `convert.rs` for
 //! table-field pulls.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::ValueEnum;
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
@@ -25,6 +25,19 @@ pub(crate) enum DupTier {
     C,
 }
 
+/// T6a: canonical fingerprinted-field list, in the order the tier-B hash
+/// inlines them. Shared between `tier_b_fingerprint` (and its JSON sibling)
+/// and the `items update` / `items apply` auto-populate logic, so the
+/// "is this patch touching a fingerprinted field?" check in `items.rs`
+/// stays pinned to the exact same set the fingerprint hashes.
+///
+/// Order matches the pre-extraction inline hashing order at tier-B:
+/// `file | summary | severity | category | symbol`. Deviating here would
+/// silently break byte-identity of the fingerprint against pre-refactor
+/// tier-B output, so this const is the single source of truth.
+pub(crate) const FINGERPRINTED_FIELDS: [&str; 5] =
+    ["file", "summary", "severity", "category", "symbol"];
+
 pub(crate) fn items_find_duplicates(doc: &TomlValue, tier: DupTier) -> Result<Vec<JsonValue>> {
     // R26: tier fns take `&[TomlValue]`; no need to clone into an owned Vec.
     // R44: items_array now returns &[TomlValue] directly (empty slice when
@@ -35,6 +48,186 @@ pub(crate) fn items_find_duplicates(doc: &TomlValue, tier: DupTier) -> Result<Ve
         DupTier::B => find_duplicates_tier_b(items),
         DupTier::C => find_duplicates_tier_c(items),
     }
+}
+
+/// T6c: cross-ledger duplicate detection. Loads the union of `primary_items`
+/// and `other_items` (each already extracted from its doc by the caller),
+/// tags every emitted item with `source_file` (the basename of its origin
+/// ledger), and runs the selected tier over the union. `source_file` is an
+/// OUTPUT-ONLY key — it's spliced into each JSON item at emit time and
+/// never written back to either on-disk ledger. Tier C is file-scoped by
+/// design (its line-window grouping assumes a single source file); passing
+/// `DupTier::C` here errors with the exact string documented in the plan.
+pub(crate) fn items_find_duplicates_across(
+    primary_items: &[TomlValue],
+    primary_file: &str,
+    other_items: &[TomlValue],
+    other_file: &str,
+    tier: DupTier,
+) -> Result<Vec<JsonValue>> {
+    if matches!(tier, DupTier::C) {
+        bail!("tier C is file-scoped; use --tier A or --tier B with --across");
+    }
+    // Build a union vector where each entry remembers its source basename.
+    // We need to carry the `source_file` tag through to emit-time, so the
+    // cheap path is to stash it as an in-memory TOML field on a *copy* of
+    // each item, run the existing tier fns over the union, then strip /
+    // preserve the tag at emit time. The tier fns already use `toml_to_json`
+    // on emit, so an in-memory field with a reserved name just propagates
+    // through the JSON output automatically.
+    //
+    // Reserved key: `__tomlctl_source_file`. On emit we rename it to
+    // `source_file`. If the on-disk data already carries `source_file`,
+    // the pre-existing value is preserved under `source_file` — a collision
+    // is logged structurally: the output key `source_file` will hold the
+    // ledger-origin tag and a distinct `source_file_orig` field carries the
+    // prior on-disk value. In practice neither ledger schema writes
+    // `source_file` today, so the collision branch is defensive-only.
+    let mut union: Vec<TomlValue> = Vec::with_capacity(primary_items.len() + other_items.len());
+    let primary_basename = Path::new(primary_file)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| primary_file.to_string());
+    let other_basename = Path::new(other_file)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| other_file.to_string());
+    for item in primary_items {
+        union.push(tag_with_source(item, &primary_basename));
+    }
+    for item in other_items {
+        union.push(tag_with_source(item, &other_basename));
+    }
+    let groups = match tier {
+        DupTier::A => find_duplicates_tier_a(&union)?,
+        DupTier::B => find_duplicates_tier_b(&union)?,
+        DupTier::C => unreachable!("tier C rejected above"),
+    };
+    // Post-process each group's items to promote the reserved tag to the
+    // output `source_file` key.
+    Ok(groups.into_iter().map(promote_source_tag).collect())
+}
+
+/// T6c helper: append a reserved `__tomlctl_source_file` field to a copy of
+/// `item`. Non-table items (defensive) pass through unchanged — the tier
+/// fns already filter non-tables via `as_table()`.
+fn tag_with_source(item: &TomlValue, source: &str) -> TomlValue {
+    let Some(tbl) = item.as_table() else {
+        return item.clone();
+    };
+    let mut new_tbl = tbl.clone();
+    // Preserve any pre-existing `source_file` field under `source_file_orig`
+    // so the output tag can reuse the clean name without losing data.
+    if let Some(existing) = new_tbl.remove("source_file") {
+        new_tbl.insert("source_file_orig".to_string(), existing);
+    }
+    new_tbl.insert(
+        "__tomlctl_source_file".to_string(),
+        TomlValue::String(source.to_string()),
+    );
+    TomlValue::Table(new_tbl)
+}
+
+/// T6c helper: rename the reserved tag to the user-facing `source_file`
+/// key on every item inside a group's `items` array.
+fn promote_source_tag(mut group: JsonValue) -> JsonValue {
+    if let Some(items) = group.get_mut("items").and_then(|v| v.as_array_mut()) {
+        for item in items.iter_mut() {
+            if let Some(obj) = item.as_object_mut()
+                && let Some(src) = obj.remove("__tomlctl_source_file")
+            {
+                obj.insert("source_file".to_string(), src);
+            }
+        }
+    }
+    group
+}
+
+/// T6a: extract the tier-B fingerprint used by `find_duplicates_tier_b` as a
+/// reusable helper. Hashes the canonical five-field concatenation
+/// `file | summary | severity | category | symbol` (pipe-separated) with
+/// SHA-256 and returns the first 16 lowercase hex chars (= 64 bits;
+/// ~4B-item birthday collision bound).
+///
+/// "Normalisation": each field is read via `str_field` (empty string on
+/// missing / non-string) and concatenated verbatim — no additional trimming,
+/// lower-casing, or unicode normalisation. This matches the pre-extraction
+/// inline code exactly; tier B's output must remain byte-identical across
+/// the refactor.
+///
+/// **Field order is load-bearing.** Do not reorder or rename without also
+/// editing `FINGERPRINTED_FIELDS` and bumping every ledger's `dedup_id`
+/// (Task 11's `backfill-dedup-id` is the canonical rebuild path).
+pub(crate) fn tier_b_fingerprint(item: &TomlValue) -> String {
+    let Some(tbl) = item.as_table() else {
+        // Non-table items can't participate in tier-B grouping; return the
+        // digest of "empty | empty | empty | empty | empty" so the helper is
+        // total. The tier-B grouping path filters non-tables earlier, so in
+        // practice this branch is only reachable from the new auto-populate
+        // caller if someone hands it a scalar — which `items_add_value_to`
+        // rejects before this helper runs.
+        return fingerprint_from_strs("", "", "", "", "");
+    };
+    fingerprint_from_strs(
+        str_field(tbl, "file"),
+        str_field(tbl, "summary"),
+        str_field(tbl, "severity"),
+        str_field(tbl, "category"),
+        str_field(tbl, "symbol"),
+    )
+}
+
+/// T6b: JSON-payload sibling of `tier_b_fingerprint`. Used by the write-funnel
+/// auto-populate logic so `items_add_value_to` / `items_update_value_to` can
+/// compute the fingerprint from the incoming `JsonValue::Object` without a
+/// round-trip through `TomlValue` (same data, skips an intermediate clone).
+///
+/// String field extraction: for each fingerprinted key, accept
+/// `JsonValue::String` verbatim; anything else (missing key, null, number,
+/// array, object) becomes the empty string. Identical to `str_field`'s
+/// "empty on non-string" semantics on the TOML side, which keeps this helper
+/// and `tier_b_fingerprint` output byte-identical when given the same
+/// underlying field values.
+pub(crate) fn tier_b_fingerprint_json(obj: &serde_json::Map<String, JsonValue>) -> String {
+    fingerprint_from_strs(
+        json_str_field(obj, "file"),
+        json_str_field(obj, "summary"),
+        json_str_field(obj, "severity"),
+        json_str_field(obj, "category"),
+        json_str_field(obj, "symbol"),
+    )
+}
+
+/// T6a: shared core of `tier_b_fingerprint` and `tier_b_fingerprint_json`.
+/// Feeds Sha256 incrementally with the `field | field | …` format and
+/// returns the first 16 hex chars. Kept `#[inline]` so both callers compile
+/// down to a single hash pass with no intermediate `String` allocation.
+#[inline]
+fn fingerprint_from_strs(file: &str, summary: &str, severity: &str, category: &str, symbol: &str) -> String {
+    // O31: feed Sha256 incrementally — avoids the throwaway `canonical`
+    // String, the full 64-char hex String, and the substring `to_string()`
+    // clone. Field order and the `|` separator are preserved exactly, so
+    // the resulting digest (and the 16-hex-char fingerprint) is
+    // byte-identical to the prior one-shot form used by tier B.
+    let mut h = Sha256::new();
+    h.update(file.as_bytes());
+    h.update(b"|");
+    h.update(summary.as_bytes());
+    h.update(b"|");
+    h.update(severity.as_bytes());
+    h.update(b"|");
+    h.update(category.as_bytes());
+    h.update(b"|");
+    h.update(symbol.as_bytes());
+    let digest = h.finalize();
+    // 8 bytes → 16 hex chars; preserves the prior `full[..16]` truncation.
+    hex_lower(&digest[..8])
+}
+
+/// T6b helper: "empty on non-string" field read for a JSON object, mirroring
+/// `convert::str_field` on the TOML side.
+fn json_str_field<'a>(obj: &'a serde_json::Map<String, JsonValue>, key: &str) -> &'a str {
+    obj.get(key).and_then(|v| v.as_str()).unwrap_or("")
 }
 
 fn dup_group_json(tier: &str, key: &str, items: &[&TomlValue]) -> JsonValue {
@@ -99,29 +292,13 @@ fn find_duplicates_tier_b(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
     let mut groups: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
     for (i, item) in items.iter().enumerate() {
         let Some(tbl) = item.as_table() else { continue };
+        // T6a: fingerprint computation lives in `tier_b_fingerprint` so the
+        // `dedup_id` auto-populate path (`items.rs`) and this grouping path
+        // hash the same five fields in the same order with the same
+        // truncation. The `basename` component of the group key stays local
+        // to grouping — it's a display aid, not part of the fingerprint.
+        let short = tier_b_fingerprint(item);
         let file = str_field(tbl, "file");
-        let summary = str_field(tbl, "summary");
-        let severity = str_field(tbl, "severity");
-        let category = str_field(tbl, "category");
-        let symbol = str_field(tbl, "symbol");
-        // O31: feed Sha256 incrementally — avoids the throwaway `canonical`
-        // String, the full 64-char hex String, and the substring `to_string()`
-        // clone. Field order and the `|` separator are preserved exactly, so
-        // the resulting digest (and the 16-hex-char fingerprint) is
-        // byte-identical to the prior one-shot form.
-        let mut h = Sha256::new();
-        h.update(file.as_bytes());
-        h.update(b"|");
-        h.update(summary.as_bytes());
-        h.update(b"|");
-        h.update(severity.as_bytes());
-        h.update(b"|");
-        h.update(category.as_bytes());
-        h.update(b"|");
-        h.update(symbol.as_bytes());
-        let digest = h.finalize();
-        // 8 bytes → 16 hex chars; preserves the prior `full[..16]` truncation.
-        let short = hex_lower(&digest[..8]);
         let basename = Path::new(file)
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
@@ -303,6 +480,215 @@ summary = "w"
             .collect();
         assert!(ids.contains(&"R1"));
         assert!(ids.contains(&"R2"));
+    }
+
+    // ---- T6a: tier_b_fingerprint helper -----------------------------------
+
+    /// The extracted helper must produce the 16-hex-char fingerprint the
+    /// tier-B grouping path already emits. Build an item, hash it, and
+    /// parse the tier-B key string — the two must agree byte-for-byte.
+    #[test]
+    fn tier_b_fingerprint_matches_grouping_key() {
+        let src = r#"
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "dup-summary"
+severity = "warning"
+category = "quality"
+
+[[items]]
+id = "R2"
+file = "src/a.rs"
+summary = "dup-summary"
+severity = "warning"
+category = "quality"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let items = items_array(&doc, "items");
+        let fp1 = tier_b_fingerprint(&items[0]);
+        let fp2 = tier_b_fingerprint(&items[1]);
+        assert_eq!(
+            fp1, fp2,
+            "identical fingerprinted fields must hash to the same 16-hex digest"
+        );
+        assert_eq!(fp1.len(), 16, "fingerprint must be 16 hex chars (64 bits)");
+        assert!(
+            fp1.chars().all(|c| c.is_ascii_hexdigit() && (!c.is_ascii_uppercase())),
+            "fingerprint must be lowercase hex: got {fp1:?}"
+        );
+
+        // Tier-B grouping's key string carries the fingerprint inline; the
+        // extracted helper must produce the identical substring. This is
+        // the byte-identity guard against a refactor silently flipping
+        // the field order or truncation.
+        let groups = items_find_duplicates(&doc, DupTier::B).unwrap();
+        assert_eq!(groups.len(), 1);
+        let key = groups[0].get("key").and_then(|v| v.as_str()).unwrap();
+        assert!(
+            key.contains(&format!("fingerprint={fp1}")),
+            "tier-B group key must contain the same fingerprint the helper emits; \
+             key={key:?} helper={fp1:?}"
+        );
+    }
+
+    /// Differing values in any fingerprinted field must change the digest.
+    /// Enumerate each of the five fields to pin the full surface; a bug
+    /// that drops one field from the hash would leave the other four
+    /// tests catching the regression.
+    #[test]
+    fn tier_b_fingerprint_differs_when_any_fingerprinted_field_changes() {
+        let base: toml::Table = toml::toml! {
+            file = "src/a.rs"
+            summary = "s"
+            severity = "minor"
+            category = "style"
+            symbol = "foo::bar"
+        };
+        let base_fp = tier_b_fingerprint(&TomlValue::Table(base.clone()));
+        for key in &FINGERPRINTED_FIELDS {
+            let mut changed = base.clone();
+            changed.insert((*key).to_string(), TomlValue::String("MUTATED".into()));
+            let fp = tier_b_fingerprint(&TomlValue::Table(changed));
+            assert_ne!(
+                fp, base_fp,
+                "changing `{key}` must change the fingerprint"
+            );
+        }
+    }
+
+    /// Missing (or non-string) fingerprinted fields treat as empty string.
+    /// This pins the "missing fields hash as empty" branch of `str_field`
+    /// without relying on downstream grouping to reveal it.
+    #[test]
+    fn tier_b_fingerprint_missing_fields_hash_as_empty_strings() {
+        // All five fields absent.
+        let empty: TomlValue = toml::from_str("").unwrap();
+        let fp_empty = tier_b_fingerprint(&empty);
+        // Explicit-empty: each field present but empty string.
+        let explicit: TomlValue = toml::from_str(
+            r#"file = ""
+summary = ""
+severity = ""
+category = ""
+symbol = """#,
+        )
+        .unwrap();
+        let fp_explicit = tier_b_fingerprint(&explicit);
+        assert_eq!(
+            fp_empty, fp_explicit,
+            "missing fingerprinted fields must hash as empty strings"
+        );
+    }
+
+    /// `tier_b_fingerprint` and `tier_b_fingerprint_json` must agree on the
+    /// same underlying data. This is the guard against the JSON-side path
+    /// (used by `items_add_value_to`) drifting from the TOML-side path
+    /// (used by tier-B grouping).
+    #[test]
+    fn tier_b_fingerprint_json_matches_toml_side() {
+        let toml_src: TomlValue = toml::from_str(
+            r#"file = "src/a.rs"
+summary = "hi"
+severity = "warning"
+category = "quality"
+symbol = "foo""#,
+        )
+        .unwrap();
+        let json_payload: JsonValue = serde_json::from_str(
+            r#"{"file":"src/a.rs","summary":"hi","severity":"warning","category":"quality","symbol":"foo"}"#,
+        )
+        .unwrap();
+        let fp_toml = tier_b_fingerprint(&toml_src);
+        let fp_json = tier_b_fingerprint_json(json_payload.as_object().unwrap());
+        assert_eq!(
+            fp_toml, fp_json,
+            "JSON and TOML sides must agree on the fingerprint"
+        );
+    }
+
+    /// Field-order on the TOML side must not affect the fingerprint:
+    /// `str_field` reads each key by name, and the helper concatenates in
+    /// fixed `FINGERPRINTED_FIELDS` order. Two items with the same field
+    /// values but serialised in different TOML orders must fingerprint
+    /// identically.
+    #[test]
+    fn tier_b_fingerprint_stable_across_toml_field_order() {
+        let a: TomlValue = toml::from_str(
+            r#"file = "x"
+summary = "y"
+severity = "minor"
+category = "bug"
+symbol = "z""#,
+        )
+        .unwrap();
+        let b: TomlValue = toml::from_str(
+            r#"symbol = "z"
+category = "bug"
+severity = "minor"
+summary = "y"
+file = "x""#,
+        )
+        .unwrap();
+        assert_eq!(tier_b_fingerprint(&a), tier_b_fingerprint(&b));
+    }
+
+    /// T6c: `--across` with tier C errors with the exact documented message.
+    /// This is a unit-level pin; the integration test covers the CLI side.
+    #[test]
+    fn items_find_duplicates_across_rejects_tier_c() {
+        let err = items_find_duplicates_across(&[], "a.toml", &[], "b.toml", DupTier::C)
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "tier C is file-scoped; use --tier A or --tier B with --across"
+        );
+    }
+
+    /// T6c: two items (one per ledger) carrying identical fingerprinted
+    /// fields group together under tier B, and each emitted item carries
+    /// a `source_file` tag naming its origin basename.
+    #[test]
+    fn items_find_duplicates_across_tier_b_tags_source_file() {
+        let primary: TomlValue = toml::from_str(
+            r#"[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "dup"
+severity = "warning"
+category = "quality"
+"#,
+        )
+        .unwrap();
+        let other: TomlValue = toml::from_str(
+            r#"[[items]]
+id = "O1"
+file = "src/a.rs"
+summary = "dup"
+severity = "warning"
+category = "quality"
+"#,
+        )
+        .unwrap();
+        let primary_items = items_array(&primary, "items");
+        let other_items = items_array(&other, "items");
+        let groups = items_find_duplicates_across(
+            primary_items,
+            "review.toml",
+            other_items,
+            "optimise.toml",
+            DupTier::B,
+        )
+        .unwrap();
+        assert_eq!(groups.len(), 1, "expected one cross-ledger dup group");
+        let items = groups[0].get("items").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(items.len(), 2);
+        let sources: Vec<&str> = items
+            .iter()
+            .map(|i| i.get("source_file").and_then(|v| v.as_str()).unwrap())
+            .collect();
+        assert!(sources.contains(&"review.toml"));
+        assert!(sources.contains(&"optimise.toml"));
     }
 
     #[test]

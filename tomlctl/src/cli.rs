@@ -15,7 +15,7 @@ use crate::convert::{
     ScalarType, detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path,
     toml_to_json,
 };
-use crate::dedup::{DupTier, items_find_duplicates};
+use crate::dedup::{DupTier, items_find_duplicates, items_find_duplicates_across};
 use crate::integrity::IntegrityOpts;
 use crate::io::{mutate_doc, mutate_doc_conditional, read_doc, read_doc_borrowed, read_toml_str};
 use crate::items::{
@@ -614,10 +614,27 @@ enum ItemsOp {
     },
 
     /// Find duplicate items using one of the dedup tiers.
+    ///
+    /// T6c: `--across <other>` runs the selected tier over the UNION of
+    /// `<file>`'s items and `<other>`'s items, tagging each emitted
+    /// JSON entry with its source ledger's basename under `source_file`.
+    /// Tier C is file-scoped by design (its line-window grouping assumes
+    /// one source file); passing `--tier C` together with `--across`
+    /// errors at runtime with the exact documented message. Tier A and
+    /// tier B both work cross-ledger.
     FindDuplicates {
         file: PathBuf,
         #[arg(long, value_enum, default_value_t = DupTier::A)]
         tier: DupTier,
+        /// T6c: run cross-ledger — compare items from `<file>` against
+        /// items from `<PATH>` and emit matches from the union. Output
+        /// items carry a `source_file` basename tag. Tier C errors.
+        #[arg(
+            long = "across",
+            value_name = "PATH",
+            help = "Compare against a second ledger; output items carry a `source_file` tag (tier A or B only)"
+        )]
+        across: Option<PathBuf>,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1054,9 +1071,34 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 println!("{}", serde_json::to_string(&id)?);
             }
         }
-        ItemsOp::FindDuplicates { file, tier, integrity } => {
+        ItemsOp::FindDuplicates { file, tier, across, integrity } => {
             let opts = read_integrity_opts(&integrity);
-            let groups = read_doc(&file, opts, |doc| items_find_duplicates(doc, tier))?;
+            let groups = match across {
+                None => read_doc(&file, opts, |doc| items_find_duplicates(doc, tier))?,
+                Some(other_path) => {
+                    // T6c: load both ledgers under the same integrity
+                    // contract; errors propagate for either. Clone the
+                    // primary's items out of the locked closure so the
+                    // second `read_doc` can fire sequentially without
+                    // nesting locks (nesting them would risk lock-order
+                    // inversion against any concurrent writer).
+                    let primary_file = file.to_string_lossy().into_owned();
+                    let other_file = other_path.to_string_lossy().into_owned();
+                    let primary_items: Vec<toml::Value> = read_doc(&file, opts, |doc| {
+                        Ok(crate::io::items_array(doc, "items").to_vec())
+                    })?;
+                    let other_items: Vec<toml::Value> = read_doc(&other_path, opts, |doc| {
+                        Ok(crate::io::items_array(doc, "items").to_vec())
+                    })?;
+                    items_find_duplicates_across(
+                        &primary_items,
+                        &primary_file,
+                        &other_items,
+                        &other_file,
+                        tier,
+                    )?
+                }
+            };
             print_json(&JsonValue::Array(groups))?;
         }
         ItemsOp::Orphans { file, integrity } => {
