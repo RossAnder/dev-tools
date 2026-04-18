@@ -1,0 +1,51 @@
+# Shared-block parity manifest.
+# Each block must be byte-identical across all listed files.
+# Consumed by scripts/verify-shared-blocks.sh.
+
+[[block]]
+name = "flow-context"
+files = [
+  "claude/commands/optimise.md",
+  "claude/commands/review.md",
+  "claude/commands/optimise-apply.md",
+  "claude/commands/review-apply.md",
+]
+
+[[block]]
+name = "ledger-schema"
+files = [
+  "claude/commands/optimise.md",
+  "claude/commands/review.md",
+  "claude/commands/optimise-apply.md",
+  "claude/commands/review-apply.md",
+]
+
+[[block]]
+name = "apply-dependency-sort"
+files = [
+  "claude/commands/optimise-apply.md",
+  "claude/commands/review-apply.md",
+]
+
+[[block]]
+name = "apply-rollback-protocol"
+files = [
+  "claude/commands/optimise-apply.md",
+  "claude/commands/review-apply.md",
+]
+
+[[block]]
+name = "apply-constraints"
+files = [
+  "claude/commands/optimise-apply.md",
+  "claude/commands/review-apply.md",
+]
+
+[[block]]
+name = "python3-fallback"
+files = [
+  "claude/commands/optimise.md",
+  "claude/commands/review.md",
+  "claude/commands/optimise-apply.md",
+  "claude/commands/review-apply.md",
+]

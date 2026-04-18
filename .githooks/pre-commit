@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STAGED=$(git diff --cached --name-only)
+
+if ! grep -qE '^claude/commands/(optimise|review|optimise-apply|review-apply)\.md$' <<< "$STAGED"; then
+  exit 0
+fi
+
+exec "$(git rev-parse --show-toplevel)/scripts/verify-shared-blocks.sh"
