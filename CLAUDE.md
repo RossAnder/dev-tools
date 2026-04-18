@@ -12,7 +12,7 @@ The pre-commit hook invokes `scripts/verify-shared-blocks.sh`, which reads its p
 
 Do not bypass the hook with `--no-verify` on these files — shared-block drift between the flow-command files has historically caused duplicate-finding cycles in the review/optimise ledger and would now also break execution-record-schema parity across `plan-new` / `plan-update` / `implement`. If the script refuses your commit, fix the drift rather than skipping the check.
 
-**Note**: if `.githooks/` or `scripts/verify-shared-blocks.sh` are not yet present in your clone, the shared-block parity check will silently no-op until they land. Run `ls .githooks scripts` to confirm before relying on the hook.
+**Note**: if `.githooks/` is absent (hook dir not installed), the shared-block parity check simply won't run. But if `.githooks/pre-commit` is installed and `scripts/verify-shared-blocks.sh` is missing, the hook fails loudly and rejects every staged commit until the script is restored. Run `ls .githooks scripts` to confirm both are present before relying on the hook.
 
 **Supply-chain note**: once `core.hooksPath` points at `.githooks/`, every commit runs `.githooks/pre-commit` and everything it invokes (currently `scripts/verify-shared-blocks.sh`). Review PR diffs touching `.githooks/**` or `scripts/verify-shared-blocks.sh` with the same scrutiny you'd apply to an unsandboxed CI step — a malicious commit to those paths runs on your next `git commit` without confirmation.
 

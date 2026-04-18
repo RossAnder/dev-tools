@@ -40,6 +40,110 @@ fn items_next_id_on_missing_file_prints_prefix_one() {
         .stdout(predicate::str::contains("R1"));
 }
 
+/// R40: `items next-id` no longer defaults `--prefix` to `R`. With four
+/// ledger schemas in use (R review, O optimise, E execution-record, plus
+/// any future), a silent R-default would mis-mint three of four callers.
+/// Omitting `--prefix` now fails at the clap layer (exit 2, "required
+/// arguments were not provided"), and the `--help` usage line pins the
+/// flag as required.
+#[test]
+fn items_next_id_requires_prefix_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-ledger.toml");
+
+    // 1. Omitting `--prefix` fails at parse time. clap's default terse
+    //    message is "error: one or more required arguments were not
+    //    provided" — we assert on `required` alone because the exact
+    //    wording can shift between clap minor versions, but "required"
+    //    is stable across them.
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&missing)
+        .write_stdin("")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
+
+    // 2. `--help` usage line shows `--prefix <PREFIX>` without surrounding
+    //    brackets (clap's notation for required flags is unadorned;
+    //    optional flags appear as `[--flag <VAL>]`). This pins the
+    //    schema-level requirement even if clap's error wording drifts.
+    let help = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("next-id")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&help.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--prefix <PREFIX>"),
+        "expected --help to show `--prefix <PREFIX>` as required, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("[--prefix"),
+        "expected --prefix to NOT be shown as optional `[--prefix ...]`, got:\n{stdout}"
+    );
+}
+
+/// R44: `items apply` rejects an ops array larger than `MAX_OPS_PER_APPLY`
+/// with a message that names the count, the cap, and directs the user to
+/// split the batch. The cap is a pre-write check, so the on-disk ledger is
+/// untouched when it fires.
+#[test]
+fn items_apply_rejects_over_cap_ops_count() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("ledger.toml");
+    let seed = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "seed"
+status = "open"
+"#;
+    fs::write(&ledger, seed).unwrap();
+
+    // 10_001 trivial no-op updates (target a non-existent id so the
+    // per-op validation would eventually error if the cap didn't trip
+    // first, but the cap check runs before mutation starts).
+    let mut payload = String::from("[");
+    for i in 0..10_001 {
+        if i > 0 {
+            payload.push(',');
+        }
+        payload.push_str(r#"{"op":"update","id":"R1","json":{"status":"open"}}"#);
+    }
+    payload.push(']');
+
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("apply")
+        .arg(&ledger)
+        .arg("--ops")
+        .arg("-")
+        .write_stdin(payload)
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("10001")
+                .and(predicate::str::contains("10000"))
+                .and(predicate::str::contains("split the batch")),
+        );
+
+    // Ledger byte-identical to the seed — cap is pre-write.
+    let after = fs::read_to_string(&ledger).unwrap();
+    assert_eq!(after, seed, "ledger must be unmodified after cap rejection");
+}
+
 /// R41 part 2 — stdin sentinel: piping a JSON payload into `items apply --ops -`
 /// on a seeded ledger must apply the add op and leave the expected item on
 /// disk.

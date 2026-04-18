@@ -80,6 +80,19 @@ pub(crate) enum OutputShape {
     Array,
     Count,
     CountBy(String),
+    /// Groups matched items by the value of a field.
+    ///
+    /// **Ordering invariant**: buckets are emitted in the insertion order of
+    /// their first-seen key (i.e., the order of the first matching item for
+    /// each group). Callers that need a sorted group-order must pre-sort the
+    /// input via `--sort-by` before invoking `--group-by`. This invariant is
+    /// load-bearing for `render-from-log` in the execution-record-schema
+    /// shared block — do NOT switch to stable-sort-by-key without updating
+    /// that routine's spec.
+    ///
+    /// The invariant is realised by `apply_aggregation_group_by` via
+    /// `serde_json::Map` with the `preserve_order` feature (see Cargo.toml) —
+    /// removing that feature would also break this invariant.
     GroupBy(String),
     Pluck(String),
 }

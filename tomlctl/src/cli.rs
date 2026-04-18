@@ -32,10 +32,38 @@ use crate::query::{self, OutputShape, Query};
 /// accidentally pipes a log or a binary into `--json -`.
 const MAX_STDIN_BYTES: u64 = 32 * 1024 * 1024;
 
+/// R44: maximum number of ops accepted in a single `items apply` batch.
+/// `MAX_STDIN_BYTES` alone does not bound op count — a well-formed 32 MiB
+/// JSON array of tiny `{"op":"update","id":"Rx"}` records can hold tens of
+/// thousands of operations, and `items_apply_to_opts` iterates serially.
+/// 10_000 is far above any legitimate batch (typical ledgers have ~50 items
+/// and typical apply batches ≤ 60 ops) while still bounded enough that an
+/// accidental loop-generated mega-payload fails fast instead of timing out
+/// the wrapping shell.
+const MAX_OPS_PER_APPLY: usize = 10_000;
+
 /// R32: guard against multiple `-` sentinels consuming stdin in a single
 /// invocation (e.g. `--json - --ops -`). The second `read_json_arg("-")` call
 /// errors out instead of silently returning an empty string (stdin already at
 /// EOF) and corrupting the apply.
+///
+/// R38: the flag is deliberately a process-global `AtomicBool`:
+///
+/// - A CLI invocation is exactly one OS process with exactly one stdin
+///   handle. "Multiple invocations" means multiple processes, each with
+///   their own flag — so the global is semantically scoped to the right
+///   thing at runtime.
+/// - Threading an `&mut bool` through `run()` → every dispatcher → every
+///   `read_json_arg` / `read_json_value_from_arg` call site would touch
+///   ~12 functions for no runtime benefit (the flag's "global" reach is
+///   already the whole process).
+///
+/// **Test contract**: unit tests that flip or rely on this flag (e.g.
+/// `read_json_arg_dash_second_call_errors_already_consumed`) MUST hold
+/// `env_lock()` for the duration of the test. `cargo test` parallelises
+/// within a process, so without the lock two tests touching stdin would
+/// race on the single flag. The lock is the test-side substitute for the
+/// per-invocation isolation the real CLI gets for free.
 static STDIN_CONSUMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Resolve an NDJSON source argument. A literal dash reads stdin via
@@ -475,14 +503,22 @@ enum ItemsOp {
         integrity: WriteIntegrityArgs,
     },
 
-    /// Print the next id string for the given prefix (default R).
+    /// Print the next id string for the given prefix.
     /// R74: this is a read-only path (reads the ledger to find the max
     /// existing id, never writes), so it carries `ReadIntegrityArgs` — the
     /// write-side containment/sidecar flags have no semantic hook here and
     /// would be silently ignored if they were accepted.
+    ///
+    /// R40: `--prefix` is required. With four ledger schemas now in
+    /// circulation (R review, O optimise, E execution-record, plus any
+    /// future additions), a default of "R" would silently mis-mint for
+    /// three of four callers. Every `tomlctl items next-id` invocation in
+    /// this repo's `claude/commands/*.md` and `SKILL.md` already passes an
+    /// explicit `--prefix R|O|E`, so making the flag required is a no-op
+    /// for well-formed callers and a fail-fast for careless ones.
     NextId {
         file: PathBuf,
-        #[arg(long, default_value = "R")]
+        #[arg(long, required = true)]
         prefix: String,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
@@ -796,6 +832,26 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         ItemsOp::Apply { file, ops, array, no_remove, integrity } => {
             let opts = write_integrity_opts(&integrity);
             let ops = read_json_arg(&ops)?;
+            // R44: bound the ops count at the CLI boundary. `MAX_STDIN_BYTES`
+            // only caps the raw payload size; a 32 MiB JSON array of minimal
+            // `{"op":"update","id":"Rx"}` records can still hold tens of
+            // thousands of ops, which `items_apply_to_opts` iterates serially.
+            // Check length here (before locking + parsing inside the mutator)
+            // so an over-large payload fails fast with a directed message,
+            // and the user-visible error predates any disk mutation.
+            let parsed_for_count: JsonValue =
+                serde_json::from_str(&ops).context("parsing --ops")?;
+            if let JsonValue::Array(arr) = &parsed_for_count
+                && arr.len() > MAX_OPS_PER_APPLY
+            {
+                bail!(
+                    "--ops contains {} operations, which exceeds the cap of {}; \
+                     split the batch into smaller /review-apply or /optimise-apply \
+                     invocations",
+                    arr.len(),
+                    MAX_OPS_PER_APPLY
+                );
+            }
             mutate_doc(&file, integrity.allow_outside, opts, |doc| {
                 items_apply_to_opts(doc, &ops, &array, no_remove)
             })?;
@@ -1039,6 +1095,17 @@ body
             return;
         }
 
+        // R53: on hash-drift the bare `assertion_failed` message is hard to
+        // act on — the caller sees "block X hash drift" and has to reverse-
+        // engineer both the actual hash and which file(s) moved. Emit a
+        // structured multi-line message instead:
+        //   - expected (the pinned constant that's now stale)
+        //   - actual   (the in-parity hash currently produced by the blocks
+        //              under test; absent when parity itself is broken)
+        //   - per-file hashes (for parity: the single hash each file maps
+        //              to; for drift: every (file, hash) pair so the
+        //              operator can spot the outlier file without re-running)
+        //   - remediation (the literal pinned-hash constant update to make)
         let expect_hash = |report: &blocks::BlocksReport, name: &str, expected: &str| {
             let blocks_arr = report
                 .report
@@ -1048,12 +1115,81 @@ body
             let block = blocks_arr
                 .iter()
                 .find(|b| b.get("name").and_then(|v| v.as_str()) == Some(name))
-                .unwrap_or_else(|| panic!("block `{name}` missing from report: {:?}", report.report));
-            let hash = block
-                .get("hash")
-                .and_then(|v| v.as_str())
-                .unwrap_or_else(|| panic!("block `{name}` has no `hash` field (drift?): {:?}", block));
-            assert_eq!(hash, expected, "block `{name}` hash drift");
+                .unwrap_or_else(|| {
+                    panic!(
+                        "block `{name}` missing from report: {:?}",
+                        report.report
+                    )
+                });
+
+            // The "happy" shape (`blocks_verify` reports parity): a single
+            // `hash` field + a `files` array. Compare the pinned constant
+            // against it; on mismatch, print every contributing file so the
+            // operator can copy the new hash into the source.
+            if let Some(hash) = block.get("hash").and_then(|v| v.as_str()) {
+                if hash != expected {
+                    let files: Vec<String> = block
+                        .get("files")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let mut msg = String::new();
+                    msg.push_str(&format!("block `{name}` pinned-hash drift\n"));
+                    msg.push_str(&format!("  expected: {expected}\n"));
+                    msg.push_str(&format!("  actual:   {hash}\n"));
+                    msg.push_str("  per-file (all match each other):\n");
+                    for f in &files {
+                        msg.push_str(&format!("    {f}: {hash}\n"));
+                    }
+                    msg.push_str(&format!(
+                        "  fix: update the pinned hash for `{name}` to {hash}"
+                    ));
+                    panic!("{msg}");
+                }
+                return;
+            }
+
+            // The "sad" shape: `blocks_verify` already detected drift across
+            // files — there is no single `hash`, only a `drift` array of
+            // per-file hashes. Emit all of them so the operator can see
+            // both WHICH file moved and whether the pinned constant is
+            // stale as well.
+            let drift_arr = block
+                .get("drift")
+                .and_then(|v| v.as_array())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "block `{name}` has neither `hash` nor `drift`: {:?}",
+                        block
+                    )
+                });
+            let mut msg = String::new();
+            msg.push_str(&format!(
+                "block `{name}` parity broken across files (pre-pinned-hash check)\n"
+            ));
+            msg.push_str(&format!("  expected (pinned): {expected}\n"));
+            msg.push_str("  per-file hashes (should be identical, but differ):\n");
+            for entry in drift_arr {
+                let f = entry
+                    .get("file")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<unknown>");
+                let h = entry
+                    .get("hash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<no-hash>");
+                msg.push_str(&format!("    {f}: {h}\n"));
+            }
+            msg.push_str(
+                "  fix: restore block parity across the listed files first, \
+                 then re-run this test to see whether the pinned constant \
+                 also needs updating",
+            );
+            panic!("{msg}");
         };
 
         // --- 8-file flow-context block ---
@@ -1092,7 +1228,7 @@ body
         expect_hash(
             &report,
             "execution-record-schema",
-            "bd817fa6671af81b92725fd86fb9f0d1342271eead4c8dc38503823ba55d312f",
+            "80d533204acce2774fe73028d3b7c7b3789a2695d70ec24b788a5f7f51027d5f",
         );
 
         // --- 2-file apply-only blocks ---

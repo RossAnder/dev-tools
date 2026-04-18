@@ -149,7 +149,7 @@ legacy_id = "D3"
 | `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
 | `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |
 | `status-transition` | `from_status`, `to_status` |
-| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured |
+| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured; optional `kind` ∈ {`reformat`, `catchup`, `migrate-boundary`} and optional `scope_delta` (freeform) for provenance tagging |
 
 **`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). Slugs are derived from the plan document's task heading, lowercased, hyphenated.
 
@@ -458,6 +458,13 @@ Determine the plan file location:
 
    If any entry fails validation, refuse to write `scope` and prompt the user via `AskUserQuestion` with: "Affected-areas entry `<bad-entry>` cannot be used as a scope glob — it's outside the repo root or contains path-traversal components. Please provide a repo-relative path or remove the entry." This validation prevents a plan with `../../../` or leading `/` from producing `../../../**` or `/**` patterns in `context.toml`, which would collapse flow-resolution step 2's scope-glob matching across every flow in the repo.
 5. **Derive `branch`**: run `git branch --show-current`. If the output is a non-empty string, set `branch = "<value>"`. If the output is empty (detached HEAD, worktree oddity), **omit the `branch` key entirely** — do not write it as an empty string.
+
+   **Branch name validation (applied BEFORE writing `branch`)**: the captured value MUST match the regex `^[A-Za-z0-9._/-]+$`. Git permits branches containing control characters (e.g. a branch created via `git branch -c $'foo\nbar'` produces output with an embedded newline), which would produce malformed TOML via the `Edit`-tool fallback write path (the `tomlctl` path is safer because it routes through `toml_edit`, but the fallback is permitted and both must be robust). If the captured value fails the regex, prompt the user via `AskUserQuestion` with the observed value (rendered with control chars escaped for display) and the three choices:
+   1. Omit the `branch` field entirely — flow resolution step 3 will then skip this flow, which is a safe fallback.
+   2. Provide an override identifier — user supplies a sanitised name that matches the regex; use that in place of the git output.
+   3. Abort plan creation — halt the flow without writing `context.toml`.
+
+   Do not silently sanitise the value (e.g. by stripping control chars); the mismatch between `branch` in `context.toml` and the actual git branch would break resolution step 3's exact-match check.
 6. **Write `.claude/flows/<slug>/context.toml`**. Use today's date (ISO 8601) as an unquoted TOML date for both `created` and `updated`. `[artifacts]` paths are computed from the slug and must be persisted in the file.
 
 Initial `context.toml` (omit the `branch` line when `git branch --show-current` is empty):

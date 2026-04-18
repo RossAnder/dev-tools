@@ -149,7 +149,7 @@ legacy_id = "D3"
 | `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
 | `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |
 | `status-transition` | `from_status`, `to_status` |
-| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured |
+| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured; optional `kind` ∈ {`reformat`, `catchup`, `migrate-boundary`} and optional `scope_delta` (freeform) for provenance tagging |
 
 **`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). Slugs are derived from the plan document's task heading, lowercased, hyphenated.
 
@@ -390,7 +390,7 @@ For each batch:
 3. When agents return, check for **plan deviations** (see protocol above). If an agent reports a deviation:
    - Reason through the impact.
    - If the deviation is minor and the fix is clear, launch a targeted fix agent.
-   - If the deviation is significant (wrong interface, missing file, architectural mismatch), pause execution and surface the deviation to the user as an informational reminder before continuing. Do NOT advise the user to run `/plan-update deviation` — the deviation is persisted to `<record>` by the append in this step, so a follow-up writer command would create a duplicate entry.
+   - If the deviation is significant (wrong interface, missing file, architectural mismatch), pause execution and surface the deviation to the user as an informational reminder before continuing. Do NOT advise a second `/plan-update deviation` invocation for the same deviation — the entry is already persisted to `<record>` by the append later in this step (below), so a follow-up writer command would create a duplicate entry. `/plan-update deviation` remains the op-level entry point for user-initiated or later-observed deviations; it's only redundant when `/implement` has already recorded the same deviation during its own Phase 2.
 
    **Per detected deviation, append a `type=deviation` entry to `<record>`** (one entry per distinct deviation, regardless of severity) using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields: `original_intent` (one line summarising what the plan called for), `rationale` (one line explaining the chosen alternative), `commits` (SHAs from this batch's git checkpoint, or `[]` if no checkpoint was made yet).
 
@@ -415,8 +415,16 @@ For each batch:
    **5b. Per task that reached a terminal state in this batch, append a `type=task-completion` entry to `<record>`** using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields:
    - `task_ref` — the task-heading slug (opaque, lowercased, hyphenated; the same shape used in the Phase 1 skip-list query).
    - `status` ∈ {`done`, `failed`, `skipped`} — `done` for clean completion, `failed` for tasks that exhausted the retry budget, `skipped` for tasks the orchestrator chose not to dispatch (e.g. blocked-by-failure cascade).
-   - `files` — array of file paths the agent reported touching, taken verbatim from the agent's return summary.
+   - `files` — array of file paths the agent reported touching, taken verbatim from the agent's return summary, **after the path-validation filter below**.
    - `commits` — array containing the SHA captured from `git rev-parse HEAD` after step 5's commit landed. If step 5 skipped the commit (no dependent batch follows), pass `[]`.
+
+   **Path validation for `files[]` (mandatory, runs before the `tomlctl items add` call).** A buggy agent that touched `~/.aws/credentials`, `/etc/passwd`, or any absolute path during its run would otherwise leak that path into the committed execution-record log (and from there into rendered `PROGRESS-LOG.md`). For each candidate entry in `files[]`:
+   1. **MUST be a repo-relative path** — reject if it begins with `/`, `\\`, or `~` (including `~/` and `~user/` forms).
+   2. **MUST NOT contain `..` components** — reject any path whose components, after normalisation, include `..` (guards against escapes like `foo/../../etc/passwd`).
+   3. **SHOULD fall under one of the flow's `scope` globs** — if the path does not match any pattern in the resolved flow's `context.scope`, do **not** reject; instead, emit a soft warning to the console naming the out-of-scope path and set `scope_warning = true` on the outgoing entry as a standalone field so downstream readers can audit. This is advisory because legitimate cross-cutting edits (e.g. test fixtures in a sibling directory) can fall outside `scope` without indicating a bug.
+   4. **On (1) or (2) violation** — drop the offending path from the array, emit a console warning of the form `"task-completion files[] filter dropped <path> for task <task_ref>: <reason>"`, and continue with the remaining valid entries. **If the array becomes empty after filtering**, halt with the error `"Phase 2 step 5b refused to persist task-completion for <task_ref> because all reported files[] failed validation — inspect agent output."` and do NOT append the entry (the task will be picked up on rerun via the skip-list query, which only counts entries actually persisted to `<record>`).
+
+   The check is intentionally cheap — a regex for rules (1) and a component split + equality test for rule (2). Rule (3) reuses the same `Glob` patterns the Phase 1 flow resolver already evaluates against `scope`.
 
    Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
 
@@ -508,6 +516,8 @@ After the Implementation Summary has been emitted, synchronise the resolved flow
 
 1. **No-op gate**: if `[tasks].in_progress == 0` in the resolved flow's `context.toml` AND no files under its `scope` were edited during this run, skip the invocation entirely and note the skip in the orchestrator's output ("Phase 4.5 skipped: no-op gate"). This prevents spurious `plan-update` calls on trivial or inline runs that never touched tracked scope.
 2. **Otherwise, auto-invoke `plan-update`**: use the `Skill` tool to call the `plan-update` skill with the literal string argument `status`. The skill will read the resolved flow's `context.toml`, update `[tasks]` counters to reflect what the Implementation Summary reported, set `updated` to today, and preserve `created` verbatim.
+
+   **Origin check (before the Skill call).** Claude Code's skill resolution picks the first match by name, and a user-installed plugin skill named `plan-update` could silently shadow the project-local one. If the project has a local `claude/commands/plan-update.md` file (check for its existence at the repo top-level, e.g. via the `Glob` tool or a filesystem test against the resolved path), that is the intended invocation target and skill resolution will prefer it automatically — proceed with the `Skill` call. If the project-local file is **absent**, surface a warning first: `"no project-local /plan-update found; invoking plugin skill. Verify the plugin is trusted."`, then proceed with the `Skill` call. Do not refuse on a missing project-local file — just flag the fallback so the user can audit the plugin origin.
 
 Because `plan-update` itself performs the 5-step flow resolution, no flow arguments need to be passed through — the invocation is literally `Skill("plan-update", "status")`.
 

@@ -29,7 +29,7 @@ tomlctl items add   <file> --json '{"id":"R7",...}'
 tomlctl items add-many <file> --defaults-json '{...}' --ndjson -    # batched NDJSON append
 tomlctl items update <file> <id> --json '{"status":"fixed"}' [--unset key]...
 tomlctl items remove <file> <id>
-tomlctl items next-id <file> [--prefix R|O]
+tomlctl items next-id <file> --prefix R|O|E             # prefix is required — no default
 tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]' [--array NAME]
 tomlctl items find-duplicates <file> [--tier A|B|C]    # dedup hygiene, read-only JSON array
 tomlctl items orphans  <file>                          # missing-file / symbol-missing / dangling-dep
