@@ -189,6 +189,46 @@ where
     })
 }
 
+/// T5: sibling of `mutate_doc` whose closure returns `Result<bool>`. When
+/// the closure returns `Ok(true)` the doc is persisted (sidecar + atomic
+/// rename) exactly as `mutate_doc` does. When it returns `Ok(false)` the
+/// write is skipped — no rewrite, no sidecar bump — because the closure
+/// did not mutate the doc (the canonical caller is
+/// `items add --dedupe-by`, where a match is found and no add occurs).
+///
+/// The pre-write containment re-check still runs on the write branch so
+/// the two `mutate_doc*` entrypoints stay in lock-step on TOCTOU closure.
+/// The pre-lock guard runs unconditionally: whether the closure mutates or
+/// not, we've already acquired the exclusive lock and touched the path;
+/// failing the guard up-front keeps the error surface identical to
+/// `mutate_doc`.
+pub(crate) fn mutate_doc_conditional<F>(
+    file: &Path,
+    allow_outside: bool,
+    integrity: IntegrityOpts,
+    f: F,
+) -> Result<()>
+where
+    F: FnOnce(&mut TomlValue) -> Result<bool>,
+{
+    with_exclusive_lock(file, || {
+        guard_write_path(file, allow_outside)?;
+        let mut doc = read_toml(file)?;
+        let mutated = f(&mut doc)?;
+        if !mutated {
+            // Skip the write — the caller signalled no-op (e.g. dedupe hit).
+            // Leaving the file + sidecar untouched is the whole point: a
+            // double-`add` with `--dedupe-by` must not bump the mtime.
+            return Ok(());
+        }
+        if !allow_outside {
+            recheck_claude_containment(file)?;
+        }
+        write_toml_with_sidecar(file, &doc, integrity)?;
+        Ok(())
+    })
+}
+
 /// Re-canonicalise `file`'s parent and assert it still starts with the
 /// `.claude/` canonical root. Used by `mutate_doc` to narrow the TOCTOU window
 /// described in R3.

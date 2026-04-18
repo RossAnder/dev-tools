@@ -1615,3 +1615,384 @@ fn items_list_shape_flags_are_mutually_exclusive_at_parse_time() {
         "--ndjson must stay OUTSIDE the shape ArgGroup (R82 + R76); got stderr:\n{stderr2}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 5 (plan `docs/plans/tomlctl-capability-gaps.md`): `items add` and
+// `items add-many` grow `--dedupe-by <F1,F2,...>`. Callers who pass
+// identical payloads twice get one insert on the first call and a skip
+// (with `matched_id`) on the second. Nested-field paths and explicit
+// `dedup_id` dedup both work via the shared JSON walker in convert.rs.
+// Absent `--dedupe-by` → legacy behaviour byte-identical.
+// ---------------------------------------------------------------------------
+
+/// T5 (a): double-add with `--dedupe-by summary,file` inserts once, then
+/// skips on the second call and reports the `matched_id` of the first-added
+/// row. Also asserts that `added:0` and the matched id appear in the JSON
+/// output so an agent can branch on the skip shape.
+#[test]
+fn items_add_dedupe_by_double_add_dedupes_on_second_call() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+"#,
+    );
+    let payload = r#"{"id":"R1","file":"x","summary":"y","status":"open"}"#;
+
+    // First call: no existing rows, so the add proceeds. The output carries
+    // `added:1` and no `matched_id`.
+    let out1 = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(payload)
+        .arg("--dedupe-by")
+        .arg("summary,file")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout1 = String::from_utf8_lossy(&out1.get_output().stdout).to_string();
+    assert!(
+        stdout1.contains(r#""added":1"#),
+        "first add must report added=1; got: {stdout1}"
+    );
+    assert!(
+        !stdout1.contains("matched_id"),
+        "first add must not emit matched_id; got: {stdout1}"
+    );
+
+    // Second call with the same payload: pre-scan finds R1, skips the add.
+    let out2 = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(payload)
+        .arg("--dedupe-by")
+        .arg("summary,file")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout2 = String::from_utf8_lossy(&out2.get_output().stdout).to_string();
+    assert!(
+        stdout2.contains(r#""added":0"#),
+        "second add must report added=0; got: {stdout2}"
+    );
+    assert!(
+        stdout2.contains(r#""matched_id":"R1""#),
+        "second add must report matched_id=R1; got: {stdout2}"
+    );
+
+    // Ledger still has exactly one [[items]] row — the dedupe short-circuit
+    // must NOT produce a duplicate R1.
+    let contents = fs::read_to_string(&ledger).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(
+        items.len(),
+        1,
+        "exactly one item must remain after double-add + dedupe; got {}",
+        items.len()
+    );
+}
+
+/// T5 (b): changing one of the dedupe fields defeats the match — the
+/// second call inserts a fresh row. Fixture pins the semantics the agent
+/// cares about: "re-using a summary with a different file is a different
+/// finding".
+#[test]
+fn items_add_dedupe_by_different_field_value_adds_both() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+"#,
+    );
+    // First add: file=x.
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","file":"x","summary":"y"}"#)
+        .arg("--dedupe-by")
+        .arg("summary,file")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    // Second add: file=z (same summary; different file → no dedupe).
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R2","file":"z","summary":"y"}"#)
+        .arg("--dedupe-by")
+        .arg("summary,file")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains(r#""added":1"#),
+        "distinct-file add must succeed; got: {stdout}"
+    );
+
+    // Ledger now has both rows.
+    let contents = fs::read_to_string(&ledger).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(items.len(), 2);
+}
+
+/// T5 (c): `add-many` with a mixed NDJSON batch — one row duplicates an
+/// existing item, two are novel. Output must enumerate both the counts
+/// and the per-row skip log in input order. Row indexing is 1-based to
+/// match the existing `items_add_many` error-message convention.
+#[test]
+fn items_add_many_dedupe_by_mixed_batch_reports_skipped_rows() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "alpha"
+status = "open"
+"#,
+    );
+    let payload = "\
+{\"id\":\"R2\",\"file\":\"src/b.rs\",\"summary\":\"beta\"}
+{\"id\":\"R99\",\"file\":\"src/a.rs\",\"summary\":\"alpha\"}
+{\"id\":\"R3\",\"file\":\"src/c.rs\",\"summary\":\"gamma\"}
+";
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add-many")
+        .arg(&ledger)
+        .arg("--ndjson")
+        .arg("-")
+        .arg("--dedupe-by")
+        .arg("summary,file")
+        .write_stdin(payload)
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    // Full payload shape: added=2, skipped=1, one-entry skipped_rows with
+    // row=2 and matched_id=R1. Parse the stdout as JSON to compare
+    // structurally rather than on-string-contains so ordering of other
+    // keys doesn't make the test flaky.
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("add-many stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["added"], serde_json::json!(2));
+    assert_eq!(v["skipped"], serde_json::json!(1));
+    let skipped = v["skipped_rows"].as_array().expect("skipped_rows array");
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0]["row"], serde_json::json!(2));
+    assert_eq!(skipped[0]["matched_id"], serde_json::json!("R1"));
+
+    // Ledger now has 1 (seed) + 2 (novel rows) = 3 items; the duplicate
+    // row is absent.
+    let contents = fs::read_to_string(&ledger).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(items.len(), 3);
+}
+
+/// T5 (d): `--dedupe-by` accepts dotted paths for nested-object fields
+/// (`meta.source_run`). Both sides walk via the JSON-side dotted-path
+/// walker introduced in `convert.rs::walk_json_path`. Pins that
+/// descent-via-objects is honoured and that a nested miss on one row
+/// doesn't falsely hit a sibling row that lacks `meta` entirely.
+#[test]
+fn items_add_dedupe_by_nested_field_path() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "alpha"
+meta = { source_run = "abc" }
+
+[[items]]
+id = "R2"
+summary = "beta"
+"#,
+    );
+
+    // Payload with matching `meta.source_run` — dedupes against R1.
+    let out_hit = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R3","summary":"new","meta":{"source_run":"abc"}}"#)
+        .arg("--dedupe-by")
+        .arg("meta.source_run")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout_hit = String::from_utf8_lossy(&out_hit.get_output().stdout).to_string();
+    assert!(
+        stdout_hit.contains(r#""added":0"#)
+            && stdout_hit.contains(r#""matched_id":"R1""#),
+        "nested dedupe-by meta.source_run must match R1; got: {stdout_hit}"
+    );
+
+    // Payload with a distinct `meta.source_run` — appends. Also exercises
+    // the "sibling item lacks meta" case: R2 has no `meta`, so the walker
+    // returns None on the candidate side. None == None(payload lacks too)
+    // would falsely match a payload with no `meta` — this test pins that
+    // a payload WITH meta.source_run never falsely matches R2.
+    let out_miss = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R4","summary":"new","meta":{"source_run":"xyz"}}"#)
+        .arg("--dedupe-by")
+        .arg("meta.source_run")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout_miss = String::from_utf8_lossy(&out_miss.get_output().stdout).to_string();
+    assert!(
+        stdout_miss.contains(r#""added":1"#),
+        "distinct nested value must bypass dedupe; got: {stdout_miss}"
+    );
+
+    let contents = fs::read_to_string(&ledger).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(items.len(), 3, "R1 + R2 + R4 — R3 was deduped");
+}
+
+/// T5 (e): explicit `--dedupe-by dedup_id` pins the forward-compatible
+/// contract for when T6 starts auto-populating `dedup_id`. Today this is
+/// entirely a user-supplied field (T6 ships the auto-populate later in
+/// the plan). The test seeds a ledger with a row carrying an explicit
+/// `dedup_id`, then:
+///
+///   1. A payload with the same `dedup_id` is skipped (matches).
+///   2. A payload with a distinct `dedup_id` is added.
+///
+/// This proves `find_dedupe_match` handles the `dedup_id` field like any
+/// other, so the upgrade path for T6 is "set the field; the scan already
+/// works" — no change to this flag's semantics is required.
+#[test]
+fn items_add_dedupe_by_explicit_dedup_id_field() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "alpha"
+dedup_id = "abc123def4567890"
+"#,
+    );
+
+    // Hit: same dedup_id as R1 → skip.
+    let out_hit = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R2","summary":"different","dedup_id":"abc123def4567890"}"#)
+        .arg("--dedupe-by")
+        .arg("dedup_id")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout_hit = String::from_utf8_lossy(&out_hit.get_output().stdout).to_string();
+    assert!(
+        stdout_hit.contains(r#""added":0"#)
+            && stdout_hit.contains(r#""matched_id":"R1""#),
+        "explicit dedup_id must match; got: {stdout_hit}"
+    );
+
+    // Miss: distinct dedup_id → add.
+    let out_miss = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R2","summary":"beta","dedup_id":"fedcba9876543210"}"#)
+        .arg("--dedupe-by")
+        .arg("dedup_id")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout_miss = String::from_utf8_lossy(&out_miss.get_output().stdout).to_string();
+    assert!(
+        stdout_miss.contains(r#""added":1"#),
+        "distinct dedup_id must add; got: {stdout_miss}"
+    );
+
+    let contents = fs::read_to_string(&ledger).unwrap();
+    let parsed: toml::Value = toml::from_str(&contents).unwrap();
+    let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(items.len(), 2);
+}
+
+/// T5: empty-value `--dedupe-by ""` (or `","` or `" , "`) must error at
+/// the CLI boundary rather than silently disable dedupe. This is the
+/// fail-loud contract from the plan — a caller who typed the flag with no
+/// payload almost certainly didn't mean "no-op", so we surface a
+/// directed error instead of writing a duplicate row that would slip
+/// past their intended guard. Covers the critical-decision branch in
+/// `parse_dedupe_fields`.
+#[test]
+fn items_add_dedupe_by_empty_value_is_fail_loud() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+"#,
+    );
+    for bad in ["", ",", " , "] {
+        let out = Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", dir.path())
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .arg("items")
+            .arg("add")
+            .arg(&ledger)
+            .arg("--json")
+            .arg(r#"{"id":"R1","summary":"y"}"#)
+            .arg("--dedupe-by")
+            .arg(bad)
+            .write_stdin("")
+            .assert()
+            .failure();
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        assert!(
+            stderr.contains("--dedupe-by requires at least one field name"),
+            "--dedupe-by {bad:?} must error; got stderr:\n{stderr}"
+        );
+    }
+}

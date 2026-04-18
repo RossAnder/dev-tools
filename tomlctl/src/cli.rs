@@ -17,9 +17,10 @@ use crate::convert::{
 };
 use crate::dedup::{DupTier, items_find_duplicates};
 use crate::integrity::IntegrityOpts;
-use crate::io::{mutate_doc, read_doc, read_doc_borrowed, read_toml_str};
+use crate::io::{mutate_doc, mutate_doc_conditional, read_doc, read_doc_borrowed, read_toml_str};
 use crate::items::{
-    array_append, items_add_many, items_add_to, items_apply_to_opts, items_get_from,
+    AddManyOutcome, AddOutcome, array_append, items_add_many, items_add_many_with_dedupe,
+    items_add_to, items_add_value_with_dedupe_to, items_apply_to_opts, items_get_from,
     items_infer_and_next_id, items_next_id, items_remove_from, items_update_to, parse_ndjson,
 };
 use crate::orphans::items_orphans;
@@ -79,6 +80,29 @@ fn read_ndjson_source(src: &str) -> Result<String> {
         std::fs::read_to_string(src)
             .with_context(|| format!("reading NDJSON file `{}`", src))
     }
+}
+
+/// T5: parse the `--dedupe-by` flag value into a `Vec<String>` of field
+/// paths. `None` (flag absent) returns an empty Vec — the caller treats
+/// that as "dedupe off" and the existing add/add-many code paths run
+/// unchanged. `Some("")` or `Some(",,")` (all-empty after split-and-trim)
+/// is a fail-loud case: the user typed the flag with no payload, which
+/// almost certainly isn't what they meant; we error with a directed
+/// message instead of silently disabling dedup.
+fn parse_dedupe_fields(raw: Option<&str>) -> Result<Vec<String>> {
+    let Some(s) = raw else {
+        return Ok(Vec::new());
+    };
+    let fields: Vec<String> = s
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(String::from)
+        .collect();
+    if fields.is_empty() {
+        bail!("--dedupe-by requires at least one field name");
+    }
+    Ok(fields)
 }
 
 /// Resolve a JSON argument: if it's literally "-", read stdin to a String.
@@ -454,6 +478,17 @@ enum ItemsOp {
         /// R57: target array-of-tables name. See `List --array`.
         #[arg(long, default_value = "items")]
         array: String,
+        /// T5: skip the add when an existing item already matches the
+        /// incoming payload on every listed field. Comma-separated list,
+        /// dotted paths for nested object fields (e.g. `summary,file` or
+        /// `meta.source_run`). Raw JSON equality; use `--where` upstream
+        /// for typed comparison. Does NOT implicitly include `dedup_id`.
+        #[arg(
+            long = "dedupe-by",
+            value_name = "F1,F2,...",
+            help = "Skip the add when an existing item matches these fields (raw equality; use --where for typed comparison)"
+        )]
+        dedupe_by: Option<String>,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -470,6 +505,17 @@ enum ItemsOp {
         defaults_json: Option<String>,
         #[arg(long, default_value = "items")]
         array: String,
+        /// T5: skip rows whose merged payload already matches an existing
+        /// item on every listed field. See `Add --dedupe-by`. When any
+        /// rows are skipped, the output adds `"skipped":M` and
+        /// `"skipped_rows":[{"row":N,"matched_id":"..."}, ...]`
+        /// (input-order ascending).
+        #[arg(
+            long = "dedupe-by",
+            value_name = "F1,F2,...",
+            help = "Skip rows whose values at these fields already exist (raw equality; use --where for typed comparison)"
+        )]
+        dedupe_by: Option<String>,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -794,22 +840,70 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let out = read_doc(&file, opts, |doc| items_get_from(doc, &array, &id))?;
             print_json(&out)?;
         }
-        ItemsOp::Add { file, json, array, integrity } => {
+        ItemsOp::Add { file, json, array, dedupe_by, integrity } => {
             let opts = write_integrity_opts(&integrity);
-            let json = read_json_arg(&json)?;
-            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
-                items_add_to(doc, &array, &json)
-            })?;
-            print_json_compact(&serde_json::json!({"ok": true}))?;
+            let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
+            if dedupe_fields.is_empty() {
+                // No-dedupe path: byte-identical behaviour to pre-T5 —
+                // same helper, same `{"ok":true}` output, same
+                // `mutate_doc` (always-write) pipeline. The T5 plan
+                // suggested emitting `{"ok":true,"added":1}` even in the
+                // no-dedupe case, but that would break the byte-identity
+                // constraint ("absent --dedupe-by → current behaviour
+                // byte-identical") since today's shape is plain
+                // `{"ok":true}`. Keep the legacy shape for back-compat
+                // and reserve the enriched shape for the `--dedupe-by`
+                // branch below.
+                let json = read_json_arg(&json)?;
+                mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+                    items_add_to(doc, &array, &json)
+                })?;
+                print_json_compact(&serde_json::json!({"ok": true}))?;
+            } else {
+                // Dedupe path: parse JSON once up-front so we can feed it
+                // to the pre-scan inside the lock without a re-parse.
+                // `mutate_doc_conditional` elides the write-and-sidecar
+                // bump when the scan returns a match; the caller sees
+                // `added:0,matched_id:...` and the on-disk file + sidecar
+                // are untouched.
+                let patch: JsonValue =
+                    read_json_value_from_arg(&json).context("parsing --json")?;
+                let mut outcome: Option<AddOutcome> = None;
+                mutate_doc_conditional(&file, integrity.allow_outside, opts, |doc| {
+                    let result = items_add_value_with_dedupe_to(
+                        doc,
+                        patch,
+                        &array,
+                        &dedupe_fields,
+                    )?;
+                    let mutated = matches!(result, AddOutcome::Added);
+                    outcome = Some(result);
+                    Ok(mutated)
+                })?;
+                match outcome.expect("closure always sets outcome on success") {
+                    AddOutcome::Added => {
+                        print_json_compact(&serde_json::json!({"ok": true, "added": 1}))?;
+                    }
+                    AddOutcome::Skipped { matched_id } => {
+                        print_json_compact(&serde_json::json!({
+                            "ok": true,
+                            "added": 0,
+                            "matched_id": matched_id,
+                        }))?;
+                    }
+                }
+            }
         }
         ItemsOp::AddMany {
             file,
             ndjson,
             defaults_json,
             array,
+            dedupe_by,
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);
+            let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
             // NDJSON source resolution factored into `read_ndjson_source` (R84);
             // the STDIN_CONSUMED guard in `read_json_arg` still refuses a second
             // `-` when `--defaults-json -` also wants stdin on the same call.
@@ -823,12 +917,53 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 ),
                 None => None,
             };
-            let mut added: usize = 0;
-            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
-                added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
-                Ok(())
-            })?;
-            print_json_compact(&serde_json::json!({"ok": true, "added": added}))?;
+            if dedupe_fields.is_empty() {
+                // No-dedupe path: byte-identical to pre-T5. Same helper,
+                // same output shape (`{"ok":true,"added":N}`), same
+                // always-write pipeline.
+                let mut added: usize = 0;
+                mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+                    added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
+                    Ok(())
+                })?;
+                print_json_compact(&serde_json::json!({"ok": true, "added": added}))?;
+            } else {
+                // Dedupe path: run the pre-scan + append loop inside the
+                // lock via `mutate_doc_conditional`. Skip the file write
+                // entirely when the batch added zero rows — the doc is
+                // untouched and the sidecar must not bump for a pure-
+                // skip batch. Any `added > 0` takes the write branch.
+                let mut outcome: Option<AddManyOutcome> = None;
+                mutate_doc_conditional(&file, integrity.allow_outside, opts, |doc| {
+                    let result = items_add_many_with_dedupe(
+                        doc,
+                        &array,
+                        &rows,
+                        defaults.as_ref(),
+                        &dedupe_fields,
+                    )?;
+                    let mutated = result.added > 0;
+                    outcome = Some(result);
+                    Ok(mutated)
+                })?;
+                let outcome = outcome.expect("closure always sets outcome on success");
+                let skipped_rows_json: Vec<JsonValue> = outcome
+                    .skipped_rows
+                    .iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "row": s.row,
+                            "matched_id": s.matched_id,
+                        })
+                    })
+                    .collect();
+                print_json_compact(&serde_json::json!({
+                    "ok": true,
+                    "added": outcome.added,
+                    "skipped": outcome.skipped_rows.len(),
+                    "skipped_rows": skipped_rows_json,
+                }))?;
+            }
         }
         ItemsOp::Update {
             file,

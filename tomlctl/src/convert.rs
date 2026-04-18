@@ -46,6 +46,42 @@ pub(crate) const DATE_KEYS: &[&str] = &[
     "date",
 ];
 
+/// T5: JSON-side dotted-path walker used by `items add --dedupe-by`.
+///
+/// Mirrors the `navigate` contract on the TOML side: split `path` on `.`
+/// and descend one segment at a time, returning `None` when any segment
+/// is missing or the current node isn't an object (nested-field dedup
+/// bottoms out on the first non-object parent).
+///
+/// **Deliberate omissions** versus the TOML `navigate`:
+///   - No array-index segments. Dedup is evaluated on ledger items, each
+///     of which is already a JSON object; plucking `meta.source_run` from
+///     an item needs object-keying only. Supporting `field.0` would invite
+///     accidents where two items with divergent array shapes compare
+///     "missing-field equal" by walking off the end.
+///   - Null-on-missing is treated as `None` here, not `Some(Null)`. The
+///     caller (`find_dedupe_match`) normalises both sides to the same
+///     `Option<&JsonValue>` shape so missing-on-both is equal and
+///     missing-on-one-only is unequal.
+///
+/// Introduced by T5 (plan `docs/plans/tomlctl-capability-gaps.md`) because
+/// the `--where` predicate family does NOT currently factor out a nested-
+/// path walker — `eval_predicate` in `query.rs` uses flat `tbl.get(key)`
+/// lookups. Rather than widen the query-engine surface mid-T5, we add this
+/// JSON-side sibling and keep `--where`'s single-key lookup unchanged.
+pub(crate) fn walk_json_path<'a>(v: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
+    let mut cur = v;
+    for seg in path.split('.') {
+        match cur {
+            JsonValue::Object(m) => {
+                cur = m.get(seg)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(cur)
+}
+
 /// Read-side dotted-path traversal. Each segment either:
 ///   - indexes the current table by its key, OR
 ///   - (R49) when the current value is an array and the segment parses as a

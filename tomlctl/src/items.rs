@@ -13,7 +13,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use toml::Value as TomlValue;
 
-use crate::convert::{json_type_name, maybe_date_coerce, toml_to_json};
+use crate::convert::{json_type_name, maybe_date_coerce, toml_to_json, walk_json_path};
 use crate::io::{item_id, items_array, items_array_mut};
 
 /// O18: minimum number of `update` ops in a batch before we pay to build
@@ -81,6 +81,97 @@ pub(crate) fn items_add_value_to(
     let arr = items_array_mut(doc, array_name)?;
     arr.push(TomlValue::Table(tbl));
     Ok(())
+}
+
+/// T5 (plan `docs/plans/tomlctl-capability-gaps.md`): scan `doc[array_name]`
+/// for the first existing item whose values at every path in `fields` equal
+/// the corresponding values in `payload`. Returns the item's `id` on match,
+/// `None` if no match.
+///
+/// Semantics:
+///   - Each entry of `fields` is a dotted path interpreted by
+///     `walk_json_path` (object descent only; no array-index segments).
+///   - Each candidate item is converted to JSON via `toml_to_json` once,
+///     so the comparison happens in JSON space. This keeps "raw JSON
+///     equality" stable regardless of TOML surface differences (e.g. a
+///     TOML datetime and a JSON string land as `JsonValue::String(...)`
+///     in both the candidate and the payload views after coercion).
+///   - Missing-on-both-sides is treated as equal (the shared `None`).
+///     Missing-on-only-one-side is unequal.
+///   - ALL fields must match (logical AND). Empty `fields` returns `None`;
+///     callers use the absent-flag path for "no dedupe".
+///
+/// Deliberately **not** typed-coerced: the `--where` predicate family
+/// supports `@int:5`, `@date:2026-04-18` etc. for typed comparison, but
+/// `--dedupe-by` does not. Callers wanting a typed compare should use
+/// `--where` to pre-filter and a separate script to decide. The help
+/// text on `--dedupe-by` documents this.
+///
+/// **`--dedupe-by` does NOT implicitly include `dedup_id`**. Callers who
+/// want fingerprint-based dedup (once T6 auto-populates `dedup_id`) must
+/// pass `--dedupe-by dedup_id` explicitly. Keeping the flag orthogonal
+/// to the dedup-id auto-populate lets a caller opt into one without the
+/// other, and keeps T5 testable before T6 lands.
+pub(crate) fn find_dedupe_match(
+    doc: &TomlValue,
+    array_name: &str,
+    payload: &JsonValue,
+    fields: &[String],
+) -> Option<String> {
+    if fields.is_empty() {
+        return None;
+    }
+    for item in items_array(doc, array_name) {
+        let candidate_json = toml_to_json(item);
+        let all_match = fields.iter().all(|f| {
+            let lhs = walk_json_path(&candidate_json, f);
+            let rhs = walk_json_path(payload, f);
+            lhs == rhs
+        });
+        if all_match {
+            // Prefer the candidate-item's id (from the table) over walking
+            // the JSON again; this matches `item_id`'s contract exactly.
+            if let Some(id) = item_id(item) {
+                return Some(id.to_string());
+            }
+            // Fallback: item lacks an id field. Return an empty string
+            // sentinel so the caller can still surface "matched but
+            // untagged" without panicking. In practice every ledger item
+            // carries an id.
+            return Some(String::new());
+        }
+    }
+    None
+}
+
+/// T5: outcome of a dedupe-aware `items add`. `Added` = appended a fresh
+/// row. `Skipped { matched_id }` = pre-scan found an existing row whose
+/// dedupe-field values equal the payload's; the doc is left untouched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AddOutcome {
+    Added,
+    Skipped { matched_id: String },
+}
+
+/// T5: dedupe-aware wrapper around `items_add_value_to`. Empty `fields`
+/// short-circuits to the current behaviour (append unconditionally,
+/// return `Added`). A non-empty slice runs the pre-scan under the
+/// caller-held lock; on match the outcome reports the matched id and
+/// the doc is not mutated; on no-match we delegate to
+/// `items_add_value_to` for the real insert.
+pub(crate) fn items_add_value_with_dedupe_to(
+    doc: &mut TomlValue,
+    patch: JsonValue,
+    array_name: &str,
+    dedupe_fields: &[String],
+) -> Result<AddOutcome> {
+    if !dedupe_fields.is_empty()
+        && let Some(matched_id) = find_dedupe_match(doc, array_name, &patch, dedupe_fields)
+    {
+        return Ok(AddOutcome::Skipped { matched_id });
+    }
+    items_add_value_to(doc, patch, array_name)?;
+    Ok(AddOutcome::Added)
 }
 
 /// O51: "empty" predicate shared by `items_add_value_to` /
@@ -644,6 +735,93 @@ pub(crate) fn array_append(
     rows: &[JsonValue],
 ) -> Result<usize> {
     items_add_many(doc, array_name, rows, None)
+}
+
+/// T5: aggregate result of a dedupe-aware `items add-many` batch. `added`
+/// is the number of rows appended; `skipped_rows` is the per-row skip log
+/// in INPUT ORDER (ascending by 1-indexed row number to match
+/// `items_add_many`'s existing error-messages). `skipped_rows.len()` is
+/// the "skipped" count — the CLI layer emits both so the JSON contract
+/// stays explicit.
+#[derive(Debug, Clone)]
+pub(crate) struct AddManyOutcome {
+    pub added: usize,
+    pub skipped_rows: Vec<SkippedRow>,
+}
+
+/// T5: one entry per skipped row in the add-many batch. `row` is
+/// **1-indexed** to match the error-message convention elsewhere in
+/// `items_add_many` (`row N: must be a JSON object`). `matched_id` is the
+/// `id` of the existing item that caused the skip.
+#[derive(Debug, Clone)]
+pub(crate) struct SkippedRow {
+    pub row: usize,
+    pub matched_id: String,
+}
+
+/// T5: dedupe-aware sibling of `items_add_many`. Empty `dedupe_fields`
+/// replicates the existing semantics (append every row, return
+/// `added == rows.len()`). A non-empty slice runs `find_dedupe_match` on
+/// the current doc state before each row; rows that match an existing
+/// item are skipped and recorded.
+///
+/// Atomicity: the caller holds the exclusive lock for the whole
+/// operation via `mutate_doc` / `mutate_doc_conditional`, so the
+/// pre-scan, the conditional append, and any subsequent pre-scans (each
+/// of which observes freshly-added rows from earlier iterations) all
+/// happen inside the same critical section. No concurrent writer can
+/// slip an identical row between our scan and our append.
+///
+/// Intra-batch self-dedup: if two rows in the SAME payload would match
+/// each other, the second one dedupes against the first because the
+/// first has already been appended to `doc`. This is usually what the
+/// caller wants (NDJSON with accidental repeats in one pipe).
+pub(crate) fn items_add_many_with_dedupe(
+    doc: &mut TomlValue,
+    array_name: &str,
+    rows: &[JsonValue],
+    defaults: Option<&JsonValue>,
+    dedupe_fields: &[String],
+) -> Result<AddManyOutcome> {
+    let base: serde_json::Map<String, JsonValue> = match defaults {
+        Some(v) => v
+            .as_object()
+            .ok_or_else(|| anyhow!("--defaults-json must be a JSON object"))?
+            .clone(),
+        None => serde_json::Map::new(),
+    };
+    let mut added: usize = 0;
+    let mut skipped_rows: Vec<SkippedRow> = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let row_num = i + 1;
+        let row_obj = row
+            .as_object()
+            .ok_or_else(|| anyhow!("row {}: must be a JSON object", row_num))?;
+        // Build the merged payload first so dedupe sees the same fields
+        // `items_add_value_to` would otherwise persist.
+        let mut merged = serde_json::Map::with_capacity(base.len() + row_obj.len());
+        merged.extend(base.clone());
+        for (k, v) in row_obj.iter() {
+            merged.insert(k.clone(), v.clone());
+        }
+        let merged_val = JsonValue::Object(merged);
+        if !dedupe_fields.is_empty()
+            && let Some(matched_id) = find_dedupe_match(doc, array_name, &merged_val, dedupe_fields)
+        {
+            skipped_rows.push(SkippedRow {
+                row: row_num,
+                matched_id,
+            });
+            continue;
+        }
+        items_add_value_to(doc, merged_val, array_name)
+            .with_context(|| format!("row {}", row_num))?;
+        added += 1;
+    }
+    Ok(AddManyOutcome {
+        added,
+        skipped_rows,
+    })
 }
 
 #[cfg(test)]
@@ -1699,5 +1877,182 @@ summary = "existing"
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["id"], "R1");
         assert_eq!(rows[1]["id"], "R2");
+    }
+
+    // ----- T5: --dedupe-by (find_dedupe_match unit tests) ----------------
+
+    /// Build a small ledger fixture for dedupe tests with two existing
+    /// items. Re-used across the cases below so each test asserts one
+    /// branch of the `find_dedupe_match` logic in isolation. R1 carries
+    /// a nested `meta` object (via `[items.meta]`-style inline table) so
+    /// the dotted-path walker is exercised on an item with nested depth.
+    fn dedupe_fixture() -> TomlValue {
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "alpha"
+status = "open"
+meta = { source_run = "run-42" }
+
+[[items]]
+id = "R2"
+file = "src/b.rs"
+summary = "beta"
+status = "open"
+"#;
+        toml::from_str(src).unwrap()
+    }
+
+    #[test]
+    fn find_dedupe_match_empty_fields_returns_none() {
+        // An empty fields slice must behave as "dedupe off" — no scan,
+        // no match. The dispatcher uses this to skip the flag entirely;
+        // the helper itself pins the contract so a careless refactor
+        // can't flip it to "match on everything".
+        let doc = dedupe_fixture();
+        let payload: JsonValue = serde_json::from_str(
+            r#"{"file":"src/a.rs","summary":"alpha"}"#,
+        )
+        .unwrap();
+        let got = find_dedupe_match(&doc, "items", &payload, &[]);
+        assert_eq!(got, None, "empty fields must never match");
+    }
+
+    #[test]
+    fn find_dedupe_match_multi_field_all_must_match() {
+        let doc = dedupe_fixture();
+        // Both `file` and `summary` match R1 — hit.
+        let hit: JsonValue = serde_json::from_str(
+            r#"{"file":"src/a.rs","summary":"alpha","status":"new"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            find_dedupe_match(
+                &doc,
+                "items",
+                &hit,
+                &["file".to_string(), "summary".to_string()],
+            ),
+            Some("R1".to_string())
+        );
+
+        // `file` matches R1 but `summary` differs — miss.
+        let miss: JsonValue = serde_json::from_str(
+            r#"{"file":"src/a.rs","summary":"different"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            find_dedupe_match(
+                &doc,
+                "items",
+                &miss,
+                &["file".to_string(), "summary".to_string()],
+            ),
+            None,
+            "partial field match must not count as a dedupe hit"
+        );
+    }
+
+    #[test]
+    fn find_dedupe_match_missing_on_both_sides_is_equal() {
+        // Neither R1/R2 nor the payload carries `nonexistent_field`, so
+        // both `walk_json_path` calls return `None` — equal by
+        // definition. A `--dedupe-by nonexistent_field,file` predicate
+        // therefore reduces to the `file` field alone in practice.
+        let doc = dedupe_fixture();
+        let payload: JsonValue = serde_json::from_str(r#"{"file":"src/a.rs"}"#).unwrap();
+        let got = find_dedupe_match(
+            &doc,
+            "items",
+            &payload,
+            &["nonexistent_field".to_string(), "file".to_string()],
+        );
+        assert_eq!(got, Some("R1".to_string()));
+    }
+
+    #[test]
+    fn find_dedupe_match_missing_on_one_side_is_unequal() {
+        // Payload has `file` = src/a.rs (matches R1) AND `extra_key` =
+        // "x" (R1 lacks it). `extra_key` is missing on the candidate
+        // side and present on the payload side → unequal → miss.
+        let doc = dedupe_fixture();
+        let payload: JsonValue = serde_json::from_str(
+            r#"{"file":"src/a.rs","extra_key":"x"}"#,
+        )
+        .unwrap();
+        let got = find_dedupe_match(
+            &doc,
+            "items",
+            &payload,
+            &["file".to_string(), "extra_key".to_string()],
+        );
+        assert_eq!(got, None, "one-sided presence must be unequal");
+    }
+
+    #[test]
+    fn items_add_value_with_dedupe_to_appends_on_miss_and_skips_on_hit() {
+        let mut doc = dedupe_fixture();
+        let patch: JsonValue =
+            serde_json::from_str(r#"{"id":"R3","file":"src/c.rs","summary":"gamma"}"#)
+                .unwrap();
+        // First call: no existing row with file=src/c.rs — append.
+        let outcome = items_add_value_with_dedupe_to(
+            &mut doc,
+            patch.clone(),
+            "items",
+            &["file".to_string(), "summary".to_string()],
+        )
+        .unwrap();
+        assert!(matches!(outcome, AddOutcome::Added));
+        // Second call with the same patch: R3 now exists → skip, report
+        // `matched_id=R3`. Doc unchanged relative to the post-first-call
+        // state.
+        let outcome = items_add_value_with_dedupe_to(
+            &mut doc,
+            patch,
+            "items",
+            &["file".to_string(), "summary".to_string()],
+        )
+        .unwrap();
+        match outcome {
+            AddOutcome::Skipped { matched_id } => assert_eq!(matched_id, "R3"),
+            other => panic!("expected Skipped(R3), got {other:?}"),
+        }
+        // Array length still 3 (original 2 + the single R3 add).
+        let items = doc.get("items").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(items.len(), 3);
+    }
+
+    #[test]
+    fn items_add_many_with_dedupe_records_skipped_rows_in_input_order() {
+        let mut doc = dedupe_fixture();
+        let rows: Vec<JsonValue> = vec![
+            // Row 1: new → added.
+            serde_json::from_str(r#"{"id":"R3","file":"src/c.rs","summary":"gamma"}"#)
+                .unwrap(),
+            // Row 2: duplicate of R1 → skipped.
+            serde_json::from_str(r#"{"id":"R99","file":"src/a.rs","summary":"alpha"}"#)
+                .unwrap(),
+            // Row 3: new → added.
+            serde_json::from_str(r#"{"id":"R4","file":"src/d.rs","summary":"delta"}"#)
+                .unwrap(),
+        ];
+        let outcome = items_add_many_with_dedupe(
+            &mut doc,
+            "items",
+            &rows,
+            None,
+            &["file".to_string(), "summary".to_string()],
+        )
+        .unwrap();
+        assert_eq!(outcome.added, 2);
+        assert_eq!(outcome.skipped_rows.len(), 1);
+        assert_eq!(outcome.skipped_rows[0].row, 2);
+        assert_eq!(outcome.skipped_rows[0].matched_id, "R1");
+        // Doc state: original 2 + 2 added = 4.
+        let items = doc.get("items").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(items.len(), 4);
     }
 }
