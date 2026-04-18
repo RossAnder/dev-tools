@@ -2679,3 +2679,294 @@ file = "src/b.rs"
         "dry-run then live apply must produce byte-identical output to live-only apply"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 11 (plan `docs/plans/tomlctl-capability-gaps.md`): `items
+// backfill-dedup-id <file>` — explicit, auditable upgrade path for pre-Task-6
+// ledgers. Walks every item, computes `tier_b_fingerprint` on any item
+// lacking `dedup_id`, writes atomically via T10's compute/apply split.
+// Idempotent: a re-run on a fully-populated ledger is a no-op (no write,
+// no sidecar bump). Honours `TOMLCTL_NO_DEDUP_ID`.
+//
+// Acceptance (a)-(d) from the plan map 1:1 onto the tests below so the
+// plan audit trail stays readable.
+// ---------------------------------------------------------------------------
+
+/// T11 (a): ledger with N items, NONE with `dedup_id` → backfill adds the
+/// field to every item, and each digest matches `tier_b_fingerprint` of
+/// its on-disk fingerprinted fields.
+#[test]
+fn items_backfill_dedup_id_populates_every_missing_item() {
+    // Seed with a kill-switch so the add path doesn't auto-populate —
+    // gives us a legacy-shaped ledger with no `dedup_id` anywhere.
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    for (id, summary) in &[("R1", "alpha"), ("R2", "beta"), ("R3", "gamma")] {
+        Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", dir.path())
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .env("TOMLCTL_NO_DEDUP_ID", "1")
+            .arg("items")
+            .arg("add")
+            .arg(&ledger)
+            .arg("--json")
+            .arg(format!(
+                r#"{{"id":"{id}","file":"src/a.rs","summary":"{summary}","severity":"warning","category":"quality"}}"#,
+            ))
+            .write_stdin("")
+            .assert()
+            .success();
+    }
+    let before: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let items_before = before.get("items").and_then(|v| v.as_array()).unwrap();
+    for item in items_before {
+        assert!(
+            item.as_table().unwrap().get("dedup_id").is_none(),
+            "legacy ledger must have no dedup_id on any item before backfill"
+        );
+    }
+
+    // Run backfill (kill switch OFF, so auto-populate can actually fire).
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items")
+        .arg("backfill-dedup-id")
+        .arg(&ledger)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(
+        v["backfilled"], serde_json::json!(3),
+        "three items were missing dedup_id, so backfilled=3"
+    );
+    // "reason" must NOT appear on the success-with-work shape.
+    assert!(
+        v.get("reason").is_none(),
+        "'reason' should only appear on disabled-by-env; got: {stdout}"
+    );
+
+    // After: every item has a valid 16-hex dedup_id matching its
+    // fingerprinted fields. The exact digest is deterministic — this test
+    // treats length+hex as the minimum invariant (a format change would
+    // also surface in the dedup.rs unit tests).
+    let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let items_after = after.get("items").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(items_after.len(), 3);
+    for item in items_after {
+        let tbl = item.as_table().unwrap();
+        let fp = tbl
+            .get("dedup_id")
+            .and_then(|v| v.as_str())
+            .expect("dedup_id must be populated after backfill");
+        assert_eq!(fp.len(), 16, "must be 16 hex chars; got {fp:?}");
+        assert!(
+            fp.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "lowercase hex only; got {fp:?}"
+        );
+    }
+    // All three digests must differ (the summaries differ, which feeds
+    // into the fingerprint input).
+    let fps: Vec<&str> = items_after
+        .iter()
+        .map(|i| i.as_table().unwrap().get("dedup_id").unwrap().as_str().unwrap())
+        .collect();
+    assert_ne!(fps[0], fps[1]);
+    assert_ne!(fps[1], fps[2]);
+    assert_ne!(fps[0], fps[2]);
+}
+
+/// T11 (b): mixed ledger — some items have `dedup_id`, some don't. The
+/// backfill must touch ONLY the missing ones, preserving the existing
+/// values byte-for-byte (even if the existing values are "wrong" for the
+/// current fingerprint algorithm — the CLI is explicit about this).
+#[test]
+fn items_backfill_dedup_id_preserves_preexisting_values() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "alpha"
+severity = "warning"
+category = "quality"
+
+[[items]]
+id = "R2"
+file = "src/b.rs"
+summary = "beta"
+severity = "warning"
+category = "quality"
+dedup_id = "preexisting-legacy"
+
+[[items]]
+id = "R3"
+file = "src/c.rs"
+summary = "gamma"
+severity = "warning"
+category = "quality"
+"#,
+    );
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items")
+        .arg("backfill-dedup-id")
+        .arg(&ledger)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(
+        v["backfilled"], serde_json::json!(2),
+        "only R1 and R3 were missing dedup_id"
+    );
+
+    let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
+    let items = after.get("items").and_then(|v| v.as_array()).unwrap();
+    // R1 — newly populated, valid 16-hex.
+    let r1_fp = items[0].as_table().unwrap().get("dedup_id").and_then(|v| v.as_str()).unwrap();
+    assert_eq!(r1_fp.len(), 16);
+    // R2 — preserved verbatim, even though it doesn't match the real
+    // fingerprint. Preservation is a hard contract — callers who want to
+    // rewrite a "wrong" digest must use `items update` explicitly.
+    assert_eq!(
+        items[1].as_table().unwrap().get("dedup_id").and_then(|v| v.as_str()),
+        Some("preexisting-legacy"),
+        "pre-existing dedup_id must be preserved byte-for-byte"
+    );
+    // R3 — newly populated, valid 16-hex, differs from R1 (different
+    // summary feeds a different digest).
+    let r3_fp = items[2].as_table().unwrap().get("dedup_id").and_then(|v| v.as_str()).unwrap();
+    assert_eq!(r3_fp.len(), 16);
+    assert_ne!(r1_fp, r3_fp);
+}
+
+/// T11 (c): `TOMLCTL_NO_DEDUP_ID=1` short-circuits backfill to a no-op
+/// with the documented explanatory output. The ledger file and its
+/// sidecar must remain byte-identical — the kill switch leaves no I/O
+/// trace.
+#[test]
+fn items_backfill_dedup_id_kill_switch_is_no_op() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "alpha"
+severity = "warning"
+category = "quality"
+"#,
+    );
+    let before_bytes = fs::read(&ledger).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env("TOMLCTL_NO_DEDUP_ID", "1")
+        .arg("items")
+        .arg("backfill-dedup-id")
+        .arg(&ledger)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["backfilled"], serde_json::json!(0));
+    assert_eq!(
+        v["reason"], serde_json::json!("disabled-by-env"),
+        "kill-switch short-circuit must emit documented reason; got: {stdout}"
+    );
+    let after_bytes = fs::read(&ledger).unwrap();
+    assert_eq!(
+        before_bytes, after_bytes,
+        "kill-switch path must not rewrite the ledger"
+    );
+}
+
+/// T11 (d): idempotent re-run — after (a) backfills everything, a second
+/// invocation emits `{"ok":true,"backfilled":0}` (no `reason` field,
+/// since the kill switch isn't set) and skips the write entirely. The
+/// ledger bytes and the sidecar bytes must both be unchanged — the
+/// no-op fast path never takes the exclusive lock.
+#[test]
+fn items_backfill_dedup_id_idempotent_second_run_skips_write() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","file":"src/a.rs","summary":"alpha","severity":"warning","category":"quality"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+
+    // The add path already auto-populates `dedup_id`, so the first
+    // backfill is trivially a no-op on this fixture — we want the
+    // idempotence contract to hold for THAT shape (every item already
+    // has dedup_id), regardless of whether it got there via add or a
+    // prior backfill.
+    let sidecar = {
+        let mut s = ledger.clone().into_os_string();
+        s.push(".sha256");
+        PathBuf::from(s)
+    };
+    assert!(sidecar.exists(), "add primes the sidecar");
+    let before_bytes = fs::read(&ledger).unwrap();
+    let before_sidecar_bytes = fs::read(&sidecar).unwrap();
+    let before_sidecar_mtime = fs::metadata(&sidecar).unwrap().modified().unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items")
+        .arg("backfill-dedup-id")
+        .arg(&ledger)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["backfilled"], serde_json::json!(0));
+    assert!(
+        v.get("reason").is_none(),
+        "reason must not appear when not disabled-by-env; got: {stdout}"
+    );
+    // The no-op path must not touch the file or sidecar at all.
+    let after_bytes = fs::read(&ledger).unwrap();
+    let after_sidecar_bytes = fs::read(&sidecar).unwrap();
+    let after_sidecar_mtime = fs::metadata(&sidecar).unwrap().modified().unwrap();
+    assert_eq!(
+        before_bytes, after_bytes,
+        "idempotent backfill must leave ledger bytes unchanged"
+    );
+    assert_eq!(
+        before_sidecar_bytes, after_sidecar_bytes,
+        "idempotent backfill must leave sidecar bytes unchanged"
+    );
+    assert_eq!(
+        before_sidecar_mtime, after_sidecar_mtime,
+        "idempotent backfill must not bump sidecar mtime"
+    );
+}

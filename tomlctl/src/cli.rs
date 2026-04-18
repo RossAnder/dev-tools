@@ -23,9 +23,9 @@ use crate::io::{
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, MutationPlan, array_append, compute_apply_mutation,
-    compute_remove_mutation, items_add_many, items_add_many_with_dedupe, items_add_to,
-    items_add_value_with_dedupe_to, items_get_from, items_infer_and_next_id, items_next_id,
-    items_update_to, parse_ndjson,
+    compute_backfill_mutation, compute_remove_mutation, dedup_id_disabled, items_add_many,
+    items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_get_from,
+    items_infer_and_next_id, items_next_id, items_update_to, parse_ndjson,
 };
 use crate::orphans::items_orphans;
 use crate::query::{self, OutputShape, Query};
@@ -669,6 +669,53 @@ enum ItemsOp {
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
+
+    /// T11: explicit, auditable upgrade path for pre-Task-6 ledgers whose
+    /// items lack `dedup_id`. Walks every item in the ledger, computes
+    /// `tier_b_fingerprint` on any item missing the field, and writes the
+    /// updated ledger atomically via the same compute/apply split as T10's
+    /// `items remove --dry-run` / `items apply --dry-run`.
+    ///
+    /// Contract (idempotent, preservation-safe):
+    ///
+    /// - Items that already carry `dedup_id` are NEVER recomputed — the
+    ///   existing value is preserved byte-for-byte regardless of whether
+    ///   the fingerprinted fields have since drifted. If a legacy digest
+    ///   needs replacing, use `items update --json '{"dedup_id":"..."}'`.
+    /// - Re-running the subcommand on a fully-populated ledger is a no-op:
+    ///   the file is NOT rewritten, the `.sha256` sidecar does not bump
+    ///   (no mtime churn, no lock take other than the initial read).
+    /// - `TOMLCTL_NO_DEDUP_ID=1` short-circuits to a documented
+    ///   `{"ok":true,"backfilled":0,"reason":"disabled-by-env"}` output
+    ///   without reading the ledger.
+    ///
+    /// Output shape:
+    ///
+    /// - Work done: `{"ok":true,"backfilled":N}` where N is the count of
+    ///   newly-populated items.
+    /// - Nothing to do: `{"ok":true,"backfilled":0}`.
+    /// - `--dry-run`: `{"ok":true,"dry_run":true,"would_backfill":N,"ids":[...]}`.
+    BackfillDedupId {
+        file: PathBuf,
+        /// Target array-of-tables name. Defaults to `items` (the ledger
+        /// schema). Use e.g. `--array rollback_events` for non-standard
+        /// arrays that carry a `dedup_id` contract.
+        #[arg(long, default_value = "items")]
+        array: String,
+        /// T11: preview the backfill without writing. Emits
+        /// `{"ok":true,"dry_run":true,"would_backfill":N,"ids":[...]}` and
+        /// leaves the ledger + sidecar byte-identical. Honours the kill
+        /// switch env var the same way the live path does — a dry run
+        /// with `TOMLCTL_NO_DEDUP_ID=1` set emits the same `disabled-by-env`
+        /// shape as a real run, just without ever touching the filesystem.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the backfill without writing. Emits a would_backfill summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1172,6 +1219,85 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let opts = read_integrity_opts(&integrity);
             let orphans = read_doc(&file, opts, items_orphans)?;
             print_json(&JsonValue::Array(orphans))?;
+        }
+        ItemsOp::BackfillDedupId { file, array, dry_run, integrity } => {
+            // T11: kill-switch short-circuit. Checked at the dispatch
+            // boundary (rather than inside `compute_backfill_mutation`) so
+            // both live and dry-run paths surface the documented
+            // `disabled-by-env` output WITHOUT touching the filesystem —
+            // the user's rollback lever should leave no I/O trace. The
+            // other funnels (add / update / apply / add-many) check the
+            // flag inside the per-funnel hook because the flag only gates
+            // the auto-populate side-effect there, not the whole operation.
+            if dedup_id_disabled() {
+                print_json_compact(&serde_json::json!({
+                    "ok": true,
+                    "backfilled": 0,
+                    "reason": "disabled-by-env",
+                }))?;
+                return Ok(());
+            }
+            let opts = write_integrity_opts(&integrity);
+            // Pre-read outside the exclusive lock to detect the no-op case
+            // (every item already has `dedup_id`) so we can skip the lock
+            // + rewrite + sidecar bump entirely. The read itself honours
+            // `--verify-integrity` under a shared lock via `read_doc`, so
+            // the integrity contract stays intact. Benign TOCTOU: if
+            // another writer backfills between our pre-read and our
+            // in-lock re-compute, the in-lock path just sees fewer items
+            // to touch and writes byte-identical bytes — no data
+            // corruption, just one redundant write. The common case
+            // (genuine no-op) avoids the write altogether.
+            let read_opts = IntegrityOpts {
+                write_sidecar: false,
+                verify_on_read: integrity.verify_integrity,
+                strict: false,
+            };
+            let preview = read_doc(&file, read_opts, |doc| {
+                compute_backfill_mutation(doc, &array)
+            })?;
+            if dry_run {
+                // Dry-run: emit the preview and stop — never acquires the
+                // exclusive lock, never writes, never bumps the sidecar.
+                // `ids` mirrors `plan.updated` verbatim so downstream
+                // callers can diff the preview against a later run.
+                let summary = serde_json::json!({
+                    "ok": true,
+                    "dry_run": true,
+                    "would_backfill": preview.updated.len(),
+                    "ids": preview.updated,
+                });
+                print_json_compact(&summary)?;
+            } else if preview.updated.is_empty() {
+                // No-op fast path: skip the write entirely. The sidecar
+                // does NOT re-hash, the file mtime does NOT bump, the
+                // exclusive lock is never taken — the ledger is
+                // byte-identical and the caller sees `backfilled:0`.
+                // Mirrors T5's `mutate_doc_conditional` "no-mutation →
+                // no-write" contract without needing a new wrapper.
+                print_json_compact(&serde_json::json!({
+                    "ok": true,
+                    "backfilled": 0,
+                }))?;
+            } else {
+                // Live path: re-read inside the exclusive lock via
+                // `mutate_doc_plan` and recompute. Recomputing (rather
+                // than reusing the pre-read plan) closes the TOCTOU
+                // window against a concurrent writer. The count we
+                // emit comes from the IN-LOCK plan so the output
+                // reflects what actually landed on disk, not the
+                // pre-read snapshot.
+                let mut written: usize = 0;
+                mutate_doc_plan(&file, integrity.allow_outside, opts, |doc| {
+                    let plan = compute_backfill_mutation(doc, &array)?;
+                    written = plan.updated.len();
+                    Ok(plan)
+                })?;
+                print_json_compact(&serde_json::json!({
+                    "ok": true,
+                    "backfilled": written,
+                }))?;
+            }
         }
     }
     Ok(())

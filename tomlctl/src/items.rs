@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use toml::Value as TomlValue;
 
 use crate::convert::{json_type_name, maybe_date_coerce, str_field, toml_to_json, walk_json_path};
-use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint_json};
+use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint, tier_b_fingerprint_json};
 use crate::io::{item_id, items_array, items_array_mut};
 
 /// T6b: env-var kill switch for every `dedup_id` auto-populate path. Any
@@ -24,7 +24,15 @@ const DEDUP_ID_KILL_SWITCH: &str = "TOMLCTL_NO_DEDUP_ID";
 
 /// T6b: return `true` iff auto-populate of `dedup_id` should be skipped on
 /// this invocation. Checked at every write-funnel hook site.
-fn dedup_id_disabled() -> bool {
+///
+/// T11: exposed to the CLI dispatch layer so `items backfill-dedup-id` can
+/// short-circuit to the documented `disabled-by-env` output without touching
+/// the ledger. The backfill subcommand is the one explicit-intent write path
+/// whose no-op cue is cleaner at the dispatch boundary than inside a compute
+/// helper — every other funnel (add / update / apply / add-many) checks the
+/// flag inside the per-funnel hook because the flag only gates the
+/// auto-populate side-effect, not the whole operation.
+pub(crate) fn dedup_id_disabled() -> bool {
     std::env::var(DEDUP_ID_KILL_SWITCH).is_ok()
 }
 
@@ -1041,6 +1049,88 @@ pub(crate) fn compute_remove_mutation(
         added: Vec::new(),
         updated: Vec::new(),
         removed: vec![id.to_string()],
+        skipped: Vec::new(),
+    })
+}
+
+/// T11: pure compute-phase helper for `items backfill-dedup-id`. Clones the
+/// doc, walks every item in `array_name`, and populates `dedup_id` on any
+/// item that lacks the field via `tier_b_fingerprint` over the same five
+/// fingerprinted fields (`file`, `summary`, `severity`, `category`,
+/// `symbol`) that `apply_dedup_id_on_add` uses at the add-path funnel.
+///
+/// Items that already carry a `dedup_id` (any non-null TOML value) are
+/// preserved byte-for-byte — preservation is a hard contract. If a legacy
+/// `dedup_id` is "wrong" (e.g. produced by an earlier fingerprint version),
+/// the backfill subcommand is NOT the fix — the caller must explicitly
+/// `items update --json '{"dedup_id":"..."}'` to rewrite it.
+///
+/// The returned plan records each newly-populated item's `id` in
+/// `plan.updated` (in input order). Items lacking an `id` field also get
+/// their fingerprint written but surface in `plan.updated` as an empty
+/// string — mirroring `compute_apply_mutation`'s per-op id capture contract
+/// so the CLI layer's `would_backfill` / `backfilled` count stays faithful
+/// to the number of items actually touched. `plan.added` and `plan.removed`
+/// stay empty.
+///
+/// **Kill-switch handling**: intentionally does NOT check
+/// `dedup_id_disabled()` — the CLI dispatch layer handles that branch BEFORE
+/// calling this helper, so callers that reach here want the backfill to run
+/// regardless of env state. Keeping the check outside this function lets
+/// the dispatch emit the documented `{"ok":true,"backfilled":0,"reason":
+/// "disabled-by-env"}` shape without an extra layer of plumbing.
+///
+/// **Error surface**: errors identically to `items_array_mut` (bails when
+/// the named array exists but isn't an array-of-tables). Empty-array (array
+/// absent or zero items) returns an empty-`updated` plan, letting the
+/// dispatch skip the write and emit `{"ok":true,"backfilled":0}`.
+pub(crate) fn compute_backfill_mutation(
+    doc: &TomlValue,
+    array_name: &str,
+) -> Result<MutationPlan> {
+    let mut new_doc = doc.clone();
+    let mut updated: Vec<String> = Vec::new();
+    // `items_array_mut` auto-creates the array if missing; this keeps the
+    // "empty ledger" path a trivial zero-item walk instead of a bail. Write
+    // paths across the rest of this module rely on the same semantics.
+    let arr = items_array_mut(&mut new_doc, array_name)?;
+    for item in arr.iter_mut() {
+        // Only table-shaped items participate. Scalar/array entries (unusual
+        // in a [[items]] layout but structurally possible for an arbitrary
+        // `--array` target) are skipped — they have no field to write into
+        // and no fingerprinted fields to read.
+        let Some(tbl) = item.as_table_mut() else {
+            continue;
+        };
+        // Contract: preserve any existing `dedup_id` regardless of its value.
+        // A present-but-empty-string `dedup_id` is still a deliberate caller
+        // choice (T6b treats empty-string as "absent in patch" for the
+        // RECOMPUTE decision, but not for backfill — backfill only ever
+        // FILLS IN a missing field, never overwrites). If a legacy empty
+        // value needs replacing, the caller uses `items update`.
+        if tbl.contains_key("dedup_id") {
+            continue;
+        }
+        // Use the TOML-side `tier_b_fingerprint` over the whole item table
+        // so the backfill digest is byte-identical to what `find-duplicates
+        // --tier B` produces. The JSON-side sibling in
+        // `apply_dedup_id_on_add` is used at the add path because that path
+        // starts from a JSON `Map` payload; here we have the parsed TOML
+        // table directly, avoiding an intermediate `toml_to_json` clone.
+        let fp = tier_b_fingerprint(&TomlValue::Table(tbl.clone()));
+        let id = tbl
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        tbl.insert("dedup_id".to_string(), TomlValue::String(fp));
+        updated.push(id);
+    }
+    Ok(MutationPlan {
+        new_doc,
+        added: Vec::new(),
+        updated,
+        removed: Vec::new(),
         skipped: Vec::new(),
     })
 }
@@ -2737,5 +2827,115 @@ summary = "first"
             err.to_string().contains("is a remove op, but --no-remove was set"),
             "expected --no-remove gate message; got: {err}"
         );
+    }
+
+    // ----- T11: compute_backfill_mutation ----------------------------------
+
+    /// T11 (unit): mixed-state ledger where some items already carry
+    /// `dedup_id` and others don't. The backfill must touch ONLY the
+    /// missing ones, preserving the pre-existing values exactly, and
+    /// `plan.updated` must list the newly-populated items' ids in input
+    /// order. `plan.new_doc` carries the freshly-populated digests on
+    /// the previously-bare items.
+    #[test]
+    fn compute_backfill_mutation_only_touches_missing() {
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "alpha"
+severity = "warning"
+category = "quality"
+
+[[items]]
+id = "R2"
+file = "src/b.rs"
+summary = "beta"
+severity = "warning"
+category = "quality"
+dedup_id = "preexisting-value"
+
+[[items]]
+id = "R3"
+file = "src/c.rs"
+summary = "gamma"
+severity = "warning"
+category = "quality"
+"#;
+        let doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan = compute_backfill_mutation(&doc, "items").unwrap();
+        // Only the two items lacking `dedup_id` get updated.
+        assert_eq!(
+            plan.updated,
+            vec!["R1".to_string(), "R3".to_string()],
+            "only items missing dedup_id should land in plan.updated"
+        );
+        assert!(plan.added.is_empty());
+        assert!(plan.removed.is_empty());
+        // Inspect the new_doc to confirm:
+        //   - R1 now has a dedup_id matching `tier_b_fingerprint`,
+        //   - R2's preserved exactly,
+        //   - R3 now has a dedup_id matching `tier_b_fingerprint`.
+        let items = plan.new_doc.get("items").and_then(|v| v.as_array()).unwrap();
+        let r1 = items[0].as_table().unwrap();
+        let r1_fp = r1.get("dedup_id").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(
+            r1_fp,
+            &tier_b_fingerprint(&TomlValue::Table(r1.clone())),
+            "R1's backfilled dedup_id must match tier_b_fingerprint of the item"
+        );
+        let r2 = items[1].as_table().unwrap();
+        assert_eq!(
+            r2.get("dedup_id").and_then(|v| v.as_str()),
+            Some("preexisting-value"),
+            "R2's pre-existing dedup_id must be preserved byte-for-byte"
+        );
+        let r3 = items[2].as_table().unwrap();
+        let r3_fp = r3.get("dedup_id").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(
+            r3_fp,
+            &tier_b_fingerprint(&TomlValue::Table(r3.clone())),
+            "R3's backfilled dedup_id must match tier_b_fingerprint of the item"
+        );
+    }
+
+    /// T11 (unit): idempotence — a ledger where every item already has
+    /// `dedup_id` produces an empty `plan.updated`. The CLI dispatch uses
+    /// this signal to skip the write entirely (no sidecar churn).
+    #[test]
+    fn compute_backfill_mutation_idempotent_when_all_present() {
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "alpha"
+dedup_id = "0123456789abcdef"
+
+[[items]]
+id = "R2"
+file = "src/b.rs"
+summary = "beta"
+dedup_id = "fedcba9876543210"
+"#;
+        let doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan = compute_backfill_mutation(&doc, "items").unwrap();
+        assert!(
+            plan.updated.is_empty(),
+            "no items missing dedup_id → plan.updated empty"
+        );
+    }
+
+    /// T11 (unit): empty-array ledger. `items_array_mut` auto-creates the
+    /// array if missing, so the walk is a no-op and `plan.updated` is empty.
+    #[test]
+    fn compute_backfill_mutation_empty_ledger() {
+        let fixture = "schema_version = 1\n";
+        let doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan = compute_backfill_mutation(&doc, "items").unwrap();
+        assert!(plan.updated.is_empty());
+        assert!(plan.added.is_empty());
+        assert!(plan.removed.is_empty());
     }
 }
