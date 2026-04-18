@@ -1,13 +1,16 @@
 ---
 description: Update plan documents — track progress, deviations, deferrals, and reconcile against codebase
-argument-hint: [plan path] [operation: status|deviation|defer|reconcile|snapshot|reformat|catchup]
+argument-hint: [plan path] [operation: status|deviation|defer|reconcile|snapshot|reformat|catchup|migrate]
 ---
 
+<!-- SHARED-BLOCK:flow-context START -->
 ## Flow Context
 
-Every invocation of this command reads and writes a per-flow `context.toml` at `.claude/flows/<slug>/context.toml` (under the git top-level). Multiple flows may coexist; resolution picks one per invocation. The schema below and the rules that follow it are the single source of truth for how this file is structured and updated — do not deviate.
+All `.claude/...` paths below resolve to the **project-local** `.claude/` directory at the git top-level. If no git top-level is available, refuse rather than fall back to `~/.claude/`.
 
 ### Canonical Flow Schema
+
+**No inline comments in the schema** — `Edit` tool's exact-string matching clobbers trailing comments during single-field updates. Status values and other enumerations are documented in the Shared Rules below, not in the schema block.
 
 ```toml
 slug = "auth-overhaul"
@@ -27,9 +30,12 @@ in_progress = 1
 [artifacts]
 review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
 optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
+execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
 ```
 
-### Status vocabulary
+### Shared Rules
+
+#### Status vocabulary
 
 `status` takes one of four string values: `draft`, `in-progress`, `review`, `complete`.
 
@@ -40,7 +46,7 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 
 **Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
 
-### Field responsibilities
+#### Field responsibilities
 
 - `slug` — immutable after creation. Only `plan-new` writes it.
 - `plan_path` — immutable after creation. For multi-file plans, `plan_path` points at the **outline file** (e.g. `docs/plans/auth-overhaul/00-outline.md`), not the directory.
@@ -49,9 +55,9 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 - `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
 - `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent when read, commands compute from `slug` but MUST write it back on their next TOML write.
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the full bootstrap sequence (zero-byte `Write` + `tomlctl set <path> schema_version 1` + `tomlctl set <path> last_updated <today>`) before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a readable log file in one step rather than erroring with `No such file or directory`.
 
-### Slug derivation
+#### Slug derivation
 
 Slug = plan filename minus `.md` extension. Examples:
 - `docs/plans/auth-overhaul.md` → slug `auth-overhaul`
@@ -59,7 +65,7 @@ Slug = plan filename minus `.md` extension. Examples:
 
 No additional slugification — the filename is already the slug.
 
-### Flow resolution order (every command, every invocation)
+#### Flow resolution order (every command, every invocation)
 
 1. **Explicit `--flow <slug>` argument**. If provided, use it verbatim. If `.claude/flows/<slug>/` doesn't exist, error.
 2. **Scope glob match on the path argument**. For each `.claude/flows/*/context.toml` where `status != "complete"`, read the `scope` array. For each pattern, invoke the `Glob` tool with the pattern and check whether the target path appears in the result. If exactly one flow matches, use it. Skip `status == "complete"` flows entirely.
@@ -67,14 +73,14 @@ No additional slugification — the filename is already the slug.
 4. **`.claude/active-flow` fallback**. Read the single-line slug. If `.claude/flows/<slug>/` exists with a valid `context.toml`, use it. If the pointed-at directory is missing or the TOML is malformed, proceed to step 5.
 5. **Ambiguous / none found**: list candidate flows (all non-complete flows with summary: slug, plan_path, status), ask the user.
 
-### TOML read/write contract
+#### TOML read/write contract
 
 - **Reading**: if `context.toml` is missing required fields (`slug`, `plan_path`, `status`, `created`, `updated`, `scope`, `[tasks]`, `[artifacts]`), prompt the user with the specific missing fields and the plan's current path. Do not synthesise defaults silently.
 - **Reading**: if `context.toml` is syntactically invalid (can't be parsed as TOML), report the parse error and ask the user to fix manually. Do not attempt auto-repair.
 - **Writing (preferred)**: use `tomlctl` (see skill `tomlctl`) — `tomlctl set <file> <key-path> <value>` for a scalar, `tomlctl set-json <file> <key-path> --json <value>` for arrays or sub-tables. `tomlctl` preserves `created` verbatim, preserves key order, holds an exclusive sidecar `.lock`, and writes atomically via tempfile + rename. One tool call per field — no Read/Edit choreography required.
 - **Writing (fallback)**: if `tomlctl` is unavailable, Read the file, modify only the target line(s) via `Edit`, Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
 
-### Flow-less fallback
+#### Flow-less fallback
 
 When `/review` or `/optimise` run on code outside any flow (resolution ends at step 5 and user picks "no flow"):
 - `/review` → `.claude/reviews/<scope>.toml`
@@ -82,9 +88,121 @@ When `/review` or `/optimise` run on code outside any flow (resolution ends at s
 
 Slug derivation for flow-less scope: lowercase, replace `/\` with `-`, collapse `--`, strip leading `-` (preserved from pre-redesign).
 
-### Completed-flow handling
+#### Completed-flow handling
 
 Flows with `status = "complete"` are skipped by resolution step 2 (scope glob match). They remain on disk for audit but do not participate in auto-resolution. Users can still target them via explicit `--flow <slug>`.
+<!-- SHARED-BLOCK:flow-context END -->
+
+<!-- SHARED-BLOCK:execution-record-schema START -->
+## Execution Record Schema
+
+Per-flow append-only log at `.claude/flows/<slug>/execution-record.toml`. Records every task-completion, verification, deviation, deferral, decision, reconcile, status-transition, and checkpoint emitted by `/plan-new`, `/implement`, and `/plan-update` against the flow. `PROGRESS-LOG.md` is a rendered view of this log, and `[tasks].completed` is derived from it. This section is the single source of truth for the file's shape and contract.
+
+### Canonical schema
+
+```toml
+schema_version = 1
+last_updated = 2026-04-18
+
+[[items]]
+id = "E1"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "add-retry-logic"
+summary = "Added retry logic in src/retry.rs"
+files = ["src/retry.rs", "tests/retry_test.rs"]
+commits = ["abc1234"]
+status = "done"
+
+[[items]]
+id = "E2"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "cargo test passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-04-18
+agent = "plan-update"
+task_ref = "add-redis-cache"
+summary = "Used existing LruCache util rather than introducing Redis"
+original_intent = "Add Redis dependency for caching"
+rationale = "src/util/cache.rs already covers the use case"
+commits = ["def5678"]
+legacy_id = "D3"
+```
+
+**Required fields per entry (all types):** `id` (E{n}, monotonic via `tomlctl items next-id <record> --prefix E`), `type`, `date` (YYYY-MM-DD TOML date — NOT `timestamp`), `agent`, `summary`.
+
+### Type vocabulary + type-specific required fields
+
+| Type | Required fields (in addition to the always-required five) |
+|------|-----------------------------------------------------------|
+| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `commits[]` |
+| `verification` | `command`, `outcome` ∈ {`pass`, `fail`} |
+| `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
+| `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
+| `decision` | `alternatives[]`, `chosen`, `rationale` |
+| `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |
+| `status-transition` | `from_status`, `to_status` |
+| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured |
+
+**`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). Slugs are derived from the plan document's task heading, lowercased, hyphenated.
+
+### Write contract — two-call pattern (canonical heredoc form)
+
+Every writer appends an entry using this exact idiom. Never tempfile-stage payloads; heredoc stdin is the blessed path.
+
+```
+cat <<'EOF' | tomlctl items add <fully-qualified-execution-record-path> --json -
+{"id":"<E{n}>","type":"<type>","date":"<YYYY-MM-DD>","agent":"<implement|plan-update|plan-new>","summary":"<one-line>", …type-specific fields…}
+EOF
+tomlctl set <fully-qualified-execution-record-path> last_updated <YYYY-MM-DD>
+```
+
+`<fully-qualified-execution-record-path>` MUST be the resolved value of `[artifacts].execution_record` in the flow's `context.toml` — NEVER the bare filename `execution-record.toml` (which resolves relative to CWD and would create a stray file at repo root during `/implement` / `/plan-update` runs). Writers that need the path without reading `context.toml` first can compute it as `.claude/flows/<slug>/execution-record.toml` per the slug derivation rule.
+
+Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfile + rename.
+
+### `[[items]]` naming rationale + restricted subcommands
+
+The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Two `tomlctl items` subcommands, `orphans` and `find-duplicates`, hardcode the review/optimise ledger schema (they expect `file`, `symbol`, `summary`, `severity`, `category`) and must not be invoked against `execution-record.toml` — they will emit garbage. All other `tomlctl items` subcommands work correctly against this schema.
+
+### Append-only + supersession
+
+Entries are never mutated after write. Corrections append a new entry carrying `supersedes_entry = "E<n>"` (pointing at the superseded entry's `id`). The render routine renders the latest entry per supersession chain; older entries remain in the log for audit.
+
+### Render-to-markdown contract
+
+Every op that mutates the log (i.e. appends an entry) regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` as its last step via the render-from-log routine. `PROGRESS-LOG.md` is a pure function of `execution-record.toml` — no timestamp substitution, no date-of-run leakage. The top of the rendered file carries the literal marker `<!-- Generated from execution-record.toml. Do not edit by hand. -->`.
+
+The render emits four tables: **Completed Items** (from `type=task-completion` + `status=done`), **Deviations** (from `type=deviation`), **Deferrals** (from `type=deferral`), and **Session Log** (grouped by `date`).
+
+**Session Log columns** — `| Date | Changes | Commits |`:
+- Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
+- **Date** = `YYYY-MM-DD` bucket key.
+- **Changes** = `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the bucket entry count. The word is `entry` when N == 1 (singular), `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in first-appearance order within the bucket. Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN). Example: a bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`. A singleton deviation renders `1 entry: deviation × 1`.
+- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). First-appearance SHA order (do NOT sort lexicographically). Empty when the bucket has no commits.
+
+Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency via the pre-sort + count-based Changes column).
+
+### `[tasks].completed` derivation
+
+`[tasks].completed` in `context.toml` is derived from the log on every write that touches `[tasks]`:
+
+```
+completed = tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref | jq -r '.[]' | sort -u | wc -l
+```
+
+Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `total` remains plan-document-driven; `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
+
+Before relying on the pipe above, verify `--pluck`'s output shape against the installed `tomlctl`: if it emits a JSON array (`["a","b"]`), keep `jq -r '.[]'`; if it emits newline-delimited strings, drop the `jq` step and pipe straight to `sort -u | wc -l`.
+<!-- SHARED-BLOCK:execution-record-schema END -->
 
 # Plan Maintenance
 
@@ -123,10 +241,10 @@ Once a flow is resolved, read its `.claude/flows/<slug>/context.toml` — the `p
 3. **Update flow context**: Once the plan is located, update the resolved flow's `.claude/flows/<slug>/context.toml`:
    - Set `updated` to today's date (ISO 8601 date value).
    - Set `status` according to what this operation determined (see the per-operation rules below). Accepted values: `draft`, `in-progress`, `review`, `complete`.
-   - Update `[tasks]` counts (`total`, `completed`, `in_progress`) to reflect the current plan state after the operation runs.
+   - Update `[tasks].total` (plan-document-driven) and **derive `[tasks].completed`** from `<record>` per Task 6's recipe in Step 3 (distinct-slug count over `task-completion` entries with `status=done`). MUST leave `[tasks].in_progress` untouched — that field is written exclusively by `/implement` during live execution.
    - **Preserve `created` verbatim.** Never regenerate it. Preserve key order. Do not introduce inline comments.
-   - If `[artifacts]` is absent, compute it from `slug` and write it back on this same update.
-   - If all plan items are now complete (or all remaining items are deferred), set `status = "complete"`. If the plan has entered a review phase between implementation rounds, set `status = "review"`.
+   - If `[artifacts]` is absent, compute it from `slug` and write it back on this same update. If `[artifacts].execution_record` points at a path that does not yet exist, bootstrap the file (zero-byte `Write` + `tomlctl set <path> schema_version 1` + `tomlctl set <path> last_updated <today>`) before any `tomlctl items add` / `list` / `get` call.
+   - If all plan items are now complete (or all remaining items are deferred), set `status = "complete"`. If the plan has entered a review phase between implementation rounds, set `status = "review"`. Append a `type=status-transition` entry whenever the value changes.
 4. If no progress log exists for the plan, offer to create one.
 
 ## Step 2: Determine Operation
@@ -135,28 +253,61 @@ Parse the operation from $ARGUMENTS (after the path). If no operation specified,
 
 ### Operations
 
-#### `status` — Update completion markers
-Scan plan items against the codebase and git history:
-- For each plan task/item, check whether the referenced files exist, the described changes are present, and relevant tests pass.
-- Update completion markers (Done/Not Done/Partial) in the progress log and outline.
-- Update the "Last updated" date.
-- Update completion percentages in summary tables.
-- **Update the resolved flow's `context.toml`**: write `[tasks].total` (the count of plan items), `[tasks].completed`, and `[tasks].in_progress` to reflect the current scan results. Set `updated` to today. Preserve `created` verbatim. If every plan item is complete, set `status = "complete"`; otherwise write `status = "in-progress"` (or `"review"` if the plan has explicitly entered a review phase between implementation rounds).
+#### `status` — Update completion markers (reconciler-contract bound)
+
+Scan plan items against the codebase and git history. For each plan task/item, check whether the referenced files exist, the described changes are present, and relevant tests pass. Then apply the **reconciler contract** below before any append, regenerate `PROGRESS-LOG.md` via the render-from-log routine, and update `context.toml` (set `updated` to today, derive `[tasks].completed` per Task 6's recipe in Step 3, preserve `created` verbatim, write `status` ∈ {`in-progress`, `review`, `complete`} per the rules in `## Flow Context`). This op MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field).
+
+##### RECONCILER CONTRACT
+
+`/implement` Phase 4.5 auto-invokes `Skill("plan-update", "status")`, so the `status` op is called immediately after `/implement` writes its own `task-completion` entries. Without the reconciler contract, the `status` op would double-write every completion `/implement` just recorded. The acceptance criterion is: **N `task-completion` entries before `status` runs == N entries after** (not 2N). The contract:
+
+1. **Build a skip-set first.** Before any append, query
+   ```
+   tomlctl items list <record> --where type=task-completion --pluck task_ref
+   ```
+   and treat the result as the skip-set. (If `--pluck` emits a JSON array, parse with `jq -r '.[]'`; if newline-delimited strings, consume directly.)
+2. **Skip duplicates.** For any `task_ref` already present in the skip-set, do not append a new `task-completion` entry. The op never duplicates entries that `/implement` (or any prior writer) has already recorded.
+3. **Status-transition writes are change-gated.** Append a `type=status-transition` entry (with `from_status` and `to_status`) ONLY when the flow's `status` field actually changes value (e.g. `in-progress` → `complete`). Never on every invocation. If `status` is unchanged, skip the transition append entirely.
+4. **Never silently back-fill.** The `status` op NEVER appends `type=task-completion` entries — those are exclusively written by `/implement` Phase 2. If reconciliation surfaces an unrecorded completion (e.g. files modified, tests pass, but no matching log entry exists), the op MUST **flag the gap in its reconciliation report** rather than silently appending. Only the `migrate` op (below) is authorised to back-fill `task-completion` entries from a legacy `PROGRESS-LOG.md`.
+5. **Render after any appends.** After the (possibly zero) appends complete, call the render-from-log routine to regenerate `PROGRESS-LOG.md`. The render is always run, even when no entries were appended, so the rendered file stays a pure function of the log.
 
 #### `deviation` — Record a deviation
+
 Capture a deviation from the plan. The agent MUST:
-- Assign the next sequential D-number (read existing deviations to find the highest).
-- Record: deviation description, commit SHA (from `git log -1 --format=%H`), date, and rationale.
-- If the deviation supersedes a previous one, add bidirectional links ("Supersedes D{x}" on the new entry, "Superseded by D{y}" on the old entry).
-- Add to the appropriate section of the progress log.
-- If the deviation was discussed in the conversation, extract the rationale from context.
+
+- Gather evidence from the conversation/git history: which task was affected, what the original intent was, what was actually done, and why. Confirm with the user before writing.
+- Append a `type=deviation` entry to `<record>` (the resolved value of `[artifacts].execution_record` from the flow's `context.toml` — never the bare filename `execution-record.toml`) using the canonical two-call heredoc pattern from the `## Execution Record Schema` shared block above. Required fields beyond the always-required five (`id`, `type`, `date`, `agent`, `summary`): `task_ref` (opaque title slug of the affected task), `original_intent`, `rationale`, `commits[]` (from `git log -1 --format=%H` or the relevant SHAs). Optional: `supersedes_entry = "E<n>"` when this deviation supersedes an earlier one — supersession is by `supersedes_entry` pointing at the prior entry's `id`, NEVER by re-using its number.
+- Mint the new `id` via `tomlctl items next-id <record> --prefix E` so the E-counter stays monotonic.
+- This op MUST NOT mint legacy IDs of any kind, and MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field).
+- After the append, invoke the **render-from-log routine** (see `### Render-from-log routine` below) to regenerate `PROGRESS-LOG.md` deterministically from `<record>`. Then update `context.toml`: set `updated` to today, derive `[tasks].completed` per Task 6's recipe (Step 3 below), preserve `created` verbatim.
+
+**Example two-call append (fully-qualified path required):**
+
+```
+cat <<'EOF' | tomlctl items add .claude/flows/<slug>/execution-record.toml --json -
+{"id":"E17","type":"deviation","date":"2026-04-18","agent":"plan-update","task_ref":"add-redis-cache","summary":"Used existing LruCache util rather than introducing Redis","original_intent":"Add Redis dependency for caching","rationale":"src/util/cache.rs already covers the use case","commits":["def5678"],"supersedes_entry":"E9"}
+EOF
+tomlctl set .claude/flows/<slug>/execution-record.toml last_updated 2026-04-18
+```
 
 #### `defer` — Register a deferral
+
 Move a plan item to the deferrals section. The agent MUST:
-- Assign a DF-number.
-- Record: item description, which plan section/task it was deferred from, reason, date, and a **re-evaluation trigger** (a concrete condition like "when frontend types are next refactored" or "when migrating to .NET 11" — not vague triggers like "later").
-- Update the original item's status to "Deferred → DF{n}".
-- **Update the resolved flow's `context.toml`**: set `updated` to today, preserve `created` verbatim, and adjust `[tasks]` counts (the deferred item drops out of `in_progress`/`total` at your discretion — treat deferrals as removed from the in-flight counter). If every remaining non-complete item is now deferred, set `status = "complete"`.
+
+- Gather evidence from the conversation: which task is being deferred, why, and the **re-evaluation trigger** (a concrete observable condition like "when frontend types are next refactored" or "when migrating to .NET 11" — not vague triggers like "later"). Confirm with the user before writing.
+- Append a `type=deferral` entry to `<record>` using the canonical two-call heredoc pattern from the `## Execution Record Schema` shared block above. Required fields beyond the always-required five: `task_ref` (opaque title slug of the deferred task), `reason`, `reevaluate_when`. Optional: `legacy_id = "DF<n>"` — only set by the `migrate` op when back-filling from a legacy hand-authored `PROGRESS-LOG.md`; the active `defer` op MUST NOT populate it.
+- Mint the new `id` via `tomlctl items next-id <record> --prefix E` so the E-counter stays monotonic.
+- This op MUST NOT mint legacy IDs of any kind, and MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field).
+- After the append, invoke the **render-from-log routine** (see `### Render-from-log routine` below) to regenerate `PROGRESS-LOG.md`. Then update `context.toml`: set `updated` to today, derive `[tasks].completed` per Task 6's recipe (Step 3 below), preserve `created` verbatim. If every remaining non-complete item is now deferred (after consulting the log), set `status = "complete"`.
+
+**Example two-call append:**
+
+```
+cat <<'EOF' | tomlctl items add .claude/flows/<slug>/execution-record.toml --json -
+{"id":"E18","type":"deferral","date":"2026-04-18","agent":"plan-update","task_ref":"add-graphql-endpoint","summary":"Deferred GraphQL endpoint until REST stabilises","reason":"Current REST API contract still in flux; GraphQL would lock in a moving schema","reevaluate_when":"When the v2 REST API is published and frozen"}
+EOF
+tomlctl set .claude/flows/<slug>/execution-record.toml last_updated 2026-04-18
+```
 
 #### `reconcile` — Full plan-code reconciliation
 The most comprehensive operation. Launch **two** agents in parallel:
@@ -179,14 +330,21 @@ The most comprehensive operation. Launch **two** agents in parallel:
 
 **Reason thoroughly through reconciliation synthesis.** Cross-reference both agents' findings, resolve conflicting evidence, and determine the accurate status of every plan item before writing updates.
 
-After both agents return, produce the reconciliation report **and apply all updates in the same response** — do not pause for confirmation. Agent results are in context now and may be lost to compaction if you wait. The user can review and revert via git.
+**Each parallel agent appends a `type=reconcile` entry to `<record>`** using the canonical two-call heredoc pattern from the `## Execution Record Schema` shared block. Required fields beyond the always-required five: `direction` ∈ {`forward`, `reverse`} (Agent 1 = `forward`, Agent 2 = `reverse`), `findings_count` (integer count of items the agent flagged), `commits_checked[]` (the SHAs the agent inspected). Mint each `id` via `tomlctl items next-id <record> --prefix E`.
+
+**Follow-up deviations and deferrals discovered during reconciliation are recorded as separate entries** via the same patterns the `deviation` and `defer` ops use (above) — append `type=deviation` / `type=deferral` entries with the appropriate fields. Do NOT inline them into the `reconcile` entries.
+
+The same **reconciler contract** that governs `status` (above) applies here: build a skip-set of existing `task-completion` `task_ref` values from `<record>` before any append; never silently back-fill `task-completion` entries (flag gaps in the report instead — `migrate` is the only authorised back-filler); only emit `type=status-transition` when the flow's `status` field actually changes value.
+
+After both agents return, produce the reconciliation report **and apply all updates in the same response** — do not pause for confirmation. Agent results are in context now and may be lost to compaction if you wait. The user can review and revert via git. After all appends, invoke the **render-from-log routine** to regenerate `PROGRESS-LOG.md`.
 
 **Update the resolved flow's `context.toml`** as part of the same write batch:
-- Write full `[tasks]` counts (`total`, `completed`, `in_progress`) derived from the reconciled item statuses.
+- Write `[tasks].total` (the count of plan items) and **derive `[tasks].completed`** per Task 6's recipe (Step 3 below — distinct-slug count over `task-completion` entries with `status=done`).
+- This op MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field).
 - Set `updated` to today's date.
 - Preserve `created` verbatim.
 - **Refine `scope`** if reconciliation reveals the plan's actual edits touched paths outside the original `scope` — add the new globs/paths (prefer `<dir>/**` glob form for directories). Never shrink `scope` below its initial derivation unless the user explicitly asks.
-- Set `status` to `complete` if every item reconciled as done (or deferred); otherwise `in-progress` (or `review` if the plan has explicitly entered a review phase).
+- Set `status` to `complete` if every item reconciled as done (or deferred); otherwise `in-progress` (or `review` if the plan has explicitly entered a review phase). If `status` changes value, append a `type=status-transition` entry per the reconciler contract.
 
 ```
 ## Reconciliation Report — [plan name]
@@ -199,13 +357,16 @@ After both agents return, produce the reconciliation report **and apply all upda
 - [item] Changed from [old status] → [new status] — evidence: [commit/file]
 
 ### Unrecorded Deviations
-- [description] — code at [file:line] differs from plan [section]. Suggested D-entry: ...
+- [description] — code at [file:line] differs from plan [section]. Suggested `type=deviation` E-entry: task_ref=..., original_intent=..., rationale=...
 
 ### Untracked Changes
 - [file] changed in [commit] but has no plan coverage
 
 ### Stale Items
 - [item] marked "In Progress" but no activity since [date]
+
+### Unrecorded Completions (gap flags — DO NOT auto-append)
+- [task_ref] — files at [file:line] suggest completion, but no `type=task-completion` entry in `<record>`. Per the reconciler contract, the `status` and `reconcile` ops MUST NOT silently back-fill these. Run `/plan-update <plan> migrate` to back-fill from a legacy `PROGRESS-LOG.md`, or have `/implement` re-record the completion explicitly.
 
 ### Suggested Deferrals
 - [item] appears blocked or deprioritized — consider deferring with trigger: [suggestion]
@@ -228,7 +389,7 @@ Read every plan document in scope. Extract and classify every piece of content i
 - **Tasks/items** — actionable work items with their current status, effort estimates, risk levels, dependencies
 - **Completed items** — items marked done, with any commit references or dates
 - **Research notes/corrections** — technical findings, library version notes, API behavior, etc. (e.g. the "Key corrections from research" sections)
-- **Deviations** — anything that records a departure from the original plan, whether formally numbered (D1-D44) or embedded in prose
+- **Deviations** — anything that records a departure from the original plan, whether previously numbered with legacy `D<n>` IDs (preserved as `legacy_id` on migrated entries) or embedded in prose
 - **Deferrals** — items explicitly deferred or marked as future work, with any stated triggers
 - **Verification criteria** — checklists, test commands, acceptance conditions
 - **Dependencies** — stated relationships between items, phases, or waves
@@ -262,7 +423,7 @@ After both agents return, produce the reformatted plan:
 **Output structure for single-file plans:**
 Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md if there's any status tracking content to extract.
 
-**PROGRESS-LOG.md format:**
+**PROGRESS-LOG.md format** (this is the rendered shape — `reformat` MUST regenerate it via the **render-from-log routine** rather than hand-authoring it; row identifiers come from the log's `id` field, i.e. `E<n>`. Migrated entries also carry `legacy_id = "D<n>"` / `"DF<n>"` for back-compat, but it does not appear in the `#` column):
 
 ```markdown
 # {Plan Name} — Progress Log
@@ -292,8 +453,8 @@ Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md i
 
 | # | Deviation | Date | Commit | Rationale | Supersedes |
 |---|-----------|------|--------|-----------|------------|
-| D1 | ... | ... | `sha` | ... | — |
-| D2 | ... | ... | `sha` | ... | Superseded by D25 |
+| E1 | ... | ... | `sha` | ... | — |
+| E2 | ... | ... | `sha` | ... | Superseded by E25 |
 
 ---
 
@@ -301,7 +462,7 @@ Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md i
 
 | # | Item | Deferred From | Date | Reason | Re-evaluate When |
 |---|------|--------------|------|--------|-----------------|
-| DF1 | ... | Wave 2, Item 9 | ... | ... | When X happens |
+| E7 | ... | Wave 2, Item 9 | ... | ... | When X happens |
 
 ---
 
@@ -337,10 +498,15 @@ Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md i
 **Key rules for reformatting:**
 - **Faithful content preservation** — every fact, note, correction, finding, and status marker from the original must appear in the output. Verify by checking the original line count and ensuring no content was silently dropped.
 - **Clean the outline** — the outline should contain the sequencing table, dependencies, constraints, and verification checklists. Research notes, verbose corrections, and progress tracking move to their own files. The outline should reference these files where needed (e.g. "See RESEARCH-NOTES.md §{Topic}").
-- **Preserve existing deviation numbering** — if deviations already have D-numbers, keep them. Don't renumber. Add supersession links if they're missing.
-- **Infer deferrals** — items described as "deferred", "future", "nice-to-have", "not needed yet" in the original should be formalized as DF-entries with re-evaluation triggers.
-- **Infer deviations** — prose that describes "we did X instead of Y" or "the plan said X but actually Y" should be formalized as D-entries if not already numbered.
+- Entries carry `legacy_id` for back-compat; no renumbering is required because E-numbers are monotonic.
+- **Preserve task headings verbatim** — `task_ref` is an opaque title slug derived from each task's heading text. If `reformat`'s classification agent rephrases a heading (e.g. "Add retry logic" → "Add retry with exponential backoff"), the derived slug changes and `/implement`'s idempotency skip-list misses the completed task, causing the task to re-execute. Therefore `reformat` MUST preserve each task's heading text **exactly as it appeared in the source plan**, byte-for-byte. Rephrasing is allowed ONLY as an explicit deviation recorded via the `deviation` op (which preserves `supersedes_entry` chains). The classification agent may reorder, regroup, or recategorize tasks freely — but heading text is immutable.
+- **Heading-equality assertion (mandatory).** Before writing the reformatted output, compare the set of pre-reformat task heading strings against the set of post-reformat task heading strings. On any mismatch (added, removed, or rephrased headings), error and require user intervention rather than writing the reformatted plan. Show the diff so the user can decide whether the change is intentional (record as a `deviation`) or accidental (regenerate with stricter heading preservation).
+- **Infer deferrals** — items described as "deferred", "future", "nice-to-have", "not needed yet" in the original should be formalized as `type=deferral` E-entries (via the `defer` op pattern) with concrete re-evaluation triggers. If the source row carried a legacy `DF<n>` ID, copy it into `legacy_id`.
+- **Infer deviations** — prose that describes "we did X instead of Y" or "the plan said X but actually Y" should be formalized as `type=deviation` E-entries (via the `deviation` op pattern). If the source row carried a legacy `D<n>` ID, copy it into `legacy_id`; supersession is by `supersedes_entry = "E<n>"`, not by re-using legacy numbers.
+- **PROGRESS-LOG.md is regenerated, not hand-authored.** The reformat MUST regenerate `PROGRESS-LOG.md` via the **render-from-log routine** (see above) — NOT by hand-authoring D/DF-numbered markdown. After the inferred deviation/deferral entries are appended to `<record>` and any new completed-items entries are migrated, append exactly **one `type=checkpoint` entry** tagging the restructure (`summary` should describe what changed: "Restructured plan into outline + detail docs + RESEARCH-NOTES.md", etc.). Then call the render-from-log routine.
 - **Present summary then write immediately** — show the user a brief summary of what files will be created/rewritten and key content movements, then **write all files in the same response without waiting for confirmation**. Do NOT pause and ask "Shall I proceed?" — the agent analysis results are in context NOW and may be lost to compaction if you wait. The user invoked `reformat` intentionally; they can review and revert via git if needed.
+
+This op MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field). After all writes, update `context.toml`: set `updated` to today, derive `[tasks].completed` per Task 6's recipe in Step 3, preserve `created` verbatim.
 
 #### `catchup` — Revive a stale plan with fresh research and codebase re-exploration
 
@@ -384,8 +550,13 @@ Using all three agents' results together, produce the reformatted plan following
 - **Replace stale research** in RESEARCH-NOTES.md with Agent 2's fresh findings — keep original notes that are still valid, mark outdated ones as superseded with the updated information
 - **Update file paths** throughout the plan to match the current codebase structure
 - **Flag invalidated tasks** — if the codebase has changed so fundamentally that a plan item no longer makes sense, note it as needing user decision rather than silently dropping it
-- **Add deviations** for any implementation that happened differently from what the plan described
-- **Add deferrals** for items that are no longer actionable in their current form
+- **Add deviations** for any implementation that happened differently from what the plan described — appended as `type=deviation` E-entries to `<record>` (via the `deviation` op pattern, with `legacy_id` populated when migrating a numbered legacy row)
+- **Add deferrals** for items that are no longer actionable in their current form — appended as `type=deferral` E-entries to `<record>` (via the `defer` op pattern, with `legacy_id` populated when migrating a numbered legacy row)
+- **Preserve task headings verbatim** — same rule and rationale as `reformat`: `task_ref` is an opaque title slug derived from each task's heading text, and rephrasing breaks `/implement`'s idempotency skip-list. Catchup MUST preserve each task's heading text exactly as it appeared in the source plan; rephrasing is allowed ONLY as an explicit deviation recorded via the `deviation` op (which preserves `supersedes_entry` chains). Codebase realignment from Agent 1 may suggest *file-path* updates (which are fine) but never *heading text* changes.
+- **Heading-equality assertion (mandatory).** Before writing the catchup output, compare the set of pre-catchup task heading strings against the set of post-catchup task heading strings. On any mismatch (added, removed, or rephrased headings), error and require user intervention rather than writing the rewritten plan.
+- **PROGRESS-LOG.md is regenerated, not hand-authored.** Catchup MUST regenerate `PROGRESS-LOG.md` via the **render-from-log routine** — NOT by hand-authoring D/DF-numbered markdown. After back-filled entries (deviations, deferrals, completions) are appended to `<record>`, append exactly **one `type=checkpoint` entry** tagging the restructure (`summary` should describe the catchup scope: research updates, structural changes, etc.). Then call the render-from-log routine.
+
+This op MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field). After all writes, update `context.toml`: set `updated` to today, derive `[tasks].completed` per Task 6's recipe in Step 3, preserve `created` verbatim.
 
 **Write all files immediately in the same response** — do not pause for confirmation. Agent results are in context now and will be lost to compaction if you wait.
 
@@ -408,7 +579,7 @@ Using all three agents' results together, produce the reformatted plan following
 - Key changes: [brief list of the most impactful research updates]
 
 ### New Deviations Recorded
-- D{n}: ...
+- E{n} (`type=deviation`, optional `legacy_id = D{n}` if migrated from a legacy hand-authored row): ...
 
 ### Items Needing User Decision
 - [item] — [why it needs a decision: conflicting approaches, obsolete requirement, etc.]
@@ -420,36 +591,123 @@ Using all three agents' results together, produce the reformatted plan following
 ```
 
 #### `snapshot` — Progress summary
+
 Generate a compact progress summary suitable for standup notes, PR descriptions, or status updates:
-- What was completed since last update
-- What deviated and why
-- What's next (prioritized remaining items)
-- Any blockers or deferred items
+- What was completed since last update (read from `<record>` `type=task-completion` entries since the prior `type=checkpoint` or `last_updated`)
+- What deviated and why (read `type=deviation` entries)
+- What's next (prioritized remaining plan items)
+- Any blockers or deferred items (read `type=deferral` entries)
+
+`snapshot` does not append entries by default, but it MUST call the **render-from-log routine** as its final step so the on-disk `PROGRESS-LOG.md` reflects the latest log state when the user reads the snapshot. This op MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field).
+
+#### `migrate` — Back-fill execution-record.toml from a legacy hand-authored `PROGRESS-LOG.md`
+
+One-shot, opt-in operation. User invokes `/plan-update <plan> migrate`. Reads the existing `PROGRESS-LOG.md` in the flow directory and translates each row into an append-only E-entry in `<record>`. After back-fill, calls the **render-from-log routine** so the on-disk `PROGRESS-LOG.md` is regenerated from the now-populated log (the legacy hand-authored content is replaced by the deterministic render).
+
+This op MUST leave `[tasks].in_progress` untouched (only `/implement` during live execution writes that field).
+
+##### Per-section translation rules
+
+For each row in the legacy `PROGRESS-LOG.md` tables:
+
+- **Deviations table** — every row whose ID column starts with `D<n>` becomes a `type=deviation` entry with `legacy_id = "D<n>"`. Best-effort fill: `task_ref` (slug from the row's "Item" / affected-task column), `original_intent` (from the row's description or rationale columns), `rationale` (from the row's "Rationale" column), `commits` (from the row's "Commit" column, single-element array). `summary` is the row's deviation description.
+- **Deferrals table** — every row whose ID column starts with `DF<n>` becomes a `type=deferral` entry with `legacy_id = "DF<n>"`. Best-effort fill: `task_ref` (slug from the "Item" / "Deferred From" column), `reason` (from "Reason"), `reevaluate_when` (from "Re-evaluate When"). `summary` is the row's item description.
+- **Completed Items table** — every row becomes a `type=task-completion` entry with `status = "done"`. Best-effort fill: `task_ref` (slug derived from the "Item" column heading text), `files` (from the "Files" column if present, else `[]`), `commits` (from the "Commit" column, single-element array if present). Source rows have NO D/DF prefix, so no `legacy_id` is set on these.
+- **Session Log table** — no-op. Session-Log rows are rederived from the log at render time; back-filling them would duplicate state.
+
+Mint each `id` via `tomlctl items next-id <record> --prefix E` so E-numbers stay monotonic across the back-fill.
+
+##### Idempotency
+
+Re-running `migrate` MUST NOT duplicate entries. Before appending each row:
+
+1. **For deviations and deferrals (rows with D/DF prefix):** scan the existing log via `tomlctl items list <record> --where legacy_id=<D|DF><n>` (or `--pluck legacy_id` and check membership). If a matching `legacy_id` is already present, skip the row.
+2. **For completed-items rows (no `legacy_id`):** dedupe by `task_ref` slug — query `tomlctl items list <record> --where type=task-completion --pluck task_ref` and skip the row if its derived slug is already present.
+
+Apply each authorised append using the canonical two-call heredoc pattern from the `## Execution Record Schema` shared block. After all back-fills complete, run the **render-from-log routine** to regenerate `PROGRESS-LOG.md` and update `context.toml` (set `updated` to today, derive `[tasks].completed` per Task 6's recipe in Step 3, preserve `created` verbatim).
+
+### Render-from-log routine
+
+Every op that mutates `<record>` (`status`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) calls this routine as its **last step**. `snapshot` also calls it (read-only refresh). The routine is a **pure function of the log** — no `<today>` / `<now>` substitution, no date-of-run leakage. Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency, achieved by the pre-sort and the count-based Changes column).
+
+The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwriting the previous content) with the following structure:
+
+1. **Top-of-file marker** — the literal first line is:
+   ```
+   <!-- Generated from execution-record.toml. Do not edit by hand. -->
+   ```
+   No timestamps, no slug substitution — the marker is a fixed string.
+
+2. **Completed Items table** — sourced from
+   ```
+   tomlctl items list <record> --where type=task-completion --where status=done
+   ```
+   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by entry append order.
+
+3. **Deviations table** — sourced from
+   ```
+   tomlctl items list <record> --where type=deviation
+   ```
+   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Latest-per-supersession-chain is rendered (see the `## Execution Record Schema` shared block); older superseded entries remain in the log for audit but are not surfaced as primary rows.
+
+4. **Deferrals table** — sourced from
+   ```
+   tomlctl items list <record> --where type=deferral
+   ```
+   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`.
+
+5. **Session Log table** with the literal column header `| Date | Changes | Commits |`:
+
+   - **Pre-sort step (mandatory).** Run
+     ```
+     tomlctl items list <record> --sort-by date:asc
+     ```
+     **before** the group operation. Without this pre-sort, `--group-by date` buckets the log in *insertion order* — empirically confirmed: `--group-by` does not re-order; it just collapses adjacent matches by the bucket key. Documenting the pre-sort here so future maintainers don't drop it as "redundant".
+   - **Group step.** Apply `--group-by date` to the sorted result. `date` is in `DATE_KEYS`, so each YYYY-MM-DD calendar day produces one bucket. No `@date:` projection is needed.
+   - For each bucket, render one row:
+     - **Date** = the YYYY-MM-DD bucket key.
+     - **Changes** = the literal format `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the integer entry count in the bucket; the word is `entry` when N == 1 (singular) and `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in **first-appearance order** within the bucket (not alphabetical, not count-sorted). Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN, NOT ASCII `x`). EXAMPLES (both verbatim, both required):
+       - A bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`.
+       - A singleton deviation renders `1 entry: deviation × 1`.
+     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **first-appearance SHA order** (the order the SHAs appear when iterating bucket entries chronologically) — do NOT sort lexicographically. Empty when no entry in the bucket has a `commits` array.
+
+The count-based Changes column is what gives cross-reorder idempotency: swapping two same-date entries in the source log doesn't change the per-type counts in the bucket, so the rendered row is identical. Combined with the pre-sort fixing bucket order, the routine is a true pure function of the log's *contents* (not its insertion sequence within a date).
 
 ## Step 3: Apply Updates
 
 After determining what needs to change:
 
-1. **Edit the progress log** — update status tables, add deviations/deferrals, update dates. Always append/edit in place — never truncate and rewrite the file.
-2. **Update the outline** if completion markers or wave status changed.
-3. **Do NOT update detail documents** unless a deviation fundamentally changes the implementation approach described there.
-4. **Always update the "Last updated" date** on any modified plan file.
-5. **Update the resolved flow's `context.toml`** at `.claude/flows/<slug>/context.toml`. This file is always touched whenever `plan-update` runs an operation that changes plan state (`status`, `reconcile`, `defer`, `deviation`, `reformat`, `catchup`). Rules:
+1. **Append entries to `<record>`** — for any op that mutates plan state (`status`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`), use the canonical heredoc-stdin two-call pattern from the `## Execution Record Schema` shared block. Never tempfile-stage payloads. Never edit `PROGRESS-LOG.md` by hand — it is regenerated.
+2. **Regenerate `PROGRESS-LOG.md`** via the **render-from-log routine** (see above) as the last step of every mutating op. The file's first line is the literal `<!-- Generated from execution-record.toml. Do not edit by hand. -->` marker.
+3. **Update the outline** if completion markers or wave status changed.
+4. **Do NOT update detail documents** unless a deviation fundamentally changes the implementation approach described there.
+5. **Always update the "Last updated" date** on the outline (and any other actively edited plan file). `PROGRESS-LOG.md` does not carry a separate "Last updated" line — its content is a pure function of `<record>`'s `last_updated` field.
+6. **Update the resolved flow's `context.toml`** at `.claude/flows/<slug>/context.toml`. This file is always touched whenever `plan-update` runs an operation that changes plan state (`status`, `reconcile`, `defer`, `deviation`, `reformat`, `catchup`, `migrate`). Rules:
    - **Preserve `created` verbatim.** Never regenerate it.
    - Set `updated` to today's ISO 8601 date on every write.
-   - Write `[tasks].total`, `[tasks].completed`, `[tasks].in_progress` per the per-operation rules above.
-   - Write `status` as one of `draft`, `in-progress`, `review`, `complete` — use `review` when the plan has entered a review phase between implementation rounds, `complete` when every item is done or all remainders are deferred.
+   - Write `[tasks].total` from the plan-document item count (unchanged behaviour: plan-document-driven).
+   - **Derive `[tasks].completed` from `<record>` on every write** using exactly this pipeline:
+
+     ```
+     completed = tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref | jq -r '.[]' | sort -u | wc -l
+     ```
+
+     This is a **distinct-slug count** over the `task-completion` entries with `status=done`, not a raw entry count. Counting distinct `task_ref` slugs means a failed attempt followed by a successful retry counts as **one** completion, not two; multiple verification appends against the same task don't inflate the counter. Do NOT reduce to a plain `--count` or `wc -l` over raw rows.
+
+     One-line note for future readers: if the installed `tomlctl --pluck` emits newline-delimited values rather than a JSON array, drop the `jq -r '.[]'` step and pipe straight to `sort -u | wc -l`.
+   - **`[tasks].in_progress` rule**: this field is written **only by `/implement` during live execution** (when it picks up a task and when it finishes one). Every `/plan-update` op MUST leave `[tasks].in_progress` untouched — read it once if you need to display it, but do not write it back. (The literal phrase appears throughout the per-op bodies above as a regression guard.)
+   - Write `status` as one of `draft`, `in-progress`, `review`, `complete` — use `review` when the plan has entered a review phase between implementation rounds, `complete` when every item is done or all remainders are deferred. If `status` changes value, append a `type=status-transition` entry per the reconciler contract.
    - `reconcile` may refine `scope`; other operations leave `scope` alone.
-   - If `[artifacts]` is absent in the existing file, compute from `slug` and write it back.
+   - If `[artifacts]` is absent in the existing file, compute from `slug` and write it back. If `[artifacts].execution_record` points at a path that does not yet exist, bootstrap the file per the `## Flow Context` `[artifacts]` rule (zero-byte `Write` + `tomlctl set <path> schema_version 1` + `tomlctl set <path> last_updated <today>`) before any `tomlctl items add` / `list` / `get` call.
    - Preserve key order. Do not introduce inline comments.
-6. Present a summary of changes made to plan documents **and** to the flow's `context.toml`.
+7. Present a summary of changes made to `<record>`, the rendered `PROGRESS-LOG.md`, and the flow's `context.toml`.
 
 ## Important Constraints
 
 - **Propose, don't assume** — When marking items as complete or recording deviations, show the evidence and let the user confirm before committing plan changes. The exception is `status` updates with clear-cut evidence (file exists, test passes).
-- **Deviations capture design-level differences, not typos** — Don't create D-entries for minor implementation details like variable naming. Deviations should reflect meaningful departures from the planned approach.
-- **Plans should remain human-readable** — The agent is a maintainer, not the owner. Don't restructure the plan format or add machine-only metadata.
-- **Append, don't rewrite** — Edit progress logs incrementally. Never regenerate the entire file — this loses edit history and risks dropping items.
+- **Deviations capture design-level differences, not typos** — Don't create `type=deviation` entries for minor implementation details like variable naming. Deviations should reflect meaningful departures from the planned approach.
+- **Plans should remain human-readable** — The agent is a maintainer, not the owner. Don't restructure the plan format or add machine-only metadata. Note that `PROGRESS-LOG.md` is the one exception: it is regenerated from `<record>` and SHOULD NOT be hand-edited (its first line warns the reader).
+- **Append-only log; rendered view is regenerated** — `<record>` is append-only (entries are never mutated; corrections append a new entry with `supersedes_entry`). `PROGRESS-LOG.md` is a deterministic render of `<record>` and is regenerated in full on every mutating op via the render-from-log routine. The plan documents themselves (outline, detail docs, RESEARCH-NOTES.md) continue to be edited in place — never truncated and rewritten — outside of the explicit `reformat` / `catchup` ops.
 - **Separate commits** — Plan updates should be committed separately from code changes unless the deviation is inherent to the implementation (e.g., a plan said "add column X" but you added "column Y" instead — that code + plan update belongs together).
-- **Bidirectional supersession** — When creating a deviation that supersedes an earlier one, always link both directions.
-- **Concrete re-evaluation triggers** — Deferral triggers must be specific and observable ("when X happens"), not vague ("when we have time").
+- **Supersession via `supersedes_entry`** — When recording a deviation that supersedes an earlier one, set `supersedes_entry = "E<n>"` on the new entry (pointing at the prior entry's `id`). The render routine surfaces the latest entry per supersession chain; older entries remain in the log for audit. There is no separate "Superseded by" backlink — it is implied by the forward pointer.
+- **Concrete re-evaluation triggers** — Deferral `reevaluate_when` values must be specific and observable ("when X happens"), not vague ("when we have time").

@@ -30,6 +30,7 @@ in_progress = 1
 [artifacts]
 review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
 optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
+execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
 ```
 
 ### Shared Rules
@@ -54,7 +55,7 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 - `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
 - `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent when read, commands compute from `slug` but MUST write it back on their next TOML write.
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the full bootstrap sequence (zero-byte `Write` + `tomlctl set <path> schema_version 1` + `tomlctl set <path> last_updated <today>`) before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a readable log file in one step rather than erroring with `No such file or directory`.
 
 #### Slug derivation
 

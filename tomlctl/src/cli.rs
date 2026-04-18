@@ -1181,22 +1181,37 @@ body
     #[test]
     fn blocks_verify_reproduces_shell_hashes() {
         // R87: pin hashes for every block enumerated in
-        // `scripts/shared-blocks.toml`, not just the two flow-wide ones. The
-        // three apply-only blocks (apply-dependency-sort,
-        // apply-rollback-protocol, apply-constraints) live in 2 files each
-        // (optimise-apply + review-apply), so they're verified over the
-        // 2-file subset rather than the full 4. Splitting the assertions
-        // this way lets a drift in any one of the five blocks surface
-        // independently with a named hash, instead of a confusing "missing"
-        // report from running a 2-file block over 4 files.
+        // `scripts/shared-blocks.toml`. The blocks have divergent file
+        // coverage — `flow-context` spans 8 command files (all flow-aware
+        // commands); `ledger-schema` spans 4 (the review/optimise pair); the
+        // three apply-only blocks span 2 (optimise-apply + review-apply).
+        // Splitting the assertions this way lets a drift in any one block
+        // surface independently with a named hash, instead of a confusing
+        // "missing" report from running a narrower block over a wider file
+        // list.
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
         let cmd_dir = repo_root.join("claude").join("commands");
-        let all_four = [
+        let flow_context_eight = [
             cmd_dir.join("optimise.md"),
             cmd_dir.join("review.md"),
             cmd_dir.join("optimise-apply.md"),
             cmd_dir.join("review-apply.md"),
+            cmd_dir.join("plan-new.md"),
+            cmd_dir.join("plan-update.md"),
+            cmd_dir.join("implement.md"),
+            cmd_dir.join("review-plan.md"),
+        ];
+        let ledger_schema_four = [
+            cmd_dir.join("optimise.md"),
+            cmd_dir.join("review.md"),
+            cmd_dir.join("optimise-apply.md"),
+            cmd_dir.join("review-apply.md"),
+        ];
+        let execution_record_three = [
+            cmd_dir.join("plan-new.md"),
+            cmd_dir.join("plan-update.md"),
+            cmd_dir.join("implement.md"),
         ];
         let apply_pair = [
             cmd_dir.join("optimise-apply.md"),
@@ -1206,7 +1221,10 @@ body
         // Only run when every file is present. The test crate is consumable
         // in isolation; degrade gracefully if someone packages it without
         // the command tree.
-        if !all_four.iter().all(|p| p.exists()) {
+        if !flow_context_eight.iter().all(|p| p.exists())
+            || !ledger_schema_four.iter().all(|p| p.exists())
+            || !execution_record_three.iter().all(|p| p.exists())
+        {
             eprintln!(
                 "blocks_verify_reproduces_shell_hashes: command files not found, skipping"
             );
@@ -1230,25 +1248,43 @@ body
             assert_eq!(hash, expected, "block `{name}` hash drift");
         };
 
-        // --- 4-file blocks ---
+        // --- 8-file flow-context block ---
         let report = blocks_verify(
-            &all_four,
-            &[
-                "flow-context".to_string(),
-                "ledger-schema".to_string(),
-            ],
+            &flow_context_eight,
+            &["flow-context".to_string()],
         )
         .unwrap();
-        assert!(report.ok, "flow-wide blocks must be parity: {:?}", report.report);
+        assert!(report.ok, "flow-context block must be parity: {:?}", report.report);
         expect_hash(
             &report,
             "flow-context",
-            "efd5619a706fcc012f2c1741cea7318b210e155048625ca04be7e09401f274f2",
+            "d17fb08499bc3dd32903443ab2d2d84b89f7f879dda98bd317b45e58e16f5b2e",
         );
+
+        // --- 4-file ledger-schema block ---
+        let report = blocks_verify(
+            &ledger_schema_four,
+            &["ledger-schema".to_string()],
+        )
+        .unwrap();
+        assert!(report.ok, "ledger-schema block must be parity: {:?}", report.report);
         expect_hash(
             &report,
             "ledger-schema",
             "23df0a7893ea44e356979328ef62592edd6493c2d1d34e0520e59958129ca14c",
+        );
+
+        // --- 3-file execution-record-schema block ---
+        let report = blocks_verify(
+            &execution_record_three,
+            &["execution-record-schema".to_string()],
+        )
+        .unwrap();
+        assert!(report.ok, "execution-record-schema block must be parity: {:?}", report.report);
+        expect_hash(
+            &report,
+            "execution-record-schema",
+            "1fc617622831d98685de90b7461b7a1e90179a2ad55e7c4ac13743db9852f414",
         );
 
         // --- 2-file apply-only blocks ---

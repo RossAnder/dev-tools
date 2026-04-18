@@ -3,9 +3,14 @@ description: Review an implementation plan for feasibility, completeness, risks,
 argument-hint: <path to plan file or directory>
 ---
 
+<!-- SHARED-BLOCK:flow-context START -->
 ## Flow Context
 
+All `.claude/...` paths below resolve to the **project-local** `.claude/` directory at the git top-level. If no git top-level is available, refuse rather than fall back to `~/.claude/`.
+
 ### Canonical Flow Schema
+
+**No inline comments in the schema** — `Edit` tool's exact-string matching clobbers trailing comments during single-field updates. Status values and other enumerations are documented in the Shared Rules below, not in the schema block.
 
 ```toml
 slug = "auth-overhaul"
@@ -25,9 +30,12 @@ in_progress = 1
 [artifacts]
 review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
 optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
+execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
 ```
 
-### Status vocabulary
+### Shared Rules
+
+#### Status vocabulary
 
 `status` takes one of four string values: `draft`, `in-progress`, `review`, `complete`.
 
@@ -38,7 +46,7 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 
 **Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
 
-### Field responsibilities
+#### Field responsibilities
 
 - `slug` — immutable after creation. Only `plan-new` writes it.
 - `plan_path` — immutable after creation. For multi-file plans, `plan_path` points at the **outline file** (e.g. `docs/plans/auth-overhaul/00-outline.md`), not the directory.
@@ -47,9 +55,9 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 - `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
 - `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent when read, commands compute from `slug` but MUST write it back on their next TOML write.
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the full bootstrap sequence (zero-byte `Write` + `tomlctl set <path> schema_version 1` + `tomlctl set <path> last_updated <today>`) before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a readable log file in one step rather than erroring with `No such file or directory`.
 
-### Slug derivation
+#### Slug derivation
 
 Slug = plan filename minus `.md` extension. Examples:
 - `docs/plans/auth-overhaul.md` → slug `auth-overhaul`
@@ -57,7 +65,7 @@ Slug = plan filename minus `.md` extension. Examples:
 
 No additional slugification — the filename is already the slug.
 
-### Flow resolution order (every command, every invocation)
+#### Flow resolution order (every command, every invocation)
 
 1. **Explicit `--flow <slug>` argument**. If provided, use it verbatim. If `.claude/flows/<slug>/` doesn't exist, error.
 2. **Scope glob match on the path argument**. For each `.claude/flows/*/context.toml` where `status != "complete"`, read the `scope` array. For each pattern, invoke the `Glob` tool with the pattern and check whether the target path appears in the result. If exactly one flow matches, use it. Skip `status == "complete"` flows entirely.
@@ -65,14 +73,14 @@ No additional slugification — the filename is already the slug.
 4. **`.claude/active-flow` fallback**. Read the single-line slug. If `.claude/flows/<slug>/` exists with a valid `context.toml`, use it. If the pointed-at directory is missing or the TOML is malformed, proceed to step 5.
 5. **Ambiguous / none found**: list candidate flows (all non-complete flows with summary: slug, plan_path, status), ask the user.
 
-### TOML read/write contract
+#### TOML read/write contract
 
 - **Reading**: if `context.toml` is missing required fields (`slug`, `plan_path`, `status`, `created`, `updated`, `scope`, `[tasks]`, `[artifacts]`), prompt the user with the specific missing fields and the plan's current path. Do not synthesise defaults silently.
 - **Reading**: if `context.toml` is syntactically invalid (can't be parsed as TOML), report the parse error and ask the user to fix manually. Do not attempt auto-repair.
 - **Writing (preferred)**: use `tomlctl` (see skill `tomlctl`) — `tomlctl set <file> <key-path> <value>` for a scalar, `tomlctl set-json <file> <key-path> --json <value>` for arrays or sub-tables. `tomlctl` preserves `created` verbatim, preserves key order, holds an exclusive sidecar `.lock`, and writes atomically via tempfile + rename. One tool call per field — no Read/Edit choreography required.
 - **Writing (fallback)**: if `tomlctl` is unavailable, Read the file, modify only the target line(s) via `Edit`, Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
 
-### Flow-less fallback
+#### Flow-less fallback
 
 When `/review` or `/optimise` run on code outside any flow (resolution ends at step 5 and user picks "no flow"):
 - `/review` → `.claude/reviews/<scope>.toml`
@@ -80,9 +88,10 @@ When `/review` or `/optimise` run on code outside any flow (resolution ends at s
 
 Slug derivation for flow-less scope: lowercase, replace `/\` with `-`, collapse `--`, strip leading `-` (preserved from pre-redesign).
 
-### Completed-flow handling
+#### Completed-flow handling
 
 Flows with `status = "complete"` are skipped by resolution step 2 (scope glob match). They remain on disk for audit but do not participate in auto-resolution. Users can still target them via explicit `--flow <slug>`.
+<!-- SHARED-BLOCK:flow-context END -->
 
 # Plan Review
 

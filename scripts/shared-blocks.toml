@@ -9,6 +9,10 @@ files = [
   "claude/commands/review.md",
   "claude/commands/optimise-apply.md",
   "claude/commands/review-apply.md",
+  "claude/commands/plan-new.md",
+  "claude/commands/plan-update.md",
+  "claude/commands/implement.md",
+  "claude/commands/review-plan.md",
 ]
 
 [[block]]
@@ -18,6 +22,14 @@ files = [
   "claude/commands/review.md",
   "claude/commands/optimise-apply.md",
   "claude/commands/review-apply.md",
+]
+
+[[block]]
+name = "execution-record-schema"
+files = [
+  "claude/commands/plan-new.md",
+  "claude/commands/plan-update.md",
+  "claude/commands/implement.md",
 ]
 
 [[block]]

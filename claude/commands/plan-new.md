@@ -3,9 +3,10 @@ description: Create a structured implementation plan using parallel exploration,
 argument-hint: [task description, design doc path, or feature name]
 ---
 
+<!-- SHARED-BLOCK:flow-context START -->
 ## Flow Context
 
-All commands in this suite share a single flow-context convention. Flows live at `.claude/flows/<slug>/` (under the git top-level) and carry a `context.toml` plus per-flow artifacts. A single-line `.claude/active-flow` pointer selects the default flow when resolution is otherwise ambiguous.
+All `.claude/...` paths below resolve to the **project-local** `.claude/` directory at the git top-level. If no git top-level is available, refuse rather than fall back to `~/.claude/`.
 
 ### Canonical Flow Schema
 
@@ -29,9 +30,12 @@ in_progress = 1
 [artifacts]
 review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
 optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
+execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
 ```
 
-### Status vocabulary
+### Shared Rules
+
+#### Status vocabulary
 
 `status` takes one of four string values: `draft`, `in-progress`, `review`, `complete`.
 
@@ -42,7 +46,7 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 
 **Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
 
-### Field responsibilities
+#### Field responsibilities
 
 - `slug` — immutable after creation. Only `plan-new` writes it.
 - `plan_path` — immutable after creation. For multi-file plans, `plan_path` points at the **outline file** (e.g. `docs/plans/auth-overhaul/00-outline.md`), not the directory.
@@ -51,9 +55,9 @@ optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 - `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
 - `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent when read, commands compute from `slug` but MUST write it back on their next TOML write.
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the full bootstrap sequence (zero-byte `Write` + `tomlctl set <path> schema_version 1` + `tomlctl set <path> last_updated <today>`) before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a readable log file in one step rather than erroring with `No such file or directory`.
 
-### Slug derivation
+#### Slug derivation
 
 Slug = plan filename minus `.md` extension. Examples:
 - `docs/plans/auth-overhaul.md` → slug `auth-overhaul`
@@ -61,7 +65,7 @@ Slug = plan filename minus `.md` extension. Examples:
 
 No additional slugification — the filename is already the slug.
 
-### Flow resolution order (every command, every invocation)
+#### Flow resolution order (every command, every invocation)
 
 1. **Explicit `--flow <slug>` argument**. If provided, use it verbatim. If `.claude/flows/<slug>/` doesn't exist, error.
 2. **Scope glob match on the path argument**. For each `.claude/flows/*/context.toml` where `status != "complete"`, read the `scope` array. For each pattern, invoke the `Glob` tool with the pattern and check whether the target path appears in the result. If exactly one flow matches, use it. Skip `status == "complete"` flows entirely.
@@ -69,14 +73,14 @@ No additional slugification — the filename is already the slug.
 4. **`.claude/active-flow` fallback**. Read the single-line slug. If `.claude/flows/<slug>/` exists with a valid `context.toml`, use it. If the pointed-at directory is missing or the TOML is malformed, proceed to step 5.
 5. **Ambiguous / none found**: list candidate flows (all non-complete flows with summary: slug, plan_path, status), ask the user.
 
-### TOML read/write contract
+#### TOML read/write contract
 
 - **Reading**: if `context.toml` is missing required fields (`slug`, `plan_path`, `status`, `created`, `updated`, `scope`, `[tasks]`, `[artifacts]`), prompt the user with the specific missing fields and the plan's current path. Do not synthesise defaults silently.
 - **Reading**: if `context.toml` is syntactically invalid (can't be parsed as TOML), report the parse error and ask the user to fix manually. Do not attempt auto-repair.
 - **Writing (preferred)**: use `tomlctl` (see skill `tomlctl`) — `tomlctl set <file> <key-path> <value>` for a scalar, `tomlctl set-json <file> <key-path> --json <value>` for arrays or sub-tables. `tomlctl` preserves `created` verbatim, preserves key order, holds an exclusive sidecar `.lock`, and writes atomically via tempfile + rename. One tool call per field — no Read/Edit choreography required.
 - **Writing (fallback)**: if `tomlctl` is unavailable, Read the file, modify only the target line(s) via `Edit`, Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
 
-### Flow-less fallback
+#### Flow-less fallback
 
 When `/review` or `/optimise` run on code outside any flow (resolution ends at step 5 and user picks "no flow"):
 - `/review` → `.claude/reviews/<scope>.toml`
@@ -84,9 +88,121 @@ When `/review` or `/optimise` run on code outside any flow (resolution ends at s
 
 Slug derivation for flow-less scope: lowercase, replace `/\` with `-`, collapse `--`, strip leading `-` (preserved from pre-redesign).
 
-### Completed-flow handling
+#### Completed-flow handling
 
 Flows with `status = "complete"` are skipped by resolution step 2 (scope glob match). They remain on disk for audit but do not participate in auto-resolution. Users can still target them via explicit `--flow <slug>`.
+<!-- SHARED-BLOCK:flow-context END -->
+
+<!-- SHARED-BLOCK:execution-record-schema START -->
+## Execution Record Schema
+
+Per-flow append-only log at `.claude/flows/<slug>/execution-record.toml`. Records every task-completion, verification, deviation, deferral, decision, reconcile, status-transition, and checkpoint emitted by `/plan-new`, `/implement`, and `/plan-update` against the flow. `PROGRESS-LOG.md` is a rendered view of this log, and `[tasks].completed` is derived from it. This section is the single source of truth for the file's shape and contract.
+
+### Canonical schema
+
+```toml
+schema_version = 1
+last_updated = 2026-04-18
+
+[[items]]
+id = "E1"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "add-retry-logic"
+summary = "Added retry logic in src/retry.rs"
+files = ["src/retry.rs", "tests/retry_test.rs"]
+commits = ["abc1234"]
+status = "done"
+
+[[items]]
+id = "E2"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "cargo test passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-04-18
+agent = "plan-update"
+task_ref = "add-redis-cache"
+summary = "Used existing LruCache util rather than introducing Redis"
+original_intent = "Add Redis dependency for caching"
+rationale = "src/util/cache.rs already covers the use case"
+commits = ["def5678"]
+legacy_id = "D3"
+```
+
+**Required fields per entry (all types):** `id` (E{n}, monotonic via `tomlctl items next-id <record> --prefix E`), `type`, `date` (YYYY-MM-DD TOML date — NOT `timestamp`), `agent`, `summary`.
+
+### Type vocabulary + type-specific required fields
+
+| Type | Required fields (in addition to the always-required five) |
+|------|-----------------------------------------------------------|
+| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `commits[]` |
+| `verification` | `command`, `outcome` ∈ {`pass`, `fail`} |
+| `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
+| `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
+| `decision` | `alternatives[]`, `chosen`, `rationale` |
+| `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |
+| `status-transition` | `from_status`, `to_status` |
+| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured |
+
+**`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). Slugs are derived from the plan document's task heading, lowercased, hyphenated.
+
+### Write contract — two-call pattern (canonical heredoc form)
+
+Every writer appends an entry using this exact idiom. Never tempfile-stage payloads; heredoc stdin is the blessed path.
+
+```
+cat <<'EOF' | tomlctl items add <fully-qualified-execution-record-path> --json -
+{"id":"<E{n}>","type":"<type>","date":"<YYYY-MM-DD>","agent":"<implement|plan-update|plan-new>","summary":"<one-line>", …type-specific fields…}
+EOF
+tomlctl set <fully-qualified-execution-record-path> last_updated <YYYY-MM-DD>
+```
+
+`<fully-qualified-execution-record-path>` MUST be the resolved value of `[artifacts].execution_record` in the flow's `context.toml` — NEVER the bare filename `execution-record.toml` (which resolves relative to CWD and would create a stray file at repo root during `/implement` / `/plan-update` runs). Writers that need the path without reading `context.toml` first can compute it as `.claude/flows/<slug>/execution-record.toml` per the slug derivation rule.
+
+Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfile + rename.
+
+### `[[items]]` naming rationale + restricted subcommands
+
+The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Two `tomlctl items` subcommands, `orphans` and `find-duplicates`, hardcode the review/optimise ledger schema (they expect `file`, `symbol`, `summary`, `severity`, `category`) and must not be invoked against `execution-record.toml` — they will emit garbage. All other `tomlctl items` subcommands work correctly against this schema.
+
+### Append-only + supersession
+
+Entries are never mutated after write. Corrections append a new entry carrying `supersedes_entry = "E<n>"` (pointing at the superseded entry's `id`). The render routine renders the latest entry per supersession chain; older entries remain in the log for audit.
+
+### Render-to-markdown contract
+
+Every op that mutates the log (i.e. appends an entry) regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` as its last step via the render-from-log routine. `PROGRESS-LOG.md` is a pure function of `execution-record.toml` — no timestamp substitution, no date-of-run leakage. The top of the rendered file carries the literal marker `<!-- Generated from execution-record.toml. Do not edit by hand. -->`.
+
+The render emits four tables: **Completed Items** (from `type=task-completion` + `status=done`), **Deviations** (from `type=deviation`), **Deferrals** (from `type=deferral`), and **Session Log** (grouped by `date`).
+
+**Session Log columns** — `| Date | Changes | Commits |`:
+- Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
+- **Date** = `YYYY-MM-DD` bucket key.
+- **Changes** = `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the bucket entry count. The word is `entry` when N == 1 (singular), `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in first-appearance order within the bucket. Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN). Example: a bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`. A singleton deviation renders `1 entry: deviation × 1`.
+- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). First-appearance SHA order (do NOT sort lexicographically). Empty when the bucket has no commits.
+
+Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency via the pre-sort + count-based Changes column).
+
+### `[tasks].completed` derivation
+
+`[tasks].completed` in `context.toml` is derived from the log on every write that touches `[tasks]`:
+
+```
+completed = tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref | jq -r '.[]' | sort -u | wc -l
+```
+
+Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `total` remains plan-document-driven; `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
+
+Before relying on the pipe above, verify `--pluck`'s output shape against the installed `tomlctl`: if it emits a JSON array (`["a","b"]`), keep `jq -r '.[]'`; if it emits newline-delimited strings, drop the `jq` step and pipe straight to `sort -u | wc -l`.
+<!-- SHARED-BLOCK:execution-record-schema END -->
 
 # Structured Plan Creation
 
@@ -255,9 +371,20 @@ in_progress = 0
 [artifacts]
 review_ledger = ".claude/flows/<slug>/review-ledger.toml"
 optimise_findings = ".claude/flows/<slug>/optimise-findings.toml"
+execution_record = ".claude/flows/<slug>/execution-record.toml"
 ```
 
-7. **Write the active-flow pointer**: write `.claude/active-flow` containing a single line — the slug, with no trailing whitespace beyond a newline. Overwrite any previous contents.
+7. **Bootstrap the execution record**. The execution record is the per-flow append-only log defined in the `## Execution Record Schema` shared block above; `/implement` and `/plan-update` append entries to it via `tomlctl items add`, and `tomlctl set` errors on non-existent targets. To make the file safely writable from any later command, perform these three steps in order:
+
+   a. **Use the `Write` tool** to create `.claude/flows/<slug>/execution-record.toml` as a **zero-byte file** (empty content — pass an empty string as the file body). This zero-byte `Write` is a required bootstrap step, NOT an optimisation target: `tomlctl set` refuses to operate on a path that does not exist, so the empty file must be materialised first. Future readers / refactorers MUST NOT "simplify" this step away by collapsing it into the first `tomlctl set` call — doing so reintroduces the `No such file or directory` failure mode.
+   b. Run `tomlctl set .claude/flows/<slug>/execution-record.toml schema_version 1`.
+   c. Run `tomlctl set .claude/flows/<slug>/execution-record.toml last_updated <today>` — use the same ISO 8601 date written for `created` / `updated` in `context.toml` above.
+
+   Do NOT add any `[[items]]` entries here — the empty-log state (no `items` key present, or an empty `items` array) is the canonical initial state, and the first `tomlctl items add` call from `/implement` or `/plan-update` will create the `[[items]]` table-array implicitly. Refer to the `## Execution Record Schema` block for the field contract; do not duplicate the schema here.
+
+   **Verification**: confirm that the path you just bootstrapped matches the value of `[artifacts].execution_record` in the `context.toml` you wrote in step 6. They must be identical (`.claude/flows/<slug>/execution-record.toml`). If they diverge, fix `context.toml` — the `[artifacts]` paths are the authoritative resolution source for downstream commands.
+
+8. **Write the active-flow pointer**: write `.claude/active-flow` containing a single line — the slug, with no trailing whitespace beyond a newline. Overwrite any previous contents.
 
 **Reminder**: `created` is immutable from this point forward. Every command that later rewrites `context.toml` (including `/implement`, `/plan-update`, `/plan-update reconcile`) MUST preserve the value written here verbatim — never regenerate it.
 

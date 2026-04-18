@@ -2,15 +2,15 @@
 
 ## Developer setup
 
-This repository ships a repo-local git hooks directory at `.githooks/` and a companion `scripts/` directory for parity enforcement on shared command-file blocks. Together they gate commits that touch the four command files below. Enable the hook dir once per clone:
+This repository ships a repo-local git hooks directory at `.githooks/` and a companion `scripts/` directory for parity enforcement on shared command-file blocks. Together they gate commits that touch the flow-command files enumerated in the manifest. Enable the hook dir once per clone:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-The pre-commit hook invokes `scripts/verify-shared-blocks.sh`, which reads its parity manifest from `scripts/shared-blocks.toml` and checks that `## Flow Context` and `## Ledger Schema` remain byte-identical across `claude/commands/optimise.md`, `review.md`, `optimise-apply.md`, and `review-apply.md` whenever one of those files is staged. Other commits are unaffected.
+The pre-commit hook invokes `scripts/verify-shared-blocks.sh`, which reads its parity manifest from `scripts/shared-blocks.toml` and checks that each named block (`flow-context`, `ledger-schema`, `execution-record-schema`, and the three `apply-*` blocks) remains byte-identical across every file that carries it. See `scripts/shared-blocks.toml` for the canonical per-block file list — widening or narrowing a block's coverage means editing that manifest, not this prose. The hook currently triggers on staged changes to `claude/commands/{optimise,review,optimise-apply,review-apply,plan-new,plan-update,implement,review-plan}.md`; other commits are unaffected.
 
-Do not bypass the hook with `--no-verify` on these files — shared-block drift between the four command files has historically caused duplicate-finding cycles in the review/optimise ledger. If the script refuses your commit, fix the drift rather than skipping the check.
+Do not bypass the hook with `--no-verify` on these files — shared-block drift between the flow-command files has historically caused duplicate-finding cycles in the review/optimise ledger and would now also break execution-record-schema parity across `plan-new` / `plan-update` / `implement`. If the script refuses your commit, fix the drift rather than skipping the check.
 
 **Note**: if `.githooks/` or `scripts/verify-shared-blocks.sh` are not yet present in your clone, the shared-block parity check will silently no-op until they land. Run `ls .githooks scripts` to confirm before relying on the hook.
 
