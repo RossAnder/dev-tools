@@ -123,6 +123,16 @@ pub(crate) struct Query {
     /// when `shape == Array`; `run()` ignores it (it always returns a
     /// `JsonValue::Array`).
     pub ndjson: bool,
+    /// T2: bare-scalar output (`--raw`). `run()` itself is oblivious to
+    /// this bit — raw-conversion happens at the cli.rs dispatch boundary
+    /// AFTER `run()` returns the JSON-shaped result. The exception is
+    /// the streaming Pluck path (`--pluck f --lines --raw`) which
+    /// short-circuits into `run_streaming` with the bare-value emit inline
+    /// so we don't materialise quoted JSON only to strip it per line. The
+    /// validation layer also consults this bit (count-by / group-by +
+    /// raw is rejected at `validate_query`). Default false keeps every
+    /// non-raw path byte-identical.
+    pub raw: bool,
 }
 
 /// Reject mutually exclusive flag combinations. The CLI's `validate_query`
@@ -190,6 +200,23 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
             // group-by composes fine with projection; no cross-exclusion here.
         }
         OutputShape::Array => {}
+    }
+    // T2: `--raw` is a scalar-output primitive — only meaningful on shapes
+    // that collapse to a single scalar (Count / CountDistinct) or a
+    // single-value Pluck. `--count-by` emits a map `{bucket: count, ...}`
+    // and `--group-by` emits `{bucket: [items, ...], ...}`; neither has a
+    // well-defined bare-scalar conversion, so we fail loud here rather
+    // than let the agent see a confusing error from `emit_raw` on the
+    // object shape. Wording is load-bearing — tests pin the exact string.
+    if q.raw
+        && matches!(
+            q.shape,
+            OutputShape::CountBy(_) | OutputShape::GroupBy(_)
+        )
+    {
+        validation_bail!(
+            "--raw is not supported on --count-by / --group-by (output is a map, not a scalar)"
+        );
     }
     // Cross-shape pairs. `main.rs` is expected to pick exactly one of the
     // below shapes, but we still double-check so callers with programmatic
@@ -437,11 +464,23 @@ pub(crate) fn run_streaming<W: Write>(
             // value. This matches the fast-path in `run()` at lines
             // 235-244, keeping streaming and non-streaming membership
             // identical.
+            //
+            // T2: when `q.raw` is set, emit the bare-scalar form (strings
+            // unquoted) instead of the JSON-encoded one. Null/missing
+            // drops are identical — raw is purely an encoding choice at
+            // the emit point. Re-using `crate::cli::emit_raw` keeps the
+            // scalar-rendering rules in one place so a table/array leak
+            // (shouldn't happen — Pluck flattens to scalars — but a
+            // defensive double-check) surfaces with the canonical error.
             for t in &filtered {
                 match t.get(field).map(toml_to_json) {
                     None | Some(JsonValue::Null) => {}
                     Some(v) => {
-                        serde_json::to_writer(&mut *writer, &v)?;
+                        if q.raw {
+                            writer.write_all(crate::cli::emit_raw(&v)?.as_bytes())?;
+                        } else {
+                            serde_json::to_writer(&mut *writer, &v)?;
+                        }
                         writer.write_all(b"\n")?;
                     }
                 }
@@ -470,7 +509,12 @@ pub(crate) fn run_streaming<W: Write>(
             match v.get(field) {
                 None | Some(JsonValue::Null) => {}
                 Some(item_val) => {
-                    serde_json::to_writer(&mut *writer, item_val)?;
+                    // T2: same raw-vs-json fork as the fast-path above.
+                    if q.raw {
+                        writer.write_all(crate::cli::emit_raw(item_val)?.as_bytes())?;
+                    } else {
+                        serde_json::to_writer(&mut *writer, item_val)?;
+                    }
                     writer.write_all(b"\n")?;
                 }
             }
@@ -1481,6 +1525,12 @@ impl Query {
             // collapses to the same bytes). This keeps downstream pipeline
             // logic inspecting a single boolean.
             ndjson: q.ndjson || q.lines,
+            // T2: propagate `--raw` through to the query spec. Most of the
+            // dispatch machinery is oblivious; the cli.rs `items list`
+            // branch post-processes the `run()` result when `raw` is set,
+            // and the streaming Pluck path threads this bit through to
+            // emit bare values per line.
+            raw: q.raw,
         })
     }
 }

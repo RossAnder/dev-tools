@@ -420,6 +420,29 @@ pub(crate) struct QueryArgs {
         help = "Emit one JSON value per line on --pluck (alias-of-semantics for --ndjson). No-op on --count/--count-by/--count-distinct/--group-by."
     )]
     pub(crate) lines: bool,
+    /// T2: bare-scalar output for single-value shapes. Composes as follows:
+    ///
+    /// - `--count --raw` / `--count-distinct --raw`: emit the bare integer
+    ///   count (no `{"count":...}` / `{"count_distinct":...,"field":...}`
+    ///   wrapping).
+    /// - `--pluck f --raw` (N=1): emit the bare plucked value (strings
+    ///   unquoted, numbers/bools bare).
+    /// - `--pluck f --raw` (N != 1): errors with the exact load-bearing
+    ///   message the task spec pins — tests assert byte-for-byte.
+    /// - `--pluck f --raw --lines`: one bare value per line (composes
+    ///   with the streaming Pluck path).
+    /// - `--count-by --raw` / `--group-by --raw`: rejected — the output is
+    ///   a map, not a scalar; `--raw` has no well-defined conversion.
+    ///
+    /// Motivation: replaces the ~35 `tomlctl items list ... --count
+    /// | jq -r .count` pipe chains the transcript audit found. Agents
+    /// consuming counts into a `read -r N` bash loop want the bare integer
+    /// on stdout without piping through jq.
+    #[arg(
+        long = "raw",
+        help = "Emit bare scalar (no JSON quoting) for --count/--count-distinct/single --pluck. With --lines + --pluck: bare value per line. Rejected on --count-by/--group-by."
+    )]
+    pub(crate) raw: bool,
 }
 
 // The CLI subcommand enums carry a lot of `Vec<String>` / nested-struct
@@ -444,6 +467,19 @@ enum Cmd {
         file: PathBuf,
         /// Dotted path, e.g. "tasks.total" or "artifacts.optimise_findings". Omit to dump whole file.
         path: Option<String>,
+        /// T2: bare-scalar output. On a scalar target (string / integer /
+        /// float / bool / date), emit the value unquoted — strings print
+        /// literally, numbers bare, booleans as `true` / `false`. On a
+        /// table or array target, error with the exact load-bearing message
+        /// the task spec pins. The motivation is parity with `items list
+        /// --count --raw`: agents consuming `tomlctl get <file>
+        /// tasks.total` into a bash `read -r N` loop want the bare integer,
+        /// not a JSON-quoted string.
+        #[arg(
+            long = "raw",
+            help = "Emit bare scalar (no JSON quoting). Errors on table/array target."
+        )]
+        raw: bool,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -923,7 +959,7 @@ pub(crate) fn run() -> Result<()> {
             };
             print_json(&out)?;
         }
-        Cmd::Get { file, path, integrity } => {
+        Cmd::Get { file, path, raw, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let out = read_doc(&file, opts, |doc| {
@@ -934,7 +970,17 @@ pub(crate) fn run() -> Result<()> {
                     ),
                 })
             })?;
-            print_json(&out)?;
+            if raw {
+                // T2: bare-scalar emit. `emit_raw` validates the value is a
+                // scalar (string / number / bool) and errors byte-for-byte
+                // on table/array targets. Null is impossible here — `navigate`
+                // returns `None` for a missing path, which we already
+                // surface as "key path not found" above; a present TOML
+                // scalar cannot map to JSON null via `toml_to_json`.
+                print_raw_value(&out)?;
+            } else {
+                print_json(&out)?;
+            }
         }
         Cmd::Set {
             file,
@@ -1053,13 +1099,28 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // iterate and re-serialise. The streaming path walks the
                 // same pipeline and emits per-item — peak memory scales with
                 // the filtered set, not the full output array.
+                //
+                // T2: `--pluck foo --lines --raw` flows through here too;
+                // `run_streaming` reads `q.raw` and emits bare values per
+                // line instead of quoted JSON. The Array variant of this
+                // branch (full-row ndjson) does not honour `--raw` — each
+                // row is a JSON object, not a scalar — and that combo has
+                // no meaningful raw form. `validate_query` does not reject
+                // it (Array + raw is a no-op, not an error) for the same
+                // reason `--lines` on Count is a silent no-op: agents
+                // blanket-add flags, and inducing an error for an
+                // ambiguous-but-harmless combo would be user-hostile.
                 let stdout = std::io::stdout();
                 let mut h = stdout.lock();
                 read_doc(&file, opts, |doc| query::run_streaming(doc, &array, &q, &mut h))?;
                 h.flush()?;
             } else {
                 let out = read_doc(&file, opts, |doc| query::run(doc, &array, &q))?;
-                print_json(&out)?;
+                if q.raw {
+                    emit_list_raw(&out, &q.shape)?;
+                } else {
+                    print_json(&out)?;
+                }
             }
         }
         ItemsOp::Get { file, id, array, integrity } => {
@@ -1531,6 +1592,129 @@ fn print_json_compact(v: &JsonValue) -> Result<()> {
     serde_json::to_writer(&mut out, v)?;
     out.write_all(b"\n")?;
     out.flush()?;
+    Ok(())
+}
+
+/// T2: convert a single `JsonValue` scalar into its bare on-stdout form.
+///
+/// - String: emits the underlying `&str` verbatim — no quotes, no escapes.
+///   A string containing a newline is a legitimate single logical value
+///   that happens to span multiple output lines; agents are responsible
+///   for their own escaping if they need it.
+/// - Number: `serde_json::Number::to_string` preserves integer / float
+///   disambiguation — `42` stays `"42"`, `42.0` stays `"42.0"` — which
+///   matches the JSON-output shape exactly except for the surrounding
+///   whitespace / commas.
+/// - Bool: `true` / `false`.
+/// - Null: unreachable on happy paths (Pluck and `get` both reject/drop
+///   nulls upstream), but errors cleanly if one ever leaks through —
+///   keeps the helper total.
+/// - Array / Object: error with the exact load-bearing message that the
+///   `Cmd::Get --raw` spec pins. The tests assert byte-for-byte.
+///
+/// Callers: `Cmd::Get --raw` (directly) and the `items list --pluck
+/// --raw` dispatch branch (after it has asserted N==1). For
+/// `--count` / `--count-distinct --raw` the dispatch extracts the inner
+/// count integer and feeds just that number in, so the Object arm is
+/// never reached from the aggregation paths.
+pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
+    match v {
+        JsonValue::String(s) => Ok(s.clone()),
+        JsonValue::Number(n) => Ok(n.to_string()),
+        JsonValue::Bool(b) => Ok(b.to_string()),
+        JsonValue::Null => {
+            bail!("--raw cannot emit null value")
+        }
+        JsonValue::Array(_) => {
+            bail!("--raw requires a scalar target; got array")
+        }
+        JsonValue::Object(_) => {
+            bail!("--raw requires a scalar target; got table")
+        }
+    }
+}
+
+/// T2: emit one bare-scalar value to stdout, followed by exactly one
+/// trailing newline. The trailing `\n` is deliberate — bash `read -r N`
+/// consumes up to a newline, so agents piping tomlctl output into
+/// variable-binding shell loops expect every bare-value emission to end
+/// in one. For the `--lines --raw --pluck` streaming path this helper is
+/// NOT called per line (that path uses `emit_raw` directly into a
+/// pre-locked writer for throughput); the semantics are the same.
+pub(crate) fn print_raw_value(v: &JsonValue) -> Result<()> {
+    let stdout = std::io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
+    out.write_all(emit_raw(v)?.as_bytes())?;
+    out.write_all(b"\n")?;
+    out.flush()?;
+    Ok(())
+}
+
+/// T2: `items list --raw` dispatch-side converter. Takes the JSON value
+/// `run()` returned and the shape flag that produced it, and emits the
+/// bare-scalar form appropriate to the shape. Called only when `q.raw`
+/// is set AND the caller did NOT take the streaming path (which handles
+/// its own emission inline). The match must cover every shape `run()`
+/// can return — not just Count/CountDistinct/Pluck — so a future new
+/// shape produces a compile error here rather than a runtime panic.
+///
+/// Error strings are load-bearing: the pluck N==0 and N>1 errors, and
+/// the count-by / group-by errors, appear byte-for-byte in integration
+/// tests. `validate_query` already rejects `--raw` + `--count-by` /
+/// `--group-by`, so those arms are defense-in-depth — reachable only if
+/// a future refactor bypasses validation.
+fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
+    match shape {
+        OutputShape::Count => {
+            // Shape is `{"count": N}` — reach in, emit the bare integer.
+            let n = v
+                .get("count")
+                .ok_or_else(|| anyhow!("internal: --count output missing `count` key"))?;
+            print_raw_value(n)?;
+        }
+        OutputShape::CountDistinct(_) => {
+            // Shape is `{"count_distinct": N, "field": "<name>"}` — drop the
+            // `field` key (it's echo-only metadata) and emit the bare count.
+            let n = v.get("count_distinct").ok_or_else(|| {
+                anyhow!("internal: --count-distinct output missing `count_distinct` key")
+            })?;
+            print_raw_value(n)?;
+        }
+        OutputShape::Pluck(_) => {
+            // Shape is `[v0, v1, ...]`. N==1 is the only emittable
+            // cardinality without `--lines`; anything else is an error
+            // with the exact task-spec wording (tests assert byte-for-byte).
+            let arr = v
+                .as_array()
+                .ok_or_else(|| anyhow!("internal: --pluck output was not a JSON array"))?;
+            match arr.len() {
+                0 => bail!("--raw requires single-value output (got 0 items)"),
+                1 => print_raw_value(&arr[0])?,
+                n => bail!(
+                    "--raw requires single-value output (got {} items); use --lines for newline-delimited",
+                    n
+                ),
+            }
+        }
+        OutputShape::Array => {
+            // Array + raw without `--lines` is defensive — an agent who
+            // blanket-added `--raw` to a plain `items list` gets a clear
+            // error rather than a corrupt pretty-print of a JSON array
+            // with quotes stripped. Byte-for-byte wording isn't pinned
+            // by the task spec for this case; keep it descriptive.
+            bail!("--raw requires a scalar target; got array");
+        }
+        OutputShape::CountBy(_) | OutputShape::GroupBy(_) => {
+            // Unreachable in practice: `validate_query` rejects these
+            // combinations with the canonical message before `run()`
+            // returns. Mirror the same message here for defence in depth
+            // — if validation is ever restructured and this path fires,
+            // the error the user sees is still the pinned one.
+            bail!(
+                "--raw is not supported on --count-by / --group-by (output is a map, not a scalar)"
+            );
+        }
+    }
     Ok(())
 }
 

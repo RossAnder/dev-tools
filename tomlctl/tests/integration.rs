@@ -3970,3 +3970,367 @@ fn strict_read_uniform_across_read_subcommands() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Task 2 (plan `docs/plans/tomlctl-capability-gaps.md`): `--raw` bare-scalar
+// output for `items list --count` / `--count-distinct` / `--pluck` (N=1 or
+// `--lines`-streamed) and for `get <file> <scalar-path>`. The motivation is
+// the ~35 `tomlctl ... | jq -r .count` pipe chains the transcript audit
+// uncovered: agents consuming counts or single-scalar `get` results into a
+// bash `read -r N` loop want the bare integer/string on stdout, not the
+// JSON-wrapped form. Error strings on invalid compositions are load-bearing
+// — tests assert byte-for-byte — so a downstream script checking for an
+// exact substring stays stable across releases.
+// ---------------------------------------------------------------------------
+
+/// T2-1: `items list --count --raw` emits a bare integer plus a single
+/// trailing newline. Byte-identity check — the whole point of `--raw` is
+/// that the stdout is parseable by `read -r N` without jq.
+#[test]
+fn items_list_count_raw_emits_bare_integer() {
+    let stdout = run_list_query(&["--count", "--raw"]);
+    assert_eq!(stdout, "6\n", "QUERY_FIXTURE has 6 rows; expected bare `6\\n`");
+}
+
+/// T2-2: `items list --count-distinct foo --raw` emits the bare count,
+/// dropping the `field` key. Stdout is a single integer line with no
+/// JSON wrapping.
+#[test]
+fn items_list_count_distinct_raw_emits_bare_integer() {
+    let stdout = run_list_query(&["--count-distinct", "category", "--raw"]);
+    // QUERY_FIXTURE categories: style, bug, bug, perf, style, security → 4.
+    assert_eq!(stdout, "4\n", "expected bare `4\\n`; got:\n{stdout}");
+}
+
+/// T2-3: `--pluck foo --raw` with N=1 (string) emits the unquoted string.
+/// Uses the `symbol` field from QUERY_FIXTURE which only R2 carries.
+#[test]
+fn items_list_pluck_raw_n_eq_1_string_emits_unquoted() {
+    let stdout = run_list_query(&["--where-has", "symbol", "--pluck", "symbol", "--raw"]);
+    // QUERY_FIXTURE R2 has symbol = "old::fn".
+    assert_eq!(stdout, "old::fn\n", "expected bare `old::fn\\n`; got:\n{stdout}");
+}
+
+/// T2-4: `--pluck foo --raw` with N=1 (integer) emits the bare integer.
+/// Exercise the JsonValue::Number arm of `emit_raw` with a genuine integer
+/// coming out of toml's `Integer` type.
+#[test]
+fn items_list_pluck_raw_n_eq_1_integer_emits_bare() {
+    // Use `--where id=R1` + `--pluck rounds` — but QUERY_FIXTURE doesn't
+    // carry `rounds`. Build a one-row fixture instead.
+    let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+n = 42
+"#;
+    let stdout = run_list_query_with(fixture, &["--pluck", "n", "--raw"]);
+    assert_eq!(stdout, "42\n", "expected bare `42\\n`; got:\n{stdout}");
+}
+
+/// T2-5: `--pluck foo --raw` on a 0-item result errors with the exact
+/// task-spec wording. Tests assert byte-for-byte — a reword to
+/// "no items matched" or "empty result" would break agent scripts.
+#[test]
+fn items_list_pluck_raw_n_eq_0_errors_with_exact_message() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        // Nothing matches `status=absent` → 0 rows → 0 plucked values.
+        .arg("--where")
+        .arg("status=absent")
+        .arg("--pluck")
+        .arg("id")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("--raw requires single-value output (got 0 items)"),
+        "exact error string expected; got stderr:\n{stderr}"
+    );
+}
+
+/// T2-6: `--pluck foo --raw` on N>1 rows errors with the pinned wording
+/// (including the suggested `--lines` remediation). Substitutes the
+/// actual N in — asserts on the literal `(got 6 items)` so a drift in
+/// count arithmetic would be caught.
+#[test]
+fn items_list_pluck_raw_n_gt_1_errors_with_exact_message_and_count() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--pluck")
+        .arg("id")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains(
+            "--raw requires single-value output (got 6 items); use --lines for newline-delimited"
+        ),
+        "exact error string expected; got stderr:\n{stderr}"
+    );
+}
+
+/// T2-7: `--pluck foo --raw --lines` emits one bare value per line. The
+/// streaming path threads `q.raw` through to the per-item emit point,
+/// so strings come out unquoted. Pin the byte sequence to catch any
+/// regression that accidentally re-quotes.
+#[test]
+fn items_list_pluck_raw_with_lines_emits_bare_per_line() {
+    let stdout = run_list_query_with(PLUCK_FIXTURE, &["--pluck", "x", "--raw", "--lines"]);
+    assert_eq!(stdout, "v1\nv2\nv3\nv4\n", "expected 4 bare lines; got:\n{stdout}");
+}
+
+/// T2-8: `tomlctl get <file> <scalar-path> --raw` emits the bare value on
+/// a scalar target (integer here). Covers the `Cmd::Get` raw branch.
+#[test]
+fn get_raw_on_integer_scalar_emits_bare_integer() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let doc = claude.join("context.toml");
+    fs::write(&doc, "[tasks]\ntotal = 7\nname = \"launch\"\n").unwrap();
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("get")
+        .arg(&doc)
+        .arg("tasks.total")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert_eq!(stdout, "7\n", "expected bare `7\\n`; got:\n{stdout}");
+}
+
+/// T2-9: `get <file> <table-path> --raw` errors with the exact wording the
+/// task spec pins. `[tasks]` is a TOML table, so navigating to `tasks`
+/// returns a JSON object — `emit_raw` rejects it.
+#[test]
+fn get_raw_on_table_errors_with_exact_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let doc = claude.join("context.toml");
+    fs::write(&doc, "[tasks]\ntotal = 7\n").unwrap();
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("get")
+        .arg(&doc)
+        .arg("tasks")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("--raw requires a scalar target; got table"),
+        "exact error string expected; got stderr:\n{stderr}"
+    );
+}
+
+/// T2-10: `get <file> <array-path> --raw` errors with the exact wording.
+/// `scope` below is a TOML array.
+#[test]
+fn get_raw_on_array_errors_with_exact_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let doc = claude.join("context.toml");
+    fs::write(&doc, "scope = [\"a\", \"b\"]\n").unwrap();
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("get")
+        .arg(&doc)
+        .arg("scope")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("--raw requires a scalar target; got array"),
+        "exact error string expected; got stderr:\n{stderr}"
+    );
+}
+
+/// T2-11: `items list --count-by foo --raw` is rejected at `validate_query`
+/// with the exact canonical message. `--count-by` emits a map, which has
+/// no bare-scalar form.
+#[test]
+fn items_list_count_by_with_raw_errors_with_exact_message() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--count-by")
+        .arg("status")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains(
+            "--raw is not supported on --count-by / --group-by (output is a map, not a scalar)"
+        ),
+        "exact error string expected; got stderr:\n{stderr}"
+    );
+}
+
+/// T2-12: same error for `--group-by foo --raw`. Pins that validation hits
+/// both shapes — not just CountBy by accident.
+#[test]
+fn items_list_group_by_with_raw_errors_with_exact_message() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--group-by")
+        .arg("status")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains(
+            "--raw is not supported on --count-by / --group-by (output is a map, not a scalar)"
+        ),
+        "exact error string expected; got stderr:\n{stderr}"
+    );
+}
+
+/// T2-13: `--pluck foo --distinct --raw` — distinct narrows the pluck
+/// array to 1 row; raw then emits that lone bare value. Covers the
+/// interaction between the pluck-field dedup path and the N==1 raw
+/// happy case, which has a non-obvious code path (dedup runs in the
+/// slow path of `run()` since `--distinct` is engaged).
+#[test]
+fn items_list_pluck_distinct_raw_n_eq_1_emits_bare() {
+    // Fixture has four identical x values — dedup collapses to one.
+    let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+x = "only"
+
+[[items]]
+id = "R2"
+x = "only"
+
+[[items]]
+id = "R3"
+x = "only"
+"#;
+    let stdout = run_list_query_with(fixture, &["--pluck", "x", "--distinct", "--raw"]);
+    assert_eq!(stdout, "only\n", "expected bare `only\\n`; got:\n{stdout}");
+}
+
+/// T2-14: `--count --raw --error-format json` on a HAPPY path emits the
+/// bare integer on stdout — the `--error-format json` flag only affects
+/// errors. Pins that `--raw` output is NOT JSON-wrapped just because the
+/// error-format is `json`.
+#[test]
+fn items_list_count_raw_with_error_format_json_still_bare_on_happy_path() {
+    let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("--error-format")
+        .arg("json")
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--count")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert_eq!(
+        stdout, "6\n",
+        "happy-path --raw stdout must be bare; --error-format json only affects errors; got:\n{stdout}"
+    );
+}
+
+/// T2-15: `--strict-read` wins against `--raw`-N=0: a missing ledger must
+/// surface `kind=not_found`, NOT the "(got 0 items)" raw-validation error,
+/// because the strict-read gate fires BEFORE the query pipeline runs.
+/// Tests the documented ordering contract from T9.
+#[test]
+fn items_list_pluck_raw_strict_read_on_missing_file_wins() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join(".claude").join("no-ledger.toml");
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("--error-format")
+        .arg("json")
+        .arg("items")
+        .arg("list")
+        .arg(&missing)
+        .arg("--pluck")
+        .arg("id")
+        .arg("--raw")
+        .arg("--strict-read")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let envelope: serde_json::Value = serde_json::from_str(stderr.trim())
+        .unwrap_or_else(|e| panic!("json-mode stderr must parse: {e}; stderr:\n{stderr}"));
+    assert_eq!(
+        envelope
+            .get("error")
+            .and_then(|e| e.get("kind"))
+            .and_then(|s| s.as_str()),
+        Some("not_found"),
+        "strict-read must surface kind=not_found (not raw-validation); got stderr:\n{stderr}"
+    );
+}
+
+/// T2-16: `--pluck foo --raw` with N=1 boolean emits `true` / `false` bare.
+/// Covers the JsonValue::Bool arm of `emit_raw`.
+#[test]
+fn items_list_pluck_raw_n_eq_1_bool_emits_true() {
+    let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+active = true
+"#;
+    let stdout = run_list_query_with(fixture, &["--pluck", "active", "--raw"]);
+    assert_eq!(stdout, "true\n", "expected bare `true\\n`; got:\n{stdout}");
+}
