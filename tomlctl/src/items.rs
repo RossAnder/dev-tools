@@ -513,6 +513,51 @@ pub(crate) fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
     Ok(format!("{}{}", prefix, max_n + 1))
 }
 
+/// Task 4: sibling of `items_next_id` that scans the ledger's existing ids,
+/// infers the (single) letter prefix in use, and delegates to `items_next_id`.
+/// Used by `items next-id --infer-from-file` when the caller doesn't want to
+/// hard-code the prefix in the invocation — the canonical case being an agent
+/// that's handed an arbitrary `<ledger>` path and needs to mint the next id
+/// without knowing whether it's an R / O / E (or future) schema.
+///
+/// Prefix extraction: for each `id` in `[[items]]`, split at the first ASCII
+/// digit; everything before the digit is the prefix. Ids with no digit, or
+/// ids that start with a digit (empty prefix), are skipped — they can't
+/// participate in the monotonic `{prefix}{n}` scheme regardless.
+///
+/// Error messages are load-bearing (tests assert byte-for-byte):
+///
+/// - Zero items / zero extractable prefixes: `--infer-from-file requires a
+///   non-empty ledger or explicit --prefix`
+/// - Multiple distinct prefixes: `--infer-from-file found multiple prefixes
+///   ({sorted-csv}); pass --prefix explicitly` — sorted alphabetically so
+///   the message is deterministic regardless of item order on disk.
+pub(crate) fn items_infer_and_next_id(doc: &TomlValue) -> Result<String> {
+    let mut prefixes: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for item in items_array(doc, "items") {
+        if let Some(id) = item_id(item)
+            && let Some(split) = id.find(|c: char| c.is_ascii_digit())
+            && split > 0
+        {
+            prefixes.insert(id[..split].to_string());
+        }
+    }
+    match prefixes.len() {
+        0 => bail!("--infer-from-file requires a non-empty ledger or explicit --prefix"),
+        1 => {
+            let prefix = prefixes.into_iter().next().expect("len == 1");
+            items_next_id(doc, &prefix)
+        }
+        _ => {
+            let joined = prefixes.into_iter().collect::<Vec<_>>().join(", ");
+            bail!(
+                "--infer-from-file found multiple prefixes ({}); pass --prefix explicitly",
+                joined
+            )
+        }
+    }
+}
+
 /// Parse NDJSON input (one JSON value per line) into a `Vec<JsonValue>`. Blank
 /// lines (after trimming) are skipped but counted in the 1-indexed line number
 /// used in error messages, so `line N` here matches the source line the caller
@@ -1387,6 +1432,117 @@ status = "open"
             msg.contains("no item with id = DOES_NOT_EXIST"),
             "expected unknown-id error, got: {msg}"
         );
+    }
+
+    // ----- Task 4: items_infer_and_next_id --------------------------------
+
+    #[test]
+    fn items_infer_and_next_id_single_prefix_returns_max_plus_one() {
+        // Led() carries two R-prefixed rows (R1, R4). Inference should pick
+        // `R` as the sole prefix and hand off to items_next_id → "R5".
+        let doc = led();
+        assert_eq!(items_infer_and_next_id(&doc).unwrap(), "R5");
+    }
+
+    #[test]
+    fn items_infer_and_next_id_picks_non_r_prefix() {
+        // E-only fixture: pin that inference isn't hard-coded to R.
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "E1"
+summary = "first"
+
+[[items]]
+id = "E2"
+summary = "second"
+
+[[items]]
+id = "E5"
+summary = "out of order"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        assert_eq!(items_infer_and_next_id(&doc).unwrap(), "E6");
+    }
+
+    #[test]
+    fn items_infer_and_next_id_empty_ledger_errors() {
+        let doc: TomlValue = toml::from_str("schema_version = 1\n").unwrap();
+        let err = items_infer_and_next_id(&doc).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "--infer-from-file requires a non-empty ledger or explicit --prefix"
+        );
+    }
+
+    #[test]
+    fn items_infer_and_next_id_multiple_prefixes_errors_alpha_sorted() {
+        // Deliberately insert out of alphabetical order (R, E, F) — the error
+        // message must still list them sorted (E, F, R) so the output is
+        // deterministic regardless of ledger row order.
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "review"
+
+[[items]]
+id = "E2"
+summary = "execution"
+
+[[items]]
+id = "F3"
+summary = "future"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let err = items_infer_and_next_id(&doc).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "--infer-from-file found multiple prefixes (E, F, R); pass --prefix explicitly"
+        );
+    }
+
+    #[test]
+    fn items_infer_and_next_id_skips_digit_leading_and_no_digit_ids() {
+        // Malformed ids that can't participate in {prefix}{n} must not
+        // contribute to the prefix set: `123` (all digits, empty prefix),
+        // `xyz` (no digit). The E-prefixed id is the only legitimate entry;
+        // inference picks E.
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "123"
+summary = "digit-only, empty prefix"
+
+[[items]]
+id = "xyz"
+summary = "no digit"
+
+[[items]]
+id = "E7"
+summary = "legit"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        assert_eq!(items_infer_and_next_id(&doc).unwrap(), "E8");
+    }
+
+    #[test]
+    fn items_infer_and_next_id_extracts_multichar_prefix() {
+        // Not all prefixes are single chars. `DF` (from a hypothetical
+        // "design-finding" schema) must come out whole — prefix extraction
+        // splits at the FIRST digit, not after one character.
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "DF1"
+summary = "design finding"
+
+[[items]]
+id = "DF4"
+summary = "design finding"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        assert_eq!(items_infer_and_next_id(&doc).unwrap(), "DF5");
     }
 
     // ----- R19: items_next_id on empty doc --------------------------------

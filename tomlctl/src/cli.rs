@@ -20,7 +20,7 @@ use crate::integrity::IntegrityOpts;
 use crate::io::{mutate_doc, read_doc, read_doc_borrowed, read_toml_str};
 use crate::items::{
     array_append, items_add_many, items_add_to, items_apply_to_opts, items_get_from,
-    items_next_id, items_remove_from, items_update_to, parse_ndjson,
+    items_infer_and_next_id, items_next_id, items_remove_from, items_update_to, parse_ndjson,
 };
 use crate::orphans::items_orphans;
 use crate::query::{self, OutputShape, Query};
@@ -509,17 +509,40 @@ enum ItemsOp {
     /// write-side containment/sidecar flags have no semantic hook here and
     /// would be silently ignored if they were accepted.
     ///
-    /// R40: `--prefix` is required. With four ledger schemas now in
-    /// circulation (R review, O optimise, E execution-record, plus any
-    /// future additions), a default of "R" would silently mis-mint for
-    /// three of four callers. Every `tomlctl items next-id` invocation in
-    /// this repo's `claude/commands/*.md` and `SKILL.md` already passes an
-    /// explicit `--prefix R|O|E`, so making the flag required is a no-op
-    /// for well-formed callers and a fail-fast for careless ones.
+    /// R40: neither `--prefix` nor `--infer-from-file` has a default. With
+    /// four ledger schemas now in circulation (R review, O optimise, E
+    /// execution-record, plus any future additions), a default of "R" would
+    /// silently mis-mint for three of four callers. Every
+    /// `tomlctl items next-id` invocation in this repo's
+    /// `claude/commands/*.md` and `SKILL.md` already passes an explicit
+    /// `--prefix R|O|E`, so structurally requiring one of the two flags is
+    /// a no-op for well-formed callers and a fail-fast for careless ones.
+    ///
+    /// T4 (plan `docs/plans/tomlctl-capability-gaps.md`): `--infer-from-file`
+    /// is the alternative path for callers handed an arbitrary `<ledger>`
+    /// without knowing its prefix up front. It scans existing ids and
+    /// returns `{prefix}{max_n+1}` when exactly one prefix is in use; on
+    /// zero (empty ledger, no explicit prefix) or more than one it errors
+    /// out rather than guessing. Structurally mutually exclusive with
+    /// `--prefix` via a `required(true)` ArgGroup — clap enforces the
+    /// "exactly one" contract at parse time with a clean error message.
+    #[command(group(
+        clap::ArgGroup::new("id_source")
+            .required(true)
+            .multiple(false)
+            .args(["prefix", "infer_from_file"])
+    ))]
     NextId {
         file: PathBuf,
-        #[arg(long, required = true)]
-        prefix: String,
+        #[arg(long, help = "Prefix letter (e.g. R, O, E) for the new id")]
+        prefix: Option<String>,
+        /// T4: derive the prefix by scanning existing ids in the ledger.
+        /// Errors if the ledger is empty or uses more than one prefix.
+        #[arg(
+            long = "infer-from-file",
+            help = "Infer the prefix from existing ids in <file>"
+        )]
+        infer_from_file: bool,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -857,12 +880,24 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             })?;
             print_json_compact(&serde_json::json!({"ok": true}))?;
         }
-        ItemsOp::NextId { file, prefix, integrity } => {
+        ItemsOp::NextId { file, prefix, infer_from_file, integrity } => {
+            // The clap ArgGroup `id_source` guarantees exactly one of
+            // `--prefix` / `--infer-from-file` reaches us; no runtime
+            // "both unset" or "both set" check is needed.
+            //
             // R19: if the target ledger doesn't exist yet, there's nothing to
             // parse or verify — the "next" id is trivially `<prefix>1`. This
             // lets flows call `items next-id` before the ledger is initialised
-            // (e.g. during bootstrap of a new flow directory).
+            // (e.g. during bootstrap of a new flow directory). When the caller
+            // passed `--infer-from-file` and the file is absent, inference has
+            // no corpus to work from, which is indistinguishable from the
+            // "empty ledger" failure case — surface the same error so the
+            // caller's remediation is the same either way.
             if !file.exists() {
+                if infer_from_file {
+                    bail!("--infer-from-file requires a non-empty ledger or explicit --prefix");
+                }
+                let prefix = prefix.as_deref().expect("clap group guarantees prefix is Some");
                 if prefix.is_empty() {
                     bail!("prefix must not be empty — use a letter like R, O, or A");
                 }
@@ -872,7 +907,15 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 println!("{}", serde_json::to_string(&format!("{}1", prefix))?);
             } else {
                 let opts = read_integrity_opts(&integrity);
-                let id = read_doc(&file, opts, |doc| items_next_id(doc, &prefix))?;
+                let id = read_doc(&file, opts, |doc| {
+                    if infer_from_file {
+                        items_infer_and_next_id(doc)
+                    } else {
+                        let prefix =
+                            prefix.as_deref().expect("clap group guarantees prefix is Some");
+                        items_next_id(doc, prefix)
+                    }
+                })?;
                 println!("{}", serde_json::to_string(&id)?);
             }
         }

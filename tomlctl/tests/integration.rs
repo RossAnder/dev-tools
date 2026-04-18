@@ -90,6 +90,174 @@ fn items_next_id_requires_prefix_flag() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Task 4 (plan `docs/plans/tomlctl-capability-gaps.md`): `items next-id
+// --infer-from-file` — scan the ledger's existing ids, infer the prefix, and
+// mint the next monotonic one. Structurally mutually exclusive with
+// `--prefix` via a required clap ArgGroup (one of the two must be passed;
+// never both). R40 is preserved: zero-prefix invocations still fail.
+// ---------------------------------------------------------------------------
+
+/// T4 acceptance (a): ledger contains only E-prefixed ids. `--infer-from-file`
+/// picks `E` (the single prefix in use) and emits `E{max_n+1}`. The fixture
+/// uses `E1, E2, E5` to pin that the helper picks `max+1 = 6`, not
+/// `len+1 = 4` — i.e. it walks the numeric suffixes, not the row count.
+#[test]
+fn items_next_id_infer_from_file_picks_sole_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("execution-record.toml");
+    fs::write(
+        &ledger,
+        r#"schema_version = 1
+
+[[items]]
+id = "E1"
+type = "status-transition"
+summary = "seed"
+
+[[items]]
+id = "E2"
+type = "status-transition"
+summary = "seed"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+summary = "seed"
+"#,
+    )
+    .unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&ledger)
+        .arg("--infer-from-file")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    // Output shape matches the non-inferred path: one JSON-encoded string
+    // literal per line (the existing `items next-id` contract).
+    assert!(
+        stdout.contains("\"E6\""),
+        "expected `\"E6\"` in stdout, got:\n{stdout}"
+    );
+}
+
+/// T4 acceptance (b): ledger contains multiple distinct prefixes. Inference
+/// can't pick one without guessing, so the helper errors out with the exact
+/// plan-specified message, prefixes sorted alphabetically for determinism
+/// (`E, F, R` regardless of on-disk row order).
+#[test]
+fn items_next_id_infer_from_file_rejects_multiple_prefixes() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("mixed.toml");
+    fs::write(
+        &ledger,
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "review finding"
+
+[[items]]
+id = "E2"
+summary = "execution record"
+
+[[items]]
+id = "F3"
+summary = "future schema"
+"#,
+    )
+    .unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&ledger)
+        .arg("--infer-from-file")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains(
+            "--infer-from-file found multiple prefixes (E, F, R); pass --prefix explicitly"
+        ),
+        "expected multi-prefix error with alpha-sorted list, got stderr:\n{stderr}"
+    );
+}
+
+/// T4 acceptance (c): empty ledger (no `[[items]]` entries) + no explicit
+/// `--prefix`. Inference has nothing to work from; surface the "non-empty
+/// ledger or explicit --prefix" guidance so the caller knows the remediation.
+/// We pass an existing-but-item-less file so the empty-inference branch is
+/// exercised (the missing-file branch raises the same message via the cli.rs
+/// early return — both paths share the error text).
+#[test]
+fn items_next_id_infer_from_file_rejects_empty_ledger() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("empty.toml");
+    fs::write(&ledger, "schema_version = 1\n").unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&ledger)
+        .arg("--infer-from-file")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains(
+            "--infer-from-file requires a non-empty ledger or explicit --prefix"
+        ),
+        "expected empty-ledger error, got stderr:\n{stderr}"
+    );
+}
+
+/// T4 acceptance (d): passing BOTH `--prefix` AND `--infer-from-file` must
+/// fail at clap parse time (exit 2, not exit 1) because the flags live in a
+/// `multiple(false)` ArgGroup. The error comes from clap directly, so we
+/// assert on the group-conflict phrase rather than a tomlctl-authored string.
+#[test]
+fn items_next_id_prefix_and_infer_from_file_are_mutually_exclusive() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-ledger.toml");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("next-id")
+        .arg(&missing)
+        .arg("--prefix")
+        .arg("R")
+        .arg("--infer-from-file")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("cannot be used with") || stderr.contains("argument cannot be used"),
+        "expected clap group-conflict error, got stderr:\n{stderr}"
+    );
+}
+
 /// R44: `items apply` rejects an ops array larger than `MAX_OPS_PER_APPLY`
 /// with a message that names the count, the cap, and directs the user to
 /// split the batch. The cap is a pre-write check, so the on-disk ledger is
