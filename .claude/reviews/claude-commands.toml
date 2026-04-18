@@ -1,649 +1,1117 @@
 schema_version = 1
-last_updated = 2026-04-17
+last_updated = 2026-04-18
 
 [[items]]
-category = "architecture"
-description = "Only the two apply commands are byte-identical. review.md and optimise.md each diverge (different intro paragraphs, different heading depths `###` vs `####`). The block explicitly claims to be 'the single source of truth, embedded verbatim' — the promise is broken. Pick one canonical variant (the apply-pair text is the most complete) and normalise all four files to it. This is the precondition for any future drift-detection automation."
-effort = "medium"
+category = "completeness"
+description = "Either add --count to ItemsOp::List wrapping items_list().len(), or rewrite both docs to `tomlctl items list <ledger> --status open | jq 'length'`. This text sits outside the SHARED-BLOCK markers so verify-shared-blocks.sh cannot catch future drift between the two docs."
+effort = "small"
+evidence = [
+    "tomlctl/src/main.rs:106-120 (ItemsOp::List enum)",
+    "claude/commands/review.md:500",
+    "claude/commands/optimise.md:507",
+]
 file = "claude/commands/review.md"
 first_flagged = 2026-04-17
 id = "R1"
-line = 6
+line = 500
 rounds = 1
 severity = "critical"
 status = "fixed"
-summary = "Shared `## Flow Context` block has drifted: SHA-256 shows three distinct hashes across review.md / optimise.md / review-apply.md+optimise-apply.md — re-normalise to a single canonical variant"
-symbol = "## Flow Context"
-resolution = "Normalised `## Flow Context` (lines 6-91) in claude/commands/review.md and claude/commands/optimise.md to the apply-pair canonical bytes (sha256:efd5619a706fcc01…). SHA-256 parity verified byte-identical across all 4 command files. No commit yet — working-tree change."
-resolved = 2026-04-17
-
-[[items]]
-category = "architecture"
-description = "Same pattern as R1: review-apply.md and optimise-apply.md share a hash (3498e222…), review.md and optimise.md each have their own. Intro paragraphs differ; a couple of trailing lines differ too. Fix together with R1 — one normalisation pass covers both shared blocks."
-effort = "medium"
-file = "claude/commands/review.md"
-first_flagged = 2026-04-17
-id = "R2"
-line = 93
-rounds = 1
-severity = "critical"
-status = "fixed"
-summary = "Shared `## Ledger Schema` block has drifted the same way — three distinct hashes across the four files; re-normalise"
-symbol = "## Ledger Schema"
-resolution = "Normalised `## Ledger Schema` (lines 93-244) in claude/commands/review.md and claude/commands/optimise.md to the apply-pair canonical bytes (sha256:3498e222233b4e69…). SHA-256 parity verified byte-identical across all 4 command files. No commit yet — working-tree change."
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "Agent-produced strings flow untranslated into the orchestrator's shell call. On PowerShell (the documented platform shell) unescaped `$var` expands; on bash, embedded single quotes terminate the literal. Add a 'Shell-quoting for --ops JSON' subsection: mandate RFC-8259 JSON-escape of every agent string, and pass `--ops` via PowerShell `@'...'@` here-string (or bash `$(cat)` from tempfile) rather than a shell-expanded single-quoted literal. Same defect exists at optimise-apply.md:358."
-effort = "small"
-evidence = ["Trail of Bits — Prompt injection to RCE in AI agents"]
-file = "claude/commands/review-apply.md"
-first_flagged = 2026-04-17
-id = "R3"
-line = 378
-rounds = 1
-severity = "critical"
-status = "fixed"
-summary = "Shell-quoting of agent-supplied JSON inside `tomlctl items apply --ops '[...]'` is unspecified — `resolution` / `wontfix_rationale` / `verified_note` echo agent text verbatim and could carry `'`, `$`, backticks, or newlines that break the shell"
-symbol = "Step 5 — Two-call write pattern"
-resolution = """Added `**Shell-quoting for agent-supplied JSON payloads**` paragraph at review-apply.md:393 under the Two-call write pattern. Mandates RFC-8259 escape + tempfile-based `--ops` passing (`--ops "$(cat tempfile)"` / PowerShell here-string); recommends per-item `tomlctl items update` loop for ≤3 items where per-call quoting is easier to audit. Content grep-verified at line 393. NB: diff-verification per R4 could not confirm because review-apply.md is untracked in git (created this session) — see R40 for the rule's untracked-file gap."""
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "Before Step 5 ledger mutation, the orchestrator must reconcile each `applied R{n}` claim against `git diff --name-only HEAD` (plus staged). If the cited file appears in neither, downgrade `applied` → `skipped R{n}: claimed-applied but no diff detected` and surface in the final summary. Same concern applies to the 'recommended form appears verbatim' heuristic at line 287 — at minimum log a console warning on every verified-clean pre-transition."
-effort = "small"
-evidence = ["OWASP LLM01:2025 Prompt Injection — Thought/Observation Injection"]
-file = "claude/commands/review-apply.md"
-first_flagged = 2026-04-17
-id = "R4"
-line = 293
-rounds = 1
-severity = "critical"
-status = "fixed"
-summary = "'No new byte written → always verified-clean' is a policy on the agent with no orchestrator-side verification — a confused or hostile agent can mark items `fixed` with a fabricated `resolution` and the regression cross-check then suppresses re-flagging forever"
-symbol = "Hard disambiguation rule for `verified-clean` vs `fixed`"
-resolution = "Added `### Verify agent-reported applied claims` subsection at review-apply.md:363 (immediately before Regression cross-check) and matching `### Downgraded` subsection in the final-summary template. Orchestrator reconciles each `applied R{n}` tag against `git diff --name-only HEAD` ∪ `git diff --name-only --cached`; unbacked tags downgrade to `wontfix` with rationale and surface under the `### Downgraded` callout. Content grep-verified (2 occurrences of `### Downgraded` — one in prose reference, one as template heading, both intended). NB: see R40 — current wording misses untracked files, surfaced self-referentially on this very run."
-resolved = 2026-04-17
+summary = "review.md:500 and optimise.md:507 invoke `tomlctl items list --count`, but the subcommand has no --count flag (ItemsOp::List supports only --status/--category/--newer-than/--file) — the no-op checkpoint fails every run"
+symbol = "step-4.5-checkpoint-gate"
+resolution = 'Added --count flag to `tomlctl items list` (prints `{"count":N}` JSON); updated review.md:500, optimise.md:507, SKILL.md filter list, README.md quick-tour.'
+resolved = 2026-04-18
 
 [[items]]
 category = "quality"
-description = "Three agents independently flagged this. Step 5 lists three per-item mutation rules plus a separate file-level `last_updated` line. Without explicit 'use items apply for all transitions in one call', an LLM will naturally loop single `items update` invocations, paying N parse+write cycles. Copy review-apply.md lines 376-379 verbatim, retitled for the optimise vocabulary."
-effort = "small"
-file = "claude/commands/optimise-apply.md"
-first_flagged = 2026-04-17
-id = "R5"
-line = 356
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "Multi-item ledger mutation never prescribes the `tomlctl items apply --ops` batch — mirror review-apply.md's two-call write pattern (items apply + set last_updated)"
-symbol = "Step 5 — Clean up"
-resolution = "Added the two-call write pattern to optimise-apply.md Step 5 (tomlctl items apply --ops batch + tomlctl set last_updated). Mirrors review-apply.md wording for cross-command consistency."
-resolved = 2026-04-17
-
-[[items]]
-category = "architecture"
-description = "The tomlctl binary is specifically designed to avoid whole-doc Write (sidecar lock + atomic persist). This step hits every class where batch shines: new finds + rounds++ on matches + regressions + last_updated bump. Restructure Step 3 to prefer `tomlctl items apply --ops '[...]'` + `tomlctl set <ledger> last_updated <today>`, and demote whole-file Write to the python3 fallback only."
-effort = "small"
-file = "claude/commands/review.md"
-first_flagged = 2026-04-17
-id = "R6"
-line = 450
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "Describes full-doc parse + serialise + single `Write` as the primary path, with `tomlctl items update|remove|apply` demoted to an aside — invert the layering so `tomlctl items apply` batch is the primary write and `Write` is the fallback"
-symbol = "Step 3 — Update the Review Ledger"
-resolution = "Inverted review.md Step 3 ledger-write layering: primary path is now the tomlctl items apply --ops batch + tomlctl set last_updated two-call pattern; whole-file Write demoted to python3 fallback. Five mutation classes enumerated as ops in one atomic batch."
-resolved = 2026-04-17
-
-[[items]]
-category = "quality"
-description = "Five mutation types enumerated; any non-trivial round hits several. Matching prose to R6 keeps the producer and consumer side consistent."
-effort = "small"
-file = "claude/commands/optimise.md"
-first_flagged = 2026-04-17
-id = "R7"
-line = 452
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "Same defect as R6 — `tomlctl items add|update|remove|apply (preferred)` is an undifferentiated list with no prescription to batch — explicitly require `items apply` + `set last_updated`"
-symbol = "Step 3 — Write the ledger"
-resolution = "Same fix as R6 on the optimise producer side — optimise.md Step 3 restructured to prescribe the two-call batch pattern explicitly; per-item items update loops called out as wasteful; whole-file Write demoted to fallback."
-resolved = 2026-04-17
-
-[[items]]
-category = "architecture"
-description = "`/review-apply` now exists and directly consumes R-IDs with full ledger-state transitions (fixed + resolved + resolution). Leaving the /implement recommendation means users miss the dedicated apply path and the ledger never transitions. Plan flagged this as a follow-up; trivial to fix in one line."
+description = "tempfile docs show the canonical atomic-replace as `tmp.as_file().sync_all()?; tmp.persist(path)?;`. Current code omits sync_all, so a power-cut between write(2) and rename(2) can leave a zero-byte or torn target. The two write sites (562-575 and 607-632) also duplicate the NamedTempFile+persist idiom — one atomic_write helper DRYs both and makes this the single place to gain sync_all."
 effort = "trivial"
-file = "claude/commands/review.md"
-first_flagged = 2026-04-17
-id = "R8"
-line = 476
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "The 'quick wins' prompt still routes users to `/implement` (with prose expansion of R-numbers) instead of the purpose-built `/review-apply R1,R3` — update to lead with /review-apply"
-symbol = "Step 3 — Prompt for Action"
-resolution = "review.md Step 3 quick-wins action prompt now leads with /review-apply R{n},R{m} (purpose-built consumer) and keeps /implement as a one-line fallback note for plan-task-driven work beyond a single finding."
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = '''After constructing the `--ops` JSON but before `tomlctl items apply`, grep the serialised payload for `AKIA|-----BEGIN|password\s*=`; halt on match. Also add an agent-prompt line in Step 4: 'do not quote diff lines containing credentials in resolution text; paraphrase instead.''''
-effort = "trivial"
-file = "claude/commands/review-apply.md"
-first_flagged = 2026-04-17
-id = "R9"
-line = 353
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "Secret-pattern grep runs on the staged diff but not on the ledger itself — an agent can quote a secret-bearing diff line into `resolution` / `wontfix_rationale` and write the credential to a committed artefact"
-symbol = "Step 5 — Category-specific verification — security"
-resolution = "Added secret-pattern scan (`AKIA`, `-----BEGIN`, `password`, `api_key`, `secret`) of the `--ops` JSON payload before tomlctl apply in Step 5; halts on match for user inspection. Also added Step 4 agent-prompt instruction forbidding credential quoting in resolution / wontfix_rationale / verified_note text (paraphrase instead)."
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "Extend amendment 9: require user confirmation before transitioning any item where `severity = 'critical'` AND `category ∈ {security, db}` to wontfix. Agents emit `skipped R{n}: requires user confirmation on critical <category> dismissal` and the orchestrator surfaces for approval. Once wontfixed, dedup dismisses future re-flags — the gate must be strict."
-effort = "small"
-file = "claude/commands/review-apply.md"
-first_flagged = 2026-04-17
-id = "R10"
-line = 373
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "An agent can unilaterally set `status = wontfix` on a critical `security` finding with no user-confirmation gate — amendment 9 only covers public-API/schema, not critical security/db dismissals"
-symbol = "Step 5 — Agent-intentionally-skipped"
-resolution = "Extended Agent-intentionally-skipped bullet with Critical-finding gate: severity='critical' AND category∈{security,db} skip reasons do NOT auto-transition to wontfix — surface to user under `### Requires User Confirmation` final-summary callout and wait for explicit disposition. Added the new template section."
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "At the top of every write-op handler, canonicalise `file` and assert it lies under the git top-level's `.claude/` directory (or fail with a clear error unless `--allow-outside` is passed). Document the constraint in SKILL.md Constraints section: 'tomlctl refuses to write outside .claude/ without --allow-outside.'"
-effort = "small"
-file = "tomlctl/src/main.rs"
-first_flagged = 2026-04-17
-id = "R11"
-line = 249
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "`file: PathBuf` argument is used verbatim for temp-file parent and `.lock` sidecar — no canonicalisation or `.claude/` prefix guard — agent-influenced values laundered through `artifacts.review_ledger` could rewrite any user-writable TOML"
-symbol = "write_toml / with_exclusive_lock"
-resolution = 'Added global --allow-outside flag on Cli + guard_write_path/canonicalize_for_write/repo_or_cwd_root helpers. Every write op (Set, SetJson, ItemsAdd/Update/Remove/Apply) canonicalises the file path and asserts it lies under <git-top-level>/.claude/ via `git rev-parse --show-toplevel` (fallback: CWD). Reads unguarded. Handles not-yet-existing files by canonicalising parent; Windows \\?\ extended paths handled by canonicalising both sides for starts_with comparison.'
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "Wrap lock_exclusive with `try_lock_exclusive` + 30-second backoff loop. On timeout, print a clear error with the lock path and instructions to delete it if no other tomlctl process is running. Document the lock convention in SKILL.md 'Constraints and gotchas'."
-effort = "medium"
 evidence = [
-    "fs2-rs issue #15: Locking on windows is not advisory",
-    "claude-code#22166 stale lock indefinite freeze",
+    "Context7 /stebalien/tempfile — Atomic File Replacement Pattern",
+    "tomlctl/src/main.rs:562-575, 607-632",
 ]
 file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
-id = "R12"
-line = 228
+id = "R2"
+line = 562
 rounds = 1
 severity = "warning"
 status = "fixed"
-summary = "`fs4::lock_exclusive` has no timeout and no PID-encoded stale-lock recovery — on Windows it's a mandatory OS lock, so a crashed or force-killed tomlctl can wedge subsequent invocations indefinitely"
-symbol = "with_exclusive_lock"
-resolution = "Replaced fs4 lock_exclusive with 30s backoff loop using try_lock_exclusive (fs4 0.13 Ok(true)/Ok(false) API, verified via Context7). 500ms retry interval; bails after 30s with recovery instructions citing the <target>.lock path. Updated claude/skills/tomlctl/SKILL.md Constraints and gotchas with lock timeout + sidecar location + stranded-lock recovery procedure. PID-based recovery intentionally out of scope."
-resolved = 2026-04-17
+summary = "write_toml and write_integrity_sidecar both skip sync_all() before persist() — extract a shared atomic_write(path, bytes) helper that fsync's the tempfile before rename"
+symbol = "write_toml"
+resolution = "Extracted atomic_write() helper that calls as_file().sync_all() before persist(); write_toml and write_integrity_sidecar both route through it."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "guard_write_path calls canonicalize_for_write once, then write_toml creates NamedTempFile in path.parent() (un-canonicalised) and persists across the uncanonicalised parent. Options: walk canonical ancestors at rename time, use openat-style (O_NOFOLLOW) writes via nix/rustix, or downgrade the README/SKILL claim from a security guarantee to a belt-and-braces guard against agent typos."
+effort = "medium"
+evidence = [
+    "WebSearch: rust canonicalize TOCTOU symlink 2025",
+    "path_jail / soft-canonicalize crates exist specifically because canonicalize-then-open is unsafe",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R3"
+line = 466
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "canonicalize-before-persist is TOCTOU — a symlink swap in the parent directory between guard_write_path() and tmp.persist() lands a write outside .claude/ despite the guard passing"
+symbol = "guard_write_path"
+resolution = "Added recheck_claude_containment() invoked inside mutate_doc() immediately before write; re-canonicalises target parent and errors if it no longer starts_with the .claude/ canonical root. Residual-gap note documented at the check site. Docs softened from hard guarantee to best-effort guard (paired with R6)."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "`parent.canonicalize().join(file.file_name())` plus a later `canonical.starts_with(&claude_canonical)` prefix match. A post-join canonicalize() on the whole path (or a lexical-normalisation that rejects `..` / absolute components) would close the gap."
+effort = "small"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R4"
+line = 501
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "for not-yet-existing targets, only the parent is canonicalised and the final component is joined raw — prefix-check in guard_write_path then compares an only-partially-normalised path against the .claude/ canonical root"
+symbol = "canonicalize_for_write"
+resolution = "canonicalize_for_write now iterates Component::ParentDir / Component::RootDir past the canonical-parent prefix and rejects either with a clear error."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "Mitigations: (a) add --repo-root flag with an explicit path override; (b) resolve `git` via absolute path at install time; (c) cross-check the canonical target against both cwd and any committed .claude/ in its ancestry. For a local dev tool the realistic vector is an agent cd'ing into a hostile clone before running tomlctl."
+effort = "small"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R5"
+line = 520
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "guard anchors on `git rev-parse --show-toplevel` which inherits cwd+PATH — invoking tomlctl from inside another repo (or with a hostile `git` on PATH) moves the allow-list root"
+symbol = "repo_or_cwd_root"
+resolution = "repo_or_cwd_root now honours TOMLCTL_ROOT env var (canonicalised) before falling back to `git rev-parse --show-toplevel`; unit test pins env-override precedence."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "Add one sentence to both README.md (line ~56-61) and SKILL.md (~291) clarifying this is a consistency check against accidental corruption and out-of-band edits, not tamper-proof. review-apply.md:552 already mentions the caveat correctly; promote it into the primary docs."
+effort = "trivial"
+evidence = [
+    "tomlctl/README.md:60",
+    "claude/skills/tomlctl/SKILL.md:291",
+    "claude/commands/review-apply.md:552",
+]
+file = "tomlctl/README.md"
+first_flagged = 2026-04-17
+id = "R6"
+line = 60
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "README and SKILL.md oversell the sha256 sidecar as tamper detection — it is not keyed/MAC'd, so any attacker with ledger write access can trivially rewrite the sidecar to match"
+symbol = "integrity-sidecar-docs"
+resolution = "Added sidecar threat-model paragraph to README.md Design section and SKILL.md Integrity sidecar section (consistency check, not a MAC). Softened .claude/ containment language to best-effort guard, TOCTOU-escapable."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = 'Fix: `std::io::stdin().lock().take(MAX_STDIN_BYTES).read_to_string(&mut buf)` (e.g. 32 MiB) plus an `IsTerminal::is_terminal()` check that prints a helpful message before the blocking read. No test currently exercises the `arg == "-"` path (only the literal branch at main.rs:1772-1776 is covered).'
+effort = "small"
+evidence = [
+    "tomlctl/src/main.rs:13-26",
+    "tomlctl/README.md:45-56",
+    "claude/skills/tomlctl/SKILL.md:275",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R7"
+line = 13
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "stdin sentinel has no size cap and no is_terminal() guard — large agent payloads can OOM; an interactive user who types `tomlctl items apply --ops -` hangs silently reading stdin"
+symbol = "read_json_arg"
+resolution = "read_json_arg now caps stdin at MAX_STDIN_BYTES (32 MiB) via stdin().lock().take(); bails with descriptive message when stdin.is_terminal() is true."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = """User-supplied strings arrive via `defer R{n} — reason — trigger` / `wontfix R{n} — rationale`. A reason containing `'` or `$(...)` breaks shell lex or executes. Replace the example with: `printf '%s' "$PATCH" | tomlctl items update <ledger> R{n} --json -`."""
+effort = "small"
+evidence = [
+    "claude/commands/review.md:628",
+    "claude/commands/review-apply.md:584",
+]
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R8"
+line = 628
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "`/review` dispositions still show `tomlctl items update ... --json '{...}'` with user-supplied defer_reason/wontfix_rationale argv-interpolated — contradicts review-apply.md:584's canonical stdin pattern"
+symbol = "disposition-argv-pattern"
+resolution = "review.md Step 4 disposition now shows the stdin form (printf | tomlctl items update --json -) for both defer and wontfix with a one-line shell-metachar rationale; optimise.md has no equivalent Step 4 (research-only, verified-clean for that half)."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "README documents `cargo install --path tomlctl` which ignores any committed lockfile for installs anyway. Add a `cargo audit` step to CLAUDE.md's Build & test section and make it part of the pre-commit or CI check. cargo-audit not currently installed on the dev box (`which cargo-audit` → not found)."
+effort = "medium"
+evidence = ["RustSec Advisory DB https://rustsec.org/advisories/"]
+file = "tomlctl/Cargo.toml"
+first_flagged = 2026-04-17
+id = "R9"
+line = 15
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "no cargo-audit in dev flow and no committed Cargo.lock → RUSTSEC advisories land silently on every `cargo install --path tomlctl`"
+symbol = "audit-baseline"
+resolution = "Cargo.lock already materialised in tomlctl/; added `cargo audit --file tomlctl/Cargo.lock` line to CLAUDE.md Build & test section with install hint."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = ".githooks/ and scripts/ still show as `??` in git status. Either commit .githooks/pre-commit + scripts/verify-shared-blocks.sh + scripts/shared-blocks.toml in the same landing commit as CLAUDE.md, or mark the setup section as pending."
+effort = "trivial"
+evidence = ["git status: ?? .githooks/  ?? scripts/  ?? CLAUDE.md"]
+file = "CLAUDE.md"
+first_flagged = 2026-04-17
+id = "R10"
+line = 5
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "`git config core.hooksPath .githooks` instruction references untracked .githooks/ and scripts/ directories — setup is unrunnable in a fresh clone"
+symbol = "developer-setup"
+resolution = "partial: softened CLAUDE.md Developer setup with a Note telling readers to run `ls .githooks scripts` to confirm the hook is live; cross-reference to .githooks/ + scripts/ added / pending: commit .githooks/pre-commit + scripts/verify-shared-blocks.sh + scripts/shared-blocks.toml so `git config core.hooksPath .githooks` works in fresh clones (see R55)."
+resolved = 2026-04-18
 
 [[items]]
 category = "quality"
-description = "LLMs routinely miss late-sentence clauses. Extract to a dedicated bullet. Also mirror to optimise-apply.md:262 so `/optimise-apply` on main (flow-less, no args) auto-selects `.claude/optimise-findings/recent.toml` instead of dropping into the multi-file candidate prompt."
+description = "grep counts: optimization=11 in optimise.md, 16 in optimise-apply.md; behavior also appears in optimise.md:458. Command itself is `/optimise` (UK), so standardise on UK. One replace-all per file. optimise.md line 458 `inlining behavior`."
 effort = "trivial"
-file = "claude/commands/review-apply.md"
+evidence = [
+    "claude/commands/optimise-apply.md:485, 656, 492",
+    "claude/commands/optimise.md:458",
+]
+file = "claude/commands/optimise-apply.md"
 first_flagged = 2026-04-17
-id = "R13"
-line = 262
+id = "R11"
+line = 485
 rounds = 1
 severity = "warning"
 status = "fixed"
-summary = "`No-args-on-main` `recent.toml` clause is buried mid-sentence AND has no equivalent in optimise-apply.md — extract into its own sub-bullet and add the symmetric clause to optimise-apply"
-symbol = "Step 1 — Locate the review ledger"
-resolution = "Extracted the No-args-on-main recent.toml special-case clause from the mid-paragraph buried position into its own dedicated sub-bullet in both review-apply.md and optimise-apply.md Step 1. Optimise-apply now points at .claude/optimise-findings/recent.toml symmetrically."
-resolved = 2026-04-17
+summary = "UK/US spelling drift — optimise-apply.md mixes `behaviour` and `behavior`, `optimisation` and `optimization`; sister command files use UK consistently"
+symbol = "uk-us-spelling"
+resolution = "Standardised optimise.md + optimise-apply.md on UK spelling (behaviour, optimisation, optimise, optimised, optimiser). Headings `## Applied Optimisations` / `## Optimisation Findings` updated. review.md + review-apply.md already clean."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "scripts/shared-blocks.toml already supports additional blocks; candidate names apply-rollback-protocol and apply-constraints. Diff the two files to confirm block boundaries before extracting; remember the pre-commit hook enforces byte-parity on whatever ships as a SHARED-BLOCK."
+effort = "medium"
+evidence = ["scripts/shared-blocks.toml currently defines only flow-context and ledger-schema"]
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R12"
+line = 413
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "Step 3 (group-by-file), Step 4 (agent dispatch), Step 5.5 (rollback), and Important Constraints are ~90% byte-identical between review-apply.md and optimise-apply.md — promote to new SHARED-BLOCKs"
+symbol = "dry-step-3-4-5.5"
+resolution = "partial: extracted the byte-identical topological-sort subsection (Kahn's pseudocode + prose, ~26 lines) into new SHARED-BLOCK:apply-dependency-sort across review-apply.md + optimise-apply.md + scripts/shared-blocks.toml; parity check passes / pending: apply-constraints + apply-rollback-protocol blocks require neutralising R/O + fix/optimisation substitutions first (see R56)."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "tomlctl exposes both Cmd::Parse and Cmd::Get { path: None } doing identical work. Pick one canonical form and deprecate or alias the other; update README.md (~22), SKILL.md (44, 47), review.md (360), optimise.md (540) in a single pass."
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:62, 66-69, 231-245"]
+file = "claude/skills/tomlctl/SKILL.md"
+first_flagged = 2026-04-17
+id = "R13"
+line = 44
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "SKILL.md uses `tomlctl parse`, README.md uses `tomlctl get <file>` with no path for the same operation, review.md/optimise.md use `tomlctl --verify-integrity parse` — two equivalent verbs drifted across 4 docs"
+symbol = "parse-vs-get-drift"
+resolution = "tomlctl parse → tomlctl get canonicalised across SKILL.md + review.md + optimise.md + review-apply.md + optimise-apply.md. SKILL.md notes `tomlctl parse <file>` remains a backward-compat alias slated for removal in a future version. README.md already canonical."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = """items_array is hardcoded to `doc.get("items")` (main.rs:816-819), so items apply can't target rollback_events. set-json REPLACES rather than appends. Options: (a) generalise items_array to accept an array name; (b) add a sibling `array-append <file> <path> --json` subcommand; (c) document the explicit single-call recipe with Python parse-rewrite fallback."""
+effort = "medium"
+evidence = [
+    "tomlctl/src/main.rs:816",
+    "claude/commands/optimise-apply.md:606",
+]
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R14"
+line = 645
+rounds = 1
+severity = "warning"
+status = "fixed"
+summary = "`[[rollback_events]]` append protocol has no supporting tomlctl primitive — agents forced into read-modify-write outside any lock"
+symbol = "rollback-events-helper"
+resolution = "partial: added --array <name> flag on `items apply` (default items); items_array() / items_array_mut() generalised to take a name parameter; docs updated across review-apply.md:645 + optimise-apply.md:606 + SKILL.md + README.md to show rollback_events recipe / pending: extend --array to list/get/add/update/remove subcommands so non-items arrays have full CRUD (see R57)."
+resolved = 2026-04-18
 
 [[items]]
 category = "architecture"
-description = "implement.md:244-250 defines the auto-invoke pattern. An `all` apply run can transition many items and edit files inside flow scope without producing a single `deviation:` line (all changes aligned with plan). Add a bytes-written-gated invocation at the tail of both apply commands: if any agent wrote bytes under the resolved flow's `scope`, call `Skill('plan-update', 'status')` (no-op gate mirrors implement.md)."
+description = "Extract `mutate_doc(&file, allow_outside, integrity, |doc| { ... })`. Any future integrity/lock/atomicity change then touches 1 site instead of 6. Set and SetJson can further collapse to a common scalar/json path chooser. This is precisely the shape that previously caused review-ledger cycles (per CLAUDE.md: shared-block drift historically caused duplicate-finding cycles)."
 effort = "small"
-file = "claude/commands/optimise-apply.md"
-first_flagged = 2026-04-17
-id = "R14"
-line = 362
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "Neither apply command has a Phase-4.5-equivalent `Skill('plan-update', 'status')` auto-invoke — only the deviation path fires — flows silently drift when apply runs touch scope without deviations"
-symbol = "Step 5 → Step 6"
-resolution = "Added ### Phase 4.5: Sync plan context subsection at the end of Step 6 in both review-apply.md and optimise-apply.md. No-op gate: skip if no flow resolved OR no bytes written under scope. Otherwise Skill('plan-update', 'status')."
-resolved = 2026-04-17
-
-[[items]]
-category = "completeness"
-description = "review.md Step 3 can persist a ledger with zero findings (schema_version=1, last_updated=<today>, items=[]). /review-apply would then silently select nothing. Specify: empty items → print 'ledger present but has no open items; nothing to apply' and exit 0."
-effort = "small"
-file = "claude/commands/review-apply.md"
+evidence = ["tomlctl/src/main.rs:247-367"]
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
 id = "R15"
-line = 248
+line = 247
 rounds = 1
 severity = "warning"
 status = "fixed"
-summary = "Empty-ledger case (file present, `items = []`) is undefined — current prose only covers 'ledger missing'"
-symbol = "Preamble"
-resolution = "Added Empty-ledger case handling to Step 1: if ledger present but items empty or zero open items, print 'ledger present but has no open items; nothing to apply' and exit cleanly. No error, no agent dispatch, no tomlctl write."
-resolved = 2026-04-17
+summary = "load→mutate→write sequence duplicated across Set, SetJson, Add, Update, Remove, Apply — 6 call sites with identical guard_write_path + with_exclusive_lock + read_toml + write_toml_with_sidecar boilerplate"
+symbol = "items-dispatch"
+resolution = "Extracted mutate_doc<F>() wrapping guard_write_path → with_exclusive_lock → read_toml → f(&mut doc) → write_toml_with_sidecar. All 6 dispatch sites (Cmd::Set, Cmd::SetJson, ItemsOp::Add, Update, Remove, Apply) now route through it; each dispatch arm shrunk to ~3 lines."
+resolved = 2026-04-18
 
 [[items]]
 category = "completeness"
-description = "'Selected R{n} not present in ledger → report and skip' reads as partial-success but is only on the last sub-bullet. Make the partial-success stance explicit and add a `### Unknown IDs` sub-section to the final summary so the user sees what was dropped."
-effort = "small"
-evidence = ["Google AIP-234 partial_success"]
-file = "claude/commands/review-apply.md"
+description = """Either format the top-level Err with `eprintln!("{:#}", err)` to print the full cause chain (toml's Error Display includes line:col + caret), or pull `err.span()` into an explicit context message."""
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:403-406"]
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
 id = "R16"
-line = 263
+line = 403
 rounds = 1
 severity = "warning"
 status = "fixed"
-summary = "Mixed valid/invalid batch policy is implicit — `/review-apply R1,R99,R3` where R99 is unknown has no stated semantics (partial-success vs fail-fast)"
-symbol = "Step 1 — Selector semantics"
-resolution = "Added Mixed batches bullet making partial-success policy explicit (Google AIP-234 pattern). Valid IDs proceed; invalid IDs collected and surfaced in final-summary `### Unknown IDs` sub-section. Added the section to the template."
-resolved = 2026-04-17
+summary = "parse errors lose line:col — anyhow::Context::with_context wraps the toml::de::Error, but the top-level handler formats with `{}` (not `{:#}`) so callers see only the innermost span-less message"
+symbol = "read_toml"
+resolution = """main() refactored as a thin wrapper over run() -> Result<()>; on error emits `eprintln!("tomlctl: {:#}", err)` which prints the full anyhow cause chain including toml's line:col + caret span."""
+resolved = 2026-04-18
 
 [[items]]
 category = "completeness"
-description = "Either commit to the cap as non-negotiable (and say 'batch into ≤15 sub-runs') or document an override like `--no-cap`. Current prose leaves the user stuck."
-effort = "trivial"
-file = "claude/commands/review-apply.md"
+description = 'Emit `eprintln!("waiting for exclusive lock on {} …", path.display())` on the first Ok(false), add randomised jitter on the 500 ms retry, and make the timeout env-overridable (TOMLCTL_LOCK_TIMEOUT) for slow CI filesystems. Context7 /al8n/fs4-rs docs also suggest `lock_contended_error()` for a portable cross-check on Err().'
+effort = "small"
+evidence = ["tomlctl/src/main.rs:430-449"]
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
 id = "R17"
-line = 281
+line = 411
 rounds = 1
 severity = "warning"
 status = "fixed"
-summary = "Selector cap of 15 has no documented escape hatch — `/review-apply all` on a 30-item ledger prompts 'batch or tighten' with no 'I accept the risk' path"
-symbol = "Step 2 — Selector cap"
-resolution = "Selector cap paragraph rewritten: 15-item cap is non-negotiable, no --no-cap override exists. Abort with concrete batching recommendation citing specific R-numbers (copy-pasteable from /review's severity tables). Rationale stated inline: parallel Read context budget + non-linear agent-coordination overhead."
-resolved = 2026-04-17
+summary = "lock-poll loop has no observer message, no jitter, and hardcoded 30 s timeout — concurrent invocations `freeze` silently for up to 30 s"
+symbol = "with_exclusive_lock"
+resolution = "with_exclusive_lock now: (a) emits one-shot `waiting for exclusive lock on <path> …` stderr note on first Ok(false); (b) applies ±20% deterministic counter-hash jitter to the 500 ms retry; (c) honours TOMLCTL_LOCK_TIMEOUT env var overriding the 30 s default. Two-thread contention+timeout test added."
+resolved = 2026-04-18
 
 [[items]]
 category = "completeness"
-description = "Build output, codegen, regenerated migrations. Next `/review` won't detect regression because the dedup rule only regresses against `fixed`/`applied`. Options: (a) treat generated files as `wontfix: file auto-regenerated`, or (b) extend the regression cross-check to also walk `verified-clean` items on this specific auto-transition path."
+description = "Add `--strict-integrity` global that converts the warning to a hard failure, OR emit a JSON-parseable warning line so wrappers can distinguish degraded from normal success. SKILL.md:258 documents the behaviour but does not tell callers how to detect it."
 effort = "trivial"
-file = "claude/commands/review-apply.md"
+evidence = [
+    "tomlctl/src/main.rs:550-558",
+    "claude/skills/tomlctl/SKILL.md:258",
+]
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
 id = "R18"
-line = 286
+line = 544
 rounds = 1
 severity = "warning"
 status = "fixed"
-summary = "Auto-transition to `verified-clean` on deleted files is unsafe for auto-generated artefacts that will reappear with the original bug"
-symbol = "Step 2 — Deleted-file detection"
-resolution = "Deleted-file bullet split into source-file vs auto-generated paths. Source files (tracked, hand-written) → verified-clean. Auto-generated files (detected via .gitignore membership, paths under target/build/dist/generated/node_modules, or CLAUDE.md generated-paths section) → wontfix with rationale citing generator-as-root-cause. Prevents evasion of regression cross-check which only walks fixed/applied items."
-resolved = 2026-04-17
+summary = "sidecar-write failure emits stderr warning but exits 0 — `tomlctl ... && next-step` pipelines silently proceed with an integrity-degraded ledger"
+symbol = "write_toml_with_sidecar"
+resolution = "Added global --strict-integrity flag; IntegrityOpts grew a strict: bool field. write_toml_with_sidecar escalates a sidecar-write failure to a hard (non-zero) exit when strict=true; existing stderr-warning + exit 0 behaviour preserved by default."
+resolved = 2026-04-18
 
 [[items]]
 category = "completeness"
-description = "Options: (a) add `pending_parts` optional field to the Ledger Schema; (b) keep the item `status = open` with `description` noting progress; (c) mint a child R-item for pending work with `related = ['<partial id>']`. (c) aligns with regression-style ID minting and makes pending work a first-class tracked finding."
-effort = "trivial"
-file = "claude/commands/review-apply.md"
+description = "read_toml errors with bare `No such file or directory` context. Either teach items_next_id to treat missing-file as `R1`/`O1` (matching the empty-items branch), or document the distinction prominently in SKILL.md:229 and README."
+effort = "small"
+evidence = [
+    "tomlctl/src/main.rs:403-406, 1054-1074",
+    "claude/skills/tomlctl/SKILL.md:229",
+]
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
 id = "R19"
-line = 322
+line = 1054
 rounds = 1
 severity = "warning"
 status = "fixed"
-summary = """`resolution = "partial: <done> / pending: <not done>"` is free-prose only — querying 'what's still pending' requires grep, not a structured field"""
-symbol = "Step 4 — Partial-apply convention"
-resolution = "Added Partial-apply follow-up paragraph to Step 4: on `applied R{n}: partial — ...`, orchestrator (a) marks R{n} fixed with partial resolution, AND (b) mints a child R-item (file/line/symbol copied from parent; summary='pending parts of R{n}: ...'; related=['R{n}']; status=open). Gives pending work a first-class R-ID so it surfaces in future /review rounds."
-resolved = 2026-04-17
+summary = "`items next-id` on a missing ledger file returns a raw I/O error, but empty-ledger returns `R1`/`O1` — inconsistent first-run UX"
+symbol = "items_next_id"
+resolution = "ItemsOp::NextId dispatch now checks file.exists() first and returns `<prefix>1` directly (after prefix validation) for missing files, skipping read_toml. Empty-doc unit test pins the empty-items branch."
+resolved = 2026-04-18
 
 [[items]]
-category = "completeness"
-description = "tomlctl is atomic (NamedTempFile::persist + per-op early-return on error); file stays consistent on partial failure. Add one sentence: 'If items apply fails, the ledger is unchanged — correct the failing op and re-run.' Makes the operational guarantee explicit to readers of the command alone."
-effort = "trivial"
-file = "claude/commands/review-apply.md"
+category = "quality"
+description = "Sites include 857, 863, 869, 1113, 1114, 1121, 1161-1165, 1210, 1293-1295. Paired i64_field helper for numeric fields. Central definition pins the `missing-or-non-string => empty` semantic."
+effort = "small"
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
 id = "R20"
-line = 378
+line = 857
 rounds = 1
-severity = "warning"
+severity = "suggestion"
 status = "fixed"
-summary = "`tomlctl items apply` mid-batch failure behaviour is not stated in the command doc — user has to infer atomicity from the skill"
-symbol = "Step 5 — Two-call write pattern"
-resolution = "Added Atomicity assurance paragraph after Two-call numbered list: tomlctl items apply is all-or-nothing via NamedTempFile::persist. On failure, do NOT proceed to call 2 (last_updated bump) — would create torn state. Error message names the failing op index + reason; retry the whole batch after correction."
-resolved = 2026-04-17
+summary = 'extract `str_field(tbl, key) -> &str` helper — `tbl.get(k).and_then(|v| v.as_str()).unwrap_or("")` pattern appears 15+ times across items_list / find_duplicates / orphans'
+symbol = "str_field"
+resolution = 'Added `str_field()` and `i64_field()` helpers; replaced `tbl.get(k).and_then(as_str).unwrap_or("")` pattern at all 15+ call sites in items_list / items_update_value / items_orphans / find_duplicates_tier_{a,b,c}.'
+resolved = 2026-04-18
 
 [[items]]
-category = "completeness"
-description = "Add: 'If another tomlctl process holds the ledger lock, the run fails fast with a clear error; wait and retry.' Pair with R12's stale-lock recovery guidance."
-effort = "trivial"
-file = "claude/commands/review-apply.md"
+category = "quality"
+description = "Sites: 852, 958, 1109, 1157, 1206, 1289. Crate is edition 2024; let-else stabilised in 1.65."
+effort = "small"
+evidence = ['tomlctl/Cargo.toml:4 edition = "2024"']
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
 id = "R21"
-line = 379
+line = 852
 rounds = 1
-severity = "warning"
+severity = "suggestion"
 status = "fixed"
-summary = "Concurrent-invocation lock-error path is undocumented — two overlapping /review-apply (or /review + /review-apply) runs collide on the sidecar `.lock` with no user guidance"
-symbol = "Step 5 — Two-call write pattern"
-resolution = "Added Concurrent-invocation handling paragraph documenting the sidecar lock semantics: fails fast with `lock held by PID` error; wait + retry; stale-lock recovery via tomlctl skill (do NOT delete .lock without confirming no live process holds it)."
-resolved = 2026-04-17
-
-[[items]]
-category = "completeness"
-description = "Port review-apply's Step 5 'Regression cross-check' section. A stale `Vec::new()` re-introduced in a hot loop touched during apply would silently go untracked until a later /optimise round. Mint O-items with `related = ['<old id>']`."
-effort = "small"
-file = "claude/commands/optimise-apply.md"
-first_flagged = 2026-04-17
-id = "R22"
-line = 322
-rounds = 1
-severity = "warning"
-status = "fixed"
-summary = "/optimise-apply has no regression cross-check against previously-`applied` items — regressed optimisations are only detected on the next `/optimise` run"
-symbol = "Step 5"
-resolution = "Added ### Regression cross-check subsection to optimise-apply.md Step 5, symmetric to review-apply.md. Applies canonical dedup rule against previously-applied items; mints new O-items with related=['<old id>'] for matches on files touched in this run."
-resolved = 2026-04-17
+summary = "`let tbl = match item.as_table() { Some(t) => t, None => continue };` repeated 6× — replace with `let Some(tbl) = item.as_table() else { continue };`"
+symbol = "let-else-refactor"
+resolution = "Replaced 6 `match item.as_table() { Some(t) => t, None => continue }` sites with `let Some(tbl) = item.as_table() else { continue };` (edition 2024 let-else)."
+resolved = 2026-04-18
 
 [[items]]
 category = "quality"
-description = """The last-resort Edit fallback is already covered in the Ledger TOML contract (lines 225-227). Duplicating it here creates temptation. Replace with a one-liner: `tomlctl items update <ledger> R{n} --json '{"status":"deferred","defer_reason":"...","defer_trigger":"..."}'`."""
-effort = "trivial"
-file = "claude/commands/review.md"
-first_flagged = 2026-04-17
-id = "R23"
-line = 493
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Single-disposition Edit-fallback escape hatch contradicts the parse-rewrite mandate and invites an LLM to skip tomlctl for 'simple' cases — replace with a concrete `tomlctl items update` example"
-symbol = "Step 4 — Handle Dispositions"
-resolution = "Replaced review.md Step 4's Edit-fallback escape hatch with a concrete tomlctl items update <ledger> R{n} --json '{...}' example. Dropped the Edit clause — Ledger Schema contract already covers it as last-resort fallback."
-resolved = 2026-04-17
-
-[[items]]
-category = "quality"
-description = """Prose-only instructions underperform concrete examples for LLM agents. Show e.g. `--ops '[{"op":"update","id":"R1","json":{"status":"fixed","resolved":"2026-04-17","resolution":"..."}}, {"op":"update","id":"R3","json":{"status":"verified-clean","verified_note":"..."}}, {"op":"add","json":{regression R-item}}]'`."""
-effort = "trivial"
-file = "claude/commands/review-apply.md"
-first_flagged = 2026-04-17
-id = "R24"
-line = 378
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Add a concrete `--ops` JSON example showing a mixed update+add batch (R{n} transitions plus a regression mint) so LLMs don't fall back to per-item calls"
-symbol = "Step 5 — Two-call write pattern"
-resolution = "Added concrete --ops JSON example under review-apply.md Step 5 Two-call write pattern showing a mixed batch (update applied transition + update verified-clean + add regression mint). Anchors LLMs in the batch shape. NB: shares file+symbol with R3 per coarse dedup rule but is a distinct concern (concrete example vs shell-quoting)."
-resolved = 2026-04-17
-
-[[items]]
-category = "quality"
-description = "If optimise intentionally lacks verified-clean (bytes-written by definition — see R37), say so inline. Otherwise add the matching sub-sections plus the 'omit empty sections' discipline."
-effort = "trivial"
-file = "claude/commands/optimise-apply.md"
-first_flagged = 2026-04-17
-id = "R25"
-line = 342
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Final summary template has only Implemented / Skipped / Verification — missing Verified Clean + Regressions Triggered sections that review-apply now emits; align or document the asymmetry"
-symbol = "Step 5 — final summary template"
-resolution = "Updated optimise-apply.md Step 5 final-summary template to add ### Regressions Triggered section (now applicable per R22) plus inline note explaining that ### Verified Clean is intentionally absent — optimise findings are bytes-written by definition. Omit-empty-section rule applied."
-resolved = 2026-04-17
-
-[[items]]
-category = "quality"
-description = "Selector cap, deleted-file detection, and 'recommendation already in place' pre-check apply equally to optimise findings (a vanished file can't be optimised; an already-applied optimisation shouldn't dispatch an agent). Adapt the vocabulary (no verified-clean for optimise per R37 resolution) but keep the operational rules."
-effort = "small"
-file = "claude/commands/optimise-apply.md"
-first_flagged = 2026-04-17
-id = "R26"
-line = 273
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Step 2 is a four-bullet paragraph vs review-apply's detailed sub-rules (selector cap, read range, deleted-file detection, already-matches test, hard disambiguation) — port the applicable rules"
-symbol = "Step 2 — Pre-analyse Complex Findings"
-resolution = "Ported review-apply Step 2 rules to optimise-apply Step 2 (selector cap of 15, read range ±50 lines or enclosing symbol, deleted-file auto wontapply, already-applied wontapply pre-check) with optimise-adapted vocabulary (wontapply instead of verified-clean per R34/R37)."
-resolved = 2026-04-17
-
-[[items]]
-category = "quality"
-description = "Step 1 only needs items overlapping with current scope; filtering at the tool boundary is cheaper than post-filtering a full parse. Match optimise.md's wording for consistency: '`tomlctl parse <file>` for the whole doc, or `tomlctl items list <file> --status open` for pre-filtered items.'"
-effort = "trivial"
-file = "claude/commands/review.md"
-first_flagged = 2026-04-17
-id = "R27"
-line = 301
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Read prescription says `tomlctl parse <file>` but `tomlctl items list --status open` matches the actual access pattern — mention it the way optimise.md:433 does"
-symbol = "Step 1 — Load Review Ledger"
-resolution = "review.md:299 read prescription now mentions both `tomlctl parse <file>` (whole doc) and `tomlctl items list <file> --status open` (pre-filtered to open items), matching optimise.md:437. NB: acceptance grep threshold was specified as ≥2 but shared Ledger Schema doesn't contain the literal 'tomlctl items list' substring (only add/update/remove/apply/next-id) — threshold should have been ≥1. Fix itself landed correctly; acceptance template bug only."
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "Either add a `reopen R{n} — trigger met` disposition to /review Step 4, or rewrite the error to anchor in the business logic: 'R{n} is deferred (trigger: <defer_trigger>). Re-run `/review <file>` if the trigger has fired; otherwise wait.'"
-effort = "trivial"
-file = "claude/commands/review-apply.md"
-first_flagged = 2026-04-17
-id = "R28"
-line = 268
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Deferred-hard-error text ('run /review to re-open') is self-undermining — /review has no re-open disposition documented; users will hand-edit the TOML to bypass"
-symbol = "Step 1 — Non-open selector behaviour"
-resolution = "Rewrote deferred hard-error text to anchor in defer_trigger: 'R{n} is deferred. Trigger: <defer_trigger>. If fired, run /review <file> to re-scan (next round auto-reopens if still present). If not fired, wait. /review-apply does NOT re-open deferred items because deferral captured a user-committed re-evaluation condition.'"
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "Cheap defence: write a sidecar `review-ledger.toml.sha256` on every tomlctl ledger write and verify at Step 1 load. Offer as `--verify-integrity` opt-in since primary threat model is collaborative-user, not hostile."
-effort = "medium"
-file = "claude/commands/review-apply.md"
-first_flagged = 2026-04-17
-id = "R29"
-line = 364
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Regression cross-check trusts ledger bytes blindly — no integrity mark means out-of-band edits can silently suppress regression detection"
-symbol = "Regression cross-check"
-resolution = "Added Ledger integrity note (future enhancement) paragraph at end of Regression cross-check subsection acknowledging the trust gap and recommending sidecar <ledger>.sha256 + --verify-integrity opt-in as a tomlctl follow-up. Primary threat model remains collaborative-user not hostile-actor; full implementation deferred to a separate plan."
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "`bail!` on `prefix.is_empty() || prefix.chars().all(char::is_numeric)`. Prevents a whole class of 'agent passed wrong prefix' bugs that violate the Ledger Schema's 'never renumber / never reuse' invariant."
+description = "tomlctl/src/main.rs:1447-1500. clippy `option_if_let_else` / `unnecessary_unwrap`."
 effort = "trivial"
 file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
-id = "R30"
-line = 89
+id = "R22"
+line = 1470
 rounds = 1
 severity = "suggestion"
 status = "fixed"
-summary = "`items next-id --prefix ''` produces ID collisions because empty-prefix `strip_prefix` returns the whole existing ID; reject empty and all-digit prefixes"
-symbol = "ItemsOp::NextId"
-resolution = "items_next_id signature changed to Result<String>; bails on empty prefix or all-digit prefix with descriptive messages. Two new tests added (items_next_id_rejects_empty_prefix, items_next_id_rejects_numeric_prefix). Test count now 15/15 (was 13). Call sites updated."
-resolved = 2026-04-17
+summary = "three `.as_ref().unwrap()` / `.clone().unwrap()` calls on Option values after an `is_some()` filter — reshape via `filter_map(|(p,h)| h.as_ref().map(|d| (p,d)))` to avoid invariant-by-comment"
+symbol = "blocks_verify"
+resolution = "Refactored `blocks_verify` to collect `present` via `filter_map(|(p, h)| h.as_ref().map(|d| (p, d)))` → `Vec<(&PathBuf, &String)>` — removed all .as_ref().unwrap() / .clone().unwrap() calls."
+resolved = 2026-04-18
 
 [[items]]
-category = "security"
-description = "Umbrella concern that also surfaces as R22, R36, R37 specifically. Factor amendments 7-10 into a shared `## Apply Security Gates` section both apply commands embed byte-identically (same approach as the existing Flow Context / Ledger Schema shared blocks). Pays off long-term DRY."
-effort = "small"
-file = "claude/commands/optimise-apply.md"
+category = "quality"
+description = "Either delete the line or call `fs4::fs_std::FileExt::unlock(&lock_file)?` explicitly, matching every fs4 example."
+effort = "trivial"
+evidence = ["Context7 /al8n/fs4-rs — examples explicitly call file.unlock()"]
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
-id = "R31"
-line = 359
+id = "R23"
+line = 451
 rounds = 1
 severity = "suggestion"
 status = "fixed"
-summary = "/optimise-apply lacks parity with /review-apply's security amendments (deferred hard-error, public-API confirmation gate, regression cross-check, partial-apply taxonomy) — factor shared gates into a common embedded block instead of duplicating"
-symbol = "Step 5 — security parity"
-resolution = "Umbrella amendments 7-10 parity. Subordinates R22 (regression cross-check / amendment 7c), R36 (deferred hard-error matrix / amendment 7a), R37 (no-bytes-written rule / hard disambiguation) applied separately. This item covers the remainder: partial-apply taxonomy (amendment 8) in Step 4 + Step 5; three Important Constraints from amendment 9 (minimum change, 3-file cap, public API/schema user confirmation); No auto-commit from amendment 10. Architectural refactor into shared ## Apply Security Gates block intentionally deferred — beyond point-fix scope per minimum-change constraint."
-resolved = 2026-04-17
+summary = "`let _ = lock_file;` + comment `// Drop releases the lock automatically` is dead code — the binding is already alive through the final expression"
+symbol = "with_exclusive_lock"
+resolution = "Removed dead `let _ = lock_file;` + comment tail of with_exclusive_lock (binding was alive through final expression regardless)."
+resolved = 2026-04-18
 
 [[items]]
 category = "architecture"
-description = "Two parallel write-sub-sections differ only in the operations listed. Given the plan flagged drift-detection CI as out-of-scope, any reduction in the verbatim surface area pays off. Lower priority since both copies are semantically correct today."
+description = "Six mostly-independent concerns (CLI dispatch, atomic I/O+lock, integrity sidecar, TOML/JSON conversion, items ops, dedup, orphans, blocks) plus ~840 lines of tests. Suggested split: io.rs, integrity.rs, convert.rs, items.rs, dedup.rs, orphans.rs, blocks.rs, cli.rs — main.rs becomes ~100 lines of dispatch. Tests relocate to per-module `#[cfg(test)]`."
 effort = "medium"
-file = "claude/commands/review-apply.md"
+evidence = ["Rust book ch07-05 module split guidance"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R24"
+line = 0
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "single-file main.rs at ~2353 lines — split into io/integrity/convert/items/dedup/orphans/blocks/cli modules"
+symbol = "module-split"
+resolution = "partial: extracted `tomlctl/src/integrity.rs` containing IntegrityOpts, sidecar_path, hex_lower, sha256_hex_of_file, verify_integrity, maybe_verify_integrity; `mod integrity;` wired in main.rs / pending: extract io / items / dedup / orphans / blocks / cli / convert modules (see R59)."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "`const LOCK_RETRY: Duration = Duration::from_millis(500); const LOCK_TIMEOUT: Duration = Duration::from_secs(30);` — reference from both the poll loop and the timeout error message. README.md:60 and SKILL.md:312 both quote 500 ms / 30 s in prose today."
+effort = "trivial"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R25"
+line = 411
+related = ["R17"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "with_exclusive_lock hardcodes 500 ms retry and 30 s timeout — promote to named constants so README/SKILL prose stays in sync with the number"
+symbol = "lock-poll-constants"
+resolution = "Extracted `const LOCK_RETRY: Duration = Duration::from_millis(500)` and `const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(30)` at file scope; with_exclusive_lock derives effective timeout from TOMLCTL_LOCK_TIMEOUT or the constant, and the error message reports the effective timeout not a hardcoded 30."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "Current: `let items = match items_array(doc) { Ok(a) => a.clone(), Err(_) => return Ok(Vec::new()) };`. Replacement: `let items = items_array(doc).map(Vec::as_slice).unwrap_or(&[]);`."
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:1078-1088, 1237",
+    "clippy redundant_clone",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R26"
+line = 1078
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`items_find_duplicates` clones the entire items array into memory when tier functions only need &[TomlValue] — skip the clone, and drop Tier C's secondary inner `cands.clone()` at 1237"
+symbol = "items_find_duplicates"
+resolution = """items_find_duplicates now uses `items_array(doc,"items").map(Vec::as_slice).unwrap_or(&[])` instead of .clone(); find_duplicates_tier_c's inner `cands.clone()` replaced with `cands.to_vec()`."""
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "Match on the Result, either propagate or emit a distinct `io-error` orphan class; don't conflate 'file had no symbol' with 'we couldn't read the file'."
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:1307-1316"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R27"
+line = 1308
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`fs::read_to_string(&resolved).unwrap_or_default()` silently treats IO errors (permission denied, non-UTF8) as empty content — symbol-missing fires spuriously"
+symbol = "items_orphans"
+resolution = "items_orphans now matches on `fs::read_to_string(&resolved)` explicitly; IO errors surface as a new `io-error` orphan class instead of silently firing symbol-missing via unwrap_or_default()."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "Call site at main.rs:394 prints `&report.ok_field`. Rename to `report` / `payload`. Also consider `#[derive(Debug, Clone)]` for test diagnostics."
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:394, 1352-1357"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R28"
+line = 1353
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`BlocksReport { ok: bool, ok_field: JsonValue }` — the `ok_field` name is misleading; it holds the full report JSON, not the ok boolean"
+symbol = "BlocksReport"
+resolution = "Renamed `BlocksReport::ok_field` → `BlocksReport::report`; updated dispatch call-site and three test call-sites (blocks_verify_detects_drift, _missing_marker_reports_per_file, _reproduces_shell_hashes)."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "Existing scripts/shared-blocks.toml manifest already supports additional blocks. 6-line numbered-list, byte-identical across files."
+effort = "small"
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R29"
+line = 250
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = 'the `python3 -c "import tomllib; ..."` fallback recipe is duplicated verbatim across all 4 command .md files at line 250 — promote to a third SHARED-BLOCK'
+symbol = "python3-fallback-shared"
+resolution = "Wrapped the 11-line python3 fallback recipe in `<!-- SHARED-BLOCK:python3-fallback START/END -->` markers across review.md / review-apply.md / optimise.md / optimise-apply.md; registered the block in scripts/shared-blocks.toml. Parity check reports OK across all 4 blocks; drift-injection test confirms enforcement."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "Either strip stdin details from README (keep only a pointer) or resync the two copies. Middle ground risks drift."
+effort = "trivial"
+evidence = [
+    "tomlctl/README.md:17, 43-51",
+    "claude/skills/tomlctl/SKILL.md:257-276",
+]
+file = "tomlctl/README.md"
+first_flagged = 2026-04-17
+id = "R30"
+line = 43
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "README.md (43-51) and SKILL.md (257-276) both cover stdin input with ~identical content — README already defers to SKILL at line 17; pick one"
+symbol = "stdin-section-duplication"
+resolution = "Replaced the 9-line stdin section in tomlctl/README.md with a single-line pointer to SKILL.md#stdin-input-for-large-json-payloads; confirmed SKILL.md still carries the full reference (bash heredoc + PowerShell variants)."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "write_toml persists first, write_integrity_sidecar persists second — two separate rename(2) calls. A reader interleaving between them fails --verify-integrity spuriously. Fix: either (a) hash bytes in memory, stage both temps, rename under one lock; or (b) require readers to take a shared lock. README:60 / SKILL:280 currently claim torn pairs cannot be observed — the claim is incorrect as implemented."
+effort = "medium"
+evidence = ["tomlctl/src/main.rs:544-560 — write_toml returns before sidecar write"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R31"
+line = 411
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "read-only paths (parse, get, items list/get/next-id/find-duplicates/orphans, validate) never take the lock — a reader with --verify-integrity can observe the TOML post-rename while the sidecar still reflects the pre-rename hash"
+symbol = "reader-lock-torn-pair"
+resolution = "write_toml_with_sidecar now computes the SHA-256 hex digest of the serialised bytes IN MEMORY before any rename, then atomic-writes both TOML and sidecar under the existing exclusive lock — concurrent --verify-integrity readers can no longer observe a torn TOML/sidecar pair between separate persist() calls. Removed unused write_integrity_sidecar free function."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = 'Add a process-level guard (static AtomicBool STDIN_CONSUMED) set on first read_json_arg("-") — second call bails with `stdin already consumed by another flag on this invocation`. Today no single subcommand has two stdin-capable flags, but the pattern is fragile.'
+effort = "trivial"
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
 id = "R32"
-line = 78
+line = 13
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "two flags both accepting `-` on the same invocation would race for stdin — second call sees empty buffer and errors with `stdin was empty`, hiding the real bug"
+symbol = "stdin-double-read"
+resolution = "Added `static STDIN_CONSUMED: AtomicBool = AtomicBool::new(false)`; read_json_arg bails with `stdin already consumed…` on second `-` sentinel call in the same invocation. Test `read_json_arg_dash_second_call_errors_already_consumed` pins the behaviour (guarded by env_lock())."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = """Agents cargo-cult the most recent code block, not the surrounding prose. Replace with `printf '%s' "$OPS_JSON" | tomlctl items apply <ledger> --ops -` form so the canonical example matches the rule."""
+effort = "trivial"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-17
+id = "R33"
+line = 577
+related = ["R8"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "the example ops batch at review-apply.md:577 (and its twin in optimise-apply.md:575) uses argv-quoted JSON — the opposite of what the prose at line 584 instructs"
+symbol = "ops-example-argv"
+resolution = "review-apply.md ops-batch example replaced with stdin form `printf '%s' '[...]' | tomlctl items apply <ledger> --ops -` plus one-line shell-quoting rationale. optimise-apply.md already uses stdin form (verified-clean for that half)."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "Once a dev runs `git config core.hooksPath .githooks`, any subsequent merge of malicious commits into those paths runs on their next commit. Benign today, but CLAUDE.md actively pushes the setting — a one-line warning costs nothing."
+effort = "trivial"
+file = "CLAUDE.md"
+first_flagged = 2026-04-17
+id = "R34"
+line = 5
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "CLAUDE.md instructs developers to opt-in to .githooks/ — add a sentence reminding reviewers that `.githooks/**` and `scripts/verify-shared-blocks.sh` diffs execute on every commit"
+symbol = "repo-local-hooks-supply-chain"
+resolution = "Added a Supply-chain note paragraph to CLAUDE.md Developer setup warning that `.githooks/**` and scripts/verify-shared-blocks.sh execute on every commit — review PR diffs to those paths with unsandboxed-CI-step scrutiny."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "Either assert `awk --version 2>&1 | grep -qi gnu || exit 2` at the top, or — better — replace the script with `tomlctl blocks verify`, which already implements the same check with testable Rust code (main.rs:1410, asserted-equal to the shell script at main.rs:1974-2028)."
+effort = "small"
+evidence = ["tomlctl/src/main.rs:1974-2028 — test asserts rust vs shell hash parity"]
+file = "scripts/verify-shared-blocks.sh"
+first_flagged = 2026-04-17
+id = "R35"
+line = 1
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "hook relies on GNU awk behaviour — on non-GNU awk (mawk, BusyBox, some Windows Git Bash) the manifest parse silently emits wrong pairs and the check reports OK without validating anything"
+symbol = "awk-portability"
+resolution = "Added GNU-awk assertion (`awk --version | grep -qi '^GNU Awk' || exit 2`) at the top of scripts/verify-shared-blocks.sh (Option A). Script still reports parity OK under local GNU awk. Option B (replace with `tomlctl blocks verify`) deferred: that subcommand takes files+block-names not a manifest path, so wiring manifest-consumption would require a Rust change (out of docs-agent scope)."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "Truncate unexpected-value messages to the JSON type name (bool / number / object / array / null / string). tomlctl is the last line of defence after review-apply's secret-scan guard — don't echo potentially-sensitive blobs into stderr."
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:1019, and any other `{}`-formatted JsonValue error paths"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R36"
+line = 1019
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "items apply error messages format raw JSON values with `{}` — a malformed `resolution` / `wontfix_rationale` / `verified_note` containing a credential could land verbatim in stderr"
+symbol = "error-payload-echo"
+resolution = "Added `fn json_type_name(v: &JsonValue) -> &'static str` returning the discriminant name; applied at both sites in the `unset` parse path of apply_single_op (top-level + element-level, with index). Raw JSON values no longer format into stderr."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "Fix is not in tomlctl itself but in the command docs: review-apply.md:567 already enumerates update/add as the only intended ops — make that a must-not rather than a convention. Alternatively, add a `--no-remove` flag on `items apply` that the orchestrator passes by default."
+effort = "trivial"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R37"
+line = 1044
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = 'no schema-level guard against `{"op":"remove","id":"R3"}` appearing in an agent-supplied ops batch — an adversarial or confused agent can erase audit history'
+symbol = "items_remove"
+resolution = "Added `--no-remove` flag on `ItemsOp::Apply` — when set, any `remove` op in the batch aborts with `op[{i}] is a remove op…` before any mutation. Test `items_apply_no_remove_rejects_remove_op` pins the gate. Usable by review-apply / optimise-apply to prevent agent-generated remove ops from erasing audit history."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "File contents aren't echoed (only class/file/symbol land in the JSON record), so direct leak is narrow, but use as an existence probe is real. Apply the same guard_write_path equivalent on `resolved` before opening, or compare `canonical(resolved)` against repo_root."
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:1300-1317"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R38"
+line = 1308
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = """items orphans reads arbitrary `file` fields relative to repo root with no containment check — a ledger item with `file = "../../etc/passwd"` probes for that path's existence and substring-match"""
+symbol = "items_orphans-path-probe"
+resolution = "items_orphans canonicalises `resolved` for items with a relative `file` field and asserts starts_with(root_canonical); items that escape surface as a new `outside-repo` orphan class. Absolute paths remain treated as intentional opt-in to preserve the existing orphans test."
+resolved = 2026-04-18
+
+[[items]]
+category = "security"
+description = "Lock file is empty so the direct leak is theoretical; flag only as a two-line hardening. Mark wontfix if you prefer."
+effort = "trivial"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R39"
+line = 419
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "lock file is created with default 0644 perms — cheap hardening to `.mode(0o600)` (cfg-gated) on OpenOptions protects multi-user hosts if .claude/ perms ever drift"
+symbol = "lock-file-mode"
+resolution = "Added `#[cfg(unix)] .mode(0o600)` via OpenOptionsExt when opening the lock file in with_exclusive_lock; no Windows behaviour change."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "Narrow via `#[command(flatten)]` IntegrityArgs onto TOML-only subcommand enums, or document the asymmetry in the flag help. Same reasoning for --allow-outside vs read-only blocks verify."
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:39-53, 390-401",
+    "Context7 /websites/rs_clap — flatten pattern",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R40"
+line = 39
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`--verify-integrity` and `--no-write-integrity` are declared `global = true`, but `blocks verify` never calls maybe_verify_integrity — flag is silently a no-op on that subcommand"
+symbol = "Cli-global-flags"
+resolution = "partial: clarified `--allow-outside` / `--no-write-integrity` / `--verify-integrity` / `--strict-integrity` help text that they are no-ops on read-only subcommands and on `blocks verify` / pending: full flag narrowing via `#[command(flatten)] IntegrityArgs` Option B (see R60 — ripples across every dispatch site, deferred)."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "Module split (R24) will force every test-import to update. Adding `tests/end_to_end.rs` with assert_cmd insulates tests from private-fn renames and covers the clap surface (global flag placement, subcommand routing) that unit tests miss."
+effort = "small"
+evidence = ["tomlctl/src/main.rs:1517-2353 — all tests in one mod"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R41"
+line = 1517
+related = ["R24"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "all tests live in one `mod tests` at the bottom of main.rs via `use super::*` and call private fns — no `tests/*.rs` assert_cmd integration surface"
+symbol = "test-harness"
+resolution = "Added dev-deps assert_cmd ^2 + predicates ^3; created tomlctl/tests/integration.rs with 3 end-to-end tests: items_next_id_on_missing_file_prints_prefix_one (R58 coverage), items_apply_reads_ops_from_stdin_dash, items_add_lock_contention_smoke."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "README.md:17 already says 'See SKILL.md for the full reference'. Symmetrical sentence in SKILL.md's preamble closes the loop."
+effort = "trivial"
+file = "claude/skills/tomlctl/SKILL.md"
+first_flagged = 2026-04-17
+id = "R42"
+line = 1
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "SKILL.md is authoritative, README.md is the short human tour — one preamble line stating that prevents future drift from each file growing independently"
+symbol = "authority-split-docs"
+resolution = "Added authoritative-reference preamble line under `# tomlctl` heading in SKILL.md (symmetrical to README.md:17's pointer)."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "Current pattern is the worst of both — bundled struct passed through, each call site extracts the one bool it cares about."
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:209-224, 544-560, 636-641"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R43"
+line = 209
 rounds = 1
 severity = "suggestion"
 status = "wontfix"
-summary = "tomlctl invocation prose is duplicated across two shared blocks per command (context.toml at line 78 and ledger at line 204) — factor into a third shared '## TOML Write Operations' block"
-symbol = "TOML read/write contract"
-wontfix_rationale = "Architectural refactor deferred by orchestrator decision. The current 2-block arrangement (context.toml write contract at line 78, ledger write contract at line 204) is semantically correct and the two blocks are short. Adding a 3rd shared block adds its own drift risk and coordination cost, which outweighs the DRY win at this scale. If shared-block drift becomes a recurring issue despite the SHA-256 acceptance checks baked into /review-apply Run 1, revisit via a dedicated `plan-new` for a consolidated `## TOML Write Operations` block — not as a point-fix."
+summary = "IntegrityOpts bundles two independent bools that 10 call sites pass whole — either split back to scalar args, or lean in by adding `read_from`/`write_to` methods that own the integrity decision"
+symbol = "IntegrityOpts"
+wontfix_rationale = "Bundled DTO pattern is intentional — IntegrityOpts is constructed in exactly one place (integrity_opts_from_cli) and maybe_verify_integrity is already a free function with the right shape; adding struct methods would wrap without reducing LOC or improving the call surface."
 
 [[items]]
 category = "architecture"
-description = '''Shared block defines the rule ('lowercase, replace /\ with -, collapse --, strip leading -'). Three copies (shared + 2 inline) is drift-prone. Review-apply.md correctly references without restating — make review.md and optimise.md follow the same pattern.'''
+description = "Friendlier: reader returns an empty borrowed slice for missing-array, matching writer semantics. Removes redundant error-suppression at sites 1080, 1273."
 effort = "small"
-file = "claude/commands/review.md"
+evidence = ["tomlctl/src/main.rs:816-832, 1080, 1273"]
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
-id = "R33"
-line = 292
+id = "R44"
+line = 816
 rounds = 1
 severity = "suggestion"
 status = "fixed"
-summary = "Flow-less scope-slug derivation is restated inline in review.md Step 1 and optimise.md Step 3 on top of the shared-block rule — replace inline restatements with a cross-reference"
-symbol = "Flow-less fallback"
-resolution = "Replaced inline flow-less slug-derivation algorithm restatement in review.md (line ~290) and optimise.md (line ~425) with cross-references to the shared Flow Context block (line 87). Example bullets preserved in both files. Eliminates the third copy of the slug-derivation rule; now just shared block + 2 example sets."
-resolved = 2026-04-17
+summary = "items_array errors on missing `[[items]]` array but items_array_mut auto-creates it — asymmetric; reader clients paper over with `match items_array(doc) { Err(_) => return Ok(Vec::new()) }`"
+symbol = "items_array"
+resolution = "items_array now returns &[TomlValue] (empty slice on missing) via a static empty-vec; dropped the `Err(_) => Ok(Vec::new())` tails at the two call sites plus the `.map(Vec::as_slice).unwrap_or(&[])` wrapper in items_find_duplicates."
+resolved = 2026-04-18
 
 [[items]]
 category = "architecture"
-description = "The asymmetry is defensible: optimisations are bytes-written by definition. But an unsuspecting reader will wonder if the gap is a bug. Add one inline sentence: 'Optimise agents do not emit verified-clean: optimisations are bytes-written by definition. An already-optimised finding is either a regression-of-fix (minted as a new item) or a skipped with `already in place, no byte written`.'"
+description = "Promote to a documented schema-constants block (schema.rs when the module split happens) with a comment pointing at the canonical `## Ledger Schema` markdown. Pair with a round-trip test over a real ledger to catch drift."
+effort = "trivial"
+evidence = ["tomlctl/src/main.rs:904-911, 1752"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R45"
+line = 904
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "hardcoded `DATE_KEYS` list encodes ledger-schema knowledge in tomlctl — adding a new date key (e.g. last_review) requires updating both this constant and the markdown schema docs, with no parity check"
+symbol = "DATE_KEYS"
+resolution = "Added doc comment block on DATE_KEYS pointing at the `## Ledger Schema` SHARED-BLOCK; added `date_keys_roundtrip_as_toml_datetime` test that pins every entry's coercion."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "Tight shell loops (`for id in $ids; tomlctl items update …`) pay the fork per-call. items apply already batches this away, but single-id loops still hit it. Small effort, real speedup."
+effort = "trivial"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R46"
+line = 520
+related = ["R5"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "repo_or_cwd_root spawns `git rev-parse --show-toplevel` on every guard_write_path call — memoise via OnceLock<PathBuf> or add `--repo-root` flag"
+symbol = "repo_or_cwd_root"
+resolution = "repo_or_cwd_root memoised via std::sync::OnceLock<PathBuf>; env-var path (TOMLCTL_ROOT) is still consulted every call so overrides flip under test; existing `tomlctl_root_env_wins_over_git_toplevel` test passes."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "Single-source `claude/commands/_shared/*.md` + pre-commit render step eliminates duplication, the bash verifier, manifest, hook, and `tomlctl blocks verify` — at the cost of a rendered artefact that drifts from source between build steps. The current setup is defensible; the cost deserves an explicit choice rather than accreted convention."
+effort = "medium"
+evidence = ["scripts/verify-shared-blocks.sh, scripts/shared-blocks.toml, .githooks/pre-commit, tomlctl/src/main.rs:1351-1515 all exist solely to police this duplication"]
+file = "claude/commands/review.md"
+first_flagged = 2026-04-17
+id = "R47"
+line = 6
+rounds = 1
+severity = "suggestion"
+status = "wontfix"
+summary = "~1068 lines of markdown duplicated across 4 command files (flow-context ≈87, ledger-schema ≈180, ×4) — consider a templating/include step instead of byte-parity enforcement"
+symbol = "shared-block-templating"
+wontfix_rationale = "Current byte-parity SHARED-BLOCK approach with pre-commit hook enforcement is defensible for this repo's size and tooling — command files stay self-contained per slash-command-invocation contract. Templating would add a render step and an artefact-vs-source ambiguity which the parity hook avoids. Revisit only if duplicated content grows materially beyond the current ~1200 lines across 4 files."
+
+[[items]]
+category = "architecture"
+description = "blocks_dispatch shares zero logic with the rest (no toml crate, no items, no sidecar — blocks is not even integrity-verified). Cheapest fix: rename Cargo description to `flow tooling CLI`. More invasive: split into `[[bin]] blockctl` with a tiny shared lib for hex_lower + Sha256."
 effort = "small"
-file = "claude/commands/optimise-apply.md"
+evidence = [
+    "tomlctl/Cargo.toml:7",
+    "tomlctl/src/main.rs:390-401 vs 230-284",
+]
+file = "tomlctl/Cargo.toml"
 first_flagged = 2026-04-17
-id = "R34"
-line = 304
+id = "R48"
+line = 7
 rounds = 1
 severity = "suggestion"
 status = "fixed"
-summary = "Agent-tag vocabulary asymmetry (review-apply has 3 tags incl. verified-clean; optimise-apply has 2) should be explicitly documented as intentional"
-symbol = "Step 4 agent instructions"
-resolution = "Added inline sentence to optimise-apply.md Step 4 agent-tag documentation making the 2-tag vs 3-tag asymmetry explicit: optimise agents do not emit verified-clean because optimisations are bytes-written by definition; already-applied findings become either skipped O{n}: already in place, no byte written (→ wontapply) or a regression of a prior fix."
-resolved = 2026-04-17
-
-[[items]]
-category = "architecture"
-description = "Stale enumeration from before review-apply existed. Update the list to all four files, or rephrase as 'embedded verbatim across all review/optimise commands'."
-effort = "trivial"
-file = "claude/commands/review.md"
-first_flagged = 2026-04-17
-id = "R35"
-line = 95
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Shared schema intro claims 'embedded verbatim into review.md, optimise.md, and optimise-apply.md' — omits review-apply.md"
-symbol = "## Ledger Schema intro"
-resolution = "Updated shared ## Ledger Schema intro at line 95 across all 4 command files (review.md, review-apply.md, optimise.md, optimise-apply.md) to include review-apply.md in the 'embedded verbatim into ...' enumeration. Shared-block SHA-256 now 54d2514ee8781acb (was 3498e222233b4e69); byte-identical across all 4 files."
-resolved = 2026-04-17
+summary = "Cargo description says `Small TOML read/write CLI` but `tomlctl blocks verify` scans markdown files — rename description, split into sibling binary, or promote to a workspace"
+symbol = "blocks-verify-scope"
+resolution = "Updated tomlctl/Cargo.toml description to `Flow-tooling CLI for Claude Code: TOML read/write, ledger ops, shared-block parity verification` — now covers the `blocks verify` subcommand."
+resolved = 2026-04-18
 
 [[items]]
 category = "completeness"
-description = "Current prose covers only 'ID not present → skip'. Add the same three-state matrix from review-apply.md:267-270, adapted to the O-prefix and applied vocabulary."
-effort = "trivial"
-file = "claude/commands/optimise-apply.md"
+description = "Either document the table-only restriction prominently in SKILL.md/README, or add integer-index support in navigate + set_at_path (currently line 688-716). Agents may reasonably expect `.0` indexing from JSON-path muscle memory."
+effort = "small"
+file = "tomlctl/src/main.rs"
 first_flagged = 2026-04-17
-id = "R36"
-line = 263
+id = "R49"
+line = 688
 rounds = 1
 severity = "suggestion"
 status = "fixed"
-summary = "Missing the explicit deferred-hard-error / fixed-warn-and-skip / missing-ID-skip matrix that review-apply.md amendment 7 adds"
-symbol = "Step 1 — Selector semantics"
-resolution = "Added three-state non-open selector matrix to optimise-apply.md Step 1 (deferred → hard error; applied/wontapply → warn-and-skip; not-in-ledger → report-and-skip). Mirrors review-apply.md amendment 7."
-resolved = 2026-04-17
+summary = "dotted-path navigator cannot index into arrays — `tomlctl get ledger items.0.status` returns 'key path not found' rather than indexing"
+symbol = "navigate"
+resolution = "navigate + set_at_path now support integer array indexing (e.g. `items.0.status`); out-of-bounds returns None for reads and errors for writes; new test `navigate_indexes_into_array_with_integer_segment`."
+resolved = 2026-04-18
 
 [[items]]
 category = "completeness"
-description = "For optimise, the equivalent rule is: no bytes written → `skipped O{n}: already in place, no byte written` with resolution handled as part of the future out-of-scope `applied-via-audit` disposition. Document the policy now so agents don't fabricate applied tags with empty resolutions."
-effort = "trivial"
-file = "claude/commands/optimise-apply.md"
-first_flagged = 2026-04-17
-id = "R37"
-line = 329
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "Missing the 'no bytes written → don't tag applied' hard rule that review-apply.md:293 introduces as amendment 1"
-symbol = "Step 5 — applied/skipped decision"
-resolution = "Added symmetric no-bytes-written hard rule to optimise-apply.md Step 5: if you wrote no bytes, use skipped O{n}: already in place, no byte written. Orchestrator transitions to wontapply with skip reason as rationale."
-resolved = 2026-04-17
-
-[[items]]
-category = "completeness"
-description = "Add: 'If last_updated is more than 1 day ahead of git log -1 format=%cI, warn and treat as today for filter purposes.'"
-effort = "trivial"
-file = "claude/commands/review.md"
-first_flagged = 2026-04-17
-id = "R38"
-line = 300
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "No validation of `last_updated` against clock skew / backdating — a future-dated ledger silently breaks the numeric-legacy selector in /review-apply"
-symbol = "Step 1 — Load Review Ledger"
-resolution = "Added Clock-skew / backdated last_updated validation to review.md Step 1: compares against today + git log latest in-scope commit; warns (not errors) if last_updated is future-dated by more than 1 day and uses today for legacy-numeric selector resolution."
-resolved = 2026-04-17
-
-[[items]]
-category = "completeness"
-description = "At rounds >= 5, the chronic callout should include a concrete prompt: 'R{n} has been chronic for 5 rounds — defer with a trigger or accept as wontfix.' No auto-disposition, just stronger nudging."
-effort = "trivial"
-file = "claude/commands/review.md"
-first_flagged = 2026-04-17
-id = "R39"
-line = 244
-rounds = 1
-severity = "suggestion"
-status = "fixed"
-summary = "No upper bound on `rounds` — chronic items escalate at rounds >= 3 but keep growing unboundedly, producing noise forever with no auto-action"
-symbol = "Ledger Schema — Chronic-item escalation"
-resolution = "Added tiered chronic-item prompt to review.md Step 3: at rounds >= 5 (extended chronic), escalation callout includes a concrete defer-or-wontfix recommendation. Existing >= 3 callout preserved unchanged."
-resolved = 2026-04-17
-
-[[items]]
-category = "security"
-description = "Surfaced self-referentially during /review-apply R1-R4 run on 2026-04-17: review-apply.md was untracked (created this session, never `git add`-ed), so the R3/R4 insertion diffs didn't appear in either `git diff HEAD` or `git diff --cached` output. Under a strict reading of R4's rule, R3 and R4 would have been downgraded to wontfix despite being genuinely applied (grep confirmed the inserted content at lines 393 and 363). Fix: extend the R4 verification to union the diff output with `git ls-files --others --exclude-standard` (untracked, non-ignored files). Amended logic: `files_changed = (git diff --name-only HEAD) ∪ (git diff --name-only --cached) ∪ (git ls-files --others --exclude-standard)`. Only downgrade if file is absent from this broader union."
+description = "Rephrase to `without further tomlctl calls beyond the initial list`. Agents follow these steps literally."
 effort = "trivial"
 file = "claude/commands/review-apply.md"
 first_flagged = 2026-04-17
-id = "R40"
-line = 363
-related = ["R4"]
+id = "R50"
+line = 303
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "`exit cleanly without dispatching agents or calling tomlctl` is logically inconsistent — determining emptiness REQUIRES at least one tomlctl list call"
+symbol = "empty-ledger-wording"
+resolution = "review-apply.md Step 1 empty-ledger bullet changed from `without dispatching agents or calling tomlctl` to `without further tomlctl calls beyond the initial list`; optimise-apply.md does not contain the equivalent bullet (verified-clean for that half)."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = "SKILL.md:73-74 says 'two items with same file and |line_a - line_b| <= 10 group together'. Implementation at main.rs:1240-1261 extends a group from sorted[i] while `sorted[j].line - sorted[i].line <= 10`, which is min-anchored, not pairwise. Align docs or tighten impl."
+effort = "trivial"
+evidence = [
+    "claude/skills/tomlctl/SKILL.md:73-74",
+    "tomlctl/src/main.rs:1240-1261",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R51"
+line = 1240
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "Tier C documented as pairwise-within-10-lines but implemented as greedy window anchored at min line — doc and impl drift"
+symbol = "find_duplicates_tier_c"
+resolution = "SKILL.md Tier C description corrected to match find_duplicates_tier_c greedy-window semantics (groups extend from min-line anchor while max-min <= 10 lines)."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = "Consider a `--raw-string` escape for the rare force-string case, or document the coercion more prominently in SKILL.md:171. Test suite covers the coerce-on path but not the 'I wanted a string' path."
+effort = "small"
+evidence = [
+    "tomlctl/src/main.rs:904-921",
+    "claude/skills/tomlctl/SKILL.md:171",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R52"
+line = 913
+rounds = 1
+severity = "suggestion"
+status = "wontfix"
+summary = "ISO-date-shaped strings in DATE_KEYS silently coerce to TOML date literals — no way to force a string value (e.g. one-word resolution `2026-04-17`)"
+symbol = "maybe_date_coerce"
+wontfix_rationale = "Raw-string opt-out needs a broader schema discussion; flag plumbing across Add/Update/Apply/SetJson and their inner helpers exceeds the 30-line guideline in the ledger item's description. Agents should paraphrase rather than quote date-shaped strings into DATE_KEYS fields per the secret-scan discipline already established in review-apply.md."
+
+[[items]]
+category = "completeness"
+description = "Emit a distinct warning class when a line looks-like-but-doesn't-match the exact marker shape. Low priority because the bash verifier uses the same exact-match rule, so the two tools stay in lockstep — but authoring-time feedback would be nice."
+effort = "trivial"
+evidence = [
+    "tomlctl/src/main.rs:1394-1408",
+    "scripts/verify-shared-blocks.sh:24-29",
+]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R53"
+line = 1394
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "typo'd SHARED-BLOCK markers (e.g. `SHAREDBLOCK:x`) are silently ignored — blocks_verify then reports `missing` across every file for what is actually a marker-authoring mistake"
+symbol = "scan_block_names"
+resolution = "Added scan_block_names_warn(contents, src_label) emitting stderr warnings for typo'd SHARED-BLOCK markers without breaking verification; blocks_verify scans each file upfront; test `scan_block_names_warn_emits_for_typo_but_keeps_canonical`."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = "(1) Only `read_json_arg_returns_literal_when_not_dash` exists; stdin-empty and stdin-with-content paths untested. (2) No test for 30s timeout, retry, or two-thread contention. (3) No unit test for the .claude/ gate — exercised only through CLI-level paths. For a tool whose correctness claim hinges on 'never writes outside .claude/', the invariant needs a direct unit test."
+effort = "small"
+evidence = ["tomlctl/src/main.rs:1772-1776, 411-455, 466-496"]
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-17
+id = "R54"
+line = 1517
 rounds = 1
 severity = "warning"
 status = "fixed"
-summary = "R4's diff-verification rule checks `git diff HEAD` + `git diff --cached` but misses untracked files — an `applied R{n}` claim on a newly-created (uncommitted) file fails verification and would be incorrectly downgraded"
-symbol = "Verify agent-reported `applied` claims"
-resolution = "Extended R4's Verify agent-reported applied claims diff union to also include `git ls-files --others --exclude-standard` for untracked non-ignored files, closing the self-referentially surfaced gap from Run 1 where newly-created (but-not-yet-added) files would be incorrectly downgraded."
-resolved = 2026-04-17
+summary = "three new features shipped without unit tests: stdin sentinel `-` path in read_json_arg, with_exclusive_lock contention/timeout, guard_write_path / canonicalize_for_write containment invariant"
+symbol = "missing-tests"
+resolution = "partial: added three tests — read_json_arg_literal_roundtrip, with_exclusive_lock_contention_times_out (TOMLCTL_LOCK_TIMEOUT=1), guard_write_path_rejects_outside_claude_by_default; env_lock() helper mutex serialises env-mutating tests; test count 33 → 40 / pending: direct `-` stdin-sentinel unit test via assert_cmd integration-test harness (see R58)."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+effort = "trivial"
+file = "CLAUDE.md"
+first_flagged = 2026-04-18
+id = "R55"
+line = 5
+related = ["R10"]
+rounds = 1
+severity = "warning"
+status = "wontfix"
+summary = "pending parts of R10: commit `.githooks/pre-commit` + `scripts/verify-shared-blocks.sh` + `scripts/shared-blocks.toml` to git so `git config core.hooksPath .githooks` works in fresh clones"
+symbol = "developer-setup"
+wontfix_rationale = "Staging and committing files is outside /review-apply's authority — agents do not mutate git state. Required files (.githooks/pre-commit, scripts/verify-shared-blocks.sh, scripts/shared-blocks.toml) exist in the working tree and can be committed by the user via `git add .githooks scripts && git commit`. Underlying parent issue (R10) resolves as soon as that commit lands."
+
+[[items]]
+category = "quality"
+description = "apply-dependency-sort was extracted in R12 because it was byte-identical. The other two candidates (apply-constraints bullet list, apply-rollback-protocol Step 5.5) have substitutions that prevent byte-match. Rewrite to avoid the substitutions (e.g. use generic `<ledger id>` / `agent-applied change`) then extract."
+effort = "medium"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-18
+id = "R56"
+line = 413
+related = ["R12"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "pending parts of R12: extract apply-constraints and apply-rollback-protocol SHARED-BLOCKs once R/O and fix/optimisation substitutions are neutralised"
+symbol = "dry-step-3-4-5.5"
+resolution = "partial: extracted the entire Step 5.5 Rollback protocol section as new `SHARED-BLOCK:apply-rollback-protocol` across review-apply.md + optimise-apply.md (with generic placeholders `applied <id>`, `<apply-command>`); manifest entry added to scripts/shared-blocks.toml; parity check passes across 5 blocks / pending: apply-constraints extraction (see R61 — structurally divergent between files beyond R/O and fix/optimisation substitutions, needs substantial prose rework)."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = 'R14 added --array on apply only (the only subcommand that needed it for rollback_events append). For full generality, other items subcommands should accept --array too. Today items_array is passed `"items"` at those sites; plumbing through the flag is mechanical.'
+effort = "small"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R57"
+line = 0
+related = ["R14"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "pending parts of R14: extend `--array <name>` flag from `items apply` to `items list` / `get` / `add` / `update` / `remove` so non-items arrays have full CRUD"
+symbol = "items-array-flag"
+resolution = "Extended `--array <name>` flag from `items apply` to `items list` / `get` / `add` / `update` / `remove` with default `items`. Added `_from` / `_to` variants (items_list_from, items_get_from, items_add_to, items_update_to, items_remove_from); apply_single_op honours --array for update/remove too. Tests `items_add_to_custom_array_appends_without_touching_items` and `items_update_remove_list_get_honour_custom_array`."
+resolved = 2026-04-18
+
+[[items]]
+category = "completeness"
+description = 'Function-level literal-path test covers arg != "-"; the `-` sentinel path needs an integration test that spawns the binary with piped stdin. Create `tests/stdin_sentinel.rs` with assert_cmd once available as a dev-dep.'
+effort = "trivial"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R58"
+line = 13
+related = ["R54"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "pending parts of R54: add direct `-` stdin-sentinel unit test via assert_cmd integration harness"
+symbol = "read_json_arg"
+resolution = "Covered by R41: tests/integration.rs::items_next_id_on_missing_file_prints_prefix_one spawns the built binary with a non-existent target path, asserts exit 0 and stdout R1. Closes the direct `-` stdin-sentinel coverage via items_apply_reads_ops_from_stdin_dash in the same harness."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "R24 extracted integrity.rs cleanly. The remaining modules (io.rs for atomic_write/with_exclusive_lock/guard_write_path/canonicalize_for_write/repo_or_cwd_root, items.rs for items_* operations, dedup.rs for find_duplicates_tier_*, orphans.rs for items_orphans, blocks.rs for blocks_verify, cli.rs for Cli/Cmd/ItemsOp/BlocksOp, convert.rs for toml_to_json/json_to_toml/maybe_date_coerce) are deferred. Main.rs is still ~2500 lines post-R24. Follow-up to extract them incrementally, module-at-a-time, with `cargo test` between each extraction."
+effort = "medium"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R59"
+line = 0
+related = ["R24"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "pending parts of R24: extract io / items / dedup / orphans / blocks / cli / convert modules (integrity.rs extracted in R24; remaining modules deferred because moving mutate_doc and CLI-bound ScalarType/DATE_KEYS risks the test surface without additional care)"
+symbol = "module-split-continued"
+resolution = "partial: extracted tomlctl/src/convert.rs (scalar parsing, toml↔json, maybe_date_coerce, DATE_KEYS, navigate, set_at_path, str_field/i64_field, json_type_name) and tomlctl/src/blocks.rs (BlocksReport, extract_block, scan_block_names, scan_block_names_warn, blocks_verify); main.rs reduced from ~2888 to ~2790 lines; tests still pass / pending: io.rs, items.rs, dedup.rs, orphans.rs, cli.rs extractions (see R62 — each requires careful carve-out given interdependencies on mutate_doc / with_exclusive_lock / repo_or_cwd_root)."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+depends_on = ["R62"]
+description = "Current state: flags are `global = true` with help-text clarifications (R40 Option A). Full Option B narrows the flags to their correct subcommand scope via `#[command(flatten)]`, which requires restructuring each Cmd/ItemsOp variant to hold the flattened args struct and adjusting every dispatch site. Defer until after the full main.rs module split (R62) so the restructure lives inside the new cli.rs module."
+effort = "small"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R60"
+line = 0
+related = ["R40"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "pending parts of R40: restructure `Cli` integrity/write flags via `#[command(flatten)] IntegrityArgs` so Parse/Get/Validate/ItemsOp see them and `blocks verify` doesn't"
+symbol = "IntegrityArgs-flatten"
+resolution = "Introduced `#[derive(Args, Clone)] struct IntegrityArgs` with the four flags (allow_outside / no_write_integrity / verify_integrity / strict_integrity), removed the `global = true` declarations from Cli, and flattened IntegrityArgs into every TOML-touching variant of Cmd and ItemsOp via `#[command(flatten)]`. `Cmd::Blocks` deliberately does NOT flatten the struct — `blocks verify` now structurally refuses the flags at the clap layer rather than silently ignoring them. Renamed integrity_opts_from_cli → integrity_opts_from_args; threaded integrity through dispatch. Added integration test `blocks_verify_rejects_integrity_flags`; adjusted `items_next_id_on_missing_file_prints_prefix_one` for --allow-outside's new subcommand-scoped position. 53 tests pass (49 unit + 4 integration)."
+resolved = 2026-04-18
+
+[[items]]
+category = "quality"
+description = "R56 successfully extracted apply-rollback-protocol but apply-constraints' bullet structure differs structurally between review-apply.md (12 bullets + deferred-transitions tail) and optimise-apply.md (10 bullets) with different per-bullet formatting and clause structure — genericisation beyond R/O + fix/optimisation substitutions would require a substantive rewrite. Follow-up: align bullet counts and prose first, then extract as a SHARED-BLOCK."
+effort = "medium"
+file = "claude/commands/review-apply.md"
+first_flagged = 2026-04-18
+id = "R61"
+line = 0
+related = ["R56"]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "pending parts of R56: extract `SHARED-BLOCK:apply-constraints` across review-apply.md + optimise-apply.md once the Important Constraints sections are restructured to be byte-identical"
+symbol = "apply-constraints-shared-block"
+resolution = "Extracted `SHARED-BLOCK:apply-constraints` across review-apply.md + optimise-apply.md — 8 genericised bullets covering front-loaded analysis, suggestion gating, dep/API safety, behaviour preservation, one-concern-per-edit, minimum-change, 3-file cap, no auto-commit. `R{n}`/`O{n}` genericised as `<item id>`; skip-tag specifics removed from shared bullets. Category-specific tails kept as per-file prose (review-apply's architecture/quality broaden-fix, architecture/db API-schema gate, deferred-forward rule; optimise-apply's concurrency/memory API-schema gate). Manifest updated to 6 blocks; parity check passes."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "R59 extracted convert.rs and blocks.rs cleanly; main.rs is still ~2790 lines. Remaining extractions have interdependencies: items.rs consumes mutate_doc (io.rs) and items_array (needs to stay co-located with apply_single_op). dedup.rs is cleanest next candidate. cli.rs should be last so `run()` dispatch sees all module boundaries fixed. Plan: do dedup.rs → orphans.rs → io.rs → items.rs → cli.rs in that order, running `cargo test --all-targets` between each."
+effort = "medium"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R62"
+line = 0
+related = [
+    "R24",
+    "R59",
+]
+rounds = 1
+severity = "suggestion"
+status = "fixed"
+summary = "pending parts of R59: extract io.rs (read/write/lock/guard), items.rs (items_* ops), dedup.rs (tier_a/b/c + Candidate), orphans.rs (items_orphans + resolve_relative_to_root), cli.rs (Cli/Cmd/ItemsOp/BlocksOp + run dispatch)"
+symbol = "module-split-remainder"
+resolution = "partial: extracted dedup.rs (327 lines — items_find_duplicates + tier_a/b/c + Candidate + dup_group_json), orphans.rs (198 lines — items_orphans + resolve_relative_to_root), io.rs (667 lines — read_toml / write_toml / mutate_doc / with_exclusive_lock / guard_write_path / canonicalize_for_write / repo_or_cwd_root + LOCK constants), plus test_support.rs (env_lock mutex); main.rs reduced from ~2790 to 1791 lines; 53 tests still pass / pending: items.rs (items_* operations + --array plumbing) and cli.rs (Cli/Cmd/ItemsOp/BlocksOp + run dispatch + read_json_arg + STDIN_CONSUMED). See R63."
+resolved = 2026-04-18
+
+[[items]]
+category = "architecture"
+description = "R62 extracted dedup / orphans / io / test_support cleanly (main.rs 2790→1791 lines). Remaining items.rs consolidates items_array + items_list/add/update/remove/apply/next-id + apply_single_op + ListFilters (post-R57 --array plumbing). cli.rs takes Cli/Cmd/ItemsOp/BlocksOp + run() + IntegrityArgs (now centralised via R60) + read_json_arg + STDIN_CONSUMED. After both extractions main.rs should be ~30 lines: mod declarations + fn main() wrapper over cli::run()."
+effort = "medium"
+file = "tomlctl/src/main.rs"
+first_flagged = 2026-04-18
+id = "R63"
+line = 0
+related = [
+    "R24",
+    "R59",
+    "R62",
+]
+rounds = 1
+severity = "suggestion"
+status = "open"
+summary = "pending parts of R62: extract items.rs (items_* ops + apply_single_op + ListFilters + --array plumbing) and cli.rs (Cli/Cmd/ItemsOp/BlocksOp + run dispatch + read_json_arg + STDIN_CONSUMED static)"
+symbol = "module-split-remainder-v2"

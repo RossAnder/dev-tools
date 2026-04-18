@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 authors = ["Ross Anderson"]
-description = "Small TOML read/write CLI for Claude Code flow + ledger files"
+description = "Flow-tooling CLI for Claude Code: TOML read/write, ledger ops, shared-block parity verification"
 license = "MIT OR Apache-2.0"
 
 [[bin]]
@@ -23,6 +23,14 @@ clap = { version = "^4", default-features = false, features = [
 anyhow = "^1"
 tempfile = "^3"
 fs4 = "^0.13"
+sha2 = "^0.11"
+
+[dev-dependencies]
+# R41/R58: black-box CLI integration harness. assert_cmd locates the built
+# binary via `Command::cargo_bin("tomlctl")`; predicates supplies the
+# stdout/stderr matchers used inside `.assert()`.
+assert_cmd = "^2"
+predicates = "^3"
 
 [profile.release]
 opt-level = 3

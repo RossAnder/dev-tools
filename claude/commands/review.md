@@ -3,6 +3,7 @@ description: Review code for issues, DRY violations, idiomatic patterns, project
 argument-hint: [file paths, directories, feature name, or empty for recent changes]
 ---
 
+<!-- SHARED-BLOCK:flow-context START -->
 ## Flow Context
 
 All `.claude/...` paths below resolve to the **project-local** `.claude/` directory at the git top-level. If no git top-level is available, refuse rather than fall back to `~/.claude/`.
@@ -89,7 +90,9 @@ Slug derivation for flow-less scope: lowercase, replace `/\` with `-`, collapse 
 #### Completed-flow handling
 
 Flows with `status = "complete"` are skipped by resolution step 2 (scope glob match). They remain on disk for audit but do not participate in auto-resolution. Users can still target them via explicit `--flow <slug>`.
+<!-- SHARED-BLOCK:flow-context END -->
 
+<!-- SHARED-BLOCK:ledger-schema START -->
 ## Ledger Schema
 
 All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `review-apply.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
@@ -155,6 +158,10 @@ related = []
 - `evidence` — array of strings: doc URLs, Context7 query citations, benchmark links.
 - `related` — array of peer IDs (e.g. `["R5", "R8"]`).
 - `flow` — slug of the flow that contains or resolved this item. Empty/omitted for flow-less ledgers.
+- `depends_on` — array of ledger IDs (e.g. `["O7", "R12"]`) this item must apply AFTER. Consumed by the topological sort in `/review-apply` and `/optimise-apply` Step 3. Forward references to non-existent IDs are harmless — the topo sort restricts the DAG to the selected set — but `tomlctl items orphans <ledger>` surfaces dangling refs for hygiene (emits `{"id":...,"class":"dangling-dep","dangling_deps":[...]}` records alongside `missing-file` and `symbol-missing` classes).
+- `fingerprint` — opaque string computed by `tomlctl` (not hand-authored). Produced by `tomlctl items find-duplicates --tier B` as a 16-char SHA-256 truncation over `file|summary|severity|category|symbol`; current ledgers leave this field absent. Consumers treat absence as "fingerprint not yet computed".
+- `rollback_rationale` — string; present on items whose transition was reverted by a Step 5.5 rollback in `/review-apply` or `/optimise-apply`. Set when a rollback flips an item from `fixed`/`applied` back to `open`. Preserved across subsequent rounds so the rollback history surfaces in future reports.
+- `reopen_rationale` — string; present on items whose status was transitioned from `deferred` back to `open` via the deferred-trigger reopen sweep (`/review` and `/optimise` Step 1). Captures the trigger event that fired.
 
 #### Disposition-specific fields (required only when status matches)
 
@@ -190,6 +197,28 @@ related = []
 
 Commands emit TOML as the authoritative artifact. For human-readable console output, commands render items as grouped markdown tables (severity-grouped for new-finding reports; disposition-grouped for full ledger views) inline in their response. The rendered markdown is not persisted.
 
+#### Rollback event log
+
+When `/review-apply` or `/optimise-apply` Step 5.5 reverts a batch of transitions, the protocol appends one `[[rollback_events]]` table to the ledger root:
+
+```toml
+[[rollback_events]]
+timestamp = 2026-04-17T14:32:00Z
+command = "review-apply"
+cause = "build failure on src/accounting/postings.rs:122"
+items = ["R3", "R7"]
+stash_ref = "stash@{0}"
+```
+
+Fields:
+- `timestamp` — ISO 8601 date-time (seconds precision).
+- `command` — `"review-apply"` or `"optimise-apply"`.
+- `cause` — short description (build fail, test regression, or claimed-applied-without-diff).
+- `items` — array of ledger IDs that were reverted back to `status = "open"`.
+- `stash_ref` — `git stash` reference for the rolled-back working-tree state so the user can recover the changes if desired.
+
+`[[rollback_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.rollback-history.toml`; no command automates this yet.
+
 ### Ledger TOML read/write contract
 
 Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`. This contract is DIFFERENT from the `context.toml` contract (single-object file, line-edit-safe) because ledgers use arrays-of-tables which are fragile under line-based editing (two items with identical `status = "open"` / `rounds = 1` lines defeat the Edit tool uniqueness).
@@ -215,6 +244,7 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 
 `tomlctl` writes go through `tempfile::NamedTempFile::persist` (atomic rename) and hold an exclusive advisory lock on a sidecar `.lock` file, so concurrent invocations are safe and an interrupted write cannot corrupt the ledger.
 
+<!-- SHARED-BLOCK:python3-fallback START -->
 **Fallback if `tomlctl` is unavailable** (missing binary, Rust not installed):
 
 1. Read the whole ledger file.
@@ -226,6 +256,7 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 **Last-resort fallback** (python3 also unavailable, and the change is a single trivial edit):
 - Read → use `Edit` with a unique surrounding context (include the preceding `id = "R{n}"` line in the match pattern to ensure uniqueness within the file).
 - If `Edit` fails due to ambiguity: escalate to one of the parse-rewrite paths rather than approximating the match.
+<!-- SHARED-BLOCK:python3-fallback END -->
 
 #### Key-order convention (for serialisers that don't preserve order)
 
@@ -243,6 +274,7 @@ The file-level keys come first: `schema_version`, `last_updated`, then `[[items]
   - New finding matches a `fixed` / `applied` item → **regression**; assign a new ID; write `related = ["<old id>"]`; flag prominently in the console report.
   - New finding matches a `deferred` / `wontfix` / `wontapply` / `verified-clean` item → treat as existing (no change); do not emit a new item; do not increment `rounds`. Note in console: "this matches an existing <status> item, not re-reporting."
 - **Chronic-item escalation**: `rounds >= 3` on `open` items escalates in the summary output.
+<!-- SHARED-BLOCK:ledger-schema END -->
 
 # Code Review
 
@@ -268,6 +300,8 @@ Before anything else, run the **5-step flow resolution order** from the Shared R
 4. `.claude/active-flow` fallback.
 5. Ambiguous / none found — list candidate flows and ask the user (or the user picks "no flow").
 
+**Batched tool calls**: emit the independent tool calls in this step (file `Read`s, `git` probes, `tomlctl` reads) in a **single response message** so they execute concurrently. Opus 4.7 handles the batch without context pressure; serialising these reads wastes round-trip budget. The only sequential dependency is that the ledger load (`tomlctl get` / `tomlctl items list`) consumes the flow path resolved above — resolve the flow first, then batch everything else.
+
 If a flow resolves, record its `slug`, `scope`, `context.updated`, and `artifacts.review_ledger` — these are consumed by the staleness pre-check, the ledger load, and later persistence. If no flow resolves (step 5 yields "no flow"), proceed with flow-less behaviour as described in the Shared Rules' flow-less fallback.
 
 ### Staleness Pre-Check
@@ -283,6 +317,34 @@ Skip this check when no flow resolved, when `status != "in-progress"`, or when `
 3. If no files are found from either approach, ask the user what to review.
 4. Classify each file by area (backend service, API endpoint, frontend component, infrastructure, config, etc.) — share this classification with all agents so they can focus on what's relevant to their lens.
 
+### Scope classification delegation
+
+When `Identify Files` yields more than 10 files (and the small-diff shortcut — ≤ 3 files — does NOT fire), delegate scope classification to an `Explore` agent (`subagent_type: "Explore"`, `thoroughness: "quick"`) to reclaim orchestrator context for Step 2 and beyond.
+
+The Explore agent MUST:
+- Read `CLAUDE.md` at the repo top-level plus any per-subdirectory `CLAUDE.md` that falls under the scope.
+- Classify each in-scope file by area (backend service, API endpoint, frontend component, infrastructure, config, test).
+- Extract CLAUDE.md excerpts relevant to review: declared tech stack, architectural conventions, and any `## Review Focus` section if present.
+- Return a compact classification table (roughly 20 words per file) and CLAUDE.md excerpts — **under 600 words total**.
+
+Example return format:
+
+```
+| file                        | area          | notes                                 |
+|-----------------------------|---------------|---------------------------------------|
+| src/api/endpoints/auth.rs   | API endpoint  | uses actix-web; auth middleware layer |
+| src/domain/user.rs          | backend core  | no framework deps                     |
+| ...                         |               |                                       |
+
+CLAUDE.md excerpts:
+- Tech stack: Rust 1.75, actix-web 4, sqlx 0.7, Postgres
+- Review focus: strict no-unwrap in request handlers
+```
+
+The orchestrator keeps only the table and excerpts; raw file reads stay in the Explore agent's context. Skip the delegation when scope ≤ 10 files — the inline classification in `Identify Files` suffices at that size, and the delegation overhead dwarfs the context saved.
+
+The delegation does NOT replace `Identify Files` — it augments it. File discovery (git diff / glob / feature-name search) still runs in the main thread; only the read-intensive per-file classification is delegated.
+
 ### Load Review Ledger
 
 The ledger path comes from the resolved flow's `context.toml`:
@@ -297,7 +359,7 @@ The ledger path comes from the resolved flow's `context.toml`:
 Check for the ledger file at the resolved path and load it per the **Ledger TOML read/write contract** in the `## Ledger Schema` section above:
 
 - **File missing** → this is a first review. Initialise an in-memory ledger with `schema_version = 1`, `last_updated = <today>`, `items = []`. Do not write to disk yet — persistence happens in Step 3 after findings are consolidated.
-- **File present** → parse it via `tomlctl parse <file>` (whole doc) or `tomlctl items list <file> --status open` to pre-filter to just the open items this step needs (falls back to `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` if `tomlctl` is unavailable). Apply the read rules from the Ledger TOML read/write contract:
+- **File present** → parse it via `tomlctl --verify-integrity get <file>` (whole doc) or `tomlctl --verify-integrity items list <file> --status open` to pre-filter to just the open items this step needs (falls back to `python3 -c "import tomllib; tomllib.load(open(PATH, 'rb'))"` if `tomlctl` is unavailable). The `--verify-integrity` global flag checks the `<file>.sha256` sidecar before parsing; on digest mismatch tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. Skip `--verify-integrity` only when the sidecar is known-absent (first-ever run for this ledger; `tomlctl` will have written one on that run's final write). Apply the read rules from the Ledger TOML read/write contract:
   - Missing `schema_version` → treat as `1`, note that it will be written back on next write.
   - `schema_version > 1` → halt and ask the user.
   - Any `[[items]]` entry missing a required field → flag as malformed in console output, exclude it from dedup/resolution for this run, do NOT attempt auto-repair.
@@ -312,9 +374,65 @@ From the loaded ledger, extract all items whose `file` overlaps with the current
 
 If no ledger was loaded, this is a first review — proceed without prior context.
 
+### Orphan surfacing (read-only)
+
+After the ledger loads and before scoping the agent launch, walk every `[[items]]` entry in the resolved ledger whose `status == "open"` and report orphans to the console without auto-transitioning:
+
+- **File orphan**: the item's `file` path no longer exists. Detect via a single `Glob` call per unique path, or — for small ledgers — a batched `Test-Path` / `[ -e <path> ]` check.
+- **Symbol orphan**: the item has a non-empty `symbol` field and a `Grep` for that symbol (name-only, not exact-match) against the current file tree returns no results. Use one `Grep` call with `output_mode: "files_with_matches"` over the repo to avoid per-item lookups.
+
+For each orphan, emit a one-line console note in Step 3's report:
+
+```
+orphan R7 — file `src/old-module.rs` no longer present (check for rename; run /review if the work has moved)
+orphan R12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run /review at the new location)
+```
+
+Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above.
+
+### Deferred-item reopen sweep
+
+After orphan surfacing and before Step 2, walk every `[[items]]` entry with `status = "deferred"` and check whether each item's `defer_trigger` has fired. Known trigger forms (literal substring match on `defer_trigger`):
+
+- `after <path> exists` → test `[ -e <path> ]` (or `Test-Path <path>` on Windows).
+- `after <file>:<symbol> landed` → test `<file>` exists AND `grep -qF "<symbol>" <file>` finds a match.
+- `when <id> resolves` → look up `<id>` in the same ledger; fires when its `status` is any of `fixed`, `applied`, `verified-clean`, `wontfix`, or `wontapply`.
+- `after <branch> merges` → test `git merge-base --is-ancestor <branch> HEAD`.
+- `after <YYYY-MM-DD>` → fires when today's ISO date is ≥ the embedded date.
+- Any other free-text trigger → surface to the console as a reminder; do not attempt automated detection.
+
+For each fired trigger, prompt the user with the item's `id`, `summary`, and the matched trigger text:
+
+```
+deferred R{n} — trigger fired: <matched trigger>
+  summary: <R{n}.summary>
+Reopen?
+  [y] reopen (status → open, reopen_rationale recorded)
+  [n] skip (leave deferred)
+  [a] abort sweep (do not inspect further candidates)
+```
+
+On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops -` at the end of the sweep: set `status = "open"`, preserve `defer_reason` (audit trail), drop `defer_trigger`, set `reopen_rationale = "trigger fired: <matched trigger text>"`. Never auto-transition silently — every reopen passes through the prompt.
+
+Non-interactive invocations surface candidates only (`found N deferred items with fired triggers; re-run interactively to reopen`) and do not mutate the ledger.
+
 **Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent instead of four specialized ones. Give it all four lenses, all mandatory tool-use requirements (Context7 and WebSearch), the prior findings context, and a cap of 15 findings.
 
+### Design Note: Intentional Asymmetry with `/optimise`
+
+`/review` has no counterpart to `/optimise`'s Step 1.5 Focal Points Brief. The asymmetry is intentional. `/optimise`'s five lenses (Memory, Serialization, Queries, Algorithm, Async) are runtime-specific — performance concerns hinge on async runtime, serialization strategy, query engine, and compilation target, which the orchestrator must pre-digest so agents can reason about the right things. `/review`'s four lenses (Quality, Security, Architecture, Completeness) are language-agnostic — idioms, authorization models, layering discipline, and test coverage apply across technology stacks without needing project-specific focal framing.
+
+The `/review` agent prompts already include CLAUDE.md's tech stack and the prior-findings context in Step 1; that's sufficient to steer the lens. Adding a focal-points synthesis step would duplicate prior-findings context without adding signal. This asymmetry is intentional — future `/review` passes over this command should not re-flag it as "/review lacks focal-points synthesis" (the mirror of this note in `optimise.md` explains why that command has no small-diff agent-collapse shortcut).
+
 ## Step 2: Launch Parallel Review Agents
+
+### Task tracking (runtime only)
+
+Before launching review agents, call `TaskCreate` once per lens: Quality, Security, Architecture, Completeness — 4 tasks for a normal run, OR 1 task for the small-diff shortcut (≤ 3 files, single combined agent). Each task's `subject` names the lens plus a scope summary (e.g. `Security: src/api/*`); `description` is one line of the file list and classification relevant to that lens.
+
+As agents transition, call `TaskUpdate` to move each task `pending → in_progress → completed` on launch and return. Do NOT mint per-finding tasks — that shadows the ledger, which is the persistent source of truth for per-item state. Do NOT hand tasks forward to `/review-apply`: tasks are ephemeral to this run while the ledger persists across commands.
+
+Gate task creation on `scope > 1 file` for `/review` to avoid noise on trivial runs — for a single-file scope, the small-diff shortcut collapses to one agent and task chrome adds little value.
 
 Launch **all four** review agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the file list, classification, and prior findings context from Step 1.
 
@@ -330,7 +448,7 @@ Every agent MUST:
   - **Required**: `file` (repo-relative path), `line` (integer; `0` if no specific line), `severity` (`critical` | `warning` | `suggestion`), `effort` (`trivial` = < 5 min / mechanical, `small` = < 30 min / localized, `medium` = > 30 min / cross-cutting), `category` (one of `quality` | `security` | `architecture` | `completeness` | `db`), `summary` (one-line description of what's wrong AND what to do).
   - **Optional**: `symbol` (function / struct / trait method name — strongly recommended for line-drift resilience), `description` (longer explanation when summary is insufficient), `evidence` (array of doc URLs, Context7 citations, or supporting references).
 - Do not emit `id`, `first_flagged`, `rounds`, or `status` — those are assigned during consolidation in Step 3.
-- **Return at least 3 findings if issues exist in the reviewed code. Cap at 10 findings per agent.** If you find more than 10, keep the highest-severity ones. Do not self-truncate below the floor — thoroughness is expected. Do not include full file contents in your response — reference by `file:line` only.
+- **Return at least 3 findings if issues exist in the reviewed code. Target 15 findings per agent (ceiling 20).** Opus 4.7's 1M context sustains a larger per-agent output than the 10-finding cap used by shorter-context models; raise only as high as signal warrants — padding with marginal `suggestion`-severity items is not the goal. If you exceed 20, apply this truncation-priority order: (1) preserve `critical` and `warning` severities over `suggestion`; (2) within severity, preserve entries with non-empty `evidence[]` (doc URL, Context7 citation, benchmark) over assumption-only findings; (3) preserve findings with a concrete `file:symbol` anchor over line-only anchors; (4) never cut a file path or API signature in favour of narrative prose. Do not self-truncate below the floor — thoroughness is expected. Do not include full file contents in your response — reference by `file:line` only.
 
 ### Agent 1: Code Quality, DRY, Idioms & Pattern Conformance
 
@@ -374,6 +492,14 @@ Do NOT flag: pragmatic shortcuts that are clearly intentional and documented, mi
 Assess whether the work feels finished. Are there edge cases not considered, error paths not handled, tests not written? Is the code defensive where it should be and trusting where it can be? Look for loose ends — TODOs, partial implementations, inconsistencies between what was changed and what should have been updated alongside it.
 
 Do NOT flag: missing tests for trivial getters/setters, defensive checks for conditions the framework already guarantees, or TODOs that are clearly tracked elsewhere.
+
+## Interim checkpoint
+
+After all review agents return but BEFORE rendering the final findings report, persist new items (and any reopened items from the deferred-reopen sweep) to the ledger in a single atomic `tomlctl items apply --ops -` call. Rationale: an interrupted run (Ctrl-C between agent return and Step 3 render) would otherwise lose the review output. Writing a checkpoint at this boundary makes findings durable the moment they exist. The Step 1 idempotency guards (open items reuse via dedup; resolved items skip re-flagging) make a re-run safe — the worst case is re-rendering a report from an already-checkpointed ledger.
+
+Defer two writes to the final render in Step 3: (1) `tomlctl set <ledger> last_updated <today>` — the ledger is only "fresh" when the report was actually produced; (2) `rounds` increments for existing open items — these only matter once the report includes them. The checkpoint covers inserts + ledger-confirmed transitions (new items from agent output, deferred-item reopens confirmed by user prompt); scalar bookkeeping stays in the final render.
+
+Skip the checkpoint entirely if no transitions are pending (agents returned no new items AND the deferred-reopen sweep produced no confirmed reopens). One `tomlctl items list <ledger> --status open --count` suffices as a gate — the command emits `{"count": N}`, so `[ "$(tomlctl items list <ledger> --status open --count | jq -r .count)" = "0" ]` skips cleanly without emitting an empty `--ops` payload.
 
 ## Step 3: Consolidate and Persist
 
@@ -501,7 +627,19 @@ If the user responds with disposition commands in the same conversation (these a
 - **`wontfix R{n} — rationale`** → locate the item with `id = "R{n}"`; set `status = "wontfix"`, `wontfix_rationale = "<rationale>"`.
 - **`fix R{n}`** → look up the item's `file`, `line`, and `summary` (plus `description` if present) from the ledger; route to `/implement` with the expanded description. **Do NOT mutate `status` here** — the resolution transition (`status = "fixed"` with `resolved` + `resolution`) happens when the fix actually lands, either via the deviation protocol inside `/implement` or via a subsequent `/plan-update` invocation. `/review` only writes the `fixed` status when a later run detects the issue is no longer present (see "Update the Review Ledger").
 
-Apply the mutation immediately with ONE `tomlctl items update` call per disposition — e.g. `tomlctl items update <ledger> R{n} --json '{"status":"deferred","defer_reason":"...","defer_trigger":"..."}'`. Follow with `tomlctl set <ledger> last_updated <YYYY-MM-DD>`.
+Apply the mutation immediately with ONE `tomlctl items update` call per disposition, using the stdin form to avoid shell-quoting issues when user-supplied `reason` / `trigger` / `rationale` strings contain `'`, `$`, `` ` ``, or newlines:
+
+```bash
+# defer
+printf '%s' '{"status":"deferred","defer_reason":"...","defer_trigger":"..."}' \
+  | tomlctl items update <ledger> R{n} --json -
+
+# wontfix
+printf '%s' '{"status":"wontfix","wontfix_rationale":"..."}' \
+  | tomlctl items update <ledger> R{n} --json -
+```
+
+Follow with `tomlctl set <ledger> last_updated <YYYY-MM-DD>`.
 
 ## Important Constraints
 

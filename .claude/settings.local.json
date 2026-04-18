@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "PowerShell(Get-Item *)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(tomlctl --version)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo audit *)",
+      "Bash(cargo test *)",
+      "Bash(bash /home/ross/Dev/dev-tools/scripts/verify-shared-blocks.sh)",
+      "Bash(echo \"exit: $?\")",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "Bash(git -C /home/ross/Dev/dev-tools status --short)",
+      "Bash(git -C /home/ross/Dev/dev-tools diff --stat)",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(git *)"
     ]
   }
 }
