@@ -47,6 +47,45 @@ const MAX_STDIN_BYTES: u64 = 32 * 1024 * 1024;
 /// the wrapping shell.
 const MAX_OPS_PER_APPLY: usize = 10_000;
 
+/// T7: capabilities advertised by `tomlctl capabilities`. Each entry is
+/// stable across patch versions within a minor release — removing an entry
+/// is a breaking change. Add new entries for new user-facing flags;
+/// don't version-qualify (the `version` field is the release marker). The
+/// downstream flow-command templates call `tomlctl capabilities` at boot
+/// and feature-gate on this list without having to parse `--help` prose.
+pub(crate) const FEATURES: &[&str] = &[
+    "count_distinct",         // T1
+    "raw",                    // T2
+    "lines",                  // T3
+    "infer_prefix",           // T4
+    "dedupe_by",              // T5
+    "dedup_id_auto",          // T6b
+    "find_duplicates_across", // T6c
+    "capabilities",           // T7
+    "error_format_json",      // T8
+    "strict_read",            // T9
+    "dry_run",                // T10
+    "backfill_dedup_id",      // T11
+];
+
+/// T7: user-facing top-level subcommand names, as they appear in
+/// `tomlctl --help`. Enumerated statically rather than clap-reflected
+/// because clap's command introspection is brittle (name-mangled enum
+/// variants, re-derives on every build). Keep this list in sync with the
+/// `Cmd` enum by hand — adding a new subcommand means one edit here and
+/// one integration assertion in `tests/integration.rs`.
+pub(crate) const SUBCOMMANDS: &[&str] = &[
+    "parse",
+    "get",
+    "set",
+    "set-json",
+    "validate",
+    "items",
+    "blocks",
+    "array-append",
+    "capabilities",
+];
+
 /// R32: guard against multiple `-` sentinels consuming stdin in a single
 /// invocation (e.g. `--json - --ops -`). The second `read_json_arg("-")` call
 /// errors out instead of silently returning an empty string (stdin already at
@@ -545,6 +584,21 @@ enum Cmd {
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
+
+    /// T7: emit a JSON description of this binary's capabilities. Downstream
+    /// flow-command templates call this at boot and feature-gate on the
+    /// returned `features` / `subcommands` lists without parsing `--help`
+    /// prose. Pure metadata — no file arg, no integrity flags, no stdin.
+    /// Output shape:
+    ///
+    /// ```json
+    /// {"version":"0.2.0","features":[...],"subcommands":[...]}
+    /// ```
+    ///
+    /// The `version` field is wired to `env!("CARGO_PKG_VERSION")` so the
+    /// Cargo.toml version is the single source of truth; bumping the
+    /// manifest automatically updates this output on the next rebuild.
+    Capabilities,
 }
 
 #[derive(Subcommand)]
@@ -1052,6 +1106,21 @@ pub(crate) fn run() -> Result<()> {
                 Ok(())
             })?;
             print_json_compact(&serde_json::json!({"ok": true, "appended": appended}))?;
+        }
+        Cmd::Capabilities => {
+            // T7: pretty-print matches the rest of the read-path surface
+            // (`parse`, `get`, `items list`) — `print_json` is the same
+            // helper they use. The `version` string is resolved at compile
+            // time via `env!("CARGO_PKG_VERSION")`, so it tracks the
+            // Cargo.toml bump automatically on the next rebuild. `FEATURES`
+            // and `SUBCOMMANDS` are static consts at module scope — see
+            // their docstrings for the drift contract.
+            let output = serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "features": FEATURES,
+                "subcommands": SUBCOMMANDS,
+            });
+            print_json(&output)?;
         }
     }
     Ok(())

@@ -4334,3 +4334,145 @@ active = true
     let stdout = run_list_query_with(fixture, &["--pluck", "active", "--raw"]);
     assert_eq!(stdout, "true\n", "expected bare `true\\n`; got:\n{stdout}");
 }
+
+// ---------------------------------------------------------------------------
+// Task 7 (plan `docs/plans/tomlctl-capability-gaps.md`): `tomlctl
+// capabilities` emits a JSON description of the binary's user-facing
+// surface so downstream flow-command templates can feature-gate cleanly
+// without parsing `--help` prose. Also pins the 0.1.0 → 0.2.0 version
+// bump that this minor release carries (new flags, new subcommand,
+// auto-populated `dedup_id` field, structured `--error-format json`).
+// ---------------------------------------------------------------------------
+
+/// T7-1: `tomlctl capabilities` writes a JSON object to stdout with the
+/// three top-level keys the spec pins (`version`, `features`, `subcommands`).
+/// Also asserts it parses cleanly as JSON — no trailing garbage, no BOM.
+#[test]
+fn capabilities_output_parses_as_json() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}; stdout:\n{stdout}"));
+    let obj = v
+        .as_object()
+        .expect("capabilities output must be a JSON object");
+    assert!(obj.contains_key("version"), "missing `version` key: {v}");
+    assert!(obj.contains_key("features"), "missing `features` key: {v}");
+    assert!(
+        obj.contains_key("subcommands"),
+        "missing `subcommands` key: {v}"
+    );
+}
+
+/// T7-2: the `features` array advertises every T1..T11 feature the plan
+/// enumerated. The expected list duplicates the names from `cli::FEATURES`
+/// deliberately — if the const drifts (someone removes a feature or renames
+/// one), this test fails in review rather than silently shipping a
+/// half-advertised capability set.
+#[test]
+fn capabilities_features_contains_every_plan_feature() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+    let features = v
+        .get("features")
+        .and_then(|f| f.as_array())
+        .expect("`features` must be a JSON array");
+    let features: Vec<&str> = features.iter().filter_map(|e| e.as_str()).collect();
+
+    // Exhaustive list duplicated from cli::FEATURES — drift between the
+    // two is caught here in review.
+    let expected = [
+        "count_distinct",         // T1
+        "raw",                    // T2
+        "lines",                  // T3
+        "infer_prefix",           // T4
+        "dedupe_by",              // T5
+        "dedup_id_auto",          // T6b
+        "find_duplicates_across", // T6c
+        "capabilities",           // T7
+        "error_format_json",      // T8
+        "strict_read",            // T9
+        "dry_run",                // T10
+        "backfill_dedup_id",      // T11
+    ];
+    for name in expected {
+        assert!(
+            features.contains(&name),
+            "expected feature `{name}` in capabilities output; got {features:?}"
+        );
+    }
+    assert_eq!(
+        features.len(),
+        expected.len(),
+        "feature count drift: expected {} entries, got {} ({features:?})",
+        expected.len(),
+        features.len()
+    );
+}
+
+/// T7-3: the `version` string equals `0.2.0`. Literal assertion rather
+/// than reading Cargo.toml — the whole point of this task is the semver
+/// bump, so pinning the exact release marker keeps the acceptance criterion
+/// honest. Bump both sides in lockstep on the next minor release.
+#[test]
+fn capabilities_version_matches_cargo_toml() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+    let version = v
+        .get("version")
+        .and_then(|s| s.as_str())
+        .expect("`version` must be a string");
+    assert_eq!(
+        version, "0.2.0",
+        "expected version `0.2.0` (the 0.1.0 → 0.2.0 bump this release carries); got `{version}`"
+    );
+}
+
+/// T7-4: the `subcommands` array includes the metadata subcommand itself
+/// (so `tomlctl capabilities | jq '.subcommands | index("capabilities")'`
+/// is truthy) plus at least one real data-path subcommand (`items`). Both
+/// sanity-check the list is populated and not an empty placeholder.
+#[test]
+fn capabilities_subcommands_contains_capabilities_and_items() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+    let subs = v
+        .get("subcommands")
+        .and_then(|s| s.as_array())
+        .expect("`subcommands` must be a JSON array");
+    let subs: Vec<&str> = subs.iter().filter_map(|e| e.as_str()).collect();
+    assert!(
+        subs.contains(&"capabilities"),
+        "subcommands must include `capabilities`; got {subs:?}"
+    );
+    assert!(
+        subs.contains(&"items"),
+        "subcommands must include `items`; got {subs:?}"
+    );
+}
