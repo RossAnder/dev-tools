@@ -38,10 +38,46 @@ pub(crate) const DEFAULT_LOCK_TIMEOUT: std::time::Duration = std::time::Duration
 
 /// R85: hard upper bound on `TOMLCTL_LOCK_TIMEOUT` (in seconds). 24 hours.
 /// Any larger value the caller sets is clamped here, with a one-line stderr
-/// warning so the operator notices. Bounded so a fat-fingered env var
-/// (`TOMLCTL_LOCK_TIMEOUT=999999999999`) can't turn `with_exclusive_lock`
-/// into an effectively infinite hang across a pass-through shell.
+/// warning. Pathological env overrides can't wedge the process for longer
+/// than this.
 pub(crate) const MAX_LOCK_TIMEOUT_SECS: u64 = 24 * 60 * 60;
+
+/// R1: resolve the effective lock timeout from `TOMLCTL_LOCK_TIMEOUT` with
+/// R85's oversize clamp. Shared by `with_exclusive_lock` and `with_shared_lock`
+/// so a future tweak to the clamp policy lands in one place; prior to the
+/// extraction the two funnels carried byte-identical 16-line copies that had
+/// to be kept in sync by hand.
+fn resolve_lock_timeout() -> std::time::Duration {
+    std::env::var("TOMLCTL_LOCK_TIMEOUT")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(|requested| {
+            if requested > MAX_LOCK_TIMEOUT_SECS {
+                eprintln!(
+                    "tomlctl: TOMLCTL_LOCK_TIMEOUT clamped from {} to {} (24h max)",
+                    requested, MAX_LOCK_TIMEOUT_SECS
+                );
+                MAX_LOCK_TIMEOUT_SECS
+            } else {
+                requested
+            }
+        })
+        .map(std::time::Duration::from_secs)
+        .unwrap_or(DEFAULT_LOCK_TIMEOUT)
+}
+
+/// R1: compute the jittered retry delay for a given attempt counter.
+/// Deterministic counter-hash (no RNG) spread `±20%` around `base_ms`.
+/// Shared by the exclusive and shared lock retry loops; see `with_exclusive_lock`
+/// for the rationale.
+fn jittered_delay_ms(base_ms: u64, attempt: u64) -> u64 {
+    let h = attempt
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(0xD1B5_4A32_D192_ED03);
+    let jitter_pct = (h % 41) as i64 - 20;
+    let delta_ms = (base_ms as i64) * jitter_pct / 100;
+    (base_ms as i64 + delta_ms).max(1) as u64
+}
 
 /// Read-side access to a named array-of-tables. Returns an empty slice when
 /// the array is missing or the value at that key isn't an array — symmetric
@@ -430,27 +466,10 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
         .open(&lock_path)
         .with_context(|| format!("opening lock file {}", lock_path.display()))?;
 
-    // R25: effective timeout = env override if set, else DEFAULT_LOCK_TIMEOUT.
-    // The error message reflects the effective timeout, not the constant default.
-    // R85: clamp oversize overrides at `MAX_LOCK_TIMEOUT_SECS` (24h) so a
-    // pathological env var can't wedge the process. The clamp emits a
-    // one-line stderr warning so the operator can tell it happened.
-    let timeout = std::env::var("TOMLCTL_LOCK_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(|requested| {
-            if requested > MAX_LOCK_TIMEOUT_SECS {
-                eprintln!(
-                    "tomlctl: TOMLCTL_LOCK_TIMEOUT clamped from {} to {} (24h max)",
-                    requested, MAX_LOCK_TIMEOUT_SECS
-                );
-                MAX_LOCK_TIMEOUT_SECS
-            } else {
-                requested
-            }
-        })
-        .map(std::time::Duration::from_secs)
-        .unwrap_or(DEFAULT_LOCK_TIMEOUT);
+    // R25 / R85: effective timeout (env override + 24h clamp) — see
+    // `resolve_lock_timeout`. R1 extracted this out of the previously
+    // duplicated 16-line inline block.
+    let timeout = resolve_lock_timeout();
     let base_delay_ms = LOCK_RETRY.as_millis() as u64;
     let start = Instant::now();
     let mut announced = false;
@@ -474,15 +493,10 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
                         lock_path.display()
                     );
                 }
-                // ±20% jitter via a small counter hash (no RNG needed).
-                // Hash maps attempt into [-20, 20] percent of base_delay_ms.
-                let h = attempt
-                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                    .wrapping_add(0xD1B5_4A32_D192_ED03);
-                let jitter_pct = (h % 41) as i64 - 20; // -20..=20
-                let delta_ms = (base_delay_ms as i64) * jitter_pct / 100;
-                let delay_ms = (base_delay_ms as i64 + delta_ms).max(1) as u64;
-                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                std::thread::sleep(std::time::Duration::from_millis(jittered_delay_ms(
+                    base_delay_ms,
+                    attempt,
+                )));
                 attempt = attempt.wrapping_add(1);
             }
             Err(e) => {
@@ -546,22 +560,9 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
         .open(&lock_path)
         .with_context(|| format!("opening lock file {}", lock_path.display()))?;
 
-    let timeout = std::env::var("TOMLCTL_LOCK_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(|requested| {
-            if requested > MAX_LOCK_TIMEOUT_SECS {
-                eprintln!(
-                    "tomlctl: TOMLCTL_LOCK_TIMEOUT clamped from {} to {} (24h max)",
-                    requested, MAX_LOCK_TIMEOUT_SECS
-                );
-                MAX_LOCK_TIMEOUT_SECS
-            } else {
-                requested
-            }
-        })
-        .map(std::time::Duration::from_secs)
-        .unwrap_or(DEFAULT_LOCK_TIMEOUT);
+    // R1: shared with `with_exclusive_lock` — see `resolve_lock_timeout` /
+    // `jittered_delay_ms`.
+    let timeout = resolve_lock_timeout();
     let base_delay_ms = LOCK_RETRY.as_millis() as u64;
     let start = Instant::now();
     let mut announced = false;
@@ -592,13 +593,10 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
                         lock_path.display()
                     );
                 }
-                let h = attempt
-                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                    .wrapping_add(0xD1B5_4A32_D192_ED03);
-                let jitter_pct = (h % 41) as i64 - 20;
-                let delta_ms = (base_delay_ms as i64) * jitter_pct / 100;
-                let delay_ms = (base_delay_ms as i64 + delta_ms).max(1) as u64;
-                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                std::thread::sleep(std::time::Duration::from_millis(jittered_delay_ms(
+                    base_delay_ms,
+                    attempt,
+                )));
                 attempt = attempt.wrapping_add(1);
             }
             Err(std::fs::TryLockError::Error(e)) => {
@@ -825,6 +823,33 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
     // `get_or_init` ensures only the first caller's resolved path wins — a
     // second concurrent resolve just discards its computed value.
     Ok(REPO_ROOT.get_or_init(|| resolved).clone())
+}
+
+/// R38: stderr-warn when a read path resolves outside `<repo-or-cwd-root>/.claude/`.
+/// Used by `items find-duplicates --across` to flag the case where a caller
+/// points the secondary-ledger flag at an arbitrary filesystem path; a
+/// subsequent TOML parse error there would echo file contents through the
+/// anyhow/toml chain and turn tomlctl into a parsing oracle. The warning is
+/// advisory only — we do NOT refuse the read — because the flag is legitimate
+/// for cross-repo cross-ledger comparisons under `--allow-outside` semantics
+/// on the write side. Canonicalisation failures (missing file, unreadable
+/// parent) short-circuit to `Ok(())` so this helper never masks the downstream
+/// not-found / IO error that the caller's normal read path surfaces.
+pub(crate) fn warn_if_read_outside_claude(file: &Path) {
+    let canonical = match file.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let Ok(root) = repo_or_cwd_root() else { return };
+    let claude_dir = root.join(".claude");
+    let claude_canonical = claude_dir.canonicalize().unwrap_or(claude_dir);
+    if canonical.starts_with(&claude_canonical) {
+        return;
+    }
+    eprintln!(
+        "tomlctl: warning: reading outside .claude/ (path resolves to {})",
+        canonical.display()
+    );
 }
 
 /// Write the TOML document and (unless suppressed) also write the `<file>.sha256`

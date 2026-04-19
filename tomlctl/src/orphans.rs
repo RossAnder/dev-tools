@@ -4,7 +4,7 @@
 //!   - `missing-file`     — ledger `file` points at a non-existent path
 //!   - `symbol-missing`   — file exists but does not contain the `symbol`
 //!   - `io-error`         — file exists but cannot be read
-//!   - `outside-repo`     — relative `file` escapes the repo root via `..`
+//!   - `outside-repo`     — `file` (relative via `..` or absolute) escapes the repo root
 //!   - `dangling-dep`     — `depends_on` names an id not in the ledger
 
 use anyhow::Result;
@@ -71,23 +71,26 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
             // R38: a RELATIVE ledger-item `file` field that escapes the root
             // via `..` (e.g. `../../etc/passwd`) turns `fs::read_to_string`
             // into an existence/symbol-presence oracle on arbitrary host
-            // paths. Canonicalise and assert containment for relative inputs
-            // only — absolute inputs are treated as intentional opt-in by
-            // the ledger author (this matches the pre-R38 behaviour on the
-            // happy path).
-            let is_relative = !Path::new(file).is_absolute();
+            // paths. Canonicalise and assert containment for relative inputs.
+            //
+            // R28: the same oracle exists for ABSOLUTE ledger-item `file`
+            // values (e.g. `/etc/shadow`, `~/.ssh/id_rsa`) — the ledger
+            // author is not always the tool operator (a crafted
+            // review-ledger.toml can arrive via any supply-chain path), so
+            // absolute paths must be subjected to the same containment
+            // check. Mirroring the relative-branch idiom: canonicalise,
+            // require `starts_with(canonical_root)`, otherwise surface as
+            // `outside-repo` and skip `exists()` / `read_to_string`. Does
+            // not gate behind a new `--allow-outside` flag — that'd widen
+            // the public API for a closed-class hardening fix.
             // O42: probe cache; on miss compute (exists, contained) and insert.
             let (exists, contained) = if let Some(hit) = path_cache.get(&resolved) {
                 *hit
             } else {
-                let contained = if is_relative {
-                    match (resolved.canonicalize().ok(), canonical_root.as_ref()) {
-                        (Some(c), Some(r)) => c.starts_with(r),
-                        (Some(c), None) => c.starts_with(&root),
-                        (None, _) => true, // missing target falls through to `missing-file`.
-                    }
-                } else {
-                    true
+                let contained = match (resolved.canonicalize().ok(), canonical_root.as_ref()) {
+                    (Some(c), Some(r)) => c.starts_with(r),
+                    (Some(c), None) => c.starts_with(&root),
+                    (None, _) => true, // missing target falls through to `missing-file`.
                 };
                 let exists = resolved.exists();
                 path_cache.insert(resolved.clone(), (exists, contained));
@@ -192,12 +195,25 @@ fn resolve_relative_to_root(root: &Path, file: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::env_lock;
 
     #[test]
     fn items_orphans_reports_missing_file_symbol_and_dangling_dep() {
+        // R28: absolute `file` fields now get the same containment check as
+        // relative ones, so we pin the repo root to the tempdir via
+        // `TOMLCTL_ROOT` — otherwise the absolute `/tmp/.../real.rs` paths
+        // would (correctly) surface as `outside-repo`. Hold `env_lock()`
+        // since we mutate process env.
+        let _guard = env_lock();
         let dir = tempfile::tempdir().unwrap();
+        let canonical_dir = dir.path().canonicalize().unwrap();
+        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
+        // where we hold the env lock.
+        unsafe {
+            std::env::set_var("TOMLCTL_ROOT", canonical_dir.as_os_str());
+        }
         // Create a real source file that contains a specific symbol.
-        let real_file = dir.path().join("real.rs");
+        let real_file = canonical_dir.join("real.rs");
         fs::write(&real_file, "pub fn present_symbol() {}\n").unwrap();
 
         let ledger = format!(
@@ -226,10 +242,13 @@ summary = "dangling dep"
 "#,
             real_file.display(),
             real_file.display(),
-            dir.path().display()
+            canonical_dir.display()
         );
         let doc: TomlValue = toml::from_str(&ledger).unwrap();
         let orphans = items_orphans(&doc).unwrap();
+        unsafe {
+            std::env::remove_var("TOMLCTL_ROOT");
+        }
         // Expect three orphan records: R2 symbol-missing, R3 missing-file, R4 dangling-dep.
         let classes: Vec<(&str, &str)> = orphans
             .iter()
@@ -253,5 +272,54 @@ summary = "dangling dep"
         let deps = r4.get("dangling_deps").and_then(|v| v.as_array()).unwrap();
         assert_eq!(deps.len(), 1);
         assert_eq!(deps[0], "R99");
+    }
+
+    /// R28 regression: absolute-path ledger rows pointing OUTSIDE the repo
+    /// root must surface as `outside-repo` rather than triggering an
+    /// existence/symbol-presence oracle against arbitrary host files. Pins
+    /// the root to one tempdir, then feeds a ledger row whose `file` points
+    /// at a sibling tempdir (known-to-exist, outside the pinned root).
+    #[test]
+    fn items_orphans_absolute_path_outside_root_is_outside_repo() {
+        let _guard = env_lock();
+        let root_dir = tempfile::tempdir().unwrap();
+        let canonical_root = root_dir.path().canonicalize().unwrap();
+        // The "oracle target" lives in a separate tempdir so it exists on
+        // disk but sits outside the pinned root.
+        let oracle_dir = tempfile::tempdir().unwrap();
+        let oracle_file = oracle_dir.path().canonicalize().unwrap().join("secret.rs");
+        fs::write(&oracle_file, "pub fn leak_me() {}\n").unwrap();
+        unsafe {
+            std::env::set_var("TOMLCTL_ROOT", canonical_root.as_os_str());
+        }
+        let ledger = format!(
+            r#"
+[[items]]
+id = "R28-probe"
+file = "{}"
+symbol = "leak_me"
+summary = "oracle attempt"
+"#,
+            oracle_file.display()
+        );
+        let doc: TomlValue = toml::from_str(&ledger).unwrap();
+        let orphans = items_orphans(&doc).unwrap();
+        unsafe {
+            std::env::remove_var("TOMLCTL_ROOT");
+        }
+        // The file DOES exist and the symbol IS present, so the pre-R28
+        // behaviour would emit zero orphans (silently reading the file).
+        // Post-R28 the row surfaces as `outside-repo` and neither `exists()`
+        // nor `read_to_string` get to leak information about the target.
+        assert_eq!(orphans.len(), 1, "{orphans:?}");
+        assert_eq!(
+            orphans[0].get("class").and_then(|v| v.as_str()),
+            Some("outside-repo"),
+            "{orphans:?}"
+        );
+        assert_eq!(
+            orphans[0].get("id").and_then(|v| v.as_str()),
+            Some("R28-probe"),
+        );
     }
 }

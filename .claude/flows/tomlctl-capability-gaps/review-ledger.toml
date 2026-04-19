@@ -1,0 +1,874 @@
+schema_version = 1
+last_updated = 2026-04-19
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R1"
+file = "tomlctl/src/io.rs"
+line = 438
+symbol = "with_exclusive_lock"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Lock-timeout parse+clamp+warn block and jitter computation duplicated verbatim between with_exclusive_lock and with_shared_lock — extract resolve_lock_timeout() and jittered_delay(attempt) helpers."
+dedup_id = "30f663027c03dbf3"
+resolved = 2026-04-19
+resolution = "Extracted resolve_lock_timeout() + jittered_delay_ms() in io.rs; replaced ~16-line env-parse and ~6-line jitter blocks in both with_exclusive_lock and with_shared_lock with single calls. Clamp + warn policy and jitter formula now live in one place."
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R2"
+file = "tomlctl/src/items.rs"
+line = 672
+symbol = "apply_single_op"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = 'apply_single_op still has inline ~22-line unset parser while apply_op_indexed uses the extracted take_unset helper — collapse to take_unset(obj.remove("unset"))? to prevent drift between dispatch paths.'
+dedup_id = "57fab39997f02e9e"
+resolved = 2026-04-19
+resolution = 'apply_single_op now delegates its `unset` parser to take_unset(obj.remove("unset"))?. The inline ~22-line match block was replaced by a one-line call; take_unset remains the single definition used by both apply_single_op and apply_op_indexed.'
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R3"
+file = "tomlctl/src/dedup.rs"
+line = 87
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Path basename extraction idiom copy-pasted at dedup.rs:87, 91, 302 — extract fn basename_or_path(s: &str) -> String."
+dedup_id = "95dc183849d87752"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R4"
+file = "tomlctl/src/items.rs"
+line = 889
+symbol = "items_add_many"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Defaults-parse-into-base and per-row merge loop duplicated between items_add_many and items_add_many_with_dedupe — extract fn defaults_base and fn merge_row_over_base."
+dedup_id = "f52cf7488cef5bad"
+resolved = 2026-04-19
+resolution = "Extracted defaults_base() and merge_row_over_base() helpers in items.rs; items_add_many and items_add_many_with_dedupe now call them instead of duplicating the parse+clone+extend shape. Defaults-parse error string and zero-default empty-map branch live in one function."
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R5"
+file = "tomlctl/src/query.rs"
+line = 256
+symbol = "run_streaming"
+severity = "warning"
+effort = "medium"
+category = "quality"
+summary = "window_untouched guard duplicated at 253-256 and 448-451; entire slow-path pipeline (filter-sort-distinct-window) reimplemented in run() and run_streaming() with only terminal emit differing. Two Pluck-dedup bodies (353-359 vs 499-503) MUST stay in sync. Factor a shared build_pipeline helper."
+dedup_id = "b6fdb78fb8ba3ee1"
+resolved = 2026-04-19
+resolution = "Factored slow-path pipeline into private build_pipeline helper in query.rs; run() and both run_streaming() Pluck/Array slow paths share the helper"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R6"
+file = "tomlctl/src/orphans.rs"
+line = 97
+symbol = "items_orphans"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Orphan JSON builder open-coded 5 times with Map::new + 3-4 obj.insert calls — switch to serde_json::json! macro (already used elsewhere); cuts 20+ lines."
+dedup_id = "68f8ef24393b7cd6"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R7"
+file = "tomlctl/src/query.rs"
+line = 658
+symbol = "parse_rhs_for_cache"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Five arms of parse_rhs_for_cache repeat the body.parse + format!(invalid typed RHS...) shape — extract fn parse_typed_rhs<T: FromStr>(body, rhs, key) where T::Err: Display."
+dedup_id = "ecf22dcc83683df3"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R8"
+file = "tomlctl/src/query.rs"
+line = 793
+symbol = "expect_single"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "expect_single/expect_multi use panic! for documented internal invariant violations — swap to unreachable! (optimizes to hint::unreachable_unchecked under release LTO, signals intent better)."
+dedup_id = "9602381337e51faa"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R9"
+file = "tomlctl/src/items.rs"
+line = 545
+symbol = "apply_op_indexed"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "apply_op_indexed add arm uses items_array(doc,array_name).len() - 1 assuming items_add_value_to always appends exactly one element — capture len_before instead. Hedge against future dedupe-skip hooks."
+dedup_id = "ff68ca1da4b9755a"
+resolved = 2026-04-19
+resolution = "Captured len_before in apply_op_indexed add arm (items.rs) before items_add_value_to call; index now independent of future dedupe-skip hooks"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R10"
+file = "tomlctl/src/cli.rs"
+line = 1776
+symbol = "emit_list_raw"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Literal --raw error string duplicated verbatim at cli.rs:1783 and query.rs:218 — hoist to pub(crate) const RAW_ON_MAP_ERR in query.rs."
+dedup_id = "fb314dc73b039a32"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R11"
+file = "tomlctl/src/main.rs"
+line = 7
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "~9-line mimalloc rationale at main.rs:7-13 near-duplicates Cargo.toml:28-34 (already drifting). Keep Cargo.toml canonical; reduce main.rs to one-line pointer."
+dedup_id = "d8d3c9d18f65cedc"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R12"
+file = "tomlctl/src/cli.rs"
+line = 1625
+symbol = "print_json"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "print_json/print_json_compact/print_raw_value each open stdout+lock+BufWriter+flush in ~5 lines — factor write_stdout(|writer| {...}) taking a closure."
+dedup_id = "d16470365db977fa"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R13"
+file = "tomlctl/src/items.rs"
+line = 102
+symbol = "apply_dedup_id_on_update"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "apply_dedup_id_on_update branches as 3 short-circuit returns + fall-through; rewrite as match (explicit, touches_fingerprinted) with single entry/exit. Prefer is_some_and over map().unwrap_or(false)+matches! chains; dedupe the !Null/!empty-string guards via is_empty_json (already at items.rs:340)."
+dedup_id = "8a36f21d03d07a2e"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R14"
+file = "tomlctl/src/query.rs"
+line = 480
+symbol = "run_streaming"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "query.rs docstring claims I/O-free yet run_streaming at 480 and 514 calls crate::cli::emit_raw — layering inversion (cli should depend on query, not reverse). Move emit_raw into query.rs (or scalar.rs sibling)."
+dedup_id = "7b27d0422efbb887"
+wontfix_rationale = "requires user confirmation on public API / schema change (moves emit_raw between cli and query modules)"
+reopen_rationale = "user directed /review-apply the won't fix items on 2026-04-19 -- reversing wontfix; user confirms public API change (move emit_raw cli->query)"
+resolved = 2026-04-19
+resolution = "Moved emit_raw from cli.rs to query.rs as pub(crate); query::run_streaming call sites dropped crate::cli:: prefix; cli::print_raw_value delegates to query::emit_raw. Layering now flows cli -> query as docstring claims"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R15"
+file = "tomlctl/src/query.rs"
+line = 1335
+symbol = "Query::from_cli_args"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Query::from_cli_args takes &crate::cli::LegacyShortcuts and &crate::cli::QueryArgs — the 'pure' query module imports clap-derive types from cli.rs. Introduce a POD QueryInput in query.rs plus a trivial adapter in cli.rs."
+dedup_id = "d77ea5873330b760"
+wontfix_rationale = "requires user confirmation on public API / schema change (introduces new POD QueryInput type crossing cli<->query boundary)"
+reopen_rationale = "user directed /review-apply the won't fix items on 2026-04-19 -- reversing wontfix; user confirms public API change (POD QueryInput at cli<->query boundary)"
+resolved = 2026-04-19
+resolution = "Introduced POD QueryInput in query.rs (primitive owned fields, no clap derives); renamed Query::from_cli_args -> Query::from_query_input(&QueryInput); added trivial field-copy adapter query_input_from_cli in cli.rs. query module no longer imports LegacyShortcuts or QueryArgs from cli"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R16"
+file = "tomlctl/src/cli.rs"
+line = 1737
+symbol = "OutputShape"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Six enumeration sites per OutputShape variant (validate_query, fast-path, distinct-dispatch, shape switch, streaming guard, from_cli_args, emit_list_raw). Collapse via trait ShapeDispatch { compute; raw_emit; is_streamable } with one impl per variant."
+dedup_id = "2e5c29a385e2c5f4"
+wontfix_rationale = "requires deliberate refactor, not a point-fix (trait-based dispatch redesign across 6 sites)"
+reopen_rationale = "user directed /review-apply the won't fix items on 2026-04-19 -- reversing wontfix; user confirms deliberate refactor (trait ShapeDispatch across 6 sites)"
+resolved = 2026-04-19
+resolution = "Introduced pub(crate) trait ShapeDispatch with compute/raw_emit/is_streamable + impl for OutputShape in query.rs. Collapsed slow-path terminal match, two streaming-guard matches!, and 6-arm emit_list_raw (56 -> 8 lines) into trait-method calls. Four sites remain raw match by design (variadic captures / per-variant construction)"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R17"
+file = "tomlctl/src/cli.rs"
+line = 56
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "FEATURES and SUBCOMMANDS static catalogs hand-maintained in cli.rs; docstring admits 'keep in sync by hand'. clap 4.6 Command::get_subcommands() is stable — the 'brittle' rationale is outdated. Add a #[test] that asserts the lists match clap introspection, or emit via build.rs."
+dedup_id = "c22ec78199f11c2a"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R18"
+file = "tomlctl/src/cli.rs"
+line = 263
+symbol = "Cli::error_format"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "--error-format parsed twice per invocation: main.rs calls parse_error_format() (try_parse) to peek, then cli::run() re-parses via Cli::parse(). Silently swallows errors in peek path and risks double --help rendering. Hoist single Cli::parse() into main.rs and pass parsed struct into run()."
+dedup_id = "9394c6959cfee1ef"
+wontfix_rationale = "requires user confirmation on public API / schema change (changes cli::run() signature to receive parsed Cli)"
+reopen_rationale = "user directed /review-apply the won't fix items on 2026-04-19 -- reversing wontfix; user confirms public API change (hoist Cli::parse into main.rs)"
+resolved = 2026-04-19
+resolution = "Single Cli::parse() in main.rs; cli::run() now takes Cli as argument. Deleted parse_error_format peek path; --error-format/--help/--version render once with native clap exit semantics, no silent error swallowing"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R19"
+file = "tomlctl/src/cli.rs"
+line = 1351
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Three dry-run read sites (ItemsOp::Remove at 1351, Apply at 1404, BackfillDedupId at 1534) build byte-identical IntegrityOpts — extract read_integrity_opts_for_preview helper."
+dedup_id = "18ca780198cd3d7e"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R20"
+file = "tomlctl/src/test_support.rs"
+line = 7
+symbol = "env_lock"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "test_support.rs exports env_lock for process-wide test serialisation; io.rs uses it, but cli.rs:2152 declares a private env_lock OnceLock and items.rs:2621 declares dedup_env_lock — three distinct mutexes where there should be one. Tests race despite 'locking'. Replace locals with use crate::test_support::env_lock."
+dedup_id = "454e67de3667ad19"
+resolved = 2026-04-19
+resolution = "Removed private env_lock() from cli.rs test mod and dedup_env_lock() from items.rs test mod. Both now `use crate::test_support::env_lock;`. All 11 dedup_env_lock() call sites renamed to env_lock(). Entire crate now rendezvous on the single OnceLock<Mutex<()>> in test_support.rs — cargo-test parallel runs can no longer race across modules."
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R21"
+file = "tomlctl/src/cli.rs"
+line = 1
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "cli.rs (2157 lines) mixes four concerns: clap derive types (243-929), run/items_dispatch/blocks_dispatch (987-1614), output helpers (1616-1788), and 350 lines of tests. Split into cli/types.rs, cli/dispatch.rs, output.rs. The 'pure plumbing; no business logic' docstring no longer reflects reality (80+ lines of T10 dry-run branching in dispatch)."
+dedup_id = "df51f8edf37cf762"
+wontfix_rationale = "requires deliberate refactor, not a point-fix (split cli.rs into types/dispatch/output modules -- exceeds 3-file cap)"
+reopen_rationale = "user directed /review-apply the won't fix items on 2026-04-19 -- reversing wontfix; deferred to future session (cli.rs split)"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R22"
+file = "tomlctl/src/items.rs"
+line = 989
+symbol = "compute_apply_mutation"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "compute_*_mutation functions clone the whole doc; on live path mutate_doc_plan triggers a second clone — no I/O leakage (split is real) but docstrings say 'pure'; prefer 'I/O-free' and note the double-clone cost."
+dedup_id = "05ef5877d3432dc6"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R23"
+file = "tomlctl/tests/integration.rs"
+line = 1
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "integration.rs is 4478 lines / 114 #[test]s in one file. Split by topic (tests/items_dry_run.rs, tests/items_dedupe.rs, tests/capabilities.rs, tests/blocks.rs) to parallelise test-binary link, localise failures by filename, enable targeted cargo test --test."
+dedup_id = "3c283bcc5a325156"
+wontfix_rationale = "requires deliberate refactor, not a point-fix (split integration.rs into 4 topic-oriented test files -- exceeds 3-file cap)"
+reopen_rationale = "user directed /review-apply the won't fix items on 2026-04-19 -- reversing wontfix; deferred to future session (integration.rs split)"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R24"
+file = "tomlctl/Cargo.toml"
+line = 35
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "mimalloc global-allocator rationale lives in Cargo.toml:28-35 and main.rs:7-14 but README.md has zero mimalloc mentions — downstream consumers inspecting the +300KB binary-size delta have no user-facing note. Add a one-line Design bullet."
+dedup_id = "8cfc6ff842689110"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R25"
+file = "tomlctl"
+line = 0
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "No tomlctl/CLAUDE.md exists. Top-level CLAUDE.md mentions build commands but not capabilities subcommand, dry-run contract, error-format json, TOMLCTL_NO_DEDUP_ID, strict-read, or count-distinct. T7 agent-discovery is the natural trigger to add a per-subtree CLAUDE.md."
+dedup_id = "02703428b1e072e9"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R26"
+file = "tomlctl/src/cli.rs"
+line = 1445
+symbol = "ItemsOp::NextId"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "NextId dispatch has inline empty-prefix and all-digit-prefix validation at cli.rs:1445-1449 that duplicates items_next_id (items.rs:765-778). Worse, cli.rs uses bare bail! (kind=other in JSON errors) while items_next_id uses tagged_err(ErrorKind::Validation) — same input produces different kind tags depending on whether the ledger exists. Extract compute_next_id and tag consistently."
+dedup_id = "1ab9384fec3ba5a6"
+resolved = 2026-04-19
+resolution = "ItemsOp::NextId missing-file branch now constructs an empty toml::Value::Table and calls items_next_id(&empty_doc, prefix)?. Empty-prefix and all-digit-prefix validations flow through the single tagged_err(ErrorKind::Validation) site in items.rs; --error-format json now reports kind=validation consistently whether or not the ledger file exists."
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R27"
+file = "tomlctl/src/cli.rs"
+line = 494
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "#[allow(clippy::large_enum_variant)] on Cmd and ItemsOp masks a 500+ byte variant; QueryArgs has 14 Vec<String>-shaped fields. Consider Box<QueryArgs> for ItemsOp::List to shrink dispatch footprint without callsite churn."
+dedup_id = "45f3fe16234716d1"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R28"
+file = "tomlctl/src/orphans.rs"
+line = 78
+symbol = "items_orphans"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Absolute-path file fields in ledger entries bypass the R38 containment check — is_relative=false short-circuits contained=true, then resolved.exists() and fs::read_to_string run unconditionally. A ledger row with file='/etc/shadow' turns items orphans into a file-existence + symbol-presence oracle. Mirror the canonicalise-and-assert-containment check for absolute inputs or gate behind --allow-outside opt-in."
+dedup_id = "07e43b3e6a917677"
+resolved = 2026-04-19
+resolution = "Closed absolute-path oracle in items_orphans (orphans.rs) by merging relative/absolute branches into one canonicalise-and-contain check; outside-root absolute paths now surface as outside-repo class, no exists()/read_to_string ever runs. Added regression test items_orphans_absolute_path_outside_root_is_outside_repo"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R29"
+file = "tomlctl/src/io.rs"
+line = 864
+symbol = "write_toml_with_sidecar"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "Sidecar path (<file>.sha256) is passed directly to atomic_write without the refuse_outside_symlink_leaf check that guards the primary TOML path. On Linux rename(2) replaces the symlink (limits blast radius), but non-Linux rename semantics differ — mirror the leaf-symlink refusal on the sidecar path for platform consistency."
+dedup_id = "c25fb908ae492ab4"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R30"
+file = "tomlctl/src/main.rs"
+line = 79
+symbol = "emit_error"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "JSON error envelope leaks absolute path in both the 'file' key and the 'message' body (read_toml tag uses path.display()). Intentional for downstream agents, but no redaction knob — captured CI logs or shared-log sinks forwarding raw envelopes leak $HOME, workspace layout, ledger location. Add a README callout under --error-format."
+dedup_id = "f8cd24227461965c"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R31"
+file = "tomlctl/src/dedup.rs"
+line = 161
+symbol = "tier_b_fingerprint"
+severity = "suggestion"
+effort = "medium"
+category = "security"
+summary = "tier_b_fingerprint truncates SHA-256 to 64 bits (2^32 birthday bound — trivially collidable for an attacker who controls the fields). Add an in-code SAFETY comment pinning 'NOT an authorization primitive — 64-bit truncation resists accident, not adversary' so a future contributor doesn't promote it to an integrity check."
+dedup_id = "7cfb951eb07829e4"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R32"
+file = "tomlctl/src/items.rs"
+line = 36
+symbol = "dedup_id_disabled"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "std::env::var(TOMLCTL_NO_DEDUP_ID).is_ok() returns true for any set value — '0', 'false', ''. A stale debug-session export silently disables dedup_id auto-populate for the whole session with no stderr trace. Restrict to canonical '1'|'true'|'yes' (reject others) or emit one-shot stderr note the first time it fires."
+dedup_id = "764d4943076c8405"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R33"
+file = "tomlctl/src/cli.rs"
+line = 968
+symbol = "strict_read_check"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "strict_read_check uses file.exists() then relies on downstream read_doc — documented as THE ordering gate ensuring kind=not_found beats kind=integrity, yet a racing rm between the two stats could produce kind=integrity from maybe_verify_integrity. Fold the strict check into read_doc itself (strict: bool on IntegrityOpts) so ordering holds inside the shared-lock critical section."
+dedup_id = "7d9b84c50a7c45c5"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R34"
+file = "tomlctl/src/io.rs"
+line = 410
+symbol = "with_exclusive_lock"
+severity = "suggestion"
+effort = "medium"
+category = "security"
+summary = ".claude/.locks/<sha256>.lock files accumulate monotonically; never pruned. Digest keys leak canonicalised path of every ledger ever locked (queryable via ls .claude/.locks/). Either fs::remove_file(&lock_path).ok() after successful release, or ship tomlctl locks prune."
+dedup_id = "4931f59f8f24d084"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R35"
+file = "tomlctl/src/io.rs"
+line = 738
+symbol = "refuse_outside_symlink_leaf"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "refuse_outside_symlink_leaf fails OPEN on symlink_metadata error and on canonicalize of a broken-symlink target. Linux rename(2) replaces the symlink rather than following it (fine today), but Windows/non-Linux rename semantics differ and broken-symlink targets outside .claude/ are a latent escape. Consider failing closed when read_link's target resolves outside .claude/."
+dedup_id = "f45113ec4c8cf0c4"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R36"
+file = "tomlctl/src/io.rs"
+line = 860
+symbol = "write_toml_with_sidecar"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "When primary-TOML persist fails under !strict, recovery rewrites the sidecar against on-disk bytes and emits stderr warnings via eprintln!. Under cron/CI with stderr to /dev/null, drift is silent. Attach the warning envelope to the subcommand's JSON output (or bump a distinct exit code) so drift is observable."
+dedup_id = "13da7b860132c24a"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R37"
+file = "tomlctl/src/io.rs"
+line = 792
+symbol = "repo_or_cwd_root"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "TOMLCTL_ROOT overrides the containment anchor; re-read on every call (bypasses OnceLock cache). A stale export silently redirects every write-path containment check to an arbitrary directory for the rest of the session with no trace. Emit a one-shot stderr announcement the first time it's observed non-empty on a write path."
+dedup_id = "ec8d5ee1ed264644"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R38"
+file = "tomlctl/src/cli.rs"
+line = 1486
+symbol = "items_dispatch_find_duplicates"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "find-duplicates --across <other> reads the secondary ledger with no containment, symlink, or allow-outside check. Caller passing --across <arbitrary.toml> turns tomlctl into a TOML-parsing oracle — parse errors include path + toml caret diagnostics echoing file contents. Stderr-warn when other_path resolves outside .claude/, or require a read-side --allow-outside."
+dedup_id = "5f8b8eef443e8301"
+resolved = 2026-04-19
+resolution = "Added pub(crate) warn_if_read_outside_claude helper in io.rs; called from items_dispatch FindDuplicates --across arm in cli.rs. Stderr-warn only (no refusal), matches --allow-outside advisory spirit"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R39"
+file = "tomlctl/src/cli.rs"
+line = 1515
+symbol = "items_dispatch_backfill"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "backfill-dedup-id kill-switch short-circuit emits only the JSON envelope (reason:disabled-by-env) with no stderr line. Operators expecting work done and getting backfilled:0 in a pipe can miss the disable. Any env var that materially changes behaviour should advertise itself once on use."
+dedup_id = "6b92503fb93f4e84"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R40"
+file = "tomlctl/src/cli.rs"
+line = 1384
+symbol = "items_dispatch_apply"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "Apply arm parses --ops once for the size guard (parsed_for_count), then compute_apply_mutation re-parses the same string inside items_apply_to_opts. For MAX_STDIN_BYTES-sized payloads this doubles parse-time memory; under --dry-run the second parse runs inside read_doc's closure. Pass parsed JsonValue into the compute helper."
+dedup_id = "460ad376928dbaa2"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R41"
+file = "tomlctl/README.md"
+line = 60
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Plan mandates three Contracts subsections (Dedup fingerprint, File state contract, Capabilities feature list). Only the first two exist — the Capabilities feature list subsection is absent, leaving downstream flow-command authors without the promised README reference. Add the third subsection."
+dedup_id = "e4ff87a3eb25091b"
+resolved = 2026-04-19
+resolution = "Added ### Capabilities feature list subsection under ## Contracts in tomlctl/README.md. Documents the capabilities JSON shape, the stability contract (features stable across patches within a minor), the version-source-of-truth via CARGO_PKG_VERSION, and a feature-meaning table covering all 12 current features."
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R42"
+file = "tomlctl/README.md"
+line = 62
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Plan Task 6 explicitly requires 'two example fingerprint diffs' in the Dedup fingerprint subsection; README shows one Example only. Add two worked diffs: (a) fingerprinted-field change → new 16-hex digest; (b) non-fingerprinted-field change → same digest."
+dedup_id = "5791daeab7279bdd"
+resolved = 2026-04-19
+resolution = "Added two worked fingerprint diff examples under the ### Dedup fingerprint subsection in tomlctl/README.md: (a) fingerprinted-field change (summary edit) → new 16-hex digest; (b) non-fingerprinted-field change (status + rounds) → same digest. Note clarifies the digest values are illustrative shapes; tier-B find-duplicates is the authoritative verifier."
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R43"
+file = "tomlctl/src/query.rs"
+line = 2104
+symbol = "count_distinct_fast_path_narrows_to_field"
+severity = "warning"
+effort = "medium"
+category = "completeness"
+summary = "Plan T1 acceptance requires 'Fast-path test asserts no full toml_to_json materialisation (structural — assert via counting a recorded invocation, not timing).' Shipped test is a property (fast == slow counts) — would still pass if fast-path arm accidentally called toml_to_json(whole_item) instead of narrowing. Add a recorded-invocation counter (test-only wrapping) per the plan's structural requirement."
+dedup_id = "41942d78d6a112ac"
+resolved = 2026-04-19
+resolution = "Added cfg(test) thread-local FAST_PATH_NARROW_CALLS and FULL_ITEM_MATERIALISE_CALLS counters plus narrow_toml_to_json / full_item_toml_to_json wrappers. Rewrote count_distinct_fast_path_narrows_to_field to assert (narrow=N, full=0) on fast path and (narrow=0, full=N) on slow path per plan T1 structural requirement"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R44"
+file = "tomlctl/tests/integration.rs"
+line = 0
+severity = "warning"
+effort = "medium"
+category = "completeness"
+summary = "Plan T7 acceptance requires '--help snapshot test for each new flag'. Only --lines has one (lines_flag_listed_in_items_list_help). Missing snapshots for --count-distinct, --raw, --infer-from-file, --dedupe-by, --across, --error-format, --strict-read, --dry-run. Help-text drift on any of the other eight would go uncaught."
+dedup_id = "b48ba5fdaf57022c"
+resolved = 2026-04-19
+resolution = "Added 8 --help snapshot tests to integration.rs covering --count-distinct, --raw, --infer-from-file, --dedupe-by, --across, --error-format, --strict-read, --dry-run; modelled on lines_flag_listed_in_items_list_help"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R45"
+file = "tomlctl/src/items.rs"
+line = 3265
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Plan T11 acceptance (d) not implemented — required: 'backfill + subsequent items list --pluck dedup_id --distinct --count-distinct dedup_id --raw returns N'. Shipped test substitutes idempotency (a plan detail, not an acceptance bullet). Add the plan-specified end-to-end test linking backfill to the T1 surface."
+dedup_id = "5bdf9e3dd44ccf1c"
+resolved = 2026-04-19
+resolution = "Added T11 end-to-end integration test linking items backfill-dedup-id to T1 query surface: seeds N=3 items, backfills, then items list --count-distinct dedup_id --raw returns N. Original plan query mixed two mutually-exclusive shape flags; achievable T1 equivalent documented in test module comment"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "fixed"
+flow = "tomlctl-capability-gaps"
+id = "R46"
+file = "tomlctl/src/cli.rs"
+line = 781
+symbol = "ItemsOp::NextId"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "T4 departs from plan: 'R40's required=true on --prefix is preserved — conflicts_with makes them mutually exclusive'. Implementation uses ArgGroup::new('id_source').required(true).args(['prefix','infer_from_file']) and drops required=true from --prefix. Functionally enforces exactly-one but reshapes help/error text — either update the plan or restore conflicts_with form."
+dedup_id = "3ab09cfa77c43b70"
+resolved = 2026-04-19
+resolution = 'Replaced ArgGroup on ItemsOp::NextId with required_unless_present = "infer_from_file" on --prefix plus conflicts_with = "prefix" on --infer-from-file. Restores plan-specified conflicts_with form while preserving (a) acceptance that --infer-from-file alone succeeds'
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R47"
+file = "tomlctl/src/convert.rs"
+line = 72
+symbol = "walk_json_path"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Plan T5 mandates the --where-path walker be reused. Implementation added a new walk_json_path helper whose own docstring acknowledges the deliberate deviation. Reviewers auditing shared semantics between --where and --dedupe-by now cross-reference two walkers. Either factor the --where walker as planned, or document the divergence in README."
+dedup_id = "1fc6624ccc397cac"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R48"
+file = "tomlctl"
+line = 0
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Plan T8 mandated 'Grep counter baseline prevents an explosion on the next PR'. Current bail! count across src/ is 77 but nothing — no test, no doc, no TOML — pins that number. A future PR adding 40 untagged bail! calls would slip through. Add a baseline test or doc assertion."
+dedup_id = "7eb9912273963e12"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R49"
+file = "tomlctl/tests/integration.rs"
+line = 4429
+symbol = "capabilities_version_matches_cargo_toml"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Test hardcodes '0.2.0' literal with comment acknowledging the deviation. On next bump (0.3.0) the test silently decouples from env!(CARGO_PKG_VERSION), requiring manual follow-up. Read via env!(CARGO_PKG_VERSION) per plan T7 action so Cargo.toml remains the single source of truth."
+dedup_id = "79f67fc74c16fc81"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R50"
+file = "tomlctl/src/items.rs"
+line = 989
+symbol = "compute_apply_mutation"
+severity = "suggestion"
+effort = "medium"
+category = "completeness"
+summary = "Plan T10 commits to named sibling functions: compute_mutation(doc, ops) and apply_mutation(plan, path). Implementation has compute_apply_mutation/compute_remove_mutation/compute_backfill_mutation (fine, shape-specific) but no apply_mutation — the apply side is inlined into io::mutate_doc_plan. Plan's (e) invariance test wanted direct apply_mutation(plan, path); shipped test is end-to-end via CLI and acknowledges 'weaker than direct invocation'."
+dedup_id = "139feb8b6aae1739"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R51"
+file = "tomlctl/src/cli.rs"
+line = 459
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "--lines help reads 'Emit one JSON value per line on --pluck (alias-of-semantics for --ndjson)'. Plan decision #3 deliberately rejected aliasing for discoverability — describing it as alias-of-semantics in user-visible help re-introduces the exact confusion the plan wanted to avoid. Rephrase: describe the behaviour, not the relationship to --ndjson."
+dedup_id = "6a722cd8fbf0259c"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R52"
+file = "tomlctl/tests/integration.rs"
+line = 3785
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Plan T9 smoke asserts 'tomlctl items list /nonexistent/file.toml → exit 0 with []' AND '--strict-read → exit 1'. The T9 test strict_read_default_preserves_next_id_missing_file_fast_path only covers items next-id. Either add an items list missing-file test verifying both halves, or reconcile the README File state contract which says items list already errors on missing."
+dedup_id = "6d8f43221d1dbc08"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R53"
+file = "tomlctl/src/items.rs"
+line = 948
+symbol = "MutationPlan::skipped"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "MutationPlan.skipped is #[allow(dead_code)], always empty, unreferenced in dispatch — reserved for a future dedupe-aware apply path. YAGNI violation: either populate now (T5 add-many-with-dedupe could feed into it) or drop until a concrete caller materialises."
+dedup_id = "ec03e8568d0dafaf"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R54"
+file = "tomlctl/src/errors.rs"
+line = 32
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "ErrorKind::Io and ErrorKind::Other are #[allow(dead_code)] — never constructed; plan taxonomy says 'io | parse | integrity | validation | not_found | other' but the 'other' string comes from a fallthrough branch, not from constructing ErrorKind::Other. Callers matching on ErrorKind::Other will never trigger. Either drop or wire up both variants."
+dedup_id = "5d323396044ad4a7"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R55"
+file = "tomlctl/src/items.rs"
+line = 1054
+symbol = "compute_remove_mutation"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "T10 (b) control test verifies R1 is gone after real remove but never asserts (i) sidecar was rewritten with new digest or (ii) mtime advanced. Without the inverse of (a)'s mtime-unchanged invariant, a regression where mutate_doc_plan stopped calling write_toml_with_sidecar would be invisible in-memory but visible on disk."
+dedup_id = "eec20d8e389ebf78"
+
+[[items]]
+first_flagged = 2026-04-19
+rounds = 1
+status = "open"
+flow = "tomlctl-capability-gaps"
+id = "R56"
+file = "tomlctl/src/cli.rs"
+line = 794
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "--infer-from-file help ('Infer the prefix from existing ids in <file>') says nothing about the two plan-specified preconditioned failure modes (empty ledger, multi-prefix). Agents will trial-invoke before discovering requirements. Mirror --count-distinct's help style: mention the errors."
+dedup_id = "ec73bd0a96af9c5c"

@@ -547,10 +547,14 @@ fn apply_op_indexed(
                 .and_then(|o| o.get("id"))
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
+            // Capture the array length before the append so the inserted
+            // index stays correct even if a future hook (dedupe-skip,
+            // batched append) makes `items_add_value_to` grow the array
+            // by something other than exactly one element.
+            let len_before = items_array(doc, array_name).len();
             items_add_value_to(doc, json, array_name)?;
             if let (Some(id), Some(map)) = (new_id, id_index.as_mut()) {
-                let new_idx = items_array(doc, array_name).len() - 1;
-                map.insert(id, new_idx);
+                map.insert(id, len_before);
             }
             Ok(())
         }
@@ -698,31 +702,10 @@ pub(crate) fn apply_single_op(
             let json = obj
                 .remove("json")
                 .ok_or_else(|| anyhow!("update op missing `json` field"))?;
-            let unset: Vec<String> = match obj.remove("unset") {
-                None | Some(JsonValue::Null) => Vec::new(),
-                Some(JsonValue::Array(a)) => {
-                    let mut out = Vec::with_capacity(a.len());
-                    for (idx, entry) in a.into_iter().enumerate() {
-                        match entry {
-                            JsonValue::String(s) => out.push(s),
-                            // R36: report element type + index only; the value
-                            // itself may be agent-generated text and must not
-                            // land on stderr verbatim.
-                            other => bail!(
-                                "update op `unset` must be an array of strings, got {} at index {}",
-                                json_type_name(&other),
-                                idx
-                            ),
-                        }
-                    }
-                    out
-                }
-                // R36: value suppressed — report only the JSON type.
-                Some(other) => bail!(
-                    "update op `unset` must be a JSON array of strings, got {}",
-                    json_type_name(&other)
-                ),
-            };
+            // R2: share the `unset` parser with `apply_op_indexed` via the
+            // `take_unset` helper so the two dispatch paths can't drift on
+            // shape errors or `null` handling.
+            let unset = take_unset(obj.remove("unset"))?;
             // R57: update now honours the apply-op's --array parameter so a
             // batch targeting e.g. `rollback_events` can update entries there,
             // not just in `[[items]]`.
@@ -863,6 +846,37 @@ pub(crate) fn parse_ndjson(s: &str) -> Result<Vec<JsonValue>> {
     Ok(rows)
 }
 
+/// R4: validate `defaults` as a JSON object (or return an empty map when
+/// `None`) and clone into an owned `Map` the caller can reuse per row.
+/// Shared by `items_add_many` and `items_add_many_with_dedupe` so the two
+/// batch funnels can't drift on the shape-error message or the "no
+/// defaults" empty-map branch.
+fn defaults_base(defaults: Option<&JsonValue>) -> Result<serde_json::Map<String, JsonValue>> {
+    match defaults {
+        Some(v) => Ok(v
+            .as_object()
+            .ok_or_else(|| anyhow!("--defaults-json must be a JSON object"))?
+            .clone()),
+        None => Ok(serde_json::Map::new()),
+    }
+}
+
+/// R4: build the per-row merged payload — `base` (defaults) cloned first,
+/// then per-row keys shallow-overwrite on conflict. Pre-sizes the target
+/// map for the sum of both sources (over-allocates when the row shadows a
+/// default; cheaper than a re-grow inside `extend`).
+fn merge_row_over_base(
+    base: &serde_json::Map<String, JsonValue>,
+    row_obj: &serde_json::Map<String, JsonValue>,
+) -> serde_json::Map<String, JsonValue> {
+    let mut merged = serde_json::Map::with_capacity(base.len() + row_obj.len());
+    merged.extend(base.clone());
+    for (k, v) in row_obj.iter() {
+        merged.insert(k.clone(), v.clone());
+    }
+    merged
+}
+
 /// Append each row in `rows` to `array_name` inside `doc`, stamping fields
 /// from `defaults` first (when `Some`) and shallow-merging per-row keys on
 /// top (per-row wins on conflict). Each row must be a JSON object; an
@@ -879,32 +893,14 @@ pub(crate) fn items_add_many(
     rows: &[JsonValue],
     defaults: Option<&JsonValue>,
 ) -> Result<usize> {
-    // O26: pre-validate defaults once and clone the resulting Map into a
-    // reusable `base` outside the row loop. Previously, every row rebuilt
-    // an empty Map and re-cloned each default key/value pair, costing N
-    // copies of the defaults block for an N-row batch. Now we clone the
-    // base per row (still O(N) — required because each row mutates it
-    // before handing ownership to `items_add_value_to`) but avoid the
-    // per-row default-iteration overhead.
-    let base: serde_json::Map<String, JsonValue> = match defaults {
-        Some(v) => v
-            .as_object()
-            .ok_or_else(|| anyhow!("--defaults-json must be a JSON object"))?
-            .clone(),
-        None => serde_json::Map::new(),
-    };
+    // O26 / R4: pre-validate defaults once and share the `base` + per-row
+    // merge shape with `items_add_many_with_dedupe`.
+    let base = defaults_base(defaults)?;
     for (i, row) in rows.iter().enumerate() {
         let row_obj = row
             .as_object()
             .ok_or_else(|| anyhow!("row {}: must be a JSON object", i + 1))?;
-        // Pre-size: defaults already in `base`, plus per-row keys (some of
-        // which may overwrite a default — over-allocation here is cheap and
-        // beats any risk of a re-grow inside `.extend()`).
-        let mut merged = serde_json::Map::with_capacity(base.len() + row_obj.len());
-        merged.extend(base.clone());
-        for (k, v) in row_obj.iter() {
-            merged.insert(k.clone(), v.clone());
-        }
+        let merged = merge_row_over_base(&base, row_obj);
         items_add_value_to(doc, JsonValue::Object(merged), array_name)
             .with_context(|| format!("row {}", i + 1))?;
     }
@@ -1195,13 +1191,8 @@ pub(crate) fn items_add_many_with_dedupe(
     defaults: Option<&JsonValue>,
     dedupe_fields: &[String],
 ) -> Result<AddManyOutcome> {
-    let base: serde_json::Map<String, JsonValue> = match defaults {
-        Some(v) => v
-            .as_object()
-            .ok_or_else(|| anyhow!("--defaults-json must be a JSON object"))?
-            .clone(),
-        None => serde_json::Map::new(),
-    };
+    // R4: share the defaults + row-merge shape with `items_add_many`.
+    let base = defaults_base(defaults)?;
     let mut added: usize = 0;
     let mut skipped_rows: Vec<SkippedRow> = Vec::new();
     for (i, row) in rows.iter().enumerate() {
@@ -1211,12 +1202,7 @@ pub(crate) fn items_add_many_with_dedupe(
             .ok_or_else(|| anyhow!("row {}: must be a JSON object", row_num))?;
         // Build the merged payload first so dedupe sees the same fields
         // `items_add_value_to` would otherwise persist.
-        let mut merged = serde_json::Map::with_capacity(base.len() + row_obj.len());
-        merged.extend(base.clone());
-        for (k, v) in row_obj.iter() {
-            merged.insert(k.clone(), v.clone());
-        }
-        let merged_val = JsonValue::Object(merged);
+        let merged_val = JsonValue::Object(merge_row_over_base(&base, row_obj));
         if !dedupe_fields.is_empty()
             && let Some(matched_id) = find_dedupe_match(doc, array_name, &merged_val, dedupe_fields)
         {
@@ -1239,6 +1225,7 @@ pub(crate) fn items_add_many_with_dedupe(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::env_lock;
     use crate::convert::{DATE_KEYS, ScalarType, infer_type, json_to_toml, navigate, set_at_path};
     use crate::query::{self, Predicate, Query};
 
@@ -2254,7 +2241,7 @@ summary = "existing"
         // observe a different env state and emit a divergent `dedup_id`
         // key. Holding the dedup-env lock for the whole test keeps the
         // byte-identity assertion deterministic under `cargo test`.
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let src = r#"schema_version = 1
 "#;
         let mut doc_a: TomlValue = toml::from_str(src).unwrap();
@@ -2519,7 +2506,7 @@ status = "open"
     /// the patch. This is the "caller knows best" override path.
     #[test]
     fn dedup_id_update_branch_1_explicit_preserved_even_with_fingerprint_patch() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let existing = existing_with_dedup_id();
         let mut patch = patch_obj(
             r#"{"summary":"new-summary","dedup_id":"caller_provided"}"#,
@@ -2538,7 +2525,7 @@ status = "open"
     /// on the merged view (that's the exact contract of this branch).
     #[test]
     fn dedup_id_update_branch_2_fingerprint_field_patch_recomputes() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let existing = existing_with_dedup_id();
         let mut patch = patch_obj(r#"{"summary":"new summary"}"#);
         apply_dedup_id_on_update(&existing, &mut patch);
@@ -2567,7 +2554,7 @@ status = "open"
     /// (that's Task 11's `backfill-dedup-id`).
     #[test]
     fn dedup_id_update_branch_3_non_fingerprint_patch_legacy_item_preserves_absence() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let existing = existing_without_dedup_id();
         let mut patch = patch_obj(r#"{"status":"fixed"}"#);
         apply_dedup_id_on_update(&existing, &mut patch);
@@ -2582,7 +2569,7 @@ status = "open"
     /// no patch mutation — the merge loop skips absent keys).
     #[test]
     fn dedup_id_update_branch_4_non_fingerprint_patch_existing_digest_preserved() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let existing = existing_with_dedup_id();
         let mut patch = patch_obj(r#"{"status":"fixed"}"#);
         apply_dedup_id_on_update(&existing, &mut patch);
@@ -2597,7 +2584,7 @@ status = "open"
     /// digest". Documented as the less-surprising semantics.
     #[test]
     fn dedup_id_update_null_patch_treated_as_absent() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let existing = existing_with_dedup_id();
         // Non-fingerprint patch with explicit null dedup_id — both the
         // "explicit" check and the "touches fingerprinted" check should
@@ -2612,24 +2599,10 @@ status = "open"
         );
     }
 
-    /// Serialise every test that touches `TOMLCTL_NO_DEDUP_ID` — the env
-    /// var is process-wide, and `cargo test` parallelises within a process,
-    /// so without a lock two kill-switch tests would race and one would
-    /// observe the wrong state. Used by the kill-switch test below AND by
-    /// the deterministic add/recompute tests to avoid observing a set env
-    /// var from an interleaved run.
-    fn dedup_env_lock() -> std::sync::MutexGuard<'static, ()> {
-        use std::sync::{Mutex, OnceLock};
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-    }
-
     /// T6b: kill-switch env var short-circuits every hook.
     #[test]
     fn dedup_id_kill_switch_disables_auto_populate_on_add() {
-        let _guard_lock = dedup_env_lock();
+        let _guard_lock = env_lock();
         // Serialise against other env-mutating tests — use a guard that
         // restores the var on drop so cargo-test parallel runs stay
         // deterministic.
@@ -2673,7 +2646,7 @@ status = "open"
     /// identical digest (pure function of fields — idempotent).
     #[test]
     fn dedup_id_add_auto_populates_deterministically() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let mut obj = patch_obj(
             r#"{"file":"src/a.rs","summary":"x","severity":"warning","category":"bug","symbol":""}"#,
         );
@@ -2693,7 +2666,7 @@ status = "open"
     /// fingerprint override). Mirrors branch 1 on the add side.
     #[test]
     fn dedup_id_add_preserves_explicit_value() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let mut obj = patch_obj(
             r#"{"file":"src/a.rs","summary":"x","dedup_id":"caller_provided"}"#,
         );
@@ -2710,7 +2683,7 @@ status = "open"
     /// Integration-style coverage of the full single-add write path.
     #[test]
     fn items_add_value_to_writes_dedup_id_onto_disk() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let mut doc: TomlValue = toml::from_str("schema_version = 1\n").unwrap();
         items_add_to(
             &mut doc,
@@ -2739,7 +2712,7 @@ status = "open"
     /// is 5 update ops today, so we exercise the linear-scan path only).
     #[test]
     fn compute_apply_mutation_new_doc_matches_live_apply_bytes() {
-        let _guard = dedup_env_lock();
+        let _guard = env_lock();
         let fixture = r#"schema_version = 1
 
 [[items]]

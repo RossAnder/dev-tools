@@ -28,17 +28,23 @@ mod test_support;
 
 use std::io::Write;
 
-use crate::cli::ErrorFormat;
+use clap::Parser;
+
+use crate::cli::{Cli, ErrorFormat};
 use crate::errors::TaggedError;
 
 fn main() {
-    // Parse once up-front so we can pluck `--error-format` before dispatching.
-    // `cli::run()` re-parses internally (trivial cost — the real work is the
-    // subcommand execution); keeping parse in both places means `main.rs` stays
-    // a thin wrapper and `cli.rs` stays reachable for tests that build `Cli`
-    // directly without going through `main()`.
-    let error_format = cli::parse_error_format();
-    if let Err(err) = cli::run() {
+    // R18: parse the `Cli` exactly once and thread it into `cli::run()`.
+    // Previously we parsed twice — a `try_parse()` peek here for
+    // `--error-format` then a full `Cli::parse()` inside `run()` — which
+    // silently swallowed clap errors on the peek path and risked double
+    // `--help` / `--version` rendering. A single `Cli::parse()` lets clap
+    // handle `--help` / `--version` / bad args exactly once with its native
+    // exit-0 / exit-2 semantics intact; `error_format` is plucked from the
+    // parsed struct and retained for use in `emit_error` on a `run()` bail.
+    let cli = Cli::parse();
+    let error_format = cli.error_format;
+    if let Err(err) = cli::run(cli) {
         emit_error(&err, error_format);
         std::process::exit(1);
     }

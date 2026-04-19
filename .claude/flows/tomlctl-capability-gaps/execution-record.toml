@@ -1,2 +1,272 @@
 schema_version = 1
 last_updated = 2026-04-18
+
+[[items]]
+id = "E1"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "items-next-id-infer-from-file"
+summary = "Added --infer-from-file to items next-id via ArgGroup; scans existing ledger prefixes"
+files = [
+    "tomlctl/src/cli.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["f9b43db"]
+status = "done"
+
+[[items]]
+id = "E2"
+type = "deviation"
+date = 2026-04-18
+agent = "implement"
+task_ref = "items-add-dedupe-by"
+summary = "Added walk_json_path in convert.rs and mutate_doc_conditional in io.rs rather than extracting from --where"
+original_intent = "Reuse the --where-path walker from convert.rs for nested-field dedupe comparison"
+rationale = "--where predicates use flat tbl.get(key) lookups today (no nested path support at all); no walker existed to extract. walk_json_path is new, documented inline. mutate_doc_conditional added so dedupe-skip keeps ledger mtime stable."
+commits = ["6457f9f"]
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "items-add-dedupe-by"
+summary = "Added --dedupe-by to items add and add-many with pre-scan inside the lock"
+files = [
+    "tomlctl/src/convert.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/src/cli.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["6457f9f"]
+status = "done"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-04-18
+agent = "implement"
+task_ref = "dedup-id-auto-populate"
+summary = "Tier-B fingerprint field order is file|summary|severity|category|symbol, not file|symbol|summary|severity|category as plan prose stated"
+original_intent = "Extract tier_b_fingerprint with the plan-documented field order file|symbol|summary|severity|category"
+rationale = "Actual inline tier-B code uses file|summary|severity|category|symbol; byte-identity with pre-refactor output is the stronger constraint. Kept actual order, documented in FINGERPRINTED_FIELDS rustdoc and README."
+commits = ["8f171f9"]
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "dedup-id-auto-populate"
+summary = "Auto-populate dedup_id across 4 write funnels with 4-branch recompute rule + kill switch + find-duplicates --across"
+files = [
+    "tomlctl/src/dedup.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/src/cli.rs",
+    "tomlctl/README.md",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["8f171f9"]
+status = "done"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "dry-run-compute-apply-split"
+summary = "Added --dry-run via MutationPlan + compute_apply_mutation/compute_remove_mutation + mutate_doc_plan live wrapper"
+files = [
+    "tomlctl/src/items.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["2378a01"]
+status = "done"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "items-backfill-dedup-id"
+summary = "Added backfill-dedup-id subcommand via T10's compute/apply split with kill-switch short-circuit and idempotent no-op detection"
+files = [
+    "tomlctl/src/items.rs",
+    "tomlctl/src/cli.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["923f420"]
+status = "done"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-04-18
+agent = "implement"
+task_ref = "error-format-json"
+summary = "anyhow chain().find_map(downcast_ref) doesn't work; used Error::downcast_ref directly. Also moved message inside TaggedError to preserve byte-identical text mode."
+original_intent = "Use anyhow's Error::chain() iterator + downcast_ref per plan sketch; attach TaggedError via .context()"
+rationale = "Trait-object downcast doesn't see anyhow's internal context wrappers — chain().find_map returns None. anyhow's inherent Error::downcast_ref method understands its own context. Separately, .context(TaggedError) inserts a ': ' separator that breaks byte-identical text mode; putting the message inside TaggedError.message and emitting it verbatim via Display avoids the artifact."
+commits = ["9900443"]
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "error-format-json"
+summary = "Added global --error-format with ErrorKind taxonomy; 5 categories tagged (9 sites total), text mode byte-identical"
+files = [
+    "tomlctl/src/errors.rs",
+    "tomlctl/src/main.rs",
+    "tomlctl/src/cli.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/integrity.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["9900443"]
+status = "done"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-04-18
+agent = "implement"
+task_ref = "strict-read"
+summary = "Plan assumed items list <missing> returns [] today; T8's read_toml tagging already errors kind=not_found. Only items next-id has a genuine silent-default fast path."
+original_intent = "Test 'items list <missing>' as the canonical default-mode silent-empty behaviour to distinguish from --strict-read"
+rationale = "Empirical check showed T8's tagging in read_toml makes every read subcommand except items next-id error on missing file already. Rewrote test (a) to pin next-id's fast path and added a benign-no-op sweep across other read arms. README wording reflects actual behaviour."
+commits = ["ebbfb12"]
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "strict-read"
+summary = "Added --strict-read to ReadIntegrityArgs via strict_read_check helper gating 8 read arms; README File state contract subsection"
+files = [
+    "tomlctl/src/cli.rs",
+    "tomlctl/README.md",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["ebbfb12"]
+status = "done"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "count-distinct-shape"
+summary = "Added OutputShape::CountDistinct with fast-path + slow-path; ArgGroup extended; 3 of 7 match sites were already pattern-correct via negation"
+files = [
+    "tomlctl/src/cli.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["66436fd"]
+status = "done"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "lines-ndjson-pluck"
+summary = "Extended run_streaming for Pluck; added --lines discrete flag; Query.ndjson = ndjson || lines"
+files = [
+    "tomlctl/src/cli.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["64cb17c"]
+status = "done"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "raw-emitter"
+summary = "Added --raw to QueryArgs and Cmd::Get; hybrid threading (Query.raw for streaming Pluck, cli.rs post-process for non-streaming)"
+files = [
+    "tomlctl/src/cli.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["77467a8"]
+status = "done"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "capabilities-version-bump"
+summary = "Added Cmd::Capabilities with FEATURES+SUBCOMMANDS consts; bumped Cargo.toml to 0.2.0"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/cli.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["c24dd83"]
+status = "done"
+dedup_id = "073df0f9e8b859a3"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "cargo build --release passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml --release"
+outcome = "pass"
+dedup_id = "bd8b7f7d669668bf"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "cargo test passed — 251 tests"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "d68d21aeb924f121"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "cargo clippy -D warnings clean"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "4a02ccd4e5c417dc"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "cargo install --path tomlctl replaced 0.1.0 with 0.2.0"
+command = "cargo install --path tomlctl"
+outcome = "pass"
+dedup_id = "fbeb106b4a45cbd9"
+
+[[items]]
+id = "E20"
+type = "status-transition"
+date = 2026-04-18
+agent = "plan-update"
+summary = "Flow complete: all 11 tasks landed"
+from_status = "in-progress"
+to_status = "complete"
+dedup_id = "83dbcc28a04ac617"

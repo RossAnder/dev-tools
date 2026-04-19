@@ -19,7 +19,7 @@ use crate::dedup::{DupTier, items_find_duplicates, items_find_duplicates_across}
 use crate::integrity::IntegrityOpts;
 use crate::io::{
     mutate_doc, mutate_doc_conditional, mutate_doc_plan, read_doc, read_doc_borrowed,
-    read_toml_str,
+    read_toml_str, warn_if_read_outside_claude,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, MutationPlan, array_append, compute_apply_mutation,
@@ -28,7 +28,7 @@ use crate::items::{
     items_infer_and_next_id, items_next_id, items_update_to, parse_ndjson,
 };
 use crate::orphans::items_orphans;
-use crate::query::{self, OutputShape, Query};
+use crate::query::{self, OutputShape, Query, ShapeDispatch};
 
 
 /// Maximum JSON payload accepted from stdin via the `-` sentinel. 32 MiB is
@@ -246,7 +246,7 @@ fn read_json_value_from_arg(arg: &str) -> Result<JsonValue> {
     version,
     about = "Read and write TOML files used by Claude Code flows and ledgers"
 )]
-struct Cli {
+pub(crate) struct Cli {
     /// T8: stderr error rendering format. `text` (default) is byte-identical
     /// to the pre-T8 `tomlctl: <anyhow chain>` line. `json` emits a single
     /// compact JSON envelope (`{"error":{"kind":...,"message":...,"file":...}}`)
@@ -260,7 +260,7 @@ struct Cli {
         global = true,
         help = "Stderr error format on failure (text|json)"
     )]
-    error_format: ErrorFormat,
+    pub(crate) error_format: ErrorFormat,
 
     #[command(subcommand)]
     cmd: Cmd,
@@ -274,23 +274,6 @@ pub(crate) enum ErrorFormat {
     Text,
     /// Single compact JSON line with `error.kind` taxonomy.
     Json,
-}
-
-/// T8: pre-dispatch parse of `--error-format` so `main.rs` can format the
-/// top-level error correctly WITHOUT re-implementing the clap plumbing. Returns
-/// `ErrorFormat::Text` on any parse failure — clap itself emits its own error
-/// message before `run()` surfaces a bail, and we never want the format
-/// selector to panic or swallow output en route to exit.
-pub(crate) fn parse_error_format() -> ErrorFormat {
-    // `try_parse` returns `Err` for `--help` / `--version` / bad args, all of
-    // which clap handles via its own stderr writer. We fall back to `Text` in
-    // those cases; the real error-surfacing path is `run()` calling `parse()`
-    // a moment later, which will emit clap's native error with its native
-    // format (not our JSON envelope — clap errors are a separate surface
-    // that predates the anyhow chain).
-    Cli::try_parse()
-        .map(|c| c.error_format)
-        .unwrap_or(ErrorFormat::Text)
 }
 
 /// R74: read-only integrity options. Read paths honour only
@@ -446,7 +429,7 @@ pub(crate) struct QueryArgs {
     /// T3: discoverable spelling of `--ndjson` for the `--pluck` case. A clap
     /// `alias` wouldn't appear in `items list --help`, defeating the whole
     /// point of exposing the flag — agents need to see it at a glance.
-    /// `Query::from_cli_args` merges this with `ndjson` (`lines || ndjson`),
+    /// `Query::from_query_input` merges this with `ndjson` (`lines || ndjson`),
     /// so downstream pipeline logic still inspects a single boolean.
     ///
     /// For non-Pluck/non-Array shapes (Count, CountBy, CountDistinct,
@@ -776,22 +759,23 @@ enum ItemsOp {
     /// returns `{prefix}{max_n+1}` when exactly one prefix is in use; on
     /// zero (empty ledger, no explicit prefix) or more than one it errors
     /// out rather than guessing. Structurally mutually exclusive with
-    /// `--prefix` via a `required(true)` ArgGroup — clap enforces the
-    /// "exactly one" contract at parse time with a clean error message.
-    #[command(group(
-        clap::ArgGroup::new("id_source")
-            .required(true)
-            .multiple(false)
-            .args(["prefix", "infer_from_file"])
-    ))]
+    /// `--prefix` via `conflicts_with = "prefix"`; `--prefix` stays
+    /// `required_unless_present = "infer_from_file"` so R40's "no silent
+    /// default" contract is preserved (omitting both still fails at clap
+    /// with the "required arguments were not provided" message).
     NextId {
         file: PathBuf,
-        #[arg(long, help = "Prefix letter (e.g. R, O, E) for the new id")]
+        #[arg(
+            long,
+            required_unless_present = "infer_from_file",
+            help = "Prefix letter (e.g. R, O, E) for the new id"
+        )]
         prefix: Option<String>,
         /// T4: derive the prefix by scanning existing ids in the ledger.
         /// Errors if the ledger is empty or uses more than one prefix.
         #[arg(
             long = "infer-from-file",
+            conflicts_with = "prefix",
             help = "Infer the prefix from existing ids in <file>"
         )]
         infer_from_file: bool,
@@ -987,8 +971,12 @@ fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
 /// Top-level dispatch entrypoint. `main.rs` is a one-line wrapper over
 /// this; splitting lets the binary target stay trivially small while all
 /// the parsing/dispatch/output plumbing lives in a normal module.
-pub(crate) fn run() -> Result<()> {
-    let cli = Cli::parse();
+///
+/// R18: the `Cli` is parsed once in `main.rs` and threaded in here. This
+/// eliminates the earlier double-parse (peek via `try_parse()` for
+/// `--error-format`, then a full `Cli::parse()` on entry) which silently
+/// swallowed errors on the peek path and risked double `--help` rendering.
+pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
         Cmd::Parse { file, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
@@ -1148,7 +1136,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 newer_than: &newer_than,
                 count,
             };
-            let q = Query::from_cli_args(&legacy, &query)?;
+            let q = Query::from_query_input(&query_input_from_cli(&legacy, &query))?;
             // R82: `ndjson` is an output-encoding choice, not a shape. Only
             // the Array and Pluck shape + ndjson encoding combinations are
             // meaningful; for aggregation shapes (Count/CountBy/
@@ -1161,7 +1149,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // value per line; `run_streaming` mirrors `apply_pluck`'s
             // null/missing-drop so the set of emitted values is identical
             // to the non-streaming path.
-            if q.ndjson && matches!(q.shape, OutputShape::Array | OutputShape::Pluck(_)) {
+            if q.ndjson && q.shape.is_streamable() {
                 // O34: stream one compact JSON value per line directly via
                 // `query::run_streaming`, avoiding the `Vec<JsonValue>` that
                 // `query::run` would otherwise materialise only for us to
@@ -1441,14 +1429,17 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 if infer_from_file {
                     bail!("--infer-from-file requires a non-empty ledger or explicit --prefix");
                 }
-                let prefix = prefix.as_deref().expect("clap group guarantees prefix is Some");
-                if prefix.is_empty() {
-                    bail!("prefix must not be empty — use a letter like R, O, or A");
-                }
-                if prefix.chars().all(|c| c.is_ascii_digit()) {
-                    bail!("prefix must not be all-digit — would collide with numeric-suffix parsing");
-                }
-                println!("{}", serde_json::to_string(&format!("{}1", prefix))?);
+                let prefix = prefix.as_deref().expect("clap required_unless_present guarantees prefix is Some when infer_from_file is false");
+                // R26: route the missing-file prefix validation through
+                // `items_next_id` on an empty doc so the empty-prefix and
+                // all-digit-prefix rejections are tagged `ErrorKind::Validation`
+                // consistently with the file-exists branch below. Prior to
+                // the extraction this branch used bare `bail!` → `kind=other`
+                // in `--error-format json`, producing different kinds for the
+                // same input depending on whether the ledger existed.
+                let empty_doc = toml::Value::Table(toml::Table::new());
+                let id = items_next_id(&empty_doc, prefix)?;
+                println!("{}", serde_json::to_string(&id)?);
             } else {
                 let opts = read_integrity_opts(&integrity);
                 let id = read_doc(&file, opts, |doc| {
@@ -1456,7 +1447,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                         items_infer_and_next_id(doc)
                     } else {
                         let prefix =
-                            prefix.as_deref().expect("clap group guarantees prefix is Some");
+                            prefix.as_deref().expect("clap required_unless_present guarantees prefix is Some when infer_from_file is false");
                         items_next_id(doc, prefix)
                     }
                 })?;
@@ -1467,6 +1458,17 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             strict_read_check(&file, integrity.strict_read)?;
             if let Some(other) = across.as_ref() {
                 strict_read_check(other, integrity.strict_read)?;
+                // R38: the `--across` path is a new read surface added by T6c;
+                // unlike the primary ledger (which flows through the write-side
+                // `guard_write_path` before any mutation), the cross-ledger
+                // read has no containment check. A caller passing
+                // `--across <arbitrary.toml>` could coax tomlctl into reading
+                // any file the process can see, and the TOML parser's error
+                // output would echo the path + a caret snippet of the content
+                // — a parsing oracle. Advisory warn only (matches the
+                // `--allow-outside` spirit on the write side); we don't refuse
+                // the read because legitimate cross-repo comparisons exist.
+                warn_if_read_outside_claude(other);
             }
             let opts = read_integrity_opts(&integrity);
             let groups = match across {
@@ -1589,8 +1591,8 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
 /// Legacy shortcut flags that predate the `--where-*` family on `items list`.
 /// Kept on the CLI for back-compat (`--status`, `--category`, `--file`,
 /// `--newer-than`) but translated into equivalent `Predicate` entries in
-/// `Query::from_cli_args` so the query engine only sees one predicate list.
-/// R69: bundled into a small struct so `from_cli_args` can take
+/// `Query::from_query_input` so the query engine only sees one predicate
+/// list. R69: bundled into a small struct so the adapter can take
 /// `(legacy, query)` rather than the prior 26-positional-arg signature.
 pub(crate) struct LegacyShortcuts<'a> {
     pub(crate) status: &'a Option<String>,
@@ -1598,6 +1600,56 @@ pub(crate) struct LegacyShortcuts<'a> {
     pub(crate) file: &'a Option<String>,
     pub(crate) newer_than: &'a Option<String>,
     pub(crate) count: bool,
+}
+
+/// R15: trivial field-copy adapter from the two clap-derive types
+/// (`LegacyShortcuts`, `QueryArgs`) into the POD `QueryInput` that
+/// `query.rs` owns. Lives here — on the cli side of the module boundary —
+/// so `query.rs` stays free of any `use crate::cli` import. This is
+/// intentionally pure plumbing: every field either `.clone()`s the owned
+/// value off `QueryArgs` (the clap-derive layer already holds the
+/// `String` / `Vec<String>` / `Option<String>`) or clones out of the
+/// `&Option<String>` references on `LegacyShortcuts`. If any logic creeps
+/// into this function, move it to `Query::from_query_input` in `query.rs`
+/// instead — the POD type's whole job is to keep the cli/query boundary
+/// a straight-line data transfer.
+pub(crate) fn query_input_from_cli(
+    legacy: &LegacyShortcuts<'_>,
+    q: &QueryArgs,
+) -> crate::query::QueryInput {
+    crate::query::QueryInput {
+        status: legacy.status.clone(),
+        category: legacy.category.clone(),
+        file: legacy.file.clone(),
+        newer_than: legacy.newer_than.clone(),
+        count: legacy.count,
+        where_eq: q.where_eq.clone(),
+        where_not: q.where_not.clone(),
+        where_in: q.where_in.clone(),
+        where_has: q.where_has.clone(),
+        where_missing: q.where_missing.clone(),
+        where_gt: q.where_gt.clone(),
+        where_gte: q.where_gte.clone(),
+        where_lt: q.where_lt.clone(),
+        where_lte: q.where_lte.clone(),
+        where_contains: q.where_contains.clone(),
+        where_prefix: q.where_prefix.clone(),
+        where_suffix: q.where_suffix.clone(),
+        where_regex: q.where_regex.clone(),
+        select: q.select.clone(),
+        exclude: q.exclude.clone(),
+        pluck: q.pluck.clone(),
+        sort_by: q.sort_by.clone(),
+        limit: q.limit,
+        offset: q.offset,
+        distinct: q.distinct,
+        group_by: q.group_by.clone(),
+        count_by: q.count_by.clone(),
+        count_distinct: q.count_distinct.clone(),
+        ndjson: q.ndjson,
+        lines: q.lines,
+        raw: q.raw,
+    }
 }
 
 fn blocks_dispatch(op: BlocksOp) -> Result<()> {
@@ -1664,126 +1716,49 @@ fn print_json_compact(v: &JsonValue) -> Result<()> {
     Ok(())
 }
 
-/// T2: convert a single `JsonValue` scalar into its bare on-stdout form.
-///
-/// - String: emits the underlying `&str` verbatim — no quotes, no escapes.
-///   A string containing a newline is a legitimate single logical value
-///   that happens to span multiple output lines; agents are responsible
-///   for their own escaping if they need it.
-/// - Number: `serde_json::Number::to_string` preserves integer / float
-///   disambiguation — `42` stays `"42"`, `42.0` stays `"42.0"` — which
-///   matches the JSON-output shape exactly except for the surrounding
-///   whitespace / commas.
-/// - Bool: `true` / `false`.
-/// - Null: unreachable on happy paths (Pluck and `get` both reject/drop
-///   nulls upstream), but errors cleanly if one ever leaks through —
-///   keeps the helper total.
-/// - Array / Object: error with the exact load-bearing message that the
-///   `Cmd::Get --raw` spec pins. The tests assert byte-for-byte.
-///
-/// Callers: `Cmd::Get --raw` (directly) and the `items list --pluck
-/// --raw` dispatch branch (after it has asserted N==1). For
-/// `--count` / `--count-distinct --raw` the dispatch extracts the inner
-/// count integer and feeds just that number in, so the Object arm is
-/// never reached from the aggregation paths.
-pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
-    match v {
-        JsonValue::String(s) => Ok(s.clone()),
-        JsonValue::Number(n) => Ok(n.to_string()),
-        JsonValue::Bool(b) => Ok(b.to_string()),
-        JsonValue::Null => {
-            bail!("--raw cannot emit null value")
-        }
-        JsonValue::Array(_) => {
-            bail!("--raw requires a scalar target; got array")
-        }
-        JsonValue::Object(_) => {
-            bail!("--raw requires a scalar target; got table")
-        }
-    }
-}
-
 /// T2: emit one bare-scalar value to stdout, followed by exactly one
 /// trailing newline. The trailing `\n` is deliberate — bash `read -r N`
 /// consumes up to a newline, so agents piping tomlctl output into
 /// variable-binding shell loops expect every bare-value emission to end
 /// in one. For the `--lines --raw --pluck` streaming path this helper is
-/// NOT called per line (that path uses `emit_raw` directly into a
+/// NOT called per line (that path uses `query::emit_raw` directly into a
 /// pre-locked writer for throughput); the semantics are the same.
+///
+/// R14: the scalar-rendering rules live in `query::emit_raw` — this
+/// helper is the I/O wrapper that adds stdout locking, buffering, and
+/// the trailing newline. Keeping `emit_raw` in `query` keeps the module
+/// layering honest (cli depends on query, not the reverse).
 pub(crate) fn print_raw_value(v: &JsonValue) -> Result<()> {
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
-    out.write_all(emit_raw(v)?.as_bytes())?;
+    out.write_all(query::emit_raw(v)?.as_bytes())?;
     out.write_all(b"\n")?;
     out.flush()?;
     Ok(())
 }
 
-/// T2: `items list --raw` dispatch-side converter. Takes the JSON value
-/// `run()` returned and the shape flag that produced it, and emits the
-/// bare-scalar form appropriate to the shape. Called only when `q.raw`
-/// is set AND the caller did NOT take the streaming path (which handles
-/// its own emission inline). The match must cover every shape `run()`
-/// can return — not just Count/CountDistinct/Pluck — so a future new
-/// shape produces a compile error here rather than a runtime panic.
+/// T2 / R16: `items list --raw` dispatch-side wrapper. The per-shape
+/// render logic lives in `ShapeDispatch::raw_emit` on `OutputShape`, so
+/// adding a new shape variant forces one edit there rather than here PLUS
+/// a second match on `shape` in this file. This function's only job now
+/// is the stdout lock + buffered write + trailing newline — the same
+/// I/O discipline `print_raw_value` applies to a single scalar, but
+/// called once with the shape-rendered bytes.
+///
+/// Called only when `q.raw` is set AND the caller did NOT take the
+/// streaming path (which handles its own emission inline).
 ///
 /// Error strings are load-bearing: the pluck N==0 and N>1 errors, and
 /// the count-by / group-by errors, appear byte-for-byte in integration
-/// tests. `validate_query` already rejects `--raw` + `--count-by` /
-/// `--group-by`, so those arms are defense-in-depth — reachable only if
-/// a future refactor bypasses validation.
+/// tests. Those strings are pinned inside `ShapeDispatch::raw_emit` —
+/// see the trait impl in `query.rs`.
 fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
-    match shape {
-        OutputShape::Count => {
-            // Shape is `{"count": N}` — reach in, emit the bare integer.
-            let n = v
-                .get("count")
-                .ok_or_else(|| anyhow!("internal: --count output missing `count` key"))?;
-            print_raw_value(n)?;
-        }
-        OutputShape::CountDistinct(_) => {
-            // Shape is `{"count_distinct": N, "field": "<name>"}` — drop the
-            // `field` key (it's echo-only metadata) and emit the bare count.
-            let n = v.get("count_distinct").ok_or_else(|| {
-                anyhow!("internal: --count-distinct output missing `count_distinct` key")
-            })?;
-            print_raw_value(n)?;
-        }
-        OutputShape::Pluck(_) => {
-            // Shape is `[v0, v1, ...]`. N==1 is the only emittable
-            // cardinality without `--lines`; anything else is an error
-            // with the exact task-spec wording (tests assert byte-for-byte).
-            let arr = v
-                .as_array()
-                .ok_or_else(|| anyhow!("internal: --pluck output was not a JSON array"))?;
-            match arr.len() {
-                0 => bail!("--raw requires single-value output (got 0 items)"),
-                1 => print_raw_value(&arr[0])?,
-                n => bail!(
-                    "--raw requires single-value output (got {} items); use --lines for newline-delimited",
-                    n
-                ),
-            }
-        }
-        OutputShape::Array => {
-            // Array + raw without `--lines` is defensive — an agent who
-            // blanket-added `--raw` to a plain `items list` gets a clear
-            // error rather than a corrupt pretty-print of a JSON array
-            // with quotes stripped. Byte-for-byte wording isn't pinned
-            // by the task spec for this case; keep it descriptive.
-            bail!("--raw requires a scalar target; got array");
-        }
-        OutputShape::CountBy(_) | OutputShape::GroupBy(_) => {
-            // Unreachable in practice: `validate_query` rejects these
-            // combinations with the canonical message before `run()`
-            // returns. Mirror the same message here for defence in depth
-            // — if validation is ever restructured and this path fires,
-            // the error the user sees is still the pinned one.
-            bail!(
-                "--raw is not supported on --count-by / --group-by (output is a map, not a scalar)"
-            );
-        }
-    }
+    let rendered = shape.raw_emit(v)?;
+    let stdout = std::io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
+    out.write_all(rendered.as_bytes())?;
+    out.write_all(b"\n")?;
+    out.flush()?;
     Ok(())
 }
 
@@ -1791,6 +1766,7 @@ fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
 mod tests {
     use super::*;
     use crate::blocks::{self, scan_block_names_warn};
+    use crate::test_support::env_lock;
     use std::fs;
     use std::path::Path;
 
@@ -2072,7 +2048,7 @@ body
         expect_hash(
             &report,
             "execution-record-schema",
-            "80d533204acce2774fe73028d3b7c7b3789a2695d70ec24b788a5f7f51027d5f",
+            "4f5fc639465f3a82a07c44ee1f53a20b3385fe1fc0147e02051e1d3586eebcc9",
         );
 
         // --- 2-file apply-only blocks ---
@@ -2147,11 +2123,4 @@ body
         STDIN_CONSUMED.store(prev, std::sync::atomic::Ordering::SeqCst);
     }
 
-    // Some tests above mutate process-wide env vars. Serialise them against
-    // each other to avoid races when `cargo test` runs them in parallel.
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        use std::sync::{Mutex, OnceLock};
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
-    }
 }

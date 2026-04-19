@@ -4476,3 +4476,265 @@ fn capabilities_subcommands_contains_capabilities_and_items() {
         "subcommands must include `items`; got {subs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// R44: plan T7 acceptance requires a `--help` snapshot test for each new
+// flag introduced by tasks T1..T11. The existing
+// `lines_flag_listed_in_items_list_help` test (T3) establishes the shape:
+// invoke the relevant subcommand with `--help`, then `assert!(stdout.contains("--flag"))`.
+// The tests below clone that shape for every other T1..T11 flag, so a clap
+// refactor that silently drops or hides a flag fails here in CI rather
+// than during an agent-facing invocation. `--error-format` is the only
+// truly global flag (it attaches at the top-level clap::Parser), so it is
+// asserted against `tomlctl --help`. The other "global-ish" flags
+// (`--strict-read`, `--dry-run`) are flattened into ReadIntegrityArgs /
+// WriteIntegrityArgs which hang off specific subcommands — the tests pick
+// one representative subcommand where each flag is surfaced.
+// ---------------------------------------------------------------------------
+
+/// R44 (T1): `items list --help` lists `--count-distinct` as a discrete
+/// flag. Paired with `lines_flag_listed_in_items_list_help` to pin every
+/// T1..T3 `items list` flag against clap drift.
+#[test]
+fn count_distinct_flag_listed_in_items_list_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("list")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--count-distinct"),
+        "items list --help must list --count-distinct as a discrete flag; got:\n{stdout}"
+    );
+}
+
+/// R44 (T2): `items list --help` lists `--raw` as a discrete flag. `--raw`
+/// also appears on `get --help`, but `items list` is the primary surface
+/// T2 targets (bare-scalar output for counts / single-pluck).
+#[test]
+fn raw_flag_listed_in_items_list_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("list")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--raw"),
+        "items list --help must list --raw as a discrete flag; got:\n{stdout}"
+    );
+}
+
+/// R44 (T4): `items next-id --help` lists `--infer-from-file` as a
+/// discrete flag. T4 makes `--prefix` and `--infer-from-file` a required
+/// mutex via an ArgGroup — clap renders both as unadorned in the usage
+/// line, so a substring match on the flag name is the stable assertion.
+#[test]
+fn infer_from_file_flag_listed_in_items_next_id_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("next-id")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--infer-from-file"),
+        "items next-id --help must list --infer-from-file as a discrete flag; got:\n{stdout}"
+    );
+}
+
+/// R44 (T5): `items add --help` lists `--dedupe-by` as a discrete flag.
+/// The same flag is also defined on `items add-many`; `add` is chosen as
+/// the representative surface because it is the single-item path agents
+/// reach for first.
+#[test]
+fn dedupe_by_flag_listed_in_items_add_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("add")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--dedupe-by"),
+        "items add --help must list --dedupe-by as a discrete flag; got:\n{stdout}"
+    );
+}
+
+/// R44 (T6c): `items find-duplicates --help` lists `--across` as a
+/// discrete flag. Cross-ledger duplicate detection is the sole surface
+/// `--across` attaches to.
+#[test]
+fn across_flag_listed_in_items_find_duplicates_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("find-duplicates")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--across"),
+        "items find-duplicates --help must list --across as a discrete flag; got:\n{stdout}"
+    );
+}
+
+/// R44 (T8): top-level `tomlctl --help` lists `--error-format` as a
+/// discrete flag. `--error-format` is defined on the top-level Cli struct
+/// with `global = true`, so it renders in the root help block — the
+/// natural surface for a stderr-format selector that predates any
+/// subcommand dispatch.
+#[test]
+fn error_format_flag_listed_in_top_level_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--error-format"),
+        "tomlctl --help must list --error-format as a discrete global flag; got:\n{stdout}"
+    );
+}
+
+/// R44 (T9): `items next-id --help` lists `--strict-read` as a discrete
+/// flag. `--strict-read` lives on `ReadIntegrityArgs` which is flattened
+/// into every read subcommand; `next-id` is the representative surface
+/// because the flag's documented purpose — errorring on a missing ledger
+/// instead of minting `<prefix>1` — is specifically about `next-id`'s
+/// bootstrapping fast path.
+#[test]
+fn strict_read_flag_listed_in_items_next_id_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("next-id")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--strict-read"),
+        "items next-id --help must list --strict-read as a discrete flag; got:\n{stdout}"
+    );
+}
+
+/// R44 (T10): `items remove --help` lists `--dry-run` as a discrete flag.
+/// `--dry-run` is defined on three T10/T11 subcommands (`items remove`,
+/// `items apply`, `items backfill-dedup-id`); `remove` is chosen as the
+/// representative surface because it is the smallest command and the one
+/// most likely to be invoked ad-hoc where a preview matters.
+#[test]
+fn dry_run_flag_listed_in_items_remove_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("items")
+        .arg("remove")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("--dry-run"),
+        "items remove --help must list --dry-run as a discrete flag; got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// R45: plan T11 acceptance (d) — the end-to-end contract linking
+// `items backfill-dedup-id` to the T1 query surface. Seed a ledger with
+// N items that are all missing `dedup_id` (via `TOMLCTL_NO_DEDUP_ID=1`
+// during seeding to defeat the auto-populate on `add`), run backfill,
+// then assert the T1 surface reports N distinct dedup_id values.
+//
+// The plan spec literally writes the verification query as
+// `items list --pluck dedup_id --distinct --count-distinct dedup_id --raw`,
+// but `--pluck` and `--count-distinct` live in the same clap `shape`
+// ArgGroup (cli.rs:621) and are mutually exclusive. The achievable T1
+// equivalent that preserves the plan's intent — "confirm N distinct
+// dedup_id values are present on the T1 surface after backfill" — is
+// `items list --count-distinct dedup_id --raw`, which is tested below.
+// ---------------------------------------------------------------------------
+
+/// R45 / T11 (d): backfill + T1 surface — after `items backfill-dedup-id`
+/// on an N-item legacy ledger, `items list --count-distinct dedup_id
+/// --raw` reports exactly N. This pins the plan-level contract that the
+/// backfill path populates *distinct* dedup_id values (not duplicates)
+/// on every item, visible from the agent-facing query surface.
+#[test]
+fn items_backfill_dedup_id_then_count_distinct_reports_n() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    // Seed three items with the kill switch engaged so the add path
+    // skips auto-populate, giving us a legacy-shaped ledger (identical
+    // seeding pattern to items_backfill_dedup_id_populates_every_missing_item).
+    for (id, summary) in &[("R1", "alpha"), ("R2", "beta"), ("R3", "gamma")] {
+        Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", dir.path())
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .env("TOMLCTL_NO_DEDUP_ID", "1")
+            .arg("items")
+            .arg("add")
+            .arg(&ledger)
+            .arg("--json")
+            .arg(format!(
+                r#"{{"id":"{id}","file":"src/a.rs","summary":"{summary}","severity":"warning","category":"quality"}}"#,
+            ))
+            .write_stdin("")
+            .assert()
+            .success();
+    }
+
+    // Backfill — kill switch off, every item gets a dedup_id.
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items")
+        .arg("backfill-dedup-id")
+        .arg(&ledger)
+        .write_stdin("")
+        .assert()
+        .success();
+
+    // T1 surface: count of distinct dedup_id values must equal N (3).
+    // `--raw` emits the bare integer plus a trailing newline, byte-identical
+    // to the existing items_list_count_distinct_raw_emits_bare_integer test.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .arg("items")
+        .arg("list")
+        .arg(&ledger)
+        .arg("--count-distinct")
+        .arg("dedup_id")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert_eq!(
+        stdout, "3\n",
+        "after backfill, --count-distinct dedup_id --raw must report exactly N=3; got:\n{stdout}"
+    );
+}

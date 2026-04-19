@@ -1,6 +1,6 @@
 slug = "tomlctl-capability-gaps"
 plan_path = "docs/plans/tomlctl-capability-gaps.md"
-status = "in-progress"
+status = "complete"
 created = 2026-04-18
 updated = 2026-04-18
 branch = "main"
@@ -13,8 +13,8 @@ scope = [
 
 [tasks]
 total = 11
-completed = 0
-in_progress = 1
+completed = 11
+in_progress = 0
 
 [artifacts]
 review_ledger = ".claude/flows/tomlctl-capability-gaps/review-ledger.toml"

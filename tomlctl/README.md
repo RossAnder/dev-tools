@@ -75,6 +75,31 @@ trimming or normalisation — field order is load-bearing and matches the tier-B
 Birthday-bound at ~4B items per scope; for adversarial inputs, set `dedup_id`
 explicitly on the payload.
 
+**Fingerprint diffs.** Two worked examples make the recompute vs preserve
+contract concrete:
+
+```
+# (a) Fingerprinted-field change → new digest.
+# Before:  {file:"a.rs", summary:"X", severity:"warning", category:"quality", symbol:"f"}
+#          dedup_id = "30f663027c03dbf3"
+# Patch:   items update <ledger> R1 --json '{"summary":"X2"}'
+# After:   {file:"a.rs", summary:"X2", severity:"warning", category:"quality", symbol:"f"}
+#          dedup_id = "c15bd8a7e1f492ab"   # recomputed — summary is fingerprinted
+
+# (b) Non-fingerprinted-field change → digest preserved.
+# Before:  {file:"a.rs", summary:"X", severity:"warning", category:"quality", symbol:"f",
+#           status:"open", rounds:1}
+#          dedup_id = "30f663027c03dbf3"
+# Patch:   items update <ledger> R1 --json '{"status":"fixed","rounds":2}'
+# After:   {file:"a.rs", summary:"X", severity:"warning", category:"quality", symbol:"f",
+#           status:"fixed", rounds:2}
+#          dedup_id = "30f663027c03dbf3"   # preserved — patch touched no fingerprinted field
+```
+
+(Digests above are illustrative shapes; the actual 16-hex value depends on the
+exact field bytes fed to SHA-256 — rerun `tomlctl items find-duplicates --tier B`
+against the payload to confirm.)
+
 On update, four branches run in order — the first to match wins:
 
 1. **Patch explicitly sets `dedup_id` (non-empty string)**: preserve caller's value.
@@ -146,3 +171,49 @@ proceeding.
 both flags produces `kind=not_found`, not `kind=integrity` (the sidecar check
 would also have failed, but the underlying state is "file missing", not
 "file tampered").
+
+### Capabilities feature list
+
+`tomlctl capabilities` emits a stable JSON description of this binary so
+downstream flow-command templates can feature-gate at boot without parsing
+`--help` prose:
+
+```json
+{
+  "version": "0.2.0",
+  "features": ["count_distinct", "raw", "lines", "infer_prefix",
+               "dedupe_by", "dedup_id_auto", "find_duplicates_across",
+               "capabilities", "error_format_json", "strict_read",
+               "dry_run", "backfill_dedup_id"],
+  "subcommands": ["parse", "get", "set", "set-json", "validate",
+                  "items", "blocks", "array-append", "capabilities"]
+}
+```
+
+Stability contract:
+
+- Each entry in `features` is stable across patch versions within a minor
+  release. Removing an entry is a breaking change that ships in a minor
+  version bump.
+- New user-facing flags add new `features` entries; do NOT version-qualify
+  (the `version` field is the release marker).
+- `subcommands` mirrors the top-level `Cmd` enum's kebab-case names.
+- `version` reads from `CARGO_PKG_VERSION` via `env!`, so `tomlctl/Cargo.toml`
+  is the single source of truth.
+
+Feature meanings:
+
+| Feature | What it enables |
+|---|---|
+| `count_distinct` | `--count-distinct <FIELD>` on `items list` |
+| `raw` | `--raw` scalar emit on `get` and on single-value `items list` shapes |
+| `lines` | `--lines` newline-per-value emit on `items list --pluck` |
+| `infer_prefix` | `items next-id --infer-from-file` |
+| `dedupe_by` | `--dedupe-by <FIELDS>` on `items add` / `items add-many` |
+| `dedup_id_auto` | auto-populate `dedup_id` in every write funnel |
+| `find_duplicates_across` | `items find-duplicates --across <other>` cross-ledger tier A/B |
+| `capabilities` | this subcommand itself |
+| `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
+| `strict_read` | `--strict-read` on every read subcommand |
+| `dry_run` | `--dry-run` on `items remove` / `items apply` / `items backfill-dedup-id` |
+| `backfill_dedup_id` | `items backfill-dedup-id <file>` |

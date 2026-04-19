@@ -26,6 +26,56 @@ use crate::convert::{
 };
 use crate::errors::{ErrorKind, tagged_err};
 
+// T1 / R43: test-only invocation counters that let unit tests assert the
+// fast-path narrows to the plucked field instead of materialising the whole
+// item via `toml_to_json`. Counters are thread-local so parallel cargo-test
+// threads don't cross-pollute each other's measurements — each call site
+// increments only the counter on the thread that made the call, so a test
+// that resets its thread's counters then runs a query will see exactly the
+// invocations it caused. Release builds strip the cfg-gated increments and
+// the associated helpers entirely; the runtime cost outside `cargo test`
+// is zero.
+#[cfg(test)]
+thread_local! {
+    static FAST_PATH_NARROW_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static FULL_ITEM_MATERIALISE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn reset_invocation_counters() {
+    FAST_PATH_NARROW_CALLS.with(|c| c.set(0));
+    FULL_ITEM_MATERIALISE_CALLS.with(|c| c.set(0));
+}
+
+#[cfg(test)]
+fn snapshot_invocation_counters() -> (usize, usize) {
+    (
+        FAST_PATH_NARROW_CALLS.with(|c| c.get()),
+        FULL_ITEM_MATERIALISE_CALLS.with(|c| c.get()),
+    )
+}
+
+/// Narrowed `toml_to_json` call used by aggregation fast-paths (Pluck /
+/// CountBy / CountDistinct). Bumps the thread-local
+/// `FAST_PATH_NARROW_CALLS` counter under cfg(test) so the structural fast-
+/// path narrowing contract (R43 / plan T1) can be asserted without relying
+/// on timing or memory. In release builds this is a transparent pass-through.
+fn narrow_toml_to_json(v: &TomlValue) -> JsonValue {
+    #[cfg(test)]
+    FAST_PATH_NARROW_CALLS.with(|c| c.set(c.get() + 1));
+    toml_to_json(v)
+}
+
+/// Full-item `toml_to_json` call used by the slow-path pipeline and any other
+/// site that needs a whole-row JSON materialisation. Bumps the thread-local
+/// `FULL_ITEM_MATERIALISE_CALLS` counter under cfg(test) so fast-path tests
+/// can assert this counter stays at zero.
+fn full_item_toml_to_json(v: &TomlValue) -> JsonValue {
+    #[cfg(test)]
+    FULL_ITEM_MATERIALISE_CALLS.with(|c| c.set(c.get() + 1));
+    toml_to_json(v)
+}
+
 /// Per-compile memory cap for user-supplied regex patterns (R72). Chosen to
 /// bound a pathological pattern's NFA compile / DFA cache at ~1 MiB each,
 /// well above anything a ledger field regex would realistically need.
@@ -104,6 +154,142 @@ pub(crate) enum OutputShape {
     /// removing that feature would also break this invariant.
     GroupBy(String),
     Pluck(String),
+}
+
+/// R16: trait dispatch for the three OutputShape-enumerating operations that
+/// fanned across six-plus match sites prior to this refactor — the slow-path
+/// terminal shape switch in `run()`, the `emit_list_raw` match in `cli.rs`,
+/// and the two streaming-guard `matches!` predicates. Keeping one `impl
+/// ShapeDispatch for OutputShape` block (inner matches) with three methods
+/// collapses those sites into three — one per trait method — so adding a
+/// new variant forces exactly one edit per method instead of six-plus
+/// scattered enumerations.
+///
+/// Some enumeration sites — the fast-path in `run()`, the distinct-key
+/// branch in `build_pipeline`, the per-variant `validate_query` mutex,
+/// and the precedence ladder in `Query::from_query_input` — stay as raw
+/// matches. Each needs either variadic per-variant captures, a per-variant
+/// construction choice, or per-variant semantics that don't collapse into
+/// a shared signature without growing the trait surface past three
+/// methods. Those sites are documented at their match arms.
+pub(crate) trait ShapeDispatch {
+    /// Slow-path terminal shape emit (called by `run()` after `build_pipeline`
+    /// has produced the windowed `Vec<JsonValue>`). Each variant either
+    /// delegates to an `apply_aggregation_*` / `apply_pluck` helper or, for
+    /// Array / GroupBy, projects `windowed` through `apply_projection` first.
+    /// Pure — no I/O; the returned `JsonValue` is what `run()` hands back.
+    fn compute(&self, windowed: &[JsonValue], q: &Query) -> JsonValue;
+
+    /// Render the bare-scalar form of the JSON value `run()` returned for
+    /// this shape. Called from the cli `items list --raw` branch AFTER
+    /// `run()` has produced `v`. Count / CountDistinct extract the inner
+    /// integer; Pluck enforces N == 1 (with the exact byte-pinned error
+    /// wording for N == 0 and N > 1); Array / CountBy / GroupBy error
+    /// (validate_query already rejects the two map shapes — the arms here
+    /// are defence-in-depth with identical wording). The returned String
+    /// is the bytes to emit WITHOUT a trailing newline; the caller adds
+    /// `\n` via `print_raw_value`-style wrapping.
+    fn raw_emit(&self, v: &JsonValue) -> Result<String>;
+
+    /// Whether the shape supports one-JSON-per-line streaming output. Only
+    /// Array and Pluck stream today — an aggregation (single object /
+    /// scalar) has no per-line decomposition, so `--ndjson`/`--lines` is a
+    /// silent no-op there. Collapses the `matches!(q.shape, Array |
+    /// Pluck(_))` guards in `run_streaming` (query.rs) and the `items list`
+    /// dispatch arm (cli.rs) into one source of truth.
+    fn is_streamable(&self) -> bool;
+}
+
+impl ShapeDispatch for OutputShape {
+    fn compute(&self, windowed: &[JsonValue], q: &Query) -> JsonValue {
+        match self {
+            OutputShape::Count => apply_aggregation_count(windowed),
+            OutputShape::CountBy(field) => apply_aggregation_count_by(windowed, field),
+            OutputShape::CountDistinct(field) => {
+                // T1: slow-path tail. `windowed` is `Vec<JsonValue>` — each
+                // item is already materialised because sort/distinct/window
+                // is engaged. `apply_aggregation_count_distinct` walks once,
+                // picks the plucked field per item, and accumulates into a
+                // `HashSet<String>` keyed by the canonical serialised form.
+                // Null/missing values are excluded from the count (matches
+                // `apply_pluck`).
+                apply_aggregation_count_distinct(windowed, field)
+            }
+            OutputShape::GroupBy(field) => {
+                // group-by can still respect select/exclude on the grouped items.
+                let projected: Vec<JsonValue> =
+                    windowed.iter().map(|v| apply_projection(v, q)).collect();
+                apply_aggregation_group_by(windowed, &projected, field)
+            }
+            OutputShape::Pluck(field) => apply_pluck(windowed, field),
+            OutputShape::Array => {
+                let projected: Vec<JsonValue> =
+                    windowed.iter().map(|v| apply_projection(v, q)).collect();
+                JsonValue::Array(projected)
+            }
+        }
+    }
+
+    fn raw_emit(&self, v: &JsonValue) -> Result<String> {
+        match self {
+            OutputShape::Count => {
+                // Shape is `{"count": N}` — reach in, render the bare integer.
+                let n = v
+                    .get("count")
+                    .ok_or_else(|| anyhow::anyhow!("internal: --count output missing `count` key"))?;
+                emit_raw(n)
+            }
+            OutputShape::CountDistinct(_) => {
+                // Shape is `{"count_distinct": N, "field": "<name>"}` — drop
+                // the `field` key (it's echo-only metadata) and render the
+                // bare count.
+                let n = v.get("count_distinct").ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "internal: --count-distinct output missing `count_distinct` key"
+                    )
+                })?;
+                emit_raw(n)
+            }
+            OutputShape::Pluck(_) => {
+                // Shape is `[v0, v1, ...]`. N==1 is the only emittable
+                // cardinality without `--lines`; anything else errors with
+                // the exact task-spec wording (tests assert byte-for-byte).
+                let arr = v
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("internal: --pluck output was not a JSON array"))?;
+                match arr.len() {
+                    0 => bail!("--raw requires single-value output (got 0 items)"),
+                    1 => emit_raw(&arr[0]),
+                    n => bail!(
+                        "--raw requires single-value output (got {} items); use --lines for newline-delimited",
+                        n
+                    ),
+                }
+            }
+            OutputShape::Array => {
+                // Array + raw without `--lines` is defensive — an agent who
+                // blanket-added `--raw` to a plain `items list` gets a clear
+                // error rather than a corrupt pretty-print of a JSON array
+                // with quotes stripped. Byte-for-byte wording isn't pinned
+                // by the task spec for this case; keep it descriptive.
+                bail!("--raw requires a scalar target; got array");
+            }
+            OutputShape::CountBy(_) | OutputShape::GroupBy(_) => {
+                // Unreachable in practice: `validate_query` rejects these
+                // combinations with the canonical message before `run()`
+                // returns. Mirror the same message here for defence in depth
+                // — if validation is ever restructured and this path fires,
+                // the error the user sees is still the pinned one.
+                bail!(
+                    "--raw is not supported on --count-by / --group-by (output is a map, not a scalar)"
+                );
+            }
+        }
+    }
+
+    fn is_streamable(&self) -> bool {
+        matches!(self, OutputShape::Array | OutputShape::Pluck(_))
+    }
 }
 
 /// Full query spec handed to `run`. `main.rs` builds this from clap args.
@@ -226,104 +412,27 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
     Ok(())
 }
 
-/// Top-level entry: walk the array-of-tables at `array_name`, run the
-/// pipeline, and return the requested JSON shape.
-pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonValue> {
-    validate_query(q)?;
-    let items: &[TomlValue] = match doc.get(array_name).and_then(|v| v.as_array()) {
-        Some(arr) => arr.as_slice(),
-        None => &[],
-    };
-
-    // 1. Filter
-    // O47: pass the array slice directly instead of materialising a
-    // Vec<&TomlValue> first. `apply_filters` borrows through the slice.
-    let filtered = apply_filters(items, &q.predicates)?;
-
-    // O21/O55: Count / Pluck / CountBy fast-paths. When the user wants one
-    // of these shapes with no sort/distinct/window mutations downstream,
-    // the per-item `toml_to_json` materialisation of every field is pure
-    // waste — Count only needs `filtered.len()`; Pluck and CountBy only
-    // need ONE field per item. The guard checks every state that could
-    // change the post-pipeline composition: sort doesn't (stable
-    // permutation) but distinct, offset, and limit all do. validate_query
-    // has already rejected --count/--pluck/--count-by + --select/--exclude,
-    // so projection can't interact with the output either. GroupBy is not
-    // fast-pathed — its grouped item bodies still need full materialisation.
-    let window_untouched = q.sort_by.is_empty()
-        && !q.distinct
-        && q.offset.is_none()
-        && q.limit.is_none();
-    if window_untouched {
-        match &q.shape {
-            OutputShape::Count => {
-                return Ok(serde_json::json!({ "count": filtered.len() }));
-            }
-            OutputShape::Pluck(field) => {
-                let mut out = Vec::with_capacity(filtered.len());
-                for t in &filtered {
-                    match t.get(field).map(toml_to_json) {
-                        None | Some(JsonValue::Null) => {}
-                        Some(v) => out.push(v),
-                    }
-                }
-                return Ok(JsonValue::Array(out));
-            }
-            OutputShape::CountBy(field) => {
-                let mut counts: serde_json::Map<String, JsonValue> = serde_json::Map::new();
-                for t in &filtered {
-                    let key = match t.get(field).map(toml_to_json) {
-                        None | Some(JsonValue::Null) => String::new(),
-                        Some(JsonValue::String(s)) => s,
-                        Some(other) => other.to_string(),
-                    };
-                    match counts.get_mut(&key) {
-                        Some(JsonValue::Number(n)) => {
-                            let new = n.as_u64().unwrap_or(0) + 1;
-                            *n = serde_json::Number::from(new);
-                        }
-                        _ => {
-                            counts.insert(key, JsonValue::from(1_u64));
-                        }
-                    }
-                }
-                return Ok(JsonValue::Object(counts));
-            }
-            OutputShape::CountDistinct(field) => {
-                // T1: structural analogue of the CountBy fast-path — one
-                // `toml_to_json` call per item, applied to the plucked
-                // field only. We never materialise the rest of the item,
-                // so per-item cost stays O(field size) rather than O(row
-                // size). Null/missing values are dropped (consistent with
-                // `--pluck`'s apply_pluck behaviour). Canonicalisation:
-                // `toml_to_json(v).to_string()` feeds each distinct value
-                // into a `HashSet<String>`. This preserves TYPE
-                // distinctness — integer `42` serialises as `42`, string
-                // `"42"` serialises as `"42"` (with quotes), so they
-                // count as two. Documented in the enum doc-comment.
-                let mut seen: HashSet<String> = HashSet::with_capacity(filtered.len());
-                for t in &filtered {
-                    match t.get(field).map(toml_to_json) {
-                        None | Some(JsonValue::Null) => {}
-                        Some(v) => {
-                            seen.insert(v.to_string());
-                        }
-                    }
-                }
-                return Ok(serde_json::json!({
-                    "count_distinct": seen.len(),
-                    "field": field,
-                }));
-            }
-            _ => {}
-        }
-    }
-
+/// R5: shared slow-path pipeline for `run()` and `run_streaming()`. Both
+/// entry points historically re-implemented the same
+/// materialise → sort → distinct → window sequence with only the terminal
+/// emit differing, and the two distinct-key branches (Array via projection,
+/// Pluck via field) had to stay byte-identical. Factoring here keeps the
+/// invariant in one place: callers get back the fully-windowed
+/// `Vec<JsonValue>` and are responsible only for per-shape terminal emit
+/// (build_pipeline does NOT run the fast-path guard — each caller decides
+/// how to handle the `window_untouched` short-circuit since the emit shape
+/// varies, and bypassing this helper for the fast-path keeps the per-item
+/// cost of CountDistinct / Pluck / CountBy at O(field size) as before).
+///
+/// Note: materialisation uses `full_item_toml_to_json` so the R43 counters
+/// record one "full-item" hit per filtered row. This mirrors the behaviour
+/// of the pre-refactor inline code verbatim.
+fn build_pipeline(filtered: &[&TomlValue], q: &Query) -> Vec<JsonValue> {
     // 2. Project (select/exclude) before shaping for Array/Pluck/Distinct
     // so distinct/pluck see the already-narrowed shape. Aggregations
     // (count/count-by/group-by) operate on the unprojected items so the
     // grouping key is always reachable.
-    let for_shape: Vec<JsonValue> = filtered.iter().map(|t| toml_to_json(t)).collect();
+    let for_shape: Vec<JsonValue> = filtered.iter().map(|t| full_item_toml_to_json(t)).collect();
 
     // 3. Sort (before limit/offset; stable so multi-key works as
     // "primary first, ties broken by secondary" when called once per key.)
@@ -365,32 +474,162 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     };
 
     // 5. Offset/limit (offset first, then limit).
-    let windowed = apply_window(deduped, q.offset, q.limit);
+    apply_window(deduped, q.offset, q.limit)
+}
 
-    // 6. Shape.
-    match &q.shape {
-        OutputShape::Count => Ok(apply_aggregation_count(&windowed)),
-        OutputShape::CountBy(field) => Ok(apply_aggregation_count_by(&windowed, field)),
-        OutputShape::CountDistinct(field) => {
-            // T1: slow-path tail. `windowed` is `Vec<JsonValue>` — each
-            // item is already materialised because sort/distinct/window
-            // is engaged. We walk once, pick the plucked field per item,
-            // and accumulate into a `HashSet<String>` keyed by the
-            // canonical serialised form. Null/missing values are
-            // excluded from the count (matches `apply_pluck`).
-            Ok(apply_aggregation_count_distinct(&windowed, field))
+/// Top-level entry: walk the array-of-tables at `array_name`, run the
+/// pipeline, and return the requested JSON shape.
+pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonValue> {
+    validate_query(q)?;
+    let items: &[TomlValue] = match doc.get(array_name).and_then(|v| v.as_array()) {
+        Some(arr) => arr.as_slice(),
+        None => &[],
+    };
+
+    // 1. Filter
+    // O47: pass the array slice directly instead of materialising a
+    // Vec<&TomlValue> first. `apply_filters` borrows through the slice.
+    let filtered = apply_filters(items, &q.predicates)?;
+
+    // O21/O55: Count / Pluck / CountBy fast-paths. When the user wants one
+    // of these shapes with no sort/distinct/window mutations downstream,
+    // the per-item `toml_to_json` materialisation of every field is pure
+    // waste — Count only needs `filtered.len()`; Pluck and CountBy only
+    // need ONE field per item. The guard checks every state that could
+    // change the post-pipeline composition: sort doesn't (stable
+    // permutation) but distinct, offset, and limit all do. validate_query
+    // has already rejected --count/--pluck/--count-by + --select/--exclude,
+    // so projection can't interact with the output either. GroupBy is not
+    // fast-pathed — its grouped item bodies still need full materialisation.
+    let window_untouched = q.sort_by.is_empty()
+        && !q.distinct
+        && q.offset.is_none()
+        && q.limit.is_none();
+    if window_untouched {
+        match &q.shape {
+            OutputShape::Count => {
+                return Ok(serde_json::json!({ "count": filtered.len() }));
+            }
+            OutputShape::Pluck(field) => {
+                let mut out = Vec::with_capacity(filtered.len());
+                for t in &filtered {
+                    match t.get(field).map(narrow_toml_to_json) {
+                        None | Some(JsonValue::Null) => {}
+                        Some(v) => out.push(v),
+                    }
+                }
+                return Ok(JsonValue::Array(out));
+            }
+            OutputShape::CountBy(field) => {
+                let mut counts: serde_json::Map<String, JsonValue> = serde_json::Map::new();
+                for t in &filtered {
+                    let key = match t.get(field).map(narrow_toml_to_json) {
+                        None | Some(JsonValue::Null) => String::new(),
+                        Some(JsonValue::String(s)) => s,
+                        Some(other) => other.to_string(),
+                    };
+                    match counts.get_mut(&key) {
+                        Some(JsonValue::Number(n)) => {
+                            let new = n.as_u64().unwrap_or(0) + 1;
+                            *n = serde_json::Number::from(new);
+                        }
+                        _ => {
+                            counts.insert(key, JsonValue::from(1_u64));
+                        }
+                    }
+                }
+                return Ok(JsonValue::Object(counts));
+            }
+            OutputShape::CountDistinct(field) => {
+                // T1: structural analogue of the CountBy fast-path — one
+                // `toml_to_json` call per item, applied to the plucked
+                // field only. We never materialise the rest of the item,
+                // so per-item cost stays O(field size) rather than O(row
+                // size). Null/missing values are dropped (consistent with
+                // `--pluck`'s apply_pluck behaviour). Canonicalisation:
+                // `toml_to_json(v).to_string()` feeds each distinct value
+                // into a `HashSet<String>`. This preserves TYPE
+                // distinctness — integer `42` serialises as `42`, string
+                // `"42"` serialises as `"42"` (with quotes), so they
+                // count as two. Documented in the enum doc-comment.
+                //
+                // R43: `narrow_toml_to_json` increments the fast-path
+                // narrowing counter under cfg(test) so the structural
+                // contract ("fast-path must NOT materialise the whole
+                // item") is asserted directly rather than inferred from
+                // timing. `full_item_toml_to_json` on the slow path
+                // increments a parallel counter; the test verifies the
+                // full-item counter stays at 0 on the fast path.
+                let mut seen: HashSet<String> = HashSet::with_capacity(filtered.len());
+                for t in &filtered {
+                    match t.get(field).map(narrow_toml_to_json) {
+                        None | Some(JsonValue::Null) => {}
+                        Some(v) => {
+                            seen.insert(v.to_string());
+                        }
+                    }
+                }
+                return Ok(serde_json::json!({
+                    "count_distinct": seen.len(),
+                    "field": field,
+                }));
+            }
+            _ => {}
         }
-        OutputShape::GroupBy(field) => {
-            // group-by can still respect select/exclude on the grouped items.
-            let projected: Vec<JsonValue> =
-                windowed.iter().map(|v| apply_projection(v, q)).collect();
-            Ok(apply_aggregation_group_by(&windowed, &projected, field))
+    }
+
+    // R5: slow-path pipeline (materialise → sort → distinct → window) lives
+    // in `build_pipeline` so `run()` and `run_streaming()` share one
+    // implementation. Only the per-shape terminal emit below differs.
+    let windowed = build_pipeline(&filtered, q);
+
+    // 6. Shape. R16: single-arm dispatch via `ShapeDispatch::compute` —
+    // per-variant bodies (including the project-then-aggregate branches
+    // for Array and GroupBy) live in the `impl ShapeDispatch for OutputShape`
+    // block so adding a new variant here is one `match` arm, not six.
+    Ok(q.shape.compute(&windowed, q))
+}
+
+/// T2: convert a single `JsonValue` scalar into its bare on-stdout form.
+///
+/// - String: emits the underlying `&str` verbatim — no quotes, no escapes.
+///   A string containing a newline is a legitimate single logical value
+///   that happens to span multiple output lines; agents are responsible
+///   for their own escaping if they need it.
+/// - Number: `serde_json::Number::to_string` preserves integer / float
+///   disambiguation — `42` stays `"42"`, `42.0` stays `"42.0"` — which
+///   matches the JSON-output shape exactly except for the surrounding
+///   whitespace / commas.
+/// - Bool: `true` / `false`.
+/// - Null: unreachable on happy paths (Pluck and `get` both reject/drop
+///   nulls upstream), but errors cleanly if one ever leaks through —
+///   keeps the helper total.
+/// - Array / Object: error with the exact load-bearing message that the
+///   `Cmd::Get --raw` spec pins. The tests assert byte-for-byte.
+///
+/// Callers: `Cmd::Get --raw` (via `cli::print_raw_value`) and the
+/// `items list --pluck --raw` dispatch branch (after it has asserted
+/// N==1). For `--count` / `--count-distinct --raw` the dispatch extracts
+/// the inner count integer and feeds just that number in, so the Object
+/// arm is never reached from the aggregation paths.
+///
+/// R14: lives in `query` rather than `cli` so `run_streaming` can emit
+/// bare scalars without inverting the module layering (cli → query is
+/// the correct direction). Pure `JsonValue → String` transform; the
+/// module's "I/O-free" docstring continues to hold at this function.
+pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
+    match v {
+        JsonValue::String(s) => Ok(s.clone()),
+        JsonValue::Number(n) => Ok(n.to_string()),
+        JsonValue::Bool(b) => Ok(b.to_string()),
+        JsonValue::Null => {
+            bail!("--raw cannot emit null value")
         }
-        OutputShape::Pluck(field) => Ok(apply_pluck(&windowed, field)),
-        OutputShape::Array => {
-            let projected: Vec<JsonValue> =
-                windowed.iter().map(|v| apply_projection(v, q)).collect();
-            Ok(JsonValue::Array(projected))
+        JsonValue::Array(_) => {
+            bail!("--raw requires a scalar target; got array")
+        }
+        JsonValue::Object(_) => {
+            bail!("--raw requires a scalar target; got table")
         }
     }
 }
@@ -425,7 +664,7 @@ pub(crate) fn run_streaming<W: Write>(
     // final value is a single object/scalar, or the caller explicitly
     // chose the batched array encoding. Delegate to `run()` and serialise
     // once.
-    if !q.ndjson || !matches!(q.shape, OutputShape::Array | OutputShape::Pluck(_)) {
+    if !q.ndjson || !q.shape.is_streamable() {
         let out = run(doc, array_name, q)?;
         serde_json::to_writer(writer, &out)?;
         return Ok(());
@@ -468,16 +707,16 @@ pub(crate) fn run_streaming<W: Write>(
             // T2: when `q.raw` is set, emit the bare-scalar form (strings
             // unquoted) instead of the JSON-encoded one. Null/missing
             // drops are identical — raw is purely an encoding choice at
-            // the emit point. Re-using `crate::cli::emit_raw` keeps the
+            // the emit point. Re-using the local `emit_raw` keeps the
             // scalar-rendering rules in one place so a table/array leak
             // (shouldn't happen — Pluck flattens to scalars — but a
             // defensive double-check) surfaces with the canonical error.
             for t in &filtered {
-                match t.get(field).map(toml_to_json) {
+                match t.get(field).map(narrow_toml_to_json) {
                     None | Some(JsonValue::Null) => {}
                     Some(v) => {
                         if q.raw {
-                            writer.write_all(crate::cli::emit_raw(&v)?.as_bytes())?;
+                            writer.write_all(emit_raw(&v)?.as_bytes())?;
                         } else {
                             serde_json::to_writer(&mut *writer, &v)?;
                         }
@@ -487,31 +726,19 @@ pub(crate) fn run_streaming<W: Write>(
             }
             return Ok(());
         }
-        // Slow path: full pipeline up to the pluck tail. Distinct on Pluck
-        // uses the plucked-field key — this mirrors the `run()` logic at
-        // lines 321-333 exactly, so --distinct dedupes by the plucked
-        // field rather than by the whole row (R9). The final emit
+        // Slow path: share the materialise → sort → distinct → window
+        // pipeline with `run()` via `build_pipeline` (R5). Pluck's
+        // plucked-field distinct-key branch lives inside that helper so
+        // both entry points stay in sync. The final emit below
         // replicates `apply_pluck`'s null/missing drop.
-        let for_shape: Vec<JsonValue> =
-            filtered.iter().map(|t| toml_to_json(t)).collect();
-        let sorted = apply_sort(for_shape, &q.sort_by);
-        let deduped = if q.distinct {
-            let projected: Vec<JsonValue> = sorted
-                .iter()
-                .map(|v| v.get(field).cloned().unwrap_or(JsonValue::Null))
-                .collect();
-            dedup_preserve_first(&sorted, &projected)
-        } else {
-            sorted
-        };
-        let windowed = apply_window(deduped, q.offset, q.limit);
+        let windowed = build_pipeline(&filtered, q);
         for v in &windowed {
             match v.get(field) {
                 None | Some(JsonValue::Null) => {}
                 Some(item_val) => {
                     // T2: same raw-vs-json fork as the fast-path above.
                     if q.raw {
-                        writer.write_all(crate::cli::emit_raw(item_val)?.as_bytes())?;
+                        writer.write_all(emit_raw(item_val)?.as_bytes())?;
                     } else {
                         serde_json::to_writer(&mut *writer, item_val)?;
                     }
@@ -528,7 +755,12 @@ pub(crate) fn run_streaming<W: Write>(
     // reduction in peak memory vs `run()`.
     if window_untouched {
         for t in &filtered {
-            let v = toml_to_json(t);
+            // R43: Array streaming already materialises the full row
+            // because `apply_projection` needs the whole object shape —
+            // this is not the fast-path narrowing contract, so we bill
+            // it to the full-item counter so test assertions on narrow-
+            // only paths stay honest.
+            let v = full_item_toml_to_json(t);
             let projected = apply_projection(&v, q);
             serde_json::to_writer(&mut *writer, &projected)?;
             writer.write_all(b"\n")?;
@@ -536,19 +768,10 @@ pub(crate) fn run_streaming<W: Write>(
         return Ok(());
     }
 
-    // Array slow path (sort/distinct/window touched): mirror the full
-    // pipeline from `run()` but emit per-item at the tail rather than
-    // collecting.
-    let for_shape: Vec<JsonValue> = filtered.iter().map(|t| toml_to_json(t)).collect();
-    let sorted = apply_sort(for_shape, &q.sort_by);
-    let deduped = if q.distinct {
-        let projected: Vec<JsonValue> =
-            sorted.iter().map(|v| apply_projection(v, q)).collect();
-        dedup_preserve_first(&sorted, &projected)
-    } else {
-        sorted
-    };
-    let windowed = apply_window(deduped, q.offset, q.limit);
+    // Array slow path (sort/distinct/window touched): share the pipeline
+    // with `run()` via `build_pipeline` (R5), then emit per-item at the
+    // tail rather than collecting.
+    let windowed = build_pipeline(&filtered, q);
     for v in &windowed {
         let projected = apply_projection(v, q);
         serde_json::to_writer(&mut *writer, &projected)?;
@@ -1306,10 +1529,58 @@ fn bucket_key(v: Option<&JsonValue>) -> String {
     }
 }
 
+/// Plain-old-data input for `Query::from_query_input`. Draws the module
+/// boundary between the clap-derive layer (`cli.rs`) and the query engine
+/// (this module): query.rs used to reach back into `crate::cli` for
+/// `LegacyShortcuts<'_>` and `QueryArgs`, which inverted the intended
+/// dependency direction (cli → query). This POD owns only primitive
+/// standard-library types — no clap derives, no `'a` lifetimes — so the
+/// query module compiles without any `use crate::cli` import. Fields
+/// mirror the subset of `LegacyShortcuts` + `QueryArgs` that
+/// `from_query_input` actually reads; see
+/// `cli::query_input_from_cli` for the trivial field-copy adapter.
+pub(crate) struct QueryInput {
+    // Legacy shortcut flags (pre-query-engine back-compat).
+    pub(crate) status: Option<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) file: Option<String>,
+    pub(crate) newer_than: Option<String>,
+    pub(crate) count: bool,
+    // Filter predicates (repeatable KEY=VAL families).
+    pub(crate) where_eq: Vec<String>,
+    pub(crate) where_not: Vec<String>,
+    pub(crate) where_in: Vec<String>,
+    pub(crate) where_has: Vec<String>,
+    pub(crate) where_missing: Vec<String>,
+    pub(crate) where_gt: Vec<String>,
+    pub(crate) where_gte: Vec<String>,
+    pub(crate) where_lt: Vec<String>,
+    pub(crate) where_lte: Vec<String>,
+    pub(crate) where_contains: Vec<String>,
+    pub(crate) where_prefix: Vec<String>,
+    pub(crate) where_suffix: Vec<String>,
+    pub(crate) where_regex: Vec<String>,
+    // Projection + shape + pagination.
+    pub(crate) select: Option<String>,
+    pub(crate) exclude: Option<String>,
+    pub(crate) pluck: Option<String>,
+    pub(crate) sort_by: Vec<String>,
+    pub(crate) limit: Option<usize>,
+    pub(crate) offset: Option<usize>,
+    pub(crate) distinct: bool,
+    pub(crate) group_by: Option<String>,
+    pub(crate) count_by: Option<String>,
+    pub(crate) count_distinct: Option<String>,
+    // Output-encoding bits.
+    pub(crate) ndjson: bool,
+    pub(crate) lines: bool,
+    pub(crate) raw: bool,
+}
+
 /// Split a `KEY=VAL` string on the first `=`. Empty keys are rejected. The
 /// value is returned verbatim (no trimming) so callers that care about
 /// whitespace-significant RHS values (e.g. `--where-prefix name= foo`) keep
-/// their payload intact. Used by `Query::from_cli_args` for every
+/// their payload intact. Used by `Query::from_query_input` for every
 /// `--where-*` family.
 fn split_kv(s: &str) -> Result<(String, String)> {
     let Some((k, v)) = s.split_once('=') else {
@@ -1322,20 +1593,23 @@ fn split_kv(s: &str) -> Result<(String, String)> {
 }
 
 impl Query {
-    /// Build a `Query` from the clap flag values on `ItemsOp::List`.
-    /// Validation is handled by `run` itself — the first thing it does is
-    /// call `validate_query` on the spec, so callers don't need to (R88).
-    /// R69: signature takes two references (a `LegacyShortcuts` for the
-    /// back-compat shortcut flags + the full `QueryArgs` bundle) so the
-    /// dispatch site is a one-line call rather than a 26-line arg spray.
+    /// Build a `Query` from a POD `QueryInput`. Validation is handled by
+    /// `run` itself — the first thing it does is call `validate_query` on
+    /// the spec, so callers don't need to (R88).
     ///
-    /// R30: moved here from `cli.rs` because the translation from clap args
-    /// into domain-level `Predicate` / `OutputShape` values is business
-    /// logic tightly coupled to `query`'s types, not pure CLI plumbing.
-    pub(crate) fn from_cli_args(
-        legacy: &crate::cli::LegacyShortcuts<'_>,
-        q: &crate::cli::QueryArgs,
-    ) -> Result<Self> {
+    /// R15: the input type is a plain-old-data `QueryInput` owned by this
+    /// module, NOT `&crate::cli::LegacyShortcuts` + `&crate::cli::QueryArgs`
+    /// as earlier revisions used. The cli crate now provides
+    /// `query_input_from_cli` as a trivial field-copy adapter, severing
+    /// the inverted `query → cli` import. R69's bundling motivation still
+    /// holds: the dispatch site is a one-line call rather than a 26-line
+    /// arg spray.
+    ///
+    /// R30: this translation from CLI args into domain-level `Predicate`
+    /// / `OutputShape` values is business logic tightly coupled to
+    /// `query`'s types, not pure CLI plumbing, so it lives here (not in
+    /// cli.rs).
+    pub(crate) fn from_query_input(input: &QueryInput) -> Result<Self> {
         // O46: pre-size the predicate vec. The `4` covers the four legacy
         // shortcut slots (`status`, `category`, `file`, `newer_than`); the
         // remaining terms sum the upper bound for every `--where-*` family.
@@ -1343,44 +1617,44 @@ impl Query {
         // this avoids the 4+ realloc-grow cycles of pushing into an empty
         // `Vec::new()` on busy list calls.
         let mut predicates: Vec<Predicate> = Vec::with_capacity(
-            4 + q.where_eq.len()
-                + q.where_not.len()
-                + q.where_in.len()
-                + q.where_has.len()
-                + q.where_missing.len()
-                + q.where_gt.len()
-                + q.where_gte.len()
-                + q.where_lt.len()
-                + q.where_lte.len()
-                + q.where_contains.len()
-                + q.where_prefix.len()
-                + q.where_suffix.len()
-                + q.where_regex.len(),
+            4 + input.where_eq.len()
+                + input.where_not.len()
+                + input.where_in.len()
+                + input.where_has.len()
+                + input.where_missing.len()
+                + input.where_gt.len()
+                + input.where_gte.len()
+                + input.where_lt.len()
+                + input.where_lte.len()
+                + input.where_contains.len()
+                + input.where_prefix.len()
+                + input.where_suffix.len()
+                + input.where_regex.len(),
         );
 
         // Legacy shortcut flags — map onto the new predicate surface so the
         // query engine has a single filter list to evaluate. Duplicating a
         // legacy flag with an equivalent `--where` is a no-op (same predicate
         // runs twice; same result).
-        if let Some(v) = legacy.status {
+        if let Some(v) = &input.status {
             predicates.push(Predicate::Where {
                 key: "status".into(),
                 rhs: v.clone(),
             });
         }
-        if let Some(v) = legacy.category {
+        if let Some(v) = &input.category {
             predicates.push(Predicate::Where {
                 key: "category".into(),
                 rhs: v.clone(),
             });
         }
-        if let Some(v) = legacy.file {
+        if let Some(v) = &input.file {
             predicates.push(Predicate::Where {
                 key: "file".into(),
                 rhs: v.clone(),
             });
         }
-        if let Some(v) = legacy.newer_than {
+        if let Some(v) = &input.newer_than {
             // `--newer-than` semantically means "first_flagged > v" where v is
             // a YYYY-MM-DD. The `@date:` prefix tells `parse_typed_value` to
             // coerce the RHS to a TOML date rather than comparing as a string.
@@ -1390,60 +1664,60 @@ impl Query {
             });
         }
 
-        for s in &q.where_eq {
+        for s in &input.where_eq {
             let (key, rhs) = split_kv(s)?;
             predicates.push(Predicate::Where { key, rhs });
         }
-        for s in &q.where_not {
+        for s in &input.where_not {
             let (key, rhs) = split_kv(s)?;
             predicates.push(Predicate::WhereNot { key, rhs });
         }
-        for s in &q.where_in {
+        for s in &input.where_in {
             let (key, rhs) = split_kv(s)?;
             let values: Vec<String> = rhs.split(',').map(|s| s.to_string()).collect();
             predicates.push(Predicate::WhereIn { key, rhs: values });
         }
-        for s in &q.where_has {
+        for s in &input.where_has {
             if s.is_empty() {
                 bail!("--where-has expects a KEY, got empty string");
             }
             predicates.push(Predicate::WhereHas { key: s.clone() });
         }
-        for s in &q.where_missing {
+        for s in &input.where_missing {
             if s.is_empty() {
                 bail!("--where-missing expects a KEY, got empty string");
             }
             predicates.push(Predicate::WhereMissing { key: s.clone() });
         }
-        for s in &q.where_gt {
+        for s in &input.where_gt {
             let (key, rhs) = split_kv(s)?;
             predicates.push(Predicate::WhereGt { key, rhs });
         }
-        for s in &q.where_gte {
+        for s in &input.where_gte {
             let (key, rhs) = split_kv(s)?;
             predicates.push(Predicate::WhereGte { key, rhs });
         }
-        for s in &q.where_lt {
+        for s in &input.where_lt {
             let (key, rhs) = split_kv(s)?;
             predicates.push(Predicate::WhereLt { key, rhs });
         }
-        for s in &q.where_lte {
+        for s in &input.where_lte {
             let (key, rhs) = split_kv(s)?;
             predicates.push(Predicate::WhereLte { key, rhs });
         }
-        for s in &q.where_contains {
+        for s in &input.where_contains {
             let (key, sub) = split_kv(s)?;
             predicates.push(Predicate::WhereContains { key, sub });
         }
-        for s in &q.where_prefix {
+        for s in &input.where_prefix {
             let (key, prefix) = split_kv(s)?;
             predicates.push(Predicate::WherePrefix { key, prefix });
         }
-        for s in &q.where_suffix {
+        for s in &input.where_suffix {
             let (key, suffix) = split_kv(s)?;
             predicates.push(Predicate::WhereSuffix { key, suffix });
         }
-        for s in &q.where_regex {
+        for s in &input.where_regex {
             let (key, pattern) = split_kv(s)?;
             predicates.push(Predicate::WhereRegex { key, pattern });
         }
@@ -1451,11 +1725,11 @@ impl Query {
         // Projection: parse `--select a,b` / `--exclude a,b` into Vec<String>.
         // `validate_query` enforces `select` / `exclude` / `pluck` mutual
         // exclusion; we just populate the struct.
-        let select_fields: Option<Vec<String>> = q
+        let select_fields: Option<Vec<String>> = input
             .select
             .as_deref()
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
-        let exclude_fields: Option<Vec<String>> = q
+        let exclude_fields: Option<Vec<String>> = input
             .exclude
             .as_deref()
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
@@ -1463,7 +1737,7 @@ impl Query {
         // Sort: each entry is `FIELD` or `FIELD:asc` or `FIELD:desc`. Unknown
         // suffix defaults to `asc` (matches the plan).
         let mut sort_list: Vec<(String, SortDir)> = Vec::new();
-        for entry in &q.sort_by {
+        for entry in &input.sort_by {
             let (field, dir) = match entry.split_once(':') {
                 Some((f, d)) => {
                     let dir = match d {
@@ -1485,22 +1759,22 @@ impl Query {
         // `shape` ArgGroup at the CLI layer makes this impossible in
         // practice (any two shape flags error at parse time), but we keep
         // the priority ladder as a belt-and-braces for programmatic callers
-        // that skip clap (`Query::from_cli_args` is called from tests too).
+        // that skip clap (`Query::from_query_input` is called from tests too).
         //
         // T1: `--count-distinct` sits at EQUAL precedence to the other
         // aggregation shapes — NOT as a sub-form of Pluck. Risk #2 in the
         // plan: the ArgGroup guarantees exclusivity at parse time; the
         // `count_distinct_and_pluck_are_mutex_at_parse_time` integration
         // test pins this contract.
-        let shape = if legacy.count {
+        let shape = if input.count {
             OutputShape::Count
-        } else if let Some(f) = q.count_by.as_deref() {
+        } else if let Some(f) = input.count_by.as_deref() {
             OutputShape::CountBy(f.to_string())
-        } else if let Some(f) = q.count_distinct.as_deref() {
+        } else if let Some(f) = input.count_distinct.as_deref() {
             OutputShape::CountDistinct(f.to_string())
-        } else if let Some(f) = q.group_by.as_deref() {
+        } else if let Some(f) = input.group_by.as_deref() {
             OutputShape::GroupBy(f.to_string())
-        } else if let Some(f) = q.pluck.as_deref() {
+        } else if let Some(f) = input.pluck.as_deref() {
             OutputShape::Pluck(f.to_string())
         } else {
             OutputShape::Array
@@ -1511,9 +1785,9 @@ impl Query {
             select: select_fields,
             exclude: exclude_fields,
             sort_by: sort_list,
-            limit: q.limit,
-            offset: q.offset,
-            distinct: q.distinct,
+            limit: input.limit,
+            offset: input.offset,
+            distinct: input.distinct,
             shape,
             // T3: `--lines` and `--ndjson` both map onto the same internal
             // boolean — the spellings differ only at the CLI surface. `--lines`
@@ -1524,13 +1798,13 @@ impl Query {
             // bit is silently ignored (single-value output — "one per line"
             // collapses to the same bytes). This keeps downstream pipeline
             // logic inspecting a single boolean.
-            ndjson: q.ndjson || q.lines,
+            ndjson: input.ndjson || input.lines,
             // T2: propagate `--raw` through to the query spec. Most of the
             // dispatch machinery is oblivious; the cli.rs `items list`
             // branch post-processes the `run()` result when `raw` is set,
             // and the streaming Pluck path threads this bit through to
             // emit bare values per line.
-            raw: q.raw,
+            raw: input.raw,
         })
     }
 }
@@ -2081,25 +2355,22 @@ v = 42
         assert_eq!(a["count_distinct"], 3);
     }
 
-    /// T1 structural assertion: the fast-path MUST NOT materialise the
-    /// entire item via `toml_to_json(item)` — only the plucked field.
-    /// Direct counter instrumentation would require plumbing through
-    /// `convert::toml_to_json`; instead we use a property test. Build
-    /// a fixture where each row carries a deeply-nested "ignore me"
-    /// payload alongside a trivial `bucket` field. Correctness of the
-    /// count on the targeted field is the assertion — if the fast-path
-    /// were accidentally materialising the full row, it'd still produce
-    /// the correct count (because we aren't checking memory), but the
-    /// pluck-scope discipline is encoded in the code itself. The real
-    /// contract is: the fast-path arm reads `t.get(field).map(toml_to_json)`
-    /// which narrows to one field; any reviewer diff-checking this test
-    /// can eyeball the arm at the corresponding line in `run()`.
+    /// T1 / R43 structural assertion: the fast-path MUST NOT materialise
+    /// the entire item via `toml_to_json(item)` — only the plucked field.
+    /// Instrumentation via the thread-local `FAST_PATH_NARROW_CALLS` /
+    /// `FULL_ITEM_MATERIALISE_CALLS` counters (see the cfg(test) block at
+    /// the top of this module) records which variant fired at each call
+    /// site, so this test asserts the structural contract directly rather
+    /// than inferring it from timing. Using thread-local counters avoids
+    /// cross-pollution from parallel cargo-test threads in the same
+    /// binary — each test observes only its own thread's invocations.
     ///
-    /// What this test DOES verify: that the fast-path arm (no sort/
-    /// distinct/window) produces a count equal to the slow-path (with
-    /// sort-by engaged), even when every row has a large unrelated
-    /// payload — confirming we didn't accidentally key the dedup off
-    /// the full row shape.
+    /// Contract verified here:
+    ///   1. Fast-path over N items increments `FAST_PATH_NARROW_CALLS` by
+    ///      exactly N and leaves `FULL_ITEM_MATERIALISE_CALLS` at 0.
+    ///   2. Slow-path (sort-by engaged) produces the same count but
+    ///      increments `FULL_ITEM_MATERIALISE_CALLS` by N — the whole
+    ///      row must be materialised to feed the sort comparator.
     #[test]
     fn count_distinct_fast_path_narrows_to_field() {
         let mut buf = String::from("schema_version = 1\n");
@@ -2126,8 +2397,37 @@ v = 42
             shape: OutputShape::CountDistinct("bucket".into()),
             ..Default::default()
         };
+
+        // Counters are thread-local, so no mutex is needed — only this
+        // thread's invocations accumulate. Reset at entry to clear any
+        // stale state left by earlier assertions on the same thread.
+        reset_invocation_counters();
+
+        // Fast-path: exactly N narrow calls, zero full-item calls.
         let a = run(&doc, "items", &q_fast).unwrap();
+        let (narrow_fast, full_fast) = snapshot_invocation_counters();
+        assert_eq!(
+            narrow_fast, 200,
+            "fast-path must narrow to the plucked field exactly once per item"
+        );
+        assert_eq!(
+            full_fast, 0,
+            "fast-path must NOT materialise the full row via toml_to_json"
+        );
+
+        // Slow-path: whole-row materialisation for the sort pipeline.
+        reset_invocation_counters();
         let b = run(&doc, "items", &q_slow).unwrap();
+        let (narrow_slow, full_slow) = snapshot_invocation_counters();
+        assert_eq!(
+            full_slow, 200,
+            "slow-path must materialise the full row (sort needs whole-item shape)"
+        );
+        assert_eq!(
+            narrow_slow, 0,
+            "slow-path must NOT hit the fast-path narrow sites"
+        );
+
         assert_eq!(a, b);
         assert_eq!(a["count_distinct"], 5);
     }
