@@ -504,7 +504,7 @@ After all review agents return but BEFORE rendering the final findings report, p
 
 Defer two writes to the final render in Step 3: (1) `tomlctl set <ledger> last_updated <today>` — the ledger is only "fresh" when the report was actually produced; (2) `rounds` increments for existing open items — these only matter once the report includes them. The checkpoint covers inserts + ledger-confirmed transitions (new items from agent output, deferred-item reopens confirmed by user prompt); scalar bookkeeping stays in the final render.
 
-Skip the checkpoint entirely if no transitions are pending (agents returned no new items AND the deferred-reopen sweep produced no confirmed reopens). One `tomlctl items list <ledger> --status open --count` suffices as a gate — the command emits `{"count": N}`, so `[ "$(tomlctl items list <ledger> --status open --count | jq -r .count)" = "0" ]` skips cleanly without emitting an empty `--ops` payload.
+Skip the checkpoint entirely if no transitions are pending (agents returned no new items AND the deferred-reopen sweep produced no confirmed reopens). One `tomlctl items list <ledger> --status open --count --raw` suffices as a gate — `--raw` emits the bare integer (no `{"count": N}` JSON wrapping), so `[ "$(tomlctl items list <ledger> --status open --count --raw)" = "0" ]` skips cleanly without emitting an empty `--ops` payload.
 
 ## Step 3: Consolidate and Persist
 
