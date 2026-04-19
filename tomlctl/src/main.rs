@@ -22,6 +22,7 @@ mod integrity;
 mod io;
 mod items;
 mod orphans;
+mod output;
 mod query;
 #[cfg(test)]
 mod test_support;

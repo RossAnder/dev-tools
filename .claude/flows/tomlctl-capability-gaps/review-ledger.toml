@@ -328,7 +328,7 @@ resolution = "Removed private env_lock() from cli.rs test mod and dedup_env_lock
 [[items]]
 first_flagged = 2026-04-19
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-capability-gaps"
 id = "R21"
 file = "tomlctl/src/cli.rs"
@@ -340,6 +340,8 @@ summary = "cli.rs (2157 lines) mixes four concerns: clap derive types (243-929),
 dedup_id = "df51f8edf37cf762"
 wontfix_rationale = "requires deliberate refactor, not a point-fix (split cli.rs into types/dispatch/output modules -- exceeds 3-file cap)"
 reopen_rationale = "user directed /review-apply the won't fix items on 2026-04-19 -- reversing wontfix; deferred to future session (cli.rs split)"
+resolved = 2026-04-19
+resolution = "Split cli.rs (2126L) into cli/mod.rs (28L re-exports), cli/types.rs (739L clap surface: Cli/Cmd/ItemsOp/BlocksOp/QueryArgs/LegacyShortcuts/Integrity args + FEATURES/SUBCOMMANDS consts), cli/dispatch.rs (1307L run/items_dispatch/blocks_dispatch + stdin helpers + query_input_from_cli adapter + tests), and output.rs (113L top-level sibling: print_json/print_json_compact/print_raw_value/emit_list_raw/emit_dry_run_plan). Cmd.cmd + integrity-args fields promoted pub(crate) for cross-module match access. main.rs imports unchanged via pub(crate) use re-exports"
 
 [[items]]
 first_flagged = 2026-04-19
@@ -359,7 +361,7 @@ dedup_id = "05ef5877d3432dc6"
 [[items]]
 first_flagged = 2026-04-19
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-capability-gaps"
 id = "R23"
 file = "tomlctl/tests/integration.rs"
@@ -371,6 +373,8 @@ summary = "integration.rs is 4478 lines / 114 #[test]s in one file. Split by top
 dedup_id = "3c283bcc5a325156"
 wontfix_rationale = "requires deliberate refactor, not a point-fix (split integration.rs into 4 topic-oriented test files -- exceeds 3-file cap)"
 reopen_rationale = "user directed /review-apply the won't fix items on 2026-04-19 -- reversing wontfix; deferred to future session (integration.rs split)"
+resolved = 2026-04-19
+resolution = "Split integration.rs (4740L/123 tests) into 4 topic binaries: blocks.rs (1 test), items_dry_run.rs (5 tests), items_dedupe.rs (18 tests T5+T6b+T6c+T11), capabilities.rs (57 tests T1/T2/T3/T7/T8/T9 + R44 help snapshots + R45 e2e). Leftover integration.rs (42 tests: items_next_id/apply-non-dry/add-many/array-append/query-suite/sidecar-coverage/settings/R80). Shared helpers extracted to tests/common/mod.rs (seed_ledger, QUERY_FIXTURE, run_list_query variants, ids_from, assert_sidecar_matches, parse_json_error_envelope). Test count preserved 1:1 (123 before/after); cargo test -- runs 5 test binaries in parallel"
 
 [[items]]
 first_flagged = 2026-04-19
