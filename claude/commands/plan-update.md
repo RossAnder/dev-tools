@@ -246,12 +246,12 @@ Cross-reorder idempotency comes from three order-insensitive operations: the cou
 `[tasks].completed` in `context.toml` is derived from the log on every write that touches `[tasks]`:
 
 ```
-completed = tomlctl items list <record> --where type=task-completion --where status=done --count-by task_ref --verify-integrity | jq 'keys | length'
+completed = tomlctl items list <record> --where type=task-completion --where status=done --count-distinct task_ref --raw --verify-integrity
 ```
 
 Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `total` remains plan-document-driven; `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
 
-`--count-by task_ref` emits `{"slug1": N, "slug2": M, ...}`; `jq 'keys | length'` returns the distinct-slug count in one hop, which replaces the earlier pluck→jq-unwrap→sort -u→wc -l chain.
+`--count-distinct task_ref --raw` emits the bare integer directly (tomlctl 0.2.0+) — no jq post-processing, no pipe composition. The single-flag form subsumes both the earlier `--pluck | jq -r '.[]' | sort -u | wc -l` chain and the interim `--count-by | jq 'keys | length'` bridge.
 
 #### Read-path integrity contract
 
@@ -343,9 +343,9 @@ Scan plan items against the codebase and git history. For each plan task/item, c
 
 1. **Build a skip-set first.** Before any append, query
    ```
-   tomlctl items list <record> --where type=task-completion --pluck task_ref --verify-integrity
+   tomlctl items list <record> --where type=task-completion --pluck task_ref --lines --verify-integrity
    ```
-   and treat the result as the skip-set. Parse the JSON array with `jq -r '.[]'` (tomlctl's `--pluck` always emits a JSON array — see `query.rs::apply_pluck`).
+   and treat each line of stdout as one `task_ref` in the skip-set. `--lines` emits one JSON value per line (tomlctl 0.2.0+), so no `jq -r '.[]'` unwrap is needed — downstream membership checks can read the output directly.
 2. **Skip duplicates.** For any `task_ref` already present in the skip-set, do not append a new `task-completion` entry. The op never duplicates entries that `/implement` (or any prior writer) has already recorded.
 3. **Status-transition writes are change-gated.** Append a `type=status-transition` entry (with `from_status` and `to_status`) ONLY when the flow's `status` field actually changes value (e.g. `in-progress` → `complete`). Never on every invocation. If `status` is unchanged, skip the transition append entirely.
 4. **Never silently back-fill.** The `status` op NEVER appends `type=task-completion` entries — those are exclusively written by `/implement` Phase 2. If reconciliation surfaces an unrecorded completion (e.g. files modified, tests pass, but no matching log entry exists), the op MUST **flag the gap in its reconciliation report** rather than silently appending. Only the `migrate` op (below) is authorised to back-fill `task-completion` entries from a legacy `PROGRESS-LOG.md`.
