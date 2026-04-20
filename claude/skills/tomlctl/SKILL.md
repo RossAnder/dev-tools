@@ -575,6 +575,13 @@ tomlctl items add-many ledger.toml --ndjson - <<'EOF'
 EOF
 ```
 
+**Windows Git Bash fallback.** If a heredoc errors with `unexpected EOF while looking for matching \`''` (CRLF line endings break the `EOF` terminator match inside `bash -c`), write the payload to a sibling file and avoid the heredoc:
+
+- `--ndjson` also accepts a file path directly: `--ndjson <path>`.
+- For `--json` / `--ops` / `--defaults-json` (which accept only a literal or `-`), pipe the file in: `cat <path> | tomlctl … --json -`.
+
+Both forms work identically on every platform; delete the staging file after the call.
+
 ## Dedup fingerprint contract
 
 Every write funnel (`items add`, `items add-many`, `items update`, `items apply`) auto-populates a `dedup_id` field per these rules:
