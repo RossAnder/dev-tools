@@ -1535,6 +1535,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "strict_read",            // T9
         "dry_run",                // T10
         "backfill_dedup_id",      // T11
+        "integrity_refresh",      // sidecar bootstrap / recovery primitive
     ];
     for name in expected {
         assert!(

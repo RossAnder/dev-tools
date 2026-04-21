@@ -61,6 +61,7 @@ Features:
 | `strict_read` | `--strict-read` on every read subcommand |
 | `dry_run` | `--dry-run` on `items remove` / `items apply` / `items backfill-dedup-id` |
 | `backfill_dedup_id` | `items backfill-dedup-id <file>` |
+| `integrity_refresh` | `integrity refresh <file>` — materialise / regenerate the `.sha256` sidecar against the file's current on-disk bytes |
 
 ## Read operations
 
@@ -555,6 +556,23 @@ tomlctl items backfill-dedup-id .claude/flows/foo/review-ledger.toml
 TOMLCTL_NO_DEDUP_ID=1 tomlctl items backfill-dedup-id <ledger>
 # → {"ok":true,"backfilled":0,"reason":"disabled-by-env"}
 ```
+
+### Regenerate a missing sidecar — `integrity refresh`
+
+Materialises (or regenerates) the `<file>.sha256` sidecar from the file's current on-disk bytes. Does NOT modify the TOML — use this when the sidecar is absent or lost but the TOML is authoritative as-is.
+
+```bash
+# Bootstrap: /plan-new's Write of the 2-line execution-record.toml
+# skeleton bypasses the tomlctl write pipeline, so no sidecar is produced.
+# Run integrity refresh immediately after the Write to close the gap.
+tomlctl integrity refresh .claude/flows/<slug>/execution-record.toml
+# → {"ok":true}
+
+# Recovery: sidecar deleted out-of-band (git clean, stray rm), TOML intact.
+tomlctl integrity refresh .claude/flows/<slug>/review-ledger.toml
+```
+
+Acquires the same exclusive lock a write path would, so it serialises correctly with concurrent writers. Subject to the same `.claude/` containment guard as other write paths — pass `--allow-outside` to refresh a sidecar for a file outside `.claude/`. Calling this on a file that already has a valid sidecar is a no-op-ish (it rewrites the sidecar with the same bytes) and idempotent.
 
 ### Stdin input for large JSON payloads
 

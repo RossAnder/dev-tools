@@ -1326,3 +1326,145 @@ fn settings_json_contains_tomlctl_allow_with_outside_deny() {
         deny
     );
 }
+
+/// `integrity refresh` materialises the `.sha256` sidecar for an existing
+/// file whose bytes were written outside tomlctl (the `/plan-new` bootstrap
+/// uses the `Write` tool for the 2-line `execution-record.toml` skeleton,
+/// bypassing the tomlctl write pipeline). The primary regression this
+/// pins: before the subcommand existed, the first downstream
+/// `tomlctl items list ... --verify-integrity` call against the
+/// freshly-bootstrapped file failed with "sidecar ... is missing" because
+/// no write had produced the sidecar yet.
+#[test]
+fn integrity_refresh_materialises_sidecar_for_bootstrapped_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude_dir = dir.path().join(".claude").join("flows").join("test");
+    fs::create_dir_all(&claude_dir).unwrap();
+    let target = claude_dir.join("execution-record.toml");
+    // Simulate `/plan-new`'s Write: 2-line TOML skeleton, NO sidecar.
+    fs::write(&target, "schema_version = 1\nlast_updated = 2026-04-21\n").unwrap();
+    let sidecar = target.with_extension("toml.sha256");
+    assert!(!sidecar.exists(), "precondition: sidecar must not exist before refresh");
+
+    // A verify-integrity read must fail in this state — this is the
+    // error the user hit that prompted this fix.
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&target)
+        .arg("--verify-integrity")
+        .write_stdin("")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("sidecar"))
+        .stderr(predicate::str::contains("missing"));
+
+    // `integrity refresh` creates the sidecar without modifying the TOML.
+    let toml_before = fs::read(&target).unwrap();
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("integrity")
+        .arg("refresh")
+        .arg(&target)
+        .write_stdin("")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"ok\":true"));
+
+    assert!(sidecar.exists(), "sidecar must exist after refresh");
+    let toml_after = fs::read(&target).unwrap();
+    assert_eq!(
+        toml_before, toml_after,
+        "refresh must not modify the TOML file"
+    );
+    // Sidecar must be in the canonical `<hex>  <basename>\n` format and
+    // the digest must match the actual file contents.
+    let sidecar_text = fs::read_to_string(&sidecar).unwrap();
+    assert!(
+        sidecar_text.ends_with("  execution-record.toml\n"),
+        "sidecar must end with `  <basename>\\n`; got {sidecar_text:?}"
+    );
+    let hex = sidecar_text.split_whitespace().next().unwrap();
+    assert_eq!(hex.len(), 64, "digest must be 64 hex chars");
+    assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+
+    // The downstream verify-integrity read now succeeds — this is the
+    // behaviour `/plan-new`'s bootstrap relies on.
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("list")
+        .arg(&target)
+        .arg("--verify-integrity")
+        .write_stdin("")
+        .assert()
+        .success();
+}
+
+/// `integrity refresh` on a non-existent file errors cleanly with
+/// `kind=not_found` under `--error-format json` — mirroring the existing
+/// missing-file taxonomy on read paths so agents can branch on the tag
+/// rather than regexing prose.
+#[test]
+fn integrity_refresh_missing_file_is_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude_dir = dir.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    let missing = claude_dir.join("no-such-file.toml");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("--error-format")
+        .arg("json")
+        .arg("integrity")
+        .arg("refresh")
+        .arg(&missing)
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    // `guard_write_path` canonicalises against the parent when the file
+    // is absent; since `.claude/` exists, canonicalisation succeeds and
+    // the guard accepts — but `refresh_sidecar` then hits NotFound on
+    // open. That's the path we want tagged.
+    assert!(
+        stderr.contains("not_found") || stderr.contains("does not exist"),
+        "expected missing-file error; got stderr: {stderr}"
+    );
+}
+
+/// `integrity refresh` refuses to operate on a file outside `.claude/`
+/// unless `--allow-outside` is passed — mirrors the existing write-side
+/// containment guard used by `set` / `items *` so a malicious artifacts
+/// path can't trick us into dropping a sidecar next to an arbitrary
+/// target.
+#[test]
+fn integrity_refresh_refuses_outside_claude_by_default() {
+    let dir = tempfile::tempdir().unwrap();
+    // Create `.claude/` so `repo_or_cwd_root()` + containment check have
+    // an anchor, then put the target OUTSIDE it.
+    fs::create_dir_all(dir.path().join(".claude")).unwrap();
+    let outside = dir.path().join("outside.toml");
+    fs::write(&outside, "x = 1\n").unwrap();
+
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("integrity")
+        .arg("refresh")
+        .arg(&outside)
+        .write_stdin("")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("refusing to write outside .claude/"));
+}

@@ -13,17 +13,17 @@ use serde_json::Value as JsonValue;
 use std::io::{BufRead, IsTerminal, Read};
 
 use super::types::{
-    BlocksOp, Cli, Cmd, FEATURES, ItemsOp, LegacyShortcuts, QueryArgs, ReadIntegrityArgs,
-    SUBCOMMANDS, WriteIntegrityArgs,
+    BlocksOp, Cli, Cmd, FEATURES, IntegrityOp, ItemsOp, LegacyShortcuts, QueryArgs,
+    ReadIntegrityArgs, SUBCOMMANDS, WriteIntegrityArgs,
 };
 
 use crate::blocks::blocks_verify;
 use crate::convert::{detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json};
 use crate::dedup::{items_find_duplicates, items_find_duplicates_across};
-use crate::integrity::IntegrityOpts;
+use crate::integrity::{IntegrityOpts, refresh_sidecar};
 use crate::io::{
-    mutate_doc, mutate_doc_conditional, mutate_doc_plan, read_doc, read_doc_borrowed,
-    read_toml_str, warn_if_read_outside_claude,
+    guard_write_path, mutate_doc, mutate_doc_conditional, mutate_doc_plan, read_doc,
+    read_doc_borrowed, read_toml_str, warn_if_read_outside_claude, with_exclusive_lock,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, array_append, compute_apply_mutation, compute_backfill_mutation,
@@ -438,6 +438,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             })?;
             print_json_compact(&serde_json::json!({"ok": true, "appended": appended}))?;
         }
+        Cmd::Integrity { op } => integrity_dispatch(op)?,
         Cmd::Capabilities => {
             // T7: pretty-print matches the rest of the read-path surface
             // (`parse`, `get`, `items list`) — `print_json` is the same
@@ -940,6 +941,28 @@ fn blocks_dispatch(op: BlocksOp) -> Result<()> {
             if !report.ok {
                 std::process::exit(1);
             }
+        }
+    }
+    Ok(())
+}
+
+fn integrity_dispatch(op: IntegrityOp) -> Result<()> {
+    match op {
+        IntegrityOp::Refresh { file, allow_outside } => {
+            // Take the same exclusive lock any write path would, so a
+            // concurrent `tomlctl set` / `items add` observes a consistent
+            // (TOML, sidecar) pair rather than overlapping our refresh.
+            with_exclusive_lock(&file, || {
+                // Containment guard mirrors `mutate_doc`: refuse to write
+                // the sidecar for a file outside `.claude/` unless the
+                // caller explicitly opts out. A malicious artifacts path
+                // could otherwise trick us into writing next to an
+                // arbitrary target.
+                guard_write_path(&file, allow_outside)?;
+                refresh_sidecar(&file)?;
+                Ok(())
+            })?;
+            print_json_compact(&serde_json::json!({"ok": true}))?;
         }
     }
     Ok(())

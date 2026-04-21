@@ -255,7 +255,7 @@ Distinct-slug count (not a raw entry count), so a failed attempt followed by a s
 
 #### Read-path integrity contract
 
-Every read of `execution-record.toml` or `context.toml` by `/plan-new`, `/plan-update`, or `/implement` MUST pass `--verify-integrity` when a `.sha256` sidecar exists. Explicit opt-out is permitted ONLY at bootstrap time when the sidecar is known-absent (the very first writer's initial atomic `Write` that materialises the 2-line TOML file, and the first read that follows it before any subsequent write has produced the sidecar). On sidecar digest mismatch, tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt.
+Every read of `execution-record.toml` or `context.toml` by `/plan-new`, `/plan-update`, or `/implement` MUST pass `--verify-integrity`. `/plan-new`'s bootstrap materialises the sidecar via `tomlctl integrity refresh` immediately after the initial `Write` (see step 7 of the bootstrap), so every downstream reader lands on a file whose sidecar exists — there is no bootstrap-grace branch for a "sidecar known-absent" state. On sidecar digest mismatch, tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. If a read legitimately hits a missing-sidecar state (the bootstrap refresh failed and was never rerun, or the sidecar was deleted out-of-band), recover with `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`.
 
 Invocation form: the flag is a per-subcommand option (not a global one), appended to the read subcommand: `tomlctl items list <record> --where ... --verify-integrity` or `tomlctl get <file> <path> --verify-integrity`.
 
@@ -506,6 +506,14 @@ execution_record = ".claude/flows/<slug>/execution-record.toml"
    ```
 
    (two lines, trailing newline; `<today>` is the same ISO 8601 date written for `created` / `updated` in `context.toml` above.) This single `Write` materialises a valid-TOML file in one filesystem operation, so the bootstrap is atomic: a concurrent writer that observes the file between this `Write` and the next `tomlctl items add` never sees a zero-byte or partial-TOML intermediate state. **Future readers / refactorers MUST NOT split this into a zero-byte `Write` followed by `tomlctl set` calls** — the legacy 3-step form was non-atomic (between steps, a concurrent reader could parse a zero-byte file as invalid TOML), and the 2-line direct `Write` was introduced specifically to close that TOCTOU window. The single-`Write` form also avoids the `tomlctl set`-on-non-existent-path error mode without re-introducing the zero-byte intermediate.
+
+   **Materialise the `.sha256` sidecar**. Immediately after the `Write` succeeds, run:
+
+   ```
+   tomlctl integrity refresh .claude/flows/<slug>/execution-record.toml
+   ```
+
+   The `Write` tool does not produce the `<file>.sha256` sidecar that tomlctl's write pipeline would, so without this step the first downstream `tomlctl items list ... --verify-integrity` call from `/implement` or `/plan-update` fails with "sidecar ... is missing". `integrity refresh` computes the digest against the just-written bytes and writes the sidecar atomically under an exclusive lock — it does NOT modify the TOML. After it succeeds, every downstream read can honour the integrity contract unconditionally. If the refresh fails (rare — the lock or sidecar write errored), halt: the file exists without its sidecar, and downstream verify-integrity reads will fail until the user reruns the refresh manually.
 
    Do NOT add any `[[items]]` entries here — the empty-log state (no `items` key present, or an empty `items` array) is the canonical initial state, and the first `tomlctl items add` call from `/implement` or `/plan-update` will create the `[[items]]` table-array implicitly. Refer to the `## Execution Record Schema` block for the field contract; do not duplicate the schema here.
 

@@ -966,7 +966,7 @@ pub(crate) fn write_toml_with_sidecar(
 /// `persist()` time. Falls back to the raw parent when canonicalisation fails
 /// (e.g. parent missing — `NamedTempFile::new_in` then surfaces the same
 /// underlying ENOENT with a clearer-context error message).
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let raw_parent = path
         .parent()
         .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })

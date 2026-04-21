@@ -32,6 +32,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "strict_read",            // T9
     "dry_run",                // T10
     "backfill_dedup_id",      // T11
+    "integrity_refresh",      // sidecar bootstrap / recovery primitive
 ];
 
 /// T7: user-facing top-level subcommand names, as they appear in
@@ -50,6 +51,7 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
     "blocks",
     "array-append",
     "capabilities",
+    "integrity",
 ];
 
 #[derive(Parser)]
@@ -394,6 +396,46 @@ pub(crate) enum Cmd {
     /// Cargo.toml version is the single source of truth; bumping the
     /// manifest automatically updates this output on the next rebuild.
     Capabilities,
+
+    /// Sidecar-maintenance operations. Carved out as its own subcommand
+    /// group so bootstrap / recovery primitives live next to the read-side
+    /// `--verify-integrity` flag they support, rather than competing for
+    /// real estate under `items` or `set`.
+    Integrity {
+        #[command(subcommand)]
+        op: IntegrityOp,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum IntegrityOp {
+    /// Regenerate `<file>.sha256` from the file's current on-disk bytes.
+    ///
+    /// Bootstrap: `/plan-new` materialises `execution-record.toml` via the
+    /// `Write` tool (a single-filesystem-op atomic write that bypasses
+    /// tomlctl's write pipeline and therefore never produces a sidecar).
+    /// The first downstream read with `--verify-integrity` then fails.
+    /// Running `integrity refresh` immediately after the `Write` closes
+    /// the gap so every subsequent read honours the integrity contract
+    /// without a special "first-read-after-bootstrap" grace branch.
+    ///
+    /// Recovery: if a sidecar was accidentally deleted (git clean, stray
+    /// rm) but the TOML is intact, refresh regenerates the sidecar from
+    /// the existing bytes without a round-trip through `set` (which would
+    /// rewrite the TOML and bump mtime for no semantic reason).
+    ///
+    /// Does NOT modify the TOML file itself — the caller is trusting that
+    /// the current on-disk bytes are authoritative. Acquires the same
+    /// exclusive lock a write path would, so it serialises correctly
+    /// with concurrent writers.
+    Refresh {
+        file: PathBuf,
+        /// Allow refreshing a sidecar for a file outside the current repo's
+        /// `.claude/` directory. Mirrors the write-side `--allow-outside`
+        /// semantics: the containment guard would otherwise refuse.
+        #[arg(long = "allow-outside")]
+        allow_outside: bool,
+    },
 }
 
 #[derive(Subcommand)]
