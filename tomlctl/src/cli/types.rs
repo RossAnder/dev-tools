@@ -428,13 +428,33 @@ pub(crate) enum IntegrityOp {
     /// the current on-disk bytes are authoritative. Acquires the same
     /// exclusive lock a write path would, so it serialises correctly
     /// with concurrent writers.
+    ///
+    /// R5: refresh is a pure content-digest primitive — it hashes the raw
+    /// on-disk bytes and never parses TOML. A malformed file (e.g. one
+    /// truncated by a partial write) will silently receive a valid
+    /// sidecar. For the recovery path, consider running `tomlctl validate
+    /// <path>` before `integrity refresh` so syntactic corruption surfaces
+    /// instead of being papered over.
+    ///
+    /// R4: carries the full `WriteIntegrityArgs` bundle for parity with
+    /// every other write subcommand, but not every flag has a semantic
+    /// hook on this sidecar-only operation:
+    ///
+    /// - `--allow-outside`: honoured (same containment guard as other writes).
+    /// - `--verify-integrity`: when set, if a sidecar already exists, it is
+    ///   verified before being overwritten. A digest mismatch propagates as
+    ///   a hard error — guards against clobbering a mismatched sidecar
+    ///   during recovery. No existing sidecar → silent proceed (the whole
+    ///   point of the bootstrap path).
+    /// - `--no-write-integrity`: structurally meaningless (refresh IS the
+    ///   sidecar write); passing it errors with a directed message.
+    /// - `--strict-integrity`: structurally meaningless (refresh has no
+    ///   fallback path to strict-ify); silently ignored so composable
+    ///   wrapper scripts that blanket-add the flag don't trip.
     Refresh {
         file: PathBuf,
-        /// Allow refreshing a sidecar for a file outside the current repo's
-        /// `.claude/` directory. Mirrors the write-side `--allow-outside`
-        /// semantics: the containment guard would otherwise refuse.
-        #[arg(long = "allow-outside")]
-        allow_outside: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
     },
 }
 

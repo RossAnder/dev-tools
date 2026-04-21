@@ -1,0 +1,420 @@
+schema_version = 1
+last_updated = 2026-04-21
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R1"
+file = "claude/commands/plan-update.md"
+line = 318
+symbol = "step-3 reconcile / step-6 migrate / shared flow-context artifacts rule"
+severity = "critical"
+effort = "small"
+category = "architecture"
+summary = "plan-update.md still has bootstrap paths (and the shared flow-context block in 8 files) that Write execution-record.toml without the new tomlctl integrity refresh step — re-introduces the exact sidecar-missing regression this commit claims to fix whenever /plan-update reconcile, /plan-update migrate, or any other self-healing command first materialises a legacy flow's execution-record"
+description = '''plan-update.md:318 (Step 3 reconcile) and :711 (Task 6 migrate) describe 'bootstrap the file via a single atomic Write of the literal content schema_version = 1\nlast_updated = <today>\n before any tomlctl items add / list / get call' with NO matching integrity refresh. The shared flow-context block at line 58 — which is replicated across all 8 command files via scripts/shared-blocks.toml — asserts the same atomic-Write self-healing contract for ANY command that first encounters a legacy flow's missing execution_record file, again without the integrity refresh. Net effect: the commit's tightened read-path integrity contract ('no bootstrap-grace branch') is inconsistent with the actual writer surface for every non-plan-new bootstrap path. Fix: either update every atomic-Write bootstrap site and the shared flow-context block to also perform integrity refresh, or replace all three prose copies with the planned `tomlctl flow bootstrap-execution-record` subcommand (already tracked as the 'Follow-up: consolidate the 3 self-healing prose copies' note in the flow-context block).'''
+evidence = [
+    "plan-update.md:318 — 'bootstrap the file via a single atomic Write'",
+    "plan-update.md:711 — same bootstrap with no refresh",
+    "shared flow-context block at every command file's line 58 — self-healing contract omits integrity refresh",
+]
+dedup_id = "f24f4f6a45ff9eaf"
+resolved = 2026-04-21
+resolution = "Added `tomlctl integrity refresh` step to all three bootstrap paths: plan-update.md:318 (Step 3 reconcile), plan-update.md:711 (Step 6 migrate), and the shared flow-context block's [artifacts] self-healing rule — byte-identical edit landed in all 8 command files. Shared-block parity verified via scripts/verify-shared-blocks.sh."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R2"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 955
+symbol = "integrity_dispatch"
+severity = "warning"
+effort = "trivial"
+category = "security"
+summary = "integrity_dispatch omits the recheck_claude_containment() call that mutate_doc / mutate_doc_conditional / mutate_doc_plan all perform immediately before persisting — closes a parity gap with the R3 TOCTOU-narrowing pattern"
+description = "Every other write wrapper in io.rs runs recheck_claude_containment(file) after the closure body and before write_toml_with_sidecar when !allow_outside (see io.rs:270, :310, :346). integrity_dispatch calls guard_write_path once inside the lock then goes straight to refresh_sidecar → atomic_write with no second containment check. The in-lock guard_write_path (O17) is the primary defence and closes the window for any actor that respects our lock, but the codebase's belt-and-braces R3 pattern — explicitly documented at io.rs:267-269 as 'cheap belt-and-braces' — should apply here too. Add `if !allow_outside { recheck_claude_containment(&file)?; }` immediately before refresh_sidecar(&file)?."
+evidence = [
+    "io.rs:254-275 mutate_doc template",
+    "dispatch.rs:949-969 new integrity_dispatch closure",
+]
+dedup_id = "763887c735e129f2"
+resolved = 2026-04-21
+resolution = "Added pre-persist recheck_claude_containment gate in integrity_dispatch (dispatch.rs) matching the mutate_doc O17/R3 TOCTOU-narrowing pattern. Promoted recheck_claude_containment to pub(crate) in io.rs."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "verified-clean"
+id = "R3"
+file = "tomlctl/src/integrity.rs"
+line = 150
+symbol = "refresh_sidecar"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "refresh_sidecar in integrity.rs calls crate::io::atomic_write and required promoting atomic_write to pub(crate) — inverts the established module dependency (io.rs imports IntegrityOpts/hex_lower/sidecar_path from integrity.rs) and duplicates the sidecar-bytes format already built inside write_toml_with_sidecar"
+description = '''integrity.rs was a pure leaf consumed by io.rs. This commit adds a dependency the other way: refresh_sidecar in integrity.rs needs atomic_write from io.rs, so atomic_write moved from private fn to pub(crate). Meanwhile the sidecar-bytes construction (hex_lower(Sha256::digest(bytes)) + basename + format!('{}  {}\n') + atomic_write(sidecar, ...)) is duplicated between io.rs:898-912 and integrity.rs:145-150. Move refresh_sidecar into io.rs next to write_toml_with_sidecar as a pub(crate) helper, or extract a shared write_sidecar_for(path, digest) helper in io.rs that both callers use. Restores the layering intent and eliminates the triple-sourced format string.'''
+evidence = [
+    "io.rs R62 module header — 'filesystem-I/O plumbing split out of main.rs'",
+    "io.rs:898-912 and integrity.rs:145-150 — duplicated sidecar-contents format",
+]
+dedup_id = "bd113eb0e9c43494"
+verified_note = "Addressed by R6's shared write_sidecar_for helper extraction — write plumbing re-centralised in io.rs; integrity.rs's refresh_sidecar now calls write_sidecar_for rather than open-coding atomic_write. No direct bytes written for R3 per the hard disambiguation rule — audited during /review-apply 2026-04-21."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R4"
+file = "tomlctl/src/cli/types.rs"
+line = 437
+symbol = "IntegrityOp::Refresh"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "IntegrityOp::Refresh hand-rolls a lone `allow_outside: bool` field instead of flattening WriteIntegrityArgs like every other write subcommand — forks the CLI's write-side flag surface and forfeits the principled --verify-integrity-pre-overwrite semantics"
+description = "Every other write-style subcommand (Set, SetJson, all ItemsOp write variants, ArrayAppend) takes #[command(flatten)] integrity: WriteIntegrityArgs which bundles --allow-outside with --no-write-integrity, --verify-integrity, --strict-integrity under a common Integrity options help heading. Refresh strips this to a lone allow_outside bool. --no-write-integrity and --strict-integrity are semantically vacuous for this command (OK to omit), but --verify-integrity has a principled use: 'verify the existing sidecar matches before overwriting it' — a safety valve against silently clobbering a mismatched sidecar during what the caller thought was a benign bootstrap. Adopt WriteIntegrityArgs and either wire --verify-integrity through or fail at clap with a structural-mutex error like Blocks does at types.rs:358."
+evidence = [
+    "types.rs:138-168 WriteIntegrityArgs",
+    "types.rs:358-362 Blocks structural-mutex precedent",
+]
+dedup_id = "2e945195b545fc8a"
+resolved = 2026-04-21
+resolution = "Flattened WriteIntegrityArgs into IntegrityOp::Refresh; --verify-integrity now gates against clobbering a mismatched sidecar, --no-write-integrity errors with a directed message, --strict-integrity silently ignored. End-to-end verified against the new 0.3.0 binary."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R5"
+file = "tomlctl/src/integrity.rs"
+line = 115
+symbol = "refresh_sidecar"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "refresh_sidecar hashes raw bytes with no toml::from_str gate — a malformed execution-record.toml (e.g. truncated by a partial Write) gets silently blessed with a valid sidecar, hiding corruption until the next read fails at the parse layer rather than the integrity layer"
+description = "sha256_hex_of_file streams bytes and writes the sidecar with no parse step. For the recovery scenario (sidecar deleted but TOML intact) that's fine. For the bootstrap scenario (we just wrote 2 lines of TOML) it's also fine. But if a user reaches for refresh to fix a wedged flow whose TOML was corrupted out-of-band, refresh will paper over the corruption. Either add a toml::from_str validation gate before writing the sidecar, or document explicitly in the refresh_sidecar docstring, plan-new.md step-7, and SKILL.md that refresh is a pure content-digest primitive and recommend `tomlctl validate <path>` pre-refresh for the recovery path."
+evidence = ["integrity.rs:120 — `let hex = match sha256_hex_of_file(file)`, no parse"]
+dedup_id = "d53f2fbe2b6cd4bd"
+resolved = 2026-04-21
+resolution = "Documented in integrity.rs refresh_sidecar docstring and IntegrityOp::Refresh clap doc that refresh hashes raw bytes without toml::from_str validation; recommends `tomlctl validate <path>` pre-refresh for the recovery path."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R6"
+file = "tomlctl/src/integrity.rs"
+line = 148
+symbol = "refresh_sidecar"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Sidecar-bytes construction duplicated across io::write_toml_with_sidecar (lines 900-912), its O16 recovery branch (line 936), and integrity::refresh_sidecar (lines 145-150) — extract a single write_sidecar_bytes(path, digest) helper"
+description = 'All three call sites compute basename via `file.file_name().ok_or_else(...).to_string_lossy().into_owned()`, format via `{}  {}\n`, and atomic_write to sidecar_path(file). The file_name-missing error branch is worded differently in each (anyhow! in io.rs vs tagged_err(Validation, …) in integrity.rs). If the sidecar format ever changes the edit must happen in three places that currently agree only by convention. See also R3 for the module-layering fix that would make this helper extraction natural.'
+evidence = [
+    "io.rs:898-912",
+    "io.rs:933-937",
+    "integrity.rs:141-150",
+]
+dedup_id = "26120c720ae6b231"
+resolved = 2026-04-21
+resolution = "Extracted pub(crate) write_sidecar_for(file, bytes) helper in io.rs; 3 call sites (write_toml_with_sidecar first persist, O16 recovery branch, refresh_sidecar) now share one sidecar-bytes format. refresh_sidecar switched from streaming sha256_hex_of_file to fs::read + write_sidecar_for, with NotFound tag attached at the io::Error call site (R21-idiomatic pattern)."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R7"
+file = "tomlctl/src/integrity.rs"
+line = 125
+symbol = "refresh_sidecar"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "NotFound-tagging branch only tags ErrorKind::NotFound — every other io::ErrorKind (PermissionDenied, IsADirectory, InvalidInput) silently falls through to untagged 'other' under --error-format json, diverging from the taxonomy contract and leaving ErrorKind::Io permanently dead-code"
+description = "anyhow's downcast_ref::<io::Error>() walks the chain (with_context preserves source types), so the downcast here does find the inner io::Error from File::open and the NotFound branch IS reachable. But the match only tags NotFound; a PermissionDenied on the TOML, an IsADirectory if the caller passes a directory, or an InvalidInput on pathologically long paths all fall through to kind='other'. errors.rs:37 marks ErrorKind::Io as #[allow(dead_code)] because no site uses it — refresh_sidecar was the natural first site. Either extend the match to tag more io::ErrorKind variants, or move the classification into sha256_hex_of_file itself (at the File::open call site, before any with_context wrap)."
+evidence = [
+    "errors.rs:32-56 closed taxonomy",
+    "integrity.rs:120-136 single-arm match",
+]
+dedup_id = "76294389417a13ec"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R8"
+file = "tomlctl/tests/integration.rs"
+line = 1339
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Missing integration-test coverage around refresh: idempotent re-refresh (byte-identical on second call), --allow-outside happy path, empty-file refresh, directory-target error, malformed-TOML refresh"
+description = "The three new tests cover bootstrap happy path, missing-file NotFound tagging, and containment refusal — but leave several behaviours unpinned: (a) calling refresh twice — does the second call produce byte-identical sidecar bytes? SKILL.md claims idempotence but nothing tests it. (b) No --allow-outside happy path (existing test only checks refusal). (c) No zero-byte file test — the streaming read loop's n==0 break is correct but untested. (d) No directory-target test — the error surface is undefined. (e) No malformed-TOML refresh (see R5). At minimum add (a) and (b)."
+evidence = ["integration.rs:1339,1416,1451 — only three test fns"]
+dedup_id = "25497563feab947f"
+resolved = 2026-04-21
+resolution = "Added 3 integration tests at tomlctl/tests/integration.rs: integrity_refresh_is_idempotent_on_unchanged_file (byte-identical sidecar across two refreshes), integrity_refresh_allow_outside_writes_sidecar (success branch of the --allow-outside escape hatch), integrity_refresh_handles_zero_byte_file (empty-file digest pinned to SHA-256 e3b0c442...b7852b855). All 6 integrity_refresh_* tests pass."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R9"
+file = "tomlctl/tests/integration.rs"
+line = 1424
+symbol = "integrity_refresh_missing_file_is_not_found"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Test oracle ORs the typed tag with the raw prose substring — a silent regression that stops attaching the NotFound tag would still leave the `does not exist` literal in stderr and pass the test"
+description = """The assertion `stderr.contains("not_found") || stderr.contains("does not exist")` is defeated on one side by the fact that `does not exist` is hardcoded into refresh_sidecar's error message (integrity.rs:131) and is always emitted regardless of whether the NotFound tag is attached. If anyhow's downcast semantics change, or a refactor moves File::open behind a layer that breaks the downcast, the tag drops but the literal prose still appears — the test passes green. Tighten to require `stderr.contains('"kind":"not_found"')` against the --error-format json output (which the test already invokes)."""
+evidence = [
+    "integration.rs:1423-1428",
+    "integrity.rs:131 hardcoded prose",
+]
+dedup_id = "ea1a4cafc1e5afab"
+resolved = 2026-04-21
+resolution = """Tightened integrity_refresh_missing_file_is_not_found oracle to require the literal substring '"kind":"not_found"' in the --error-format json envelope; removed the OR-with-prose fallback that masked tag regressions."""
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R10"
+file = "claude/commands/plan-new.md"
+line = 510
+symbol = "step-7 bootstrap halt branch"
+severity = "warning"
+effort = "trivial"
+category = "security"
+summary = "Step 7's halt-on-refresh-failure prose leaves a partial-bootstrap state (TOML on disk, sidecar missing) with no cleanup guidance and doesn't quote the exact recovery command — a user who sees the halt must grep the skill doc to discover what to run"
+description = "The new sub-block ends: 'If the refresh fails (rare — the lock or sidecar write errored), halt: the file exists without its sidecar, and downstream verify-integrity reads will fail until the user reruns the refresh manually.' Two issues: (1) no cleanup guidance — a subsequent /plan-new re-attempt for the same slug will see the existing TOML, skip the Write, and leave the partial state entrenched. Either direct the user to `rm` the TOML before retrying, or have /plan-new delete the TOML on refresh failure so the bootstrap is atomic in effect. (2) No explicit recovery command — quote `tomlctl integrity refresh .claude/flows/<slug>/execution-record.toml` verbatim in the halt message so a halting agent can surface it to the user."
+evidence = ["plan-new.md:510-516 new sub-block"]
+dedup_id = "5025bc60703954bc"
+resolved = 2026-04-21
+resolution = "plan-new.md step-7 halt text now quotes the exact `tomlctl integrity refresh .claude/flows/<slug>/execution-record.toml` recovery command and adds TOML-cleanup guidance (rm before retry) to prevent partial-bootstrap entrenchment on a subsequent /plan-new re-attempt for the same slug."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R11"
+file = "tomlctl/README.md"
+line = 42
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "tomlctl/README.md documents --no-write-integrity / --verify-integrity / --strict-integrity flags but has no mention of the new `integrity` subcommand group or `integrity refresh` operation — drifts from SKILL.md"
+description = "SKILL.md was updated with a new feature-table row and a 'Regenerate a missing sidecar' section. README.md — the Rust-crate-level doc — is now stale relative to the CLI surface. Add a short subsection mirroring SKILL.md, or an explicit pointer ('see claude/skills/tomlctl/SKILL.md for the integrity subcommand group')."
+evidence = ["grep of tomlctl/README.md for 'integrity refresh' returns 0 hits"]
+dedup_id = "25d7081aa056674a"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "fixed"
+id = "R12"
+file = "tomlctl/Cargo.toml"
+line = 3
+symbol = "package.version"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "User-visible new subcommand and feature added without a tomlctl semver bump (still 0.2.0) — older local installs will fail with 'unrecognised subcommand integrity' when /plan-new runs the new bootstrap step"
+description = "The commit adds a new top-level subcommand `integrity` (user-visible surface expansion) and a new `integrity_refresh` feature flag in FEATURES. Prior precedent (docs/plans/tomlctl-capability-gaps.md:159, 'Bump tomlctl/Cargo.toml version 0.1.0 → 0.2.0 (semver-relevant new surface)') established minor-bump-on-new-subcommand. Capabilities gating means downstream commands can detect the new surface without a version bump, so functional impact is limited — but CLAUDE.md's 'Build & test' section instructs `cargo install --path tomlctl` only 'when the tomlctl binary version bumps'. Without a bump, users with older installs get the old binary and /plan-new step 7's `tomlctl integrity refresh` invocation fails hard. Bump to 0.3.0 so the reinstall heuristic triggers."
+evidence = [
+    "Cargo.toml:3 unchanged",
+    "docs/plans/tomlctl-capability-gaps.md:159 precedent",
+    "CLAUDE.md build-and-test reinstall guidance",
+]
+dedup_id = "8f2ad555278be99c"
+resolved = 2026-04-21
+resolution = "Bumped tomlctl 0.2.0 → 0.3.0 (Cargo.toml + capabilities_version_matches_cargo_toml test literal) for the new integrity subcommand. `cargo install --path tomlctl --force` verified end-to-end — CLAUDE.md's reinstall-on-bump heuristic now triggers for downstream consumers."
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R13"
+file = "tomlctl/src/integrity.rs"
+line = 141
+symbol = "refresh_sidecar file-name-missing branch"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "ErrorKind::Validation used to tag the file-name-missing branch widens the taxonomy beyond its documented 'CLI-level validation rule' scope — the structurally identical branch in write_toml_with_sidecar uses untagged anyhow!, so the two surface under different `kind` strings"
+description = "errors.rs:44-47 documents ErrorKind::Validation as 'A CLI-level validation rule rejected the invocation — flag mutex violations in validate_query, or the prefix-shape check in items_next_id'. A path that ends in `..` or `/` producing None from file_name() isn't a CLI validation rule — it's a path-invariant failure inside the write pipeline. Either retag (add a new kind, or reuse NotFound), or drop the tag to plain anyhow! to match io.rs:900-904 so two structurally identical refusals surface uniformly."
+evidence = [
+    "errors.rs:44-47 documented scope",
+    "io.rs:900-904 untagged parallel branch",
+]
+dedup_id = "dd4c326bc2b5194c"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R14"
+file = "claude/commands/plan-new.md"
+line = 493
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Step 7 still opens with 'Perform a single atomic step' but now chains `Write` + `tomlctl integrity refresh` — the framing and the procedure disagree"
+description = "The step-7 opener predates the refresh. It's now a two-step sequence with an ordering constraint (Write first, then refresh) and a fail-halt branch. Either rephrase ('Perform an atomic two-step sequence: materialise the TOML atomically, then the sidecar') or split into explicit numbered sub-steps."
+evidence = ["plan-new.md:493 opener vs :510-516 refresh sub-block"]
+dedup_id = "e816cc24d654ec79"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R15"
+file = "tomlctl/src/cli/types.rs"
+line = 35
+symbol = "FEATURES const"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "New FEATURES entry `integrity_refresh` breaks the `// T<n>` suffix convention used by every other entry (T1..T11 at lines 23-34)"
+description = "The new entry uses a descriptive comment ('sidecar bootstrap / recovery primitive') because this work wasn't tracked under the tomlctl-capability-gaps plan's T-series. Defensible as-is, but now the convention has one outlier. Either back-reference a plan/task number, or document that FEATURES comments accept descriptive text."
+evidence = ["types.rs:23-36 FEATURES const"]
+dedup_id = "a6f47ed8ff65297f"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R16"
+file = "tomlctl/src/integrity.rs"
+line = 131
+symbol = "refresh_sidecar NotFound prose"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "NotFound message 'refreshing sidecar: <path> does not exist' breaks the established 'reading <path>: <io::Error Display>' pattern used by read_toml / read_toml_str — reshape for prose parity"
+description = "Existing NotFound sites emit 'reading {path}: {os-error}' (e.g. 'No such file or directory (os error 2)'). The new site drops the os-error suffix and uses a different subject-verb order. Low severity — just convention drift that makes log-scraping regex brittle across sites."
+evidence = [
+    "io.rs:125-157 read_toml NotFound prose",
+    "integrity.rs:128-131",
+]
+dedup_id = "f61f1f6679fb334a"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R17"
+file = "tomlctl/tests/integration.rs"
+line = 1346
+symbol = "integrity_refresh_materialises_sidecar_for_bootstrapped_file"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = """Test derives sidecar path via `target.with_extension("toml.sha256")` — a subtle PathBuf quirk that happens to equal the production `sidecar_path` output only because the target ends in `.toml`; use format!('{}.sha256', ...) or expose sidecar_path() so the test computes the path the same way production does"""
+description = "PathBuf::with_extension replaces the existing extension. The test passes coincidentally because `target.toml` gets its `.toml` extension replaced with `.toml.sha256`. If the target were ever `execution-record.toml.draft` the test would silently diverge from what production derives. Low-severity readability nit."
+evidence = ["integration.rs:1346"]
+dedup_id = "b2e356e4a098147d"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R18"
+file = "tomlctl/src/io.rs"
+line = 969
+symbol = "atomic_write"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "atomic_write promoted from private to pub(crate) with no doc note clarifying it's the sidecar/TOML persistence primitive (no containment guard, no lock acquisition — caller must wrap)"
+description = "The visibility bump exports a low-level primitive that now has two crate-internal callers (write_toml_with_sidecar, refresh_sidecar). A future module could naively call it and skip the lock+guard wrapping. Add a one-sentence header: 'MUST be wrapped in with_exclusive_lock + guard_write_path; see refresh_sidecar / write_toml_with_sidecar for the canonical call pattern.'"
+evidence = ["io.rs:969 pub(crate) fn atomic_write"]
+dedup_id = "a683830d0efa364f"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R19"
+file = "tomlctl/src/integrity.rs"
+line = 115
+symbol = "refresh_sidecar docstring"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "refresh_sidecar's 32-line docstring duplicates the clap-facing docstring on IntegrityOp::Refresh (types.rs:412-430) almost verbatim — shrink the internal docstring to a one-sentence cross-reference"
+description = "Both docs explain Bootstrap use case, Recovery use case, don't-touch-the-TOML guarantee, and the caller's MUST-hold-the-lock obligation. The clap doc is user-facing via --help; the integrity.rs doc is only read by tomlctl maintainers. One-line summary + 'See IntegrityOp::Refresh for the contract.' matches the convention used by most pub(crate) helpers in integrity.rs (e.g. maybe_verify_integrity is single-line)."
+evidence = ["integrity.rs:85-118 vs types.rs:412-430"]
+dedup_id = "cf421cf569023186"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R20"
+file = "claude/commands/plan-new.md"
+line = 510
+severity = "suggestion"
+effort = "medium"
+category = "completeness"
+summary = "Gap between the Write tool and the tomlctl integrity refresh invocation is a TOCTOU window for concurrent readers — an /implement or /plan-update started in this window would still see the sidecar-missing error the commit claims to fix"
+description = "The Write tool doesn't take tomlctl's exclusive lock. There's a non-zero interval between Write completing and `tomlctl integrity refresh` acquiring the lock. A concurrent `/implement` or `/plan-update` that starts in this window would fail with the pre-fix error. For the current usage pattern (humans run /plan-new once, then move on) this is theoretical. But document the window in the step-7 paragraph so no future reader treats this as a general-purpose atomic-Write-plus-sidecar primitive."
+evidence = ["plan-new.md:501-516 two-operation sequence"]
+dedup_id = "565e65383b08a6b1"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R21"
+file = "tomlctl/src/integrity.rs"
+line = 120
+symbol = "refresh_sidecar"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "NotFound-downcast via anyhow::Error::downcast_ref::<io::Error>() is unidiomatic vs the rest of the module — read_toml (io.rs:137) classifies io::ErrorKind at the raw fs call site before any with_context wraps"
+description = "The downcast works (with_context preserves source types), but the established pattern in io.rs is to match io::Error.kind() immediately at the fs::read_to_string call site so the tag attaches before any context layers. Prefer classifying inside sha256_hex_of_file at the File::open call site, or doing an upfront `if !file.exists() { return tagged NotFound }` in refresh_sidecar."
+evidence = [
+    "io.rs:125-157 read_toml classification pattern",
+    "integrity.rs:120-136 downcast-after-context pattern",
+]
+dedup_id = "3f3eca6cfa083981"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R22"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 949
+symbol = "integrity_dispatch"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "integrity_dispatch duplicates the with_exclusive_lock + guard_write_path skeleton that mutate_doc* already centralise — extract a sibling with_write_guard(file, allow_outside, f) helper for future sidecar-only operations"
+description = "Today there's only one such site so extraction is arguably premature. But the codebase has a clear preference for centralising cross-cutting concerns (shared-blocks, mutate_doc* family). If a second sidecar-only operation lands (integrity verify-only, integrity recompute-all-under), the copy-paste will happen. Pre-empting is cheap."
+evidence = ["dispatch.rs:949-969 vs io.rs:254-275 mutate_doc"]
+dedup_id = "933ca517b8d60860"
+
+[[items]]
+first_flagged = 2026-04-21
+rounds = 1
+status = "open"
+id = "R23"
+file = "claude/commands/implement.md"
+line = 258
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Shared-block prose hard-codes 'see step 7 of the bootstrap' as a cross-file reference into plan-new.md — step-list renumbering in plan-new would silently rot the reference across all three shared-block files with no CI signal"
+description = "The read-path integrity contract now says 'see step 7 of the bootstrap' pointing into plan-new.md's numbered step list. If steps are added/removed/reordered in plan-new's bootstrap, every sibling reference breaks silently. Replace with a named anchor or section title (e.g. 'see the Bootstrap-the-execution-record section'), or add a verify-shared-blocks-style check that steps under named anchors are stable."
+evidence = ["All three command files contain 'step 7 of the bootstrap' at line ~258"]
+dedup_id = "4416cae567d17c90"

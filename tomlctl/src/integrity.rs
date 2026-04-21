@@ -110,44 +110,43 @@ pub(crate) fn maybe_verify_integrity(file: &Path, integrity: IntegrityOpts) -> R
 /// a round-trip through `tomlctl set` (which would rewrite the TOML and
 /// bump mtime for no semantic reason).
 ///
+/// R5: refresh is a pure content-digest primitive — it hashes raw bytes and
+/// never parses TOML. A malformed file (e.g. a truncated partial write, or
+/// hand-corrupted content) will silently get a valid sidecar; the next
+/// `--verify-integrity` read will still pass digest, but the first TOML
+/// parse will fail with `kind=parse`. For the recovery scenario, consider
+/// running `tomlctl validate <path>` before `integrity refresh` so
+/// syntactic corruption surfaces before the sidecar papers over it.
+///
 /// The caller MUST wrap the call in `with_exclusive_lock(file, ...)` so
 /// a concurrent writer observes a consistent (TOML, sidecar) pair.
 pub(crate) fn refresh_sidecar(file: &Path) -> Result<()> {
-    // Hash the current on-disk bytes directly — we don't need a parse, only
-    // a content digest. Fails early with a clear NotFound tag if the file
-    // doesn't exist (matches the prose of `read_toml`'s NotFound branch so
-    // `--error-format json` surfaces `kind=not_found` uniformly).
-    let hex = match sha256_hex_of_file(file) {
-        Ok(h) => h,
+    // R6: read the file's current bytes into memory, then let the shared
+    // `io::write_sidecar_for` helper compute the digest and atomic-write
+    // the sidecar. `refresh_sidecar` targets small TOML files (KiB, not
+    // GiB) — peak memory bounded by file size is acceptable and keeps the
+    // hash-and-format contract co-located with the rest of the sidecar
+    // plumbing in `io.rs`.
+    //
+    // NotFound tagging (R6): match directly on the `io::Error` BEFORE any
+    // `with_context` wrap so the tag is attached to the innermost error
+    // layer (mirrors `read_toml`'s NotFound pattern). Other I/O errors
+    // fall through the untagged `with_context` branch.
+    let bytes = match fs::read(file) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(tagged_err(
+                ErrorKind::NotFound,
+                Some(file.to_owned()),
+                format!("refreshing sidecar: {} does not exist", file.display()),
+            ));
+        }
         Err(e) => {
-            // If the open failed with NotFound, surface it tagged; other I/O
-            // errors fall through untagged.
-            if let Some(io_err) = e.downcast_ref::<std::io::Error>()
-                && io_err.kind() == std::io::ErrorKind::NotFound
-            {
-                return Err(tagged_err(
-                    ErrorKind::NotFound,
-                    Some(file.to_owned()),
-                    format!("refreshing sidecar: {} does not exist", file.display()),
-                ));
-            }
-            return Err(e);
+            return Err(anyhow::Error::new(e))
+                .with_context(|| format!("reading {} for sidecar refresh", file.display()));
         }
     };
-    let basename = file
-        .file_name()
-        .ok_or_else(|| {
-            tagged_err(
-                ErrorKind::Validation,
-                Some(file.to_owned()),
-                format!("refreshing sidecar: target `{}` has no file name", file.display()),
-            )
-        })?
-        .to_string_lossy()
-        .into_owned();
-    let sidecar_contents = format!("{}  {}\n", hex, basename);
-    let sidecar = sidecar_path(file);
-    crate::io::atomic_write(&sidecar, sidecar_contents.as_bytes())
+    crate::io::write_sidecar_for(file, &bytes)
 }
 
 pub(crate) fn verify_integrity(file: &Path) -> Result<()> {

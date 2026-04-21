@@ -1552,7 +1552,7 @@ fn capabilities_features_contains_every_plan_feature() {
     );
 }
 
-/// T7-3: the `version` string equals `0.2.0`. Literal assertion rather
+/// T7-3: the `version` string equals `0.3.0`. Literal assertion rather
 /// than reading Cargo.toml — the whole point of this task is the semver
 /// bump, so pinning the exact release marker keeps the acceptance criterion
 /// honest. Bump both sides in lockstep on the next minor release.
@@ -1572,8 +1572,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.2.0",
-        "expected version `0.2.0` (the 0.1.0 → 0.2.0 bump this release carries); got `{version}`"
+        version, "0.3.0",
+        "expected version `0.3.0` (the 0.2.0 → 0.3.0 bump for the new integrity subcommand); got `{version}`"
     );
 }
 

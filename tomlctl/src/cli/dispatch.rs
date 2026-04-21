@@ -20,10 +20,11 @@ use super::types::{
 use crate::blocks::blocks_verify;
 use crate::convert::{detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json};
 use crate::dedup::{items_find_duplicates, items_find_duplicates_across};
-use crate::integrity::{IntegrityOpts, refresh_sidecar};
+use crate::integrity::{IntegrityOpts, refresh_sidecar, sidecar_path, verify_integrity};
 use crate::io::{
     guard_write_path, mutate_doc, mutate_doc_conditional, mutate_doc_plan, read_doc,
-    read_doc_borrowed, read_toml_str, warn_if_read_outside_claude, with_exclusive_lock,
+    read_doc_borrowed, read_toml_str, recheck_claude_containment,
+    warn_if_read_outside_claude, with_exclusive_lock,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, array_append, compute_apply_mutation, compute_backfill_mutation,
@@ -948,7 +949,31 @@ fn blocks_dispatch(op: BlocksOp) -> Result<()> {
 
 fn integrity_dispatch(op: IntegrityOp) -> Result<()> {
     match op {
-        IntegrityOp::Refresh { file, allow_outside } => {
+        IntegrityOp::Refresh { file, integrity } => {
+            // R4: `integrity refresh` flattens `WriteIntegrityArgs` for parity
+            // with every other write subcommand, but not every flag has a
+            // semantic hook on this sidecar-only operation. Surface the
+            // semantically-meaningless ones here so composable wrapper scripts
+            // fail loud on the truly broken combination and no-op on the
+            // harmless one:
+            //
+            // - `--no-write-integrity`: refresh IS the sidecar write — making
+            //   the flag structurally meaningless. Bail with a directed
+            //   message rather than silently no-op (which would leave the
+            //   caller convinced the sidecar was refreshed).
+            // - `--strict-integrity`: refresh has no sidecar-failure
+            //   fallback path to strict-ify (we already fail hard on any
+            //   `atomic_write` error). Silently ignore so wrapper scripts
+            //   that blanket-add the flag across a mix of write subcommands
+            //   don't need to special-case refresh.
+            if integrity.no_write_integrity {
+                bail!(
+                    "--no-write-integrity is meaningless on `integrity refresh` — the subcommand's entire purpose is to write the sidecar"
+                );
+            }
+            let _ = integrity.strict_integrity; // R4: silently ignored; see above.
+            let allow_outside = integrity.allow_outside;
+            let verify_before_overwrite = integrity.verify_integrity;
             // Take the same exclusive lock any write path would, so a
             // concurrent `tomlctl set` / `items add` observes a consistent
             // (TOML, sidecar) pair rather than overlapping our refresh.
@@ -959,6 +984,25 @@ fn integrity_dispatch(op: IntegrityOp) -> Result<()> {
                 // could otherwise trick us into writing next to an
                 // arbitrary target.
                 guard_write_path(&file, allow_outside)?;
+                // R4: `--verify-integrity` on refresh means "verify the
+                // existing sidecar matches before overwriting". This gates
+                // the recovery path against clobbering a mismatched sidecar
+                // (e.g. if the TOML was tampered with between the previous
+                // write and this refresh, the caller wants to know before
+                // the sidecar gets regenerated against the tampered bytes).
+                // Missing sidecar → proceed silently; bootstrap is the
+                // whole point of this subcommand.
+                if verify_before_overwrite && sidecar_path(&file).exists() {
+                    verify_integrity(&file)?;
+                }
+                // R2: in-lock pre-persist containment re-check. Mirrors the
+                // mutate_doc O17/R3 pattern — the inside-lock `guard_write_path`
+                // above is the primary defence; this call is the belt-and-braces
+                // TOCTOU narrowing against a parent-symlink swap between the
+                // guard and the `atomic_write` inside `refresh_sidecar`.
+                if !allow_outside {
+                    recheck_claude_containment(&file)?;
+                }
                 refresh_sidecar(&file)?;
                 Ok(())
             })?;

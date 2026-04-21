@@ -359,7 +359,13 @@ where
 /// Re-canonicalise `file`'s parent and assert it still starts with the
 /// `.claude/` canonical root. Used by `mutate_doc` to narrow the TOCTOU window
 /// described in R3.
-fn recheck_claude_containment(file: &Path) -> Result<()> {
+///
+/// R2: also invoked by `integrity_dispatch::IntegrityOp::Refresh` so the
+/// sidecar-write path gets the same belt-and-braces TOCTOU narrowing the
+/// mutate_doc family performs between the inside-lock `guard_write_path`
+/// and the subsequent `atomic_write` (inside `refresh_sidecar` →
+/// `write_sidecar_for`).
+pub(crate) fn recheck_claude_containment(file: &Path) -> Result<()> {
     let parent = file
         .parent()
         .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })
@@ -852,6 +858,26 @@ pub(crate) fn warn_if_read_outside_claude(file: &Path) {
     );
 }
 
+/// R6: shared sidecar-bytes helper. Computes the SHA-256 of `bytes`, derives
+/// the basename of `file`, formats the standard `sha256sum`-style content
+/// (`<hex>  <basename>\n`), and atomically writes it to `sidecar_path(file)`.
+///
+/// Taking the *source bytes* (rather than a pre-computed digest) keeps the
+/// hash-and-format contract in one place — every caller already has the
+/// bytes in hand. Used by both `write_toml_with_sidecar` (first persist +
+/// O16 recovery branch) and `integrity::refresh_sidecar`, so the three
+/// former open-coded sites now share one implementation.
+pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
+    let hex = hex_lower(&Sha256::digest(bytes));
+    let basename = file
+        .file_name()
+        .ok_or_else(|| anyhow!("target `{}` has no file name", file.display()))?
+        .to_string_lossy()
+        .into_owned();
+    let sidecar_contents = format!("{}  {}\n", hex, basename);
+    atomic_write(&sidecar_path(file), sidecar_contents.as_bytes())
+}
+
 /// Write the TOML document and (unless suppressed) also write the `<file>.sha256`
 /// sidecar.
 ///
@@ -894,22 +920,15 @@ pub(crate) fn write_toml_with_sidecar(
         return atomic_write(path, bytes);
     }
 
-    // Stage both tempfiles with hash computed from the same in-memory bytes.
-    let hex = hex_lower(&Sha256::digest(bytes));
-    let sidecar = sidecar_path(path);
-    let basename = path
-        .file_name()
-        .ok_or_else(|| anyhow!("target `{}` has no file name", path.display()))?
-        .to_string_lossy()
-        .into_owned();
-    let sidecar_contents = format!("{}  {}\n", hex, basename);
-
     // O12: persist SIDECAR first; if this fails, the TOML was never updated and
     // the on-disk pair stays internally consistent (OLD + OLD). If sidecar
     // succeeds, persist the TOML — under the same exclusive lock there is no
     // concurrent writer, and any reader observing a mid-swap state lands on
     // the recoverable combinations documented above.
-    atomic_write(&sidecar, sidecar_contents.as_bytes())?;
+    //
+    // R6: sidecar-bytes construction (hash + basename + format + atomic_write)
+    // is centralised in `write_sidecar_for`.
+    write_sidecar_for(path, bytes)?;
     if let Err(e) = atomic_write(path, bytes) {
         if integrity.strict {
             return Err(e).with_context(|| {
@@ -929,12 +948,12 @@ pub(crate) fn write_toml_with_sidecar(
         // in a wedged state when the TOML failure is transient (e.g. EIO,
         // ENOSPC clearing) — the next successful write still proceeds
         // through the standard NEW-sidecar / NEW-TOML path.
+        // R6: recovery sidecar-bytes construction centralised in
+        // `write_sidecar_for`.
         let recovery: Result<()> = (|| {
             let on_disk = fs::read(path)
                 .with_context(|| format!("re-reading {} for sidecar recovery", path.display()))?;
-            let recovery_hex = hex_lower(&Sha256::digest(&on_disk));
-            let recovery_contents = format!("{}  {}\n", recovery_hex, basename);
-            atomic_write(&sidecar, recovery_contents.as_bytes())
+            write_sidecar_for(path, &on_disk)
         })();
         if let Err(re) = recovery {
             eprintln!(
