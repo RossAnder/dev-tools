@@ -167,15 +167,12 @@ pub(crate) fn read_toml_str(path: &Path) -> Result<String> {
     // untagged.
     match fs::read_to_string(path) {
         Ok(s) => Ok(s),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            Err(tagged_err(
-                ErrorKind::NotFound,
-                Some(path.to_owned()),
-                format!("reading {}: {}", path.display(), e),
-            ))
-        }
-        Err(e) => Err(anyhow::Error::new(e))
-            .with_context(|| format!("reading {}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(tagged_err(
+            ErrorKind::NotFound,
+            Some(path.to_owned()),
+            format!("reading {}: {}", path.display(), e),
+        )),
+        Err(e) => Err(anyhow::Error::new(e)).with_context(|| format!("reading {}", path.display())),
     }
 }
 
@@ -199,8 +196,13 @@ pub(crate) fn read_doc_borrowed<'a, R>(
     // receives a `&str`, so we don't know the source path at this layer. The
     // message prose ("parsing borrowed TOML: <err>") is byte-identical to the
     // pre-T8 `anyhow!(...)` form.
-    let spanned = toml::de::DeTable::parse(source)
-        .map_err(|e| tagged_err(ErrorKind::Parse, None, format!("parsing borrowed TOML: {}", e)))?;
+    let spanned = toml::de::DeTable::parse(source).map_err(|e| {
+        tagged_err(
+            ErrorKind::Parse,
+            None,
+            format!("parsing borrowed TOML: {}", e),
+        )
+    })?;
     f(spanned.get_ref())
 }
 
@@ -368,11 +370,20 @@ where
 pub(crate) fn recheck_claude_containment(file: &Path) -> Result<()> {
     let parent = file
         .parent()
-        .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })
+        .and_then(|p| {
+            if p.as_os_str().is_empty() {
+                None
+            } else {
+                Some(p)
+            }
+        })
         .unwrap_or(Path::new("."));
-    let parent_canonical = parent
-        .canonicalize()
-        .with_context(|| format!("re-canonicalising parent of {} before persist", file.display()))?;
+    let parent_canonical = parent.canonicalize().with_context(|| {
+        format!(
+            "re-canonicalising parent of {} before persist",
+            file.display()
+        )
+    })?;
     let root = repo_or_cwd_root()?;
     let claude_dir = root.join(".claude");
     let claude_canonical = claude_dir.canonicalize().unwrap_or(claude_dir);
@@ -413,7 +424,13 @@ fn lock_path_for(target: &Path) -> Result<PathBuf> {
             // file.
             let parent = target
                 .parent()
-                .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })
+                .and_then(|p| {
+                    if p.as_os_str().is_empty() {
+                        None
+                    } else {
+                        Some(p)
+                    }
+                })
                 .unwrap_or(Path::new("."));
             match parent.canonicalize() {
                 Ok(pc) => {
@@ -450,7 +467,6 @@ fn lock_path_for(target: &Path) -> Result<PathBuf> {
 /// hash, no external RNG) to avoid lockstep retries between competing
 /// processes.
 pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) -> Result<R> {
-    use fs4::fs_std::FileExt;
     use std::time::Instant;
 
     let lock_path = lock_path_for(path)?;
@@ -481,9 +497,13 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
     let mut announced = false;
     let mut attempt: u64 = 0;
     loop {
-        match lock_file.try_lock_exclusive() {
-            Ok(true) => break,
-            Ok(false) => {
+        // Use std's inherent `File::try_lock` (stable since 1.89) — it returns
+        // `Result<(), TryLockError>` where `WouldBlock` is "lock held by
+        // another process" and `Error(io::Error)` is a real I/O failure. The
+        // shared sibling below uses the analogous inherent `try_lock_shared`.
+        match lock_file.try_lock() {
+            Ok(()) => break,
+            Err(std::fs::TryLockError::WouldBlock) => {
                 if !announced {
                     eprintln!(
                         "tomlctl: waiting for exclusive lock on {} …",
@@ -505,15 +525,13 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
                 )));
                 attempt = attempt.wrapping_add(1);
             }
-            Err(e) => {
-                // O43: treat EINTR (signal-interrupted syscall) and WouldBlock
-                // as transient — retry without sleeping and without consuming
-                // the retry budget. fs4's `try_lock_exclusive` surfaces the
-                // underlying `io::Error` directly; on unix a signal arriving
-                // mid-flock(2) returns `ErrorKind::Interrupted`. WouldBlock
-                // here is defensive (the `Ok(false)` arm above already handles
-                // the "lock held by another process" case on most platforms,
-                // but some fs4 versions surface it as an Err instead).
+            Err(std::fs::TryLockError::Error(e)) => {
+                // O43: EINTR is a benign retry signal (the syscall was
+                // interrupted before it could decide; the lock state is
+                // unchanged). Loop back without sleeping and without spending
+                // a retry budget slot. WouldBlock is its own `TryLockError`
+                // variant handled above; matching it here is defensive in
+                // case a future std revision ever folds it into `Error`.
                 if matches!(
                     e.kind(),
                     std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock
@@ -577,10 +595,7 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
         // Use std's inherent `File::try_lock_shared` (stable since 1.89) — it
         // returns `Result<(), TryLockError>` where `WouldBlock` is "lock held
         // by another process" and `Error(io::Error)` is a real I/O failure.
-        // The exclusive sibling uses fs4's `try_lock_exclusive` (different
-        // name; no collision with std's inherent `try_lock`); the shared
-        // path can't, because std's inherent `try_lock_shared` shadows the
-        // fs4 trait method by name resolution.
+        // The exclusive sibling above uses the analogous inherent `try_lock`.
         match lock_file.try_lock_shared() {
             Ok(()) => break,
             Err(std::fs::TryLockError::WouldBlock) => {
@@ -619,9 +634,8 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
                 ) {
                     continue;
                 }
-                return Err(anyhow!(e)).with_context(|| {
-                    format!("acquiring shared lock on {}", lock_path.display())
-                });
+                return Err(anyhow!(e))
+                    .with_context(|| format!("acquiring shared lock on {}", lock_path.display()));
             }
         }
     }
@@ -639,9 +653,8 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
 ///      Fall back to CWD if git is missing or we're not inside a repo.
 ///   3. Assert canonical target lies under `<root>/.claude/`.
 pub(crate) fn guard_write_path(file: &Path, allow_outside: bool) -> Result<()> {
-    let canonical = canonicalize_for_write(file).with_context(|| {
-        format!("canonicalising write target {}", file.display())
-    })?;
+    let canonical = canonicalize_for_write(file)
+        .with_context(|| format!("canonicalising write target {}", file.display()))?;
 
     let root = repo_or_cwd_root()?;
     let claude_dir = root.join(".claude");
@@ -700,7 +713,13 @@ fn canonicalize_for_write(file: &Path) -> Result<PathBuf> {
     }
     let parent = file
         .parent()
-        .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })
+        .and_then(|p| {
+            if p.as_os_str().is_empty() {
+                None
+            } else {
+                Some(p)
+            }
+        })
         .unwrap_or(Path::new("."));
     let parent_canonical = parent
         .canonicalize()
@@ -756,9 +775,7 @@ fn refuse_outside_symlink_leaf(path: &Path) -> Result<()> {
     let target_abs = if target.is_absolute() {
         target
     } else {
-        path.parent()
-            .unwrap_or(Path::new("."))
-            .join(target)
+        path.parent().unwrap_or(Path::new(".")).join(target)
     };
     let target_canon = match std::fs::canonicalize(&target_abs) {
         Ok(p) => p,
@@ -800,9 +817,9 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
         && !env_root.is_empty()
     {
         let p = PathBuf::from(&env_root);
-        return p.canonicalize().with_context(|| {
-            format!("canonicalising TOMLCTL_ROOT={}", env_root)
-        });
+        return p
+            .canonicalize()
+            .with_context(|| format!("canonicalising TOMLCTL_ROOT={}", env_root));
     }
     // R46: cache git-or-cwd resolution per process. The first call resolves
     // it; every subsequent call hits the OnceLock fast path.
@@ -973,7 +990,6 @@ pub(crate) fn write_toml_with_sidecar(
     Ok(())
 }
 
-
 /// Atomic-replace pattern: write `bytes` to a tempfile in the same directory as
 /// `path`, `sync_all()` to flush to disk, then `persist()` to rename into place.
 /// The `sync_all` call is load-bearing — without it, a crash between rename and
@@ -988,9 +1004,17 @@ pub(crate) fn write_toml_with_sidecar(
 pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let raw_parent = path
         .parent()
-        .and_then(|p| if p.as_os_str().is_empty() { None } else { Some(p) })
+        .and_then(|p| {
+            if p.as_os_str().is_empty() {
+                None
+            } else {
+                Some(p)
+            }
+        })
         .unwrap_or(Path::new("."));
-    let parent_buf = raw_parent.canonicalize().unwrap_or_else(|_| raw_parent.to_path_buf());
+    let parent_buf = raw_parent
+        .canonicalize()
+        .unwrap_or_else(|_| raw_parent.to_path_buf());
     let parent: &Path = &parent_buf;
     let mut tmp = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("creating temp file in {}", parent.display()))?;
@@ -1011,10 +1035,15 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     // sync_all() pattern there is awkward and largely a no-op).
     #[cfg(unix)]
     {
-        let dir = std::fs::File::open(parent)
-            .with_context(|| format!("opening parent {} for fsync after persist", parent.display()))?;
-        dir.sync_all()
-            .with_context(|| format!("fsync parent directory {} after persist", parent.display()))?;
+        let dir = std::fs::File::open(parent).with_context(|| {
+            format!(
+                "opening parent {} for fsync after persist",
+                parent.display()
+            )
+        })?;
+        dir.sync_all().with_context(|| {
+            format!("fsync parent directory {} after persist", parent.display())
+        })?;
     }
     Ok(())
 }
@@ -1360,7 +1389,8 @@ resolution = "fix in abc123"
         let stem = &fname[..fname.len() - ".lock".len()];
         assert_eq!(stem.len(), 64, "digest length: {}", stem.len());
         assert!(
-            stem.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            stem.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "digest must be lowercase hex: {stem}"
         );
         // The old sidecar location must not be what we return.
