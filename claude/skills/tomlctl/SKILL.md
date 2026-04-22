@@ -401,21 +401,23 @@ tomlctl items add ledger.toml --dedupe-by dedup_id --json '{...}'
 
 ### Batch append many items — `items add-many`
 
-For runs that need to append many new items at once (e.g. a 50-finding review batch), assemble NDJSON line-by-line and pipe to `items add-many`. Each line is one JSON object; blank lines are ignored; any malformed line aborts the whole batch pre-mutation and names the offending line number.
+For runs that need to append many new items at once (e.g. a 50-finding review batch), assemble NDJSON line-by-line and pass it to `items add-many`. Each line is one JSON object; blank lines are ignored; any malformed line aborts the whole batch pre-mutation and names the offending line number.
+
+**Default to the staging-file form** — write the NDJSON to a sibling file and pass `--ndjson <path>`. It works identically on every platform, survives payloads of any size, and sidesteps the Windows Git Bash heredoc breakage described in [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads).
 
 ```bash
-# Common fields stamped once via --defaults-json; per-row keys win on conflict.
+# 1. Stage the batch (Write tool or `cat > …` — payload doesn't touch the shell).
+# 2. Invoke with --ndjson pointing at that file:
 tomlctl items add-many .claude/flows/foo/review-ledger.toml \
   --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
-  --ndjson - <<'EOF'
-{"id":"R1","file":"src/a.rs","line":10,"severity":"minor","category":"quality","summary":"…"}
-{"id":"R2","file":"src/b.rs","line":22,"severity":"major","category":"quality","summary":"…"}
-{"id":"R3","file":"src/c.rs","line":7,"severity":"critical","category":"memory","summary":"…"}
-EOF
-# → {"ok":true,"added":3}
+  --ndjson .claude/flows/foo/_batch.ndjson
+# → {"ok":true,"added":N}
+# Delete _batch.ndjson after the call.
 ```
 
-`--ndjson <path>` reads from a file instead of stdin. `--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed. `--dedupe-by <FIELDS>` as on `items add`.
+On Unix shells you can inline the payload with a heredoc (`--ndjson - <<'EOF' … EOF`). Do **not** reach for that form on Windows Git Bash — multi-line heredocs intermittently fail with `unexpected EOF while looking for matching \`''` because CRLF line endings break bash's terminator match under `bash -c`. The file form above is the safe default everywhere.
+
+`--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed. `--dedupe-by <FIELDS>` as on `items add`.
 
 Prefer `items add-many` over a shell loop of single `items add` calls — one parse, one lock, one rewrite, one sidecar refresh.
 
@@ -530,11 +532,10 @@ tomlctl array-append <ledger> rollback_events --json '{
   "stash_ref": "stash@{0}"
 }'
 
-# Many records via NDJSON
-tomlctl array-append <ledger> rollback_events --ndjson - <<'EOF'
-{"timestamp":"…","command":"…","cause":"…","items":["…"]}
-{"timestamp":"…","command":"…","cause":"…","items":["…"]}
-EOF
+# Many records via NDJSON — stage to a sibling file and pass --ndjson <path>.
+# Same platform reasoning as `items add-many` above; avoid heredocs on Windows Git Bash.
+tomlctl array-append <ledger> rollback_events \
+  --ndjson .claude/flows/foo/_rollback-batch.ndjson
 ```
 
 `items apply --array <name>` remains available for heterogeneous batches (add/update/remove on the same array in one parse+write). Use `array-append` when every op is an append.

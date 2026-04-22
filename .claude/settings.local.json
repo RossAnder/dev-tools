@@ -17,7 +17,9 @@
       "Bash(python3 *)",
       "Bash(scripts/verify-shared-blocks.sh *)",
       "Bash(cargo build *)",
-      "Bash(grep -v '^$')"
+      "Bash(grep -v '^$')",
+      "PowerShell(cargo test *)",
+      "PowerShell(bash scripts/verify-shared-blocks.sh 2>&1)"
     ]
   }
 }
