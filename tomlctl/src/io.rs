@@ -648,11 +648,23 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
 /// agent-influenced `artifacts.*` paths pointing at e.g. credential files.
 ///
 /// Resolution strategy:
-///   1. Canonicalise the target (parent if file doesn't exist yet).
-///   2. Find the git top-level via `git rev-parse --show-toplevel`.
+///   1. If the target's parent doesn't exist and the nearest existing
+///      ancestor lies under `<root>/.claude/`, create the missing
+///      intermediates (mkdir -p, bounded by the containment root).
+///   2. Canonicalise the target (parent if file doesn't exist yet).
+///   3. Find the git top-level via `git rev-parse --show-toplevel`.
 ///      Fall back to CWD if git is missing or we're not inside a repo.
-///   3. Assert canonical target lies under `<root>/.claude/`.
+///   4. Assert canonical target lies under `<root>/.claude/`.
 pub(crate) fn guard_write_path(file: &Path, allow_outside: bool) -> Result<()> {
+    if !allow_outside {
+        // Mirror the Write tool's `mkdir -p` behaviour so agents that call
+        // `tomlctl items add` against a not-yet-bootstrapped flow directory
+        // (`.claude/flows/<new-slug>/...`) don't have to pre-create it by
+        // hand. Bounded to paths whose nearest-existing ancestor already
+        // sits under `.claude/` — outside that anchor the helper is a
+        // no-op and `canonicalize_for_write` will bail as before.
+        ensure_parent_under_claude(file)?;
+    }
     let canonical = canonicalize_for_write(file)
         .with_context(|| format!("canonicalising write target {}", file.display()))?;
 
@@ -681,6 +693,65 @@ pub(crate) fn guard_write_path(file: &Path, allow_outside: bool) -> Result<()> {
         "refusing to write outside .claude/ (path resolves to {}); pass --allow-outside to override",
         canonical.display()
     )
+}
+
+/// Auto-create missing intermediate directories for `file` when the target
+/// would land under `<root>/.claude/`. Matches the Write tool's mkdir -p
+/// semantics so first writes to a fresh flow directory don't require an
+/// explicit out-of-band `mkdir` step.
+///
+/// Bounded by the same containment root that `guard_write_path` enforces:
+/// we only create intermediates when the nearest existing ancestor of the
+/// target canonicalises to `.claude/` or something under it. If the anchor
+/// is outside (or canonicalisation fails), this is a no-op and the caller's
+/// `canonicalize_for_write` will bail with the usual "parent directory not
+/// found" error — no silent directory creation outside `.claude/`.
+///
+/// Symlink escape is still caught downstream: `canonicalize_for_write`
+/// (via `refuse_outside_symlink_leaf`) runs after this helper, and the
+/// post-create containment check in `guard_write_path` re-verifies the
+/// target lands under `.claude/`.
+fn ensure_parent_under_claude(file: &Path) -> Result<()> {
+    let parent = file
+        .parent()
+        .and_then(|p| {
+            if p.as_os_str().is_empty() {
+                None
+            } else {
+                Some(p)
+            }
+        })
+        .unwrap_or(Path::new("."));
+    if parent.exists() {
+        return Ok(());
+    }
+    // Walk up to the nearest existing ancestor. `canonicalize` requires
+    // an existing path, so we can't canonicalise the missing `parent`
+    // directly — the anchor stands in for the containment check.
+    let mut anchor: &Path = parent;
+    while !anchor.exists() {
+        match anchor.parent() {
+            Some(p) if p.as_os_str().is_empty() => return Ok(()),
+            Some(p) => anchor = p,
+            None => return Ok(()),
+        }
+    }
+    let Ok(anchor_canonical) = anchor.canonicalize() else {
+        return Ok(());
+    };
+    let root = repo_or_cwd_root()?;
+    let claude_dir = root.join(".claude");
+    let Ok(claude_canonical) = claude_dir.canonicalize() else {
+        return Ok(());
+    };
+    if anchor_canonical != claude_canonical
+        && !anchor_canonical.starts_with(&claude_canonical)
+    {
+        return Ok(());
+    }
+    fs::create_dir_all(parent)
+        .with_context(|| format!("creating parent directory {}", parent.display()))?;
+    Ok(())
 }
 
 /// Canonicalise a write target. If the file doesn't exist yet, canonicalise the

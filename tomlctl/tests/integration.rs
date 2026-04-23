@@ -1446,6 +1446,89 @@ fn integrity_refresh_missing_file_is_not_found() {
     );
 }
 
+/// `guard_write_path` auto-creates missing intermediate directories when
+/// the target lands under `.claude/`, matching the Write tool's `mkdir -p`
+/// semantics. This removes the confusing "parent directory ... not found
+/// (os error 2/3)" error class that agents hit when calling
+/// `tomlctl items add` against a not-yet-bootstrapped flow directory
+/// (e.g. `.claude/flows/<new-slug>/execution-record.toml`).
+///
+/// The write itself still requires the TOML file to pre-exist (that
+/// invariant is owned by `/plan-new`'s single-Write bootstrap, per the
+/// atomic-bootstrap contract in plan-new.md), so this test asserts the
+/// directory creation as a side-effect of the failing call — the command
+/// exits non-zero on the subsequent `read_toml` but the flow dir is
+/// already in place so the agent's follow-up `Write` tool call lands
+/// cleanly without needing a separate `mkdir`.
+#[test]
+fn write_under_claude_auto_creates_missing_parent_dirs() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude_dir = dir.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    let flow_dir = claude_dir.join("flows").join("hashed-kindling-engelbart");
+    let target = flow_dir.join("execution-record.toml");
+    assert!(!flow_dir.exists(), "precondition: flow dir must not exist yet");
+
+    // The call fails at `read_toml` (file doesn't exist) but the
+    // directory-creation side-effect is what this test pins — so we do
+    // NOT assert exit status here, only that the dir now exists and the
+    // stderr doesn't carry the pre-fix "parent directory ... not found"
+    // confusion.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("set")
+        .arg(&target)
+        .arg("schema_version")
+        .arg("1")
+        .write_stdin("")
+        .assert();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        !stderr.contains("parent directory") && !stderr.contains("canonicalising write target"),
+        "pre-fix error must not re-appear; got stderr: {stderr}"
+    );
+    assert!(
+        flow_dir.exists(),
+        "auto-mkdir must have created the flow directory"
+    );
+}
+
+/// The auto-mkdir helper must NOT create directories outside `.claude/`.
+/// When a write target sits outside the containment root and the parent
+/// doesn't exist, the usual "parent directory ... not found" bail still
+/// fires — we don't silently mkdir arbitrary paths, even with
+/// `--allow-outside`. This pins the containment property of the helper:
+/// creation is bounded by the same anchor the guard enforces.
+#[test]
+fn write_outside_claude_does_not_auto_create_parent_dirs() {
+    let dir = tempfile::tempdir().unwrap();
+    // `.claude/` must exist so `repo_or_cwd_root()` has an anchor, but
+    // the target deliberately sits outside it.
+    fs::create_dir_all(dir.path().join(".claude")).unwrap();
+    let outside_parent = dir.path().join("outside-dir");
+    let outside_target = outside_parent.join("stray.toml");
+    assert!(!outside_parent.exists(), "precondition: parent must not exist");
+
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("--allow-outside")
+        .arg("set")
+        .arg(&outside_target)
+        .arg("schema_version")
+        .arg("1")
+        .write_stdin("")
+        .assert()
+        .failure();
+    assert!(
+        !outside_parent.exists(),
+        "auto-mkdir must not fire outside .claude/, even under --allow-outside"
+    );
+}
+
 /// `integrity refresh` refuses to operate on a file outside `.claude/`
 /// unless `--allow-outside` is passed — mirrors the existing write-side
 /// containment guard used by `set` / `items *` so a malicious artifacts
