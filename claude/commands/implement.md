@@ -359,27 +359,38 @@ Launch implementation agents grouped into batches by dependency order. Each batc
 
 ### Parallel-dispatch anti-pattern (the one that keeps happening)
 
-The classic failure: the orchestrator announces parallelism, then emits one `Agent` block and stops generating. This file's dynamic batch sizes (unlike `/review`'s fixed "all four") make it easy to drop the remainder.
+The classic failure: the orchestrator announces parallelism, then emits one `Agent` block and stops generating. This file's dynamic batch sizes (unlike `/review`'s fixed "all four") make it easy to drop the remainder. **This failure has been observed in user transcripts even when this prose was already in the file** — knowing the rule is not enough; the guard must fire at the moment of dispatch.
 
-**DO NOT do this** (produces sequential execution despite the narration):
+**The exact failure mode observed in the wild** (do NOT reproduce):
 
-> *Turn 1:* "Now I have enough context. Let me dispatch Wave 1a (A1 and A2 in parallel)." → single `Agent(A1: …)` block, turn ends.
+> *Turn:* "Now dispatching Batch 1 — 4 parallel agents on disjoint files (C1, C3, C5, C7)." → single `Agent(C1: …)` block, turn ends.
 >
-> *Turn 2 (after A1 returns, ~9 minutes later):* "Now launching A2." → single `Agent(A2: …)` block.
+> *~8 minutes later:* C1 returns. Next batch item dispatched one at a time. Total wall-clock ≈ C1 + C3 + C5 + C7. UI still displays all four tasks as "in progress" because TaskUpdate fired on all four before dispatch — which makes the failure invisible until you check timestamps.
+
+The failure is insidious because the narration, the TaskUpdate calls, and even the per-agent prompt construction can all be correct — and still only one `Agent` block actually reaches the response. The missing piece is the **commit-to-completion gate** below.
+
+**DO this instead** (literal response shape for N=4):
+
+> *Turn:* "Dispatching batch 1 (N=4, disjoint files): C1, C3, C5, C7."
 >
-> A1 and A2 ran **back-to-back**, not in parallel. Wall-clock ≈ A1 + A2 rather than max(A1, A2). The narration lied.
-
-**DO this instead:**
-
-> *Turn 1:* "Dispatching batch 1a — A1 + A2 (two Agent blocks in this response)." → `Agent(A1: …)` **and** `Agent(A2: …)` blocks both emitted before the turn ends.
+> ```
+> Agent(C1: …)
+> Agent(C3: …)
+> Agent(C5: …)
+> Agent(C7: …)
+> ```
 >
-> Both agents run concurrently; both results return in one tool-result message.
+> All four blocks in the same response. Turn ends only after the 4th block. The harness fans out concurrently; four results return in one tool-result message.
 
-**Pre-send checklist** (apply every time you dispatch a batch):
+**Commit-to-completion gate (mandatory).** The moment you are about to emit the first `Agent` block of a batch, you are committing to emitting all N in the same response. Do not emit block 1 unless you are prepared to emit block N before ending the turn. If you are uncertain you can draft all N agent prompts in one response, draft them in your head first, *then* start emitting — do not start with block 1 hoping to figure out the rest mid-turn, because once block 1 is in the response the natural stopping instinct fires hard.
 
-1. Batch size = N. Narrate the whole batch once ("Dispatching batch X: A1, A2, …, AN"). Do NOT narrate agents one-at-a-time ("Let me launch A1. Now A2.") — that framing primes a single tool call per turn.
-2. Before ending your turn, count the `Agent` tool-use blocks in the response you are about to send. If the count is fewer than N, you have not finished dispatching — add the remaining `Agent` blocks to the same response before stopping.
-3. Thinking/reasoning between the `Agent` blocks in the same response is fine and does NOT serialise them — the harness collects all tool-use blocks at turn end and fires them concurrently. The only thing that serialises a batch is ending the turn with fewer than N blocks.
+**Pre-send checklist** (apply every time you dispatch a batch, as the LAST thing before ending the turn):
+
+1. Batch size = N. State N aloud as a number in the narration ("N=4", not just "four agents") — a numeric token is harder for the model to lose track of than a prose enumeration.
+2. Narrate the whole batch once. Do NOT narrate agents one-at-a-time ("Let me launch A1. Now A2.") — that framing primes a single tool call per turn.
+3. **Count the `Agent` tool-use blocks you have emitted in this response.** If the count is fewer than N, the response is incomplete — add the remaining `Agent` blocks to the same response before ending the turn. Ending the turn with fewer than N blocks silently serialises the batch.
+4. Do NOT emit any free-form text between consecutive `Agent` blocks. Short thinking tokens are fine; a new prose paragraph primes the "natural stopping point" instinct and makes it likely you'll end the turn one block short.
+5. Thinking/reasoning between the `Agent` blocks is fine and does NOT serialise them — the harness collects all tool-use blocks at turn end and fires them concurrently. The only thing that serialises a batch is ending the turn with fewer than N blocks.
 
 ### Agent dispatch rules
 
@@ -409,8 +420,14 @@ Include this tool guidance in each agent's prompt, tailored to its task:
 **Prompt-cache tip**: When launching the batch's agents, place shared context — file list, plan excerpts, verification commands, cross-cutting constraints — as a literal-equal preamble at the top of each agent prompt, with per-agent divergence (specific files, task details) below a clear divider. The 5-minute TTL prompt cache reuses the shared prefix across agents, reducing latency and cost. Keep the shared text byte-identical — whitespace differences defeat the cache.
 
 For each batch:
-1. Update all batch tasks to `in_progress` via TaskUpdate.
-2. **Dispatch the whole batch in one assistant response.** Emit one `Agent` tool-use block per task in this batch, all within the same response. Apply the pre-send checklist from the *Parallel-dispatch anti-pattern* section above — count the `Agent` blocks before ending the turn and confirm the count matches the batch size. Do NOT end the turn after a single `Agent` block if more batch tasks remain; the harness cannot fan out calls emitted on later turns.
+1. Update all batch tasks to `in_progress` via TaskUpdate. (TaskUpdate firing is NOT evidence of parallel dispatch — the UI can show all N tasks "in progress" while only one `Agent` block was actually emitted. See the anti-pattern section above.)
+2. **Dispatch the whole batch in one assistant response.** Emit one `Agent` tool-use block per task in this batch, all within the same response. Before ending the turn, re-read this checklist:
+   - Batch size = N (state it numerically in narration: "N=4", not "four agents").
+   - `Agent` blocks emitted in this response = ? If `< N`, keep emitting. If `= N`, end the turn. If `> N`, you over-dispatched — review the batch definition.
+   - No free-form prose paragraphs between consecutive `Agent` blocks. Thinking tokens between them are fine.
+   - Commit-to-completion: if you emit block 1, you are on the hook for block N in this same response. Draft all N prompts mentally before starting to emit, not as you go.
+
+   Do NOT end the turn after a single `Agent` block if more batch tasks remain; the harness cannot fan out calls emitted on later turns.
 3. When agents return, check for **plan deviations** (see protocol above). If an agent reports a deviation:
    - Reason through the impact.
    - If the deviation is minor and the fix is clear, launch a targeted fix agent.
