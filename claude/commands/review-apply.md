@@ -31,6 +31,7 @@ in_progress = 1
 review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
 optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
+plan_review_findings = ".claude/flows/auth-overhaul/plan-review-findings.toml"
 ```
 
 ### Shared Rules
@@ -55,7 +56,7 @@ execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
 - `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
 - `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the **atomic 2-line bootstrap followed by sidecar materialisation**: a single `Write` tool call whose content is exactly `schema_version = 1\nlast_updated = <today>\n` (literal newlines; `<today>` is ISO 8601), then `tomlctl integrity refresh <path>` to produce the `<path>.sha256` sidecar, both before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a valid-TOML log file with its integrity sidecar rather than erroring with `No such file or directory` or later tripping `sidecar ... is missing` on the first `--verify-integrity` read. The bootstrap is **two-step but effectively atomic**: the `Write` materialises a parseable file in one syscall, and the `integrity refresh` adds the sidecar in a lock-protected second syscall — a concurrent `/implement` or `/plan-update` that observes the file strictly between the Write and the refresh would fail its `--verify-integrity` read, but the self-healing guard in every downstream command MUST recover via `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`. _(Follow-up: consolidate the 3 self-healing prose copies into a `tomlctl flow bootstrap-execution-record` subcommand — tracked under R48's resolution; requires a separate Rust change.)_
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`, `plan_review_findings`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the **atomic 2-line bootstrap followed by sidecar materialisation**: a single `Write` tool call whose content is exactly `schema_version = 1\nlast_updated = <today>\n` (literal newlines; `<today>` is ISO 8601), then `tomlctl integrity refresh <path>` to produce the `<path>.sha256` sidecar, both before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a valid-TOML log file with its integrity sidecar rather than erroring with `No such file or directory` or later tripping `sidecar ... is missing` on the first `--verify-integrity` read. The bootstrap is **two-step but effectively atomic**: the `Write` materialises a parseable file in one syscall, and the `integrity refresh` adds the sidecar in a lock-protected second syscall — a concurrent `/implement` or `/plan-update` that observes the file strictly between the Write and the refresh would fail its `--verify-integrity` read, but the self-healing guard in every downstream command MUST recover via `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`. For `plan_review_findings` specifically, the self-healing path is simpler: commands compute `plan_review_findings = .claude/flows/<slug>/plan-review-findings.toml` from `slug` when absent and write it back on the next TOML write. No atomic bootstrap is needed — `/review-plan` is the sole writer and creates the file on first persistence.
 
 #### Slug derivation
 
@@ -179,7 +180,7 @@ related = []
 
 #### Category vocabularies
 
-- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `verified-clean` (reserved for items with `status = "verified-clean"`).
+- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `testability` | `verified-clean` (reserved for items with `status = "verified-clean"`).
 - **Optimise** (`optimise-findings.toml`): `memory` | `serialization` | `query` | `algorithm` | `concurrency`.
 
 **Unknown-value fail-soft rules** (mandatory):
@@ -192,7 +193,7 @@ related = []
 - `deferred` — not acting now, with a concrete re-eval trigger.
 - `fixed` (review) / `applied` (optimise) — resolved with commit evidence.
 - `wontfix` (review) / `wontapply` (optimise) — intentional non-action with rationale.
-- `verified-clean` (review only) — explicitly audited and confirmed clean; kept to avoid re-flagging via dedup.
+- `verified-clean` (review only) — explicitly audited and confirmed clean; kept to avoid re-flagging via dedup. `/optimise` has no `verified-clean` counterpart — bytes-written findings land in `applied`, already-correct cases land in `wontapply` with rationale.
 
 #### Render-to-markdown contract
 
@@ -451,7 +452,7 @@ Absent `depends_on` everywhere, `deps[i]` is empty for every item, `queue` start
 
 Group the selected findings by file or closely related file cluster. This determines how many implementation agents to launch — one per cluster. Files that share findings or have interdependent changes belong in the same cluster.
 
-**Clusters are mixed-category by design.** A single agent handles all findings for its file cluster across `quality` + `security` + `architecture` + `completeness` + `db`. Do not split by category — that violates "no two agents edit the same file" whenever a file has findings in multiple categories. Agent prompts list each finding's `category` alongside its details so the agent applies appropriate judgment per-item.
+**Clusters are mixed-category by design.** A single agent handles all findings for its file cluster across quality + security + architecture + completeness + db + testability. Do not split by category — that violates "no two agents edit the same file" whenever a file has findings in multiple categories. Agent prompts list each finding's `category` alongside its details so the agent applies appropriate judgment per-item.
 
 If findings have dependencies (e.g. adding an interface before consuming it, or changing a schema that flows through multiple files), note the dependency so agents can sequence correctly.
 

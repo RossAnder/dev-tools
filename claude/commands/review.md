@@ -31,6 +31,7 @@ in_progress = 1
 review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
 optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
 execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
+plan_review_findings = ".claude/flows/auth-overhaul/plan-review-findings.toml"
 ```
 
 ### Shared Rules
@@ -55,7 +56,7 @@ execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
 - `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
 - `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
 - `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the **atomic 2-line bootstrap followed by sidecar materialisation**: a single `Write` tool call whose content is exactly `schema_version = 1\nlast_updated = <today>\n` (literal newlines; `<today>` is ISO 8601), then `tomlctl integrity refresh <path>` to produce the `<path>.sha256` sidecar, both before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a valid-TOML log file with its integrity sidecar rather than erroring with `No such file or directory` or later tripping `sidecar ... is missing` on the first `--verify-integrity` read. The bootstrap is **two-step but effectively atomic**: the `Write` materialises a parseable file in one syscall, and the `integrity refresh` adds the sidecar in a lock-protected second syscall — a concurrent `/implement` or `/plan-update` that observes the file strictly between the Write and the refresh would fail its `--verify-integrity` read, but the self-healing guard in every downstream command MUST recover via `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`. _(Follow-up: consolidate the 3 self-healing prose copies into a `tomlctl flow bootstrap-execution-record` subcommand — tracked under R48's resolution; requires a separate Rust change.)_
+- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`, `plan_review_findings`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the **atomic 2-line bootstrap followed by sidecar materialisation**: a single `Write` tool call whose content is exactly `schema_version = 1\nlast_updated = <today>\n` (literal newlines; `<today>` is ISO 8601), then `tomlctl integrity refresh <path>` to produce the `<path>.sha256` sidecar, both before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a valid-TOML log file with its integrity sidecar rather than erroring with `No such file or directory` or later tripping `sidecar ... is missing` on the first `--verify-integrity` read. The bootstrap is **two-step but effectively atomic**: the `Write` materialises a parseable file in one syscall, and the `integrity refresh` adds the sidecar in a lock-protected second syscall — a concurrent `/implement` or `/plan-update` that observes the file strictly between the Write and the refresh would fail its `--verify-integrity` read, but the self-healing guard in every downstream command MUST recover via `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`. For `plan_review_findings` specifically, the self-healing path is simpler: commands compute `plan_review_findings = .claude/flows/<slug>/plan-review-findings.toml` from `slug` when absent and write it back on the next TOML write. No atomic bootstrap is needed — `/review-plan` is the sole writer and creates the file on first persistence.
 
 #### Slug derivation
 
@@ -179,7 +180,7 @@ related = []
 
 #### Category vocabularies
 
-- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `verified-clean` (reserved for items with `status = "verified-clean"`).
+- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `testability` | `verified-clean` (reserved for items with `status = "verified-clean"`).
 - **Optimise** (`optimise-findings.toml`): `memory` | `serialization` | `query` | `algorithm` | `concurrency`.
 
 **Unknown-value fail-soft rules** (mandatory):
@@ -192,7 +193,7 @@ related = []
 - `deferred` — not acting now, with a concrete re-eval trigger.
 - `fixed` (review) / `applied` (optimise) — resolved with commit evidence.
 - `wontfix` (review) / `wontapply` (optimise) — intentional non-action with rationale.
-- `verified-clean` (review only) — explicitly audited and confirmed clean; kept to avoid re-flagging via dedup.
+- `verified-clean` (review only) — explicitly audited and confirmed clean; kept to avoid re-flagging via dedup. `/optimise` has no `verified-clean` counterpart — bytes-written findings land in `applied`, already-correct cases land in `wontapply` with rationale.
 
 #### Render-to-markdown contract
 
@@ -457,7 +458,7 @@ Every agent MUST:
 
 ### Agent 1: Code Quality, DRY, Idioms & Pattern Conformance
 
-Look at the changed code through the lens of code quality, consistency, and idiomatic correctness. This agent has two complementary concerns:
+Look at the changed code through the lens of code quality, consistency, and idiomatic correctness. This agent has three complementary concerns:
 
 **Internal consistency** — Search the broader codebase for similar logic, patterns, and conventions. Does the new code follow the same idioms as existing code — or does it introduce duplication or a different way of doing things? Consider naming, structure, complexity, and whether the code would be easy for another developer to understand. Refer to CLAUDE.md for documented conventions, but also look at actual code to see what patterns are established in practice.
 
@@ -469,6 +470,15 @@ Look at the changed code through the lens of code quality, consistency, and idio
 - Avoiding anti-patterns documented in official language or framework style guides
 - Using runtime-specific APIs where they offer meaningful advantages over generic alternatives
 
+**Type-design expressiveness** — Evaluate the *shape of declared types* as a correctness concern, not a performance one. Does the type system encode what the domain actually allows, or does it accept states the domain forbids? Look for:
+- Discriminated unions / sum types where the code encodes mutually-exclusive states with combinations of booleans, enums, and optionals (making illegal states representable)
+- Newtypes / wrapper types where a primitive (`string`, `int`, `uuid`) carries domain meaning that currently crosses boundaries untyped and interchangeable with other same-primitive values
+- Redundant representations — two fields encoding the same state, or a field whose value is mechanically derivable from others
+- Over-wide records where distinct use cases share a single type and carry unused fields in most contexts
+- Stringly-typed values where a closed set of variants would be more precise (magic strings, loose `Record<string, unknown>` / `map[string]any` maps)
+
+Fitness of a data structure to its *access pattern* is `/optimise` Agent 4's concern — keep findings here framed around expressiveness and correctness. If a finding is about access-cost, hot-path shape, or complexity class, it belongs in `/optimise`.
+
 Do NOT flag: minor style differences that don't affect readability, single-use helper functions that aid clarity, patterns that are intentionally different due to different requirements, or older idioms that are consistent with the rest of the codebase (consistency trumps modernity unless the project is actively migrating).
 
 ### Agent 2: Security & Trust Boundaries
@@ -479,7 +489,7 @@ Do NOT flag: theoretical vulnerabilities with no plausible attack vector in cont
 
 ### Agent 3: Architecture, Dependencies & Project Structure
 
-Consider whether the changed code respects the architectural boundaries, dependency rules, and structural conventions of the project. This agent has two complementary concerns:
+Consider whether the changed code respects the architectural boundaries, dependency rules, and structural conventions of the project. This agent has three complementary concerns and **owns the `db` ledger category** — `db` findings are emitted here, not by Agents 1, 2, or 4.
 
 **Architectural fitness** — Is logic in the right layer? Are concerns properly separated? Would the changes make the codebase harder to evolve? Look at how the code fits into the larger system, not just whether it works in isolation.
 
@@ -489,6 +499,15 @@ Consider whether the changed code respects the architectural boundaries, depende
 - Exports and imports follow the project's module boundary patterns (e.g., barrel files, re-exports, direct imports)
 - New functionality doesn't duplicate a responsibility already owned by an existing module
 - Configuration, constants, and environment variables are defined in the expected locations
+- Model-category placement: entities, domain types, DTOs, value objects, and persistence models sit in the directory/module locations the project establishes for each category, rather than piling into one bucket
+
+**Domain modelling & persistence boundaries** (`category = "db"`) — Check how *model types* are shaped and layered, independent of their runtime/query efficiency (that is `/optimise` Agent 3's territory). Look for:
+- Persistence concerns leaking into domain types — ORM annotations, schema-driven field shapes, or column-level concerns on types that domain logic consumes directly
+- Missing entity / value-object / DTO distinctions — a single type serving request-shape, wire-shape, and storage-shape roles that should be split
+- Aggregate boundary violations — cross-aggregate references held directly rather than by identity, or child entities addressable outside their aggregate root
+- Relationship modelling that doesn't match the domain (1:N modelled as M:N, optional relationships modelled as required, or vice versa)
+- Primary key / identity choices that contradict the domain (natural keys where surrogates fit better, or the inverse)
+- Migrations that change the shape of stored data without a corresponding data-migration step
 
 Do NOT flag: pragmatic shortcuts that are clearly intentional and documented, minor coupling that would require disproportionate refactoring to resolve, or files placed in reasonable locations that simply differ from a rigid reading of the structure docs.
 

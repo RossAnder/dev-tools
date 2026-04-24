@@ -9,22 +9,81 @@ description: Read and write TOML files used by Claude Code flows — `.claude/fl
 
 A small Rust CLI that reads and writes the TOML files used by the `/plan-new`, `/implement`, `/plan-update`, `/review`, `/optimise`, `/review-apply`, and `/optimise-apply` commands.
 
+## Quick Reference
+
+The highest-frequency patterns. Deeper treatment in the linked sections.
+
+| Task | Command |
+|---|---|
+| Append one item (JSON arg) | `tomlctl items add <file> --json '{...}'` |
+| Append one item (stdin) | `cat payload.json \| tomlctl items add <file> --json -` |
+| Batch append homogeneous items | `tomlctl items add-many <file> --ndjson <path>` |
+| Apply heterogeneous batch (add/update/remove) | `tomlctl items apply <file> --ops -` |
+| Filter items | `tomlctl items list <file> --where status=open` ([see filter operators](#filters-all-repeatable-all-and-combined)) |
+| Count / bucket items | `tomlctl items list <file> --count` / `--count-by status` / `--group-by file` |
+| Next monotonic id | `tomlctl items next-id <file> --prefix R\|O\|E\|P` |
+| Bump scalar field | `tomlctl set <file> <key.path> <value>` |
+| Set array / sub-table | `tomlctl set-json <file> <key.path> --json '<json>'` |
+| Refresh integrity sidecar | `tomlctl integrity refresh <file>` ([see sidecar files](#sidecar-files)) |
+
+## Common recipes
+
+```bash
+# 1. Append a task-completion entry with commits[], bump last_updated
+tomlctl items add .claude/flows/<slug>/execution-record.toml --json '{
+  "id":"E12","type":"task-completion","task_ref":"T3",
+  "timestamp":"2026-04-18T14:32:00Z","commits":["ab12cd3","9e8f1a2"]
+}'
+tomlctl set .claude/flows/<slug>/execution-record.toml last_updated 2026-04-18
+```
+
+```bash
+# 2. Dedup-by-field add — skip if (file, summary) already present
+tomlctl items add ledger.toml --dedupe-by file,summary --json '{"id":"R24",...}'
+```
+
+```bash
+# 3. Mint the next id, build the payload inline, append via stdin
+NEXT=$(tomlctl items next-id ledger.toml --prefix R)
+printf '{"id":%s,"severity":"minor","summary":"...","status":"open"}' "\"$NEXT\"" \
+  | tomlctl items add ledger.toml --json -
+```
+
+```bash
+# 4. Count open items as a bare integer
+tomlctl items list ledger.toml --where status=open --count --raw
+```
+
+```bash
+# 5. Bulk transition — close a batch of deferred items in one parse+write
+tomlctl items apply ledger.toml --ops - <<'EOF'
+[
+  {"op":"update","id":"R7", "json":{"status":"open"},"unset":["defer_reason","defer_trigger"]},
+  {"op":"update","id":"R11","json":{"status":"open"},"unset":["defer_reason","defer_trigger"]}
+]
+EOF
+```
+
+## `--verify-integrity` support matrix
+
+`--verify-integrity` is a **per-subcommand flag**, not a global — it is accepted only on read subcommands that touch a TOML + sidecar pair. Verification is rejected (clap-layer error) on every other path. See [Sidecar files](#sidecar-files) for what it checks.
+
+| Subcommand | `--verify-integrity` |
+|---|---|
+| `tomlctl get` | yes |
+| `tomlctl parse` | yes |
+| `tomlctl validate` | yes |
+| `tomlctl items list` | yes |
+| `tomlctl items get` | yes |
+| `tomlctl items next-id` | yes |
+| `tomlctl items find-duplicates` | yes |
+| `tomlctl items orphans` | yes |
+
+`tomlctl blocks verify` intentionally does NOT accept `--verify-integrity` (it operates on markdown with no sidecar pair).
+
 ## When to use this skill
 
-Use `tomlctl` whenever a flow command needs to:
-
-- Resolve a flow's `scope`, `branch`, `status`, or `artifacts.*` from `context.toml`.
-- Read, filter, project, group, sort, count, or distinct-count `[[items]]` in `review-ledger.toml` / `optimise-findings.toml`.
-- Update a single scalar (`status`, `updated`, `tasks.completed`) in `context.toml`.
-- Append one or many new `[[items]]` entries, with optional pre-append dedup by named fields.
-- Patch fields on an existing item by `id`, or unset fields.
-- Append a record to a non-`items` array-of-tables (e.g. `[[rollback_events]]`).
-- Compute the next `R{n}` / `O{n}` id — with an explicit `--prefix`, or inferred from the ledger.
-- Backfill `dedup_id` on legacy ledgers, or surface duplicates (within a ledger or across two).
-- Feature-gate downstream templates against a specific tomlctl version.
-- Preview destructive mutations with `--dry-run` before committing them.
-
-Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Shell-level post-processing of tomlctl's JSON output is no longer needed either — prefer in-tool primitives (`--raw` / `--lines` / `--count-distinct` / `--count`) over piping through `jq -r .count` / `jq -r '.[]'` / `| sort -u | wc -l`.
+Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, the review / optimise ledgers, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — prefer in-tool primitives (`--raw` / `--lines` / `--count-distinct` / `--count`) over piping through `jq -r .count` / `jq -r '.[]'` / `| sort -u | wc -l`.
 
 ## Install
 
@@ -43,44 +102,31 @@ tomlctl --version
 
 ## Feature-gate with `tomlctl capabilities`
 
-`tomlctl capabilities` emits a stable JSON document (`{"version":"…","features":[…],"subcommands":[…]}`) so downstream templates can feature-gate at boot without parsing `--help` prose. Features are stable within a minor release; new flags add new feature entries rather than being version-qualified.
-
-Features:
+`tomlctl capabilities` emits a stable JSON document (`{"version":"…","features":[…],"subcommands":[…]}`) so downstream templates can feature-gate at boot without parsing `--help` prose. Features are stable within a minor release; new flags add new feature entries rather than being version-qualified. Run the command itself for the authoritative list; representative entries:
 
 | Feature | What it enables |
 |---|---|
 | `count_distinct` | `--count-distinct <FIELD>` on `items list` |
-| `raw` | `--raw` scalar emit on `get` and on single-value `items list` shapes |
-| `lines` | `--lines` newline-per-value emit on `items list --pluck` |
-| `infer_prefix` | `items next-id --infer-from-file` |
-| `dedupe_by` | `--dedupe-by <FIELDS>` on `items add` / `items add-many` |
-| `dedup_id_auto` | auto-populate `dedup_id` in every write funnel |
-| `find_duplicates_across` | `items find-duplicates --across <other>` cross-ledger tier A/B |
-| `capabilities` | this subcommand itself |
-| `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
-| `strict_read` | `--strict-read` on every read subcommand |
-| `dry_run` | `--dry-run` on `items remove` / `items apply` / `items backfill-dedup-id` |
-| `backfill_dedup_id` | `items backfill-dedup-id <file>` |
-| `integrity_refresh` | `integrity refresh <file>` — materialise / regenerate the `.sha256` sidecar against the file's current on-disk bytes |
+| `raw` / `lines` | `--raw` / `--lines` output shapes |
+| `dedupe_by` / `dedup_id_auto` | `--dedupe-by <FIELDS>` + auto-populate on every write |
+| `find_duplicates_across` | `items find-duplicates --across <other>` (tier A/B) |
+| `error_format_json` | `--error-format json` + `ErrorKind` taxonomy |
+| `strict_read` / `dry_run` | `--strict-read` on reads / `--dry-run` on writes |
+| `backfill_dedup_id` / `integrity_refresh` | legacy upgrade + sidecar regen |
 
 ## Read operations
 
 All read commands print JSON on stdout by default.
 
 ```bash
-# Whole document as JSON (omit the path argument to read the entire file)
+# Whole document (omit path to read the entire file) or a single value
 tomlctl get .claude/flows/auth-overhaul/context.toml
-
-# Single value at a dotted path
 tomlctl get .claude/flows/auth-overhaul/context.toml status
 tomlctl get .claude/flows/auth-overhaul/context.toml tasks.completed
-tomlctl get .claude/flows/auth-overhaul/context.toml artifacts.optimise_findings
 
 # Scalar as bare text (no JSON quotes / no braces) — pipes straight into bash
-tomlctl get .claude/flows/auth-overhaul/context.toml status --raw
-# → review
-tomlctl get .claude/flows/auth-overhaul/context.toml tasks.completed --raw
-# → 4
+tomlctl get .claude/flows/auth-overhaul/context.toml status --raw          # → review
+tomlctl get .claude/flows/auth-overhaul/context.toml tasks.completed --raw # → 4
 
 # Parse-check (exit 0 on valid)
 tomlctl validate .claude/flows/auth-overhaul/context.toml
@@ -113,57 +159,23 @@ tomlctl --strict-read items list .claude/flows/foo/review-ledger.toml --status o
 
 ### Filters (all repeatable, all AND-combined)
 
-All `KEY=VAL` right-hand sides accept an optional `@type:` prefix to disambiguate native TOML types from string literals:
+| Operator | Usage | Meaning |
+|---|---|---|
+| `--where` | `--where status=open` | field equals value (exact match) |
+| `--where-not` | `--where-not status=fixed` | field does not equal value |
+| `--where-in` | `--where-in status=open,deferred,wontfix` | field in comma-separated set |
+| `--where-has` | `--where-has defer_reason` | field present and non-empty |
+| `--where-missing` | `--where-missing resolution` | field absent or empty |
+| `--where-gt` / `--where-gte` | `--where-gte first_flagged=@date:2026-04-01` | field `>` / `>=` value |
+| `--where-lt` / `--where-lte` | `--where-lt line=@int:100` | field `<` / `<=` value |
+| `--where-contains` | `--where-contains summary=allocation` | field string contains substring |
+| `--where-prefix` | `--where-prefix id=R2` | field string starts with |
+| `--where-suffix` | `--where-suffix file=.rs` | field string ends with |
+| `--where-regex` | `--where-regex symbol='^old::'` | caller-supplied regex (does NOT auto-anchor) |
 
-| RHS form | Meaning |
-|---|---|
-| `@date:2026-04-18` | TOML date literal |
-| `@datetime:2026-04-18T10:00:00Z` | TOML datetime |
-| `@int:42` | integer |
-| `@float:1.5` | float |
-| `@bool:true` | boolean |
-| `@string:foo` / `@str:foo` | explicit string (useful when value looks like a date/int but you need string compare) |
-| `foo` (no prefix) | string; when the item field is natively typed, the RHS is coerced to the field's type before comparison |
+**Typed RHS.** All `KEY=VAL` right-hand sides accept an optional `@type:` prefix to disambiguate native TOML types from string literals: `@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`. With no prefix the RHS is string, coerced to the field's native type when the field is typed.
 
-```bash
-# Status/category/file — legacy shortcut flags still work (unchanged semantics)
-tomlctl items list ledger.toml --status open
-tomlctl items list ledger.toml --category quality --status open --file src/auth/session.rs
-
-# Generic equality (exact match; string or native-typed)
-tomlctl items list ledger.toml --where status=open
-tomlctl items list ledger.toml --where severity=critical --where category=memory
-
-# Negated equality
-tomlctl items list ledger.toml --where-not status=fixed
-
-# Set membership
-tomlctl items list ledger.toml --where-in status=open,deferred,wontfix
-
-# Field presence
-tomlctl items list ledger.toml --where-has defer_reason      # field present and non-empty
-tomlctl items list ledger.toml --where-missing resolution    # field absent or empty
-
-# Numeric / date comparison (use @type: when RHS is ambiguous)
-tomlctl items list ledger.toml --where-gte first_flagged=@date:2026-04-01
-tomlctl items list ledger.toml --where-lt line=@int:100
-tomlctl items list ledger.toml --where-gt rounds=@int:1
-
-# String substring / prefix / suffix (case-sensitive)
-tomlctl items list ledger.toml --where-contains summary=allocation
-tomlctl items list ledger.toml --where-prefix id=R2
-tomlctl items list ledger.toml --where-suffix file=.rs
-
-# Regex (caller-supplied anchors — does NOT auto-anchor)
-tomlctl items list ledger.toml --where-regex symbol='^old::'
-```
-
-Legacy shortcut flags preserved (use `--where` for anything new):
-
-- `--status <name>` — same as `--where status=<name>`
-- `--category <name>` — same as `--where category=<name>`
-- `--file <path>` — same as `--where file=<path>`
-- `--newer-than <YYYY-MM-DD>` — same as `--where-gt first_flagged=@date:<d>`
+**Legacy shortcut flags** (preserved; prefer `--where` for anything new): `--status <n>` ≡ `--where status=<n>`, `--category <n>` ≡ `--where category=<n>`, `--file <p>` ≡ `--where file=<p>`, `--newer-than <d>` ≡ `--where-gt first_flagged=@date:<d>`.
 
 ### Projection (mutually exclusive within this group)
 
@@ -219,44 +231,17 @@ tomlctl items list ledger.toml --group-by file
 
 `--count`, `--count-distinct`, `--count-by`, `--group-by`, and `--pluck` are all members of the shape ArgGroup and are mutually exclusive.
 
-### Output shapes (`--raw` / `--lines`)
+### Output shapes (`--raw` / `--lines` / `--ndjson`)
 
-`--raw` emits a single scalar with no JSON framing (no quotes on strings, no object braces) — pipes straight into bash arithmetic or string comparison. It requires a shape that collapses to exactly one value:
-
-```bash
-# Bare integer, no {"count": N} wrapping
-tomlctl items list ledger.toml --status open --count --raw
-# → 7
-
-# Bare integer, no {"count_distinct":...,"field":...} wrapping
-tomlctl items list record.toml --where type=task-completion \
-  --count-distinct task_ref --raw
-# → 14
-
-# Single pluck result as a bare string
-tomlctl items list ledger.toml --where id=R22 --pluck symbol --raw
-# → old::fn
-```
-
-Multi-element pluck with `--raw` errors: `--raw requires single-value output (got {N} items); use --lines for newline-delimited`. Non-single-value shapes (`--count-by`, `--group-by`, unfiltered list) also error under `--raw`.
-
-`--lines` emits one JSON value per line (newline-delimited) instead of a JSON array — lets downstream shell iterate a pluck without `jq -r '.[]'`:
+- **`--raw`** — emit a single bare scalar (no JSON framing). Requires a shape that collapses to one value: `--count --raw`, `--count-distinct F --raw`, `--pluck F --raw` when exactly one item matches. Errors on multi-element pluck, `--count-by`, `--group-by`, or unfiltered list.
+- **`--lines`** — emit one JSON value per line instead of a JSON array. Available only on `--pluck`.
+- **`--ndjson`** — one full item per line. Pipes cleanly into `items add-many` / `items apply`.
 
 ```bash
-# Each id on its own line, no JSON array wrapper
-tomlctl items list ledger.toml --status open --pluck id --lines
-# R1
-# R3
-# R7
-```
-
-`--lines` is available only on `--pluck`. On other shapes it errors — use `--ndjson` for per-row streaming of full items.
-
-### NDJSON output (row streaming)
-
-```bash
-# Newline-delimited one-item-per-line output — pipes cleanly into items add-many / apply
-tomlctl items list ledger.toml --status open --ndjson
+tomlctl items list ledger.toml --status open --count --raw         # → 7
+tomlctl items list ledger.toml --where id=R22 --pluck symbol --raw # → old::fn
+tomlctl items list ledger.toml --status open --pluck id --lines    # R1\nR3\nR7
+tomlctl items list ledger.toml --status open --ndjson              # {...}\n{...}
 ```
 
 ### Single-item fetch
@@ -316,19 +301,7 @@ An item can surface twice if it is both file/symbol-orphaned AND has dangling de
 
 ### Verify shared-block parity across markdown files
 
-`tomlctl blocks verify` checks that a named shared block is byte-identical across a set of files, mirroring `scripts/verify-shared-blocks.sh` without the bash+awk dependency. Blocks are delimited by `<!-- SHARED-BLOCK:<name> START -->` … `<!-- SHARED-BLOCK:<name> END -->` markers (inclusive markers excluded from the hash).
-
-```bash
-# Verify named blocks across all four command files
-tomlctl blocks verify claude/commands/optimise.md claude/commands/review.md \
-  claude/commands/optimise-apply.md claude/commands/review-apply.md \
-  --block flow-context --block ledger-schema
-
-# Omit --block to verify every block present in the first listed file
-tomlctl blocks verify claude/commands/*.md
-```
-
-Output is JSON (`{"ok":true|false,"blocks":[...]}`). Exit code is 0 on success, non-zero on drift or missing markers.
+See [Advanced / maintenance](#advanced--maintenance) for `blocks verify` — infrastructure-only, no flow command invokes it.
 
 ## Write operations
 
@@ -401,25 +374,18 @@ tomlctl items add ledger.toml --dedupe-by dedup_id --json '{...}'
 
 ### Batch append many items — `items add-many`
 
-For runs that need to append many new items at once (e.g. a 50-finding review batch), assemble NDJSON line-by-line and pass it to `items add-many`. Each line is one JSON object; blank lines are ignored; any malformed line aborts the whole batch pre-mutation and names the offending line number.
+For runs that need to append many new items at once (e.g. a 50-finding review batch), assemble NDJSON line-by-line and pass it to `items add-many` — one parse, one lock, one rewrite, one sidecar refresh. Each line is one JSON object; blank lines are ignored; any malformed line aborts the whole batch pre-mutation and names the offending line number.
 
-**Default to the staging-file form** — write the NDJSON to a sibling file and pass `--ndjson <path>`. It works identically on every platform, survives payloads of any size, and sidesteps the Windows Git Bash heredoc breakage described in [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads).
+Default to the staging-file form (platform-safe — see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for why):
 
 ```bash
-# 1. Stage the batch (Write tool or `cat > …` — payload doesn't touch the shell).
-# 2. Invoke with --ndjson pointing at that file:
 tomlctl items add-many .claude/flows/foo/review-ledger.toml \
   --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
   --ndjson .claude/flows/foo/_batch.ndjson
 # → {"ok":true,"added":N}
-# Delete _batch.ndjson after the call.
 ```
 
-On Unix shells you can inline the payload with a heredoc (`--ndjson - <<'EOF' … EOF`). Do **not** reach for that form on Windows Git Bash — multi-line heredocs intermittently fail with `unexpected EOF while looking for matching \`''` because CRLF line endings break bash's terminator match under `bash -c`. The file form above is the safe default everywhere.
-
-`--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed. `--dedupe-by <FIELDS>` as on `items add`.
-
-Prefer `items add-many` over a shell loop of single `items add` calls — one parse, one lock, one rewrite, one sidecar refresh.
+`--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed. `--dedupe-by <FIELDS>` works the same as on `items add`.
 
 ### Patch an existing item
 
@@ -452,7 +418,11 @@ tomlctl items update ledger.toml R7 \
   --unset defer_reason --unset defer_trigger
 ```
 
-In `items apply` batches, add an optional `unset` array of strings to an `update` op. Back-compat: omitting `unset` leaves behaviour unchanged.
+In `items apply` batches, an `update` op accepts a per-op `unset` array of field names alongside the `json` patch object. Both may appear on the same op: `json` sets fields, `unset` deletes fields; the `unset` pass runs **after** the `json` merge, so an `unset` on the same key as a set wins. Omitting `unset` leaves behaviour unchanged.
+
+```json
+{"op":"update","id":"R7","json":{"status":"open"},"unset":["defer_reason","defer_trigger"]}
+```
 
 ```bash
 tomlctl items apply ledger.toml --ops '[
@@ -577,15 +547,7 @@ Acquires the same exclusive lock a write path would, so it serialises correctly 
 
 ### Stdin input for large JSON payloads
 
-All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) treat the literal value `-` as "read from stdin". Use this to avoid shell-quoting or tempfile round-trips when the payload is large or contains quotes / newlines / dollar signs.
-
-Stdin consumption rules:
-
-- Refuses to block on an interactive TTY (so `… --json -` without a pipe errors fast rather than hanging).
-- Caps the read at 32 MiB.
-- Only one flag per invocation may use `-` — a second `-` on the same call errors with `stdin already consumed by another flag on this invocation`.
-
-Prefer heredocs over tempfiles for on-invocation staging:
+All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) treat the literal `-` as "read from stdin". Use this to avoid shell-quoting or tempfile round-trips for large or quote-heavy payloads. Caps the read at 32 MiB, refuses to block on an interactive TTY, and allows only one `-`-consuming flag per invocation (a second errors with `stdin already consumed by another flag on this invocation`).
 
 ```bash
 tomlctl items add-many ledger.toml --ndjson - <<'EOF'
@@ -594,12 +556,7 @@ tomlctl items add-many ledger.toml --ndjson - <<'EOF'
 EOF
 ```
 
-**Windows Git Bash fallback.** If a heredoc errors with `unexpected EOF while looking for matching \`''` (CRLF line endings break the `EOF` terminator match inside `bash -c`), write the payload to a sibling file and avoid the heredoc:
-
-- `--ndjson` also accepts a file path directly: `--ndjson <path>`.
-- For `--json` / `--ops` / `--defaults-json` (which accept only a literal or `-`), pipe the file in: `cat <path> | tomlctl … --json -`.
-
-Both forms work identically on every platform; delete the staging file after the call.
+**Windows Git Bash fallback.** Multi-line heredocs fail there with `unexpected EOF while looking for matching \`''` (CRLF breaks the `EOF` terminator match under `bash -c`). Stage the payload to a sibling file instead: `--ndjson` accepts a file path directly; for `--json` / `--ops` / `--defaults-json`, pipe the file in (`cat <path> | tomlctl … --json -`). Delete the staging file after the call.
 
 ## Dedup fingerprint contract
 
@@ -647,36 +604,33 @@ Closed taxonomy (every tag site is enumerated; all other `bail!` sites fall thro
 
 Prefer `--error-format json` + `.error.kind` switching over regex-matching stderr text when branching on error class (e.g. "bootstrap the ledger if missing, bubble up otherwise").
 
-## Integrity sidecar
+## Sidecar files
 
-Every write emits an integrity sidecar next to the target: `<file>.sha256`, in the standard `sha256sum` format (`<64-lower-hex>  <basename>\n`, two spaces between the digest and the basename, trailing newline). The sidecar is written atomically via tempfile + rename under the same lock as the primary write, so an interleaved `--verify-integrity` reader never sees a torn pair.
+Every write produces (and every read can verify) two sidecars next to the target TOML:
 
-**Threat model.** The sidecar is a consistency check against accidental corruption and collaborative out-of-band edits — it is **not** a MAC or tamper-proof signature. An attacker with ledger write access can trivially rewrite the sidecar; hostile-actor threat models still require auditing the ledger's git history.
+- **`<file>.sha256`** — integrity sidecar in standard `sha256sum` format (`<64-lower-hex>  <basename>\n`, two spaces between digest and basename, trailing newline). Written by default on every write (atomic tempfile+rename, under the same lock as the primary write). Verified by `--verify-integrity` on reads (see the [support matrix](#--verify-integrity-support-matrix)). Regenerated by `tomlctl integrity refresh <path>`.
+- **`<file>.lock`** / `.claude/.locks/<hash>.lock` — exclusive advisory lock acquired by every write path; prevents concurrent mutators from corrupting the file. On Windows this is a mandatory lock; see the lock-recovery note under [Constraints and gotchas](#constraints-and-gotchas).
 
 ```bash
-# Default behaviour: write writes both ledger.toml and ledger.toml.sha256
+# Default — writes both ledger.toml and ledger.toml.sha256
 tomlctl items update ledger.toml R7 --json '{"status":"fixed"}'
 
-# Skip the sidecar for this invocation (e.g. read-only-ish filesystems or
-# when you want to hand-edit before the next write regenerates it).
-tomlctl --no-write-integrity items update ledger.toml R7 --json '{"status":"fixed"}'
+# Skip the sidecar (e.g. read-only-ish FS, or hand-editing before the next write).
+tomlctl items update ledger.toml R7 --json '{"status":"fixed"}' --no-write-integrity
 
-# Treat sidecar write failures as hard errors instead of warnings.
-tomlctl --strict-integrity items update ledger.toml R7 --json '{"status":"fixed"}'
+# Treat sidecar write failures as hard errors.
+tomlctl items update ledger.toml R7 --json '{"status":"fixed"}' --strict-integrity
+
+# Verify on read — errors if sidecar is missing OR the digest disagrees.
+tomlctl items list ledger.toml --where status=open --verify-integrity
 ```
 
-Pass `--verify-integrity` on any invocation to verify the target against its sidecar before every read. Wires into `parse`, `get`, `validate`, `items list`, `items get`, `items next-id`, `items find-duplicates`, `items orphans`.
+- **Missing sidecar under `--verify-integrity`** → hard error naming the expected path; never auto-regenerated. Run `tomlctl integrity refresh` to materialise it.
+- **Digest mismatch** → hard error naming both expected (from sidecar) and actual (from current bytes). Resolve by a human; `tomlctl` never auto-repairs.
+- **Sidecar write failure after a successful primary write** → stderr warning and exit 0 by default (data is durable; the next write rebuilds the sidecar). `--strict-integrity` flips this to a hard error.
+- **`--allow-outside`** applies identically — the sidecar lands next to the target wherever that is.
 
-```bash
-tomlctl --verify-integrity items list ledger.toml --status open
-# If the sidecar is missing OR the digest disagrees, the command exits
-# non-zero and the error names both hashes + the sidecar path.
-```
-
-- **Missing sidecar with `--verify-integrity`** → error names the expected sidecar path; never auto-regenerated.
-- **Digest mismatch** → error names both the expected (from sidecar) and actual (from current file bytes) digests. Resolve by a human (either the file drifted out-of-band or the sidecar is stale). `tomlctl` will never auto-repair.
-- **Sidecar write failure** (disk full, permissions, etc.) after the primary write has landed → by default, logged to stderr as a warning; the command still exits 0 (data is durable; sidecar can be rebuilt by any subsequent write). `--strict-integrity` flips this to a hard error.
-- **Same write-guard applies** — sidecars are written alongside the target, so a write that passed `--allow-outside` writes its sidecar to the same location.
+> `.sha256` is not a MAC — it detects accidental corruption and out-of-band edits, not an adversary with write access. Hostile-actor threat models still require auditing the ledger's git history.
 
 ## Constraints and gotchas
 
@@ -693,3 +647,23 @@ tomlctl --verify-integrity items list ledger.toml --status open
 ## Permissions
 
 `Bash(tomlctl *)` is pre-approved in the project's `.claude/settings.json`. `Bash(tomlctl --allow-outside *)` is explicitly denied at the same layer, so any invocation passing `--allow-outside` falls through to an interactive permission prompt. Agents should never emit `--allow-outside` unattended — the write-path containment guard is default-on for a reason.
+
+## Advanced / maintenance
+
+Infrastructure-only primitives — no flow command invokes these directly. Kept documented for hook/script authors and release-engineering work.
+
+### `blocks verify` — shared-block parity across markdown files
+
+`tomlctl blocks verify` checks that named shared blocks are byte-identical across a set of files, mirroring `scripts/verify-shared-blocks.sh` without the bash+awk dependency. Blocks are delimited by `<!-- SHARED-BLOCK:<name> START -->` … `<!-- SHARED-BLOCK:<name> END -->` markers (markers excluded from the hash; content between them joined by `\n`).
+
+```bash
+# Verify named blocks across the flow-command files
+tomlctl blocks verify claude/commands/optimise.md claude/commands/review.md \
+  claude/commands/optimise-apply.md claude/commands/review-apply.md \
+  --block flow-context --block ledger-schema
+
+# Omit --block to verify every block present in the first listed file
+tomlctl blocks verify claude/commands/*.md
+```
+
+Output is JSON (`{"ok":true|false,"blocks":[...]}`); exit code 0 on success, non-zero on drift or missing markers. Does NOT accept `--verify-integrity` / `--allow-outside` / `--no-write-integrity` / `--strict-integrity` (markdown has no sidecar pair; `blocks verify` never writes).
