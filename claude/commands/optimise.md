@@ -307,7 +307,7 @@ Example (posture framing — bullets describe concerns and preferences, not hard
 - Source generation: source-generated logging, JSON, and other compile-time patterns preferred over runtime equivalents
 ```
 
-When this section is present, agents should use the posture to shape their research — what concerns to bring forward, what scale the project is operating at, what's already been decided. But the posture is not exhaustive: agents should still surface concerns outside it, and findings that only cite "the posture says X" without independent evidence are weaker than findings that identify something new.
+(Posture-as-framing rules: see the opening paragraph of this section above.)
 
 ## Step 1: Determine Scope
 
@@ -357,7 +357,7 @@ orphan O7 — file `src/old-module.rs` no longer present (check for rename; run 
 orphan O12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run /optimise at the new location)
 ```
 
-Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above.
+Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above. If `tomlctl items orphans` is unavailable (older binary predating the subcommand), fall back to a one-off `Glob` sweep over each item's `file` plus a `Grep` sweep over each item's `symbol` to flag missing paths and missing symbols; `depends_on` dangling-refs then go unchecked until the binary is updated (`cargo install --path tomlctl`).
 
 ### Deferred-item reopen sweep
 
@@ -418,7 +418,7 @@ Include the relevant focal points in each agent's prompt in Step 2. These are **
 
 ### Design Note: Intentional Asymmetry with `/review`
 
-`/optimise` always launches all five research agents regardless of scope size — there is no small-diff shortcut analogous to `/review`'s 1-agent collapse at `review.md:315`. Each agent's value comes from independent, specialized research (Context7 lookups and WebSearches on its lens's technology surface — memory allocators, serialization libraries, query engines, algorithmic primitives, async runtimes), not from dividing file reads. Collapsing to one agent would lose four distinct research threads for a marginal latency win. Agents are told when scope is small so they concentrate research depth on the specific code paths in the few files reviewed; they do not fan out to a broader sweep.
+`/optimise` always launches all five research agents regardless of scope size — there is no small-diff shortcut analogous to `/review`'s 1-agent collapse (see `review.md` §"Step 1: Determine Scope and Load Prior Findings", under the "Small-diff shortcut" marker). Each agent's value comes from independent, specialized research (Context7 lookups and WebSearches on its lens's technology surface — memory allocators, serialization libraries, query engines, algorithmic primitives, async runtimes), not from dividing file reads. Collapsing to one agent would lose four distinct research threads for a marginal latency win. Agents are told when scope is small so they concentrate research depth on the specific code paths in the few files reviewed; they do not fan out to a broader sweep.
 
 This asymmetry is intentional — future `/review` passes over this command should not re-flag it as "/optimise lacks small-diff shortcut" (the mirror of this note appears in `review.md` explaining why that command has no Step 1.5 focal-points synthesis counterpart).
 
@@ -428,7 +428,7 @@ This asymmetry is intentional — future `/review` passes over this command shou
 
 Before launching the five lens-agents, call `TaskCreate` once per lens — 5 tasks total covering Memory, Serialization, Queries, Algorithm, and Async. Each task's `subject` names the lens plus a scope summary (e.g. `Memory: src/services/*`); `description` is one line of the file list and classification relevant to that lens.
 
-As agents transition, call `TaskUpdate` to move each task `pending → in_progress → completed` on launch and return. Do NOT mint per-finding tasks — that shadows the ledger, which is the persistent source of truth for per-item state. Do NOT hand tasks forward to `/optimise-apply`: tasks are ephemeral to this run, while the ledger persists across commands.
+As agents transition, call `TaskUpdate` to move each task `pending → in_progress → completed` on launch and return. Do NOT mint per-finding tasks — that shadows the ledger, which is the persistent source of truth for per-item state. Do NOT hand tasks forward to `/optimise-apply`: tasks are ephemeral to this run, while the ledger persists across commands. These TaskCreate/TaskUpdate entries are ephemeral to this `/optimise` run and do NOT write `context.toml.[tasks]`.
 
 The five tasks provide visible progress even for small scopes — the five-agent launch happens regardless of scope size (see the Design Note in Step 1.5), so the task chrome matches the actual work without added overhead.
 
@@ -559,7 +559,7 @@ Apply the dedup / merge / regression rules from the `## Ledger Schema` `Item-ID 
 - **New finding, no match** → assign the next O-number (`max(existing O-numbers) + 1`, starting at `O1` on first run), append a fresh `[[items]]` with `first_flagged = today`, `rounds = 1`, `status = "open"`, the `flow` slug if one resolved, plus all fields emitted by the agent (`file`, `line`, optional `symbol`, `severity`, `effort`, `category`, `summary`, optional `description`, `evidence`).
 - **Matches an `open` item** → reuse the existing ID; increment `rounds`; refresh `line` if it drifted; update `description` / `evidence` if the agent produced richer material this round; leave `first_flagged` untouched.
 - **Matches an `applied` item** → **regression**. Assign a new O-number; set `related = ["<old id>"]`; flag prominently in the console report under a dedicated "Regressions" group so the user notices.
-- **Matches a `deferred` / `wontapply` / `verified-clean` item** → treat as existing; do not emit a new item; do not increment `rounds`. Note in the console: "this matches an existing `<status>` item (`<id>`), not re-reporting."
+- **Matches a `deferred` / `wontapply` / `verified-clean` item** → treat as existing; do not emit a new item; do not increment `rounds`. Note in the console: "this matches an existing `<status>` item (`<id>`), not re-reporting." (`verified-clean` appears here only when a `/review` item happens to share the ledger — see the disposition-vocabulary asymmetry note in the `## Ledger Schema` block above: `/optimise` writes `applied` for bytes-changed outcomes and `wontapply` for already-correct outcomes, and has no `verified-clean` counterpart.)
 - **Chronic-item escalation**: any `open` item that ends up with `rounds >= 3` is called out in the console report summary.
 
 Set `last_updated = today` on the in-memory structure.

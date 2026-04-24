@@ -328,7 +328,7 @@ Before launching pre-analysis (Step 2), confirm the ledger is fresh with respect
 1. Read `last_updated` from the ledger root.
 2. Collect every distinct `file` referenced by items in the resolved selector (union across selected items).
 3. For each file, run `git log -1 --format=%cI -- <file>` to obtain the newest commit timestamp touching that path.
-4. If any file's newest commit is **strictly after** the ledger's `last_updated` date, the ledger is stale with respect to this selector.
+4. If any file's newest commit timestamp is at or after 00:00:00Z on the day AFTER `last_updated`, the ledger is stale with respect to this selector. The comparison is UTC-based; users in non-UTC timezones may observe staleness firing at different wall-clock times than the calendar rule suggests.
 
 On stale detection, print a one-screen summary:
 
@@ -397,8 +397,6 @@ For each selected finding:
 - **Deleted-file detection**: use `Test-Path <file>` (or equivalent on non-Windows). If `False`:
   - **Source files** (tracked in git, hand-written) → auto-transition to `wontapply` with `wontapply_rationale = "file removed — audited during /optimise-apply <today>"`. No agent dispatch.
   - **Auto-generated files** (build output, codegen, regenerated migrations — detected by .gitignore membership, by path under `target/`, `build/`, `dist/`, `generated/`, `node_modules/`, or by explicit mention in CLAUDE.md's generated-paths section) → auto-transition to `wontapply` with `wontapply_rationale = "file is auto-generated and will reappear on next build — finding applies to the generator, not this artefact; file the generator fix as a separate item"`. No agent dispatch.
-
-  (/optimise has no `verified-clean` state — both branches land in `wontapply`. The rationale text preserves the source-vs-generated distinction for future audit; see Step 4 agent-tag notes and Step 5 applied/skipped decision rule.)
 - **"Already applied" test**: compare the read range against the finding's recommended optimisation literal or symbol. If the recommended form appears **verbatim** in the read range, pre-transition the item to `wontapply` with `wontapply_rationale = "already in place, no byte written — audited during /optimise-apply <today>"`. Semantic-judgement cases (refactor equivalence, moved code, paraphrased recommendations) route to an agent, not the orchestrator.
 - **Invariant narration** (for `category = concurrency` findings): the pre-analysis notes must briefly state the invariant being restored (e.g. "lock ordering: outer lock A acquired before inner lock B to prevent deadlock", "async boundary: must not await while holding a non-async-aware lock", "channel capacity: bounded N prevents unbounded producer growth"). This lets downstream agents focus on applying the optimisation rather than re-litigating the concurrency correctness argument.
 - For findings involving novel APIs, complex algorithmic changes, or cross-cutting patterns, reason through the implementation approach NOW and include the pre-analysed reasoning in the agent's prompt so the agent executes rather than deliberates. Resolving reasoning here once is cheaper than having every agent re-investigate and lets you verify conclusions before delegating.
