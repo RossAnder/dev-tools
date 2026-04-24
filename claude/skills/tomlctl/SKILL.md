@@ -376,7 +376,9 @@ tomlctl items add ledger.toml --dedupe-by dedup_id --json '{...}'
 
 For runs that need to append many new items at once (e.g. a 50-finding review batch), assemble NDJSON line-by-line and pass it to `items add-many` — one parse, one lock, one rewrite, one sidecar refresh. Each line is one JSON object; blank lines are ignored; any malformed line aborts the whole batch pre-mutation and names the offending line number.
 
-Default to the staging-file form (platform-safe — see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for why):
+**Always** default to the staging-file form. For any batch of **more than 5 items**, or any batch where a single row is wider than ~1 KB (typical for review/optimise findings with `summary` + `rationale` + `suggestion` prose), the staging file is the **only** supported path on Windows — the heredoc form is unreliable there (see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for the failure mode and the measured threshold).
+
+Write the NDJSON with the `Write` tool, then point `--ndjson` at the path:
 
 ```bash
 tomlctl items add-many .claude/flows/foo/review-ledger.toml \
@@ -503,7 +505,8 @@ tomlctl array-append <ledger> rollback_events --json '{
 }'
 
 # Many records via NDJSON — stage to a sibling file and pass --ndjson <path>.
-# Same platform reasoning as `items add-many` above; avoid heredocs on Windows Git Bash.
+# Same >5-item / Windows-heredoc rule as `items add-many` above. Staging file is
+# mandatory on Windows for any batch larger than ~5 items.
 tomlctl array-append <ledger> rollback_events \
   --ndjson .claude/flows/foo/_rollback-batch.ndjson
 ```
@@ -547,7 +550,9 @@ Acquires the same exclusive lock a write path would, so it serialises correctly 
 
 ### Stdin input for large JSON payloads
 
-All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) treat the literal `-` as "read from stdin". Use this to avoid shell-quoting or tempfile round-trips for large or quote-heavy payloads. Caps the read at 32 MiB, refuses to block on an interactive TTY, and allows only one `-`-consuming flag per invocation (a second errors with `stdin already consumed by another flag on this invocation`).
+All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) treat the literal `-` as "read from stdin". Caps the read at 32 MiB, refuses to block on an interactive TTY, and allows only one `-`-consuming flag per invocation (a second errors with `stdin already consumed by another flag on this invocation`).
+
+On Linux/macOS the heredoc form is fine for any size:
 
 ```bash
 tomlctl items add-many ledger.toml --ndjson - <<'EOF'
@@ -556,7 +561,25 @@ tomlctl items add-many ledger.toml --ndjson - <<'EOF'
 EOF
 ```
 
-**Windows Git Bash fallback.** Multi-line heredocs fail there with `unexpected EOF while looking for matching \`''` (CRLF breaks the `EOF` terminator match under `bash -c`). Stage the payload to a sibling file instead: `--ndjson` accepts a file path directly; for `--json` / `--ops` / `--defaults-json`, pipe the file in (`cat <path> | tomlctl … --json -`). Delete the staging file after the call.
+**On Windows Git Bash, heredocs are unreliable — use the staging-file form for any batch of >5 items or >~10 KB.** The Bash-tool transport to Git Bash intermittently mangles the heredoc terminator (CR bytes get appended to the `EOF` delimiter), so large bodies fail with one of:
+
+- `bash: -c: line N: unexpected EOF while looking for matching \`''` — the whole command errors out, no write happens.
+- Partial success followed by spurious errors — tomlctl actually writes the first N items, then bash treats the tail of the heredoc body as shell commands to execute (e.g. `/c/Users/ros…: Permission denied`). This is the failure mode that shows up as a "false interrupt" in the UI.
+
+Measured behaviour on this machine (Opus 4.x, Git Bash, 2026-04-24): narrow rows (a few fields, <100 bytes each) survive heredocs up to ~80 rows; typical review-finding rows (summary + file + rationale + suggestion ≈ 700 bytes) start failing intermittently at 14 rows and fail consistently at 15 rows. The practical threshold is ~10 KB of total command text. **Don't try to estimate this at call time** — just stage to a file once you're past a handful of rows.
+
+Windows-safe pattern (mandatory for >5 items, recommended for all batches):
+
+```bash
+# 1. Write tool → .claude/flows/<slug>/_batch.ndjson  (one JSON object per line)
+# 2. --ndjson <path>, no stdin, no heredoc:
+tomlctl items add-many .claude/flows/<slug>/ledger.toml \
+  --defaults-json '{"first_flagged":"2026-04-24","rounds":1,"status":"open"}' \
+  --ndjson .claude/flows/<slug>/_batch.ndjson
+# 3. Optional: rm .claude/flows/<slug>/_batch.ndjson after the call.
+```
+
+For `--json` / `--ops` / `--defaults-json` (which don't accept a file path directly), write the payload to a sibling file and pipe it in: `cat .claude/flows/<slug>/_patch.json | tomlctl … --json -`. A single-line heredoc (`<<'EOF'\n{"...":"..."}\nEOF`) is fine on Windows for one-line patches — only multi-line bodies are risky.
 
 ## Dedup fingerprint contract
 
