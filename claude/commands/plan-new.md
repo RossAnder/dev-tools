@@ -299,7 +299,8 @@ Works with:
 3. **Scope assessment** — Before launching exploration, estimate the likely scope:
    - How many modules or areas will this touch?
    - Does the request bundle multiple independent concerns?
-   - If it clearly spans 4+ unrelated modules or combines independent features (e.g., "overhaul auth AND add logging"), ask the user whether to split into separate plans before investing in exploration. Use AskUserQuestion for this.
+   - Propose splitting when ANY of these hold: (a) features could ship independently (no code dependency, independent success measures, reviewable separately); (b) ≥4 unrelated modules with no shared refactoring; (c) combines a refactor and a new feature.
+   - When any criterion above holds, ask the user whether to split into separate plans before investing in exploration. Use AskUserQuestion for this.
 4. **Requirements check** — Clarifying questions are deferred to Phase 4 (Directed Questions), which operates on exploration and research findings. In Phase 1, only check whether the task bundles independent concerns — if so, propose splitting via `AskUserQuestion` before spending exploration budget.
 
 ## Phase 2: Explore (parallel agents)
@@ -343,6 +344,8 @@ If you must truncate to stay under 500 words, prioritise file paths and interfac
 
 This phase always runs. Research agents may return early with minimal findings when the task uses only well-established patterns, so the phase's cost adjusts to task complexity rather than being statically skipped. Directed follow-up research happens later, in Phase 5, only when Phase 4 answers surface an unresearched topic.
 
+**Library enumeration**. Before launching research agents, the orchestrator reads dependency-manifest file(s) intersecting the plan's `scope` globs: `package.json` (Node.js), `Cargo.toml` (Rust), `pyproject.toml` / `requirements.txt` (Python), `go.mod` (Go), `*.csproj` / `*.fsproj` (.NET), and similar. For monorepos, enumerate only the workspace packages whose directories intersect `scope`. Extract each dependency and its pinned version. Hand the scope-filtered "libraries to research" list (typically ≤ 20) to each research agent as input.
+
 Launch up to 2 research agents in parallel using the Agent tool (subagent_type: "general-purpose"):
 
 **IMPORTANT: You MUST make all research Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch the full complement of research agents.
@@ -356,9 +359,28 @@ Every research agent MUST:
 - **Return at least 3 findings if relevant research exists; zero findings is acceptable when the task uses only well-established patterns already present in the codebase — state this explicitly rather than padding. Aim for ~500 words and cap at 10 findings. Do not self-truncate below the floor when findings genuinely exist.**
 - **If truncating, prioritise API signatures, version-specific behaviour, and deprecation warnings over general best-practice narrative.**
 
-Research focus should be tailored to the task — common patterns:
-- **API/library research** — Verify that planned API usage is correct, check for deprecations, find recommended patterns
+**Structured Research Notes record format (REQUIRED)** — every Research Notes bullet MUST be emitted in this exact record shape; freeform prose notes are not acceptable:
+
+```
+- **Library/API**: [name] [version from manifest]
+- **Source**: [Context7 query reference or URL]
+- **Finding**: [one-line — API signature, deprecation, behaviour]
+- **Details**: [2-3 sentence explanation with exact parameter names / method signatures]
+- **Impact on plan**: [how this finding shapes the design, or "no change"]
+```
+
+**Context7 no-match / multi-match handling**:
+- If Context7 returns nothing for a library, fall back to WebSearch; record the absence in the Research Notes (`**Source**: Context7 returned no match; WebSearch: ...`), and flag the fall-back in Phase 6.
+- If Context7 returns multiple library IDs for the same query, the agent states the disambiguation explicitly in its output; if ambiguous, it surfaces the disambiguation as a Phase 4 question for the user.
+
+**Version-pinning requirement**: every library-referencing finding MUST cite the exact version from the manifest (the `Library/API` line's `[version from manifest]` slot is not optional). Findings without a version pin are incomplete and must be re-attempted.
+
+Research focus should be tailored to the task. Broaden research focus beyond API signatures to also cover:
+- **API/library research** — Verify that planned API usage is correct, check for deprecations, find recommended patterns.
 - **Architecture research** — How do other projects structure similar features? What are the established patterns and anti-patterns?
+- **Changelog / breaking-change research** — when the plan references a library version distant from the project's pinned version.
+- **Benchmarking research** — when the plan proposes multiple viable approaches and the choice hinges on performance.
+- **Undocumented-behaviour research** — StackOverflow, GitHub Issues when the official docs are ambiguous or silent on the edge case.
 
 **Checkpoint**: After agents return, append a `## Research Notes` section to the plan-mode file as a second recovery point.
 
@@ -386,7 +408,15 @@ Ask questions via `AskUserQuestion`. The tool accepts up to 4 questions per call
 
 ## Phase 5: Directed Research (conditional — parallel agents)
 
-**Skip this phase** if every answer from Phase 4 is already covered by `## Research Notes`. Note the skip decision under a dedicated `### Phase 5 outcome` sub-heading inside `## User Decisions` (so decision records stay separate from phase meta-notes) and proceed to Phase 6.
+**Trigger procedure** (mechanical — do not substitute subjective judgement):
+
+1. For each Phase 4 answer A, extract key terms (library/API/pattern names).
+2. Grep `## Research Notes` for each key term.
+3. If all terms appear, mark A as "covered".
+4. If all answers are "covered", skip Phase 5 and note the skip in Phase 6.
+5. Override: if grep matched the library name but not the specific API referenced in the answer, run Phase 5 anyway.
+
+When the procedure above yields a skip, record the skip decision under a dedicated `### Phase 5 outcome` sub-heading inside `## User Decisions` (so decision records stay separate from phase meta-notes) and proceed to Phase 6.
 
 **Run this phase** if a Phase 4 answer surfaced a topic not yet researched — for example, the user selected a library, API, or approach that initial research did not cover.
 
@@ -405,28 +435,30 @@ If the directed research agent returns zero actionable findings, note this under
 
 Using exploration results, research results (including any Phase 5 additions), and the `## User Decisions` captured in Phase 4:
 
-1. **Evaluate approaches** — If multiple implementation strategies are viable, evaluate each against:
+1. **Review research findings**. Re-read `## Research Notes`. For each finding with a non-empty "Impact on plan", note the constraint. List deprecations and version-specific behaviours that force design choices. Subsequent Phase 6 steps reference this constraints list.
+
+2. **Evaluate approaches** — If multiple implementation strategies are viable, evaluate each against:
    - Consistency with existing codebase patterns
    - Implementation complexity and risk
    - Performance and maintainability implications
    - How well it integrates with surrounding code
 
-2. **Choose an approach** — Select one approach with explicit rationale. If the choice is non-obvious or high-stakes, note the alternatives considered and why they were rejected.
+3. **Choose an approach** — Select one approach with explicit rationale. If the choice is non-obvious or high-stakes, note the alternatives considered and why they were rejected.
 
-3. **Decompose into tasks** — Break the implementation into discrete, file-scoped tasks:
+4. **Decompose into tasks** — Break the implementation into discrete, file-scoped tasks:
    - Each task should own specific files with no overlap between parallel tasks
    - Tasks should be sized for a single focused agent session
    - Identify dependencies between tasks — which can run in parallel, which must be sequential
    - Target 3-4 parallel agents maximum when grouped by dependency level
 
-4. **Scope check** — After decomposition, review the total scope:
+5. **Scope check** — After decomposition, review the total scope:
    - Count unique files across all tasks. If any single agent batch touches more than 6 files, split the batch further.
    - If total plan scope exceeds ~15 unique files, flag this to the user and recommend splitting into sequential sub-plans that can be executed and verified independently.
    - This constraint exists because agent quality degrades as file count per batch increases.
 
-5. **Identify risks** — What could go wrong? Edge cases, migration risks, backward compatibility concerns, performance cliffs.
+6. **Identify risks** — What could go wrong? Edge cases, migration risks, backward compatibility concerns, performance cliffs.
 
-6. **Plan verification** — Using the build/test/lint commands discovered in Phase 2, design the end-to-end verification strategy: what commands to run, what conditions to check. If Phase 2 didn't surface clear commands, note this for the user to confirm.
+7. **Plan verification** — Using the build/test/lint commands discovered in Phase 2, design the end-to-end verification strategy: what commands to run, what conditions to check. If Phase 2 didn't surface clear commands, note this for the user to confirm.
 
 **Optionally launch up to 2 Plan agents** (subagent_type: "Plan") for complex designs that benefit from different perspectives. For example:
 - One agent focusing on minimal-change approach, another on clean-architecture approach

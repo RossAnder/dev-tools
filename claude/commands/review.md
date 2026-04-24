@@ -325,7 +325,7 @@ Skip this check when no flow resolved, when `status != "in-progress"`, or when `
 
 ### Scope classification delegation
 
-When `Identify Files` yields more than 10 files (and the small-diff shortcut — ≤ 3 files — does NOT fire), delegate scope classification to an `Explore` agent (`subagent_type: "Explore"`, `thoroughness: "quick"`) to reclaim orchestrator context for Step 2 and beyond.
+When `Identify Files` yields more than 10 files (and the small-diff shortcut — ≤ 3 files — does NOT fire; see "Small-diff shortcut" below), delegate scope classification to an `Explore` agent (`subagent_type: "Explore"`, `thoroughness: "quick"`) to reclaim orchestrator context for Step 2 and beyond.
 
 The Explore agent MUST:
 - Read `CLAUDE.md` at the repo top-level plus any per-subdirectory `CLAUDE.md` that falls under the scope.
@@ -422,11 +422,11 @@ On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops -`
 
 Non-interactive invocations surface candidates only (`found N deferred items with fired triggers; re-run interactively to reopen`) and do not mutate the ledger.
 
-**Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent instead of four specialized ones. Give it all four lenses, all mandatory tool-use requirements (Context7 and WebSearch), the prior findings context, and a cap of 15 findings.
+**Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent instead of five specialized ones. Give it all five lenses, all mandatory tool-use requirements (Context7 and WebSearch), the prior findings context, and a cap of 15 findings.
 
 ### Design Note: Intentional Asymmetry with `/optimise`
 
-`/review` has no counterpart to `/optimise`'s Step 1.5 Focal Points Brief. The asymmetry is intentional. `/optimise`'s five lenses (Memory, Serialization, Queries, Algorithm, Async) are runtime-specific — performance concerns hinge on async runtime, serialization strategy, query engine, and compilation target, which the orchestrator must pre-digest so agents can reason about the right things. `/review`'s four lenses (Quality, Security, Architecture, Completeness) are language-agnostic — idioms, authorization models, layering discipline, and test coverage apply across technology stacks without needing project-specific focal framing.
+`/review` has no counterpart to `/optimise`'s Step 1.5 Focal Points Brief. The asymmetry is intentional. `/optimise`'s five lenses (Memory, Serialization, Queries, Algorithm, Async) are runtime-specific — performance concerns hinge on async runtime, serialization strategy, query engine, and compilation target, which the orchestrator must pre-digest so agents can reason about the right things. `/review`'s five lenses (Quality, Security, Architecture, Completeness, Testability) are language-agnostic — idioms, authorization models, layering discipline, test coverage, and diagnostics apply across technology stacks without needing project-specific focal framing.
 
 The `/review` agent prompts already include CLAUDE.md's tech stack and the prior-findings context in Step 1; that's sufficient to steer the lens. Adding a focal-points synthesis step would duplicate prior-findings context without adding signal. This asymmetry is intentional — future `/review` passes over this command should not re-flag it as "/review lacks focal-points synthesis" (the mirror of this note in `optimise.md` explains why that command has no small-diff agent-collapse shortcut).
 
@@ -434,15 +434,15 @@ The `/review` agent prompts already include CLAUDE.md's tech stack and the prior
 
 ### Task tracking (runtime only)
 
-Before launching review agents, call `TaskCreate` once per lens: Quality, Security, Architecture, Completeness — 4 tasks for a normal run, OR 1 task for the small-diff shortcut (≤ 3 files, single combined agent). Each task's `subject` names the lens plus a scope summary (e.g. `Security: src/api/*`); `description` is one line of the file list and classification relevant to that lens.
+Before launching review agents, call `TaskCreate` once per lens: Quality, Security, Architecture, Completeness, Testability — 5 tasks for a normal run, OR 1 task for the small-diff shortcut (≤ 3 files, single combined agent). Each task's `subject` names the lens plus a scope summary (e.g. `Security: src/api/*`); `description` is one line of the file list and classification relevant to that lens.
 
-As agents transition, call `TaskUpdate` to move each task `pending → in_progress → completed` on launch and return. Do NOT mint per-finding tasks — that shadows the ledger, which is the persistent source of truth for per-item state. Do NOT hand tasks forward to `/review-apply`: tasks are ephemeral to this run while the ledger persists across commands.
+As agents transition, call `TaskUpdate` to move each task `pending → in_progress → completed` on launch and return. Do NOT mint per-finding tasks — that shadows the ledger, which is the persistent source of truth for per-item state. Do NOT hand tasks forward to `/review-apply`: tasks are ephemeral to this run while the ledger persists across commands. These TaskCreate/TaskUpdate entries are ephemeral to this `/review` run and do NOT write `context.toml.[tasks]`.
 
 Gate task creation on `scope > 1 file` for `/review` to avoid noise on trivial runs — for a single-file scope, the small-diff shortcut collapses to one agent and task chrome adds little value.
 
-Launch **all four** review agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the file list, classification, and prior findings context from Step 1.
+Launch **all five** review agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the file list, classification, and prior findings context from Step 1.
 
-**IMPORTANT: You MUST make all four Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing four Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of four agents. Each agent provides specialized, parallel analysis that cannot be replicated by fewer passes.
+**IMPORTANT: You MUST make all five Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of five agents. Each agent provides specialized, parallel analysis that cannot be replicated by fewer passes.
 
 Every agent MUST:
 - Read each changed file in full and read related/surrounding code to build context
@@ -451,7 +451,7 @@ Every agent MUST:
 - Adapt their review to the nature of the code — a UI component needs different scrutiny than a database query
 - Check the prior findings context and note if a finding matches a previously tracked item per the dedup rule in the `## Ledger Schema` section (same `file` AND (same non-empty `symbol` OR exact `summary` match))
 - **Return findings as a structured list** where each finding supplies the fields required by the `## Ledger Schema`:
-  - **Required**: `file` (repo-relative path), `line` (integer; `0` if no specific line), `severity` (`critical` | `warning` | `suggestion`), `effort` (`trivial` = < 5 min / mechanical, `small` = < 30 min / localized, `medium` = > 30 min / cross-cutting), `category` (one of `quality` | `security` | `architecture` | `completeness` | `db`), `summary` (one-line description of what's wrong AND what to do).
+  - **Required**: `file` (repo-relative path), `line` (integer; `0` if no specific line), `severity` (`critical` | `warning` | `suggestion`), `effort` (`trivial` = < 5 min / mechanical, `small` = < 30 min / localized, `medium` = > 30 min / cross-cutting), `category` (one of `quality` | `security` | `architecture` | `completeness` | `db` | `testability`), `summary` (one-line description of what's wrong AND what to do).
   - **Optional**: `symbol` (function / struct / trait method name — strongly recommended for line-drift resilience), `description` (longer explanation when summary is insufficient), `evidence` (array of doc URLs, Context7 citations, or supporting references).
 - Do not emit `id`, `first_flagged`, `rounds`, or `status` — those are assigned during consolidation in Step 3.
 - **Return at least 3 findings if issues exist in the reviewed code. Target 15 findings per agent (ceiling 20).** Opus 4.7's 1M context sustains a larger per-agent output than the 10-finding cap used by shorter-context models; raise only as high as signal warrants — padding with marginal `suggestion`-severity items is not the goal. If you exceed 20, apply this truncation-priority order: (1) preserve `critical` and `warning` severities over `suggestion`; (2) within severity, preserve entries with non-empty `evidence[]` (doc URL, Context7 citation, benchmark) over assumption-only findings; (3) preserve findings with a concrete `file:symbol` anchor over line-only anchors; (4) never cut a file path or API signature in favour of narrative prose. Do not self-truncate below the floor — thoroughness is expected. Do not include full file contents in your response — reference by `file:line` only.
@@ -483,9 +483,9 @@ Do NOT flag: minor style differences that don't affect readability, single-use h
 
 ### Agent 2: Security & Trust Boundaries
 
-Examine the changed code for security implications appropriate to what it does. Think about trust boundaries, input handling, data exposure, authentication and authorization, and how the code interacts with external systems or user-controlled data. The concerns will vary entirely based on the nature of the changes — apply judgement rather than a fixed checklist.
+Agent 2 emits `category = "security"` for every finding it surfaces.
 
-Do NOT flag: theoretical vulnerabilities with no plausible attack vector in context, missing protections that the framework or infrastructure already provides, or security concerns that would only apply in a different deployment model than the project uses.
+Focus on security **essentials and quick wins** appropriate to what the changed code does. Apply contextual judgement: not every feature needs every possible protection, and the goal is to flag the top issues that would actually matter if this shipped — not to enumerate every possible concern. Research the specific trust boundaries, data flows, and attack surfaces the changed code introduces via Context7 and WebSearch where current guidance matters. Bring forward only the highest-signal findings — real risks with plausible attack vectors in the actual deployment. Do NOT produce exhaustive threat-model output, theoretical vulnerabilities, or defence-in-depth laundry lists. **Hard cap: 5 findings.** Zero findings is a valid outcome — if nothing material surfaces, return an empty security pass rather than padding.
 
 ### Agent 3: Architecture, Dependencies & Project Structure
 
@@ -509,13 +509,27 @@ Consider whether the changed code respects the architectural boundaries, depende
 - Primary key / identity choices that contradict the domain (natural keys where surrogates fit better, or the inverse)
 - Migrations that change the shape of stored data without a corresponding data-migration step
 
-Do NOT flag: pragmatic shortcuts that are clearly intentional and documented, minor coupling that would require disproportionate refactoring to resolve, or files placed in reasonable locations that simply differ from a rigid reading of the structure docs.
+Do NOT flag: pragmatic shortcuts that are clearly intentional and documented (explicit code comment, ADR, or CLAUDE.md note); coupling confined to a single module or resolvable in fewer than ~50 LOC touched across ≤ 2 files; files placed in a sibling directory under the same top-level module as the "correct" location when no existing file in the project demonstrates the stricter placement rule.
 
 ### Agent 4: Completeness & Robustness
 
 Assess whether the work feels finished. Are there edge cases not considered, error paths not handled, tests not written? Is the code defensive where it should be and trusting where it can be? Look for loose ends — TODOs, partial implementations, inconsistencies between what was changed and what should have been updated alongside it.
 
-Do NOT flag: missing tests for trivial getters/setters, defensive checks for conditions the framework already guarantees, or TODOs that are clearly tracked elsewhere.
+Do NOT flag: missing tests for trivial getters/setters, defensive checks for conditions the framework already guarantees, or TODOs that are clearly tracked elsewhere. **Defer tests-not-written findings to Agent 5 (Testability) — Agent 5 explicitly owns the testing lens.**
+
+### Agent 5: Testability, Diagnostics & Developer Experience
+
+Agent 5 emits `category = "testability"` for every finding it surfaces. Cap: **15 findings per agent, ceiling 20** (same as other agents). The agent owns the testing lens — Agent 4 defers to Agent 5 on tests-not-written observations.
+
+Look at the changed code through three complementary sub-lenses:
+
+**Testability** — Is the public surface actually testable? Look for hidden globals, singletons reached via imports rather than parameters, and missing seams for mocking (interfaces where a concrete is hard-wired, time/randomness/IO without injection points). Do new tests accompany new code where the project convention requires them? Are tests deterministic (no real clocks, no network, no shared mutable fixtures across cases) and do their names describe what they actually cover rather than the production function's name? Does the changed code's regression risk have coverage — not coverage-for-coverage's-sake, but the specific behaviours that would fail if future changes broke them?
+
+**Diagnostics & observability** — When this code fails in production, will the operator be able to triage from logs alone? Error messages should name the operation that failed, the input involved, and expected vs actual state (not just "invalid argument" or "operation failed"). Logging should be at the right level (debug/info/warn/error) with enough context that a log line stands on its own. Where the project pattern expects metrics or tracing (counters, histograms, spans), are they instrumented on new code paths?
+
+**Developer experience** — Public APIs, CLIs, and configuration surfaces should be discoverable: help text that describes what options actually do, self-describing errors for misconfiguration, sensible defaults that work without customisation in the common case. Naming and error messages should read well to a first-time user who doesn't know the codebase — avoid internal jargon in user-facing strings.
+
+Do NOT flag: missing tests for trivial getters/setters (defer to framework-provided coverage), debug-level logging gaps on hot paths where the project doesn't already log, or DX polish on internal-only APIs that no first-time user will encounter.
 
 ## Interim checkpoint
 
@@ -537,7 +551,7 @@ Apply the dedup, merge, and regression rules from the `## Ledger Schema` section
 - For each consolidated agent finding, check it against every item in the loaded ledger:
   - **Matches an `open` item** → reuse the existing `id`; the merge step will increment `rounds` and refresh `last_updated`. Do not mint a new ID.
   - **Matches a `fixed` item** → **regression**. Mint a new `R{n}` ID (continuing from `max(existing) + 1`); record `related = ["<old id>"]` on the new item; flag the regression prominently in the console report.
-  - **Matches a `deferred` / `wontfix` / `verified-clean` item** → do NOT mint a new ID; do NOT emit the finding to the report as a new item; note in console output: "this matches an existing <status> item, not re-reporting." The existing item is left untouched (no `rounds` increment).
+  - **Matches a `deferred` / `wontfix` / `verified-clean` item** → do NOT mint a new ID; do NOT emit the finding to the report as a new item; note in console output: "this matches an existing <status> item, not re-reporting." The existing item is left untouched (no `rounds` increment). `verified-clean` is review-only — see the asymmetry note in the `## Ledger Schema` section's disposition vocabulary for why `/optimise` has no counterpart.
   - **No match** → mint a new `R{n}` ID = `max(existing R-numbers) + 1`. If the ledger is empty, start at `R1`.
 - **Never renumber**. IDs are stable across rounds and are referenced by `/implement`, `/plan-update`, and disposition commands. IDs retired by deletion are never reused.
 - **Chronic-item escalation**: any existing `open` item whose `rounds` will reach `3` or more after this round's merge MUST be called out separately in the summary output.

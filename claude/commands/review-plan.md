@@ -100,6 +100,8 @@ Review an implementation plan document against the actual codebase. Validate tha
 
 This command works with any plan format — structured work packages, wave-based outlines, task lists, or prose plans. Agents adapt their review to whatever format they encounter.
 
+> **Agent count**: `/review-plan` uses 4 lens-agents (Feasibility, Completeness, Executability, Risk) — distinct from `/review`'s 5 code-review lenses. The agent counts differ because plan review and code review answer different questions.
+
 > **Effort**: Requires `xhigh` or `max` — lower effort may reduce agent spawning and tool usage.
 
 ## Step 1: Load the Plan
@@ -231,3 +233,94 @@ If none found, state "All references verified current."]
 - Deduplicate findings across agents
 - For every critical issue, include what the agent found in the codebase that contradicts the plan
 - An empty review is valid — a well-written plan may have no issues
+
+## Step 3.5: Persist Findings
+
+After consolidation (Step 3) and before the end-of-turn auto-merge offer (Step 4), persist findings to the flow's `plan-review-findings.toml` artifact so subsequent `/review-plan` runs can dedup against prior rounds and so the auto-merger in Step 4 has a single source of truth.
+
+1. Compute `plan_review_findings_path = context.toml.[artifacts].plan_review_findings` via `tomlctl get <context> artifacts.plan_review_findings --verify-integrity`. If the key is absent (legacy flow), derive `.claude/flows/<slug>/plan-review-findings.toml` from `slug` per the self-healing contract in the `flow-context` shared block and write the path back into `[artifacts]` on the next TOML write.
+2. If the target file does not yet exist, create it by writing a two-line bootstrap: `schema_version = 1\nlast_updated = <today>\n`. (No atomic bootstrap dance is needed — `/review-plan` is the sole writer.)
+3. Mint monotonic P-IDs via `tomlctl items next-id <path> --prefix P`.
+4. Batch-write findings: `tomlctl items add-many <path> --defaults-json '{"review_round":<n>, "status":"open"}' --ndjson -` with all findings from this round.
+5. `tomlctl set <path> last_updated <today>` and `tomlctl set <path> round <n>`.
+
+Where `<n>` = current review round (1 on first run; increment on subsequent runs — see Re-run dedup below).
+
+### Artifact Schema: `plan-review-findings.toml`
+
+```toml
+schema_version = 1
+last_updated = 2026-04-24
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "### 3. optimise.md audit fixes"
+anchor_old = "- **Action**: apply the four optimise.md audit fixes"
+anchor_new = "- **Action**: apply the five optimise.md audit fixes including the Design Note re-anchor"
+summary = "Action count mis-states task scope after re-anchor addition"
+status = "open"
+```
+
+**Required fields**:
+- `id` — `P{n}` monotonic.
+- `review_round` — integer.
+- `severity` ∈ {`critical`, `warning`, `suggestion`}.
+- `category` ∈ {`feasibility`, `completeness`, `executability`, `risk`}.
+- `plan_section` — markdown heading anchor as literal string, copied verbatim from the plan file.
+- `summary` — one-line description.
+- `status` ∈ {`open`, `merged`, `discarded`}.
+
+**Optional fields**:
+- `description` — longer explanation when `summary` is insufficient.
+- `anchor_old` — exact substring that already exists in the plan file under `plan_section`.
+- `anchor_new` — replacement substring.
+
+The `anchor_old` + `anchor_new` pair together form the mechanical merge contract. **Both are required for auto-merge to act on a finding. Findings with only `summary` / `description` and no anchor pair are advisory-only and skipped by the merger.**
+
+**Schema callouts** (read before touching this artifact):
+
+1. `tomlctl items find-duplicates` and `tomlctl items orphans` hardcode the review/optimise ledger schema and MUST NOT be invoked against `plan-review-findings.toml` — they will emit garbage. (Parallel to the existing warning in the `execution-record-schema` shared block.)
+2. `tomlctl items next-id --prefix P` is the supported ID path; `tomlctl items list`, `tomlctl items add-many --ndjson -`, and `tomlctl items apply --ops -` are the supported mutation/query subcommands for this artifact.
+
+## Step 4: Auto-Merge Offer (end of turn)
+
+Replace the fire-and-forget end-of-turn summary with this auto-merge protocol. The aim: let the user opt-in to a mechanical merge of selected-severity findings into a `.revised.md` sibling of the plan file, then accept, keep both, or discard.
+
+1. **Count findings by severity.** If zero findings total, output `No findings — plan is clean.` and end.
+
+2. **`AskUserQuestion` (Q1)** — `multiSelect` over severity `[Critical, Warning, Suggestion]`, default `[Critical, Warning]`.
+   - **Empty-answer rule**: if the response is empty (`acceptEdits` mode / skill-hosted / headless — per Claude Code issues [#29618](https://github.com/anthropics/claude-code/issues/29618) and [#29547](https://github.com/anthropics/claude-code/issues/29547)), treat as "zero selected" — skip merge entirely. Persist findings only. Do NOT proceed to Q2.
+
+3. **If zero severities selected** → persist only, no merge. Output: `Findings persisted; auto-merge skipped. Re-run interactively to merge.`
+
+4. **Filter selected-severity findings** to those with **both `anchor_old` AND `anchor_new` present**. Advisory-only findings (no anchor pair) are skipped silently.
+
+5. **Conflict detection** — group filtered findings by `plan_section`. If >1 finding in a group has non-empty `anchor_old`, emit `[conflict: plan_section="..."; findings=P3, P7] — manual merge required` and skip all findings in that group. Non-conflicting findings in other groups still apply.
+
+6. **Mechanical merge** — for each surviving finding, locate `anchor_old` as a substring in the plan file under the `plan_section` heading. If found exactly once, replace with `anchor_new`. Otherwise log `[merge-failed: P{n} — anchor_old not found uniquely in section "..."]` and skip that finding. Apply surviving edits in P-id monotonic order.
+
+7. **Materialise the revised content** via `Write` to a sibling file. **Replace the plan file's trailing `.md` with `.revised.md`** (do not append — e.g. `docs/plans/flow-commands-hardening.md` → `docs/plans/flow-commands-hardening.revised.md`). For multi-file plans (`plan_path` points at `<dir>/00-outline.md`), materialise only the outline at `<outline-dir>/00-outline.revised.md` — detail files are not rewritten by auto-merge v1.
+
+8. **Pre-existing sibling**: if `<plan>.revised.md` already exists when we're about to write, rename it to `<plan>.revised.prev.md` first (overwriting any older `.revised.prev.md`). Cheap rollback.
+
+9. **Console summary**: `N applied, K conflicts skipped, M merge-failures`. List `plan_section → summary` for each applied finding.
+
+10. **`AskUserQuestion` (Q2)** — `[Accept, Keep both, Discard]`.
+    - **Default**: `Keep both` (NOT `Accept`). `Accept` is irreversible; default-to-Accept + auto-mode empty-answer = silent plan overwrite.
+    - **Empty-answer rule**: empty → treat as `Keep both`.
+
+11. **Apply chosen action**:
+    - **Accept** — `Write` the revised content over the original plan file; keep `<plan>.revised.md` for one cycle (post-hoc inspection). Transition matching findings to `status = "merged"` via `tomlctl items apply <path> --ops -`.
+    - **Keep both** — no mutation; findings stay `status = "open"`.
+    - **Discard** — delete `<plan>.revised.md`; transition findings to `status = "discarded"`.
+    - The `<plan>.revised.prev.md` from the prior run is deleted on the NEXT run's step 8 (one-cycle retention).
+
+12. `tomlctl set <path> last_updated <today>`.
+
+### Re-run dedup (subsequent invocations)
+
+Subsequent `/review-plan` runs increment `round`: read the current round via `tomlctl get <path> round`, increment by 1, and write it back via `tomlctl set <path> round <n>`. Findings already transitioned to `merged` or `discarded` are ignored by lens-agents; agents receive `open`-status items from prior rounds as prior context so they can avoid re-raising the same issue. Dedup key: `(plan_section, anchor_old)` — a new finding with the same pair as an existing `open` item MUST NOT be added; update the existing item if severity/category changed, otherwise skip.
