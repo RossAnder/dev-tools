@@ -1,11 +1,11 @@
 ---
-description: Bootstrap a modern test stack for the current project — research-agent dispatch surfaces 2-3 candidate stacks, then scaffolds config + smoke test + CI workflow + marker block
-argument-hint: [language] [--with-mutation]
+description: Bootstrap a modern test stack for the current project — research-agent dispatch surfaces 2-3 candidate stacks, then scaffolds config + smoke test + showcase tests + CI workflow + marker block
+argument-hint: [language] [--with-mutation] [--no-showcase]
 ---
 
 # Test-Stack Bootstrap
 
-Stand up a modern, opinionated test framework in the current project. This command is a **one-shot setup**, not a flow-aware loop — it runs Project Profile detection, fans out 4 parallel research agents to surface current best-practice tooling, synthesises 2-3 cohesive stack candidates, and scaffolds the chosen stack with idempotent marker blocks in `CLAUDE.md` and `.gitignore`.
+Stand up a modern, opinionated test framework in the current project. This command is a **one-shot setup**, not a flow-aware loop — it runs Project Profile detection, fans out 4 parallel research agents to surface current best-practice tooling, synthesises 2-3 cohesive stack candidates, and scaffolds the chosen stack (config, smoke test, showcase tests demonstrating good practice, CI workflow) with idempotent marker blocks in `CLAUDE.md` and `.gitignore`.
 
 > **Effort**: Requires `max` — Phase 2 dispatches 4 concurrent research agents (Context7 + WebSearch). Lower effort may collapse the dispatch and degrade recommendation quality.
 
@@ -13,26 +13,33 @@ This command is intentionally **not flow-aware**. It does NOT inline `flow-conte
 
 ## Usage
 
-- `/test-bootstrap` — auto-detect project language from manifests; default stack candidates exclude mutation testing.
+- `/test-bootstrap` — auto-detect project language from manifests; default stack candidates exclude mutation testing and INCLUDE showcase tests demonstrating good practice.
 - `/test-bootstrap rust` (or `python`, `typescript`, `go`) — pin language explicitly when manifest detection is ambiguous (e.g. polyglot monorepos).
 - `/test-bootstrap --with-mutation` — include a mutation-testing tool in the scaffolded stack and emit a separate, opt-in CI workflow for it. The flag is OFF by default because mutation runs are expensive (10x-100x normal CI time); see Agent C below.
-- `/test-bootstrap rust --with-mutation` — combine both.
+- `/test-bootstrap --no-showcase` — skip the showcase-tests file (Phase 4 still emits the single smoke test). Showcase tests are ON by default because they demonstrate the framework's good-practice idioms — AAA structure, parameterised cases, error-path assertion, per-test tempdir fixture lifecycle, mock-at-smallest-boundary, and (when a property library is in the chosen stack) one property-based test. **Each slot binds to existing user code where a fitting public symbol exists**, falling back to a tiny synthetic SUT colocated in the file only when no project symbol fits. The user-code-bound tests are written as **characterization tests** — Agent A reads the symbol's current implementation and asserts the behavior it currently exhibits, NOT a hand-derived expectation. This preserves the "must pass on first run" guarantee while making the showcase a copy-paste-ready reference against the user's actual codebase (and a free regression net for the bound symbols). Slots fall back to synthetic when the candidate survey returns no fitting symbol, when binding would require non-deterministic input (wall-clock time, randomness, network calls without a mockable seam), or when the symbol's behavior is not derivable from a single read of its source.
+- `/test-bootstrap rust --with-mutation` — combine flags freely.
 
 The `--with-mutation` flag MUST be discoverable in three places: (i) frontmatter `argument-hint`; (ii) this Usage section; (iii) the CLAUDE.md stack marker block emitted by Phase 5 (`Mutation testing: <tool> (opt-in via --with-mutation; not in default CI)`).
 
+The `--no-showcase` flag MUST be discoverable in the same three places: (i) frontmatter `argument-hint`; (ii) this Usage section; (iii) the CLAUDE.md stack marker block emitted by Phase 5 (`Showcase tests: <file path> | (none — opted out via --no-showcase)`).
+
 ## Re-run guard
 
-Before any work begins, scan the target project's `CLAUDE.md` (if present) for the marker block delimiter `<!-- TEST-BOOTSTRAP:STACK START -->`. If found, the project has already been bootstrapped. Read the existing block's `**Framework**`, `**Coverage tool**`, `**Mutation tool**`, and `**Bootstrapped**` fields and prompt the user via `AskUserQuestion`:
+Before any work begins, scan the target project's `CLAUDE.md` (if present) for the marker block delimiter `<!-- TEST-BOOTSTRAP:STACK START -->`. If found, the project has already been bootstrapped. Read the existing block's `**Framework**`, `**Coverage tool**`, `**Mutation tool**`, `**Showcase tests**`, and `**Bootstrapped**` fields and prompt the user via `AskUserQuestion`:
 
 ```
-Already bootstrapped on <YYYY-MM-DD> with <framework> + <coverage> (+ <mutation>).
+Already bootstrapped on <YYYY-MM-DD> with <framework> + <coverage> (+ <mutation>) (+ showcase: <yes|no>).
 Choose:
   [upgrade-stack]      — re-run Phases 2-5; replace marker block with new selection
   [add-coverage-gates] — keep stack; raise/adjust coverage thresholds and re-write CI snippet only
+  [refresh-showcase]   — keep stack; re-emit only the showcase-tests file (overwrites the
+                          stub-marked showcase file in place; useful when ecosystem idioms
+                          have moved). Honours the recorded with_showcase setting; if the
+                          previous run used --no-showcase, this option is hidden.
   [remove]             — strip marker block from CLAUDE.md and .gitignore; print checklist
-                          of generated files (CI workflow, smoke test, conftest/snapshot dirs)
-                          the user MAY want to delete manually. /test-bootstrap does NOT
-                          delete user code — only the marker blocks.
+                          of generated files (CI workflow, smoke test, showcase tests,
+                          conftest/snapshot dirs) the user MAY want to delete manually.
+                          /test-bootstrap does NOT delete user code — only the marker blocks.
   [abort]              — exit without touching anything
 ```
 
@@ -47,6 +54,7 @@ Walk the target project to assemble a single Project Profile dictionary. This pr
 - The project root (CWD or git top-level if available).
 - The user's `[language]` argument, if supplied (forces the `language` field in the profile, skips manifest inference).
 - The user's `--with-mutation` flag, if supplied (sets `with_mutation = true` in the profile; Agent C scaffolds mutation config; otherwise Agent C still recommends but does not scaffold).
+- The user's `--no-showcase` flag, if supplied (sets `with_showcase = false` in the profile; Phase 4 skips writing the showcase-tests file and Agent A omits the showcase bundle from its output to save tokens). Default is `with_showcase = true`.
 
 ### Processing
 
@@ -84,6 +92,18 @@ Use `Glob` and `Read` (in a single batched response message) to detect:
 - **Existing test infra** — flag presence of `tests/`, `**/test_*.py`, `**/*.test.ts`, `**/*_test.go`, or `Cargo.toml [dev-dependencies]` test crates. If existing infra is detected, the Phase 4 scaffolder MUST prompt before overwriting it.
 - **Existing CLAUDE.md** — if present, read in full; extract any `## Optimization Focus`-style declarations, regulatory / privacy constraints (mentions of HIPAA, PCI-DSS, GDPR), and any explicit testing-stack hints.
 - **Performance signal** — `Grep` for the words `latency`, `throughput`, `performance-critical`, `low-latency`, `high-throughput` in `CLAUDE.md` and `README.md`. Presence sets `performance_signal = true` in the profile, which tells Agent C to weight property-based testing more heavily.
+- **Showcase candidate survey** (run only when `with_showcase = true`) — survey the project for public symbols that fit the showcase-bundle slots Agent A will fill. The goal is to bind each showcase test to real user code wherever feasible, falling back to synthetic SUTs only for slots no candidate fits. Procedure:
+  1. **Discover candidate files** via `Glob`. Cap at the first 25 source files matching the language extension (`*.rs` / `*.py` / `*.ts` / `*.go`), excluding `tests/`, `target/`, `node_modules/`, `.venv/`, `dist/`, `build/`, and the `examples/` directory. Prefer files under `src/` when the language convention has one.
+  2. **Read each candidate file** and enumerate public/exported symbols (Rust `pub fn`, Python module-level `def` without leading underscore, TS `export function` / `export const = (…) =>`, Go capitalised `func`).
+  3. **Score each symbol against slot heuristics** — a single symbol may fit multiple slots:
+     - **`slot:happy`** — pure-ish: simple parameter types (primitives, strings, slices, plain structs/dataclasses); returns a value; no `async`, no `&mut self`, no I/O imports referenced inside the body. ALWAYS try to fill this slot if any candidate fits.
+     - **`slot:parameterised`** — same as `slot:happy`; the same symbol can serve both slots if it takes one or two simple params (drives the parameter-table form naturally).
+     - **`slot:error`** — signature returns `Result<_, _>` (Rust), `(value, error)` (Go), or the body has a `raise` / `throw` reachable from a documented input (Python / TS). Match an input that triggers the error path by reading the body, not by guessing.
+     - **`slot:tempdir`** — signature takes a `Path` / `str` interpreted as a path, OR body calls `fs::write` / `open(..., 'w')` / `fs.writeFileSync` / `os.WriteFile`.
+     - **`slot:mock`** — body invokes ONE clearly-named external dependency that has a mockable seam in the chosen test framework: `axios.*` / `requests.*` / `httpx.*` / a trait method on an injected dependency / a method on an interface field. Reject candidates that bake in concrete clients (e.g. construct an `httpx.Client()` inline with no parameter to swap) — those need refactoring before mock-binding is honest.
+     - **`slot:property`** — pair-shaped functions where a property is mechanically derivable: `parse`/`format` round-trip, `encode`/`decode` round-trip, commutative arithmetic helpers (`add`, `merge_sets`), idempotent normalisers (`canonicalise(canonicalise(x)) == canonicalise(x)`). The pair (or property) must be obvious from names + signatures; do not infer properties from body semantics.
+  4. **Reject any candidate** whose body references wall-clock time (`Utc::now`, `time.time()`, `Date.now`, `time.Now()`), randomness (`rand::*`, `random.*`, `Math.random`, `crypto/rand`), or environment-derived state (`env::var`, `os.environ`, `process.env`, `os.Getenv`) — these defeat the "must pass on first run" guarantee for characterization tests.
+  5. **Cap output** at 6 candidates total, with at most 2 candidates per slot. Rank by lowest dependency count + shortest body (proxy for "easy to characterize from one read"). Empty list is allowed and signals "all-synthetic showcase" to Agent A.
 
 ### Output
 
@@ -100,9 +120,35 @@ A single JSON blob (or TOML — pick one and stay consistent within an invocatio
   "claude_md_excerpts": "...",
   "performance_signal": true,
   "with_mutation": false,
+  "with_showcase": true,
+  "showcase_candidates": [
+    {
+      "file": "src/parser.rs",
+      "symbol": "parse_int",
+      "signature": "pub fn parse_int(s: &str) -> Result<i32, String>",
+      "slots": ["happy", "parameterised", "error"],
+      "notes": "trims and parses; error arm reachable via non-numeric input"
+    },
+    {
+      "file": "src/config.rs",
+      "symbol": "load_from_path",
+      "signature": "pub fn load_from_path(path: &Path) -> Result<Config, ConfigError>",
+      "slots": ["tempdir", "error"],
+      "notes": "reads file at path; happy-path requires writing a temp file first"
+    },
+    {
+      "file": "src/codec.rs",
+      "symbol": "encode",
+      "signature": "pub fn encode(s: &str) -> String",
+      "slots": ["property"],
+      "notes": "paired with decode; round-trip property: decode(encode(s)) == s"
+    }
+  ],
   "regulatory_constraints": []
 }
 ```
+
+When `with_showcase = false`, omit the `showcase_candidates` field entirely (or set it to `[]`); Agent A's prompt will skip the bundle.
 
 ## Phase 2: Parallel research-agent fan-out
 
@@ -133,13 +179,36 @@ AGENT-SPECIFIC SECTION: <Agent A | B | C | D>
 
 **Decision domain**: Unit + integration test framework.
 
-**Returns** (per candidate, ≤400 words): package name, version range, install command, config-file template (verbatim — `vitest.config.ts` / `pytest.ini` / `[dev-dependencies]` block / etc.), smoke-test template (one passing test that exercises the framework's core API), parallelisation flag (e.g. `--threads`, `pytest-xdist -n auto`, `cargo test --jobs N`), recent breaking changes summary.
+**Returns** (per candidate, ≤400 words for the runner block + ≤400 words for the showcase-bundle block when `with_showcase = true`): package name, version range, install command, config-file template (verbatim — `vitest.config.ts` / `pytest.ini` / `[dev-dependencies]` block / etc.), smoke-test template (one passing test that exercises the framework's core API), parallelisation flag (e.g. `--threads`, `pytest-xdist -n auto`, `cargo test --jobs N`), recent breaking changes summary.
 
 **Profile-driven weighting**:
 - `scale = small` → favour zero-config or near-zero-config runners.
 - `scale = large` → favour runners with proven monorepo support and parallelisation.
 - `project_type = web-service` → favour runners with built-in HTTP test helpers.
 - `project_type = library` → favour runners that produce library-friendly assertion failures.
+
+**Showcase-bundle contract** (REQUIRED when `with_showcase = true`; SKIPPED when `with_showcase = false`):
+
+In addition to the smoke-test template, Agent A emits a single **showcase test file** (verbatim, ready to write) demonstrating idiomatic good-practice patterns for the candidate framework. **Each slot in the bundle binds to a user-code candidate from the profile's `showcase_candidates` list when one fits the slot; the slot falls back to a tiny synthetic SUT colocated in the file only when no candidate fits.** The default mode is mixed: some tests exercise real user symbols, others demonstrate the pattern against a synthetic helper. This makes the file a copy-paste-ready reference against the user's actual codebase (and a free regression net for the bound symbols), while still passing on first run regardless of project state.
+
+**User-code binding via characterization tests.** When Agent A binds a slot to a user candidate, it does NOT hand-derive expected values. Instead, it reads the candidate's source from the `file` field, mentally executes the function for the chosen inputs, and asserts the behavior the code currently exhibits. This is the classic *characterization test* pattern (also called approval testing) — the test captures present behavior so any future change that breaks it surfaces as a failing showcase test. If the candidate's behavior is not derivable from a single read of its source (control flow too tangled, depends on un-mockable global state, calls itself recursively over user-defined types Agent A cannot resolve), Agent A MUST fall back to synthetic for that slot rather than guess and risk a showcase test that fails on first run.
+
+**Slot-by-slot procedure** — one named test per slot, in this fixed order. Numbered comments (`// 1. AAA happy path (bound: src/parser.rs::parse_int)` or `// 1. AAA happy path (synthetic — no fitting candidate)`) make the binding explicit and skimmable:
+
+1. **AAA happy-path test** — explicit `// arrange` / `// act` / `// assert` sectioning. Bind to a `slot:happy` candidate if one is present; pick inputs that hit the candidate's main control-flow path. Synthetic fallback uses a one-line helper like `add(a, b) -> a + b`.
+2. **Parameterised / table-driven test** — the framework's idiomatic multi-case form (`#[rstest]` + `#[case]` for Rust; `@pytest.mark.parametrize` for Python; `it.each` for Vitest; `t.Run` over a `[]struct{name,…}` table for Go). At least 3 cases. Reuses the slot-1 candidate when it fits both `slot:happy` and `slot:parameterised` (common — same symbol, varied inputs). Synthetic fallback re-uses the slot-1 synthetic helper with three input rows.
+3. **Error-path test** — assertion on the framework's idiomatic raised / returned error (`pytest.raises`, `expect().toThrow`, `Result::Err`, Go's `if err == nil { t.Fatal(...) }`). Match against the error message **substring**, not its exact text — this keeps the test stable across minor wording changes. Bind to a `slot:error` candidate using the input the candidate file demonstrates triggers the error arm.
+4. **Per-test fixture with tempdir lifecycle** — uses the framework's per-test tempdir (`tmp_path` / `tempfile::tempdir()` / `vi.stubGlobal` + OS tempdir / `t.TempDir()`). When binding to a `slot:tempdir` candidate, the test writes a small input file to the tempdir, calls the candidate with that path, and asserts what the candidate currently returns for that input. Asserts the temp file is cleaned by the framework's automatic teardown (or comments that fact). Synthetic fallback writes-then-reads a string round-trip in a tempdir.
+5. **Mock-at-smallest-boundary test** — mocks ONE method on ONE module (e.g. `axios.get`, `requests.get`, a single trait method), not the whole module. Includes a `beforeEach`/setup that resets the mock per test for order-independence. When binding to a `slot:mock` candidate, mock the exact dependency the candidate calls and assert what the candidate does with the mocked return value. Synthetic fallback is a function that calls the mocked dependency exactly once.
+6. **Property-based test** (CONDITIONAL — emit ONLY when Agent C's selected property library for the same stack candidate is non-null; otherwise omit case 6 and renumber nothing — leave 6 absent so users see the gap and know to add a property library if they want one). Bind to a `slot:property` candidate if present, using the property pair documented in the candidate's `notes` field (round-trip, commutative, idempotent). Synthetic fallback states one property over a synthetic helper.
+
+**Marking and isolation requirements** (apply to bound and synthetic tests equally):
+
+- The showcase file MUST carry the framework's stub marker on its first line (`// TEST-BOOTSTRAP:STUB` for Rust/JS/TS/Go; `# TEST-BOOTSTRAP:STUB` for Python) so Phase 4's idempotency rules let `[refresh-showcase]` overwrite it cleanly.
+- Conventional locations: `tests/showcase_test.rs` (Rust) / `tests/test_showcase.py` (Python) / `__tests__/showcase.test.ts` (TS) / `showcase_test.go` (Go, in a `package showcase` of its own at the repo root or under `examples/showcase/`).
+- Each test names its binding mode in a header comment so users can audit quickly: `// 3. Error path (bound: src/parser.rs::parse_int — current behavior: returns Err containing "invalid digit")` or `// 3. Error path (synthetic — no slot:error candidate found)`.
+- The bundle is held to the same isolation discipline the `test-author` skill enforces: no module-level mutable globals, no test-order dependencies, no writes outside per-test tempdirs, no assertions against `now()` or randomness. Agent A re-prompt trigger: if the returned bundle violates these (e.g. a global counter, a shared `setup()` that mutates state across tests, an unmocked `Date.now()`), reject with `"Re-emit showcase bundle without shared mutable state; tests must be runnable in any order"`.
+- Agent A also re-prompts itself if it cannot honestly characterize a bound symbol's behavior — better to fall back to synthetic than ship a guessed assertion. If `showcase_candidates` is empty, ALL slots use the synthetic fallback; the bundle still emits in full.
 
 ### Agent B: Coverage
 
@@ -253,6 +322,7 @@ Per the chosen stack's agent outputs, typical writes:
 
 - **Test config** — e.g. `vitest.config.ts`, `pytest.ini` / `pyproject.toml` `[tool.pytest.ini_options]` block, `Cargo.toml` `[dev-dependencies]` additions, `go.mod` additions.
 - **Smoke test** — one passing test in the framework's idiomatic location (`tests/smoke_test.rs`, `tests/test_smoke.py`, `__tests__/smoke.test.ts`, `smoke_test.go`). The smoke test MUST pass on first run so the user knows the stack is wired correctly.
+- **Showcase tests** (only if `with_showcase = true`) — the demonstration file from Agent A's showcase-bundle contract. Each slot binds to a user-code candidate from Phase 1's `showcase_candidates` survey when one fits, otherwise falls back to a synthetic SUT colocated in the file. Bound tests are written as **characterization tests** (assert what the symbol currently does), so the file passes on first run regardless of whether slots are bound or synthetic. Conventional locations: `tests/showcase_test.rs` / `tests/test_showcase.py` / `__tests__/showcase.test.ts` / `showcase_test.go` (or under `examples/showcase/` for Go projects that prefer to keep the demo out of the root package). Failure on first run implies either the stack is mis-wired (worse signal than no showcase file at all) OR Agent A mis-characterized a bound symbol — in the latter case the user should re-run with `[refresh-showcase]` after fixing the binding, or run with `--no-showcase` if the survey keeps mis-binding. Carries `<!-- TEST-BOOTSTRAP:STUB -->`-equivalent stub marker on first line per Phase 4 §Idempotency so subsequent `[refresh-showcase]` re-runs overwrite without prompting. Imports of user symbols use the project's idiomatic import style (relative imports for Python packages with `src/` layout, `crate::` for Rust intra-crate refs, etc.) — Agent A reads `Cargo.toml` / `pyproject.toml` / `package.json` to learn the package name when needed.
 - **Coverage config** — e.g. `.coveragerc`, `vitest.config.ts` `coverage` block, `cargo-llvm-cov` invocation in CI.
 - **CI workflow** — `.github/workflows/test.yml` (or the provider equivalent) with SHA-pinned actions per Agent D's contract.
 - **Mutation workflow** (only if `with_mutation = true`) — `.github/workflows/mutation.yml` with `workflow_dispatch` + weekly schedule + `timeout-minutes: 30`.
@@ -294,13 +364,19 @@ If `CLAUDE.md` does not exist, create it (with a minimal one-line preface noting
 **Framework**: <framework> <version>
 **Coverage tool**: <tool> (gate: 80% line, 90% changed lines)
 **Mutation tool**: <tool> (opt-in via --with-mutation; not in default CI)
+**Showcase tests**: <path-to-showcase-file>
 **Bootstrapped**: <YYYY-MM-DD> via /test-bootstrap
 <!-- TEST-BOOTSTRAP:STACK END -->
 ```
 
-The literal phrase `opt-in via --with-mutation; not in default CI` is the third discoverability slot for the flag (frontmatter + Usage + this block).
+The literal phrase `opt-in via --with-mutation; not in default CI` is the third discoverability slot for the `--with-mutation` flag (frontmatter + Usage + this block).
 
-If `with_mutation = false`, the `**Mutation tool**` line MUST still appear — set value to `(none — opt-in via --with-mutation; not in default CI)`. This guarantees the marker block always documents how to add mutation later.
+The `**Showcase tests**:` line is the third discoverability slot for the `--no-showcase` flag (frontmatter + Usage + this block). Its value rules:
+
+- If `with_showcase = true` → set value to `<path-to-showcase-file>` (the conventional location chosen in Phase 4, e.g. `tests/showcase_test.rs`).
+- If `with_showcase = false` → set value to `(none — opted out via --no-showcase)`.
+
+If `with_mutation = false`, the `**Mutation tool**` line MUST still appear — set value to `(none — opt-in via --with-mutation; not in default CI)`. This guarantees the marker block always documents how to add mutation later. The same always-present rule applies to `**Showcase tests**:` so re-runs can read both fields without ambiguity about whether they were absent or simply unset.
 
 ### .gitignore marker block
 
