@@ -180,7 +180,7 @@ related = []
 
 #### Category vocabularies
 
-- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `testability` | `verified-clean` (reserved for items with `status = "verified-clean"`).
+- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `testability` | `package-quality` | `verified-clean` (reserved for items with `status = "verified-clean"`).
 - **Optimise** (`optimise-findings.toml`): `memory` | `serialization` | `query` | `algorithm` | `concurrency`.
 
 **Unknown-value fail-soft rules** (mandatory):

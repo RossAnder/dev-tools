@@ -180,7 +180,7 @@ related = []
 
 #### Category vocabularies
 
-- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `testability` | `verified-clean` (reserved for items with `status = "verified-clean"`).
+- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `testability` | `package-quality` | `verified-clean` (reserved for items with `status = "verified-clean"`).
 - **Optimise** (`optimise-findings.toml`): `memory` | `serialization` | `query` | `algorithm` | `concurrency`.
 
 **Unknown-value fail-soft rules** (mandatory):
@@ -422,7 +422,9 @@ On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops -`
 
 Non-interactive invocations surface candidates only (`found N deferred items with fired triggers; re-run interactively to reopen`) and do not mutate the ledger.
 
-**Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent instead of five specialized ones. Give it all five lenses, all mandatory tool-use requirements (Context7 and WebSearch), the prior findings context, and a cap of 15 findings.
+**Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent instead of five (or six) specialized ones. Give it all six lenses (5 standard + package-quality if any reviewed file is under `claude/commands/` or `claude/skills/`), all mandatory tool-use requirements (Context7 and WebSearch), the prior findings context, and a cap of 20 findings.
+
+**Conditional 6th lens (package-quality)**: If any reviewed file's path begins with `claude/commands/` or `claude/skills/`, also launch Agent 6 in the same parallel batch (6 agents instead of 5). The lens is static-analysis only — frontmatter quality, structural completeness, content depth, internal consistency, shared-block compliance — and emits findings under category `package-quality`.
 
 ### Design Note: Intentional Asymmetry with `/optimise`
 
@@ -434,7 +436,7 @@ The `/review` agent prompts already include CLAUDE.md's tech stack and the prior
 
 ### Task tracking (runtime only)
 
-Before launching review agents, call `TaskCreate` once per lens: Quality, Security, Architecture, Completeness, Testability — 5 tasks for a normal run, OR 1 task for the small-diff shortcut (≤ 3 files, single combined agent). Each task's `subject` names the lens plus a scope summary (e.g. `Security: src/api/*`); `description` is one line of the file list and classification relevant to that lens.
+Before launching review agents, call `TaskCreate` once per lens: Quality, Security, Architecture, Completeness, Testability, Package Quality (conditional) — 5 or 6 tasks for a normal run (5 standard + package-quality if scope includes paths under `claude/commands/` or `claude/skills/`), OR 1 task for the small-diff shortcut (≤ 3 files, single combined agent). Each task's `subject` names the lens plus a scope summary (e.g. `Security: src/api/*`); `description` is one line of the file list and classification relevant to that lens.
 
 As agents transition, call `TaskUpdate` to move each task `pending → in_progress → completed` on launch and return. Do NOT mint per-finding tasks — that shadows the ledger, which is the persistent source of truth for per-item state. Do NOT hand tasks forward to `/review-apply`: tasks are ephemeral to this run while the ledger persists across commands. These TaskCreate/TaskUpdate entries are ephemeral to this `/review` run and do NOT write `context.toml.[tasks]`.
 
@@ -442,7 +444,7 @@ Gate task creation on `scope > 1 file` for `/review` to avoid noise on trivial r
 
 Launch **all five** review agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the file list, classification, and prior findings context from Step 1.
 
-**IMPORTANT: You MUST make all five Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of five agents. Each agent provides specialized, parallel analysis that cannot be replicated by fewer passes.
+**IMPORTANT: You MUST make all five (or six, if package-quality fires) Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five or six Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of five or six agents. Each agent provides specialized, parallel analysis that cannot be replicated by fewer passes.
 
 Every agent MUST:
 - Read each changed file in full and read related/surrounding code to build context
@@ -530,6 +532,27 @@ Look at the changed code through three complementary sub-lenses:
 **Developer experience** — Public APIs, CLIs, and configuration surfaces should be discoverable: help text that describes what options actually do, self-describing errors for misconfiguration, sensible defaults that work without customisation in the common case. Naming and error messages should read well to a first-time user who doesn't know the codebase — avoid internal jargon in user-facing strings.
 
 Do NOT flag: missing tests for trivial getters/setters (defer to framework-provided coverage), debug-level logging gaps on hot paths where the project doesn't already log, or DX polish on internal-only APIs that no first-time user will encounter.
+
+### Agent 6: Package Quality (conditional)
+
+Agent 6 fires only when the reviewed scope includes at least one file under `claude/commands/` or `claude/skills/`. It emits `category = "package-quality"` for every finding. Cap: **15 findings, ceiling 20**.
+
+Static analysis against 6 dimensions:
+
+| Dimension | Weight | Check |
+|---|---|---|
+| Frontmatter quality | 20% | `description` + `argument-hint` (commands) or `name` + `description` (skills) present, non-empty, descriptive |
+| Trigger coverage | 18% | (Skills) `description` clearly enumerates trigger phrases. (Commands) `argument-hint` correctly describes args. |
+| Structural completeness | 20% | Phase / section headers present and ordered; no broken references |
+| Content depth | 22% | Each phase has substantive content (not just a stub heading) |
+| Consistency | 12% | Internal cross-references resolve; terminology consistent with shared blocks |
+| Shared-block compliance | 8% | If file is in `scripts/shared-blocks.toml` for any block, the block content is byte-identical to canonical |
+
+Severity scale matches the rest of `/review`: `critical | warning | suggestion` (NOT `info / minor / major / critical`, which would fail the malformed-item check at read time and be excluded from dedup/resolution).
+
+**Cross-category dedup rule**: when emitting a `package-quality` finding on a path under `claude/commands/` or `claude/skills/`, also scan existing `quality` findings (Agent 1's domain) for matching `(file, symbol)` tuples. The same problem (e.g. 'missing `argument-hint` frontmatter key') may otherwise land twice — once under `quality` from Agent 1 and once under `package-quality` from Agent 6. Treat `package-quality` ⊂ `quality` for dedup-only purposes; emit under `package-quality` if Agent 6 is the canonical reporter, otherwise leave as `quality` and back-reference.
+
+**Design Note: Intentional asymmetry with `/optimise`** — `/optimise` has no equivalent `package-quality` lens. The asymmetry is intentional: `package-quality` is a static-analysis lens (frontmatter, structure, shared-block compliance), not a runtime-performance lens. Future `/review` and `/optimise` passes should not re-flag the omission.
 
 ## Interim checkpoint
 
