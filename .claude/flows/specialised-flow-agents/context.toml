@@ -1,6 +1,6 @@
 slug = "specialised-flow-agents"
 plan_path = "docs/plans/specialised-flow-agents.md"
-status = "in-progress"
+status = "complete"
 created = 2026-04-29
 updated = 2026-04-30
 branch = "main"
@@ -11,7 +11,7 @@ scope = [
 
 [tasks]
 total = 18
-completed = 17
+completed = 18
 in_progress = 0
 
 [artifacts]

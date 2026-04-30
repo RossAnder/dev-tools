@@ -294,3 +294,13 @@ summary = "Shared-block parity confirmed manually via PowerShell SHA256 over int
 command = "powershell parity-hash check (manual; tomlctl blocks verify regression bypassed)"
 outcome = "pass"
 dedup_id = "e984d12a16bfb60e"
+
+[[items]]
+id = "E27"
+type = "status-transition"
+date = 2026-04-30
+agent = "plan-update"
+summary = "status in-progress → complete"
+from_status = "in-progress"
+to_status = "complete"
+dedup_id = "2faa4446b2a4e85d"
