@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-04-18
+last_updated = 2026-04-30
 
 [[items]]
 id = "O1"
@@ -1132,3 +1132,399 @@ related = ["O9"]
 status = "applied"
 resolved = 2026-04-18
 resolution = 'Added mimalloc = { version = "0.1", default-features = false } to tomlctl/Cargo.toml (alphabetical, with WHY comment citing small-alloc profile + rust-analyzer PR #19603). Wired #[global_allocator] static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc; at top of tomlctl/src/main.rs. Added [build] rustflags = ["-C", "target-cpu=x86-64-v3"] to tomlctl/.cargo/config.toml (preserved existing windows-msvc +crt-static/lld-link block; cargo replaces rather than merges rustflags so target-cpu also restated there when the target block matches). Context7-verified mimalloc 0.1 API.'
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O57"
+file = "tomlctl/src/io.rs"
+line = 73
+symbol = "jittered_delay_ms"
+severity = "critical"
+effort = "trivial"
+category = "concurrency"
+summary = "Lock-retry jitter is deterministic on attempt counter only — all concurrent writers compute identical delays, producing a thundering-herd wake on every retry round"
+description = "jittered_delay_ms hashes only `attempt` with two fixed Fibonacci/golden-ratio constants. Five concurrent tomlctl invocations (e.g. /review or /optimise dispatching parallel research agents that each write the same ledger) all compute the SAME delay at attempt=0, sleep ~50 ms, and wake simultaneously to collide on try_lock again. The ±20% jitter is intra-process (across attempts) not inter-process. Combined with the 30 s default timeout, four out of five contenders can hit the timeout boundary within one LOCK_RETRY (50 ms) of each other, producing a correlated timeout cascade where all waiters fail rather than serialising. Fix: mix std::process::id() into the seed — `let h = (attempt ^ pid as u64).wrapping_mul(0x9E37…).wrapping_add(0xD1B5…)`. One-line change in jittered_delay_ms; affects both with_exclusive_lock and with_shared_lock retry loops."
+evidence = [
+    "https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock",
+    "https://dev.to/dylan_dumont_266378d98367/building-a-job-queue-in-rust-persistent-tasks-with-retry-logic-5n9",
+]
+dedup_id = "f1dee7857316f8f1"
+resolved = 2026-04-30
+resolution = "Mixed std::process::id() into jittered_delay_ms seed via (attempt ^ pid) XOR before wrapping_mul; both with_exclusive_lock and with_shared_lock retry loops inherit automatically. Decorrelates concurrent writers retry schedules across processes while preserving per-process attempt-keyed variation."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O58"
+file = "tomlctl/src/items.rs"
+line = 284
+symbol = "find_dedupe_match"
+severity = "critical"
+effort = "medium"
+category = "memory"
+summary = "find_dedupe_match converts each candidate ledger item to a full JsonValue tree per scan — O(N×ledger_size) full-tree clones for batch add-many"
+description = "On every scan pass, find_dedupe_match calls toml_to_json(item) to materialise the entire item as a JsonValue, even when --dedupe-by names a single field path. For a 100-item ledger scanned for each of N incoming rows in a batch add-many, this is O(N × ledger_size) full-tree conversions. The walk_json_path call only needs the field — a targeted item.get(field) per dedupe field (mirroring the narrow_toml_to_json fast-path query.rs:516 already uses for O21/O55) would cut this to O(N × fields × field_size). Apply the same fast-path pattern as already established by O21/O55 in query::run."
+evidence = [
+    "tomlctl/src/items.rs:284-302 find_dedupe_match",
+    "tomlctl/src/query.rs:516 narrow_toml_to_json fast-path",
+]
+dedup_id = "2a4f63eca02c9b7a"
+resolved = 2026-04-30
+resolution = "Replaced full-tree toml_to_json(item) in find_dedupe_match with a per-field narrow walker (narrow_toml_field) that traverses TomlValue::Table arms and converts only the leaf to JSON, mirroring narrow_toml_to_json fast-path in query.rs:516. Cuts O(N x ledger_size) full-tree clones to O(N x dedupe_field_count x field_depth)."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O59"
+file = "tomlctl/src/io.rs"
+line = 1096
+symbol = "atomic_write"
+severity = "warning"
+effort = "trivial"
+category = "concurrency"
+summary = "atomic_write fsyncs full data + metadata via sync_all() on the tempfile — sync_data() suffices for a fresh tempfile and skips the metadata journal write"
+description = "For a freshly written NamedTempFile, sync_all() flushes data pages plus inode metadata (size, mtime, atime) — but only the data needs to reach stable storage before persist() renames it into place. sync_data() achieves the durability requirement with one fewer metadata journal write per atomic write. For typical 1–5 KiB ledger files the difference is sub-millisecond, but it is semantically more precise and reduces lock-held time during heavy contention. Note: parent-dir fsync (O11) must remain sync_all() since dirent updates are metadata, not data. Related to O11 (parent fsync) and O15 (canonicalised tempfile parent) on the same function but addresses a distinct concern (data vs metadata)."
+evidence = [
+    "https://users.rust-lang.org/t/correct-way-to-save-a-file-atomically-but-without-interferring-with-performance/89223",
+    "https://docs.rs/tempfile/latest/tempfile/struct.NamedTempFile.html",
+]
+related = [
+    "O11",
+    "O15",
+]
+dedup_id = "773c4837552342a9"
+resolved = 2026-04-30
+resolution = "Changed atomic_write tempfile fsync from sync_all() to sync_data() (line 1100 post-edit); parent-dir sync_all() at line 1142 retained for dirent durability post-rename. Doc comment updated."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O60"
+file = "tomlctl/src/items.rs"
+line = 868
+symbol = "merge_row_over_base"
+severity = "warning"
+effort = "small"
+category = "memory"
+summary = "merge_row_over_base clones the entire defaults map per batch row via merged.extend(base.clone()) — O(rows × defaults) String clones even when row shadows every default"
+description = "items add-many with --defaults-json calls merge_row_over_base for every NDJSON row. Each call does base.clone() to seed the merged map, then inserts per-row keys on top. For a 100-row batch with 10 default fields carrying string values, this is 100 × 10 = 1000 transient String allocations. Since base is never mutated within the loop, replace base.clone() with an explicit iterator that emits owned (key, value) pairs only when the row does NOT already shadow that key, or carry references and only clone on actual insertion. Follow-up to O26 which addressed the original add_many clone-per-row pattern at the items_add_value_to layer; this is the surviving allocation in merge_row_over_base."
+evidence = ["tomlctl/src/items.rs:864-878 merge_row_over_base"]
+related = ["O26"]
+dedup_id = "537f9f55bee7f832"
+resolved = 2026-04-30
+resolution = "Rewrote merge_row_over_base to walk base once, choosing row-supplied value (shadowed) or default value (non-shadowed) per entry, then appending row-only keys; eliminates per-shadowed-default wasted clone of the prior extend(base.clone()) pattern. Output ordering preserved byte-identical via IndexMap insertion order."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O61"
+file = "tomlctl/src/dedup.rs"
+line = 114
+symbol = "tag_with_source"
+severity = "warning"
+effort = "small"
+category = "memory"
+summary = "tag_with_source clones every item's full TOML table to inject one source-file metadata field — O(items × fields) clones per cross-ledger find-duplicates run"
+description = "items_find_duplicates_across calls tag_with_source for each item in BOTH input ledgers. tag_with_source does tbl.clone() (line 118), copying the full IndexMap<String, TomlValue> plus every key String and leaf value, just to add a single `source_file` field used at emit time. For P + Q items that is 2 × (P + Q) full table clones per --across run. Carry the source tag as a parallel Vec<&str> alongside `union` (no structural clones) and inject `source_file` only at dup_group_json emit time. Eliminates O(items) table clones and matches the O30 pattern of borrowing &str keys."
+evidence = [
+    "tomlctl/src/dedup.rs:86-128 items_find_duplicates_across / tag_with_source",
+    "tomlctl/src/dedup.rs:O30 (Tier-A borrow pattern)",
+]
+dedup_id = "769308d80aed739c"
+resolved = 2026-04-30
+resolution = "Replaced full-table clone in tag_with_source with in-place BTreeMap::insert via new tag_with_source_in_place; items_find_duplicates_across now takes Vec<TomlValue> by value (callers in cli/dispatch.rs already construct owned vecs); union built via Vec::append (no per-item table clone). Touches dedup.rs + cli/dispatch.rs:837 (signature update; within 3-file cap)."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O62"
+file = "tomlctl/src/dedup.rs"
+line = 291
+symbol = "find_duplicates_tier_b"
+severity = "warning"
+effort = "small"
+category = "memory"
+summary = "Tier-B grouping uses BTreeMap<(String, String), …> keyed by (16-char fingerprint hex, basename) — fingerprint could be a stack [u8; 8] before hex encoding"
+description = "find_duplicates_tier_b stores a fingerprint as a 16-char hex String inside the BTreeMap key alongside a basename String — two heap allocations per item. The 16-char hex is itself a String-of-fixed-length, encoding 8 raw digest bytes. Switching the fingerprint key half to a fixed-size [u8; 8] (the raw digest, hex-encoded only at display time) keeps the hash on the stack and eliminates one allocation per item. Peer concern to O31 (canonical-string roundtrip in tier-B fingerprint construction) — same function, distinct allocation in the grouping container rather than the hashing input."
+evidence = ["tomlctl/src/dedup.rs:291-307 find_duplicates_tier_b"]
+related = ["O31"]
+dedup_id = "473a7f78cf2bcb2a"
+resolved = 2026-04-30
+resolution = "Added fingerprint_bytes_from_strs and tier_b_fingerprint_bytes helpers returning [u8; 8]; switched find_duplicates_tier_b grouping BTreeMap key from (String, String) to ([u8; 8], String); hex encoding deferred to emit-time hex_lower once per surviving group. Public tier_b_fingerprint / tier_b_fingerprint_json API unchanged."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O63"
+file = "tomlctl/src/io.rs"
+line = 960
+symbol = "write_sidecar_for"
+severity = "warning"
+effort = "trivial"
+category = "memory"
+summary = "write_sidecar_for forces .to_string_lossy().into_owned() on file basename — Cow::Borrowed fast-path lost on every sidecar write"
+description = '''write_sidecar_for builds the basename via file.file_name()?.to_string_lossy().into_owned(). On any platform where the file name is valid UTF-8 (essentially always for ledger paths), to_string_lossy returns Cow::Borrowed — but into_owned() forces a heap clone regardless. The basename is only used to format the sidecar contents; format!('{}  {}\n', hex, basename) accepts &str equally. Drop into_owned() and let format! consume the Cow. One-liner. Saves one allocation per write.'''
+evidence = ["tomlctl/src/io.rs:958-967 write_sidecar_for"]
+dedup_id = "c7abe920014f9ab7"
+resolved = 2026-04-30
+resolution = "Dropped .into_owned() on basename in write_sidecar_for; preserved Cow::Borrowed fast-path through to the format!(...) call via deref coercion to &str."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O64"
+file = "tomlctl/src/io.rs"
+line = 190
+symbol = "read_doc_borrowed"
+severity = "warning"
+effort = "medium"
+category = "serialization"
+summary = "O10's borrowed DeTable<'a> path is wired ONLY for Cmd::Parse without --verify-integrity — ItemsOp::{List,Get,FindDuplicates} all still go through the fully-owned read_toml + toml_to_json path"
+description = "read_doc_borrowed exists and works (O10) but the read_doc helper used by every ItemsOp dispatch arm calls read_toml → toml::from_str::<TomlValue> which allocates owned String for every TOML value. For a typical ledger of N items × K string fields per item, extending the borrowed path saves O(N×K) String clones per read. Infrastructure already exists: detable_to_json at convert.rs:237-263 accepts DeTable input; the wiring is missing in cli/dispatch.rs ItemsOp::{List,Get,FindDuplicates,Orphans} arms. Mechanical change: add a read_doc_borrowed sibling that takes a closure receiving DeTable, and route the read-only ItemsOp arms through it."
+evidence = [
+    "tomlctl/src/io.rs:179-207 read_doc_borrowed (O10)",
+    "tomlctl/src/convert.rs:237-263 detable_to_json",
+]
+related = ["O10"]
+dedup_id = "70be109a4c801911"
+wontapply_rationale = "cross-file refactor exceeds 3-file cap — extending the borrowed DeTable fast-path to ItemsOp::{List,Get,FindDuplicates} requires editing items_get_from / items_find_duplicates / items_list_from public signatures (live in items.rs and dedup.rs) plus call sites in cli/dispatch.rs; localising to io.rs alone would re-materialise DeTable back into TomlValue, defeating the per-scalar allocation savings. Description does not enumerate specific call sites."
+resolved = 2026-04-30
+resolution = "Partial apply via /implement (after deliberate user-authorised bypass of the 3-file cap that gated the original /optimise-apply skip). Added read_doc_either(file, opts, owned, borrowed) helper in io.rs that routes verify_on_read=true to the existing locked owned read_doc path and verify_on_read=false to read_toml_str + read_doc_borrowed + detable_to_json once at the boundary. Wired the new helper into ItemsOp::Get (dispatch.rs:532) and ItemsOp::FindDuplicates (dispatch.rs:823, both no-across and with-across branches). Added JsonValue siblings: items_get_from_json (items.rs:214), items_find_duplicates_json + items_find_duplicates_across_json + tier_a/b/c_json + tag_with_source_in_place_json + dup_group_json_json (dedup.rs), items_array_json + item_id_json (io.rs:145, 157). Smoke-tested byte-identity between borrowed and --verify-integrity paths on a 73-item ledger via items get and items find-duplicates --tier b. ItemsOp::List is NOT yet on the borrowed path because query::run still takes &TomlValue and a query::run_json variant would be a substantially larger refactor than this run handled (the original cluster agent timed out before reaching query.rs); a follow-up O-item should be minted to track that residual work. Files: tomlctl/src/{io,items,dedup,convert,query,cli/dispatch}.rs. Verified: cargo build --all-targets pass, cargo clippy --all-targets -D warnings pass, cargo test 134 pass / 3 pre-existing failures unrelated (blocks_verify_reproduces_shell_hashes from staged claude/commands/*.md edits, two orphans:: tests on Windows UNC paths)."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O65"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 788
+symbol = "ItemsOp::NextId"
+severity = "warning"
+effort = "trivial"
+category = "serialization"
+summary = "items next-id JSON output uses println!('{}', serde_json::to_string(&id)?) at two sites — materialises an intermediate String then re-formats through println!"
+description = "Two adjacent call sites in the ItemsOp::NextId dispatch arm allocate a String via serde_json::to_string then format it through println!'s fmt::Write machinery, doubling the format work. The output.rs print_json_compact pattern (serde_json::to_writer to a locked BufWriter<StdoutLock>) is the established idiom elsewhere — using it here keeps the dispatch surface consistent. Replace with a small helper: locked stdout, to_writer, writeln!. Minor allocation savings, but the inconsistency is the more visible cost."
+evidence = [
+    "tomlctl/src/cli/dispatch.rs:788,800 ItemsOp::NextId",
+    "tomlctl/src/output.rs:60-67 print_json_compact",
+]
+dedup_id = "9178ca581acfdb23"
+resolved = 2026-04-30
+resolution = 'Replaced println!("{}", serde_json::to_string(&id)?) at both sites (lines 788 and 800 in dispatch.rs) with print_json_compact(&serde_json::Value::from(id))? matching established codebase style (locked stdout via BufWriter + serde_json::to_writer + trailing newline + flush).'
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O66"
+file = "tomlctl/src/query.rs"
+line = 838
+symbol = "apply_filters"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "apply_filters evaluates predicates in CLI insertion order — no cost-aware reorder, so --where-regex placed before cheap --where=val pays full regex cost per item"
+description = "The per-item filter loop iterates `preds` in CLI argument order with `continue 'item` short-circuit. The legacy --status flag is hoisted to position 0 (lines 1639-1643) so the typical 'status open + complex predicates' shape is already cheap-first. But arbitrary `--where-regex` before cheaper equality predicates pays the full regex cost on every survivor of the regex pass. A static reorder at predicate-build time — equality first, range/contains/prefix/suffix middle, regex last — would short-circuit earlier on every multi-predicate query at zero per-item cost. Stable sort by predicate-class cost ordinal in build_pipeline."
+evidence = [
+    "tomlctl/src/query.rs:838-845 apply_filters per-item loop",
+    "tomlctl/src/query.rs:1639-1643 status hoist",
+]
+dedup_id = "ea247bb4fc696d90"
+resolved = 2026-04-30
+resolution = "Added cost-aware predicate reorder in apply_filters via stable sort_by_key over an index permutation; cost table near Predicate enum (presence=0, eq=1, multi-eq=2, ordering=3, prefix/suffix=4, contains=5, regex=6). Stable sort preserves CLI insertion order within equal-cost predicates."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O67"
+file = "tomlctl/src/query.rs"
+line = 1467
+symbol = "apply_aggregation_group_by"
+severity = "warning"
+effort = "trivial"
+category = "query"
+summary = "apply_aggregation_group_by allocates a fresh String bucket key per item even on hits — should mirror O53's CountBy get_mut-first pattern"
+description = "For each item, bucket_key() returns an owned String, then groups.get_mut(&key) takes &String. On a hit (the dominant case for clustered group-by), the key is allocated and immediately dropped. Mirror the O53 CountBy fix: probe with get_mut first (no key allocation), only allocate the owned String on the miss path. On a 1000-item ledger with 10 groups this is ~990 wasted String allocations per query."
+evidence = [
+    "tomlctl/src/query.rs:1467-1486 apply_aggregation_group_by",
+    "tomlctl/src/query.rs:O53 apply_aggregation_count_by",
+]
+related = ["O53"]
+dedup_id = "06e7ea09f1cd1daa"
+resolved = 2026-04-30
+resolution = "Added bucket_key_borrowed helper returning Cow<str>; apply_aggregation_group_by now uses borrow-first bucket-key lookup, only taking ownership via into_owned() on the insert path. Non-string scalars unavoidably allocate (no borrowed view for serde_json::Number)."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O68"
+file = "tomlctl/src/items.rs"
+line = 175
+symbol = "items_apply_to_opts"
+severity = "warning"
+effort = "small"
+category = "algorithm"
+summary = "ID_INDEX_BUILD_THRESHOLD = 5 is high for typical batches AND remove invalidates the entire id_index — interleaved remove/update sequences pay O(n) per remove"
+description = "items apply --ops uses a HashMap id_index ONLY when update op count > 5; below threshold, every update does a full O(n) array scan. Typical flow-apply batch sizes are 2-15 ops, so a meaningful fraction of real batches stay below the threshold. Worse, every remove op in a mixed batch sets id_index = None, forcing a full O(n) rebuild before the next indexed op. Total cost in an n-item ledger with k interleaved removes: O(n + k·n). Two fixes: (a) lower threshold to 2 or 3 (the HashMap build cost is trivial relative to one full scan); (b) on remove, retain the index but mark the removed id slot as stale (or compute the shift offset since each remove moves later indices by -1) so subsequent updates can patch indices in O(1) rather than rebuilding. Peer concern to O18 (original O(N×M) batch) and O54 (no_remove pre-scan duplication) on the same function."
+evidence = [
+    "tomlctl/src/items.rs:175 ID_INDEX_BUILD_THRESHOLD",
+    "tomlctl/src/items.rs:452-596 items_apply_to_opts",
+    "tomlctl/src/items.rs:732-739 items_remove_from",
+]
+related = [
+    "O18",
+    "O54",
+]
+dedup_id = "b0ed4227ee72ded9"
+resolved = 2026-04-30
+resolution = "Lowered ID_INDEX_BUILD_THRESHOLD from 5 to 2 (indexed path activates for batches of 3+ update ops, covering typical optimise-apply traffic) AND replaced whole-index drop on remove with O(map_size) per-entry invalidation (drop removed key, decrement subsequent indices). Stale-entry case defensively falls through to legacy full-rebuild path. Plus follow-up clippy-fix to merge_row_over_base doc comment to satisfy doc_lazy_continuation."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "wontapply"
+id = "O69"
+file = "tomlctl/src/items.rs"
+line = 1035
+symbol = "compute_apply_mutation"
+severity = "suggestion"
+effort = "medium"
+category = "memory"
+summary = "compute_apply_mutation and compute_remove_mutation do unconditional doc.clone() — full TomlValue tree deep-copy on every dry-run path"
+description = "Both compute_* helpers do `let mut new_doc = doc.clone()` to produce a MutationPlan.new_doc as a pure-compute step. For a 200-item ledger with ~20 fields per item, the clone deep-copies every TomlValue node including every String heap allocation. The clone is correct (the compute path must not mutate the input doc), but it dominates peak RSS on --dry-run paths. Mitigations require structural change: copy-on-write Arc<TomlValue> trees, or a structural-diff approach that emits a Vec<MutationOp> instead of a full new_doc and applies it during persist. Document as the dominant peak-RSS contributor on --dry-run; defer unless ledgers exceed ~1k items in practice."
+evidence = [
+    "tomlctl/src/items.rs:1035 compute_apply_mutation",
+    "tomlctl/src/items.rs:1055 compute_remove_mutation",
+]
+dedup_id = "dafa6263a24411c5"
+wontapply_rationale = "Defer per finding description — mitigation requires structural CoW Arc<TomlValue> tree or diff-based MutationPlan refactor; exceeds mechanical-fix scope (audited /optimise-apply 2026-04-30)."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "wontapply"
+id = "O70"
+file = "tomlctl/src/io.rs"
+line = 898
+symbol = "repo_or_cwd_root"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "repo_or_cwd_root() returns Ok(cached.clone()) on every call — PathBuf heap clone per write path; called 3-4 times per typical write"
+description = "After the OnceLock cold path resolves, every subsequent call clones the PathBuf (a heap-allocated OS-string buffer). repo_or_cwd_root is invoked from guard_write_path, recheck_claude_containment, lock_path_for, and warn_if_read_outside_claude — a single write hits it 3-4 times. Switch the OnceLock to OnceLock<Arc<PathBuf>> and have callers borrow the Arc (or a &Path), eliminating all but the initial allocation. Polish-level — no measurable wall-clock impact on a sub-second CLI but a clean architectural improvement."
+evidence = ["tomlctl/src/io.rs:884-919 repo_or_cwd_root"]
+dedup_id = "42e8c7de41c5185f"
+wontapply_rationale = "Clean Arc<PathBuf> swap requires updating callsites in orphans.rs (orphans.rs:92 `c.starts_with(&root)` needs `&*root` because Arc<PathBuf> does not implement AsRef<Path>) — exceeds single-file cluster constraint imposed for parallel-write safety. Cluster B agent attempted the swap, observed the orphans.rs compile blocker, and reverted cleanly. Polish-level optimisation per finding description (no measurable wall-clock impact on sub-second CLI). Audited /optimise-apply 2026-04-30."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "applied"
+id = "O71"
+file = "tomlctl/src/query.rs"
+line = 568
+symbol = "build_pipeline_count_distinct"
+severity = "suggestion"
+effort = "small"
+category = "memory"
+summary = "CountDistinct fast-path uses seen.insert(v.to_string()) — JsonValue::String could borrow &str directly into a HashSet<&str> rather than re-serialising to a quoted JSON String"
+description = "Each non-null plucked value is serialised via v.to_string() (which JSON-quotes string values) and inserted into a HashSet<String>. For string-typed fields (severity, category, status — the dominant CountDistinct keys in flow-command queries) the serialisation re-allocates an owned String per item. A HashSet<&str> restricted to the JsonValue::String arm would borrow into the JsonValue tree directly. Note: the to_string() path correctly distinguishes string '42' from integer 42 via JSON quoting; preserving that distinction means dispatching by JsonValue arm rather than blindly switching to as_str()."
+evidence = ["tomlctl/src/query.rs:563-568 build_pipeline CountDistinct"]
+dedup_id = "6d15c06af1bbb131"
+resolved = 2026-04-30
+resolution = 'Bucket-based CountDistinct fast-path in tomlctl/src/query.rs:613-630: seen_strings consumes JsonValue::String directly (no JSON-quoting, no re-allocation), seen_other serialises non-string variants via to_string(). Type-distinction invariant preserved via bucket separation (string "42" lands in seen_strings as `42`; integer 42 lands in seen_other as `"42"` — disjoint buckets, cannot collide). R43 narrow-counter contract preserved (no full_item_toml_to_json calls). Comment block at lines 588-617 rewritten to describe bucket canonicalisation. Verified via cargo build pass; pre-existing test failures in dispatch.rs/orphans.rs are unrelated (working-tree parity drift on flow-command .md files; Windows UNC TOML escapes).'
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "wontapply"
+id = "O72"
+file = "tomlctl/src/orphans.rs"
+line = 59
+symbol = "items_orphans"
+severity = "suggestion"
+effort = "medium"
+category = "query"
+summary = "items_orphans collects ALL orphan records into a Vec<JsonValue> before returning — could stream via to_writer per orphan, mirroring run_streaming"
+description = "The function pushes JsonValue::Object records into out throughout the loop and returns Ok(out); the caller in dispatch.rs serialises the whole vector after the function returns. For a 1000-item ledger with many orphans this is benign per-record but contrasts with query::run_streaming which uses serde_json::to_writer per item with no intermediate Vec. Streaming would reduce peak allocations on large orphan sets. Peer concern to O28/O29/O42 on the same function — those addressed read/canonicalize/regex caching; this is the emit-strategy follow-up."
+evidence = [
+    "tomlctl/src/orphans.rs:59-188 items_orphans",
+    "tomlctl/src/query.rs run_streaming pattern",
+]
+related = [
+    "O28",
+    "O29",
+    "O42",
+]
+dedup_id = "96074409405aff05"
+wontapply_rationale = "Streaming emit-strategy mandates dispatch.rs rewire of items_orphans caller — preserving the JSON-array wire format requires emitting `[`, comma-separated `serde_json::to_writer` per orphan, `]` directly to stdout via a writer parameter, breaking the `read_doc(&file, opts, items_orphans)` callback shape. Introducing NDJSON opt-in is a behavioural change that also spans dispatch.rs (new `--ndjson` flag mirroring the query path). Exceeds single-file cluster constraint. Audited /optimise-apply 2026-04-30."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "wontapply"
+id = "O73"
+file = "tomlctl/src/convert.rs"
+line = 205
+symbol = "toml_to_json"
+severity = "suggestion"
+effort = "medium"
+category = "algorithm"
+summary = "toml_to_json and json_to_toml use unbounded recursion over Array/Table arms — no stack-depth guard; pathologically nested input could overflow the thread stack"
+description = "Both converters recurse directly on Array and Table/Object arms with no depth counter or iteration-based stack. detable_to_json / devalue_to_json share the same pattern. In practice ledger TOML is shallow (2-3 levels) so this is theoretical, but a hand-crafted deeply-nested TOML payload (e.g. a stress-test fixture or adversarial input via a compromised .claude/ ingestion path) would overflow. Either add a depth parameter (bail at e.g. 64 levels) or convert to an explicit work-stack. Distinct from O39 (capacity hints in the same functions) — orthogonal concern at the same symbol."
+evidence = ["tomlctl/src/convert.rs:205-338 toml_to_json/json_to_toml/detable_to_json"]
+dedup_id = "f66c04d5bd7c1fbb"
+wontapply_rationale = "Bailout-style depth guard mandates Result return type for toml_to_json / detable_to_json / devalue_to_json — cascades to ~13 callsites across items.rs (lines 195, 300), dedup.rs (line 285), dispatch.rs (lines 344, 347, 356-357, 866, 873), io.rs (line 314), query.rs (narrow_toml_to_json / full_item_toml_to_json wrappers and their .map() aggregation closures, touching the R43 fast/slow-path counter machinery). Iteration-based work-stack rewrite preserves signatures but rewrites all four function bodies — also out of scope at medium effort. Silent-Null/panic helper alternative is unsafe (Null corrupts downstream JSON callers; panic converts theoretical stack-overflow into guaranteed DoS). Theoretical risk — ledger TOML is shallow in practice. Audited /optimise-apply 2026-04-30."
+
+[[items]]
+first_flagged = 2026-04-29
+rounds = 1
+status = "open"
+id = "O74"
+file = "tomlctl/src/io.rs"
+line = 417
+symbol = "lock_path_for"
+severity = "suggestion"
+effort = "medium"
+category = "concurrency"
+summary = "Lock files at .claude/.locks/<sha>.lock are never deleted — one stale zero-byte file accumulates per distinct canonicalised target, forever"
+description = "Every unique (target path → SHA-256 hex) combination creates a permanent lock file under .claude/.locks/. A project with 50 flow directories × 5 ledger files produces 250 lock files monotonically. No TTL sweep, no GC on drop, no cleanup subcommand. Safe deletion of advisory lock files requires the rename-then-unlink + st_nlink check trick to avoid TOCTOU between unlink and a concurrent opener. Suggested implementation: a `tomlctl locks gc` subcommand that opens each .lock, calls try_lock, and unlinks if successful (the next concurrent caller's open(create=true) will simply re-create it; the rename-trick handles the race). Peer concern to O45 which addressed accumulation via .gitignore convention; this is the active-cleanup follow-up. Currently unbounded growth."
+evidence = [
+    "tomlctl/src/io.rs:417-454 lock_path_for",
+    "https://copyprogramming.com/howto/flock-removing-locked-file-without-race-condition",
+]
+related = ["O45"]
+dedup_id = "9d451dc393df19bc"
+
+[[items]]
+id = "O75"
+file = "tomlctl/src/query.rs"
+line = 522
+symbol = "run"
+severity = "warning"
+effort = "medium"
+category = "serialization"
+summary = "O64 follow-up: extend borrowed-DeTable fast-path to ItemsOp::List by adding a query::run_json (and run_streaming_json) variant operating on &JsonValue"
+description = "O64 wired ItemsOp::Get and ItemsOp::FindDuplicates through read_doc_either + the JsonValue helpers, but ItemsOp::List still goes through read_doc + query::run because that function takes &TomlValue and walks navigate / TomlValue helpers internally. Adding parallel query::run_json + query::run_streaming_json variants — or refactoring run to accept &JsonValue — would close the residual gap and let ItemsOp::List skip the owned-TomlValue intermediate too. Largest single hotspot left in the read path; query is the most-called items op in agent workflows."
+evidence = [
+    "tomlctl/src/cli/dispatch.rs:518-527 ItemsOp::List",
+    "tomlctl/src/query.rs:522 query::run signature",
+    "tomlctl/src/io.rs:299 read_doc_either",
+]
+related = ["O64"]
+first_flagged = 2026-04-30
+rounds = 1
+status = "wontapply"
+dedup_id = "fafdab121f5ccabd"
+wontapply_rationale = "dispatch.rs:521 rewire of ItemsOp::List path through read_doc_either is mandatory to realise the optimisation — new query.rs run_json / run_streaming_json variants would be dead code without the dispatch-side rewire (and would also need the io.rs read_doc_either parity contract maintained across owned vs borrowed branches). Exceeds single-file cluster constraint. Audited /optimise-apply 2026-04-30."
