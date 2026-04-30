@@ -19,18 +19,21 @@ use super::types::{
 
 use crate::blocks::blocks_verify;
 use crate::convert::{detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json};
-use crate::dedup::{items_find_duplicates, items_find_duplicates_across};
+use crate::dedup::{
+    items_find_duplicates, items_find_duplicates_across, items_find_duplicates_across_json,
+    items_find_duplicates_json,
+};
 use crate::integrity::{IntegrityOpts, refresh_sidecar, sidecar_path, verify_integrity};
 use crate::io::{
     guard_write_path, mutate_doc, mutate_doc_conditional, mutate_doc_plan, read_doc,
-    read_doc_borrowed, read_toml_str, recheck_claude_containment,
+    read_doc_borrowed, read_doc_either, read_toml_str, recheck_claude_containment,
     warn_if_read_outside_claude, with_exclusive_lock,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, array_append, compute_apply_mutation, compute_backfill_mutation,
     compute_remove_mutation, dedup_id_disabled, items_add_many, items_add_many_with_dedupe,
-    items_add_to, items_add_value_with_dedupe_to, items_get_from, items_infer_and_next_id,
-    items_next_id, items_update_to, parse_ndjson,
+    items_add_to, items_add_value_with_dedupe_to, items_get_from, items_get_from_json,
+    items_infer_and_next_id, items_next_id, items_update_to, parse_ndjson,
 };
 use crate::orphans::items_orphans;
 use crate::output::{emit_dry_run_plan, emit_list_raw, print_json, print_json_compact, print_raw_value};
@@ -529,7 +532,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         ItemsOp::Get { file, id, array, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
-            let out = read_doc(&file, opts, |doc| items_get_from(doc, &array, &id))?;
+            let out = read_doc_either(
+                &file,
+                opts,
+                |doc| items_get_from(doc, &array, &id),
+                |doc| items_get_from_json(doc, &array, &id),
+            )?;
             print_json(&out)?;
         }
         ItemsOp::Add { file, json, array, dedupe_by, integrity } => {
@@ -785,7 +793,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // same input depending on whether the ledger existed.
                 let empty_doc = toml::Value::Table(toml::Table::new());
                 let id = items_next_id(&empty_doc, prefix)?;
-                println!("{}", serde_json::to_string(&id)?);
+                print_json_compact(&serde_json::Value::from(id))?;
             } else {
                 let opts = read_integrity_opts(&integrity);
                 let id = read_doc(&file, opts, |doc| {
@@ -797,7 +805,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                         items_next_id(doc, prefix)
                     }
                 })?;
-                println!("{}", serde_json::to_string(&id)?);
+                print_json_compact(&serde_json::Value::from(id))?;
             }
         }
         ItemsOp::FindDuplicates { file, tier, across, integrity } => {
@@ -818,29 +826,62 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             }
             let opts = read_integrity_opts(&integrity);
             let groups = match across {
-                None => read_doc(&file, opts, |doc| items_find_duplicates(doc, tier))?,
+                None => read_doc_either(
+                    &file,
+                    opts,
+                    |doc| items_find_duplicates(doc, tier),
+                    |doc| items_find_duplicates_json(doc, tier),
+                )?,
                 Some(other_path) => {
                     // T6c: load both ledgers under the same integrity
                     // contract; errors propagate for either. Clone the
                     // primary's items out of the locked closure so the
-                    // second `read_doc` can fire sequentially without
-                    // nesting locks (nesting them would risk lock-order
-                    // inversion against any concurrent writer).
+                    // second read can fire sequentially without nesting
+                    // locks (nesting them would risk lock-order inversion
+                    // against any concurrent writer).
                     let primary_file = file.to_string_lossy().into_owned();
                     let other_file = other_path.to_string_lossy().into_owned();
-                    let primary_items: Vec<toml::Value> = read_doc(&file, opts, |doc| {
-                        Ok(crate::io::items_array(doc, "items").to_vec())
-                    })?;
-                    let other_items: Vec<toml::Value> = read_doc(&other_path, opts, |doc| {
-                        Ok(crate::io::items_array(doc, "items").to_vec())
-                    })?;
-                    items_find_duplicates_across(
-                        &primary_items,
-                        &primary_file,
-                        &other_items,
-                        &other_file,
-                        tier,
-                    )?
+                    if opts.verify_on_read {
+                        let primary_items: Vec<toml::Value> = read_doc(&file, opts, |doc| {
+                            Ok(crate::io::items_array(doc, "items").to_vec())
+                        })?;
+                        let other_items: Vec<toml::Value> = read_doc(&other_path, opts, |doc| {
+                            Ok(crate::io::items_array(doc, "items").to_vec())
+                        })?;
+                        items_find_duplicates_across(
+                            primary_items,
+                            &primary_file,
+                            other_items,
+                            &other_file,
+                            tier,
+                        )?
+                    } else {
+                        // O64: borrowed-DeTable fast-path. Both ledgers go
+                        // through the borrowed parse + detable_to_json
+                        // boundary; the cross-ledger join then runs in
+                        // JsonValue space via items_find_duplicates_across_json.
+                        let primary_items: Vec<JsonValue> = {
+                            let source = read_toml_str(&file)?;
+                            read_doc_borrowed(&source, |table| {
+                                let json = detable_to_json(table);
+                                Ok(crate::io::items_array_json(&json, "items").to_vec())
+                            })?
+                        };
+                        let other_items: Vec<JsonValue> = {
+                            let source = read_toml_str(&other_path)?;
+                            read_doc_borrowed(&source, |table| {
+                                let json = detable_to_json(table);
+                                Ok(crate::io::items_array_json(&json, "items").to_vec())
+                            })?
+                        };
+                        items_find_duplicates_across_json(
+                            primary_items,
+                            &primary_file,
+                            other_items,
+                            &other_file,
+                            tier,
+                        )?
+                    }
                 }
             };
             print_json(&JsonValue::Array(groups))?;

@@ -531,7 +531,9 @@ fn error_format_json_missing_file_tagged_not_found() {
     assert_eq!(err["kind"], serde_json::json!("not_found"));
     let message = err["message"].as_str().unwrap();
     assert!(
-        message.contains("No such file") || message.contains("not found"),
+        message.contains("No such file")
+            || message.contains("not found")
+            || message.contains("cannot find"),
         "expected missing-file prose in message, got: {message}"
     );
     let file = err["file"].as_str().expect("file must be populated on not_found");

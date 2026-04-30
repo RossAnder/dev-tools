@@ -461,7 +461,26 @@ As agents transition, call `TaskUpdate` to move each task `pending → in_progre
 
 For sequential batches (from the topo sort's batching), update the batch-k tasks to `completed` before minting batch-(k+1) tasks — so the user sees each batch's progress cleanly without inter-batch leakage.
 
-Launch implementation agents in parallel using the Agent tool (subagent_type: "general-purpose"), one per file cluster. Each agent receives only the findings relevant to its cluster.
+**Lite-eligibility gate (orchestrator decision, per cluster)**
+
+Before launching each cluster's agent, evaluate the cluster as a whole against ALL of the following criteria:
+
+1. **File scope**: cluster touches ≤ 2 files.
+2. **Action fully specified**: every item's `summary` + `description` describes the exact change to make. No design decisions left to the implementer for ANY item in the cluster.
+3. **No cross-file refactor**: no item requires coordinated edits to call sites, type definitions, or interfaces in files outside the cluster.
+4. **Not security-sensitive**: no item touches auth, crypto, input-validation, sandbox-boundary, or token-storage code.
+
+**Coupling-isolation rule**: if any item in a cluster fails any criterion, the entire cluster goes to `flow-implement-deep`. Trivial items dependency-linked or file-overlapping with complex items ride with the complex items to `-deep` — cluster boundaries are NOT re-drawn for cost savings. Clean cluster isolation outweighs the marginal cost saving from peeling out trivial items.
+
+Dispatch:
+- Cluster passes ALL criteria → `subagent_type: "flow-implement-lite"` (Sonnet — mechanical, fully-specified work)
+- Cluster fails ANY criterion → `subagent_type: "flow-implement-deep"` (Opus — DEFAULT; cross-file / ambiguous / security-sensitive)
+
+Record the lite-vs-deep choice as a one-line `DISPATCH:` header at the top of each agent's prompt with the rationale (e.g. `DISPATCH: flow-implement-lite — cluster passes lite-eligibility (1 file, fully-specified action, no cross-cutting impact, non-security path, no coupled deep items)` or `DISPATCH: flow-implement-deep — coupling-isolation: cluster contains item O5 (severity=critical, category=memory) which fails criterion #4`). The header is captured in the execution record for audit.
+
+This gate is **separate from** the critical-finding user-confirmation gate near the bottom of this command (severity=critical AND category∈{memory,query,concurrency}); that gate suppresses silent automated wontapply transitions, not lite/deep selection.
+
+Launch implementation agents in parallel using the Agent tool with the chosen subagent_type, one per file cluster. Each agent receives only the findings relevant to its cluster. The `flow-implement-lite` and `flow-implement-deep` agents both absorb the applied/skipped tag form, Tier-2 already-applied protocol, no-overlapping-edits rule, and plan-deviation reporting protocol in their system prompts; the per-call instructions below restate optimise-specific clarifications (id prefix `O`, no `verified-clean` vocabulary, partial-apply form).
 
 **File cluster grouping is the primary strategy for avoiding conflicts.** Ensure no two agents edit the same file. If findings cannot be cleanly separated into non-overlapping file clusters (e.g., multiple findings targeting the same file from different angles), **sequence those agents rather than parallelize them**. Only use `isolation: "worktree"` as a last resort when overlapping file edits are truly unavoidable — worktree merges are time-consuming and risk losing work.
 
@@ -510,20 +529,27 @@ Skip the checkpoint entirely if no non-risky transitions are pending. Do not emi
 
 ## Step 5: Verification
 
-After all agents complete, launch a **verification sub-agent** to keep verbose build/test output out of the main context:
+After all agents complete, run two-stage verification.
 
-The verification agent MUST:
-- Determine the project's build and test commands by checking: (a) CLAUDE.md for documented commands, (b) project root files (e.g. Cargo.toml, package.json, *.sln, Makefile, pyproject.toml). If ambiguous, ask the user.
-- Run the appropriate build command(s) for the changed files
-- Run relevant tests
-- For findings that modified concurrency primitives, synchronization, or task spawning patterns, verify that:
-  - Synchronization primitives are appropriate for the access pattern and runtime (e.g. async-aware vs blocking locks, read-write vs exclusive)
-  - Spawned tasks are bounded or tracked
-  - Channel/queue capacity choices are intentional and documented with rationale
-- If builds or tests fail, report the specific errors with file paths and line numbers
-- Return a concise pass/fail summary — not the full output
+### Step 5a: Mechanical build/test verification
 
-If verification fails, **reason thoroughly to diagnose** in the main conversation. Thoroughly analyse the failure, determine root cause, then fix directly or launch a targeted fix agent. Re-run verification.
+Determine the project's build and test commands by checking: (a) CLAUDE.md for documented commands, (b) project root files (e.g. Cargo.toml, package.json, *.sln, Makefile, pyproject.toml). If ambiguous, ask the user.
+
+Launch the `verification` agent **once** (`subagent_type: "verification"`, pinned to Haiku) with the full ordered command list in a `commands:` field — build first, then tests (and any category-specific commands from Step 5b that fit the run-and-report contract). The agent runs them sequentially and short-circuits on the first `fail`, returning one `command:` + `outcome:` block per attempted command (with `tail:` on failure and a `not_run:` line listing the unrun remainder). Do not restate the agent's reporting contract in the prompt — it lives in the agent's system prompt and per-spawn restatement is redundant boilerplate. Pilot data (Apr 29–30 2026) confirmed N parallel/sequential single-command spawns wasted Opus orchestrator round-trips and prompt-cache misses for ~9–20 s of Haiku work each; one fan-in spawn is the supported pattern.
+
+### Step 5b: Concurrency-semantic check (orchestrator-driven)
+
+For findings that modified concurrency primitives, synchronization, or task spawning patterns, the orchestrator (Opus) reads the changed code directly and confirms:
+
+- Synchronization primitives are appropriate for the access pattern and runtime (e.g. async-aware vs blocking locks, read-write vs exclusive)
+- Spawned tasks are bounded or tracked
+- Channel/queue capacity choices are intentional and documented with rationale
+
+The orchestrator reasons about each concurrency finding in the main conversation — no sub-agent dispatch — because the analysis benefits from the broader Step-2-pre-analysis context the orchestrator already carries, and the judgement does not fit the `verification` agent's run-and-report contract.
+
+### Step 5c: Failure handling
+
+If Step 5a's verification reports `outcome: fail`, **reason thoroughly to diagnose** in the main conversation. Read the affected file(s) using the agent-supplied tail for context, determine root cause, then fix directly or launch a targeted fix agent (`flow-implement-deep` for non-trivial fixes, `flow-implement-lite` if the fix is mechanical and the lite-eligibility gate would pass). Re-run Step 5a verification after each fix attempt.
 
 ### Verify agent-reported `applied` claims
 

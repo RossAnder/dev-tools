@@ -1,0 +1,167 @@
+schema_version = 1
+last_updated = 2026-04-24
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-04-24
+agent = "implement"
+summary = "status draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "06a4136536fc5c7b"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-04-24
+agent = "implement"
+task_ref = "shared-block-evolution"
+summary = "Added plan_review_findings to flow-context; added testability + verified-clean asymmetry to ledger-schema; deleted R48 follow-up; extended review-apply.md category cluster"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/optimise-apply.md",
+    "claude/commands/review-apply.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/implement.md",
+    "claude/commands/review-plan.md",
+]
+commits = ["29c221a2f882b76a3082aeb6f24b7f95c705210c"]
+status = "done"
+dedup_id = "9d1f402280ac8a25"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-04-24
+agent = "implement"
+task_ref = "tomlctl-skill-polish"
+summary = "Added Quick Reference, Common recipes, verify-integrity matrix, Sidecar section, --where-not/--where-missing, items apply --ops unset; trimmed filter-operator prose and threat-model prose; moved blocks verify to Advanced appendix (695 -> 669 lines)"
+files = ["claude/skills/tomlctl/SKILL.md"]
+commits = ["29c221a2f882b76a3082aeb6f24b7f95c705210c"]
+status = "done"
+dedup_id = "a2c0b55543126f6a"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-04-24
+agent = "implement"
+task_ref = "review-md-lens-restructure"
+summary = "review.md: audit fixes (TaskCreate ephemerality, small-diff forward ref, Agent 3 thresholds, asymmetry cross-ref) + narrowed Agent 2 Security + added Agent 5 Testability/Diagnostics/DX + four->five updates anchored by context"
+files = ["claude/commands/review.md"]
+commits = ["025b0b70e968e22153d7d417c4593319729fe83f"]
+status = "done"
+dedup_id = "5874f724c026ecf1"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-04-24
+agent = "implement"
+task_ref = "plan-new-research-strengthening"
+summary = "plan-new.md: Phase 1 concrete scope-split criteria; Phase 3 library-enumeration + structured Research Notes + Context7 no/multi-match + version-pinning + broadened focus; Phase 5 mechanical trigger; Phase 6 Review research findings step 1"
+files = ["claude/commands/plan-new.md"]
+commits = ["025b0b70e968e22153d7d417c4593319729fe83f"]
+status = "done"
+dedup_id = "0a4efa10b32f275d"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-04-24
+agent = "implement"
+task_ref = "review-plan-persistence-automerge"
+summary = "review-plan.md: plan-review-findings.toml schema with anchor_old/anchor_new merge contract; find-duplicates/orphans do-not-invoke callouts; Step 3.5 persistence; Step 4 auto-merge with Q1/Q2 AskUserQuestion and empty-answer rules per #29618/#29547; conflict detection; .revised.md/.revised.prev.md; re-run dedup; 4-vs-5 note"
+files = ["claude/commands/review-plan.md"]
+commits = ["025b0b70e968e22153d7d417c4593319729fe83f"]
+status = "done"
+dedup_id = "a4280baa0f4e80e2"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-04-24
+agent = "implement"
+task_ref = "optimise-md-audit-fixes"
+summary = "optimise.md: TaskCreate ephemerality; Optimization Focus dedup to pointer; orphans fallback Glob+Grep sweep; verified-clean asymmetry cross-ref; re-anchor review.md:315 to heading-anchor"
+files = ["claude/commands/optimise.md"]
+commits = ["17f1edfd56cdc1c301f08964681ab12081143c79"]
+status = "done"
+dedup_id = "3ed0b9e83c74af7e"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-04-24
+agent = "implement"
+task_ref = "implement-md-dispatch-rewrite"
+summary = "implement.md: deleted ~900-word anti-pattern/gate/checklist; replaced with 45-word working-formula paragraph; repositioned Prompt-cache tip; scrubbed dangling back-references; added <record> shorthand reminder; added Next Steps section to Phase 4"
+files = ["claude/commands/implement.md"]
+commits = ["17f1edfd56cdc1c301f08964681ab12081143c79"]
+status = "done"
+dedup_id = "e794392d21e3c9e9"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-04-24
+agent = "implement"
+task_ref = "optimise-apply-freshness-gate"
+summary = "optimise-apply.md: replaced strictly-after with at-or-after 00:00:00Z on day-AFTER UTC rule + timezone caveat; removed per-file verified-clean asymmetry note (now covered once in shared block)"
+files = ["claude/commands/optimise-apply.md"]
+commits = ["17f1edfd56cdc1c301f08964681ab12081143c79"]
+status = "done"
+dedup_id = "fb5692be05fd426c"
+
+[[items]]
+id = "E10"
+type = "verification"
+date = 2026-04-24
+agent = "implement"
+summary = "shared-block parity OK"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "9b3abd1b915e7afe"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-04-24
+agent = "implement"
+summary = "cargo build passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-04-24
+agent = "implement"
+summary = "cargo test: 134 passed, 3 failed (pre-existing Windows-only tomlctl tests, not plan-introduced; out of plan scope per Out-of-Scope clause)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "fail"
+dedup_id = "8e7372829ef70c5f"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-04-24
+agent = "implement"
+summary = "cargo clippy clean"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "4860156a6c648e1f"
+
+[[items]]
+id = "E14"
+type = "status-transition"
+date = 2026-04-24
+agent = "plan-update"
+summary = "status in-progress -> complete"
+from_status = "in-progress"
+to_status = "complete"
+dedup_id = "11f490b43566a666"

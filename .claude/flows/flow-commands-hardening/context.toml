@@ -1,0 +1,21 @@
+slug = "flow-commands-hardening"
+plan_path = "docs/plans/flow-commands-hardening.md"
+status = "complete"
+created = 2026-04-24
+updated = 2026-04-24
+branch = "main"
+scope = [
+    "claude/commands/**",
+    "claude/skills/tomlctl/**",
+]
+
+[tasks]
+total = 8
+completed = 8
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/flow-commands-hardening/review-ledger.toml"
+optimise_findings = ".claude/flows/flow-commands-hardening/optimise-findings.toml"
+execution_record = ".claude/flows/flow-commands-hardening/execution-record.toml"
+plan_review_findings = ".claude/flows/flow-commands-hardening/plan-review-findings.toml"

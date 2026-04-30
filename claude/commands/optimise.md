@@ -343,9 +343,10 @@ Identify the files to analyse:
 
 **Small scope note**: When 3 or fewer files are in scope, still launch all five research agents — their value comes from specialized, parallel research (independent Context7 lookups, WebSearches, and deep lens-specific analysis), not from dividing file reads. Tell each agent the scope is small so it can skip broad exploration and focus its research depth on the specific code paths in those files.
 
+<!-- SHARED-BLOCK:ledger-disposition-sweep START -->
 ### Orphan surfacing (read-only)
 
-After the ledger loads and before Step 1.5, walk every `[[items]]` entry in the resolved ledger whose `status == "open"` and report orphans to the console without auto-transitioning:
+After the ledger loads and before the dispatch section, walk every `[[items]]` entry in the resolved ledger whose `status == "open"` and report orphans to the console without auto-transitioning:
 
 - **File orphan**: the item's `file` path no longer exists. Detect via a single `Glob` call per unique path, or — for small ledgers — a batched `Test-Path` / `[ -e <path> ]` check.
 - **Symbol orphan**: the item has a non-empty `symbol` field and a `Grep` for that symbol (name-only, not exact-match) against the current file tree returns no results. Use one `Grep` call with `output_mode: "files_with_matches"` over the repo to avoid per-item lookups.
@@ -353,15 +354,15 @@ After the ledger loads and before Step 1.5, walk every `[[items]]` entry in the 
 For each orphan, emit a one-line console note in Step 3's report:
 
 ```
-orphan O7 — file `src/old-module.rs` no longer present (check for rename; run /optimise if the work has moved)
-orphan O12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run /optimise at the new location)
+orphan <id>7 — file `src/old-module.rs` no longer present (check for rename; run the active flow command if the work has moved)
+orphan <id>12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run the active flow command at the new location)
 ```
 
-Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above. If `tomlctl items orphans` is unavailable (older binary predating the subcommand), fall back to a one-off `Glob` sweep over each item's `file` plus a `Grep` sweep over each item's `symbol` to flag missing paths and missing symbols; `depends_on` dangling-refs then go unchecked until the binary is updated (`cargo install --path tomlctl`).
+Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above.
 
 ### Deferred-item reopen sweep
 
-After orphan surfacing and before Step 1.5, walk every `[[items]]` entry with `status = "deferred"` and check whether each item's `defer_trigger` has fired. Known trigger forms (literal substring match on `defer_trigger`):
+After orphan surfacing and before the dispatch section, walk every `[[items]]` entry with `status = "deferred"` and check whether each item's `defer_trigger` has fired. Known trigger forms (literal substring match on `defer_trigger`):
 
 - `after <path> exists` → test `[ -e <path> ]` (or `Test-Path <path>` on Windows).
 - `after <file>:<symbol> landed` → test `<file>` exists AND `grep -qF "<symbol>" <file>` finds a match.
@@ -373,8 +374,8 @@ After orphan surfacing and before Step 1.5, walk every `[[items]]` entry with `s
 For each fired trigger, prompt the user with the item's `id`, `summary`, and the matched trigger text:
 
 ```
-deferred O{n} — trigger fired: <matched trigger>
-  summary: <O{n}.summary>
+deferred <id> — trigger fired: <matched trigger>
+  summary: <summary>
 Reopen?
   [y] reopen (status → open, reopen_rationale recorded)
   [n] skip (leave deferred)
@@ -384,6 +385,9 @@ Reopen?
 On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops -` at the end of the sweep: set `status = "open"`, preserve `defer_reason` (audit trail), drop `defer_trigger`, set `reopen_rationale = "trigger fired: <matched trigger text>"`. Never auto-transition silently — every reopen passes through the prompt.
 
 Non-interactive invocations surface candidates only (`found N deferred items with fired triggers; re-run interactively to reopen`) and do not mutate the ledger.
+<!-- SHARED-BLOCK:ledger-disposition-sweep END -->
+
+If `tomlctl items orphans` is unavailable (older binary predating the subcommand), fall back to a one-off `Glob` sweep over each item's `file` plus a `Grep` sweep over each item's `symbol` to flag missing paths and missing symbols; `depends_on` dangling-refs then go unchecked until the binary is updated (`cargo install --path tomlctl`).
 
 ## Step 1.5: Determine Focal Points
 
@@ -432,7 +436,7 @@ As agents transition, call `TaskUpdate` to move each task `pending → in_progre
 
 The five tasks provide visible progress even for small scopes — the five-agent launch happens regardless of scope size (see the Design Note in Step 1.5), so the task chrome matches the actual work without added overhead.
 
-Launch **all five** agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the file list and classification from Step 1, plus its relevant **focal points** from Step 1.5.
+Launch **all five** agents in parallel using the Agent tool (subagent_type: "flow-research"). Provide each agent with the file list and classification from Step 1, plus its relevant **focal points** from Step 1.5. The `flow-research` agent is pinned to Sonnet and absorbs the Context7-first/WebSearch-second contract and version-pinning requirements in its system prompt; the per-call instructions below specify the lens focus, severity vocabulary, optimise-specific finding-record fields, and per-call cap (15-20 findings) which override the agent's default.
 
 **IMPORTANT: You MUST make all five Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count below five** — launch ALL FIVE agents. Each agent provides specialized, independent research (Context7 lookups, WebSearches, lens-specific analysis) that cannot be replicated by fewer passes.
 

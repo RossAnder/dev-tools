@@ -583,6 +583,12 @@ For old or unimplemented plans that have fallen behind the codebase. Performs de
 
 **Phase 1: Deep exploration and fresh research** — Launch **three** agents in parallel:
 
+<!-- Migration note (specialised-flow-agents.md Wave 2 §16):
+     Agent 2 → subagent_type: "flow-research" (Sonnet) — research workload (fetch-and-summarise technology state).
+     Agents 1 + 3 stay on general-purpose — reconcile / synthesis workloads.
+     reconcile op (lines ~394) + reformat op (lines ~463) trios stay on general-purpose — out of scope per
+     docs/plans/specialised-flow-agents.md audit (workloads too varied per Phase A research). -->
+
 **IMPORTANT: You MUST make all three Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch all three agents. Each has a non-overlapping scope (codebase, technology, content).
 
 **Agent 1: Codebase re-exploration**
@@ -594,10 +600,8 @@ Thoroughly explore the current state of the codebase in the plan's scope:
 - Check `git log` for the full history of changes in the plan's scope area
 - Return a comprehensive current-state inventory
 
-**Agent 2: Technology and API research**
+**Agent 2: Technology and API research** (`subagent_type: "flow-research"`)
 Research the current state of every technology, library, and framework version referenced in the plan:
-- You MUST use Context7 MCP tools (resolve-library-id then query-docs) to look up current API signatures, recommended patterns, and deprecations for every library the plan references
-- You MUST use WebSearch to find current best practices, breaking changes, and migration guides for the framework versions in use
 - Check whether the plan's technical approach is still valid or has been superseded by newer patterns
 - Flag anything in the plan that references deprecated APIs, removed features, or outdated guidance
 - Return a technology assessment with specific corrections needed

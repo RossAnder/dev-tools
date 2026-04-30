@@ -17,6 +17,7 @@
 use anyhow::{Result, bail};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value as JsonValue;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use toml::Value as TomlValue;
@@ -120,6 +121,45 @@ pub(crate) enum Predicate {
     WherePrefix { key: String, prefix: String },
     WhereSuffix { key: String, suffix: String },
     WhereRegex { key: String, pattern: String },
+}
+
+/// O66: per-predicate evaluation-cost rank used by `apply_filters` to
+/// reorder the predicate vector before the per-item loop. Lower rank ==
+/// cheaper to evaluate per item, so we want them tried first; the first
+/// false short-circuits the rest of the predicates for that item via the
+/// `'item` continue. The numbers are coarse-grained (no precise calibration
+/// against measured timings — the goal is to put obviously-cheap presence
+/// checks ahead of obviously-expensive regex compiles, not to fine-tune
+/// adjacent ranks). Stable sort below preserves CLI insertion order
+/// within equal-cost predicates so user-visible ordering stays predictable
+/// (eg. error messages that reference "the first failing predicate").
+fn predicate_cost(p: &Predicate) -> u8 {
+    match p {
+        // Field-presence checks: one hashmap lookup, no value comparison.
+        Predicate::WhereHas { .. } | Predicate::WhereMissing { .. } => 0,
+        // Equality on a typed-prefix RHS: parse-cache hit + a Rust-level
+        // `==`. Bare-string equality is one `as_str` + slice compare.
+        Predicate::Where { .. } | Predicate::WhereNot { .. } => 1,
+        // Multi-RHS equality: same per-element cost as Where, multiplied by
+        // |rhs|. Still cheap relative to substring/regex.
+        Predicate::WhereIn { .. } => 2,
+        // Ordering comparisons: one parse-cache hit + a `cmp`. Slightly
+        // dearer than equality because the RHS may need cross-type
+        // coercion (Int vs Float, Date vs DateTime).
+        Predicate::WhereGt { .. }
+        | Predicate::WhereGte { .. }
+        | Predicate::WhereLt { .. }
+        | Predicate::WhereLte { .. } => 3,
+        // Substring / prefix / suffix: stringify the field then walk it.
+        // Field stringification (Int/Float/Datetime → String) costs more
+        // than scalar compare; substring search itself is O(field len).
+        Predicate::WherePrefix { .. } | Predicate::WhereSuffix { .. } => 4,
+        Predicate::WhereContains { .. } => 5,
+        // Regex match: pattern is pre-compiled once at apply_filters entry
+        // (R72), but per-item match-cost is still substantially higher
+        // than fixed-string substring search. Always last.
+        Predicate::WhereRegex { .. } => 6,
+    }
 }
 
 /// Mutually-exclusive output shapes. `Array` is the default when none of the
@@ -546,12 +586,24 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
                 // field only. We never materialise the rest of the item,
                 // so per-item cost stays O(field size) rather than O(row
                 // size). Null/missing values are dropped (consistent with
-                // `--pluck`'s apply_pluck behaviour). Canonicalisation:
-                // `toml_to_json(v).to_string()` feeds each distinct value
-                // into a `HashSet<String>`. This preserves TYPE
-                // distinctness — integer `42` serialises as `42`, string
-                // `"42"` serialises as `"42"` (with quotes), so they
-                // count as two. Documented in the enum doc-comment.
+                // `--pluck`'s apply_pluck behaviour).
+                //
+                // O71: bucket-based canonicalisation preserves TYPE
+                // distinctness without re-allocating string-typed values.
+                // String-typed values are consumed directly into
+                // `seen_strings` (no JSON-quoting, no re-allocation —
+                // `narrow_toml_to_json` already produced the owned
+                // `String` we move in). All other JSON variants
+                // (numbers, bools, arrays, objects) are serialised via
+                // `to_string()` and inserted into `seen_other`. Because
+                // the two buckets are disjoint, integer `42` (lands in
+                // `seen_other` as `"42"`) and string `"42"` (lands in
+                // `seen_strings` as `42`) cannot collide even though
+                // their textual forms overlap — so the
+                // `count_distinct_different_types` invariant (integer
+                // 42 ≠ string "42") is preserved by bucket separation
+                // rather than by JSON-quoting. Documented in the enum
+                // doc-comment.
                 //
                 // R43: `narrow_toml_to_json` increments the fast-path
                 // narrowing counter under cfg(test) so the structural
@@ -560,17 +612,22 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
                 // timing. `full_item_toml_to_json` on the slow path
                 // increments a parallel counter; the test verifies the
                 // full-item counter stays at 0 on the fast path.
-                let mut seen: HashSet<String> = HashSet::with_capacity(filtered.len());
+                let cap = filtered.len();
+                let mut seen_strings: HashSet<String> = HashSet::with_capacity(cap);
+                let mut seen_other: HashSet<String> = HashSet::with_capacity(cap);
                 for t in &filtered {
                     match t.get(field).map(narrow_toml_to_json) {
                         None | Some(JsonValue::Null) => {}
-                        Some(v) => {
-                            seen.insert(v.to_string());
+                        Some(JsonValue::String(s)) => {
+                            seen_strings.insert(s);
+                        }
+                        Some(other) => {
+                            seen_other.insert(other.to_string());
                         }
                     }
                 }
                 return Ok(serde_json::json!({
-                    "count_distinct": seen.len(),
+                    "count_distinct": seen_strings.len() + seen_other.len(),
                     "field": field,
                 }));
             }
@@ -834,10 +891,25 @@ pub(crate) fn apply_filters<'a>(
         })
         .collect::<Result<Vec<_>>>()?;
 
+    // O66: cost-aware predicate reorder. Build a permutation of indices
+    // sorted by `predicate_cost` ascending so cheap presence checks run
+    // ahead of expensive regex matches; on a per-item false the `'item`
+    // continue short-circuits, so cheap-first means we touch the regex
+    // engine for fewer items in the common "any cheap predicate already
+    // rules this row out" case. Stable sort preserves CLI insertion order
+    // within equal-cost predicates (see `predicate_cost` for the table),
+    // so any user-visible ordering tied to insertion order — e.g. an
+    // error message that mentions "the first failing predicate" — stays
+    // predictable. `eval_order` aliases the existing `compiled` and
+    // `rhs_cache` vectors via index, so we don't disturb their `preds`-
+    // aligned layout.
+    let mut eval_order: Vec<usize> = (0..preds.len()).collect();
+    eval_order.sort_by_key(|&i| predicate_cost(&preds[i]));
+
     let mut out = Vec::with_capacity(items.len());
     'item: for it in items {
-        for (i, p) in preds.iter().enumerate() {
-            if !eval_predicate(it, p, compiled[i].as_ref(), &rhs_cache[i])? {
+        for &i in &eval_order {
+            if !eval_predicate(it, &preds[i], compiled[i].as_ref(), &rhs_cache[i])? {
                 continue 'item;
             }
         }
@@ -1471,14 +1543,21 @@ pub(crate) fn apply_aggregation_group_by(
 ) -> JsonValue {
     // R68: same Map-backed accumulator as `apply_aggregation_count_by`, but
     // the slot value is a Vec of grouped items.
+    //
+    // O67: borrow-first bucket-key lookup, mirroring the O53 `CountBy`
+    // get_mut-first pattern. `bucket_key_borrowed` returns a `Cow<str>` so
+    // the common case — string-typed group field — borrows directly off
+    // the source `JsonValue` and never allocates on a hit. Only the miss
+    // path (and the unavoidable non-string canonicalisation path) takes
+    // ownership via `into_owned()` for the `groups.insert` call.
     let mut groups: serde_json::Map<String, JsonValue> = serde_json::Map::new();
     for (i, it) in raw.iter().enumerate() {
-        let key = bucket_key(it.get(field));
+        let key = bucket_key_borrowed(it.get(field));
         let proj = projected[i].clone();
-        match groups.get_mut(&key) {
+        match groups.get_mut(key.as_ref()) {
             Some(JsonValue::Array(arr)) => arr.push(proj),
             _ => {
-                groups.insert(key, JsonValue::Array(vec![proj]));
+                groups.insert(key.into_owned(), JsonValue::Array(vec![proj]));
             }
         }
     }
@@ -1526,6 +1605,22 @@ fn bucket_key(v: Option<&JsonValue>) -> String {
         None | Some(JsonValue::Null) => String::new(),
         Some(JsonValue::String(s)) => s.clone(),
         Some(other) => other.to_string(),
+    }
+}
+
+/// O67: borrow-friendly sibling of `bucket_key`. Returns a `Cow<str>` that
+/// borrows directly off the source `JsonValue` for the missing/null and
+/// string cases (the common ones for ledger group-by fields like
+/// `status` / `category` / `tier`). Non-string scalars still need a fresh
+/// canonical-form `String` because `serde_json::Number` and other variants
+/// don't expose a borrowed string view. Callers that already need an owned
+/// `String` should prefer `bucket_key`; callers doing get_mut-first lookups
+/// should call this and `.into_owned()` only on the insert path.
+fn bucket_key_borrowed(v: Option<&JsonValue>) -> Cow<'_, str> {
+    match v {
+        None | Some(JsonValue::Null) => Cow::Borrowed(""),
+        Some(JsonValue::String(s)) => Cow::Borrowed(s.as_str()),
+        Some(other) => Cow::Owned(other.to_string()),
     }
 }
 

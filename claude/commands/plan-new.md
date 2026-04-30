@@ -346,34 +346,11 @@ This phase always runs. Research agents may return early with minimal findings w
 
 **Library enumeration**. Before launching research agents, the orchestrator reads dependency-manifest file(s) intersecting the plan's `scope` globs: `package.json` (Node.js), `Cargo.toml` (Rust), `pyproject.toml` / `requirements.txt` (Python), `go.mod` (Go), `*.csproj` / `*.fsproj` (.NET), and similar. For monorepos, enumerate only the workspace packages whose directories intersect `scope`. Extract each dependency and its pinned version. Hand the scope-filtered "libraries to research" list (typically ≤ 20) to each research agent as input.
 
-Launch up to 2 research agents in parallel using the Agent tool (subagent_type: "general-purpose"):
+Launch up to 2 research agents in parallel using the Agent tool (subagent_type: "flow-research"):
 
 **IMPORTANT: You MUST make all research Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch the full complement of research agents.
 
 **Each research agent must have a non-overlapping scope.** Before dispatching, explicitly partition the research topics so no two agents investigate the same library, API, or technology. State the partition in each agent's prompt (e.g., "You are responsible for X and Y. The other agent covers Z and W. Do not research Z or W.").
-
-Every research agent MUST:
-- You MUST use Context7 MCP tools (resolve-library-id then query-docs) to look up API signatures, configuration options, and recommended patterns for the specific libraries and framework versions in use
-- You MUST use WebSearch to find current best practices, migration guides, and known pitfalls
-- Return structured findings with source references (documentation URLs, Context7 query results)
-- **Return at least 3 findings if relevant research exists; zero findings is acceptable when the task uses only well-established patterns already present in the codebase — state this explicitly rather than padding. Aim for ~500 words and cap at 10 findings. Do not self-truncate below the floor when findings genuinely exist.**
-- **If truncating, prioritise API signatures, version-specific behaviour, and deprecation warnings over general best-practice narrative.**
-
-**Structured Research Notes record format (REQUIRED)** — every Research Notes bullet MUST be emitted in this exact record shape; freeform prose notes are not acceptable:
-
-```
-- **Library/API**: [name] [version from manifest]
-- **Source**: [Context7 query reference or URL]
-- **Finding**: [one-line — API signature, deprecation, behaviour]
-- **Details**: [2-3 sentence explanation with exact parameter names / method signatures]
-- **Impact on plan**: [how this finding shapes the design, or "no change"]
-```
-
-**Context7 no-match / multi-match handling**:
-- If Context7 returns nothing for a library, fall back to WebSearch; record the absence in the Research Notes (`**Source**: Context7 returned no match; WebSearch: ...`), and flag the fall-back in Phase 6.
-- If Context7 returns multiple library IDs for the same query, the agent states the disambiguation explicitly in its output; if ambiguous, it surfaces the disambiguation as a Phase 4 question for the user.
-
-**Version-pinning requirement**: every library-referencing finding MUST cite the exact version from the manifest (the `Library/API` line's `[version from manifest]` slot is not optional). Findings without a version pin are incomplete and must be re-attempted.
 
 Research focus should be tailored to the task. Broaden research focus beyond API signatures to also cover:
 - **API/library research** — Verify that planned API usage is correct, check for deprecations, find recommended patterns.
@@ -420,9 +397,7 @@ When the procedure above yields a skip, record the skip decision under a dedicat
 
 **Run this phase** if a Phase 4 answer surfaced a topic not yet researched — for example, the user selected a library, API, or approach that initial research did not cover.
 
-Launch **up to 1 general-purpose research agent** with a narrow scope. Budget: ~500 words / 10 findings. The agent MUST:
-- Use Context7 MCP tools (resolve-library-id then query-docs) for API signatures, configuration, and version-specific behaviour.
-- Use WebSearch for current best practices, migration guides, and known pitfalls.
+Launch **up to 1 flow-research agent** with a narrow scope. The agent MUST:
 - Return structured findings scoped strictly to the topic introduced by Phase 4 answers — do not re-investigate topics already covered in `## Research Notes`.
 
 If the directed research agent returns zero actionable findings, note this under the `### Phase 5 outcome` sub-heading inside `## User Decisions` (e.g. `— directed research surfaced nothing actionable`) and proceed to Phase 6 without appending to Research Notes.
@@ -663,7 +638,7 @@ Also output the plan path and the resolved flow slug so the user has both refere
 
 - **Plan mode restrictions apply** — The main conversation can only edit the plan file. All other actions must be read-only (Glob, Grep, Read, git commands, Context7, WebSearch). Sub-agents operate in their own contexts and are not restricted by plan mode, but their prompts should instruct them to perform read-only exploration or research only — no edits.
 - **Front-load complex analysis in the main conversation** — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Give agents specific exploration or research tasks, not open-ended design problems.
-- **Explore agents for exploration, general-purpose agents for research** — Use subagent_type "Explore" for codebase navigation and "general-purpose" for Context7/WebSearch research.
+- **Explore agents for exploration, flow-research agents for research** — Use subagent_type "Explore" for codebase navigation and "flow-research" for Context7/WebSearch research.
 - **Context budget** — Cap explore agent output at ~500 words and research agent output at ~500 words / 10 findings. Persist findings to the plan file between phases as checkpoints. If context becomes constrained, use `/compact` with specific preservation instructions before continuing.
 - **Don't over-plan** — The plan should be detailed enough to execute without ambiguity, but not so detailed that it prescribes every line of code. Implementation agents will read the target files and make tactical decisions.
 - **Reuse over reinvention** — Actively search for existing patterns, utilities, and abstractions. The plan should reference them by file path.
