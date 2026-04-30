@@ -170,9 +170,18 @@ fn merged_fingerprint(
 /// O18: minimum number of `update` ops in a batch before we pay to build
 /// an `id → array_index` HashMap. Below this, the per-op linear scan
 /// (`items_update_value_to` walks the array) is cheaper than the
-/// up-front map build + per-`remove` rebuild. Empirically the crossover
-/// sits around 4–6 ops on a 50-row ledger; 5 is the chosen midpoint.
-const ID_INDEX_BUILD_THRESHOLD: usize = 5;
+/// up-front map build + per-`remove` rebuild.
+///
+/// O68: threshold tuned for typical 2-3 item apply batches. The original
+/// midpoint (5) was calibrated for a 50-row ledger crossover band, but
+/// typical review-apply / optimise-apply batches sit at 1-3 update ops,
+/// which left the indexed fast path dormant on the most common workload.
+/// Combined with the O(1)-per-entry `remove` invalidation below (replacing
+/// the prior whole-index drop), the dispatch comparison `update_count >
+/// ID_INDEX_BUILD_THRESHOLD` now activates the indexed path for any batch
+/// with 3+ update ops — covering the bulk of `items apply` traffic. The
+/// spec floor is 2 (no benefit at 1, and 0 always builds).
+const ID_INDEX_BUILD_THRESHOLD: usize = 2;
 
 #[cfg(test)]
 pub(crate) fn items_get(doc: &TomlValue, id: &str) -> Result<JsonValue> {
@@ -184,6 +193,32 @@ pub(crate) fn items_get_from(doc: &TomlValue, array_name: &str, id: &str) -> Res
     for item in items_array(doc, array_name) {
         if item_id(item) == Some(id) {
             return Ok(toml_to_json(item));
+        }
+    }
+    bail!("no item with id = {}", id)
+}
+
+/// O64: JSON-side sibling of `items_get_from`. Walks a `JsonValue` doc's
+/// named items array and returns a clone of the first object whose `id`
+/// field equals `id`. Used by the borrowed-DeTable fast-path in
+/// `ItemsOp::Get`'s non-verify-integrity branch — the doc has already
+/// been converted from `DeTable<'a>` to `JsonValue` once at the read
+/// boundary via `detable_to_json`, so this walker only needs to find
+/// and clone the matching item rather than re-traversing a TOML tree.
+///
+/// Output byte-identity: the returned `JsonValue` is structurally
+/// equal to `toml_to_json(matching_toml_item)` for the same underlying
+/// data — the `detable_to_json` parity test in `convert.rs` already
+/// pins both converters to the same shape. Error message
+/// ("no item with id = X") is emitted verbatim from both paths.
+pub(crate) fn items_get_from_json(
+    doc: &JsonValue,
+    array_name: &str,
+    id: &str,
+) -> Result<JsonValue> {
+    for item in crate::io::items_array_json(doc, array_name) {
+        if crate::io::item_id_json(item) == Some(id) {
+            return Ok(item.clone());
         }
     }
     bail!("no item with id = {}", id)
@@ -243,6 +278,28 @@ pub(crate) fn items_add_value_to(
     Ok(())
 }
 
+/// O58: walk a candidate ledger item by dotted path and convert ONLY the
+/// leaf to JSON, mirroring the narrowing semantics of `walk_json_path`
+/// (object descent only — no array-index segments). Used by
+/// `find_dedupe_match` to compare a payload-side `walk_json_path` result
+/// against the candidate's same-path leaf without materialising the
+/// candidate's entire `TomlValue::Table` tree as `JsonValue` first. The
+/// returned `Option<JsonValue>` matches `walk_json_path`'s `Option<&JsonValue>`
+/// shape under `lhs.as_ref() == rhs` so equality semantics (including the
+/// missing-on-both-sides convention) carry through unchanged.
+fn narrow_toml_field(item: &TomlValue, path: &str) -> Option<JsonValue> {
+    let mut cur = item;
+    for seg in path.split('.') {
+        match cur {
+            TomlValue::Table(t) => {
+                cur = t.get(seg)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(toml_to_json(cur))
+}
+
 /// T5 (plan `docs/plans/tomlctl-capability-gaps.md`): scan `doc[array_name]`
 /// for the first existing item whose values at every path in `fields` equal
 /// the corresponding values in `payload`. Returns the item's `id` on match,
@@ -251,8 +308,9 @@ pub(crate) fn items_add_value_to(
 /// Semantics:
 ///   - Each entry of `fields` is a dotted path interpreted by
 ///     `walk_json_path` (object descent only; no array-index segments).
-///   - Each candidate item is converted to JSON via `toml_to_json` once,
-///     so the comparison happens in JSON space. This keeps "raw JSON
+///   - O58: each candidate field is narrowed to a leaf-only JSON value via
+///     `narrow_toml_field`, so the comparison happens in JSON space without
+///     materialising the whole candidate item. This keeps "raw JSON
 ///     equality" stable regardless of TOML surface differences (e.g. a
 ///     TOML datetime and a JSON string land as `JsonValue::String(...)`
 ///     in both the candidate and the payload views after coercion).
@@ -282,11 +340,18 @@ pub(crate) fn find_dedupe_match(
         return None;
     }
     for item in items_array(doc, array_name) {
-        let candidate_json = toml_to_json(item);
+        // O58: narrow per-dedupe-field to a leaf JSON conversion instead of
+        // materialising the whole candidate item via `toml_to_json`. Mirrors
+        // the `narrow_toml_to_json` fast-path pattern in `query.rs` (O21/O55):
+        // walking the dotted path through `TomlValue::Table` arms and only
+        // converting the LEAF to JSON keeps the per-row scan cost O(field
+        // depth) rather than O(row size). For batch add-many on an N-item
+        // ledger with M dedupe rows, this avoids O(N × ledger_size) full-
+        // tree clones.
         let all_match = fields.iter().all(|f| {
-            let lhs = walk_json_path(&candidate_json, f);
+            let lhs = narrow_toml_field(item, f);
             let rhs = walk_json_path(payload, f);
-            lhs == rhs
+            lhs.as_ref() == rhs
         });
         if all_match {
             // Prefer the candidate-item's id (from the table) over walking
@@ -586,10 +651,38 @@ fn apply_op_indexed(
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow!("remove op missing `id` field"))?;
             // R57: remove also follows --array. Order-preserving `Vec::remove`
-            // shifts later indexes by 1, so the cheapest correct response is
-            // to drop the map and let the next op that needs it rebuild.
+            // (via `retain`) shifts later indexes by 1.
+            //
+            // O68: keep the index alive across `remove` ops by patching it in
+            // place — drop the removed key and decrement every index that
+            // sat AFTER the removed slot. This is still O(map_size) per
+            // remove but skips the array walk + per-id `to_string` heap
+            // churn that `build_id_index` does on a fresh rebuild. For
+            // interleaved remove/update batches the saving compounds: every
+            // `update` after the first `remove` previously paid a full
+            // rebuild before its O(1) lookup; now it lands on a still-warm
+            // index. We capture the removed index BEFORE the call so a stale
+            // index entry (id-in-map but not-in-doc, which shouldn't happen
+            // post-O18 but defensively allowed) falls through to the legacy
+            // full-rebuild path on the next op that needs the map.
+            let removed_idx = id_index.as_ref().and_then(|m| m.get(id).copied());
             items_remove_from(doc, array_name, id)?;
-            *id_index = None;
+            match (id_index.as_mut(), removed_idx) {
+                (Some(map), Some(idx)) => {
+                    map.remove(id);
+                    for v in map.values_mut() {
+                        if *v > idx {
+                            *v -= 1;
+                        }
+                    }
+                }
+                _ => {
+                    // No live map (already invalidated) or the removed id
+                    // was never tracked there: fall back to the full-rebuild
+                    // path so the next indexed op sees a consistent view.
+                    *id_index = None;
+                }
+            }
             Ok(())
         }
         other => bail!("unknown op `{}`", other),
@@ -861,18 +954,40 @@ fn defaults_base(defaults: Option<&JsonValue>) -> Result<serde_json::Map<String,
     }
 }
 
-/// R4: build the per-row merged payload — `base` (defaults) cloned first,
-/// then per-row keys shallow-overwrite on conflict. Pre-sizes the target
-/// map for the sum of both sources (over-allocates when the row shadows a
+/// R4: build the per-row merged payload — defaults provide the base layer,
+/// per-row keys shallow-overwrite on conflict. Pre-sizes the target map
+/// for the sum of both sources (over-allocates when the row shadows a
 /// default; cheaper than a re-grow inside `extend`).
+///
+/// O60: walk `base` once and for each entry choose the row's value when
+/// the row shadows the default (cloning ONLY the chosen value, not both),
+/// then append row keys absent from base. The previous `extend(base.clone())`
+/// plus per-row insert pattern paid a wasted `clone` per shadowed default;
+/// for 100 rows times 10 default fields that was ~1000 transient String
+/// allocations per batch. Output ordering is preserved byte-identical to
+/// the legacy form: defaults appear in their `base.iter()` order (with
+/// row-supplied values at shadowed positions), and non-shadowed row keys
+/// trail in `row_obj.iter()` order, matching how `serde_json::Map`'s
+/// `IndexMap` backing handled the original `extend` plus `insert` sequence.
 fn merge_row_over_base(
     base: &serde_json::Map<String, JsonValue>,
     row_obj: &serde_json::Map<String, JsonValue>,
 ) -> serde_json::Map<String, JsonValue> {
     let mut merged = serde_json::Map::with_capacity(base.len() + row_obj.len());
-    merged.extend(base.clone());
+    for (k, v) in base.iter() {
+        match row_obj.get(k.as_str()) {
+            Some(rv) => {
+                merged.insert(k.clone(), rv.clone());
+            }
+            None => {
+                merged.insert(k.clone(), v.clone());
+            }
+        }
+    }
     for (k, v) in row_obj.iter() {
-        merged.insert(k.clone(), v.clone());
+        if !base.contains_key(k.as_str()) {
+            merged.insert(k.clone(), v.clone());
+        }
     }
     merged
 }

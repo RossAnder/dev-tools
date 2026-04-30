@@ -70,8 +70,19 @@ fn resolve_lock_timeout() -> std::time::Duration {
 /// Deterministic counter-hash (no RNG) spread `±20%` around `base_ms`.
 /// Shared by the exclusive and shared lock retry loops; see `with_exclusive_lock`
 /// for the rationale.
+///
+/// O57: mix `std::process::id()` into the seed so concurrent tomlctl
+/// processes do not all compute the same delay sequence. Without the PID
+/// XOR, five contenders entering the loop simultaneously all produce
+/// identical `attempt=0` jitter, sleep ~50 ms, and wake in lockstep to
+/// collide on `try_lock` again — within a single 30 s timeout window
+/// four of five could hit the boundary within one `LOCK_RETRY` of each
+/// other. Folding the OS-supplied PID into the input decorrelates the
+/// retry schedules across processes while preserving the existing
+/// attempt-keyed variation within a single process.
 fn jittered_delay_ms(base_ms: u64, attempt: u64) -> u64 {
-    let h = attempt
+    let pid = std::process::id() as u64;
+    let h = (attempt ^ pid)
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
         .wrapping_add(0xD1B5_4A32_D192_ED03);
     let jitter_pct = (h % 41) as i64 - 20;
@@ -120,6 +131,31 @@ pub(crate) fn items_array_mut<'a>(
 /// `main.rs`.
 pub(crate) fn item_id(item: &TomlValue) -> Option<&str> {
     item.as_table()?.get("id")?.as_str()
+}
+
+/// O64: JSON-side sibling of `items_array`. Used by the borrowed-DeTable
+/// fast-path in `ItemsOp::{Get, FindDuplicates}`: after `detable_to_json`
+/// converts the parsed doc to an owned `JsonValue` once at the read
+/// boundary, downstream item walks operate on `&[JsonValue]` without
+/// re-allocating per-scalar `String`s through a `TomlValue` intermediate.
+/// Returns an empty slice when the array is missing or the value at that
+/// key isn't a JSON array — symmetric with the TomlValue-side `items_array`
+/// behaviour so callers can swap between the two without changing their
+/// loop shape.
+pub(crate) fn items_array_json<'a>(doc: &'a serde_json::Value, name: &str) -> &'a [serde_json::Value] {
+    static EMPTY: Vec<serde_json::Value> = Vec::new();
+    doc.get(name)
+        .and_then(|v| v.as_array())
+        .map(Vec::as_slice)
+        .unwrap_or(EMPTY.as_slice())
+}
+
+/// O64: JSON-side sibling of `item_id`. Pull the `id` field of an item
+/// JSON object as `&str`, returning `None` when the value isn't an object
+/// or lacks an `id` string. Mirrors `item_id`'s semantics for the
+/// borrowed-fast-path consumers in `dedup.rs` and `items.rs`.
+pub(crate) fn item_id_json(item: &serde_json::Value) -> Option<&str> {
+    item.as_object()?.get("id")?.as_str()
 }
 
 pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
@@ -236,6 +272,48 @@ pub(crate) fn read_doc<R>(
     } else {
         let doc = read_toml(file)?;
         f(&doc)
+    }
+}
+
+/// O64: dual-closure read dispatcher that picks between the owned
+/// `TomlValue` path and the borrowed-DeTable fast path based on
+/// `integrity.verify_on_read`.
+///
+/// - When `verify_on_read` is true (the user passed `--verify-integrity`)
+///   the read path MUST go through `read_doc` to keep the shared-lock +
+///   `maybe_verify_integrity` + `read_toml` contract intact. The owned
+///   `TomlValue` is handed to `owned`. The borrowed closure is never
+///   invoked on this branch.
+/// - When `verify_on_read` is false the read source string is parsed
+///   borrowed via `DeTable::parse`, converted to `JsonValue` once at the
+///   boundary via `detable_to_json`, and handed to `borrowed`. The owned
+///   closure is never invoked on this branch. Skipping the
+///   `toml::from_str::<TomlValue>` step elides the per-scalar `String`
+///   allocation that path makes unconditionally for every TOML node.
+///
+/// Output byte-identity: every dispatch arm that swings to this helper
+/// must emit identical JSON in both branches. The `detable_to_json` parity
+/// test (`convert.rs`) and the `find_duplicates_*_json` parity tests (this
+/// crate) are the ground truth. Callers are responsible for keeping the
+/// two closure outputs equivalent — this helper trusts them.
+pub(crate) fn read_doc_either<R, F, B>(
+    file: &Path,
+    integrity: IntegrityOpts,
+    owned: F,
+    borrowed: B,
+) -> Result<R>
+where
+    F: FnOnce(&TomlValue) -> Result<R>,
+    B: FnOnce(&serde_json::Value) -> Result<R>,
+{
+    if integrity.verify_on_read {
+        read_doc(file, integrity, owned)
+    } else {
+        let source = read_toml_str(file)?;
+        read_doc_borrowed(&source, |table| {
+            let json = crate::convert::detable_to_json(table);
+            borrowed(&json)
+        })
     }
 }
 
@@ -957,11 +1035,18 @@ pub(crate) fn warn_if_read_outside_claude(file: &Path) {
 /// former open-coded sites now share one implementation.
 pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
     let hex = hex_lower(&Sha256::digest(bytes));
+    // O63: keep the basename as the borrowed `Cow<str>` returned by
+    // `to_string_lossy()` rather than forcing an owned `String` via
+    // `.into_owned()`. The only downstream use is the `format!` below,
+    // which interpolates via `Display` and accepts `&str` (deref of
+    // `Cow<str>`) — the prior `.into_owned()` call materialised a
+    // String on every sidecar write even though no caller needed
+    // ownership. On the common ASCII-basename path `to_string_lossy`
+    // returns `Cow::Borrowed`, so this also drops the redundant clone.
     let basename = file
         .file_name()
         .ok_or_else(|| anyhow!("target `{}` has no file name", file.display()))?
-        .to_string_lossy()
-        .into_owned();
+        .to_string_lossy();
     let sidecar_contents = format!("{}  {}\n", hex, basename);
     atomic_write(&sidecar_path(file), sidecar_contents.as_bytes())
 }
@@ -1062,10 +1147,12 @@ pub(crate) fn write_toml_with_sidecar(
 }
 
 /// Atomic-replace pattern: write `bytes` to a tempfile in the same directory as
-/// `path`, `sync_all()` to flush to disk, then `persist()` to rename into place.
-/// The `sync_all` call is load-bearing — without it, a crash between rename and
-/// fsync can leave the target empty on some filesystems. See the tempfile crate
-/// docs (`/stebalien/tempfile`) for the canonical pattern.
+/// `path`, `sync_data()` to flush content to disk (O59), then `persist()` to
+/// rename into place. The data fsync is load-bearing — without it, a crash
+/// between rename and fsync can leave the target empty on some filesystems.
+/// See the tempfile crate docs (`/stebalien/tempfile`) for the canonical
+/// pattern; the parent-directory `sync_all()` below covers the dirent update
+/// that makes the rename durable.
 ///
 /// O15: the tempfile is sited under the CANONICALISED parent so a symlinked
 /// parent directory pointing to a different mount can't trigger EXDEV at
@@ -1092,8 +1179,15 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     tmp.as_file_mut()
         .write_all(bytes)
         .with_context(|| format!("writing temp file for {}", path.display()))?;
+    // O59: `sync_data()` (fdatasync) suffices on a freshly created
+    // tempfile — only the data needs to reach stable storage before
+    // `persist()` renames it into place. Tempfile metadata (owner,
+    // mode, mtime) is not load-bearing for the post-rename target,
+    // and the parent-directory `sync_all()` below still flushes the
+    // dirent update that makes the rename durable. Skipping the
+    // metadata fsync trims one disk operation per atomic write.
     tmp.as_file()
-        .sync_all()
+        .sync_data()
         .with_context(|| format!("fsync temp file for {}", path.display()))?;
     tmp.persist(path)
         .map_err(|e| anyhow!("atomic rename to {} failed: {}", path.display(), e.error))?;

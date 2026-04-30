@@ -380,6 +380,34 @@ pub(crate) fn i64_field(tbl: &toml::Table, key: &str) -> i64 {
     tbl.get(key).and_then(|v| v.as_integer()).unwrap_or(0)
 }
 
+/// O64: JSON-side sibling of `str_field`. Returns `""` when the key is
+/// missing or the value is not a JSON string. Used by the borrowed-DeTable
+/// fast-path's dedup tiers in `dedup.rs`, mirroring the TOML-side
+/// "empty string on missing / non-string" semantics so the two paths
+/// produce byte-identical fingerprints and grouping keys for the same
+/// underlying data. (Pre-O64 this helper lived privately inside `dedup.rs`
+/// as `json_str_field`; relocated here so it sits next to `str_field` and
+/// can be reused by `find_duplicates_*_json` without duplication.)
+pub(crate) fn str_field_json<'a>(
+    obj: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> &'a str {
+    obj.get(key).and_then(|v| v.as_str()).unwrap_or("")
+}
+
+/// O64: JSON-side sibling of `i64_field`. Returns `0` when the key is
+/// missing or the value is not a JSON integer. Used by `find_duplicates_tier_c_json`
+/// to read the `line` field; the TOML side reads `i64_field(tbl, "line")`
+/// and the JSON side must match its "non-integer / missing → 0" semantics
+/// byte-for-byte so `--tier C` produces the same line-window grouping
+/// regardless of which read path delivered the doc.
+pub(crate) fn i64_field_json(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> i64 {
+    obj.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+}
+
 /// R36: return the JSON type-name discriminant for a `serde_json::Value`
 /// without echoing any user-supplied content. Used in error messages on
 /// apply-op parse failures, where the value could be an agent-generated
