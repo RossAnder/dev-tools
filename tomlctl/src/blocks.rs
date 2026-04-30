@@ -29,7 +29,9 @@ pub(crate) struct BlocksReport {
 /// `<!-- SHARED-BLOCK:NAME END -->` markers. Markers themselves are NOT
 /// included in the hash input. Inner lines are joined by `\n` (matching awk's
 /// default ORS), with every content line — including the last — followed by
-/// `\n`. Returns None if either marker is missing.
+/// `\n`. CRLF line endings in the source are normalised to `\n` in the hash
+/// input (via `str::lines()`, which strips both `\n` and `\r\n`). Returns
+/// None if either marker is missing.
 pub(crate) fn extract_block(contents: &str, name: &str) -> Option<Vec<u8>> {
     let start = format!("<!-- SHARED-BLOCK:{} START -->", name);
     let end = format!("<!-- SHARED-BLOCK:{} END -->", name);
@@ -40,7 +42,7 @@ pub(crate) fn extract_block(contents: &str, name: &str) -> Option<Vec<u8>> {
     // trivially correct upper bound that eliminates reallocations during the
     // per-line `extend_from_slice` + `push(b'\n')` loop below.
     let mut out = Vec::with_capacity(contents.len());
-    for line in contents.split('\n') {
+    for line in contents.lines() {
         if line == start {
             in_block = true;
             saw_start = true;
@@ -87,6 +89,15 @@ pub(crate) fn scan_block_names_warn(contents: &str, src_label: Option<&str>) -> 
             if !names.contains(&n) {
                 names.push(n);
             }
+            continue;
+        }
+        // END markers are canonical too — skip them without adding to `names`
+        // (block names are discovered from START markers only). Without this
+        // guard every valid END marker fell through to the fuzzy-match block
+        // below and emitted a spurious "probable typo'd" warning.
+        if let Some(rest) = trimmed.strip_prefix("<!-- SHARED-BLOCK:")
+            && rest.strip_suffix(" END -->").is_some()
+        {
             continue;
         }
         // Fuzzy match: heuristically flag anything that contains
@@ -227,4 +238,49 @@ pub(crate) fn blocks_verify(files: &[PathBuf], blocks: &[String]) -> Result<Bloc
 
 fn path_to_string(p: &Path) -> String {
     p.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
+    use crate::integrity::hex_lower;
+
+    /// Fix A: `extract_block` must return `Some(...)` for CRLF input and the
+    /// digest must equal the digest produced from the LF equivalent.
+    #[test]
+    fn extract_block_crlf_matches_lf_digest() {
+        let lf = "<!-- SHARED-BLOCK:foo START -->\nline one\nline two\n<!-- SHARED-BLOCK:foo END -->\n";
+        let crlf = "<!-- SHARED-BLOCK:foo START -->\r\nline one\r\nline two\r\n<!-- SHARED-BLOCK:foo END -->\r\n";
+
+        let lf_bytes = extract_block(lf, "foo").expect("LF: extract_block returned None");
+        let crlf_bytes = extract_block(crlf, "foo").expect("CRLF: extract_block returned None");
+
+        let lf_digest = hex_lower(&Sha256::digest(&lf_bytes));
+        let crlf_digest = hex_lower(&Sha256::digest(&crlf_bytes));
+        assert_eq!(
+            lf_digest, crlf_digest,
+            "CRLF and LF content must produce the same digest"
+        );
+    }
+
+    /// Fix B: `scan_block_names_warn` must NOT emit a typo warning for a
+    /// valid END marker. We verify the behavioural contract: the returned
+    /// `names` list must equal `["foo"]` (START-only discovery, END is
+    /// canonical and silent) and must NOT contain a spurious empty entry or
+    /// panic.
+    #[test]
+    fn scan_block_names_warn_end_marker_not_flagged() {
+        let contents = "\
+<!-- SHARED-BLOCK:foo START -->
+body
+<!-- SHARED-BLOCK:foo END -->
+";
+        let names = scan_block_names_warn(contents, Some("test-fixture"));
+        assert_eq!(
+            names,
+            vec!["foo".to_string()],
+            "END marker must be recognised as canonical and not alter the names list"
+        );
+    }
 }

@@ -220,19 +220,19 @@ mod tests {
             r#"
 [[items]]
 id = "R1"
-file = "{}"
+file = '{}'
 symbol = "present_symbol"
 summary = "valid"
 
 [[items]]
 id = "R2"
-file = "{}"
+file = '{}'
 symbol = "missing_symbol"
 summary = "sym gone"
 
 [[items]]
 id = "R3"
-file = "{}/nope.rs"
+file = '{}/nope.rs'
 summary = "file gone"
 
 [[items]]
@@ -296,7 +296,7 @@ summary = "dangling dep"
             r#"
 [[items]]
 id = "R28-probe"
-file = "{}"
+file = '{}'
 symbol = "leak_me"
 summary = "oracle attempt"
 "#,
