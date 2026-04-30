@@ -206,3 +206,91 @@ files = ["claude/commands/implement.md"]
 commits = ["5a78f8c"]
 status = "done"
 dedup_id = "075d866bd2bcef0a"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "migrate-plan-new-phase-3-and-phase-5"
+summary = "Migrated /plan-new Phase 3 (≤2-agent research) and Phase 5 (≤1-agent directed research) from subagent_type=general-purpose to flow-research. Stripped Context7/WebSearch contract restatements, finding-record template defaults, and ≤500w/≤10-finding cap defaults. Updated 'Important Constraints' line for the new subagent_type. Plan + Explore dispatch sites untouched."
+files = ["claude/commands/plan-new.md"]
+commits = ["7958916"]
+status = "done"
+dedup_id = "0e30fcc5c6818e17"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "migrate-plan-update-catchup-agent-2"
+summary = "Migrated /plan-update catchup Agent 2 ONLY to subagent_type=flow-research; Agents 1 and 3 remain on general-purpose. Reconcile and reformat ops untouched. Stripped Context7/WebSearch contract restatements from Agent 2's prompt. Inline migration-note HTML comment added near catchup dispatch (lines 586-590) listing which agent migrated and why the others did not — guard against future-maintainer drift."
+files = ["claude/commands/plan-update.md"]
+commits = ["7958916"]
+status = "done"
+dedup_id = "8d800472ca8202f8"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "migrate-test-bootstrap-phase-2"
+summary = "Migrated /test-bootstrap Phase 2 4-lens dispatch to subagent_type=flow-research. Stripped Context7+WebSearch citation requirement and maintenance-gap/CVE/deprecation flag bullet — now in agent system prompt. Test-bootstrap-specific 2-3 candidates output shape, per-candidate ≤400w cap, profile-suitability ranking, and per-lens (Test runner / Coverage / Mutation+Property / CI integration) focus all retained."
+files = ["claude/commands/test-bootstrap.md"]
+commits = ["7958916"]
+status = "done"
+dedup_id = "d26b44156d1ebf74"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-04-30
+agent = "implement"
+summary = "cargo build passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-04-30
+agent = "implement"
+summary = "cargo test FAILED — 3 pre-existing Windows-path tests in tomlctl/src/orphans.rs (R28-probe + 2 related). Not Phase D-caused — Phase D touched zero Rust source. See deviation E25."
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "fail"
+dedup_id = "cd1151da79237a0e"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-04-30
+agent = "implement"
+summary = "cargo clippy passed (orchestrator-direct rerun after verification agent short-circuited on test fail)"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "5bccc975f1ebe1be"
+
+[[items]]
+id = "E25"
+type = "deviation"
+date = 2026-04-30
+agent = "implement"
+task_ref = "phase-e-full-package-verification"
+summary = 'Phase E cargo-test fail not addressed — pre-existing Windows-path bug in tomlctl/src/orphans.rs (3 R28-probe tests embed Path::display() output verbatim into TOML strings; Windows extended paths \\?\C:\... fail TOML escape parsing).'
+original_intent = "Phase E (Task 18) acceptance criterion: all four verification commands exit 0."
+rationale = "The failing tests live in tomlctl/src/orphans.rs and were added in commit 1900585 (Apply tomlctl-capability-gaps review findings). Phase D scope is claude/commands/*.md plus ~/.claude/agents/*.md only — zero Rust source changes. Test failures are environmental (Windows tempdir path escaping in toml::from_str) and unrelated to the migration work. Recommend a follow-up tomlctl fix to either (a) escape backslashes when interpolating Path::display() into TOML literals, or (b) use raw-string TOML literals (triple-quoted) for path fields. Tracking outside this flow."
+commits = ["7958916"]
+dedup_id = "df75410e21f660be"
+
+[[items]]
+id = "E26"
+type = "verification"
+date = 2026-04-30
+agent = "implement"
+summary = "Shared-block parity confirmed manually via PowerShell SHA256 over inter-marker content for all 7 blocks (flow-context, ledger-schema, execution-record-schema, apply-dependency-sort, apply-rollback-protocol, apply-constraints, ledger-disposition-sweep) — byte-identical across every carrier listed in scripts/shared-blocks.toml. Note: tomlctl blocks verify reports false-positive drift (END markers flagged as 'probable typo'd' despite valid format) — separate tomlctl 0.3.0 regression unrelated to Phase D."
+command = "powershell parity-hash check (manual; tomlctl blocks verify regression bypassed)"
+outcome = "pass"
+dedup_id = "e984d12a16bfb60e"

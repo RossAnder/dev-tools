@@ -11,8 +11,8 @@ scope = [
 
 [tasks]
 total = 18
-completed = 9
-in_progress = 9
+completed = 17
+in_progress = 0
 
 [artifacts]
 review_ledger = ".claude/flows/specialised-flow-agents/review-ledger.toml"
