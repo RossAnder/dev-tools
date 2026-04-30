@@ -380,9 +380,10 @@ From the loaded ledger, extract all items whose `file` overlaps with the current
 
 If no ledger was loaded, this is a first review — proceed without prior context.
 
+<!-- SHARED-BLOCK:ledger-disposition-sweep START -->
 ### Orphan surfacing (read-only)
 
-After the ledger loads and before scoping the agent launch, walk every `[[items]]` entry in the resolved ledger whose `status == "open"` and report orphans to the console without auto-transitioning:
+After the ledger loads and before the dispatch section, walk every `[[items]]` entry in the resolved ledger whose `status == "open"` and report orphans to the console without auto-transitioning:
 
 - **File orphan**: the item's `file` path no longer exists. Detect via a single `Glob` call per unique path, or — for small ledgers — a batched `Test-Path` / `[ -e <path> ]` check.
 - **Symbol orphan**: the item has a non-empty `symbol` field and a `Grep` for that symbol (name-only, not exact-match) against the current file tree returns no results. Use one `Grep` call with `output_mode: "files_with_matches"` over the repo to avoid per-item lookups.
@@ -390,15 +391,15 @@ After the ledger loads and before scoping the agent launch, walk every `[[items]
 For each orphan, emit a one-line console note in Step 3's report:
 
 ```
-orphan R7 — file `src/old-module.rs` no longer present (check for rename; run /review if the work has moved)
-orphan R12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run /review at the new location)
+orphan <id>7 — file `src/old-module.rs` no longer present (check for rename; run the active flow command if the work has moved)
+orphan <id>12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run the active flow command at the new location)
 ```
 
 Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above.
 
 ### Deferred-item reopen sweep
 
-After orphan surfacing and before Step 2, walk every `[[items]]` entry with `status = "deferred"` and check whether each item's `defer_trigger` has fired. Known trigger forms (literal substring match on `defer_trigger`):
+After orphan surfacing and before the dispatch section, walk every `[[items]]` entry with `status = "deferred"` and check whether each item's `defer_trigger` has fired. Known trigger forms (literal substring match on `defer_trigger`):
 
 - `after <path> exists` → test `[ -e <path> ]` (or `Test-Path <path>` on Windows).
 - `after <file>:<symbol> landed` → test `<file>` exists AND `grep -qF "<symbol>" <file>` finds a match.
@@ -410,8 +411,8 @@ After orphan surfacing and before Step 2, walk every `[[items]]` entry with `sta
 For each fired trigger, prompt the user with the item's `id`, `summary`, and the matched trigger text:
 
 ```
-deferred R{n} — trigger fired: <matched trigger>
-  summary: <R{n}.summary>
+deferred <id> — trigger fired: <matched trigger>
+  summary: <summary>
 Reopen?
   [y] reopen (status → open, reopen_rationale recorded)
   [n] skip (leave deferred)
@@ -421,8 +422,9 @@ Reopen?
 On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops -` at the end of the sweep: set `status = "open"`, preserve `defer_reason` (audit trail), drop `defer_trigger`, set `reopen_rationale = "trigger fired: <matched trigger text>"`. Never auto-transition silently — every reopen passes through the prompt.
 
 Non-interactive invocations surface candidates only (`found N deferred items with fired triggers; re-run interactively to reopen`) and do not mutate the ledger.
+<!-- SHARED-BLOCK:ledger-disposition-sweep END -->
 
-**Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent instead of five (or six) specialized ones. Give it all six lenses (5 standard + package-quality if any reviewed file is under `claude/commands/` or `claude/skills/`), all mandatory tool-use requirements (Context7 and WebSearch), the prior findings context, and a cap of 20 findings.
+**Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent (`subagent_type: "flow-research"`) instead of five (or six) specialized ones. Give it all six lenses (5 standard + package-quality if any reviewed file is under `claude/commands/` or `claude/skills/`), the prior findings context, and a cap of 20 findings.
 
 **Conditional 6th lens (package-quality)**: If any reviewed file's path begins with `claude/commands/` or `claude/skills/`, also launch Agent 6 in the same parallel batch (6 agents instead of 5). The lens is static-analysis only — frontmatter quality, structural completeness, content depth, internal consistency, shared-block compliance — and emits findings under category `package-quality`.
 
@@ -442,21 +444,19 @@ As agents transition, call `TaskUpdate` to move each task `pending → in_progre
 
 Gate task creation on `scope > 1 file` for `/review` to avoid noise on trivial runs — for a single-file scope, the small-diff shortcut collapses to one agent and task chrome adds little value.
 
-Launch **all five** review agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the file list, classification, and prior findings context from Step 1.
+Launch **all five** review agents in parallel using the Agent tool (subagent_type: "flow-research"). Provide each agent with the file list, classification, and prior findings context from Step 1.
 
 **IMPORTANT: You MUST make all five (or six, if package-quality fires) Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five or six Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of five or six agents. Each agent provides specialized, parallel analysis that cannot be replicated by fewer passes.
 
 Every agent MUST:
 - Read each changed file in full and read related/surrounding code to build context
-- You MUST use Context7 MCP tools (resolve-library-id then query-docs) to verify library and framework API usage for correctness — do not rely on training data alone
-- You MUST use WebSearch when uncertain about best practices, deprecation status, or current guidance for a specific technology
 - Adapt their review to the nature of the code — a UI component needs different scrutiny than a database query
 - Check the prior findings context and note if a finding matches a previously tracked item per the dedup rule in the `## Ledger Schema` section (same `file` AND (same non-empty `symbol` OR exact `summary` match))
 - **Return findings as a structured list** where each finding supplies the fields required by the `## Ledger Schema`:
   - **Required**: `file` (repo-relative path), `line` (integer; `0` if no specific line), `severity` (`critical` | `warning` | `suggestion`), `effort` (`trivial` = < 5 min / mechanical, `small` = < 30 min / localized, `medium` = > 30 min / cross-cutting), `category` (one of `quality` | `security` | `architecture` | `completeness` | `db` | `testability`), `summary` (one-line description of what's wrong AND what to do).
   - **Optional**: `symbol` (function / struct / trait method name — strongly recommended for line-drift resilience), `description` (longer explanation when summary is insufficient), `evidence` (array of doc URLs, Context7 citations, or supporting references).
 - Do not emit `id`, `first_flagged`, `rounds`, or `status` — those are assigned during consolidation in Step 3.
-- **Return at least 3 findings if issues exist in the reviewed code. Target 15 findings per agent (ceiling 20).** Opus 4.7's 1M context sustains a larger per-agent output than the 10-finding cap used by shorter-context models; raise only as high as signal warrants — padding with marginal `suggestion`-severity items is not the goal. If you exceed 20, apply this truncation-priority order: (1) preserve `critical` and `warning` severities over `suggestion`; (2) within severity, preserve entries with non-empty `evidence[]` (doc URL, Context7 citation, benchmark) over assumption-only findings; (3) preserve findings with a concrete `file:symbol` anchor over line-only anchors; (4) never cut a file path or API signature in favour of narrative prose. Do not self-truncate below the floor — thoroughness is expected. Do not include full file contents in your response — reference by `file:line` only.
+- **Return at least 3 findings if issues exist in the reviewed code. Target 15 findings per agent (ceiling 20). NOTE: this 20-finding ceiling overrides the flow-research agent's default ≤10 cap for /review's higher-signal lens decomposition.** Opus 4.7's 1M context sustains a larger per-agent output than the 10-finding cap used by shorter-context models; raise only as high as signal warrants — padding with marginal `suggestion`-severity items is not the goal. If you exceed 20, apply this truncation-priority order: (1) preserve `critical` and `warning` severities over `suggestion`; (2) within severity, preserve entries with non-empty `evidence[]` (doc URL, Context7 citation, benchmark) over assumption-only findings; (3) preserve findings with a concrete `file:symbol` anchor over line-only anchors; (4) never cut a file path or API signature in favour of narrative prose. Do not self-truncate below the floor — thoroughness is expected. Do not include full file contents in your response — reference by `file:line` only.
 
 ### Agent 1: Code Quality, DRY, Idioms & Pattern Conformance
 

@@ -1,0 +1,160 @@
+schema_version = 1
+last_updated = 2026-04-30
+
+[[items]]
+id = "E1"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "create-flow-research-agent"
+summary = "Created ~/.claude/agents/flow-research.md (Sonnet, research workload, Context7+WebSearch tools, no Edit/Write/Bash)"
+files = ["~/.claude/agents/flow-research.md"]
+status = "done"
+dedup_id = "6191673d0fad84f3"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "create-flow-implement-lite-agent"
+summary = "Created ~/.claude/agents/flow-implement-lite.md (Sonnet, mechanical apply work, gated by orchestrator's lite-eligibility check)"
+files = ["~/.claude/agents/flow-implement-lite.md"]
+status = "done"
+dedup_id = "7cc26301b6866cd0"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "create-flow-implement-deep-agent"
+summary = "Created ~/.claude/agents/flow-implement-deep.md (Opus, default for apply/implement work, cross-file + ambiguous-spec + security-sensitive paths)"
+files = ["~/.claude/agents/flow-implement-deep.md"]
+status = "done"
+dedup_id = "d92fa476a5528454"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "create-verification-agent"
+summary = "Created ~/.claude/agents/verification.md (Haiku, run-one-command pass|fail reporter, no aggregation/retry/interpretation)"
+files = ["~/.claude/agents/verification.md"]
+status = "done"
+dedup_id = "64dfdefd4c7c7ecb"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "reconcile-orphan-surfacing-prose-to-byte-identity"
+summary = "Reconciled orphan-surfacing + deferred-item-reopen-sweep prose between review.md and optimise.md to byte-identity (R/O ID prefixes -> <id> placeholder, /review and /optimise -> 'the active flow command', step refs -> 'before the dispatch section'); lifted optimise.md tomlctl-fallback clause outside the future block boundary"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+]
+status = "done"
+dedup_id = "de3dc7c5935b5a6f"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "add-markers-and-manifest-entry-for-ledger-disposition-sweep"
+summary = "Added <!-- SHARED-BLOCK:ledger-disposition-sweep START/END --> markers wrapping the reconciled orphan+deferred section in review.md and optimise.md; appended new [[block]] entry for ledger-disposition-sweep to scripts/shared-blocks.toml listing both files"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "scripts/shared-blocks.toml",
+]
+status = "done"
+dedup_id = "547fb44d1703fb6b"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "verify-shared-block-parity-end-to-end"
+summary = "Ran shared-block parity verifier; new ledger-disposition-sweep block joins the existing six (flow-context, ledger-schema, execution-record-schema, apply-dependency-sort, apply-rollback-protocol, apply-constraints) with byte-identity confirmed across all carriers"
+status = "done"
+dedup_id = "2fd8318ed02e79af"
+
+[[items]]
+id = "E8"
+type = "verification"
+date = 2026-04-29
+agent = "implement"
+summary = "Shared-block parity verifier passes; ledger-disposition-sweep block byte-identical across review.md and optimise.md"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "d2629e9892f9ec9b"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-04-29
+agent = "implement"
+task_ref = "promote-ledger-disposition-sweep"
+summary = "Narrowed shared block scope: orphan-surfacing + deferred-item-reopen-sweep only; clock-skew validation NOT promoted"
+original_intent = "Promote orphan-surfacing + deferred-item-reopen-sweep + clock-skew validation as a single ledger-disposition-sweep shared block per audit deliverable #3"
+rationale = "Clock-skew validation lives at line 552 in optimise.md within Step 3's separate ledger-reload, while review.md has it at line 374 adjacent to orphan-surfacing. Co-locating in optimise.md would require moving clock-skew up to the pre-Step-1.5 position, which changes WHEN the validation runs (against early ledger-load instead of Step 3's reload). That restructure exceeds Task 5's surgical-edit scope. Promoted only the ~40-line orphan+deferred core (the high-value drift hazard the audit highlighted); clock-skew remains duplicated separately and can be addressed in a follow-up plan if needed."
+dedup_id = "041b358d871b4874"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "migrate-optimise-step-2-research-dispatch"
+summary = "Changed /optimise Step 2 lens dispatch from subagent_type=general-purpose to flow-research (Sonnet). Added clarifying note that the agent absorbs Context7-first/WebSearch-second contract and version-pinning; per-call instructions below override defaults for optimise-specific finding-record fields and 15-20 finding cap."
+files = ["claude/commands/optimise.md"]
+status = "done"
+dedup_id = "2a94551cd4abc255"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-04-29
+agent = "implement"
+task_ref = "migrate-optimise-apply-step-4-cluster-dispatch-and-step-5-verification"
+summary = "Installed lite-eligibility gate before Step 4 cluster dispatch (4 criteria + coupling-isolation rule); orchestrator picks flow-implement-deep (default) or flow-implement-lite per cluster with one-line DISPATCH header rationale. Replaced Step 5 monolithic verification with two-stage structure: 5a mechanical build/test via verification agent (Haiku, run-one-command), 5b concurrency-semantic check inline by orchestrator (Opus), 5c failure handling reasons through then dispatches flow-implement-deep/-lite for fixes. Critical-finding user-confirmation gate at lines ~570 unchanged."
+files = ["claude/commands/optimise-apply.md"]
+status = "done"
+dedup_id = "ffc7b73a990062cf"
+
+[[items]]
+id = "E12"
+type = "status-transition"
+date = 2026-04-30
+agent = "implement"
+summary = "status draft → in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "2fb725502d5439ab"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "extend-verification-agent-to-command-list"
+summary = "Extended ~/.claude/agents/verification.md to accept a commands: list (back-compat with single command:); runs sequentially, short-circuits on first fail, emits one report block per attempted command with not_run: line listing unrun remainder. Driven by Apr 29-30 pilot audit finding N parallel single-command spawns wasted Opus round-trips for ~9-20s Haiku work each."
+files = ["~/.claude/agents/verification.md"]
+status = "done"
+dedup_id = "cbab6c28d1b8ad10"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "update-optimise-apply-step-5a-to-list-pattern"
+summary = "Replaced /optimise-apply Step 5a per-command verification dispatch with single-spawn full-ordered-list pattern; stripped per-spawn boilerplate now in agent system prompt. Lift documented as Recommendation B from the Phase C pilot audit."
+files = ["claude/commands/optimise-apply.md"]
+status = "done"
+dedup_id = "dfe0b5e03455981d"

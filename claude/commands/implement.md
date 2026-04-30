@@ -385,6 +385,32 @@ Include this tool guidance in each agent's prompt, tailored to its task:
 - **Codebase exploration**: "Read related files to understand existing patterns before writing new code. Match the style, naming, and structure of surrounding code."
 - **Diagnostics**: "LSP diagnostics are reliable when you first open a file and useful for understanding existing issues. However, after making edits, new diagnostics may be stale — do not automatically act on post-edit diagnostics. If new diagnostics appear after your edits, re-read the flagged lines to verify the issue is real before attempting a fix. For definitive verification, run a targeted build command (e.g. `cargo check -p crate_name`, `dotnet build path/to/Project.csproj`, `tsc --noEmit`) rather than relying on LSP. Leave full build and test runs to the verification agent."
 
+### Lite-eligibility gate (per-task dispatch)
+
+Before dispatching each task (or batch of parallel tasks), evaluate the **lite-eligibility gate** to select the correct sub-agent type. The orchestrator picks `flow-implement-deep` (default) or `flow-implement-lite` per task/batch; dispatch to `-lite` ONLY when ALL four criteria hold for EVERY task in the batch.
+
+**Primary input — plan task effort tag:**
+
+- **`S` (small)** — lite-eligible SUBJECT to all four criteria below (AND-combined). Evaluate all four; if any fails, dispatch to `-deep`.
+- **`M` or `L`** — ALWAYS dispatch to `flow-implement-deep`. Do NOT evaluate the other criteria; the effort tag alone is sufficient to escalate.
+- **No tag / unknown** — treat as `M` and dispatch to `-deep`.
+
+**The four criteria (for `S`-tagged tasks only):**
+
+1. **File scope** ≤ 2 files for the task as a whole.
+2. **Action fully specified** — the task's `Action` + `Detail` fields (or equivalent) describe the exact change. No design decisions are left to the implementer.
+3. **No cross-file refactor** — the task does not require coordinated edits to call sites, type definitions, or interfaces in files outside its stated file set.
+4. **Not security-sensitive** — the task does not touch auth, crypto, input-validation, sandbox-boundary, or token-storage code.
+
+**Coupling-isolation rule (for parallel batches):** if ANY task in the batch is `M`/`L` OR fails any of the four criteria, the **entire batch** goes to `flow-implement-deep`. Lite is reserved for batches whose every task is independently lite-eligible. Do NOT peel individual tasks out of a coupled batch to send them to `-lite`.
+
+**DISPATCH header (mandatory):** record the lite-vs-deep choice as a one-line `DISPATCH:` header at the top of each agent prompt. Examples:
+
+- `DISPATCH: flow-implement-lite — task is S, passes all 4 criteria (1 file, fully-specified action, no cross-cutting impact, non-security path)`
+- `DISPATCH: flow-implement-deep — effort=M; criterion #1 (effort tag) fails`
+- `DISPATCH: flow-implement-deep — coupling-isolation: batch contains task <name> (effort=L)`
+- `DISPATCH: flow-implement-deep — criterion #4 fails: task touches auth middleware`
+
 ### Batch execution
 
 **Reminder**: `<record>` below refers to the path resolved in Phase 1 (`.claude/flows/<slug>/execution-record.toml`), NOT the bare filename.
@@ -461,16 +487,9 @@ If a change spans many files (e.g. renaming an interface used in 15 places):
 
 ## Phase 3: Verify
 
-After all batches complete, launch a **verification sub-agent** (keeps verbose build/test output out of the main context):
+After all batches complete, determine the verification commands (if not already extracted in Phase 1): check (a) CLAUDE.md for documented commands, (b) project root files (e.g. Cargo.toml, package.json, *.sln, Makefile, pyproject.toml). If ambiguous, ask the user.
 
-The verification agent MUST:
-- **Use the verification commands from the plan** if they were extracted in Phase 1. Do not re-discover commands that are already known.
-- If no commands were provided from the plan, determine the project's build and test commands by checking: (a) CLAUDE.md for documented commands, (b) project root files (e.g. Cargo.toml, package.json, *.sln, Makefile, pyproject.toml). If ambiguous, ask the user.
-- Run the appropriate build commands
-- Run relevant tests
-- If builds or tests fail, report the specific errors with file paths and line numbers
-- Return a concise summary — not the full build/test output
-- **Report each command that was actually executed**, including the exact command string and a `pass` / `fail` outcome. The orchestrator uses this to write one `type=verification` entry per command into `<record>` (see below). Do not aggregate across commands and do not omit commands that succeeded.
+Launch the `verification` agent **once** (`subagent_type: "verification"`, pinned to Haiku) with the full ordered command list in a `commands:` field — build first, then tests, then lint. The agent runs them sequentially and short-circuits on the first `fail`, returning one `command:` + `outcome:` block per attempted command (with `tail:` on failure and a `not_run:` line listing the unrun remainder). Do not restate the agent's reporting contract in the prompt — it lives in the agent's system prompt.
 
 **Per verification command actually executed, append one `type=verification` entry to `<record>`** using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields: `command` (the exact command string the verification agent ran, byte-for-byte) and `outcome` ∈ {`pass`, `fail`}. One entry per command — a verification phase that ran build + test + lint produces three entries. Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
 

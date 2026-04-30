@@ -1,0 +1,21 @@
+slug = "specialised-flow-agents"
+plan_path = "docs/plans/specialised-flow-agents.md"
+status = "in-progress"
+created = 2026-04-29
+updated = 2026-04-30
+branch = "main"
+scope = [
+    "claude/commands/**",
+    "scripts/**",
+]
+
+[tasks]
+total = 18
+completed = 9
+in_progress = 9
+
+[artifacts]
+review_ledger = ".claude/flows/specialised-flow-agents/review-ledger.toml"
+optimise_findings = ".claude/flows/specialised-flow-agents/optimise-findings.toml"
+execution_record = ".claude/flows/specialised-flow-agents/execution-record.toml"
+plan_review_findings = ".claude/flows/specialised-flow-agents/plan-review-findings.toml"

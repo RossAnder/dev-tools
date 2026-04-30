@@ -54,3 +54,10 @@ files = [
   "claude/commands/optimise-apply.md",
   "claude/commands/review-apply.md",
 ]
+
+[[block]]
+name = "ledger-disposition-sweep"
+files = [
+  "claude/commands/review.md",
+  "claude/commands/optimise.md",
+]

@@ -133,17 +133,15 @@ This command works with any plan format — structured work packages, wave-based
 
 ## Step 2: Launch Parallel Review Agents
 
-Launch **all four** review agents in parallel using the Agent tool (subagent_type: "general-purpose"). Provide each agent with the full plan content.
+Launch **all four** review agents in parallel using the Agent tool (subagent_type: "flow-research"). Provide each agent with the full plan content.
 
 **IMPORTANT: You MUST make all four Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing four Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of four agents. Each agent provides a specialized review perspective that cannot be replicated by fewer passes.
 
 Every agent MUST:
 - Read the plan document(s) in full
 - Explore the actual codebase to validate the plan's claims — read the files the plan references, search for patterns the plan assumes exist, verify paths and line numbers
-- You MUST use Context7 MCP tools (resolve-library-id then query-docs) to verify that APIs, libraries, and framework features referenced in the plan actually exist and work as described — do not rely on training data alone
-- You MUST use WebSearch to check for updated guidance on technologies the plan relies on — the plan may have been written with outdated assumptions
 - Return findings as a structured list with references to specific plan sections
-- **Return at least 3 findings if issues exist. Cap at 10 findings per agent.** Prioritize by impact. Do not self-truncate below the floor — thoroughness is expected.
+- **Return at least 3 findings if issues exist.** Do not self-truncate below the floor — thoroughness is expected.
 
 ### Agent 1: Feasibility, Codebase Alignment & Dependencies
 
