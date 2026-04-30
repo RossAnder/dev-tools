@@ -106,7 +106,7 @@ A single JSON blob (or TOML — pick one and stay consistent within an invocatio
 
 ## Phase 2: Parallel research-agent fan-out
 
-Dispatch **4 research agents in a single response message** (one Agent tool-use block per agent), each given the full Project Profile from Phase 1. Mirrors `/optimise`'s Step 2 parallel lens dispatch — the orchestrator MUST NOT serialise these calls.
+Dispatch **4 research agents in a single response message** (one Agent tool-use block per agent, each with `subagent_type: "flow-research"`), each given the full Project Profile from Phase 1. Mirrors `/optimise`'s Step 2 parallel lens dispatch — the orchestrator MUST NOT serialise these calls.
 
 ### Standard prompt template (literal-equal preamble for cache hit)
 
@@ -114,13 +114,9 @@ Place this preamble at the top of each agent prompt, byte-identical across all f
 
 > **Project Profile**: <full JSON blob from Phase 1>
 >
-> **Your task**: Use Context7 (resolve-library-id then query-docs) and WebSearch to surface current best-practice options for **{decision}** given this profile. Return 2-3 ranked candidates with: package name, version range (e.g. `^4.2.0`), install command, config-file template (verbatim, ready to write), recent breaking changes summary (≤6 months back), and one-paragraph rationale tying the candidate to the profile signals (scale / project_type / ci_provider / performance_signal).
+> **Your task**: Surface current best-practice options for **{decision}** given this profile. Return 2-3 ranked candidates with: package name, version range (e.g. `^4.2.0`), install command, config-file template (verbatim, ready to write), recent breaking changes summary (≤6 months back), and one-paragraph rationale tying the candidate to the profile signals (scale / project_type / ci_provider / performance_signal).
 >
-> **Mandatory constraints**:
-> - Cite at least one Context7 query result and one WebSearch result per candidate. No training-data-only recommendations.
-> - Flag any candidate with a maintenance gap >12 months, a recent CVE, or a deprecation notice.
-> - Cap output at ~400 words per candidate to keep Phase 3 synthesis tractable.
-> - Rank candidates by suitability for THIS profile, not by generic popularity.
+> Cap output at ~400 words per candidate to keep Phase 3 synthesis tractable. Rank candidates by suitability for THIS profile, not by generic popularity.
 
 Per-agent divergence (lens, decision domain, output schema) goes below a clear divider:
 

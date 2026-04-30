@@ -158,3 +158,51 @@ summary = "Replaced /optimise-apply Step 5a per-command verification dispatch wi
 files = ["claude/commands/optimise-apply.md"]
 status = "done"
 dedup_id = "dfe0b5e03455981d"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "migrate-review-step-2-research-dispatch"
+summary = "Migrated /review small-diff (line 427) and 5-lens parallel dispatch (line 447) from subagent_type=general-purpose to flow-research (Sonnet). Stripped Context7/WebSearch contract restatements; added 20-finding ceiling override note distinguishing /review's per-call cap from agent's default 10."
+files = ["claude/commands/review.md"]
+commits = ["5a78f8c"]
+status = "done"
+dedup_id = "fdc130313621b43c"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "migrate-review-apply-step-4-and-step-5"
+summary = "Installed lite-eligibility gate at /review-apply Step 4 (line 469) — 4 criteria + coupling-isolation rule + DISPATCH-header mandate selecting flow-implement-deep (default) or flow-implement-lite. Replaced Step 5 verification block (line 536+) with single-spawn verification agent pattern carrying full ordered commands list (build → test → category-specific). No critical-finding gate added — that remains optimise-only per plan §12."
+files = ["claude/commands/review-apply.md"]
+commits = ["5a78f8c"]
+status = "done"
+dedup_id = "0db8e9ccad467ba2"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "migrate-review-plan-step-2-research-dispatch"
+summary = "Migrated /review-plan Step 2 4-lens dispatch (line 136) from subagent_type=general-purpose to flow-research. Stripped Context7/WebSearch contract restatements and default-cap restatements from shared Every-agent-MUST bullet list; per-lens focus directives and 4-lens partition retained."
+files = ["claude/commands/review-plan.md"]
+commits = ["5a78f8c"]
+status = "done"
+dedup_id = "1e9da74997aeebc2"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-04-30
+agent = "implement"
+task_ref = "migrate-implement-phase-2-and-phase-3"
+summary = "Inserted Phase 2 lite-eligibility gate (effort=S subject to other 3 criteria; M/L always escalate; coupling-isolation rule for batches; DISPATCH-header mandate). Replaced Phase 3 9-bullet verification dispatch with single-spawn verification agent (Haiku) carrying full ordered commands list. Per-spawn reporting-contract boilerplate stripped — now in agent system prompt."
+files = ["claude/commands/implement.md"]
+commits = ["5a78f8c"]
+status = "done"
+dedup_id = "075d866bd2bcef0a"
