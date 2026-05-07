@@ -1,6 +1,6 @@
 ---
 description: Update plan documents — track progress, deviations, deferrals, and reconcile against codebase
-argument-hint: [plan path] [operation: status|deviation|defer|reconcile|snapshot|reformat|catchup|migrate]
+argument-hint: [plan path] [operation: status|complete|deviation|defer|reconcile|snapshot|reformat|catchup|migrate]
 ---
 
 <!-- SHARED-BLOCK:flow-context START -->
@@ -317,7 +317,7 @@ Once a flow is resolved, read its `.claude/flows/<slug>/context.toml` — the `p
    - Update `[tasks].total` (plan-document-driven) and **derive `[tasks].completed`** from `<record>` per Task 6's recipe in Step 3 (distinct-slug count over `task-completion` entries with `status=done`). Leave `[tasks].in_progress` untouched (honours § flow-context field responsibilities).
    - **Preserve `created` verbatim.** Never regenerate it. Preserve key order. Do not introduce inline comments.
    - If `[artifacts]` is absent, compute it from `slug` and write it back on this same update. If `[artifacts].execution_record` points at a path that does not yet exist, bootstrap the file via a **single atomic `Write`** of the literal content `schema_version = 1\nlast_updated = <today>\n`, then IMMEDIATELY run `tomlctl integrity refresh <path>` to materialise the `.sha256` sidecar, before any `tomlctl items add` / `list` / `get` call. Do NOT use the legacy 3-step (zero-byte `Write` + two `tomlctl set`) form — it is non-atomic and exposes a TOCTOU window to concurrent readers. Skipping the integrity refresh step leaves the file without a sidecar, which makes every downstream `--verify-integrity` read fail until the refresh is retried.
-   - If all plan items are now complete (or all remaining items are deferred), set `status = "complete"`. If the plan has entered a review phase between implementation rounds, set `status = "review"`. Append a `type=status-transition` entry whenever the value changes.
+   - If all plan items are now complete (or all remaining items are deferred), set `status = "review"` — NOT `"complete"`. The `review` status indicates "implementation finished, awaiting explicit user sign-off" and keeps the flow targetable by `/review`, `/optimise`, `/optimise-apply`, and `/review-apply` (their resolution filter is `status != "complete"`, which `review` satisfies). The user transitions `review → complete` by explicitly invoking the `/plan-update <plan> complete` op (see Operations below) — auto-transition to `complete` is forbidden because it strands a freshly-implemented plan beyond auto-resolution before the user has had a chance to /review or /optimise it. Append a `type=status-transition` entry whenever the value changes.
 4. If no progress log exists for the plan, offer to create one.
 
 ## Step 2: Determine Operation
@@ -334,9 +334,32 @@ Both `reformat` and `catchup` rewrite plan files and MUST honour this rule. `tas
 
 ### Operations
 
+#### `complete` — Explicitly mark the flow as complete
+
+User-invoked op. The ONLY path that may set `status = "complete"` (auto-transitions are forbidden — see the `status` op and `defer` op rules above). Run when the user has finished `/review`-ing and `/optimise`-ing the implemented plan and is ready to drop it from auto-resolution.
+
+The op:
+
+1. Read `<old_status>` from `context.toml` via `tomlctl get .claude/flows/<slug>/context.toml status --verify-integrity`.
+2. **Refuse to transition from `draft`** — a plan that was never `in-progress` cannot be `complete`. Surface the error and exit. The user must run `/implement` (or manually transition via the `status` op below) first.
+3. **No-op if already `complete`.** Print a one-line confirmation and exit (no log entry, no render).
+4. Otherwise (status is `in-progress` or `review`): set `status = "complete"` in `context.toml`. Set `updated` to today. Preserve `created` verbatim and preserve key order.
+5. Append a `type=status-transition` entry to `<record>` with `from_status = <old_status>`, `to_status = "complete"`, `summary = "User explicitly marked flow complete via /plan-update <slug> complete"`. Mint the id with `tomlctl items next-id <record> --prefix E`. Always conclude with `tomlctl set <record> last_updated <today>`.
+6. Invoke the **render-from-log routine** to regenerate `PROGRESS-LOG.md`.
+7. Print a one-line confirmation: `flow <slug>: status <old_status> → complete. Auto-resolution will skip this flow on subsequent /review, /optimise, /implement runs (use --flow <slug> to target explicitly).`
+
+**Warn-if-incomplete gate.** Before writing the transition, count outstanding items from the resolved review/optimise ledgers (if they exist):
+
+```
+tomlctl items list .claude/flows/<slug>/review-ledger.toml --status open --count --raw 2>/dev/null
+tomlctl items list .claude/flows/<slug>/optimise-findings.toml --status open --count --raw 2>/dev/null
+```
+
+If either count is > 0, surface the count to the user via `AskUserQuestion` with two options: `Mark complete anyway` (proceeds) or `Cancel` (exits without writing). The gate prevents accidentally completing a flow that still has unresolved findings; users can override when the open items are intentionally deferred / wontfix and just haven't been transitioned.
+
 #### `status` — Update completion markers (reconciler-contract bound)
 
-Scan plan items against the codebase and git history. For each plan task/item, check whether the referenced files exist, the described changes are present, and relevant tests pass. Then apply the **reconciler contract** below before any append, regenerate `PROGRESS-LOG.md` via the render-from-log routine, and update `context.toml` (set `updated` to today, derive `[tasks].completed` per Task 6's recipe in Step 3, preserve `created` verbatim, write `status` ∈ {`in-progress`, `review`, `complete`} per the rules in `## Flow Context`). Leaves `[tasks].in_progress` untouched (honours § flow-context field responsibilities).
+Scan plan items against the codebase and git history. For each plan task/item, check whether the referenced files exist, the described changes are present, and relevant tests pass. Then apply the **reconciler contract** below before any append, regenerate `PROGRESS-LOG.md` via the render-from-log routine, and update `context.toml` (set `updated` to today, derive `[tasks].completed` per Task 6's recipe in Step 3, preserve `created` verbatim, write `status` ∈ {`in-progress`, `review`} per the rules in `## Flow Context` — this op MUST NOT write `status = "complete"`; only the `complete` op above may do so). Leaves `[tasks].in_progress` untouched (honours § flow-context field responsibilities).
 
 ##### RECONCILER CONTRACT
 
@@ -384,7 +407,7 @@ Move a plan item to the deferrals section. The agent MUST:
 - Append a `type=deferral` entry to `<record>` using the canonical two-call heredoc pattern from the `## Execution Record Schema` shared block above. Required fields beyond the always-required five: `task_ref` (opaque title slug of the deferred task), `reason`, `reevaluate_when`. Optional: `legacy_id = "DF<n>"` — only set by the `migrate` op when back-filling from a legacy hand-authored `PROGRESS-LOG.md`; the active `defer` op MUST NOT populate it.
 - Mint the new `id` via `tomlctl items next-id <record> --prefix E` so the E-counter stays monotonic.
 - This op MUST NOT mint legacy IDs of any kind (honours § flow-context field responsibilities — leaves `[tasks].in_progress` untouched).
-- After the append, invoke the **render-from-log routine** (see `### Render-from-log routine` below) to regenerate `PROGRESS-LOG.md`. Then update `context.toml`: set `updated` to today, derive `[tasks].completed` per Task 6's recipe (Step 3 below), preserve `created` verbatim. If every remaining non-complete item is now deferred (after consulting the log), set `status = "complete"`.
+- After the append, invoke the **render-from-log routine** (see `### Render-from-log routine` below) to regenerate `PROGRESS-LOG.md`. Then update `context.toml`: set `updated` to today, derive `[tasks].completed` per Task 6's recipe (Step 3 below), preserve `created` verbatim. If every remaining non-complete item is now deferred (after consulting the log), set `status = "review"` — NOT `"complete"` (per the explicit-sign-off rule documented in the `status` op above; only `/plan-update <plan> complete` may set `status = "complete"`).
 
 The two-call heredoc shape matches the `deviation` op example above; substitute `type=deferral` and the deferral-specific required fields (`task_ref`, `reason`, `reevaluate_when`) per the Execution Record Schema type vocabulary.
 
@@ -422,7 +445,7 @@ After both agents return, produce the reconciliation report **and apply all upda
 - Set `updated` to today's date (honours the date-validation check defined in Step 3 Task 6).
 - Preserve `created` verbatim.
 - **Refine `scope`** if reconciliation reveals the plan's actual edits touched paths outside the original `scope` — add the new globs/paths (prefer `<dir>/**` glob form for directories). Never shrink `scope` below its initial derivation unless the user explicitly asks.
-- Set `status` to `complete` if every item reconciled as done (or deferred); otherwise `in-progress` (or `review` if the plan has explicitly entered a review phase). If `status` changes value, append a `type=status-transition` entry per the reconciler contract.
+- Set `status` to `review` if every item reconciled as done (or deferred); otherwise `in-progress`. **This op MUST NOT set `status = "complete"`** — only the explicit `complete` op may do that (per the explicit-sign-off rule documented in the `status` op above). If `status` changes value, append a `type=status-transition` entry per the reconciler contract.
 
 ```
 ## Reconciliation Report — [plan name]
