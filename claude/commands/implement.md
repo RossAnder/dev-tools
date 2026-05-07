@@ -42,8 +42,8 @@ plan_review_findings = ".claude/flows/auth-overhaul/plan-review-findings.toml"
 
 - `draft` — written by `plan-new` at creation.
 - `in-progress` — written by `implement` when it starts a task; written by `plan-update` after work resumes.
-- `review` — written only by `plan-update` when a plan enters a review phase between implementation rounds.
-- `complete` — written only by `plan-update` when all tasks are done or all remainders are deferred.
+- `review` — written by `plan-update` when implementation finishes (every item done or all remainders deferred) or when a plan enters a review phase between rounds. Awaits explicit user sign-off via `/plan-update <plan> complete`.
+- `complete` — written ONLY by `plan-update`'s explicit `complete` op (user-invoked). Auto-transitions to `complete` from any other op (`status`, `defer`, `reconcile`, `/implement` Phase 4.5) are forbidden — they route through `review` instead.
 
 **Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
 
@@ -195,7 +195,7 @@ Render-then-render MUST be byte-identical (idempotency). Reordering two same-dat
 
 ### Render-from-log routine
 
-Every op that mutates `<record>` (`status`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) calls this routine as its **last step**. `snapshot` also calls it (read-only refresh). `/implement` Phase 3 also calls it at end-of-phase. The routine is a **pure function of the log** — no `<today>` / `<now>` substitution, no date-of-run leakage. Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency, achieved by the pre-sort and the count-based Changes column).
+Every op that mutates `<record>` (`status`, `complete`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) calls this routine as its **last step**. `snapshot` also calls it (read-only refresh). `/implement` Phase 3 also calls it at end-of-phase. The routine is a **pure function of the log** — no `<today>` / `<now>` substitution, no date-of-run leakage. Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency, achieved by the pre-sort and the count-based Changes column).
 
 The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwriting the previous content) with the following structure:
 
@@ -474,6 +474,8 @@ For each batch:
 
    The check is intentionally cheap — a regex for rules (1) and a component split + equality test for rule (2). Rule (3) reuses the same `Glob` patterns the Phase 1 flow resolver already evaluates against `scope`.
 
+   **Free-text JSON sanitisation (rule 4, mandatory, applies to every JSON-payload heredoc in `/implement`).** Before assembling the heredoc JSON payload, every free-text field interpolated from agent output (`task_ref`, `summary`, `rationale`, `original_intent`, `reason`, `reevaluate_when`, and any other agent-supplied prose) MUST be JSON-encoded per RFC 8259 — escape `\\`, `"`, control characters (U+0000 through U+001F), and the Unicode line separators U+2028 (` `) and U+2029 (` `). The single-quoted heredoc delimiter `<<'EOF'` prevents shell expansion / injection, but a literal `}`, an unescaped `"`, a raw newline, or a U+2028/U+2029 in agent prose would still break the JSON payload's structure (or, worse, a paragraph-separator character would parse as a JS line terminator in a JS-runtime-based downstream renderer). Most JSON serialisers (jq, Python `json.dumps`, Rust `serde_json::to_string`) handle this automatically; if the payload is being assembled by string concatenation in shell, every interpolated free-text field MUST be passed through an explicit escaper first. **This rule applies uniformly to every JSON-payload heredoc in `/implement`** — task-completion (this step), deviation (Phase 2 step 3b), verification (Phase 3), status-transition (Phase 1) — wherever the spec emits `cat <<'EOF' | tomlctl items add <record> --json -` with agent-supplied free-text in the JSON body.
+
    Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
 
    ```json
@@ -495,6 +497,39 @@ When a task fails (build error, test failure, agent-reported issue):
 If a change spans many files (e.g. renaming an interface used in 15 places):
 - Do NOT split across multiple agents — give it to a single agent with the full file list.
 - If the file list is too large for one agent, split into sequential batches (batch 1: change the definition + direct consumers, batch 2: change indirect consumers).
+
+### Stash escalation handler (delegate-emitted `stash-required`)
+
+The `flow-implement-{deep,lite}` agent contracts forbid delegates from running `git stash`, `git reset`, or `git checkout --` on their own — concurrent batches share the working tree, and a delegate-initiated stash would silently swallow a sibling's in-flight edits. Instead, when a delegate encounters a dirty working-tree state that blocks its own work (e.g. an untracked file collides with a path it must create, or it needs to read a file's on-disk state but the working copy reflects an unsaved sibling edit), the delegate returns the escalation tag `escalate <id>: stash-required — <reason>` and exits without writing.
+
+When the orchestrator (this command) receives that escalation tag, follow this protocol — the analogue of `/review-apply` Step 5.5 and `/optimise-apply` Step 5.5, adapted to `/implement`'s batch model. **Do not extend the `apply-rollback-protocol` shared block**; this is a `/implement`-specific handler with different triggers and a different recovery path (the apply-side rollback reverts a failed transition, whereas this handler unblocks a delegate that hit a working-tree precondition).
+
+1. **Halt the batch.** Pause dispatch of any sibling delegates in the same batch that have not yet started, and wait for any sibling that is already running to complete its return — sibling delegates may still be writing to the working tree, and stashing under them would lose their work. Concurrent stash is unsafe; this handler is strictly serial within a batch.
+2. **Stash with a tracked ref.** Once siblings have terminated, run:
+
+   ```bash
+   git stash push -u -m "implement-escalation-stash-<ISO timestamp>"
+   ```
+
+   Use the full ISO 8601 timestamp (e.g. `implement-escalation-stash-2026-04-18T14:32:00Z`) so multiple stashes within one run remain distinguishable. Capture the resulting stash ref (e.g. `stash@{0}`) — you will need it for the pop step and the report. If `git stash push` reports `No local changes to save`, the precondition the delegate hit has cleared on its own (likely a sibling completed its commit between the delegate's escalation and the orchestrator's stash) — skip directly to step 4 (re-dispatch) without popping.
+3. **Perform the operation that the delegate's escalation requested**, typically a `Read` of the now-clean on-disk state of the file the delegate's edits had collided with. Do NOT make new edits during this step — the orchestrator's role here is observational (collect the context the delegate needs to succeed on retry), not corrective.
+4. **Pop the stash.** Run:
+
+   ```bash
+   git stash pop <stash-ref>
+   ```
+
+   If `git stash pop` reports a merge conflict (a sibling's earlier write now conflicts with the stashed user-in-progress state), do NOT auto-resolve — surface the conflict to the user with the literal stash ref so they can resolve manually via `git checkout --theirs/--ours <path>` and continue. Halt the run; do not proceed to step 5. The stash remains on the stack for user recovery.
+5. **Re-dispatch the delegate** with updated context: the original task instructions plus a "Stash escalation context" preamble that includes (a) the on-disk state the orchestrator observed in step 3 and (b) a one-line note `"Working tree was stashed and restored to unblock your earlier escalate <id>: stash-required tag — proceed with the original task using the on-disk state below."`. The re-dispatch counts against the task's normal retry budget (max 2 fix attempts per failure), but a stash-required escalation that succeeds on the first re-dispatch consumes one attempt, not zero — the delegate's first run produced no bytes and is recorded as a failure for retry-counting purposes.
+6. **Surface the stash event in the Phase 4 report.** Add a one-line entry under `### Failed / Skipped` (or a dedicated `### Stash Events` sub-block when there are 2+ events in one run) of the form `stash-required handled for <id>: <reason> (stash <ref>, popped cleanly)`. This makes the working-tree disturbance auditable from the rendered summary.
+
+**Safety constraints:**
+
+- Never run `git stash` while sibling delegates from the same batch are still writing — always serialise as in step 1.
+- Never accept the delegate's own description of "what the working tree contains" as ground truth — re-derive via `git status --porcelain` before deciding whether to stash.
+- Never bypass the stash by `git checkout -- <path>` or `git restore <path>` — those forms discard user-in-progress work without recovery, whereas the stash leaves a recoverable ref.
+- Never auto-resolve a `git stash pop` merge conflict — surface to the user.
+- A stash-required escalation that the orchestrator cannot satisfy (e.g. step 4 conflict, or the delegate immediately re-escalates after re-dispatch) terminates the task as `failed` for `<record>` purposes; the orchestrator must NOT loop indefinitely.
 
 ## Phase 3: Verify
 
@@ -552,21 +587,27 @@ After successful verification, output:
 
 ### Next Steps
 - [review the revised plan and `PROGRESS-LOG.md` to confirm recorded outcomes match expectations]
-- [trigger `/review` on the scope just modified, or address any `Failed / Skipped` items that need manual attention]
+- [trigger `/review` and `/optimise` on the scope just modified to validate the implementation, then `/plan-update <slug> complete` to drop the flow from auto-resolution; OR address any `Failed / Skipped` items that need manual attention]
 ```
 
 ### Phase 4.5: Sync plan context
 
 After the Implementation Summary has been emitted, synchronise the resolved flow's `context.toml` with the work just completed.
 
-1. **No-op gate**: if `[tasks].in_progress == 0` in the resolved flow's `context.toml` AND no files under its `scope` were edited during this run, skip the invocation entirely and note the skip in the orchestrator's output ("Phase 4.5 skipped: no-op gate"). This prevents spurious `plan-update` calls on trivial or inline runs that never touched tracked scope.
-2. **Otherwise, auto-invoke `plan-update`**: use the `Skill` tool to call the `plan-update` skill with the literal string argument `status`. The skill will read the resolved flow's `context.toml`, update `[tasks]` counters to reflect what the Implementation Summary reported, set `updated` to today, and preserve `created` verbatim. **The `status` op MAY transition `status` to `review` (when all items are now done or all remaining items are deferred) but it MUST NOT transition to `complete`** — auto-completion would strand the freshly-implemented plan beyond auto-resolution before the user has had a chance to /review or /optimise it. The user transitions `review → complete` explicitly via `/plan-update <plan> complete` once they're satisfied.
+1. **No-op gate**: if `[tasks].in_progress == 0` in the resolved flow's `context.toml` AND no files under its `scope` were edited during this run, skip the invocation entirely and note the skip in the orchestrator's output. The skip message MUST be interpolated to surface both gate-condition contributions so a user can distinguish an intentional skip from a bug: literal format `Phase 4.5 skipped: no-op gate (in_progress=<N>, scoped-edits=<count>)` where `<N>` is the value of `[tasks].in_progress` read from the resolved `context.toml` and `<count>` is the number of files in this run that touched any pattern in the flow's `scope` glob list (compute by intersecting the run's set of edited files with the flow's `scope` patterns via the `Glob` tool). This prevents spurious `plan-update` calls on trivial or inline runs that never touched tracked scope.
+2. **Otherwise, auto-invoke `plan-update`**:
 
-3. **Surface the next-step prompt.** After Phase 4.5 returns, append a one-line console hint when `status` is now `review`: `flow <slug>: implementation complete — status is now "review". Run /review and /optimise against the scope, then /plan-update <slug> complete to drop the flow from auto-resolution.` This makes the new manual-completion gesture discoverable without breaking existing automation.
+   **Origin check (before the Skill call).** Claude Code's skill resolution picks the first match by name, and a user-installed plugin skill named `plan-update` could silently shadow the project-local one. If the project has a local `claude/commands/plan-update.md` file (check for its existence at the repo top-level, e.g. via the `Glob` tool or a filesystem test against the resolved path), that is the intended invocation target and skill resolution will prefer it automatically — proceed with the `Skill` call. If the project-local file is **absent**, gate the plugin invocation behind an `AskUserQuestion` prompt rather than proceeding silently: present the warning `"no project-local /plan-update found; the plugin skill named 'plan-update' will be invoked. Verify the plugin origin is trusted."` with the options `[t] trust this session — invoke the plugin skill` and `[a] abort the Skill call — surface 'plan-update unavailable' and continue without auto-sync`. **Cache the trust decision per-session** so repeated `/implement` invocations within the same session do not re-prompt: store the boolean trust outcome in an orchestrator-scoped session variable (e.g. `phase4_5_plugin_trust = true|false`) keyed by the absent project-local-file state; on subsequent runs in the same session, skip the prompt and reuse the cached decision. The cache is in-memory only — a fresh session re-prompts. On `[a] abort`, emit `"Phase 4.5 plan-update Skill call aborted by user — context.toml not auto-synced; run /plan-update status manually if desired"` and skip the rest of this step.
 
-   **Origin check (before the Skill call).** Claude Code's skill resolution picks the first match by name, and a user-installed plugin skill named `plan-update` could silently shadow the project-local one. If the project has a local `claude/commands/plan-update.md` file (check for its existence at the repo top-level, e.g. via the `Glob` tool or a filesystem test against the resolved path), that is the intended invocation target and skill resolution will prefer it automatically — proceed with the `Skill` call. If the project-local file is **absent**, surface a warning first: `"no project-local /plan-update found; invoking plugin skill. Verify the plugin is trusted."`, then proceed with the `Skill` call. Do not refuse on a missing project-local file — just flag the fallback so the user can audit the plugin origin.
+   Use the `Skill` tool to call the `plan-update` skill with the literal string argument `status`. The skill will read the resolved flow's `context.toml`, update `[tasks]` counters to reflect what the Implementation Summary reported, set `updated` to today, and preserve `created` verbatim. **The `status` op MAY transition `status` to `review` (when all items are now done or all remaining items are deferred) but it MUST NOT transition to `complete`** — auto-completion would strand the freshly-implemented plan beyond auto-resolution before the user has had a chance to /review or /optimise it. The user transitions `review → complete` explicitly via `/plan-update <plan> complete` once they're satisfied.
 
-Because `plan-update` itself performs the 5-step flow resolution, no flow arguments need to be passed through — the invocation is literally `Skill("plan-update", "status")`.
+   Because `plan-update` itself performs the 5-step flow resolution, no flow arguments need to be passed through — the invocation is literally `Skill("plan-update", "status")`.
+
+3. **Surface the next-step prompt.** After Phase 4.5 returns, append a one-line console hint when `status` is now `review`: `flow <slug>: implementation complete — status is now "review". Run /review and /optimise against the scope, then /plan-update <slug> complete to drop the flow from auto-resolution.`
+
+   (Replace `<slug>` with the resolved flow's slug before printing — the orchestrator has the resolved slug at this point and MUST interpolate it into the literal hint string. The placeholder is for spec readability only; it must not appear verbatim in the user-facing console output.)
+
+   This makes the new manual-completion gesture discoverable without breaking existing automation.
 
 ## Important Constraints
 

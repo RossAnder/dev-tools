@@ -61,3 +61,10 @@ files = [
   "claude/commands/review.md",
   "claude/commands/optimise.md",
 ]
+
+[[block]]
+name = "forbidden-working-tree-ops"
+files = [
+  "claude/agents/flow-implement-deep.md",
+  "claude/agents/flow-implement-lite.md",
+]

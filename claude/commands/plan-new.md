@@ -42,8 +42,8 @@ plan_review_findings = ".claude/flows/auth-overhaul/plan-review-findings.toml"
 
 - `draft` — written by `plan-new` at creation.
 - `in-progress` — written by `implement` when it starts a task; written by `plan-update` after work resumes.
-- `review` — written only by `plan-update` when a plan enters a review phase between implementation rounds.
-- `complete` — written only by `plan-update` when all tasks are done or all remainders are deferred.
+- `review` — written by `plan-update` when implementation finishes (every item done or all remainders deferred) or when a plan enters a review phase between rounds. Awaits explicit user sign-off via `/plan-update <plan> complete`.
+- `complete` — written ONLY by `plan-update`'s explicit `complete` op (user-invoked). Auto-transitions to `complete` from any other op (`status`, `defer`, `reconcile`, `/implement` Phase 4.5) are forbidden — they route through `review` instead.
 
 **Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
 
@@ -195,7 +195,7 @@ Render-then-render MUST be byte-identical (idempotency). Reordering two same-dat
 
 ### Render-from-log routine
 
-Every op that mutates `<record>` (`status`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) calls this routine as its **last step**. `snapshot` also calls it (read-only refresh). `/implement` Phase 3 also calls it at end-of-phase. The routine is a **pure function of the log** — no `<today>` / `<now>` substitution, no date-of-run leakage. Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency, achieved by the pre-sort and the count-based Changes column).
+Every op that mutates `<record>` (`status`, `complete`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) calls this routine as its **last step**. `snapshot` also calls it (read-only refresh). `/implement` Phase 3 also calls it at end-of-phase. The routine is a **pure function of the log** — no `<today>` / `<now>` substitution, no date-of-run leakage. Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency, achieved by the pre-sort and the count-based Changes column).
 
 The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwriting the previous content) with the following structure:
 

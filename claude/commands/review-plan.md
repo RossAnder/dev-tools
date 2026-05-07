@@ -42,8 +42,8 @@ plan_review_findings = ".claude/flows/auth-overhaul/plan-review-findings.toml"
 
 - `draft` — written by `plan-new` at creation.
 - `in-progress` — written by `implement` when it starts a task; written by `plan-update` after work resumes.
-- `review` — written only by `plan-update` when a plan enters a review phase between implementation rounds.
-- `complete` — written only by `plan-update` when all tasks are done or all remainders are deferred.
+- `review` — written by `plan-update` when implementation finishes (every item done or all remainders deferred) or when a plan enters a review phase between rounds. Awaits explicit user sign-off via `/plan-update <plan> complete`.
+- `complete` — written ONLY by `plan-update`'s explicit `complete` op (user-invoked). Auto-transitions to `complete` from any other op (`status`, `defer`, `reconcile`, `/implement` Phase 4.5) are forbidden — they route through `review` instead.
 
 **Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
 
