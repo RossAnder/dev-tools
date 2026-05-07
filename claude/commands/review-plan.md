@@ -133,9 +133,11 @@ This command works with any plan format — structured work packages, wave-based
 
 ## Step 2: Launch Parallel Review Agents
 
-Launch **all four** review agents in parallel using the Agent tool (subagent_type: "flow-research"). Provide each agent with the full plan content.
+Launch **all four** review agents in parallel using the Agent tool (subagent_type: "flow-research-deep"). Provide each agent with the full plan content.
 
-**IMPORTANT: You MUST make all four Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing four Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of four agents. Each agent provides a specialized review perspective that cannot be replicated by fewer passes.
+**Why Opus across all four lenses (not the cheaper Sonnet `flow-research`)**: plan critique is pure judgement — does the plan match codebase reality (Agent 1), what scope is invisibly missing (Agent 2), would an executor agent succeed without ambiguity (Agent 3), are the technology assumptions current (Agent 4). Sonnet's fetch-and-summarise contract cannot synthesise the cross-document inferences these lenses require; previous runs with Sonnet `flow-research` produced superficial findings ("looks good", "consider adding more detail") that missed real plan defects. The cost premium is justified — a missed plan defect surfaces during /implement as a wasted batch + rollback, which is far more expensive than the Opus dispatch.
+
+**IMPORTANT: You MUST make all four Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing four Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of four agents. Each agent provides a specialized review perspective that cannot be replicated by fewer passes. Do NOT silently downgrade any of the four to `flow-research` to save cost.
 
 Every agent MUST:
 - Read the plan document(s) in full
@@ -193,9 +195,27 @@ Are the plan's technology assumptions current and are risks adequately addressed
 - Are rollback and failure recovery strategies adequate for each phase?
 - Are there performance, security, or backward-compatibility risks not addressed?
 
+## Step 2.5: Vet agent output (orchestrator)
+
+After all four `flow-research-deep` agents return but BEFORE the Step 3 consolidation, the orchestrator (Opus) MUST vet the returned findings. Even Opus output for a judgement-heavy lens like plan critique can include incorrect claims (e.g. "file X doesn't exist" when it does, "API Y is deprecated" when it isn't), and these false claims, if promoted into the report, cause real implementation churn.
+
+**Vetting procedure:**
+
+1. **Triage by evidence-grade.** Group every finding by `Evidence-grade: high | medium | low`. Counts per grade go in the console output.
+2. **Verify every "stale reference" / "file does not exist" / "API has changed" claim.** Plan-critique findings of this shape are the most dangerous when wrong — the plan author will doubt their plan and rewrite work that was actually correct. For each such claim, the orchestrator runs the cheap verification directly:
+   - `file does not exist` → `ls <path>` or Glob check.
+   - `API X has changed` → re-query Context7 to confirm.
+   - `signature mismatch` → Read the file at the cited line and confirm.
+   Drop any finding whose verification fails; log the drop with the verification evidence.
+3. **Drop unverified `low` findings.** Same rubric as /review and /optimise.
+4. **Spot-check `medium` and `high` findings.** Sample at least 3 per agent (or all if the agent returned fewer than 3); confirm `file:line` anchors and Counter-line plausibility.
+5. **Re-dispatch on systemic failure.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens.
+
+The verification step (item 2 above) is the highest-value one for plan critique specifically. A plan reviewer that flags non-existent stale references is worse than no plan reviewer.
+
 ## Step 3: Consolidate Results
 
-**Reason thoroughly through consolidation.** Cross-reference all agent findings against the plan, resolve conflicting assessments, and synthesize a coherent verdict on plan readiness.
+**Reason thoroughly through consolidation.** Cross-reference all surviving (post-vet) agent findings against the plan, resolve conflicting assessments, and synthesize a coherent verdict on plan readiness.
 
 After all agents complete, produce a single consolidated report:
 

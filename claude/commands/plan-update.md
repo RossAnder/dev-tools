@@ -600,7 +600,7 @@ Thoroughly explore the current state of the codebase in the plan's scope:
 - Check `git log` for the full history of changes in the plan's scope area
 - Return a comprehensive current-state inventory
 
-**Agent 2: Technology and API research** (`subagent_type: "flow-research"`)
+**Agent 2: Technology and API research** (`subagent_type: "flow-research"` for the default mechanical case; escalate to `subagent_type: "flow-research-deep"` if the plan introduces architectural pattern questions or compares libraries — state the rationale at the top of the prompt as `DISPATCH: flow-research-deep — <reason>`)
 Research the current state of every technology, library, and framework version referenced in the plan:
 - Check whether the plan's technical approach is still valid or has been superseded by newer patterns
 - Flag anything in the plan that references deprecated APIs, removed features, or outdated guidance
@@ -609,9 +609,23 @@ Research the current state of every technology, library, and framework version r
 **Agent 3: Content extraction and classification**
 Same as the `reformat` Agent 1 — read every plan document and extract the full classified inventory (tasks, completed items, research notes, deviations, deferrals, verification criteria, dependencies, context).
 
-**Phase 2: Synthesize and rewrite** — After all three agents return:
+**Phase 1.5: Vet agent output (orchestrator)** — Before Phase 2 synthesis, the orchestrator (Opus) MUST vet Agent 2's output (the Sonnet `flow-research` tech-research run). The catchup operation is the most expensive op in /plan-update — propagating fabricated tech findings into a rewritten plan corrupts the plan and the user's trust in the catchup. Procedure:
 
-**Reason thoroughly through catchup synthesis.** Cross-reference all three agents' results — codebase state, technology research, and content inventory — to determine accurate status for every plan item, identify which research notes are stale, and resolve conflicts between the plan's expectations and codebase reality.
+1. **Honour `ESCALATE-TO-DEEP`** if Agent 2 returned the flag — re-dispatch to `flow-research-deep` with the escalation reason before proceeding.
+2. **Verify every "deprecated" / "removed" / "superseded" claim.** These are the highest-impact assertions because they drive plan rewrites. For each claim, the orchestrator runs the cheap verification:
+   - Re-query Context7 for the API in question.
+   - Check the library's official changelog (WebFetch on the changelog URL).
+   - Confirm the version pin in the project manifest matches Agent 2's claimed version.
+   Drop any claim whose verification fails; log the drop with verification evidence.
+3. **Drop unverified `low-confidence:` findings** unless framed as an explicit hypothesis.
+4. **Spot-check at least 3 findings** from Agent 2; confirm cited URLs resolve and match the claim.
+5. Agents 1 + 3 (`general-purpose`) are not vetted at the same depth — they are reconcile / synthesis workloads and the orchestrator already cross-references their outputs in Phase 2 below.
+
+Carry only post-vet Agent 2 findings into Phase 2 synthesis.
+
+**Phase 2: Synthesize and rewrite** — After all three agents return AND vetting completes:
+
+**Reason thoroughly through catchup synthesis.** Cross-reference all three agents' results — codebase state, vetted technology research, and content inventory — to determine accurate status for every plan item, identify which research notes are stale, and resolve conflicts between the plan's expectations and codebase reality.
 
 Using all three agents' results together, produce the reformatted plan following the same structure and rules as the `reformat` operation (outline, detail docs, PROGRESS-LOG.md, RESEARCH-NOTES.md). Additionally:
 

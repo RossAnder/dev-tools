@@ -518,9 +518,31 @@ Every agent MUST:
 - Add a brief inline comment only when the fix would be non-obvious to a reader
 - If a finding cannot be safely applied (would break behaviour, has unclear semantics, or the research doesn't hold up on closer inspection), **skip it** and report why
 
+## Step 4.5: Vet `flow-implement-lite` apply tags (orchestrator)
+
+After cluster agents return but BEFORE the interim checkpoint, the orchestrator (Opus) MUST vet `applied` tags from `flow-implement-lite` clusters. The Step 5a build/test verification catches bytes-don't-compile bugs and existing-test regressions, but it does NOT catch:
+
+- Subtle correctness issues that compile and pass existing tests (e.g. an off-by-one that the tests don't exercise).
+- Anti-pattern introductions (e.g. the agent picked an idiom that compiles but fights the surrounding code's style).
+- Inconsistent style with surroundings (the lite agent's spec was met but the result reads jarringly).
+- The lite agent flagged an apply with `[vet-recommended]` (per `flow-implement-lite`'s output contract) — the agent itself surfaced residual uncertainty.
+
+**Vetting procedure (per cluster):**
+
+1. **Inspect every `applied <id> [vet-recommended]: ...` tag.** This is the agent's explicit ask; the orchestrator MUST read the touched files at the named line ranges and confirm the change is sound. If wrong, re-dispatch the failed item to `flow-implement-deep` for a corrected fix.
+2. **Spot-sample bare `applied` tags.** Sample at least **1 applied per cluster** (or all if the cluster has fewer than 3 applies). For each sampled apply:
+   - Read the touched lines and confirm the change matches the finding's recommended action.
+   - Confirm the surrounding code's style (naming, error handling, idioms) is preserved or improved, not regressed.
+   - For review fixes specifically, confirm the fix actually addresses the finding's root cause rather than just silencing the symptom.
+3. **Sample-failure → expand-and-fix.** If a sampled apply fails vetting, **expand the sample to 100% of that cluster's applies** — the failure pattern likely affects others. For each failed apply, mark it for re-dispatch to `flow-implement-deep` (do NOT revert silently — let `flow-implement-deep` produce the correct fix and then verify).
+4. **Skip sampling for `flow-implement-deep` cluster output.** Deep clusters carry their own escalation discipline; the orchestrator's review focus is `flow-implement-lite` output specifically. A spot-check of deep output remains advisable but is not gated.
+5. **Record the vet outcome** as a console line per cluster: `vet: cluster <id> — N applies sampled, M failed, K re-dispatched to deep`.
+
+The vet pass is what separates "fix succeeded" from "the right thing happened." Skipping it means a review fix can ship that compiles but doesn't actually address the reviewed concern.
+
 ## Interim checkpoint
 
-After cluster agents return (Step 4) but BEFORE launching the verification sub-agent (Step 5), persist non-risky transitions to the ledger in a single atomic `tomlctl items apply --ops -` call. "Non-risky" means:
+After Step 4.5 vetting (and any re-dispatched fixes complete), persist non-risky transitions to the ledger in a single atomic `tomlctl items apply --ops -` call. "Non-risky" means:
 
 - `verified-clean` transitions for items where agents wrote no bytes and reported `verified-clean R{n}: <note>`.
 - `wontfix` transitions for agent-intentional skips (agent wrote no bytes AND declared the finding unsafe or unclear and reported `skipped R{n}: <reason>`).

@@ -279,6 +279,23 @@ For `ci_provider != github-actions`, the SHA-pin requirement still applies in sp
 
 Cache the full agent payload (all 4 returns, raw) to `<target>/.claude/.test-bootstrap-research.json` for the duration of the invocation. Phase 3 reads from this cache so a re-prompt during the AskUserQuestion step does NOT re-spend agent tokens. The cache file is **transient** — delete it on Phase 5 success or on `abort`. Phase 2 itself is stateless; safe to re-run, but outputs may differ run-to-run as ecosystems evolve.
 
+### Phase 2 vetting (orchestrator)
+
+Before the cache write — and before Phase 3 synthesises the stack candidates — the orchestrator (Opus) MUST vet each Sonnet agent's output. Tool research is one of the most fabrication-prone domains: agents recommend stale package versions, broken install commands, deprecated config syntax. The targeted reject-and-re-prompt rules already in the agent specs above (SHA pinning for Agent D, `workflow_dispatch`/cron for Agent C mutation, no shared-state in Agent A showcase) are NOT a substitute for general vetting — they catch only those specific patterns.
+
+**Vetting procedure (per agent):**
+
+1. **Honour `ESCALATE-TO-DEEP` flags.** If a Sonnet agent returned `ESCALATE-TO-DEEP: <reason>` (e.g. "framework choice depends on benchmarking trade-offs the project profile cannot decide"), re-dispatch the agent's decision domain to `flow-research-deep` with the escalation reason in the prompt. Merge results.
+2. **Verify install commands.** For each candidate's `install command`, confirm the package name resolves on the relevant registry (npm / PyPI / crates.io / Go module proxy) — a 30-second WebFetch or registry probe per candidate is cheap. A typo like `jest-stryker` instead of `stryker-mutator/core` would otherwise survive into Phase 4 and break the user's first install.
+3. **Verify version ranges against the registry.** A candidate that pins `^4.2.0` when the latest stable is `7.x` indicates the agent's training data is stale — re-dispatch the agent with the correct latest version range as a hint.
+4. **Verify config-file template syntax.** If the candidate ships a `vitest.config.ts` / `pytest.ini` / etc. template, confirm the syntax matches the documented config schema for the version range. Sonnet has been observed conflating major-version config schemas (e.g. emitting Vitest v0.x config under a v1.x version pin).
+5. **Drop unverified `low-confidence:` candidates.** A "best practice" or "recommended threshold" claim without a citation is a guess; drop it from the candidate.
+6. **Re-dispatch on systemic failure.** If more than 30% of an agent's candidates fail vetting, re-dispatch the entire agent with the failure pattern in the prompt (or escalate to `flow-research-deep`).
+
+The targeted reject-and-re-prompt rules (SHA pinning, mutation CI shape, showcase isolation) run BEFORE this vetting pass — they are quick mechanical checks the agent's spec embeds. The general vetting pass above runs AFTER, catching everything those targeted rules don't cover. Both layers are mandatory.
+
+Cache only post-vet output to `.test-bootstrap-research.json`.
+
 ## Phase 3: Synthesis into stack candidates
 
 Combine the 4 agents' outputs into **2-3 cohesive stack candidates**. Not a Cartesian product — coherent triples where the test runner, coverage tool, mutation tool (if requested), and CI snippet work well together within the same ecosystem.

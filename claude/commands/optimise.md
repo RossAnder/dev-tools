@@ -436,7 +436,9 @@ As agents transition, call `TaskUpdate` to move each task `pending → in_progre
 
 The five tasks provide visible progress even for small scopes — the five-agent launch happens regardless of scope size (see the Design Note in Step 1.5), so the task chrome matches the actual work without added overhead.
 
-Launch **all five** agents in parallel using the Agent tool (subagent_type: "flow-research"). Provide each agent with the file list and classification from Step 1, plus its relevant **focal points** from Step 1.5. The `flow-research` agent is pinned to Sonnet and absorbs the Context7-first/WebSearch-second contract and version-pinning requirements in its system prompt; the per-call instructions below specify the lens focus, severity vocabulary, optimise-specific finding-record fields, and per-call cap (15-20 findings) which override the agent's default.
+Launch **all five** agents in parallel using the Agent tool (subagent_type: "flow-research-deep"). Provide each agent with the file list and classification from Step 1, plus its relevant **focal points** from Step 1.5. The `flow-research-deep` agent is pinned to Opus and absorbs the Context7-first/WebSearch-second contract, version-pinning requirements, evidence-grade rubric, and adversarial Counter-line requirement in its system prompt; the per-call instructions below specify the lens focus, severity vocabulary, optimise-specific finding-record fields, and per-call cap (15-20 findings) which override the agent's default ≤8.
+
+**Why Opus across all five lenses (not the cheaper Sonnet `flow-research`)**: optimisation is judgement-heavy across the board — distinguishing real bottlenecks from theoretical ones, knowing when an idiomatic-looking pattern is actually anti-optimal in the project's runtime, weighing fix cost against perf gain. Sonnet's fetch-and-summarise contract produces surface-level findings that the orchestrator must heavily vet or discard; Opus's deeper reasoning + mandatory Counter-line discipline produces fewer findings of higher signal. The cost premium is justified by avoiding harmful "optimisations" that ship to production. If a future lens here turns out to be genuinely mechanical (pure version-bump research, dependency advisory lookups), it can be peeled out to `flow-research`; today's five are not.
 
 **IMPORTANT: You MUST make all five Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count below five** — launch ALL FIVE agents. Each agent provides specialized, independent research (Context7 lookups, WebSearches, lens-specific analysis) that cannot be replicated by fewer passes.
 
@@ -512,9 +514,29 @@ Examine how the code structures concurrent and asynchronous work. Consider:
 
 Focus on the idioms and primitives of the project's async runtime. Common runtime-specific concerns include: in .NET — Task vs ValueTask, ConfigureAwait, Channel\<T\>, SemaphoreSlim, IHostedService lifecycle; in Rust — JoinSet vs spawn, select! branches, sync Mutex vs tokio Mutex, blocking in async; on the frontend — request deduplication, race conditions in reactive state, concurrent fetch management. You MUST research the specific async runtime and concurrency primitives in use via Context7 — correct usage of these APIs is subtle and version-dependent.
 
+## Step 2.5: Vet agent output (orchestrator)
+
+After all five `flow-research-deep` agents return but BEFORE the interim checkpoint persists anything to the ledger, the orchestrator (Opus) MUST vet the returned findings. Even Opus agents produce wrong findings — vetting catches them before they enter the ledger and survive across rounds as zombie work-items.
+
+**Vetting procedure:**
+
+1. **Triage by evidence-grade.** Group every finding by its `Evidence-grade: high | medium | low` tag. Counts per grade go in the console output for transparency.
+2. **Drop unverified `low` findings.** A `low` finding without an explicit `low — hypothesis: …` framing AND a concrete verification step (profile, benchmark, test) the user can take is a fabrication risk. Drop it; log the drop in console.
+3. **Spot-check `medium` and `high` findings.** Sample at least **3 per agent** (or all if the agent returned fewer than 3). For each sampled finding:
+   - Read the file at the cited `file:line` and confirm the code matches the finding's `Details`.
+   - Confirm the `Counter` line is plausible — a finding with a Counter that contradicts the Finding itself is broken.
+   - For library-version findings, confirm the version pin in the manifest matches what the agent claimed.
+   - If the sampled finding fails any check, **expand the sample** to include all findings from that agent — the sample failure indicates the agent's whole output is unreliable.
+4. **Drop or downgrade** findings that fail vetting. Drop with rationale logged; downgrades (e.g. `high → medium`) are appended as `_orchestrator-downgrade: <reason>` to the finding's evidence-grade line.
+5. **Re-dispatch on systemic failure.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens to a fresh `flow-research-deep` instance with the failure pattern in the prompt (e.g. "the prior agent's findings did not match the cited line numbers; verify every `file:line` claim before returning").
+
+This vet pass is what makes the Opus dispatch worth the cost — the orchestrator turns a probabilistically-correct sample into a verified one. Skipping the vet pass squanders the model upgrade.
+
+**Vet pass is NOT optional.** The Step 1 idempotency guards prevent duplicate-flagging, but they cannot retroactively remove a fabricated finding once it's persisted to the ledger — that requires manual cleanup later via `/review-apply` or hand-editing. Vet first, persist second.
+
 ## Interim checkpoint
 
-After all five research agents return but BEFORE rendering the final findings report, persist new items (and any reopened items from the deferred-reopen sweep) to the ledger in a single atomic `tomlctl items apply --ops -` call. Rationale: an interrupted run (Ctrl-C between agent return and Step 3 render) would otherwise lose the research output. Writing a checkpoint at this boundary makes findings durable the moment they exist. The Step 1 idempotency guards (open items reuse via dedup; resolved items skip re-flagging) make a re-run safe — the worst case is re-rendering a report from an already-checkpointed ledger.
+After Step 2.5 vetting, persist surviving items (and any reopened items from the deferred-reopen sweep) to the ledger in a single atomic `tomlctl items apply --ops -` call. Rationale: an interrupted run (Ctrl-C between agent return and Step 3 render) would otherwise lose the research output. Writing a checkpoint at this boundary makes findings durable the moment they exist. The Step 1 idempotency guards (open items reuse via dedup; resolved items skip re-flagging) make a re-run safe — the worst case is re-rendering a report from an already-checkpointed ledger.
 
 Defer two writes to the final render in Step 3: (1) `tomlctl set <ledger> last_updated <today>` — the ledger is only "fresh" when the report was actually produced; (2) `rounds` increments for existing open items — these only matter once the report includes them. The checkpoint covers inserts + ledger-confirmed transitions (new items from agent output, deferred-item reopens confirmed by user prompt); scalar bookkeeping stays in the final render.
 

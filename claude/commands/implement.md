@@ -424,7 +424,18 @@ For each batch:
    - If you emit block 1, you are on the hook for block N in this same response. Draft all N prompts mentally before starting to emit, not as you go.
 
    Do NOT end the turn after a single `Agent` block if more batch tasks remain; the harness cannot fan out calls emitted on later turns.
-3. When agents return, check for **plan deviations** (see protocol above). If an agent reports a deviation:
+3. When agents return:
+
+   **3a. Vet `flow-implement-lite` output before promoting completion.** Before checking deviations or appending any `task-completion` entry to `<record>`, the orchestrator (Opus) MUST vet `applied` / completion claims from any cluster that was dispatched to `flow-implement-lite`. The Phase 3 verification agent catches build / test failures, but it does NOT catch correctness issues that pass existing tests or anti-pattern introductions. Procedure:
+
+   - **Inspect every `applied <id> [vet-recommended]: ...` tag.** The lite agent's explicit ask; read the touched files and confirm the change is sound. If wrong, re-dispatch the affected task to `flow-implement-deep` and treat the lite attempt as a failed retry against the retry budget below.
+   - **Spot-sample bare `applied` tags from `flow-implement-lite` clusters.** Sample at least **1 task per cluster** (or all if the cluster has fewer than 3 tasks). For each sampled task: read the touched lines, confirm the change matches the plan task's `Action` + `Detail` fields, confirm surrounding code style is preserved.
+   - **Sample-failure → expand-and-fix.** If a sampled apply fails vetting, expand to 100% of that cluster; re-dispatch failed items to `flow-implement-deep`.
+   - **Skip vetting for `flow-implement-deep` clusters.** Deep clusters carry their own escalation discipline (cross-cut surfaces, Alternatives sections); a spot-check remains advisable but is not gated here.
+
+   Do NOT append `task-completion` entries to `<record>` for tasks whose vet failed — wait for the re-dispatched fix to land.
+
+   **3b. Plan deviations.** Check the agent return for the deviation protocol above. If an agent reports a deviation:
    - Reason through the impact.
    - If the deviation is minor and the fix is clear, launch a targeted fix agent.
    - If the deviation is significant (wrong interface, missing file, architectural mismatch), pause execution and surface the deviation to the user as an informational reminder before continuing. Do NOT advise a second `/plan-update deviation` invocation for the same deviation — the entry is already persisted to `<record>` by the append later in this step (below), so a follow-up writer command would create a duplicate entry. `/plan-update deviation` remains the op-level entry point for user-initiated or later-observed deviations; it's only redundant when `/implement` has already recorded the same deviation during its own Phase 2.

@@ -424,7 +424,7 @@ On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops -`
 Non-interactive invocations surface candidates only (`found N deferred items with fired triggers; re-run interactively to reopen`) and do not mutate the ledger.
 <!-- SHARED-BLOCK:ledger-disposition-sweep END -->
 
-**Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent (`subagent_type: "flow-research"`) instead of five (or six) specialized ones. Give it all six lenses (5 standard + package-quality if any reviewed file is under `claude/commands/` or `claude/skills/`), the prior findings context, and a cap of 20 findings.
+**Small-diff shortcut**: If 3 or fewer files are in scope, launch a single comprehensive review agent (`subagent_type: "flow-research-deep"` — single-agent must cover the judgement-heavy lenses too, so dispatch the Opus variant) instead of five (or six) specialized ones. Give it all six lenses (5 standard + package-quality if any reviewed file is under `claude/commands/` or `claude/skills/`), the prior findings context, and a cap of 20 findings. The orchestrator still runs the Step 2.5 vet pass on the returned findings — single-agent dispatch does not bypass vetting.
 
 **Conditional 6th lens (package-quality)**: If any reviewed file's path begins with `claude/commands/` or `claude/skills/`, also launch Agent 6 in the same parallel batch (6 agents instead of 5). The lens is static-analysis only — frontmatter quality, structural completeness, content depth, internal consistency, shared-block compliance — and emits findings under category `package-quality`.
 
@@ -444,9 +444,20 @@ As agents transition, call `TaskUpdate` to move each task `pending → in_progre
 
 Gate task creation on `scope > 1 file` for `/review` to avoid noise on trivial runs — for a single-file scope, the small-diff shortcut collapses to one agent and task chrome adds little value.
 
-Launch **all five** review agents in parallel using the Agent tool (subagent_type: "flow-research"). Provide each agent with the file list, classification, and prior findings context from Step 1.
+Launch **all five** review agents in parallel using the Agent tool. Provide each agent with the file list, classification, and prior findings context from Step 1. **The five lenses use a mixed-model dispatch** — the choice of `flow-research` (Sonnet, fetch-and-summarise) vs `flow-research-deep` (Opus, judgement-licensed) is per-lens, not uniform:
 
-**IMPORTANT: You MUST make all five (or six, if package-quality fires) Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five or six Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement of five or six agents. Each agent provides specialized, parallel analysis that cannot be replicated by fewer passes.
+| Lens | Agent | subagent_type | Rationale |
+|---|---|---|---|
+| 1. Quality, DRY, Idioms & Pattern Conformance | Agent 1 | **`flow-research-deep`** (Opus) | Type-design expressiveness, idiomatic API choice, internal-consistency judgement against the broader codebase — pure judgement, the kind of lens where a Sonnet shortcut produces "looks fine to me" output that misses the real issues. |
+| 2. Security & Trust Boundaries | Agent 2 | **`flow-research`** (Sonnet) | Hard-capped at 5 findings; the lens is essentials-and-quick-wins, well-known attack surfaces (auth, input validation, secrets, injection), checklist-driven against documented OWASP / framework-specific patterns. The orchestrator's vet pass catches anything over-claimed. |
+| 3. Architecture, Dependencies & Project Structure | Agent 3 | **`flow-research-deep`** (Opus) | Layering, domain modelling, persistence-boundary judgement, cross-aggregate-reference detection — the lens explicitly requires mapping how *types* fit the *domain*, which is the synthesis Sonnet's contract forbids. |
+| 4. Completeness & Robustness | Agent 4 | **`flow-research`** (Sonnet) | Edge-case enumeration, error-path coverage, TODO sweeps — checklist-driven against the changed code's surface. |
+| 5. Testability, Diagnostics & DX | Agent 5 | **`flow-research`** (Sonnet) | Coverage gaps, log-level appropriateness, error-message quality, CLI/help-text discoverability — surface-level lens against documented patterns. |
+| 6. Package Quality (conditional) | Agent 6 | **`flow-research`** (Sonnet) | Static analysis against 6 weighted dimensions, frontmatter / structure / shared-block compliance — purely checklist-driven. |
+
+The Sonnet agents (2, 4, 5, 6) absorb the Context7-first/WebSearch-second contract, version-pinning requirements, evidence-grade rubric, and `escalate-to-deep` tag in `flow-research`'s system prompt. The Opus agents (1, 3) absorb the same plus the mandatory Counter-line, cross-cutting-synthesis licence, and tighter ≤8-finding default in `flow-research-deep`'s system prompt; per-call instructions below override the cap to 20 findings for /review.
+
+**IMPORTANT: You MUST make all five (or six, if package-quality fires) Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five or six Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count** — launch the full complement. Each agent provides specialized, parallel analysis that cannot be replicated by fewer passes. Mixed dispatch is critical: do NOT silently downgrade Agent 1 or Agent 3 to `flow-research` to save cost — the lenses were assigned to Opus because Sonnet output for those lenses is what motivates this whole protocol.
 
 Every agent MUST:
 - Read each changed file in full and read related/surrounding code to build context
@@ -554,9 +565,33 @@ Severity scale matches the rest of `/review`: `critical | warning | suggestion` 
 
 **Design Note: Intentional asymmetry with `/optimise`** — `/optimise` has no equivalent `package-quality` lens. The asymmetry is intentional: `package-quality` is a static-analysis lens (frontmatter, structure, shared-block compliance), not a runtime-performance lens. Future `/review` and `/optimise` passes should not re-flag the omission.
 
+## Step 2.5: Vet agent output (orchestrator)
+
+After all review agents return but BEFORE the interim checkpoint persists anything to the ledger, the orchestrator (Opus) MUST vet the returned findings. Sonnet sub-agents (Agents 2, 4, 5, 6) are the primary vet target — `flow-research`'s contract is fetch-and-summarise, so its findings carry higher fabrication risk than `flow-research-deep` output (Agents 1, 3). The vet pass is mandatory for both, but the spot-check sample size is asymmetric (see below).
+
+**Vetting procedure:**
+
+1. **Triage by source agent and evidence-grade.** Group every finding by `(agent_id, evidence-grade)`. Counts per group go in the console output for transparency.
+2. **Honour `ESCALATE-TO-DEEP` flags.** If a Sonnet agent returned `ESCALATE-TO-DEEP: <reason>` at the top of its report, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt. Merge results when the deep run returns.
+3. **Drop unverified `low` findings.** A `low` finding without an explicit `low-confidence:` prefix AND a concrete verification step the user can take is a fabrication risk. Drop it; log the drop in console.
+4. **Spot-check sample sizes (per agent):**
+   - **Sonnet agents (2, 4, 5, 6)**: sample at least **5 findings per agent** (or all if the agent returned fewer). Fabrication risk is higher; broader sample is needed.
+   - **Opus agents (1, 3)**: sample at least **3 findings per agent**. Counter-line discipline reduces but does not eliminate the need to vet.
+5. **For each sampled finding:**
+   - Read the file at the cited `file:line` and confirm the code matches the finding's `summary`/`description`.
+   - For Opus findings, confirm the `Counter` line is plausible — a finding with a Counter that contradicts the Finding itself is broken.
+   - For library-version findings, confirm the version pin in the manifest matches what the agent claimed.
+   - Sanity-check the recommendation: is it deprecated, is it contradicted by surrounding code, would applying it actually be harmful? Sonnet agents are particularly prone to recommending out-of-date patterns.
+6. **Drop or downgrade.** Drop findings that fail vetting with rationale logged. Downgrades (e.g. `high → medium`) are appended as `_orchestrator-downgrade: <reason>` to the finding's evidence-grade line.
+7. **Re-dispatch on systemic failure.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy for Sonnet).
+
+**Why the asymmetric sample.** Sonnet's fetch-and-summarise contract produces findings whose surface looks reasonable but whose grounding is weaker — fabricated `file:line` anchors, recommendations from older library versions, "best practice" claims without sources. Opus's mandatory Counter line forces the agent to articulate the failure mode of its own finding, which catches the worst fabrications inside the agent before they reach the orchestrator. Vet both, but vet Sonnet harder.
+
+**Vet pass is NOT optional.** The Step 1 idempotency guards prevent duplicate-flagging, but they cannot retroactively remove a fabricated finding once it's persisted to the ledger — that requires manual cleanup later via `/review-apply` or hand-editing.
+
 ## Interim checkpoint
 
-After all review agents return but BEFORE rendering the final findings report, persist new items (and any reopened items from the deferred-reopen sweep) to the ledger in a single atomic `tomlctl items apply --ops -` call. Rationale: an interrupted run (Ctrl-C between agent return and Step 3 render) would otherwise lose the review output. Writing a checkpoint at this boundary makes findings durable the moment they exist. The Step 1 idempotency guards (open items reuse via dedup; resolved items skip re-flagging) make a re-run safe — the worst case is re-rendering a report from an already-checkpointed ledger.
+After Step 2.5 vetting, persist surviving items (and any reopened items from the deferred-reopen sweep) to the ledger in a single atomic `tomlctl items apply --ops -` call. Rationale: an interrupted run (Ctrl-C between agent return and Step 3 render) would otherwise lose the review output. Writing a checkpoint at this boundary makes findings durable the moment they exist. The Step 1 idempotency guards (open items reuse via dedup; resolved items skip re-flagging) make a re-run safe — the worst case is re-rendering a report from an already-checkpointed ledger.
 
 Defer two writes to the final render in Step 3: (1) `tomlctl set <ledger> last_updated <today>` — the ledger is only "fresh" when the report was actually produced; (2) `rounds` increments for existing open items — these only matter once the report includes them. The checkpoint covers inserts + ledger-confirmed transitions (new items from agent output, deferred-item reopens confirmed by user prompt); scalar bookkeeping stays in the final render.
 

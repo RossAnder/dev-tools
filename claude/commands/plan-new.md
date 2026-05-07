@@ -346,7 +346,9 @@ This phase always runs. Research agents may return early with minimal findings w
 
 **Library enumeration**. Before launching research agents, the orchestrator reads dependency-manifest file(s) intersecting the plan's `scope` globs: `package.json` (Node.js), `Cargo.toml` (Rust), `pyproject.toml` / `requirements.txt` (Python), `go.mod` (Go), `*.csproj` / `*.fsproj` (.NET), and similar. For monorepos, enumerate only the workspace packages whose directories intersect `scope`. Extract each dependency and its pinned version. Hand the scope-filtered "libraries to research" list (typically ≤ 20) to each research agent as input.
 
-Launch up to 2 research agents in parallel using the Agent tool (subagent_type: "flow-research"):
+Launch up to 2 research agents in parallel using the Agent tool. **Default `subagent_type: "flow-research"` (Sonnet)** for the mechanical fetch-and-summarise work this phase does — verifying API signatures, finding pinned versions, fetching changelogs. The Sonnet contract suits Phase 3 because the orchestrator (Opus) carries the design synthesis in Phase 6; you do not need Opus for the lookup itself.
+
+**Escalate to `flow-research-deep` (Opus) only when:** (a) a topic requires architectural inference across multiple libraries (e.g. "evaluate trade-offs between cap'n proto and protobuf for our use case" — this is judgement, not lookup); or (b) the research is benchmarking-driven (e.g. "compare allocation profiles of these three libraries"); or (c) a previous Phase 3 agent returned `ESCALATE-TO-DEEP: <reason>` and the topic is being re-dispatched. State the rationale at the top of the agent's prompt: `DISPATCH: flow-research-deep — <reason>`.
 
 **IMPORTANT: You MUST make all research Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch the full complement of research agents.
 
@@ -359,7 +361,16 @@ Research focus should be tailored to the task. Broaden research focus beyond API
 - **Benchmarking research** — when the plan proposes multiple viable approaches and the choice hinges on performance.
 - **Undocumented-behaviour research** — StackOverflow, GitHub Issues when the official docs are ambiguous or silent on the edge case.
 
-**Checkpoint**: After agents return, append a `## Research Notes` section to the plan-mode file as a second recovery point.
+**Vet agent output before checkpoint.** The orchestrator (Opus) MUST vet returned findings before persisting them to `## Research Notes` — Sonnet's fetch-and-summarise contract carries fabrication risk that compounds when the findings flow into Phase 6 design. Procedure:
+
+1. **Honour `ESCALATE-TO-DEEP` flags.** If a Sonnet agent returned `ESCALATE-TO-DEEP: <reason>` at the top of its report, re-dispatch the topic to `flow-research-deep` with the escalation reason in the prompt before proceeding.
+2. **Drop unverified `low-confidence:` findings** unless framed as an explicit hypothesis with a verification step.
+3. **Spot-check at least 3 findings per agent** (or all if fewer) — confirm the cited URL exists and matches the claim, confirm the `Library/API` version pin matches the manifest, confirm Context7 query references resolve to real library IDs.
+4. **Drop fabrications** with rationale logged. Do NOT silently fix them — Phase 4 / Phase 6 may reference the dropped finding indirectly, and an audit trail makes the gap visible.
+
+Persist only post-vet findings to `## Research Notes`.
+
+**Checkpoint**: After vetting, append a `## Research Notes` section to the plan-mode file as a second recovery point.
 
 **Reason thoroughly to synthesize research findings.** Evaluate which findings are actionable, resolve any conflicts between sources, and determine how research impacts the design approach.
 
@@ -397,10 +408,12 @@ When the procedure above yields a skip, record the skip decision under a dedicat
 
 **Run this phase** if a Phase 4 answer surfaced a topic not yet researched — for example, the user selected a library, API, or approach that initial research did not cover.
 
-Launch **up to 1 flow-research agent** with a narrow scope. The agent MUST:
+Launch **up to 1 research agent** with a narrow scope. **Default `subagent_type: "flow-research"` (Sonnet)** for the same reasons Phase 3 defaults to Sonnet — the directed topic is usually a specific library / API the user pointed at. **Escalate to `flow-research-deep` (Opus)** when the user's answer introduces a topic that requires architectural reasoning rather than lookup (e.g. user picked an approach that needs comparison against alternatives). State the rationale: `DISPATCH: flow-research-deep — <reason>`.
+
+The agent MUST:
 - Return structured findings scoped strictly to the topic introduced by Phase 4 answers — do not re-investigate topics already covered in `## Research Notes`.
 
-If the directed research agent returns zero actionable findings, note this under the `### Phase 5 outcome` sub-heading inside `## User Decisions` (e.g. `— directed research surfaced nothing actionable`) and proceed to Phase 6 without appending to Research Notes.
+**Vet returned findings** with the same procedure as Phase 3 (honour ESCALATE-TO-DEEP, drop unverified low-confidence, spot-check). If the directed research agent returns zero actionable findings, note this under the `### Phase 5 outcome` sub-heading inside `## User Decisions` (e.g. `— directed research surfaced nothing actionable`) and proceed to Phase 6 without appending to Research Notes.
 
 **Checkpoint**: Append Phase 5 findings under a dedicated `### Directed research additions` sub-heading at the bottom of the Research Notes section so `/plan-update reformat` preserves the provenance boundary when extracting RESEARCH-NOTES.md.
 
@@ -638,7 +651,7 @@ Also output the plan path and the resolved flow slug so the user has both refere
 
 - **Plan mode restrictions apply** — The main conversation can only edit the plan file. All other actions must be read-only (Glob, Grep, Read, git commands, Context7, WebSearch). Sub-agents operate in their own contexts and are not restricted by plan mode, but their prompts should instruct them to perform read-only exploration or research only — no edits.
 - **Front-load complex analysis in the main conversation** — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Give agents specific exploration or research tasks, not open-ended design problems.
-- **Explore agents for exploration, flow-research agents for research** — Use subagent_type "Explore" for codebase navigation and "flow-research" for Context7/WebSearch research.
+- **Explore agents for exploration, flow-research / flow-research-deep for research** — Use subagent_type "Explore" for codebase navigation. For Context7/WebSearch research, default to `flow-research` (Sonnet — mechanical fetch-and-summarise) and escalate to `flow-research-deep` (Opus — judgement-licensed) when the topic requires architectural inference, library comparison, or benchmarking-driven trade-offs. The orchestrator (Opus) MUST vet `flow-research` output before persisting to `## Research Notes` (see Phase 3).
 - **Context budget** — Cap explore agent output at ~500 words and research agent output at ~500 words / 10 findings. Persist findings to the plan file between phases as checkpoints. If context becomes constrained, use `/compact` with specific preservation instructions before continuing.
 - **Don't over-plan** — The plan should be detailed enough to execute without ambiguity, but not so detailed that it prescribes every line of code. Implementation agents will read the target files and make tactical decisions.
 - **Reuse over reinvention** — Actively search for existing patterns, utilities, and abstractions. The plan should reference them by file path.
