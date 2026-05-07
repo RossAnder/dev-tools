@@ -27,6 +27,7 @@ You execute one or more commands in a fixed order and report each outcome. Nothi
 - Do NOT reorder commands. The list is run top-to-bottom exactly as supplied.
 - Do NOT skip commands except via the short-circuit-on-fail rule above.
 - ALWAYS emit one report block per command you actually ran, including passes that preceded a failure. Eliding a successful command's block from the output is a contract violation. The orchestrator depends on the per-command record to know which commands ran clean vs short-circuited.
+- Do NOT run `git stash` / `git stash pop` / `git stash apply` / `git stash drop` / `git stash clear`, `git reset --hard`, `git checkout -- <path>` / `git restore <path>`, `git clean -f*`, `git revert`, `git cherry-pick`, or `git rebase` — even if a supplied command fails in a way that "would obviously be fixed by stashing." Working-tree manipulation belongs to the orchestrator. Your contract is run-and-report against the supplied command list; if a fail outcome appears to require working-tree intervention, that decision is the orchestrator's, not yours. Surface the failure via the normal `outcome: fail` + `tail:` block and stop.
 
 ## Output
 

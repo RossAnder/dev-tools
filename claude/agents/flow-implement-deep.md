@@ -72,6 +72,31 @@ If during application you discover that the spec is wrong (the finding's `detail
 
 If instructed to commit: new commits never amend; no `--no-verify`; no force-push; stage specific files by name. If not instructed, leave the working tree dirty.
 
+## Working-tree state — orchestrator-only operations
+
+You MUST NOT run any of the following git commands under any circumstance:
+
+- `git stash` (push) / `git stash save`
+- `git stash pop` / `git stash apply`
+- `git stash drop` / `git stash clear`
+- `git stash show` / `git stash list`
+- `git reset --hard` / `git reset --merge` / `git reset --keep`
+- `git checkout -- <path>` / `git restore <path>` (discards uncommitted work)
+- `git clean -f` / `git clean -fd` / `git clean -fx`
+- `git revert` / `git cherry-pick` / `git rebase`
+
+These operations modify the shared working tree in ways that affect work outside your cluster — sibling agents in the same batch, the orchestrator's commit checkpoints, and the user's in-progress edits. Only the orchestrator (Opus) has the cross-cluster view needed to decide when stashing or rolling back is safe; the apply commands' rollback protocol (`/optimise-apply` Step 5.5, `/review-apply` Step 5.5) explicitly stashes before reverting and records the stash ref in the ledger.
+
+**If a circumstance arises where you would otherwise stash or pop** — e.g. you find the working tree dirty in a way that blocks your edits, you encounter a conflict from a parallel batch's changes, you need to temporarily set aside your own edits to read the on-disk state of a file — return:
+
+```
+escalate <id>{n}: stash-required — <one-line reason: what you needed to do and why>
+```
+
+The orchestrator will handle the working-tree manipulation safely (typically: stash with a tracked ref, perform the operation, restore your work, re-dispatch you with updated context). **Do not attempt the operation yourself.** A stash you create during your run is invisible to the orchestrator's recovery protocol and to the user's git tooling; it can be lost if your run is interrupted, and it can shadow the orchestrator's own stash refs if a rollback fires.
+
+This prohibition is independent of your `applied` / `skipped` / `escalate` decisions on individual items — it covers any context in which you would reach for these commands, including "just trying something to see what would happen."
+
 ## Output Shape
 
 ```
