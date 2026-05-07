@@ -518,6 +518,7 @@ Every agent MUST:
 - Add a brief inline comment only when the fix would be non-obvious to a reader
 - If a finding cannot be safely applied (would break behaviour, has unclear semantics, or the research doesn't hold up on closer inspection), **skip it** and report why
 
+<!-- SHARED-BLOCK:apply-vet-flow-implement-lite START -->
 ## Step 4.5: Vet `flow-implement-lite` apply tags (orchestrator)
 
 After cluster agents return but BEFORE the interim checkpoint, the orchestrator (Opus) MUST vet `applied` tags from `flow-implement-lite` clusters. The Step 5a build/test verification catches bytes-don't-compile bugs and existing-test regressions, but it does NOT catch:
@@ -533,12 +534,13 @@ After cluster agents return but BEFORE the interim checkpoint, the orchestrator 
 2. **Spot-sample bare `applied` tags.** Sample at least **1 applied per cluster** (or all if the cluster has fewer than 3 applies). For each sampled apply:
    - Read the touched lines and confirm the change matches the finding's recommended action.
    - Confirm the surrounding code's style (naming, error handling, idioms) is preserved or improved, not regressed.
-   - For review fixes specifically, confirm the fix actually addresses the finding's root cause rather than just silencing the symptom.
+   - Confirm the change makes structural sense and addresses the finding's root cause — not just satisfying the spec by adding a duplicating helper or silencing the symptom without fixing the underlying issue.
 3. **Sample-failure → expand-and-fix.** If a sampled apply fails vetting, **expand the sample to 100% of that cluster's applies** — the failure pattern likely affects others. For each failed apply, mark it for re-dispatch to `flow-implement-deep` (do NOT revert silently — let `flow-implement-deep` produce the correct fix and then verify).
 4. **Skip sampling for `flow-implement-deep` cluster output.** Deep clusters carry their own escalation discipline; the orchestrator's review focus is `flow-implement-lite` output specifically. A spot-check of deep output remains advisable but is not gated.
 5. **Record the vet outcome** as a console line per cluster: `vet: cluster <id> — N applies sampled, M failed, K re-dispatched to deep`.
 
-The vet pass is what separates "fix succeeded" from "the right thing happened." Skipping it means a review fix can ship that compiles but doesn't actually address the reviewed concern.
+The vet pass is what separates "the change succeeded" from "the right thing happened." Skipping it means a regression — bytes that compile and pass existing tests but break correctness, style, or root-cause coverage — can ship unnoticed.
+<!-- SHARED-BLOCK:apply-vet-flow-implement-lite END -->
 
 ## Interim checkpoint
 

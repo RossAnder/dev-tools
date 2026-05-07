@@ -68,3 +68,10 @@ files = [
   "claude/agents/flow-implement-deep.md",
   "claude/agents/flow-implement-lite.md",
 ]
+
+[[block]]
+name = "apply-vet-flow-implement-lite"
+files = [
+  "claude/commands/optimise-apply.md",
+  "claude/commands/review-apply.md",
+]
