@@ -223,7 +223,7 @@ fn read_json_value_from_arg(arg: &str) -> Result<JsonValue> {
 /// paths hand us `WriteIntegrityArgs` (the full set). Both flow through the
 /// same `IntegrityOpts` so every downstream consumer
 /// (`maybe_verify_integrity` / `write_toml_with_sidecar`) stays unchanged.
-fn read_integrity_opts(args: &ReadIntegrityArgs) -> IntegrityOpts {
+pub(crate) fn read_integrity_opts(args: &ReadIntegrityArgs) -> IntegrityOpts {
     IntegrityOpts {
         // Read-side paths never write a sidecar; default to true so that if
         // a future refactor funnels the same opts into a writer we don't
@@ -263,7 +263,7 @@ fn strict_read_check(file: &std::path::Path, strict_read: bool) -> Result<()> {
     ))
 }
 
-fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
+pub(crate) fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
     IntegrityOpts {
         write_sidecar: !args.no_write_integrity,
         verify_on_read: args.verify_integrity,

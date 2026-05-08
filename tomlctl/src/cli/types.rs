@@ -471,19 +471,27 @@ pub(crate) enum FlowOp {
     },
     /// Discover plan files under configured directories.
     FindPlans {
+        /// One or more directories to scan for plan markdown files. Repeat the
+        /// flag for each additional directory; absolute or repo-relative paths
+        /// are accepted. Overrides `tomlctl.plansDirectories` / `plansDirectory`
+        /// in `.claude/settings.json` when provided.
         #[arg(long = "dirs", value_name = "DIR")]
         dirs: Vec<PathBuf>,
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — `flow find-plans` always emits JSON.
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
     /// Report staleness of a flow's `context.toml`.
     Stale {
+        /// Flow slug to inspect (`<root>/.claude/flows/<slug>/context.toml`).
         #[arg(long = "slug")]
         slug: String,
+        /// Staleness threshold as `<n>{s|m|h|d|w}` (default: `7d`).
+        /// `flow stale` flips `stale=true` when the flow's `updated` date is
+        /// older than this duration.
         #[arg(long = "threshold", default_value = "7d")]
         threshold: String,
+        /// Emit single-line compact JSON instead of pretty-printed JSON.
         #[arg(long = "json")]
         json: bool,
         #[command(flatten)]
@@ -491,18 +499,23 @@ pub(crate) enum FlowOp {
     },
     /// Initialise a new flow (idempotent).
     Init {
+        /// Flow slug — must match `^[a-z0-9][a-z0-9-]{0,63}$`.
         #[arg(long = "slug")]
         slug: String,
+        /// Path to the plan markdown file the flow tracks.
         #[arg(long = "plan")]
         plan: PathBuf,
+        /// Optional `branch` to record in `context.toml` and the active-flow registry.
         #[arg(long = "branch")]
         branch: Option<String>,
+        /// Optional `worktree` (absolute path) recorded on the active-flow entry.
         #[arg(long = "worktree")]
         worktree: Option<PathBuf>,
+        /// Scope-glob patterns recorded on the active-flow entry. Repeatable.
         #[arg(long = "scope")]
         scope: Vec<String>,
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — `flow init` always emits JSON.
+        /// Preview the bootstrap without writing. Emits a `would_change` summary.
         #[arg(long = "dry-run")]
         dry_run: bool,
         #[command(flatten)]
@@ -510,14 +523,19 @@ pub(crate) enum FlowOp {
     },
     /// Report (and optionally bootstrap) a flow artifact.
     EnsureArtifact {
+        /// Flow slug whose artifact is under inspection.
         #[arg(long = "slug")]
         slug: String,
+        /// Artifact kind (context, execution-record, review-ledger,
+        /// optimise-findings, plan-review-findings).
         #[arg(long = "kind", value_enum)]
         kind: ArtifactKind,
+        /// When set on `kind=execution-record`, materialise the 2-line
+        /// `schema_version=1` skeleton (idempotent — no-op if file present).
         #[arg(long = "bootstrap")]
         bootstrap: bool,
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — `flow ensure-artifact` always emits JSON.
+        /// Preview the bootstrap without writing.
         #[arg(long = "dry-run")]
         dry_run: bool,
         #[command(flatten)]
@@ -525,29 +543,49 @@ pub(crate) enum FlowOp {
     },
     /// Resolve the active flow via the 5-step algorithm.
     Resolve {
-        #[arg(long = "flow")]
+        /// Step-1 explicit override: bypass discovery and use this slug.
+        #[arg(long = "flow", help = "Step-1 override: resolve to this flow slug verbatim")]
         flow: Option<String>,
-        #[arg(long = "path", value_name = "PATH")]
+        /// Step-2 scope-glob filter: paths to test against each candidate flow's
+        /// `scope` array. Repeatable.
+        #[arg(
+            long = "path",
+            value_name = "PATH",
+            help = "Step-2 scope-glob: caller path tested against each flow's scope (repeatable)"
+        )]
         path: Vec<PathBuf>,
-        #[arg(long = "branch")]
+        /// Step-3/5 branch hint — match active-flow registry binding by branch,
+        /// else fall through to step-5 branch-match against `context.toml`.
+        #[arg(long = "branch", help = "Step-3 binding hint / step-5 branch-match filter")]
         branch: Option<String>,
-        #[arg(long = "worktree")]
+        /// Step-3 binding hint — match active-flow registry binding by worktree path.
+        #[arg(long = "worktree", help = "Step-3 binding hint: match active-flow registry by worktree")]
         worktree: Option<PathBuf>,
-        #[arg(long = "with-staleness")]
+        /// Annotate the resolved envelope with `{stale, age_seconds, reason}`.
+        #[arg(long = "with-staleness", help = "Annotate envelope with staleness verdict (7d threshold)")]
         with_staleness: bool,
-        #[arg(long = "json", default_value_t = true)]
+        /// Emit JSON. On by default — `--json=false` would emit JSON anyway
+        /// (read-side tomlctl idiom). Retained for callers that pass it explicitly.
+        #[arg(
+            long = "json",
+            default_value_t = true,
+            help = "Emit JSON envelope (always on — flag retained for explicit-pass callers)"
+        )]
         json: bool,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
     /// Run invariant checks across flows.
     Doctor {
+        /// When set, scope checks to a single flow slug; otherwise every flow
+        /// under `.claude/flows/` is checked.
         #[arg(long = "slug")]
         slug: Option<String>,
+        /// Auto-repair sidecar mismatches and prune stale active-flow entries.
         #[arg(long = "fix")]
         fix: bool,
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — `flow doctor` always emits JSON.
+        /// Preview `--fix` actions without writing.
         #[arg(long = "dry-run")]
         dry_run: bool,
         #[command(flatten)]
@@ -555,14 +593,17 @@ pub(crate) enum FlowOp {
     },
     /// List all flows.
     List {
+        /// Filter by `context.toml`'s `status` field (exact-string match).
         #[arg(long = "status")]
         status: Option<String>,
+        /// Filter by `context.toml`'s `branch` field (exact-string match).
         #[arg(long = "branch")]
         branch: Option<String>,
+        /// Cross-reference with `.claude/active-flow.toml` and only emit slugs
+        /// present in the registry.
         #[arg(long = "active-only")]
         active_only: bool,
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — `flow list` always emits JSON.
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -573,23 +614,26 @@ pub(crate) enum FlowOp {
 pub(crate) enum ActiveOp {
     /// List entries in the active-flow registry.
     List {
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — output is always JSON.
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
     /// Add (or update) a flow in the active-flow registry.
     Add {
+        /// Slug to upsert in the registry.
         #[arg(long = "slug")]
         slug: String,
+        /// Branch to record on the entry's `[active.binding]` table.
         #[arg(long = "branch")]
         branch: Option<String>,
+        /// Worktree absolute path (per-clone) recorded on the binding.
         #[arg(long = "worktree")]
         worktree: Option<PathBuf>,
+        /// Scope-glob pattern (repeatable) recorded on the binding.
         #[arg(long = "scope")]
         scope: Vec<String>,
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — output is always JSON.
+        /// Preview the upsert without writing.
         #[arg(long = "dry-run")]
         dry_run: bool,
         #[command(flatten)]
@@ -597,10 +641,11 @@ pub(crate) enum ActiveOp {
     },
     /// Remove a flow from the active-flow registry.
     Remove {
+        /// Slug to remove.
         #[arg(long = "slug")]
         slug: String,
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — output is always JSON.
+        /// Preview the removal without writing.
         #[arg(long = "dry-run")]
         dry_run: bool,
         #[command(flatten)]
@@ -608,10 +653,11 @@ pub(crate) enum ActiveOp {
     },
     /// Update a flow's last-touched timestamp in the registry.
     Touch {
+        /// Slug whose `last_used` should be refreshed.
         #[arg(long = "slug")]
         slug: String,
-        #[arg(long = "json")]
-        json: bool,
+        // R7: `--json` flag dropped — output is always JSON.
+        /// Preview the touch without writing.
         #[arg(long = "dry-run")]
         dry_run: bool,
         #[command(flatten)]

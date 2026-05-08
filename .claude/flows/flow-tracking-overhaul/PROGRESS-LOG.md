@@ -62,6 +62,7 @@
 | E58 | Removed stale cautionary note from tdd.md Acceptance smoke-check about implement.md argume | 2026-05-08 | `—` | Package-quality warning (R60): implement.md frontmatter has been updated to `[--flow <slug>] [plan path or task description]`, so the cautio | — |
 | E59 | Consolidated 3 active-flow registry parsers into flow::schema (R17 user-authorised overrid | 2026-05-08 | `—` | DB warning (R17) reopened after user-authorised override of cluster scope-confinement. Created tomlctl/src/flow/schema.rs as single source o | — |
 | E60 | Removed --cwd flag from flow resolve (R26 user-authorised override) | 2026-05-08 | `—` | Architecture warning (R26) reopened after user-authorised override of public-CLI-surface gate. Removed --cwd from cli/types.rs FlowOp::Resol | — |
+| E61 | R16 doc-only addition: integrity sidecar (.sha256) scope subsection added to CLAUDE.md | 2026-05-08 | `—` | Applied via /review-apply for review-ledger item R16. CLAUDE.md is in the flow's scope globs, so the doc addition is recorded as a plan dev | — |
 
 ---
 
@@ -77,4 +78,4 @@
 
 | Date | Changes | Commits |
 |------|---------|---------|
-| 2026-05-08 | 60 entries: status-transition × 2, checkpoint × 1, task-completion × 18, deviation × 29, verification × 10 | 0134ce4, 2983cdd, 494254e, 4b29c9a, 58d9307, 5ee8c9d, 6aa837a, 735cdae, 8ffa35f, b8c6f8c, c1bad18, cf03863 |
+| 2026-05-08 | 61 entries: status-transition × 2, checkpoint × 1, task-completion × 18, deviation × 30, verification × 10 | 0134ce4, 2983cdd, 494254e, 4b29c9a, 58d9307, 5ee8c9d, 6aa837a, 735cdae, 8ffa35f, b8c6f8c, c1bad18, cf03863 |

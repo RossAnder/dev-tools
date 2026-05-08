@@ -368,7 +368,8 @@ branch = "main"
 "#,
     );
 
-    let arr = run_find_plans(&root, &["--json"]);
+    // R7: `--json` flag dropped — `flow find-plans` always emits JSON.
+    let arr = run_find_plans(&root, &[]);
     assert_eq!(arr.len(), 2);
 
     // Every record must carry `path`, `slug`, `has_flow`. Wired records

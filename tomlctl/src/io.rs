@@ -1106,6 +1106,33 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
     Ok(REPO_ROOT.get_or_init(|| resolved).clone())
 }
 
+/// R8: sorted directory listing — keeps test output deterministic across
+/// platforms. `fs::read_dir` does not specify an order on POSIX or NTFS;
+/// sorting by `file_name` (OS-string-lexicographic) makes the listing
+/// stable. Pre-R8 this lived as a per-leaf private helper in
+/// `flow::list`, `flow::find_plans`, `flow::doctor`, and
+/// `flow::resolve::enumerate_flows`; consolidation lives next to the
+/// other filesystem primitives.
+pub(crate) fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
+    let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir)
+        .with_context(|| format!("reading directory {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+    Ok(entries)
+}
+
+/// R2: render `path` relative to `root` using forward slashes. Falls
+/// back to the path's lossy display form when it doesn't share `root`'s
+/// prefix. Pre-R2, `flow::find_plans` used a reversed `(path, root)`
+/// argument order; the canonical form here is `(root, path)` matching
+/// the majority of pre-existing leaf-local helpers
+/// (`flow::ensure_artifact`, `flow::doctor`, `flow::resolve`).
+pub(crate) fn relativise(root: &Path, path: &Path) -> String {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    rel.to_string_lossy().replace('\\', "/")
+}
+
 /// R38: stderr-warn when a read path resolves outside `<repo-or-cwd-root>/.claude/`.
 /// Used by `items find-duplicates --across` to flag the case where a caller
 /// points the secondary-ledger flag at an arbitrary filesystem path; a

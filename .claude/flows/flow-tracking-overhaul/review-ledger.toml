@@ -4,7 +4,7 @@ last_updated = 2026-05-08
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R1"
 file = "tomlctl/src/flow/init.rs"
@@ -15,11 +15,13 @@ effort = "medium"
 category = "quality"
 summary = "T7 init.rs duplicates ~7 active-flow registry helpers verbatim from active.rs (build_entry, find_slug_index, empty_doc, mutate_active body, write_integrity_opts, now_rfc3339, entry_to_json) — promote helpers to active.rs pub(crate) instead of branching"
 dedup_id = "3c735c3d50a7f3fc"
+resolved = 2026-05-08
+resolution = "Promoted flow::active::{build_entry, find_slug_index, empty_doc, mutate_active} to pub(crate); deleted seven duplicates from flow::init (build_active_entry, find_active_slug_index, empty_active_doc, inline mutate_active body, leaf-local write_integrity_opts, leaf-local now_rfc3339, duplicate entry_to_json); init.rs::upsert_active_entry now delegates to the shared pipeline"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R2"
 file = "tomlctl/src/flow/find_plans.rs"
@@ -30,11 +32,13 @@ effort = "trivial"
 category = "quality"
 summary = "find_plans::relativise has reversed (path, root) argument order vs sibling flow modules' (root, path); promote one to crate::io shared helper to remove 4× duplication and the lone reversed signature"
 dedup_id = "b5022e59a3722111"
+resolved = 2026-05-08
+resolution = "Extracted relativise(root, path) to crate::io with canonical (root, path) ordering; removed leaf-local copies in find_plans, ensure_artifact, doctor, resolve"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R3"
 file = "tomlctl/src/flow/active.rs"
@@ -45,11 +49,13 @@ effort = "trivial"
 category = "quality"
 summary = "Integrity-args translators duplicated 6× (cli/dispatch + 5 flow leaves) — promote cli/dispatch helpers to pub(crate) or impl From<&Args> for IntegrityOpts in integrity.rs"
 dedup_id = "ac03b2f1a147eda2"
+resolved = 2026-05-08
+resolution = "Promoted cli::dispatch::{read_integrity_opts, write_integrity_opts} to pub(crate) re-exported via crate::cli::*; removed six leaf-local duplicates in flow::active, init, ensure_artifact, doctor, and the private resolve copy"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R4"
 file = "tomlctl/src/flow/resolve.rs"
@@ -60,11 +66,13 @@ effort = "small"
 category = "quality"
 summary = "Resolution `source` carried as bare &str across build_resolved_envelope / build_unresolved_envelope_with_ties — convert to enum ResolveSource so the 6 known values are non-stringly-typed and the build_unresolved scope-glob branch becomes a match arm"
 dedup_id = "d1b4b271e4c1154a"
+resolved = 2026-05-08
+resolution = "Introduced enum ResolveSource with as_str() accessor; threaded through build_resolved_envelope, build_unresolved_envelope_with_ties, and the step-6 none envelope. Wire-format byte-identical (six pre-existing string literals emitted verbatim by as_str())"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R5"
 file = "tomlctl/src/flow/resolve.rs"
@@ -75,11 +83,13 @@ effort = "trivial"
 category = "quality"
 summary = "any_path_matches_scope uses Vec<GlobMatcher> + nested loop where idiomatic globset is GlobSet::is_match (single Aho-Corasick traversal); also recompiled per resolve invocation across flows — cache compiled GlobSet per FlowSummary in enumerate_flows"
 dedup_id = "b4653da9f5d812d1"
+resolved = 2026-05-08
+resolution = "Replaced per-call Vec<GlobMatcher>+nested loop with globset::GlobSet; cached compiled GlobSet on each FlowSummary during enumerate_flows so step-2 candidate filtering is O(paths) not O(paths*patterns*candidates)"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R6"
 file = "tomlctl/src/flow/stale.rs"
@@ -90,11 +100,13 @@ effort = "small"
 category = "quality"
 summary = "5 different ad-hoc jiff time helpers across flow leaves; the staleness arithmetic in stale.rs:127-191 and resolve.rs:768-846 are copy-paste with diverged error messages — consolidate into flow::time module (now_rfc3339, today_utc, parse_iso_to_date)"
 dedup_id = "519bedb16dc4bf71"
+resolved = 2026-05-08
+resolution = "Created flow/time.rs exposing now(), now_rfc3339(), today_utc_date(), today_utc_iso(), today_toml_date(), parse_iso_to_date(); replaced five pre-existing per-site jiff helpers in active.rs, init.rs, ensure_artifact.rs, stale.rs::verdict_from_iso_string, and resolve.rs::compute_staleness"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R7"
 file = "tomlctl/src/cli/types.rs"
@@ -105,11 +117,13 @@ effort = "trivial"
 category = "quality"
 summary = "`--json` flag accepted on every flow subcommand but ignored at every dispatch site (8× `_json: bool`); FlowOp::Resolve uniquely has `default_value_t = true` — drop the flag everywhere or honour it consistently"
 dedup_id = "570db3892a6ba038"
+resolved = 2026-05-08
+resolution = "Dropped --json flag from every FlowOp variant except Resolve (where default_value_t=true was load-bearing) and from every ActiveOp variant; updated dispatch wiring + leaf signatures + 1 test-side reference"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R8"
 file = "tomlctl/src/flow/list.rs"
@@ -120,11 +134,13 @@ effort = "trivial"
 category = "quality"
 summary = "Sorted directory-listing helper duplicated 4× across list/find_plans/doctor/resolve — extract to crate::io::read_dir_sorted; the 'parallel-safety during B-phase rollout' rationale has expired"
 dedup_id = "b11c55b778452b2b"
+resolved = 2026-05-08
+resolution = "Extracted read_dir_sorted to crate::io; removed four pre-existing duplicates in find_plans, list, doctor, and resolve::enumerate_flows"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R9"
 file = "tomlctl/src/flow/init.rs"
@@ -135,11 +151,13 @@ effort = "small"
 category = "quality"
 summary = "Canonical-artifact path map computed in 3 places (init::artifacts_for, resolve::canonical_artifacts, doctor::canonical_artifacts) with three different shapes — extract one source of truth so a future schema addition doesn't require editing three locations"
 dedup_id = "50d561d7236e9ee0"
+resolved = 2026-05-08
+resolution = "Created flow/artifacts.rs exposing CanonicalArtifacts::for_slug(slug) with to_pairs() and to_json() accessors; replaced three divergent shapes in init::artifacts_for, resolve::canonical_artifacts, doctor::canonical_artifacts. JSON shape preserved by routing all three call sites through CanonicalArtifacts::to_json()"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "flow-tracking-overhaul"
 id = "R10"
 file = "tomlctl/src/flow/find_plans.rs"
@@ -150,11 +168,12 @@ effort = "trivial"
 category = "quality"
 summary = "P4 sentinel `__DONT_ASK__` is a private const in find_plans.rs only; if a second consumer adds the same opt-out semantics, promote to a crate-level constant before drift lands"
 dedup_id = "2183bb792e17b6ea"
+verified_note = "SENTINEL_UNSET (__DONT_ASK__) remains a private const in find_plans.rs with exactly one consumer module; the finding is conditional on a second consumer arriving — current state is correct (tripwire, not action). Audited during /review-apply 2026-05-08"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R11"
 file = "tomlctl/src/flow/init.rs"
@@ -165,11 +184,13 @@ effort = "trivial"
 category = "quality"
 summary = "Two different slug validators share the name `validate_slug` (strict regex `^[a-z0-9][a-z0-9-]{0,63}$` in init.rs vs deny-list in ensure_artifact.rs); rename the lenient one to `validate_slug_lenient` or gate via `SlugKind` argument"
 dedup_id = "e900f24da3da12b0"
+resolved = 2026-05-08
+resolution = "Renamed flow::ensure_artifact::validate_slug to validate_slug_lenient; updated three test callers and the call-site in dispatch. The strict-regex validate_slug in flow::init is unchanged"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R12"
 file = "tomlctl/src/flow/active.rs"
@@ -180,11 +201,13 @@ effort = "trivial"
 category = "quality"
 summary = "Dry-run paths in active::remove and active::touch reimplement slug-lookup inline (4-line closures) instead of using existing find_slug_index helper at line 171"
 dedup_id = "b20303077710b5af"
+resolved = 2026-05-08
+resolution = "Replaced inline 4-line slug-lookup closures in active::remove and active::touch dry-run paths with calls to the shared find_slug_index helper"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R13"
 file = "tomlctl/src/flow/resolve.rs"
@@ -195,11 +218,13 @@ effort = "medium"
 category = "quality"
 summary = "FlowSummary (resolve.rs:627) and FlowRecord (list.rs:99) project the same context.toml subset with the same parse loop (~70 LOC vs ~48 LOC); extract a shared FlowProjection iterator with per-caller error-tolerance config"
 dedup_id = "c7a2073f9c0d09e3"
+resolved = 2026-05-08
+resolution = "Introduced flow::schema::FlowProjection::from_toml_value; both flow::list::read_context_record and flow::resolve::enumerate_flows now consume the same parse helper. Per-leaf shape (FlowRecord vs FlowSummary) preserved by extracting fields off the projection"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R14"
 file = "tomlctl/src/flow/active.rs"
@@ -210,6 +235,8 @@ effort = "trivial"
 category = "quality"
 summary = "Legacy-pointer warning is documented as 'one-shot stderr warning' but emits on every `flow active list` invocation; either implement OnceLock-based once-per-process suppression or correct the docstring to say 'every-call'"
 dedup_id = "cf87bdd2b7a044d8"
+resolved = 2026-05-08
+resolution = "Gated maybe_warn_legacy on a process-wide OnceLock<()>; the warning now fires at most once per process even across repeated flow active list calls in the same invocation"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -237,7 +264,7 @@ resolution = "Added validate_slug (lenient deny-list mirroring ensure_artifact.r
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R16"
 file = "tomlctl/src/integrity.rs"
@@ -249,6 +276,8 @@ category = "security"
 summary = "Sidecar (.sha256) is not itself integrity-protected — attacker who can write `.claude/` can update both TOML and sidecar atomically and the check passes; the contract is accidental-corruption detection, not tamper-evidence — document the scope explicitly in CLAUDE.md so consumers don't treat `--verify-integrity` as a tamper-evident seal"
 evidence = ["tomlctl/src/integrity.rs:152-207"]
 dedup_id = "5a0cac4d2fcec697"
+resolved = 2026-05-08
+resolution = "Added '## Integrity sidecar (.sha256) — scope' subsection to CLAUDE.md documenting that the sidecar detects accidental corruption only and is not a tamper-evident seal against an attacker with write access to .claude/. Placed after the Flow registry section"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -271,7 +300,7 @@ resolution = "User-authorised override of cluster scope-confinement. Created tom
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R18"
 file = "tomlctl/src/flow/resolve.rs"
@@ -282,6 +311,8 @@ effort = "medium"
 category = "db"
 summary = "Resolve envelope (~13 keys) hand-built via serde_json::Map insertions in build_resolved_envelope and build_unresolved_envelope_with_ties; introducing `#[derive(Serialize)] ResolveEnvelope` would type the wire schema and enable a future Rust-library API that flow-bootstrap could call in-process"
 dedup_id = "5b12b167cf06a1d7"
+resolved = 2026-05-08
+resolution = "Introduced struct ResolveEnvelope with to_json() method preserving canonical 13-key resolved order and 5-key unresolved order. Both build_resolved_envelope and build_unresolved_envelope_with_ties (and the step-6 none branch) emit through one struct. Wire-format byte-identical; chose manual serde_json::Map build path over derive(Serialize) to avoid adding new serde derive dependency"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -365,7 +396,7 @@ dedup_id = "b3e164b4bd45ead2"
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R24"
 file = "tomlctl/src/flow/resolve.rs"
@@ -376,6 +407,8 @@ effort = "trivial"
 category = "db"
 summary = "pick_active_latest sorts last_used by lexicographic string compare; safe today (active.rs writes UTC-Z always via jiff::Timestamp::now().to_string()) but a hand-edited registry entry with TZ offset would silently produce wrong 'latest' picks. Parse to jiff::Timestamp at load time so a malformed entry surfaces at parse rather than via a wrong pick"
 dedup_id = "d4f7db6015968d3d"
+resolved = 2026-05-08
+resolution = "pick_active_latest now parses each last_used to jiff::Timestamp at lookup time; entries with unparseable timestamps emit stderr warning and sort as ancient (treated as None). UTC-Z entries sort correctly via Timestamp::cmp; hand-edited TZ-offset entries no longer silently mis-pick"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -611,7 +644,7 @@ resolution = "Extended read_plans_directory in find_plans.rs to accept array-of-
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R39"
 file = "tomlctl/src/flow/stale.rs"
@@ -622,11 +655,13 @@ effort = "medium"
 category = "testability"
 summary = "verdict_from_iso_string + resolve.rs::compute_staleness call jiff::Timestamp::now() directly with no injection seam; tests asserting age_seconds == 0 (flow_stale.rs:43-50, flow_resolve.rs:513) are fragile across UTC midnight; identical compute logic duplicated across stale.rs:127-191 and resolve.rs:768-846 without unit tests on either copy"
 dedup_id = "c265c9a4efdabe05"
+resolved = 2026-05-08
+resolution = "Introduced thread-local FIXED_NOW injection seam in flow::time (test-only, reset via set_now_for_test(None) or FixedNowGuard::Drop); added three unit tests covering age_seconds-at-boundary, UTC-midnight crossing, malformed input. Both flow::stale::verdict_from_iso_string and flow::resolve::compute_staleness route through flow::time::today_utc_date() so the seam reaches both consolidated call sites"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R40"
 file = "tomlctl/tests/flow_resolve.rs"
@@ -637,6 +672,8 @@ effort = "small"
 category = "testability"
 summary = "load_active_entries propagates parse-error as Err; no test in flow_resolve.rs seeds malformed active-flow.toml to verify user-facing error kind/message and whether fallthrough or hard error is the intended contract — paired with R34 (divergent treatment)"
 dedup_id = "0a97b71dcb615ac7"
+resolved = 2026-05-08
+resolution = "Added corrupt_active_flow_toml_falls_through_to_none integration test in tests/flow_resolve.rs documenting the contract: a malformed active-flow.toml is TOLERATED (treated as empty registry) and resolution falls through to step 6 with a stderr breadcrumb"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -671,7 +708,7 @@ dedup_id = "2e074d4a26380d18"
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R43"
 file = "tomlctl/src/cli/types.rs"
@@ -682,6 +719,8 @@ effort = "trivial"
 category = "testability"
 summary = 'FlowOp::Resolve flags (--flow, --path, --branch, --worktree, --cwd, --with-staleness, --json) and FlowOp::Init flags (--slug, --plan) lack `help = "..."` annotations; running `tomlctl flow resolve --help` shows only flag names with no semantic description. By contrast QueryArgs flags (cli/types.rs:193-293) have extensive help strings'
 dedup_id = "cbdc7d30130c1e28"
+resolved = 2026-05-08
+resolution = "Added one-line help='...' annotations to every FlowOp::{FindPlans, Stale, Init, EnsureArtifact, Resolve, Doctor, List} flag and every ActiveOp::{List, Add, Remove, Touch} flag (R7 dropped --json from each, so help annotations target only surviving flags)"
 
 [[items]]
 first_flagged = 2026-05-08

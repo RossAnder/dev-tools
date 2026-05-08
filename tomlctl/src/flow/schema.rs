@@ -38,6 +38,72 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use toml::Value as TomlValue;
 
+// R13: shared projection of `<flow>/context.toml` for `flow::list` and
+// `flow::resolve::enumerate_flows`. Pre-R13 each consumer hand-walked
+// the same `TomlValue` chain; the consolidated struct + parse helper
+// below replaces both walks.
+
+/// R13: subset of `context.toml` fields surfaced by `flow list` and
+/// consumed by `flow resolve`'s candidate enumeration. All fields are
+/// `Option`-typed so a hand-edited file with a missing key parses
+/// cleanly; consumers default to their own per-leaf shape (e.g.
+/// `flow list` emits `""` for absent strings; `flow resolve` filters
+/// `is_complete()` on `status`).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FlowProjection {
+    pub(crate) status: Option<String>,
+    pub(crate) updated: Option<String>,
+    pub(crate) plan_path: Option<String>,
+    pub(crate) branch: Option<String>,
+    pub(crate) scope: Vec<String>,
+}
+
+impl FlowProjection {
+    /// Project a parsed `context.toml` doc into the shared projection.
+    /// Returns `None` when the doc root is not a table (defensive — a
+    /// `[[items]]`-shaped TOML wouldn't be a context.toml but we won't
+    /// panic on it). `updated` is rendered to its `Display` form
+    /// (`YYYY-MM-DD` for a TOML date; the raw datetime string when
+    /// hand-edited as a quoted string), matching the pre-R13 behaviour
+    /// of both consumer sites.
+    pub(crate) fn from_toml_value(doc: &TomlValue) -> Option<Self> {
+        let table = doc.as_table()?;
+        let status = table
+            .get("status")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let updated = table.get("updated").map(|v| match v {
+            TomlValue::Datetime(dt) => dt.to_string(),
+            TomlValue::String(s) => s.clone(),
+            other => other.to_string(),
+        });
+        let plan_path = table
+            .get("plan_path")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let branch = table
+            .get("branch")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let scope: Vec<String> = table
+            .get("scope")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Some(FlowProjection {
+            status,
+            updated,
+            plan_path,
+            branch,
+            scope,
+        })
+    }
+}
+
 /// Top-level shape of `.claude/active-flow.toml`.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ActiveDoc {

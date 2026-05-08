@@ -11,11 +11,9 @@ use crate::cli::FlowOp;
 pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
     match op {
         FlowOp::Active { op } => crate::flow::active::dispatch(op),
-        FlowOp::FindPlans {
-            dirs,
-            json,
-            integrity,
-        } => crate::flow::find_plans::dispatch(dirs, json, integrity),
+        FlowOp::FindPlans { dirs, integrity } => {
+            crate::flow::find_plans::dispatch(dirs, integrity)
+        }
         FlowOp::Stale {
             slug,
             threshold,
@@ -28,20 +26,16 @@ pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
             branch,
             worktree,
             scope,
-            json,
             dry_run,
             integrity,
-        } => crate::flow::init::dispatch(
-            slug, plan, branch, worktree, scope, json, dry_run, integrity,
-        ),
+        } => crate::flow::init::dispatch(slug, plan, branch, worktree, scope, dry_run, integrity),
         FlowOp::EnsureArtifact {
             slug,
             kind,
             bootstrap,
-            json,
             dry_run,
             integrity,
-        } => crate::flow::ensure_artifact::dispatch(slug, kind, bootstrap, json, dry_run, integrity),
+        } => crate::flow::ensure_artifact::dispatch(slug, kind, bootstrap, dry_run, integrity),
         FlowOp::Resolve {
             flow,
             path,
@@ -62,16 +56,14 @@ pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
         FlowOp::Doctor {
             slug,
             fix,
-            json,
             dry_run,
             integrity,
-        } => crate::flow::doctor::dispatch(slug, fix, json, dry_run, integrity),
+        } => crate::flow::doctor::dispatch(slug, fix, dry_run, integrity),
         FlowOp::List {
             status,
             branch,
             active_only,
-            json,
             integrity,
-        } => crate::flow::list::dispatch(status, branch, active_only, json, integrity),
+        } => crate::flow::list::dispatch(status, branch, active_only, integrity),
     }
 }

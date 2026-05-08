@@ -29,11 +29,12 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use crate::cli::{ArtifactKind, WriteIntegrityArgs};
+use crate::cli::{ArtifactKind, WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::integrity::{IntegrityOpts, refresh_sidecar, sha256_hex_of_file, sidecar_path};
+use crate::flow::time::today_utc_iso;
+use crate::integrity::{refresh_sidecar, sha256_hex_of_file, sidecar_path};
 use crate::io::{
-    atomic_write, guard_write_path, recheck_claude_containment, repo_or_cwd_root,
+    atomic_write, guard_write_path, recheck_claude_containment, relativise, repo_or_cwd_root,
     with_exclusive_lock,
 };
 use crate::output::print_json_compact;
@@ -42,13 +43,12 @@ pub(crate) fn dispatch(
     slug: String,
     kind: ArtifactKind,
     bootstrap: bool,
-    _json: bool,
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
     // Containment guard fires before any FS touch — a malformed slug must
     // surface as `kind=validation` regardless of the requested mode.
-    validate_slug(&slug)?;
+    validate_slug_lenient(&slug)?;
     let root = repo_or_cwd_root()?;
     let artifact_path = artifact_path_for(&root, &slug, kind);
 
@@ -109,7 +109,11 @@ fn artifact_path_for(root: &Path, slug: &str, kind: ArtifactKind) -> PathBuf {
 /// `ensure-artifact` is also called against pre-existing flows whose slugs
 /// were minted under earlier conventions, so we only reject the actively
 /// dangerous shapes rather than the full init-grade allow-list.
-fn validate_slug(slug: &str) -> Result<()> {
+///
+/// R11: previously named `validate_slug` — same name as the strict-regex
+/// variant in `flow::init`. Renamed `_lenient` so a future cross-leaf
+/// reader can tell the two validators apart at a glance.
+fn validate_slug_lenient(slug: &str) -> Result<()> {
     if slug.is_empty() {
         return Err(tagged_err(
             ErrorKind::Validation,
@@ -177,14 +181,6 @@ fn assert_under_claude(root: &Path, artifact: &Path) -> Result<()> {
             artifact.display()
         ),
     ))
-}
-
-/// Render `path` relative to `root` using forward slashes. Falls back to
-/// the absolute display form when `path` doesn't share `root`'s prefix
-/// (e.g. test sandboxes with symlinked tmpdirs).
-fn relativise(root: &Path, path: &Path) -> String {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    rel.to_string_lossy().replace('\\', "/")
 }
 
 /// Compute the read-only verdict — does the artifact exist, and (if so) is
@@ -332,35 +328,8 @@ fn emit_bootstrap_noop(root: &Path, artifact: &Path, kind: ArtifactKind) -> Resu
     print_json_compact(&report)
 }
 
-/// Translate the clap-derive `WriteIntegrityArgs` into the integrity-side
-/// `IntegrityOpts`. Mirrors `cli::dispatch::write_integrity_opts` /
-/// `flow::active::write_integrity_opts` — duplicated locally because
-/// those helpers are private to their owning modules.
-fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
-    IntegrityOpts {
-        write_sidecar: !args.no_write_integrity,
-        verify_on_read: args.verify_integrity,
-        strict: args.strict_integrity,
-    }
-}
-
-/// Today's UTC date formatted `YYYY-MM-DD`, suitable for the
-/// `last_updated` field of the bootstrapped TOML. Matches
-/// `flow::stale::verdict_from_iso_string`'s date-only inputs.
-fn today_utc_iso() -> Result<String> {
-    use jiff::Timestamp;
-    Ok(Timestamp::now()
-        .in_tz("UTC")
-        .map_err(|e| {
-            tagged_err(
-                ErrorKind::Validation,
-                None,
-                format!("resolving today's UTC date: {e}"),
-            )
-        })?
-        .strftime("%Y-%m-%d")
-        .to_string())
-}
+// R3 / R6: `write_integrity_opts` and `today_utc_iso` are now sourced
+// from `crate::cli` and `crate::flow::time` respectively.
 
 #[cfg(test)]
 mod tests {
@@ -368,21 +337,21 @@ mod tests {
 
     #[test]
     fn validate_slug_rejects_traversal() {
-        assert!(validate_slug("..").is_err());
-        assert!(validate_slug("../escape").is_err());
-        assert!(validate_slug("a/b").is_err());
-        assert!(validate_slug("a\\b").is_err());
-        assert!(validate_slug("").is_err());
-        let err = validate_slug("../etc/passwd").unwrap_err();
+        assert!(validate_slug_lenient("..").is_err());
+        assert!(validate_slug_lenient("../escape").is_err());
+        assert!(validate_slug_lenient("a/b").is_err());
+        assert!(validate_slug_lenient("a\\b").is_err());
+        assert!(validate_slug_lenient("").is_err());
+        let err = validate_slug_lenient("../etc/passwd").unwrap_err();
         let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
         assert!(matches!(tagged.kind, ErrorKind::Validation));
     }
 
     #[test]
     fn validate_slug_accepts_normal() {
-        assert!(validate_slug("feature-x").is_ok());
-        assert!(validate_slug("a").is_ok());
-        assert!(validate_slug("flow-tracking-overhaul").is_ok());
+        assert!(validate_slug_lenient("feature-x").is_ok());
+        assert!(validate_slug_lenient("a").is_ok());
+        assert!(validate_slug_lenient("flow-tracking-overhaul").is_ok());
     }
 
     #[test]

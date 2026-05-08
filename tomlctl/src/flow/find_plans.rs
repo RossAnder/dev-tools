@@ -41,7 +41,7 @@ use serde_json::Value as JsonValue;
 
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::repo_or_cwd_root;
+use crate::io::{read_dir_sorted, relativise, repo_or_cwd_root};
 use crate::output::print_json;
 
 /// P4 sentinel: a settings value of this literal string is treated as
@@ -50,7 +50,6 @@ const SENTINEL_UNSET: &str = "__DONT_ASK__";
 
 pub(crate) fn dispatch(
     dirs: Vec<PathBuf>,
-    _json: bool,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let root = repo_or_cwd_root()?;
@@ -267,18 +266,6 @@ fn walk_plans(
     Ok(())
 }
 
-/// Sorted directory listing — keeps test output deterministic across
-/// platforms. `read_dir` does not specify an order on POSIX or NTFS; sorting
-/// by file name (OS-string-lexicographic) makes the JSON array stable.
-fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
-    let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir)
-        .with_context(|| format!("reading directory {}", dir.display()))?
-        .filter_map(|e| e.ok())
-        .collect();
-    entries.sort_by_key(|e| e.file_name());
-    Ok(entries)
-}
-
 fn is_markdown(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -328,7 +315,8 @@ fn pick_outline_md(dir: &Path) -> Result<Option<PathBuf>> {
 /// to `root` whenever possible (purely cosmetic — keeps output stable
 /// across machines whose absolute paths differ).
 fn build_plan_record(plan_path: &Path, slug: &str, root: &Path) -> JsonValue {
-    let display_path = relativise(plan_path, root);
+    // R2: shared `(root, path)` form via `crate::io::relativise`.
+    let display_path = relativise(root, plan_path);
 
     let mut obj = serde_json::Map::new();
     obj.insert("path".to_string(), JsonValue::String(display_path));
@@ -360,14 +348,6 @@ fn build_plan_record(plan_path: &Path, slug: &str, root: &Path) -> JsonValue {
     }
 
     JsonValue::Object(obj)
-}
-
-/// Render `path` relative to `root` when possible, falling back to the
-/// path's lossy display form. Forward slashes are emitted on every platform
-/// for stable JSON output.
-fn relativise(path: &Path, root: &Path) -> String {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    rel.to_string_lossy().replace('\\', "/")
 }
 
 /// Subset of fields we extract from `<flow>/context.toml`. We deliberately

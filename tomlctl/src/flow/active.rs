@@ -37,9 +37,12 @@ use serde_json::{Value as JsonValue, json};
 use std::path::{Path, PathBuf};
 use toml::Value as TomlValue;
 
-use crate::cli::{ActiveOp, ReadIntegrityArgs, WriteIntegrityArgs};
+use crate::cli::{
+    ActiveOp, ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
+};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::schema::{ActiveDoc, ActiveEntry as SchemaEntry};
+use crate::flow::time::now_rfc3339;
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::{
     guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
@@ -64,26 +67,10 @@ fn legacy_pointer_path() -> Result<PathBuf> {
     Ok(root.join(".claude").join("active-flow"))
 }
 
-/// Read-side `IntegrityOpts` translator. Mirrors `cli::dispatch::read_integrity_opts`
-/// — duplicated locally because that helper is private to the cli module
-/// and the flow leaf modules each handle their own integrity translation.
-fn read_integrity_opts(args: &ReadIntegrityArgs) -> IntegrityOpts {
-    IntegrityOpts {
-        write_sidecar: true,
-        verify_on_read: args.verify_integrity,
-        strict: false,
-    }
-}
-
-/// Write-side `IntegrityOpts` translator. Mirror of
-/// `cli::dispatch::write_integrity_opts`.
-fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
-    IntegrityOpts {
-        write_sidecar: !args.no_write_integrity,
-        verify_on_read: args.verify_integrity,
-        strict: args.strict_integrity,
-    }
-}
+// R3: integrity-args translation is now sourced from `crate::cli`
+// (`read_integrity_opts` / `write_integrity_opts`) — the previously
+// duplicated leaf-local helpers were collapsed because the cli helpers
+// were promoted to `pub(crate)`.
 
 /// Read the on-disk active-flow doc, returning an empty default
 /// (`schema_version = 1`, no `[[active]]`) when the file does not exist.
@@ -104,8 +91,10 @@ fn read_doc_or_default(file: &Path, integrity: IntegrityOpts) -> Result<TomlValu
 }
 
 /// Build the empty default registry doc — used as the in-memory bootstrap
-/// when the registry file doesn't exist yet on disk.
-fn empty_doc() -> TomlValue {
+/// when the registry file doesn't exist yet on disk. R1 promoted to
+/// `pub(crate)` so `flow::init`'s active-flow-registration path shares
+/// the same default rather than carrying a byte-equivalent copy.
+pub(crate) fn empty_doc() -> TomlValue {
     let mut tbl = toml::map::Map::new();
     tbl.insert(
         "schema_version".to_string(),
@@ -222,8 +211,9 @@ fn validate_slug(slug: &str) -> Result<()> {
 }
 
 /// Find the index of an entry whose `slug` field equals `slug`. Returns
-/// `None` if no entry matches or the entries are not tables.
-fn find_slug_index(arr: &[TomlValue], slug: &str) -> Option<usize> {
+/// `None` if no entry matches or the entries are not tables. R1: promoted
+/// to `pub(crate)` so `flow::init` shares the same lookup helper.
+pub(crate) fn find_slug_index(arr: &[TomlValue], slug: &str) -> Option<usize> {
     arr.iter().position(|entry| {
         entry
             .as_table()
@@ -238,8 +228,10 @@ fn find_slug_index(arr: &[TomlValue], slug: &str) -> Option<usize> {
 /// paths agree on the same value). Empty-string optionals are omitted; an
 /// absent binding (no branch / no worktree / no scope) yields a row with
 /// no `[active.binding]` table, matching the schema's "binding fields are
-/// all optional" contract.
-fn build_entry(
+/// all optional" contract. R1: promoted to `pub(crate)` so
+/// `flow::init`'s active-flow-registration path uses the same builder
+/// rather than a duplicate.
+pub(crate) fn build_entry(
     slug: &str,
     last_used: &str,
     branch: Option<&str>,
@@ -281,15 +273,6 @@ fn build_entry(
     TomlValue::Table(entry)
 }
 
-/// RFC3339 timestamp via jiff. Documented in the plan: `jiff::Timestamp::now().to_string()`
-/// produces e.g. `"2026-05-08T14:32:00Z"`. Wrapped in a helper so tests
-/// can swap to a fixed clock if a future regression motivates it (none
-/// today — all the integration tests assert *presence* and *non-empty*
-/// rather than an exact value).
-fn now_rfc3339() -> String {
-    jiff::Timestamp::now().to_string()
-}
-
 /// Run an upsert / remove / touch closure under the standard exclusive
 /// lock + bootstrap + post-mutation containment-recheck pipeline. The
 /// closure mutates the `[[active]]` array; the wrapper handles file
@@ -301,7 +284,7 @@ fn now_rfc3339() -> String {
 /// `write_toml_with_sidecar` materialises the file + sidecar atomically.
 /// `guard_write_path` runs unconditionally (even on bootstrap) so the
 /// `.claude/` containment rule is enforced before the first byte hits disk.
-fn mutate_active<F>(
+pub(crate) fn mutate_active<F>(
     file: &Path,
     integrity_args: &WriteIntegrityArgs,
     f: F,
@@ -331,43 +314,55 @@ where
 }
 
 /// Emit the legacy-pointer warning if the new registry is absent AND the
-/// old single-line file is present. Called once at list time. The warning
-/// goes to stderr (one line, plain prose) so structured stdout JSON stays
-/// machine-readable.
+/// old single-line file is present. The warning goes to stderr (one line,
+/// plain prose) so structured stdout JSON stays machine-readable.
+///
+/// R14: gated on a process-wide `OnceLock` flag so multiple
+/// `flow active list` calls in the same process emit the warning at
+/// most once — matching the docstring's "one-shot stderr warning"
+/// contract. Pre-R14 the body fired on every call; the new gate uses
+/// `OnceLock::set` so subsequent calls early-return without re-running
+/// the existence checks.
 fn maybe_warn_legacy(active_flow_toml: &Path) -> Result<()> {
+    use std::sync::OnceLock;
+    static WARNED: OnceLock<()> = OnceLock::new();
+    if WARNED.get().is_some() {
+        return Ok(());
+    }
     if active_flow_toml.exists() {
         return Ok(());
     }
     let legacy = legacy_pointer_path()?;
     if legacy.exists() {
-        eprintln!(
-            "tomlctl: legacy `.claude/active-flow` ignored; run cutover steps in CLAUDE.md"
-        );
+        // Race-tolerant: two concurrent callers hitting `set` see one win
+        // and one Err — the second's Err is harmless (no second emit).
+        if WARNED.set(()).is_ok() {
+            eprintln!(
+                "tomlctl: legacy `.claude/active-flow` ignored; run cutover steps in CLAUDE.md"
+            );
+        }
     }
     Ok(())
 }
 
 pub(crate) fn dispatch(op: ActiveOp) -> Result<()> {
     match op {
-        ActiveOp::List { json: _, integrity } => list(integrity),
+        ActiveOp::List { integrity } => list(integrity),
         ActiveOp::Add {
             slug,
             branch,
             worktree,
             scope,
-            json: _,
             dry_run,
             integrity,
         } => add(slug, branch, worktree, scope, dry_run, integrity),
         ActiveOp::Remove {
             slug,
-            json: _,
             dry_run,
             integrity,
         } => remove(slug, dry_run, integrity),
         ActiveOp::Touch {
             slug,
-            json: _,
             dry_run,
             integrity,
         } => touch(slug, dry_run, integrity),
@@ -455,15 +450,12 @@ fn remove(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<
             strict: false,
         };
         let doc = read_doc_or_default(&file, read_opts)?;
+        // R12: route the dry-run lookup through the shared `find_slug_index`
+        // helper so the live and dry-run paths consult the same slug-key code.
         let removed_entry = doc
             .get("active")
             .and_then(|v| v.as_array())
-            .and_then(|arr| arr.iter().find(|e| {
-                e.as_table()
-                    .and_then(|t| t.get("slug"))
-                    .and_then(|v| v.as_str())
-                    == Some(slug.as_str())
-            }))
+            .and_then(|arr| find_slug_index(arr, &slug).map(|i| &arr[i]))
             .map(entry_to_json)
             .unwrap_or(JsonValue::Null);
         let envelope = json!({
@@ -506,15 +498,12 @@ fn touch(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<(
             strict: false,
         };
         let doc = read_doc_or_default(&file, read_opts)?;
+        // R12: route through shared `find_slug_index` (live path uses the
+        // same helper inside `mutate_active`).
         let would_update = doc
             .get("active")
             .and_then(|v| v.as_array())
-            .and_then(|arr| arr.iter().find(|e| {
-                e.as_table()
-                    .and_then(|t| t.get("slug"))
-                    .and_then(|v| v.as_str())
-                    == Some(slug.as_str())
-            }))
+            .and_then(|arr| find_slug_index(arr, &slug).map(|i| &arr[i]))
             .map(|e| {
                 // Project the entry forward to what touch WOULD produce,
                 // so the dry-run's `new_entry` reflects the post-touch

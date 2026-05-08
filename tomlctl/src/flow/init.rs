@@ -10,18 +10,15 @@
 //! - active-flow registry is upserted regardless (so a re-init recovers a
 //!   missing entry without forcing the user through `flow active add`).
 //!
-//! ### Plan deviation note (T3 helper visibility)
+//! ### R1 consolidation note
 //!
-//! T3 (active.rs) does NOT expose `pub(crate)` helpers for active-flow
-//! upserts — only `dispatch(ActiveOp)` is public, which prints to stdout
-//! and would muddy this module's single-line JSON envelope. Per the plan's
-//! "Plan deviation protocol" (option `(a)`), we ship a small inline
-//! registration helper here that reuses T3's public types and replicates
-//! its `mutate_active` / `build_entry` upsert pattern. The two
-//! implementations should stay in lock-step on schema details — the
-//! `[active.binding]` shape, the `last_used` RFC3339 form, and the
-//! `mutate_active` lock-bootstrap sequence are all duplicated here from
-//! `active.rs`.
+//! Pre-R1, `active.rs`'s `build_entry` / `find_slug_index` / `empty_doc` /
+//! `mutate_active` / `now_rfc3339` / `entry_to_json` / `write_integrity_opts`
+//! helpers were duplicated verbatim here behind a "T3 doesn't expose
+//! pub(crate) helpers" rationale. R1 promoted those to `pub(crate)` on
+//! `active.rs` and `flow::time`, so this module now consumes them via
+//! `use crate::flow::active::{build_entry, find_slug_index, mutate_active}`
+//! and `crate::cli::write_integrity_opts`.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -31,9 +28,13 @@ use regex::Regex;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use crate::cli::WriteIntegrityArgs;
+use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::integrity::{IntegrityOpts, maybe_verify_integrity, refresh_sidecar};
+use crate::flow::active::{build_entry as build_active_entry, find_slug_index, mutate_active};
+use crate::flow::artifacts::CanonicalArtifacts;
+use crate::flow::schema::ActiveEntry as SchemaEntry;
+use crate::flow::time::{now_rfc3339, today_toml_date};
+use crate::integrity::refresh_sidecar;
 use crate::io::{
     atomic_write, guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
     with_exclusive_lock, write_toml_with_sidecar,
@@ -67,22 +68,6 @@ fn validate_slug(slug: &str) -> Result<()> {
     ))
 }
 
-/// Today's date, rendered as a `toml::value::Datetime` in the canonical
-/// bare-date form (`YYYY-MM-DD`). Uses jiff's `Timestamp::now()` resolved
-/// in UTC so the date is stable regardless of the local TZ. Matches the
-/// schema documented in `claude/commands/implement.md` (`## Execution
-/// Record Schema`).
-fn today_toml_date() -> Result<toml::value::Datetime> {
-    let date_str = jiff::Timestamp::now()
-        .in_tz("UTC")
-        .context("resolving today's UTC date")?
-        .date()
-        .to_string();
-    date_str.parse::<toml::value::Datetime>().with_context(|| {
-        format!("converting today ({date_str}) to TOML date")
-    })
-}
-
 /// Resolve `<root>/.claude/flows/<slug>/context.toml`.
 fn context_path_for(slug: &str) -> Result<PathBuf> {
     let root = repo_or_cwd_root()?;
@@ -109,33 +94,7 @@ fn active_flow_path() -> Result<PathBuf> {
     Ok(root.join(".claude").join("active-flow.toml"))
 }
 
-/// Compute the four canonical artifact paths from `slug` (relative-to-repo
-/// strings — they go straight into `context.toml [artifacts]` as the
-/// schema documents).
-struct Artifacts {
-    review_ledger: String,
-    optimise_findings: String,
-    execution_record: String,
-    plan_review_findings: String,
-}
-
-fn artifacts_for(slug: &str) -> Artifacts {
-    Artifacts {
-        review_ledger: format!(".claude/flows/{slug}/review-ledger.toml"),
-        optimise_findings: format!(".claude/flows/{slug}/optimise-findings.toml"),
-        execution_record: format!(".claude/flows/{slug}/execution-record.toml"),
-        plan_review_findings: format!(".claude/flows/{slug}/plan-review-findings.toml"),
-    }
-}
-
-fn artifacts_to_json(a: &Artifacts) -> JsonValue {
-    json!({
-        "review_ledger": a.review_ledger,
-        "optimise_findings": a.optimise_findings,
-        "execution_record": a.execution_record,
-        "plan_review_findings": a.plan_review_findings,
-    })
-}
+// R9: artifact JSON shape is now built by `CanonicalArtifacts::to_json`.
 
 /// Build the seed `context.toml` document for a fresh init. Field order
 /// matches the schema documented in `claude/commands/implement.md` — the
@@ -154,7 +113,7 @@ fn build_seed_doc(
     branch: Option<&str>,
     scope: &[String],
     today: toml::value::Datetime,
-    artifacts: &Artifacts,
+    artifacts: &CanonicalArtifacts,
 ) -> TomlValue {
     let mut root = toml::map::Map::new();
     root.insert("slug".to_string(), TomlValue::String(slug.to_string()));
@@ -226,126 +185,49 @@ fn try_load_existing_context(file: &Path) -> Result<Option<TomlValue>> {
     Ok(Some(doc))
 }
 
-/// Build a fresh active-flow `[[active]]` entry — duplicates `active.rs`'s
-/// `build_entry` logic verbatim. See the plan-deviation note at the top of
-/// the file for why we don't share the `active.rs` helper.
-fn build_active_entry(
-    slug: &str,
-    last_used: &str,
-    branch: Option<&str>,
-    worktree: Option<&Path>,
-    scope: &[String],
-) -> TomlValue {
-    let mut entry = toml::map::Map::new();
-    entry.insert("slug".to_string(), TomlValue::String(slug.to_string()));
-    entry.insert(
-        "last_used".to_string(),
-        TomlValue::String(last_used.to_string()),
-    );
-    let mut binding = toml::map::Map::new();
-    if let Some(b) = branch {
-        binding.insert("branch".to_string(), TomlValue::String(b.to_string()));
-    }
-    if let Some(w) = worktree {
-        binding.insert(
-            "worktree".to_string(),
-            TomlValue::String(w.display().to_string()),
-        );
-    }
-    if !scope.is_empty() {
-        let arr: Vec<TomlValue> = scope
-            .iter()
-            .map(|s| TomlValue::String(s.clone()))
-            .collect();
-        binding.insert("scope".to_string(), TomlValue::Array(arr));
-    }
-    if !binding.is_empty() {
-        entry.insert("binding".to_string(), TomlValue::Table(binding));
-    }
-    TomlValue::Table(entry)
-}
-
-/// JSON projection of an active-flow entry — duplicates `active.rs`'s
-/// `entry_to_json` for dry-run envelope use. Defensive `null` fallback on
-/// non-table input mirrors the source.
+/// R1 consolidation: render an active-flow entry as JSON. Defensive
+/// `null` fallback on non-table input mirrors the source. We project
+/// through the typed schema (`flow::schema`) for byte-identical shape
+/// with `flow::active::list`'s envelope.
 fn active_entry_to_json(entry: &TomlValue) -> JsonValue {
-    let Some(tbl) = entry.as_table() else {
+    let Some(parsed) = SchemaEntry::from_toml_value(entry) else {
         return JsonValue::Null;
     };
     let mut out = serde_json::Map::new();
-    if let Some(slug) = tbl.get("slug").and_then(|v| v.as_str()) {
-        out.insert("slug".to_string(), JsonValue::String(slug.to_string()));
-    }
-    if let Some(last_used) = tbl.get("last_used").and_then(|v| v.as_str()) {
+    out.insert("slug".to_string(), JsonValue::String(parsed.slug.clone()));
+    if !parsed.last_used.is_empty() {
         out.insert(
             "last_used".to_string(),
-            JsonValue::String(last_used.to_string()),
+            JsonValue::String(parsed.last_used.clone()),
         );
     }
-    if let Some(binding) = tbl.get("binding").and_then(|v| v.as_table()) {
+    if !parsed.binding.is_empty() {
         let mut b = serde_json::Map::new();
-        if let Some(branch) = binding.get("branch").and_then(|v| v.as_str()) {
+        if let Some(branch) = parsed.binding.branch.as_deref() {
             b.insert("branch".to_string(), JsonValue::String(branch.to_string()));
         }
-        if let Some(wt) = binding.get("worktree").and_then(|v| v.as_str()) {
+        if let Some(wt) = parsed.binding.worktree.as_deref() {
             b.insert("worktree".to_string(), JsonValue::String(wt.to_string()));
         }
-        if let Some(scope) = binding.get("scope").and_then(|v| v.as_array()) {
-            let scope_json: Vec<JsonValue> = scope
+        if !parsed.binding.scope.is_empty() {
+            let scope_json: Vec<JsonValue> = parsed
+                .binding
+                .scope
                 .iter()
-                .filter_map(|v| v.as_str().map(|s| JsonValue::String(s.to_string())))
+                .map(|s| JsonValue::String(s.clone()))
                 .collect();
             b.insert("scope".to_string(), JsonValue::Array(scope_json));
         }
-        if !b.is_empty() {
-            out.insert("binding".to_string(), JsonValue::Object(b));
-        }
+        out.insert("binding".to_string(), JsonValue::Object(b));
     }
     JsonValue::Object(out)
 }
 
-/// Find the index of an `[[active]]` entry by slug. Mirrors
-/// `active.rs::find_slug_index` — the duplication is intentional per the
-/// plan-deviation note.
-fn find_active_slug_index(arr: &[TomlValue], slug: &str) -> Option<usize> {
-    arr.iter().position(|entry| {
-        entry
-            .as_table()
-            .and_then(|t| t.get("slug"))
-            .and_then(|v| v.as_str())
-            == Some(slug)
-    })
-}
-
-/// Build the empty-default active-flow registry doc (`schema_version=1`,
-/// no `[[active]]` entries). Mirrors `active.rs::empty_doc`.
-fn empty_active_doc() -> TomlValue {
-    let mut tbl = toml::map::Map::new();
-    tbl.insert("schema_version".to_string(), TomlValue::Integer(1));
-    tbl.insert("active".to_string(), TomlValue::Array(Vec::new()));
-    TomlValue::Table(tbl)
-}
-
-/// Translate `WriteIntegrityArgs` to `IntegrityOpts` — duplicates
-/// `active.rs::write_integrity_opts`.
-fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
-    IntegrityOpts {
-        write_sidecar: !args.no_write_integrity,
-        verify_on_read: args.verify_integrity,
-        strict: args.strict_integrity,
-    }
-}
-
-/// RFC3339 timestamp — mirrors `active.rs::now_rfc3339`.
-fn now_rfc3339() -> String {
-    jiff::Timestamp::now().to_string()
-}
-
-/// Upsert the active-flow registry entry for `slug`. Replicates the
-/// `active.rs::mutate_active` lock-bootstrap pipeline so init's
-/// registration shares the same TOCTOU contract as a direct
-/// `flow active add`. Returns the JSON shape of the persisted entry on
-/// success.
+/// R1 consolidation: upsert the active-flow registry entry for `slug`
+/// via the shared `flow::active::mutate_active` pipeline. Pre-R1 this
+/// reimplemented the lock + bootstrap + write sequence inline; the
+/// promoted `mutate_active` now owns that pipeline and this helper is a
+/// thin wrapper that builds the entry and forwards.
 fn upsert_active_entry(
     slug: &str,
     branch: Option<&str>,
@@ -354,25 +236,11 @@ fn upsert_active_entry(
     integrity_args: &WriteIntegrityArgs,
 ) -> Result<(TomlValue, String)> {
     let file = active_flow_path()?;
-    let opts = write_integrity_opts(integrity_args);
-    let allow_outside = integrity_args.allow_outside;
     let last_used = now_rfc3339();
     let new_entry = build_active_entry(slug, &last_used, branch, worktree, scope);
-
     let entry_for_return = new_entry.clone();
-    with_exclusive_lock(&file, || {
-        // O17 parity: in-lock containment guard so a leaf-symlink swap
-        // between path-resolution and persist is still caught — same
-        // pattern as `active::mutate_active`.
-        guard_write_path(&file, allow_outside)?;
-        let mut doc = if file.exists() {
-            maybe_verify_integrity(&file, opts)?;
-            read_toml(&file)?
-        } else {
-            empty_active_doc()
-        };
-        // Upsert the entry. Schema-version backfill on a doc that lacks
-        // the field — same as `active::active_array_mut`.
+
+    mutate_active(&file, integrity_args, |doc| {
         let root = doc
             .as_table_mut()
             .context("active-flow.toml root is not a table")?;
@@ -383,14 +251,10 @@ fn upsert_active_entry(
             .or_insert_with(|| TomlValue::Array(Vec::new()))
             .as_array_mut()
             .context("`active` is not an array of tables in active-flow.toml")?;
-        match find_active_slug_index(arr, slug) {
-            Some(idx) => arr[idx] = new_entry,
-            None => arr.push(new_entry),
+        match find_slug_index(arr, slug) {
+            Some(idx) => arr[idx] = new_entry.clone(),
+            None => arr.push(new_entry.clone()),
         }
-        if !allow_outside {
-            recheck_claude_containment(&file)?;
-        }
-        write_toml_with_sidecar(&file, &doc, opts)?;
         Ok(())
     })?;
     Ok((entry_for_return, last_used))
@@ -452,7 +316,6 @@ pub(crate) fn dispatch(
     branch: Option<String>,
     worktree: Option<PathBuf>,
     scope: Vec<String>,
-    _json: bool,
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
@@ -460,7 +323,7 @@ pub(crate) fn dispatch(
 
     let context_path = context_path_for(&slug)?;
     let execution_record_path = execution_record_path_for(&slug)?;
-    let artifacts = artifacts_for(&slug);
+    let artifacts = CanonicalArtifacts::for_slug(&slug);
 
     // Try to load an existing context — drives the idempotent branch.
     let existing = try_load_existing_context(&context_path)?;
@@ -578,7 +441,7 @@ pub(crate) fn dispatch(
         "slug": slug,
         "action": action,
         "context_path": context_path.display().to_string(),
-        "artifacts": artifacts_to_json(&artifacts),
+        "artifacts": artifacts.to_json(),
     });
     print_json_compact(&envelope)
 }

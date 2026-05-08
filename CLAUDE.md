@@ -62,3 +62,9 @@ When switching an existing repo to the `tomlctl`-backed flow registry (`.claude/
    This seeds `context.toml` + `execution-record.toml` under `.claude/flows/<slug>/` and registers the flow in `.claude/active-flow.toml`.
 
 After migration, all flow commands (`tomlctl flow list`, `tomlctl flow resolve`, etc.) read from `.claude/active-flow.toml` exclusively; the legacy `.claude/active-flow` file is ignored.
+
+## Integrity sidecar (.sha256) — scope
+
+`tomlctl` writes a `<file>.sha256` sidecar on every `tomlctl items apply` / `tomlctl set` / `tomlctl flow init` write (suppress with `--no-write-integrity`). The sidecar exists to detect **accidental corruption** — a torn write, a buggy tool that mangles the TOML, or out-of-band manual edits that break the schema. `tomlctl <op> --verify-integrity` errors on digest mismatch and never auto-repairs.
+
+**The sidecar is NOT a tamper-evident seal.** An attacker who can write to `.claude/` can update both the TOML and the sidecar atomically, and the digest check will pass. If you need adversarial integrity (signed artefacts, append-only logs, untrusted-collaborator defence), the sidecar is not sufficient — review the file's git history, sign commits, and treat ledger writes the same way you'd treat any other CI script that runs unsandboxed.

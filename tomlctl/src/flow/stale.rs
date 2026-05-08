@@ -29,6 +29,7 @@ use toml::Value as TomlValue;
 
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
+use crate::flow::time::{parse_iso_to_date, today_utc_date};
 use crate::io::{read_toml, repo_or_cwd_root};
 use crate::output::{print_json, print_json_compact};
 
@@ -129,33 +130,12 @@ fn verdict_from_iso_string(
     threshold_label: &str,
     threshold_dur: Duration,
 ) -> Result<JsonValue> {
-    use jiff::Timestamp;
-    use jiff::civil::Date;
-
-    // Two acceptable forms: bare `YYYY-MM-DD` (the canonical schema) and a
-    // datetime `YYYY-MM-DDTHH:MM:SSZ` (tolerated for forward-compat).
-    let updated_date: Date = if iso.len() == 10 {
-        iso.parse::<Date>()
-            .with_context(|| format!("parsing `updated` as a date: {iso}"))?
-    } else {
-        // Datetime form — strip down to the date portion. `jiff::Timestamp`
-        // is the natural parser for an RFC3339-ish input, but we only need
-        // the date for staleness arithmetic.
-        let dt: jiff::Zoned = iso
-            .parse::<Timestamp>()
-            .with_context(|| format!("parsing `updated` as a timestamp: {iso}"))?
-            .in_tz("UTC")
-            .with_context(|| format!("interpreting `updated` in UTC: {iso}"))?;
-        dt.date()
-    };
-
-    // Today (UTC). Truncate to a date so the comparison is in whole-day units;
-    // the schema's `updated` is always a date, so there's nothing finer to
-    // preserve on the today side.
-    let today: Date = Timestamp::now()
-        .in_tz("UTC")
-        .context("resolving today's UTC date")?
-        .date();
+    // R6 / R39: parse + today-resolution route through `flow::time`,
+    // sharing the injection seam with `flow::resolve::compute_staleness`.
+    let updated_date = parse_iso_to_date(iso).map_err(|_| {
+        anyhow::anyhow!("parsing `updated` as a date or timestamp: {iso}")
+    })?;
+    let today = today_utc_date()?;
 
     // Compute age in days. `Date::until` against another `Date` defaults to
     // a span in days. `updated_date.until(today)` yields a POSITIVE day count

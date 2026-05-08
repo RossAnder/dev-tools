@@ -63,33 +63,17 @@ use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use crate::cli::WriteIntegrityArgs;
-use crate::integrity::{
-    IntegrityOpts, refresh_sidecar, sha256_hex_of_file, sidecar_path,
-};
+use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
+use crate::flow::artifacts::CanonicalArtifacts;
+use crate::integrity::{refresh_sidecar, sha256_hex_of_file, sidecar_path};
 use crate::io::{
-    guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
-    with_exclusive_lock, write_toml_with_sidecar,
+    guard_write_path, read_dir_sorted, read_toml, recheck_claude_containment, relativise,
+    repo_or_cwd_root, with_exclusive_lock, write_toml_with_sidecar,
 };
 use crate::output::print_json_compact;
 
-/// Translate `WriteIntegrityArgs` → `IntegrityOpts` (mirrors the leaf-local
-/// helper in `flow::active` / `flow::init` / `flow::ensure_artifact`).
-fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
-    IntegrityOpts {
-        write_sidecar: !args.no_write_integrity,
-        verify_on_read: args.verify_integrity,
-        strict: args.strict_integrity,
-    }
-}
-
-/// Render `path` relative to `root` using forward slashes. Falls back to
-/// the absolute display form when `path` doesn't share `root`'s prefix.
-/// Mirrors `flow::ensure_artifact::relativise`.
-fn relativise(root: &Path, path: &Path) -> String {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    rel.to_string_lossy().replace('\\', "/")
-}
+// R3 / R2: `write_integrity_opts` and `relativise` now sourced from
+// `crate::cli` and `crate::io` respectively.
 
 /// Outcome of a sidecar-state probe. `Mismatch` carries the expected and
 /// actual hex digests so the caller can format a directed failure detail
@@ -134,29 +118,7 @@ fn sidecar_state(file: &Path) -> Result<Option<SidecarStatus>> {
     }
 }
 
-/// Canonical artifact-path map for a slug (matches `flow::init::artifacts_for`).
-/// Keys are the `[artifacts]` table keys; values are repo-relative path
-/// strings — the same form `flow init` writes into `context.toml`.
-fn canonical_artifacts(slug: &str) -> Vec<(&'static str, String)> {
-    vec![
-        (
-            "review_ledger",
-            format!(".claude/flows/{slug}/review-ledger.toml"),
-        ),
-        (
-            "optimise_findings",
-            format!(".claude/flows/{slug}/optimise-findings.toml"),
-        ),
-        (
-            "execution_record",
-            format!(".claude/flows/{slug}/execution-record.toml"),
-        ),
-        (
-            "plan_review_findings",
-            format!(".claude/flows/{slug}/plan-review-findings.toml"),
-        ),
-    ]
-}
+// R9: canonical-artifact map sourced from `crate::flow::artifacts::CanonicalArtifacts`.
 
 /// One check entry — accumulates into the `checks` array. `detail` is only
 /// surfaced when the check is failing (the success path stays terse).
@@ -226,11 +188,7 @@ fn discover_slugs(flows_dir: &Path, slug: Option<&str>) -> Result<Vec<String>> {
     if !flows_dir.exists() {
         return Ok(Vec::new());
     }
-    let mut entries: Vec<fs::DirEntry> = fs::read_dir(flows_dir)
-        .with_context(|| format!("reading directory {}", flows_dir.display()))?
-        .filter_map(|e| e.ok())
-        .collect();
-    entries.sort_by_key(|e| e.file_name());
+    let entries = read_dir_sorted(flows_dir)?;
     let mut out = Vec::new();
     for e in entries {
         if !e.path().is_dir() {
@@ -399,7 +357,7 @@ fn check_one_flow(
 /// names the first divergence found (deterministic — keys are checked in
 /// canonical order).
 fn check_artifacts_canonical(slug: &str, doc: &TomlValue, checks: &mut Vec<Check>) {
-    let canon = canonical_artifacts(slug);
+    let canon = CanonicalArtifacts::for_slug(slug);
     let arts = doc
         .as_table()
         .and_then(|t| t.get("artifacts"))
@@ -412,8 +370,8 @@ fn check_artifacts_canonical(slug: &str, doc: &TomlValue, checks: &mut Vec<Check
         ));
         return;
     };
-    for (key, want) in &canon {
-        match arts.get(*key).and_then(|v| v.as_str()) {
+    for (key, want) in canon.to_pairs() {
+        match arts.get(key).and_then(|v| v.as_str()) {
             None => {
                 checks.push(Check::fail(
                     "artifacts-canonical",
@@ -683,7 +641,6 @@ fn dry_run_fix_plan(
 pub(crate) fn dispatch(
     slug: Option<String>,
     fix: bool,
-    _json: bool,
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {

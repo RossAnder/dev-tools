@@ -784,3 +784,14 @@ summary = "Removed --cwd flag from flow resolve (R26 user-authorised override)"
 original_intent = "Plan's resolver dispatch (T10) plumbed --cwd CLI → FlowOp → resolve::dispatch with the inner fn taking _cwd unused"
 rationale = "Architecture warning (R26) reopened after user-authorised override of public-CLI-surface gate. Removed --cwd from cli/types.rs FlowOp::Resolve, flow/dispatch.rs destructure+call, flow::resolve::dispatch signature, and flow-bootstrap.md procedure. Carriers in shared-block still pass cwd in envelope; agent now tolerates+ignores extra fields. Coordinated 9-carrier shared-block edit deferred."
 dedup_id = "1cac00bc2be28d19"
+
+[[items]]
+id = "E61"
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+task_ref = "apply-r16-claude-md-sidecar-doc"
+summary = "R16 doc-only addition: integrity sidecar (.sha256) scope subsection added to CLAUDE.md"
+original_intent = "The plan task list did not include CLAUDE.md threat-model documentation for the integrity sidecar; R16 surfaced via /review as a security-category suggestion outside the original plan scope"
+rationale = "Applied via /review-apply for review-ledger item R16. CLAUDE.md is in the flow's scope globs, so the doc addition is recorded as a plan deviation. The added subsection at CLAUDE.md:66-70 documents that the .sha256 sidecar detects accidental corruption only and is not a tamper-evident seal against an attacker with write access to .claude/ — closing R16's documentation request without changing any tomlctl source code"
+dedup_id = "dd97c24dff5b6377"

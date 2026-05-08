@@ -24,7 +24,7 @@
 mod dispatch;
 mod types;
 
-pub(crate) use dispatch::run;
+pub(crate) use dispatch::{read_integrity_opts, run, write_integrity_opts};
 pub(crate) use types::{
     ActiveOp, ArtifactKind, Cli, ErrorFormat, FlowOp, JsonOp, ReadIntegrityArgs,
     WriteIntegrityArgs,

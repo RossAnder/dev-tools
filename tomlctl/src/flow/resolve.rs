@@ -39,16 +39,56 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use globset::Glob;
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use crate::cli::ReadIntegrityArgs;
+use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::flow::schema::{ActiveDoc, ActiveEntry};
+use crate::flow::artifacts::CanonicalArtifacts;
+use crate::flow::schema::{ActiveDoc, ActiveEntry, FlowProjection};
+use crate::flow::time::{parse_iso_to_date, today_utc_date};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
-use crate::io::{read_toml, repo_or_cwd_root};
+use crate::io::{read_dir_sorted, read_toml, relativise, repo_or_cwd_root};
 use crate::output::print_json_compact;
+
+// ---------------------------------------------------------------------------
+// R4: Source enum
+// ---------------------------------------------------------------------------
+
+/// R4: the typed envelope `source` field. Pre-R4 this was a bare `&str`
+/// threaded through every envelope-builder; the bare-string form admitted
+/// typos at compile time. The `as_str` accessor produces the exact wire
+/// strings the JSON envelope carries — wire-format must remain
+/// byte-identical to the pre-R4 output.
+///
+/// Variants correspond to the resolve algorithm's six emission paths:
+/// `explicit-flag`, `scope-glob`, `active-binding`, `active-latest`,
+/// `branch-match`, and the terminal `none`. The plan's enum sketch also
+/// lists `prompt-required` as a reserved future variant; this
+/// implementation does not emit it today, so it is intentionally absent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResolveSource {
+    ExplicitFlag,
+    ScopeGlob,
+    ActiveBinding,
+    ActiveLatest,
+    BranchMatch,
+    None,
+}
+
+impl ResolveSource {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            ResolveSource::ExplicitFlag => "explicit-flag",
+            ResolveSource::ScopeGlob => "scope-glob",
+            ResolveSource::ActiveBinding => "active-binding",
+            ResolveSource::ActiveLatest => "active-latest",
+            ResolveSource::BranchMatch => "branch-match",
+            ResolveSource::None => "none",
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -113,7 +153,7 @@ fn resolve(
             return build_resolved_envelope(
                 root,
                 slug,
-                "explicit-flag",
+                ResolveSource::ExplicitFlag,
                 false,
                 Vec::new(),
                 with_staleness,
@@ -141,10 +181,16 @@ fn resolve(
 
     // Step 2: scope-glob match.
     if !paths.is_empty() {
+        // R5: route through the cached `scope_set` (built once in
+        // `enumerate_flows`) — each candidate gets a single
+        // `GlobSet::is_match` sweep per caller path.
         let candidates: Vec<&FlowSummary> = flows
             .iter()
             .filter(|f| !f.is_complete())
-            .filter(|f| any_path_matches_scope(paths, &f.scope))
+            .filter(|f| match &f.scope_set {
+                Some(set) => paths.iter().any(|p| set.is_match(p)),
+                None => false,
+            })
             .collect();
         match candidates.len() {
             0 => { /* fall through */ }
@@ -153,7 +199,7 @@ fn resolve(
                 return build_resolved_envelope(
                     root,
                     &slug,
-                    "scope-glob",
+                    ResolveSource::ScopeGlob,
                     false,
                     Vec::new(),
                     with_staleness,
@@ -169,7 +215,7 @@ fn resolve(
                 // resolved=false envelope so the caller can present the
                 // candidates to the user — a tie is not a resolution.
                 return build_unresolved_envelope_with_ties(
-                    "scope-glob",
+                    ResolveSource::ScopeGlob,
                     tie,
                     warnings,
                 );
@@ -208,7 +254,7 @@ fn resolve(
                 return build_resolved_envelope(
                     root,
                     &best.slug,
-                    "active-binding",
+                    ResolveSource::ActiveBinding,
                     false,
                     Vec::new(),
                     with_staleness,
@@ -231,7 +277,7 @@ fn resolve(
                 return build_resolved_envelope(
                     root,
                     &latest.slug,
-                    "active-latest",
+                    ResolveSource::ActiveLatest,
                     false,
                     Vec::new(),
                     with_staleness,
@@ -281,7 +327,7 @@ fn resolve(
             return build_resolved_envelope(
                 root,
                 &chosen_slug,
-                "branch-match",
+                ResolveSource::BranchMatch,
                 ties_broken,
                 tie_slugs,
                 with_staleness,
@@ -293,18 +339,132 @@ fn resolve(
 
     // Step 6: none.
     warnings.push("no flow resolves; user prompt required".to_string());
-    Ok(json!({
-        "resolved": false,
-        "source": "none",
-        "ties_broken": false,
-        "tie_candidates": [],
-        "warnings": warnings,
-    }))
+    // R18: route through `ResolveEnvelope::unresolved` so the unresolved
+    // shape is built once. `tie_candidates` empty → `ties_broken` is false
+    // (the unresolved ctor anchors `ties_broken` on the tie list emptiness).
+    Ok(ResolveEnvelope::unresolved(ResolveSource::None, Vec::new(), warnings).to_json())
 }
 
 // ---------------------------------------------------------------------------
 // Envelope construction
 // ---------------------------------------------------------------------------
+
+/// R18: typed envelope for the resolved-flow output. Field order in the
+/// emitted JSON matches the `to_json` build order exactly — wire format
+/// is byte-identical to the pre-R18 hand-rolled envelope. The struct
+/// exists so a future schema addition is one named field on the struct
+/// plus one matching `obj.insert(...)` rather than two parallel edits
+/// in `build_resolved_envelope` and `build_unresolved_envelope_with_ties`.
+struct ResolveEnvelope {
+    resolved: bool,
+    slug: Option<String>,
+    source: ResolveSource,
+    ties_broken: bool,
+    tie_candidates: Vec<String>,
+    context_path: Option<String>,
+    artifacts: Option<CanonicalArtifacts>,
+    plan_path: Option<String>,
+    scope: Option<Vec<String>>,
+    branch: Option<String>,
+    status: Option<String>,
+    stale: Option<JsonValue>,
+    warnings: Vec<String>,
+}
+
+impl ResolveEnvelope {
+    /// Build the envelope for the terminal `none` outcome (step 6) and
+    /// the step-2 tie path. These envelopes intentionally carry only
+    /// the five "outcome-class" fields (`resolved`, `source`,
+    /// `ties_broken`, `tie_candidates`, `warnings`) — the rest stay
+    /// unset and are skipped in `to_json`.
+    fn unresolved(source: ResolveSource, tie_candidates: Vec<String>, warnings: Vec<String>) -> Self {
+        Self {
+            resolved: false,
+            slug: None,
+            source,
+            ties_broken: !tie_candidates.is_empty(),
+            tie_candidates,
+            context_path: None,
+            artifacts: None,
+            plan_path: None,
+            scope: None,
+            branch: None,
+            status: None,
+            stale: None,
+            warnings,
+        }
+    }
+
+    /// Build the JSON object preserving the canonical key order:
+    /// `resolved, slug, source, ties_broken, tie_candidates,
+    /// context_path, artifacts, plan_path, scope, branch, status,
+    /// stale, warnings`. Optional fields are emitted as JSON `null`
+    /// when unset on the resolved path; on the unresolved path the
+    /// post-`source`/`tie_candidates` fields are omitted entirely so
+    /// the byte shape matches the pre-R18 unresolved envelope.
+    /// Naming-convention exception: `to_json` consumes `self` (rather
+    /// than `into_json`) to mirror the existing `to_json` shape on
+    /// `CanonicalArtifacts` and `Check` / `Fix` in `flow::doctor`.
+    #[allow(clippy::wrong_self_convention)]
+    fn to_json(self) -> JsonValue {
+        let mut obj = serde_json::Map::new();
+        obj.insert("resolved".to_string(), JsonValue::Bool(self.resolved));
+        // Resolved-side: every field present (slug, context_path, etc).
+        // Unresolved-side: skip post-source structural fields.
+        if self.resolved {
+            obj.insert(
+                "slug".to_string(),
+                JsonValue::String(self.slug.unwrap_or_default()),
+            );
+        }
+        obj.insert(
+            "source".to_string(),
+            JsonValue::String(self.source.as_str().to_string()),
+        );
+        obj.insert(
+            "ties_broken".to_string(),
+            JsonValue::Bool(self.ties_broken),
+        );
+        let ties: Vec<JsonValue> = self.tie_candidates.into_iter().map(JsonValue::String).collect();
+        obj.insert("tie_candidates".to_string(), JsonValue::Array(ties));
+        if self.resolved {
+            obj.insert(
+                "context_path".to_string(),
+                JsonValue::String(self.context_path.unwrap_or_default()),
+            );
+            obj.insert(
+                "artifacts".to_string(),
+                self.artifacts
+                    .map(|a| a.to_json())
+                    .unwrap_or(JsonValue::Null),
+            );
+            obj.insert(
+                "plan_path".to_string(),
+                self.plan_path.map(JsonValue::String).unwrap_or(JsonValue::Null),
+            );
+            let scope_arr: Vec<JsonValue> = self
+                .scope
+                .unwrap_or_default()
+                .into_iter()
+                .map(JsonValue::String)
+                .collect();
+            obj.insert("scope".to_string(), JsonValue::Array(scope_arr));
+            obj.insert(
+                "branch".to_string(),
+                self.branch.map(JsonValue::String).unwrap_or(JsonValue::Null),
+            );
+            obj.insert(
+                "status".to_string(),
+                self.status.map(JsonValue::String).unwrap_or(JsonValue::Null),
+            );
+            obj.insert("stale".to_string(), self.stale.unwrap_or(JsonValue::Null));
+        }
+        let warnings_json: Vec<JsonValue> =
+            self.warnings.into_iter().map(JsonValue::String).collect();
+        obj.insert("warnings".to_string(), JsonValue::Array(warnings_json));
+        JsonValue::Object(obj)
+    }
+}
 
 /// Render the full resolved envelope. Reads the resolved flow's
 /// `context.toml` to populate the projection (status, branch, scope,
@@ -313,7 +473,7 @@ fn resolve(
 fn build_resolved_envelope(
     root: &Path,
     slug: &str,
-    source: &str,
+    source: ResolveSource,
     ties_broken: bool,
     tie_candidates: Vec<String>,
     with_staleness: bool,
@@ -382,118 +542,58 @@ fn build_resolved_envelope(
 
     // Optional staleness annotation.
     let stale_v = if with_staleness {
-        compute_staleness(table)
+        Some(compute_staleness(table))
     } else {
-        JsonValue::Null
+        Some(JsonValue::Null)
     };
 
-    // Render context_path relative to root (forward slashes).
-    let context_path_rel = relativise(root, &context_path);
-    let tie_candidates_json: Vec<JsonValue> = tie_candidates
-        .into_iter()
-        .map(JsonValue::String)
-        .collect();
-
-    let mut obj = serde_json::Map::new();
-    obj.insert("resolved".to_string(), JsonValue::Bool(true));
-    obj.insert("slug".to_string(), JsonValue::String(slug.to_string()));
-    obj.insert("source".to_string(), JsonValue::String(source.to_string()));
-    obj.insert("ties_broken".to_string(), JsonValue::Bool(ties_broken));
-    obj.insert(
-        "tie_candidates".to_string(),
-        JsonValue::Array(tie_candidates_json),
-    );
-    obj.insert(
-        "context_path".to_string(),
-        JsonValue::String(context_path_rel),
-    );
-    obj.insert("artifacts".to_string(), artifacts.to_json());
-    obj.insert(
-        "plan_path".to_string(),
-        plan_path_v
-            .map(JsonValue::String)
-            .unwrap_or(JsonValue::Null),
-    );
-    let scope_json: Vec<JsonValue> = scope_v.into_iter().map(JsonValue::String).collect();
-    obj.insert("scope".to_string(), JsonValue::Array(scope_json));
-    obj.insert(
-        "branch".to_string(),
-        branch_v.map(JsonValue::String).unwrap_or(JsonValue::Null),
-    );
-    obj.insert(
-        "status".to_string(),
-        status_v.map(JsonValue::String).unwrap_or(JsonValue::Null),
-    );
-    obj.insert("stale".to_string(), stale_v);
-    let warnings_json: Vec<JsonValue> =
-        warnings.iter().cloned().map(JsonValue::String).collect();
-    obj.insert("warnings".to_string(), JsonValue::Array(warnings_json));
-
-    Ok(JsonValue::Object(obj))
+    let envelope = ResolveEnvelope {
+        resolved: true,
+        slug: Some(slug.to_string()),
+        source,
+        ties_broken,
+        tie_candidates,
+        context_path: Some(relativise(root, &context_path)),
+        artifacts: Some(artifacts),
+        plan_path: plan_path_v,
+        scope: Some(scope_v),
+        branch: branch_v,
+        status: status_v,
+        stale: stale_v,
+        warnings: warnings.clone(),
+    };
+    Ok(envelope.to_json())
 }
 
 /// Tie-detection envelope for the step-2 multi-match case. The plan body
 /// says "multiple → tie surfaced": we surface as a `resolved=false`
 /// envelope carrying the tied slugs in `tie_candidates`.
 fn build_unresolved_envelope_with_ties(
-    source: &str,
+    source: ResolveSource,
     tie_candidates: Vec<String>,
     mut warnings: Vec<String>,
 ) -> Result<JsonValue> {
     warnings.push(format!(
-        "{source} match has multiple candidates; tie_candidates surfaced"
+        "{src} match has multiple candidates; tie_candidates surfaced",
+        src = source.as_str()
     ));
-    let tie_json: Vec<JsonValue> = tie_candidates.into_iter().map(JsonValue::String).collect();
-    Ok(json!({
-        "resolved": false,
-        "source": source,
-        "ties_broken": true,
-        "tie_candidates": tie_json,
-        "warnings": warnings,
-    }))
+    Ok(ResolveEnvelope::unresolved(source, tie_candidates, warnings).to_json())
 }
 
 // ---------------------------------------------------------------------------
 // Artifacts projection
 // ---------------------------------------------------------------------------
 
-/// Four canonical artifact paths for a flow.
-struct Artifacts {
-    review_ledger: String,
-    optimise_findings: String,
-    execution_record: String,
-    plan_review_findings: String,
-}
-
-impl Artifacts {
-    fn to_json(&self) -> JsonValue {
-        json!({
-            "review_ledger": self.review_ledger,
-            "optimise_findings": self.optimise_findings,
-            "execution_record": self.execution_record,
-            "plan_review_findings": self.plan_review_findings,
-        })
-    }
-}
-
-/// Canonical-path computation: `.claude/flows/<slug>/<key-with-dashes>.toml`.
-/// Mirrors the logic in `flow::init::artifacts_for`.
-fn canonical_artifacts(slug: &str) -> Artifacts {
-    Artifacts {
-        review_ledger: format!(".claude/flows/{slug}/review-ledger.toml"),
-        optimise_findings: format!(".claude/flows/{slug}/optimise-findings.toml"),
-        execution_record: format!(".claude/flows/{slug}/execution-record.toml"),
-        plan_review_findings: format!(".claude/flows/{slug}/plan-review-findings.toml"),
-    }
-}
-
 /// Prefer explicit `[artifacts]` when present and well-shaped; fall back to
 /// the canonical computation otherwise. A partial `[artifacts]` block (some
 /// keys present, some absent) gets the missing keys filled from the
 /// canonical computation — that's the most defensible behaviour for a
 /// hand-edited file that left out a key.
-fn read_or_compute_artifacts(table: &toml::map::Map<String, TomlValue>, slug: &str) -> Artifacts {
-    let canonical = canonical_artifacts(slug);
+fn read_or_compute_artifacts(
+    table: &toml::map::Map<String, TomlValue>,
+    slug: &str,
+) -> CanonicalArtifacts {
+    let canonical = CanonicalArtifacts::for_slug(slug);
     let Some(arts_tbl) = table.get("artifacts").and_then(|v| v.as_table()) else {
         return canonical;
     };
@@ -504,7 +604,7 @@ fn read_or_compute_artifacts(table: &toml::map::Map<String, TomlValue>, slug: &s
             .map(str::to_string)
             .unwrap_or_else(|| fallback.to_string())
     };
-    Artifacts {
+    CanonicalArtifacts {
         review_ledger: pluck("review_ledger", &canonical.review_ledger),
         optimise_findings: pluck("optimise_findings", &canonical.optimise_findings),
         execution_record: pluck("execution_record", &canonical.execution_record),
@@ -591,13 +691,41 @@ fn best_binding_match(
     }
 }
 
-/// Step-4 fallback: most-recent `last_used` wins. Empty `last_used`
-/// strings sort to the bottom (treated as ancient).
+/// Step-4 fallback: most-recent `last_used` wins. R24: parses each
+/// `last_used` to `jiff::Timestamp` so a hand-edited entry with a TZ
+/// offset (which would lex-compare wrong vs UTC-Z entries) surfaces as a
+/// stderr warning and that entry is treated as ancient (sorts last).
+/// Empty `last_used` strings also sort to the bottom — same pre-R24
+/// behaviour.
 fn pick_active_latest(entries: &[ActiveEntry]) -> Option<ActiveEntry> {
-    entries
+    use jiff::Timestamp;
+
+    // Parse each entry's `last_used` once; warn-and-treat-as-ancient on
+    // failure (empty string OR bad format). The downstream `max_by` then
+    // operates on `Option<Timestamp>` where `None < Some(_)`.
+    let parsed: Vec<(Option<Timestamp>, &ActiveEntry)> = entries
         .iter()
-        .max_by(|a, b| a.last_used.cmp(&b.last_used))
-        .cloned()
+        .map(|e| {
+            if e.last_used.is_empty() {
+                return (None, e);
+            }
+            match e.last_used.parse::<Timestamp>() {
+                Ok(ts) => (Some(ts), e),
+                Err(_) => {
+                    eprintln!(
+                        "tomlctl: warning: active-flow entry `{slug}` has unparseable last_used `{lu}` — treated as ancient",
+                        slug = e.slug,
+                        lu = e.last_used,
+                    );
+                    (None, e)
+                }
+            }
+        })
+        .collect();
+    parsed
+        .into_iter()
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, e)| e.clone())
 }
 
 // ---------------------------------------------------------------------------
@@ -609,7 +737,18 @@ struct FlowSummary {
     slug: String,
     status: Option<String>,
     branch: Option<String>,
+    /// Raw scope-glob patterns from the flow's `context.toml`. Retained
+    /// as the source-of-truth for diagnostics (e.g. logged on a
+    /// scope-glob compile failure); the compiled `scope_set` below is
+    /// what `any_path_matches_scope` actually consults.
+    #[allow(dead_code)]
     scope: Vec<String>,
+    /// R5: pre-compiled scope `GlobSet`, built once during flow
+    /// enumeration so repeat `any_path_matches_scope` calls (one per
+    /// caller `--path` against each candidate flow) skip the
+    /// per-invocation compile loop. `None` when the flow has no
+    /// scope or every pattern failed to compile.
+    scope_set: Option<GlobSet>,
     /// `updated` rendered as the on-disk display form (`YYYY-MM-DD` for a
     /// TOML date, the raw datetime string otherwise). Lexicographic
     /// comparison is used for "latest" picks, which is correct under
@@ -635,11 +774,7 @@ fn enumerate_flows(root: &Path) -> Result<Vec<FlowSummary>> {
     if !flows_dir.exists() {
         return Ok(Vec::new());
     }
-    let mut entries: Vec<std::fs::DirEntry> = std::fs::read_dir(&flows_dir)
-        .with_context(|| format!("reading {}", flows_dir.display()))?
-        .filter_map(|e| e.ok())
-        .collect();
-    entries.sort_by_key(|e| e.file_name());
+    let entries = read_dir_sorted(&flows_dir)?;
     let mut out: Vec<FlowSummary> = Vec::with_capacity(entries.len());
     for entry in entries {
         let path = entry.path();
@@ -664,38 +799,24 @@ fn enumerate_flows(root: &Path) -> Result<Vec<FlowSummary>> {
             Ok(v) => v,
             Err(_) => continue,
         };
-        let Some(table) = doc.as_table() else { continue };
-        let status = table
-            .get("status")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let branch = table
-            .get("branch")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let scope: Vec<String> = table
-            .get("scope")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let updated = table
-            .get("updated")
-            .map(|v| match v {
-                TomlValue::Datetime(dt) => dt.to_string(),
-                TomlValue::String(s) => s.clone(),
-                other => other.to_string(),
-            })
-            .unwrap_or_default();
+        // R13: route through the shared `FlowProjection` parse — same
+        // projection `flow::list` consumes. `None` (not a table) is
+        // tolerated as "skip this flow", matching the pre-R13
+        // best-effort enumeration contract.
+        let Some(proj) = FlowProjection::from_toml_value(&doc) else {
+            continue;
+        };
+        // R5: pre-compile the scope GlobSet once per flow during
+        // enumeration. Subsequent `any_path_matches_scope` calls reuse
+        // this cached set instead of recompiling per candidate.
+        let scope_set = compile_scope_globset(&proj.scope);
         out.push(FlowSummary {
             slug: slug.to_string(),
-            status,
-            branch,
-            scope,
-            updated,
+            status: proj.status,
+            branch: proj.branch,
+            scope: proj.scope,
+            scope_set,
+            updated: proj.updated.unwrap_or_default(),
         });
     }
     Ok(out)
@@ -705,33 +826,41 @@ fn enumerate_flows(root: &Path) -> Result<Vec<FlowSummary>> {
 // Glob matching (step 2)
 // ---------------------------------------------------------------------------
 
-/// True when ANY of the caller's `--path` args matches ANY of `scope`'s
-/// globs. We compile each scope glob ad-hoc (the `scope` array is small —
-/// typically 1-3 patterns per flow). Compile failures on a malformed
-/// pattern are treated as non-matches (defensive — a hand-edited bad glob
-/// should not crash the resolver).
-fn any_path_matches_scope(paths: &[PathBuf], scope: &[String]) -> bool {
+/// R5: compile a `GlobSet` for the flow's scope. Returns `None` when
+/// every pattern fails to compile (defensive against hand-edited
+/// malformed globs — that case must not crash the resolver). Compile
+/// failures on individual patterns are silently dropped, matching the
+/// pre-R5 per-pattern `if let Ok(g)` behaviour.
+fn compile_scope_globset(scope: &[String]) -> Option<GlobSet> {
     if scope.is_empty() {
-        return false;
+        return None;
     }
-    // Pre-compile the scope globs once, then test each path against each.
-    let mut matchers: Vec<globset::GlobMatcher> = Vec::with_capacity(scope.len());
+    let mut builder = GlobSetBuilder::new();
+    let mut any = false;
     for pat in scope {
         if let Ok(g) = Glob::new(pat) {
-            matchers.push(g.compile_matcher());
+            builder.add(g);
+            any = true;
         }
     }
-    if matchers.is_empty() {
+    if !any {
+        return None;
+    }
+    builder.build().ok()
+}
+
+/// True when ANY of the caller's `--path` args matches ANY of `scope`'s
+/// globs. R5: routes through `GlobSet::is_match` which performs a
+/// single Aho-Corasick-style sweep across all compiled patterns at once,
+/// instead of the prior nested `for path { for matcher { ... } }` loop.
+/// Used by the unit tests; production resolve consumes the cached
+/// `FlowSummary::scope_set` directly.
+#[cfg(test)]
+fn any_path_matches_scope(paths: &[PathBuf], scope: &[String]) -> bool {
+    let Some(set) = compile_scope_globset(scope) else {
         return false;
-    }
-    for p in paths {
-        for m in &matchers {
-            if m.is_match(p) {
-                return true;
-            }
-        }
-    }
-    false
+    };
+    paths.iter().any(|p| set.is_match(p))
 }
 
 // ---------------------------------------------------------------------------
@@ -759,36 +888,21 @@ fn compute_staleness(table: &toml::map::Map<String, TomlValue>) -> JsonValue {
         }
     };
 
-    use jiff::Timestamp;
-    use jiff::civil::Date;
-
-    let updated_date: Date = if iso.len() == 10 {
-        match iso.parse::<Date>() {
-            Ok(d) => d,
-            Err(_) => {
-                return json!({
-                    "stale": true,
-                    "age_seconds": JsonValue::Null,
-                    "reason": "updated field unparseable",
-                });
-            }
+    // R6: route the parse + today resolution through `flow::time` so
+    // R39's injection seam can pin the clock during tests, and the
+    // identical-format error messages stay in lock-step with `stale.rs`.
+    let updated_date = match parse_iso_to_date(&iso) {
+        Ok(d) => d,
+        Err(_) => {
+            return json!({
+                "stale": true,
+                "age_seconds": JsonValue::Null,
+                "reason": "updated field unparseable",
+            });
         }
-    } else {
-        let z = match iso.parse::<Timestamp>().and_then(|t| t.in_tz("UTC")) {
-            Ok(z) => z,
-            Err(_) => {
-                return json!({
-                    "stale": true,
-                    "age_seconds": JsonValue::Null,
-                    "reason": "updated field unparseable",
-                });
-            }
-        };
-        z.date()
     };
-
-    let today: Date = match Timestamp::now().in_tz("UTC") {
-        Ok(z) => z.date(),
+    let today = match today_utc_date() {
+        Ok(d) => d,
         Err(_) => {
             return json!({
                 "stale": true,
@@ -828,19 +942,8 @@ fn compute_staleness(table: &toml::map::Map<String, TomlValue>) -> JsonValue {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn read_integrity_opts(args: &ReadIntegrityArgs) -> IntegrityOpts {
-    IntegrityOpts {
-        write_sidecar: true,
-        verify_on_read: args.verify_integrity,
-        strict: false,
-    }
-}
-
-fn relativise(root: &Path, path: &Path) -> String {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    rel.to_string_lossy().replace('\\', "/")
-}
+// R3 / R2: `read_integrity_opts` and `relativise` now sourced from
+// `crate::cli` and `crate::io` respectively.
 
 #[cfg(test)]
 mod tests {
@@ -848,7 +951,7 @@ mod tests {
 
     #[test]
     fn canonical_artifacts_yields_four_canonical_paths() {
-        let a = canonical_artifacts("feature-x");
+        let a = CanonicalArtifacts::for_slug("feature-x");
         assert_eq!(
             a.review_ledger,
             ".claude/flows/feature-x/review-ledger.toml"

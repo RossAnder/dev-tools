@@ -44,15 +44,14 @@ use toml::Value as TomlValue;
 
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::flow::schema::ActiveDoc;
-use crate::io::repo_or_cwd_root;
+use crate::flow::schema::{ActiveDoc, FlowProjection};
+use crate::io::{read_dir_sorted, repo_or_cwd_root};
 use crate::output::print_json;
 
 pub(crate) fn dispatch(
     status: Option<String>,
     branch: Option<String>,
     active_only: bool,
-    _json: bool,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let root = repo_or_cwd_root()?;
@@ -200,47 +199,17 @@ fn read_context_record(path: &Path, slug: &str) -> Result<FlowRecord> {
         .with_context(|| format!("reading {}", path.display()))?;
     let doc: TomlValue = toml::from_str(&s)
         .with_context(|| format!("parsing {}", path.display()))?;
-    let table = doc
-        .as_table()
+    // R13: route through the shared `FlowProjection` parse so list and
+    // resolve consume one canonical projection.
+    let proj = FlowProjection::from_toml_value(&doc)
         .ok_or_else(|| anyhow::anyhow!("context.toml root is not a table"))?;
-
-    let status = table
-        .get("status")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
-    // `updated` is normally a TOML date literal (parsed as Datetime). Render
-    // its `Display` form (YYYY-MM-DD) so JSON output stays a plain string;
-    // accept a TOML string too for forward-compat with hand-edited files.
-    let updated = table.get("updated").map(|v| match v {
-        TomlValue::Datetime(dt) => dt.to_string(),
-        TomlValue::String(s) => s.clone(),
-        other => other.to_string(),
-    });
-    let plan_path = table
-        .get("plan_path")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
-    let branch = table
-        .get("branch")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
-    let scope: Vec<String> = table
-        .get("scope")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-
     Ok(FlowRecord {
         slug: slug.to_string(),
-        status,
-        updated,
-        plan_path,
-        branch,
-        scope,
+        status: proj.status,
+        updated: proj.updated,
+        plan_path: proj.plan_path,
+        branch: proj.branch,
+        scope: proj.scope,
     })
 }
 
@@ -283,17 +252,4 @@ fn load_active_slug_set(root: &Path) -> Result<std::collections::HashSet<String>
     Ok(set)
 }
 
-/// Sorted directory listing — keeps test output deterministic across
-/// platforms (POSIX and NTFS make no guarantee about `read_dir` order).
-/// Mirrors `find_plans::read_dir_sorted` rather than reusing it directly:
-/// keeping each flow leaf module self-contained avoids cross-leaf coupling
-/// during the parallel B-phase rollout.
-fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
-    let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir)
-        .with_context(|| format!("reading directory {}", dir.display()))?
-        .filter_map(|e| e.ok())
-        .collect();
-    entries.sort_by_key(|e| e.file_name());
-    Ok(entries)
-}
 

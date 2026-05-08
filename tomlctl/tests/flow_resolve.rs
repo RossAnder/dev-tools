@@ -613,3 +613,50 @@ fn resolved_envelope_carries_canonical_keys() {
         ]
     );
 }
+
+/// R40: contract for a malformed `.claude/active-flow.toml` — the
+/// registry parse error is TOLERATED (treated as empty registry) rather
+/// than escalated to a hard error. The implementation routes through
+/// `load_active_entries`, which catches `read_toml`'s parse error,
+/// emits a stderr breadcrumb, and returns `Vec::new()` so resolution
+/// can fall through to step 5 / step 6.
+///
+/// This test seeds a syntactically broken `[[active]]` block (unclosed
+/// table) and asserts the resolver still succeeds — landing on the
+/// terminal `none` outcome rather than aborting.
+#[test]
+fn corrupt_active_flow_toml_falls_through_to_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join(".claude")).unwrap();
+    // Unclosed `[[active]]` array-of-tables — toml parser rejects this.
+    let body = r#"schema_version = 1
+[[active
+slug = "broken"
+"#;
+    seed_active_registry(root, body);
+
+    // Run with no `--branch`, no `--path`, so step-2 is skipped and
+    // step-3/4 only fires when the registry parses. The malformed
+    // registry should NOT escalate to a hard error.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", root)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("flow")
+        .arg("resolve")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("stdout must parse as JSON");
+    assert_eq!(v["resolved"], serde_json::json!(false));
+    assert_eq!(v["source"], serde_json::json!("none"));
+    // The stderr breadcrumb should mention the unreadable registry.
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("active-flow.toml"),
+        "stderr must surface the registry-unreadable warning: {stderr}"
+    );
+}
