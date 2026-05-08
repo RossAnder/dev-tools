@@ -338,19 +338,39 @@ fn json_set_refuses_path_outside_claude() {
     drop(dir);
 }
 
-/// (7) Symmetric P19 rejection on the TOML write side — DEFERRED. The
-/// JSON-side rejection (refuse `.toml` targets) is already implemented and
-/// covered by `json_set_refuses_toml_extension` below; the symmetric refusal
-/// on the TOML side requires editing `cli/dispatch.rs`, which is outside
-/// this task's owned files. Orchestrator picks this up as a follow-up
-/// commit.
+/// (7) Symmetric P19 rejection on the TOML write side: `tomlctl set` /
+/// `tomlctl set-json` / `tomlctl array-append` against a `.json` target
+/// must error `kind=validation` with a message that points the caller at
+/// `tomlctl json set`. Pairs with `json_set_refuses_toml_extension` below
+/// (the JSON-side refusal of `.toml` targets).
 #[test]
-#[ignore = "P19 symmetric TOML→JSON rejection deferred — needs cli/dispatch.rs touch (out of scope for this task)"]
 fn tomlctl_set_on_dot_json_path_refers_to_json_set() {
-    // Sketch: `tomlctl set foo.json a "x"` → kind=validation, message
-    // referring to `tomlctl json set`. Implementation lives in
-    // `cli/dispatch.rs` Cmd::Set / Cmd::SetJson / Cmd::ArrayAppend write
-    // arms and is intentionally unimplemented here.
+    let (dir, root) = fresh_tempdir();
+    let target = root.join(".claude").join("settings.json");
+    fs::write(&target, "{}\n").unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", &root)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("--error-format=json")
+        .arg("set")
+        .arg(&target)
+        .arg("a")
+        .arg("x")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"].as_str(), Some("validation"));
+    let msg = err["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("tomlctl json set"),
+        "TOML writer rejection on .json target must mention `tomlctl json set`, got: {msg}"
+    );
+
+    drop(dir);
 }
 
 /// (7b) JSON writers refuse `.toml` targets (positive half of P19). This

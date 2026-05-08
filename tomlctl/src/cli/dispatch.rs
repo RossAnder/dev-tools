@@ -271,6 +271,30 @@ fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
     }
 }
 
+/// P19 (symmetric half): TOML write subcommands (`set`, `set-json`,
+/// `array-append`) refuse `.json` targets and point the caller at
+/// `tomlctl json set`. The corresponding positive half (JSON writers
+/// refuse `.toml` targets) lives in `crate::json::refuse_toml_extension`.
+/// Pairing the two prevents the silent-write hazard of e.g.
+/// `tomlctl set .claude/settings.json key val` parsing the JSON file as
+/// TOML and emitting unrelated bytes back into it.
+fn refuse_json_extension_for_toml_writers(file: &std::path::Path) -> Result<()> {
+    if file
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+    {
+        return Err(crate::errors::tagged_err(
+            crate::errors::ErrorKind::Validation,
+            Some(file.to_path_buf()),
+            format!(
+                "use `tomlctl json set {} ...` — TOML writers do not handle .json files",
+                file.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn dry_run_read_opts(integrity: &WriteIntegrityArgs) -> IntegrityOpts {
     IntegrityOpts {
         write_sidecar: false,
@@ -398,6 +422,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             dry_run,
             integrity,
         } => {
+            refuse_json_extension_for_toml_writers(&file)?;
             if dry_run {
                 // R22: a caller passing `tomlctl set --dry-run /etc/passwd`
                 // would otherwise silently parse the file as TOML and
@@ -426,6 +451,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             print_json_compact(&serde_json::json!({"ok": true}))?;
         }
         Cmd::SetJson { file, path, json, dry_run, integrity } => {
+            refuse_json_extension_for_toml_writers(&file)?;
             // O35: parse stdin/literal JSON straight into a `JsonValue`,
             // skipping the intermediate String allocation. The parse moves
             // out of the `mutate_doc` closure, which is a side-benefit:
@@ -473,6 +499,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             dry_run,
             integrity,
         } => {
+            refuse_json_extension_for_toml_writers(&file)?;
             // clap's `conflicts_with` guarantees at most one is set; enforce
             // "at least one" here since clap has no first-class
             // required-exactly-one primitive on optional flags.
