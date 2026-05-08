@@ -1,0 +1,334 @@
+schema_version = 1
+last_updated = 2026-05-08
+round = 1
+
+[[items]]
+review_round = 1
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "### Phase A — Leaf Primitives"
+summary = "Phase A1/B1/B2 parallel batches all share writes to tomlctl/src/flow/mod.rs — guaranteed merge conflicts unless Task 1 pre-declares all sub-mod entries up front and downstream tasks remove flow/mod.rs from their Files lists."
+description = "Tasks 3,4,5 (A1) all list tomlctl/src/flow/mod.rs in Files; same for 7,8,9 (B1) and 10,11 (B2). Plan L119 says A0 stubs ALL Phase A+B subcommands, but per-task Files lists contradict that intent. Fix: amend Task 1 acceptance to enumerate every `pub mod X;` in flow/mod.rs and flow/dispatch.rs; trim flow/mod.rs from Tasks 3,4,5,7,8,9,10,11 Files lists."
+status = "merged"
+dedup_id = "122487685c603e2f"
+
+[[items]]
+review_round = 1
+id = "P2"
+severity = "critical"
+category = "completeness"
+plan_section = "#### 1. Land Cmd::Flow / Cmd::Json skeleton + dep additions [M]"
+summary = "Task 1 will break tomlctl/tests/capabilities.rs:1550 — the exhaustive `assert_eq!(features.len(), expected.len())` over a 14-entry literal array. Task 12 must also bump the version literal `0.4.0` at capabilities.rs:1579. Neither file is in the Files lists."
+description = 'capabilities.rs:1528-1543 enumerates expected feature names; line 1550 asserts strict count equality. capabilities.rs:1579 asserts version literal `"0.4.0"`. cargo test fails before any new test binary runs.'
+status = "merged"
+dedup_id = "edbaa4695da5b410"
+
+[[items]]
+review_round = 1
+id = "P3"
+severity = "critical"
+category = "completeness"
+plan_section = "#### 15. Coordinated rewrite of 9 carriers + SKILL.md (single commit) [L]"
+summary = "tdd.md has TWO flow-resolution call sites; only the shared block is addressed by Task 15. tdd.md:415 (## Bootstrap-missing fallback) reads 'Resolve the parent flow via the standard flow-resolution order' and back-references the shared block."
+description = "After Phase D2 collapses Step-0, line 415's back-reference points at a block that no longer documents 5 prose steps. tdd.md:415 needs explicit rewriting in Task 15 — either (a) invoke flow-bootstrap again, or (b) reuse a cached envelope from cycle entry."
+status = "merged"
+dedup_id = "b5e65fd9c2b00ccd"
+
+[[items]]
+review_round = 1
+id = "P4"
+severity = "critical"
+category = "executability"
+plan_section = "#### 17. Wire first-use multi-select into plan-new, plan-update, review-plan [M]"
+summary = "Type collision: Task 17 stores `plansDirectory` as either array OR literal string `__DONT_ASK__`. Task 4 (find-plans) accepts string|array<string> but never mentions sentinel handling — would treat `__DONT_ASK__` as a literal directory `./__DONT_ASK__/`."
+description = """Where does sentinel detection live — in tomlctl flow find-plans, in tomlctl json get, or in carrier prose post-bootstrap? The plan never assigns ownership. Fix: extend Task 4 Action — 'if plansDirectory == "__DONT_ASK__" (literal string), treat as unset → fall through to default ["docs/plans/"]. Add a unit test asserting this.' Cross-reference from Task 17 back to Task 4."""
+status = "merged"
+dedup_id = "a399742cad09d86a"
+
+[[items]]
+review_round = 1
+id = "P5"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 13. Author claude/agents/flow-bootstrap.md [M]"
+summary = "Model ID inconsistency: Task 13 acceptance pins `claude-haiku-4-5-20251001` (full ID); peer agent claude/agents/verification.md:5 uses `model: haiku` (alias). Mixing pinned vs aliased Haiku agents is a maintenance burden."
+description = "Either change Task 13 to `model: haiku` matching verification.md, or keep the pin AND add rationale in Task 13 Detail explaining why this agent pins while verification doesn't."
+anchor_old = "Frontmatter declares `model: claude-haiku-4-5-20251001` and tool allowlist restricted to `Bash(tomlctl *)`."
+anchor_new = "Frontmatter declares `model: haiku` (alias — matches the peer `claude/agents/verification.md`'s convention; auto-upgrades on Haiku point releases) and tool allowlist `tools: Bash` (matching the verification agent's bare-tool precedent; the body prompt disciplines command shape)."
+status = "merged"
+dedup_id = "ae619c92b142be53"
+
+[[items]]
+review_round = 1
+id = "P6"
+severity = "critical"
+category = "completeness"
+plan_section = "## Scope"
+summary = "claude/commands/test-bootstrap.md:12 is an undocumented carrier touched by the rename. The literal string `it does NOT read .claude/active-flow` references the file the plan deletes. test-bootstrap.md is not listed in Affected areas."
+description = "test-bootstrap.md is not in the 9-carrier list nor in Affected areas (line 42), but the literal-string drift will remain. Add a Task 15 acceptance bullet to update test-bootstrap.md:12 to reference `.claude/active-flow.toml` (or generalise to 'any active-flow registry')."
+status = "merged"
+dedup_id = "db34d70620bc938b"
+
+[[items]]
+review_round = 1
+id = "P7"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Research Notes"
+summary = "Plan misattributes `compute_set_mutation` and `compute_set_json_mutation` to convert.rs; both live in io.rs (lines 490 and 528). convert.rs only carries set_at_path (line 105) and navigate (line 90). Task 2 detail also says 'Mirror convert::compute_set_json_mutation' — wrong module."
+anchor_old = "`convert.rs` (`set_at_path`, `navigate`, `compute_set_mutation`, `compute_set_json_mutation`)"
+anchor_new = "`convert.rs` (`set_at_path`, `navigate`), `io.rs` (atomic write pipeline plus `compute_set_mutation`, `compute_set_json_mutation`)"
+status = "merged"
+dedup_id = "5520f54fce780acc"
+
+[[items]]
+review_round = 1
+id = "P8"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Context"
+summary = "Three 'real-world failure mode' claims are factually wrong: (a) .claude/active-flow does NOT point at a missing flow (points at flow-tracking-overhaul which exists); (b) actually 5 of 6 flows on branch=main, not 4 of 5; (c) Task 10 acceptance 5-sample-flow count is off by one."
+anchor_old = '4 of 5 flows declare `branch = "main"` — step 3 has no documented tiebreaker and could pick a `complete` flow.'
+anchor_new = '5 of 6 flows declare `branch = "main"` (the sixth, `glistening-wiggling-valiant`, omits the field entirely) — step 3 has no documented tiebreaker and could pick a `complete` flow.'
+status = "merged"
+dedup_id = "0861cd19c13abb82"
+
+[[items]]
+review_round = 1
+id = "P9"
+severity = "warning"
+category = "completeness"
+plan_section = "## Verification"
+summary = """.claude/settings.json:3 already contains `"plansDirectory": "docs/plans"`. Phase E smoke (multi-select prompt fires for plansDirectory) cannot exercise without manual setup. Verification step 7 needs a 'delete plansDirectory before smoke' preamble."""
+status = "merged"
+dedup_id = "b6db32fc4b5e5b27"
+
+[[items]]
+review_round = 1
+id = "P10"
+severity = "warning"
+category = "risk"
+plan_section = "## Research Notes"
+summary = 'Internal version-pin inconsistency: Research Notes line 81 says `jiff = "^0.1"`; Task 1 line 154 says `jiff = "^0.2"`. Both versions exist with different APIs. Reconcile to ^0.2 (current stable; 0.1 is in deprecation-bridge mode).'
+anchor_old = '**`jiff = "^0.1"`** OR **`time = "^0.3"`** OR **`chrono = "^0.4"`** — for RFC3339 `last_used` timestamps. Recommend `jiff` (newer, smaller, no chrono ecosystem baggage). Phase A0 picks one; `cargo audit` after addition.'
+anchor_new = '**`jiff = "^0.2"`** OR **`time = "^0.3"`** OR **`chrono = "^0.4"`** — for RFC3339 `last_used` timestamps. Recommend `jiff` (newer, smaller, no chrono ecosystem baggage; `^0.2` is current stable, `0.1` in deprecation-bridge mode). Phase A0 picks one; `cargo audit` after addition. `Timestamp::now().to_string()` works without the `serde` feature; only enable `features = ["serde"]` if active-flow.toml round-trips through serde derive.'
+status = "merged"
+dedup_id = "914ed0c10cb2936f"
+
+[[items]]
+review_round = 1
+id = "P11"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 10. Implement `tomlctl flow resolve` (5-step keystone) [L]"
+summary = "Task 10 acceptance says 'cross-validate against the 5 sample flows currently in .claude/flows/' — actually 6, and the on-disk state covers only ~3 of the 6 source paths the plan defines. Test must synthesise additional fixtures."
+anchor_old = "Cross-validate against the existing 5-step prose by running resolve over the 5 sample flows currently in `.claude/flows/` (one fixture per source path)."
+anchor_new = "Cross-validate against the existing 5-step prose by synthesising 6 in-test fixtures (one per source path: explicit-flag, scope-glob, active-binding, active-latest, branch-match, none) — relying on `.claude/flows/` snapshots is unstable since the live `flow-tracking-overhaul` flow will mutate during implementation."
+status = "merged"
+dedup_id = "f300cee896850d7c"
+
+[[items]]
+review_round = 1
+id = "P12"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "33% of tasks (6,13,14,16,17,18) gate acceptance on a human ('Manual diff review' / 'Manual smoke test' / 'User reviews' / 'verdict recorded'). For autonomous runs via flow-implement-deep, no human is in the loop. Each needs a verifiable substitute (grep counts, exit codes, JSON round-trips)."
+status = "merged"
+dedup_id = "17ca2bee9aad74eb"
+
+[[items]]
+review_round = 1
+id = "P13"
+severity = "warning"
+category = "executability"
+plan_section = "#### 15. Coordinated rewrite of 9 carriers + SKILL.md (single commit) [L]"
+summary = "Task 15 says 'Replace... with the Task 14 design' but does not tell the executor where Task 14's output lives (a `checkpoint` entry in execution-record). Risk: executor regenerates from prose and diverges from Task 14's locked envelope."
+description = "Add Task 15 Action sub-step: 'Read the most recent `checkpoint` entry in .claude/flows/flow-tracking-overhaul/execution-record.toml where task_ref = 14; copy its body verbatim.' Optionally promote the design block to scripts/templates/flow-context.md for mechanical reference."
+status = "merged"
+dedup_id = "3a015025a08a0102"
+
+[[items]]
+review_round = 1
+id = "P14"
+severity = "warning"
+category = "executability"
+plan_section = "#### 17. Wire first-use multi-select into plan-new, plan-update, review-plan [M]"
+summary = "AskUserQuestion mechanics under-specified for: (a) 'other → free-text' has no native AUQ affordance and needs a follow-up tool call; (b) multi-select with `Don't ask again` + array option needs an arbitration rule; (c) headless mode returns empty — what happens?"
+description = """Add Task 17 sub-rules: (a) sentinel selection wins over array contents; (b) 'other' dispatches a follow-up text prompt and appends; (c) headless-empty → use ["docs/plans/"] in-memory WITHOUT persisting (so next interactive session can prompt)."""
+status = "merged"
+dedup_id = "ba20ade24aa79adf"
+
+[[items]]
+review_round = 1
+id = "P15"
+severity = "warning"
+category = "risk"
+plan_section = "#### 12. Phase B doc sync + tomlctl version bump [S]"
+summary = "Task 12 bumps tomlctl 0.4.0→0.5.0. CLAUDE.md mandates `cargo install --path tomlctl` on version bumps. Task 12 doesn't include this in commit-message guidance. After Task 15's shared-block rewrite, `tomlctl flow resolve` calls fail with 'unknown subcommand' until user re-installs."
+description = "Add Task 12 acceptance: commit message MUST include re-install instruction. Or add a tomlctl version check in Task 13's flow-bootstrap agent body that fails early with a clear remediation message."
+status = "merged"
+dedup_id = "929d92be7e1d8a52"
+
+[[items]]
+review_round = 1
+id = "P16"
+severity = "warning"
+category = "risk"
+plan_section = "#### 2. Implement `tomlctl json {get,set,unset}` [M]"
+summary = "settings.json sidecar drift: Claude Code harness writes settings.json directly (e.g., on /config). After harness write, .claude/settings.json.sha256 is stale; next `tomlctl json get --verify-integrity` fails with kind=integrity."
+description = "Strong recommendation: tomlctl json should NOT maintain a sidecar for .claude/settings.json since the harness is a co-writer. Either (a) skip sidecar refresh on writes to settings.json specifically, or (b) document users running /config must follow up with `tomlctl integrity refresh`. Option (a) safer as default."
+status = "merged"
+dedup_id = "51d1cd0a4d8502c3"
+
+[[items]]
+review_round = 1
+id = "P17"
+severity = "warning"
+category = "risk"
+plan_section = "## User Decisions"
+summary = "plansDirectory schema-array compat: Decision 1 extends plansDirectory to string|array<string>. The setting schema URL at .claude/settings.json:2 is `https://json.schemastore.org/claude-code-settings.json` — Claude Code-owned. If their official schema is string-only, writing an array triggers harness-side validation warnings every load."
+description = "WebSearch / docs-check the setting's accepted shape; if string-only, store array under a tomlctl-namespaced key like `tomlctl.plansDirectories` and read both for back-compat."
+status = "merged"
+dedup_id = "09c79dcda1d4c123"
+
+[[items]]
+review_round = 1
+id = "P18"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 15. Coordinated rewrite of 9 carriers + SKILL.md (single commit) [L]"
+summary = "claude/skills/tomlctl/SKILL.md is edited by 3 separate batches (Tasks 6, 12, 15) without coordination. Task 15 'rewrite the Quick Reference' could overwrite Tasks 6/12 additions."
+description = "Add a coordination bullet to Task 15: 'MUST patch (not rewrite) the Quick Reference, preserving subcommand entries added in Tasks 6 and 12.'"
+status = "merged"
+dedup_id = "1d629fd22ed7d3a1"
+
+[[items]]
+review_round = 1
+id = "P19"
+severity = "warning"
+category = "executability"
+plan_section = "#### 2. Implement `tomlctl json {get,set,unset}` [M]"
+summary = "UX boundary: no surfaced error for the predictable mistake `tomlctl set .claude/settings.json plansDirectory ...` (parses as TOML, fails opaque without hinting at the right tool)."
+description = "Add Task 2 acceptance: 'TOML writers (set, set-json, array-append) refuse `.json` paths with a kind=validation error referencing tomlctl json set.'"
+status = "merged"
+dedup_id = "62a19bd201e5ea1c"
+
+[[items]]
+review_round = 1
+id = "P20"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 18. Phase E doc sync [S]"
+summary = "Risk row L415 says 'Task 18 documents the cutover' but Task 18's Action only adds string-or-array and tomlctl json notes. No coverage of clear-state instructions per Decision 5."
+description = "Extend Task 18 Action — CLAUDE.md note explaining one-time cutover (clear .claude/flows/, delete legacy .claude/active-flow, run `tomlctl flow init`)."
+status = "merged"
+dedup_id = "86d378e0dccfbe2d"
+
+[[items]]
+review_round = 1
+id = "P21"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 14. Design new flow-context shared block content [S]"
+summary = "Task 14's output is markdown text in an execution-record `checkpoint` field — not a file. Promote to scripts/templates/flow-context.md for mechanical reference by Tasks 13 and 15. Eliminates envelope/template drift risk."
+status = "merged"
+dedup_id = "3b1ba711ce1bc2ed"
+
+[[items]]
+review_round = 1
+id = "P22"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 15. Coordinated rewrite of 9 carriers + SKILL.md (single commit) [L]"
+summary = "No documented mid-edit recovery if Task 15 is interrupted. Pre-commit hook will reject the recovery commit too. Add: 'If interrupted, git checkout HEAD -- <touched files> to restore parity; do NOT commit a partial edit.'"
+status = "merged"
+dedup_id = "6b80ffaebcda17fd"
+
+[[items]]
+review_round = 1
+id = "P23"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 16. Phase D end-to-end smoke through one command [S]"
+summary = """Task 16 acceptance circularity: 'Smoke verdict recorded as a verification entry' passes by recording a verdict regardless of pass/fail. Substitute: 'smoke run produces exit 0 AND recorded entry has outcome="pass"; if exit non-zero, task is incomplete.'"""
+status = "merged"
+dedup_id = "e657ce5b964e0c5d"
+
+[[items]]
+review_round = 1
+id = "P24"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Verification Commands"
+summary = "scripts/verify-shared-blocks.sh:9 requires GNU awk (gawk); default Git Bash for Windows ships mawk. Pre-commit hook fails-closed on Windows-only contributors. Document in CLAUDE.md 'Developer setup': `pacman -S gawk` (MSYS2) or `scoop install gawk` (Scoop)."
+status = "merged"
+dedup_id = "8566d4e612e3531a"
+
+[[items]]
+review_round = 1
+id = "P25"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Plan-mode artefacts"
+summary = "Lines 421-424 describe `.claude/plans/stateful-greeting-sedgewick.md` in present tense; the file no longer exists (already moved to docs/plans/flow-tracking-overhaul.md)."
+anchor_old = "This file currently lives at `.claude/plans/stateful-greeting-sedgewick.md` due to plan-mode auto-naming. Post-`ExitPlanMode`, move to `docs/plans/flow-tracking-overhaul.md`. The `plan_path` field in `.claude/flows/flow-tracking-overhaul/context.toml` (created during plan-new's Phase 7 bootstrap) reflects the final destination."
+anchor_new = "This file was originally written by plan-mode to `.claude/plans/stateful-greeting-sedgewick.md`, then renamed to `docs/plans/flow-tracking-overhaul.md` post-`ExitPlanMode`. The `plan_path` field in `.claude/flows/flow-tracking-overhaul/context.toml` (created during plan-new's Phase 7 bootstrap) reflects the final destination."
+status = "merged"
+dedup_id = "150a4d7ad8eeaa4a"
+
+[[items]]
+review_round = 1
+id = "P26"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "`cargo audit` cadence is per-task acceptance (snapshot only). New advisories drop continuously; six months from now, a new RUSTSEC against globset/jiff or transitive deps silently leaves the build 'audit-clean per last manual run'. Add CLAUDE.md cadence note ('weekly or before each release') as out-of-scope follow-up."
+status = "merged"
+dedup_id = "975913a80dbceaf4"
+
+[[vet_events]]
+timestamp = "2026-05-08T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked: (a) compute_set_mutation/compute_set_json_mutation actually live at io.rs:490,528 not convert.rs — confirmed via grep; (b) 6 flows on disk with 5 declaring branch=main (glistening-wiggling-valiant omits) — matches finding's correction to plan; (c) .claude/active-flow points at flow-tracking-overhaul which exists — plan's stale-pointer claim is false as currently observed; (d) .claude/settings.json:3 already contains plansDirectory: docs/plans — confirms smoke-test breakage finding; (e) .claude/plans/stateful-greeting-sedgewick.md no longer exists — confirms editorial finding."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked: (a) test-bootstrap.md:12 contains literal 'it does NOT read .claude/active-flow' — confirmed; (b) tdd.md:415 contains 'Resolve the parent flow via the standard flow-resolution order (see ## Flow Context above)' — confirmed second resolver call site; (c) tomlctl/tests/capabilities.rs:1550 carries assert_eq over a 14-entry literal expected array (lines 1528-1543) — confirmed; (d) capabilities.rs:1579 asserts version literal 0.4.0 — confirmed Task 12 dependency."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Cross-validated: (a) Task 1 mod.rs pre-stub claim — Agent 3 overlaps Agent 1; both grounded in plan text Files lists; (b) human-gating count of 6 of 18 tasks — countable from plan Acceptance lines (Tasks 6,13,14,16,17,18); (c) __DONT_ASK__ type collision — verified via plan L349 (sentinel) and Task 4 L188-197 (no sentinel handling)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+dropped_ids = ["risk-bash-colon-star-syntax"]
+rationale = "Spot-checked: (a) jiff version inconsistency Research-Notes-L81 (^0.1) vs Task-1-L154 (^0.2) — confirmed via grep; (b) verification.md:5 uses model:haiku alias and tools:Bash,Read,Grep bare list — confirmed; (c) verify-shared-blocks.sh:9 requires GNU awk via grep gating — confirmed; (d) Cargo.toml shows version 0.4.0 with deps not yet including globset/jiff — confirmed; (e) DROPPED: Agent 4's claim that 'Bash(tomlctl *)' (space-star) is wrong syntax — repo's own .claude/settings.json:5 uses 'Bash(tomlctl *)' space-star and works fine; the plan's Task 13 syntax matches repo precedent. Agent 4's colon-star claim conflicts with observable repo state."
+dedup_id = "45ca31c3315a5978"

@@ -1,0 +1,281 @@
+schema_version = 1
+last_updated = 2026-05-08
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 1. Add `dry_run: bool` fields to clap variants [S]"
+anchor_old = "- **Action**: Add `#[arg(long, default_value_t = false)] pub(crate) dry_run: bool` to each of: `Cmd::Set`, `Cmd::SetJson`, `Cmd::ArrayAppend`, `ItemsOp::Add`, `ItemsOp::AddMany`, `ItemsOp::Update`. Match the field-position convention from existing `ItemsOp::Remove::dry_run` (types.rs around line 588)."
+anchor_new = "- **Action**: Add `#[arg(long, default_value_t = false)] pub(crate) dry_run: bool` to each of: `Cmd::Set`, `Cmd::SetJson`, `Cmd::ArrayAppend`, `ItemsOp::Add`, `ItemsOp::AddMany`, `ItemsOp::Update`. Match the field-position convention from existing `ItemsOp::Remove::dry_run` (types.rs:606-610). **AND** in the same task, update the destructure pattern in each affected dispatch arm at `cli/dispatch.rs:374` (`Cmd::Set`), `:388` (`Cmd::SetJson`), `:410` (`Cmd::ArrayAppend`), `:543` (`ItemsOp::Add`), `:597` (`ItemsOp::AddMany`), `:668` (`ItemsOp::Update`) — bind `dry_run` in the destructure (no branch yet; the `if dry_run` branch lands in Task 6(b)). Without this, `cargo build` after Task 1 fails with E0027 'pattern does not mention field `dry_run`'."
+summary = "Task 1 cannot land alone: dispatch arms exhaustively destructure variants without `..`, so adding `dry_run` breaks the build until each arm is amended. Acceptance criterion is wrong as written."
+status = "merged"
+dedup_id = "58f3cc18155df09f"
+
+[[items]]
+id = "P2"
+review_round = 1
+severity = "critical"
+category = "completeness"
+plan_section = "#### 8. Update docs + version bump [S]"
+anchor_old = '  - Cargo.toml: bump `version = "0.3.0"` → `"0.4.0"`.'
+anchor_new = """
+  - Cargo.toml: bump `version = "0.3.0"` → `"0.4.0"`.
+  - **`tomlctl/tests/capabilities.rs`**: update the strict assertions that pin to today's surface — line 1548-1554 asserts `features.len() == expected.len()` (will fail when `agent_context` is added), and line 1576-1579 asserts the literal string `"0.3.0"` (will fail on the bump). Add `"agent_context"` to the test's `expected` list and update the literal version to `"0.4.0"` in lockstep with Cargo.toml."""
+summary = "Existing tests pin exact feature count and literal version `0.3.0`; both will fail under this plan unless the test file is updated alongside Cargo.toml."
+status = "merged"
+dedup_id = "a64c052f529a55fb"
+
+[[items]]
+id = "P3"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "#### Change 3 — Enumerating-error rewrites (Principle 3)"
+anchor_old = "**Audit ledger persistence**: write the ledger from Agent 3 into `.claude/flows/<slug>/audit-error-rewrites.md` so the implement-time agent has a concrete target list (this happens during Phase 7 of the plan-new flow OR at /implement start; in plan mode I can't write it)."
+anchor_new = "**Audit ledger persistence**: the ledger from Agent 3's exploration MUST be persisted at `.claude/flows/glistening-wiggling-valiant/audit-error-rewrites.md` BEFORE Tasks 5 / 6(c) start. Add a Phase-0 task (or fold into the implement command's pre-flight) that writes the 70-row table (file:line:current_message:rewrite-target). Tasks 5 and 6(c) cite this file as their input list — without it, the executing agent has no concrete target set and would have to re-perform the audit at runtime, which is the architectural-decision-at-runtime anti-pattern the plan format forbids."
+summary = "Tasks 5 and 6(c) reference an audit ledger that does not exist on disk; without persistence as an explicit pre-flight step, the implement-time agent has no concrete target list for the 70 rewrites."
+status = "merged"
+dedup_id = "0a80efa672a0b8f6"
+
+[[items]]
+id = "P4"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 4. Add `compute_set_mutation` + `ScalarMutationPlan` + `emit_dry_run_scalar` [M]"
+anchor_old = "- **Action**: In `io.rs`, define `pub(crate) struct ScalarMutationPlan { path, old_value: Option<JsonValue>, new_value: JsonValue }`. Add `compute_set_mutation(doc, path, value, ty)` and `compute_set_json_mutation(doc, path, json)` — both clone `doc`, run the existing `set_at_path` logic on the clone, and return `ScalarMutationPlan` with the pre-mutation value of the path captured into `old_value`."
+anchor_new = "- **Action**: In `io.rs`, define `pub(crate) struct ScalarMutationPlan { path, old_value: Option<JsonValue>, new_value: JsonValue }`. Add `compute_set_mutation(doc, path, value, ty)` and `compute_set_json_mutation(doc, path, json)` — both clone `doc`, then call `crate::convert::navigate(&clone, path)` to capture the pre-mutation value into `old_value` (None when the path doesn't exist yet), then call `crate::convert::set_at_path` (defined at `convert.rs:105`, NOT in `io.rs`) on the clone, and return the populated `ScalarMutationPlan`. Note: `old_value` uses direct `serde_json::Value` encoding — string/int/float/bool/null only; the dry-run path inherits the same scalar-type restriction as live `set` (no datetime mutation today)."
+summary = "Plan locates `set_at_path` in `io.rs`; it actually lives at `convert.rs:105`. Compute-set helpers must import from `crate::convert` and use `navigate` for old-value capture before the destructive set call. Datetime serialisation contract should also be pinned (string/int/float/bool/null only)."
+status = "merged"
+dedup_id = "36f6a822a5949591"
+
+[[items]]
+id = "P5"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "#### Change 2 — `--dry-run` parity across write surface (Principle 4)"
+anchor_old = "- `compute_add_many_mutation(doc, array_name, rows, dedupe_fields) -> Result<MutationPlan>` — clones doc, calls `items_add_many_with_dedupe`, captures `added` ids; populates `added` only."
+anchor_new = "- `compute_add_many_mutation(doc, array_name, rows, defaults, dedupe_fields) -> Result<MutationPlan>` — when `dedupe_fields` is empty, calls `items_add_many` (returns `Result<usize>`); otherwise calls `items_add_many_with_dedupe` (returns `Result<AddManyOutcome>`). Translates either return into `MutationPlan`: skipped rows from the dedupe path go into the `MutationPlan.skipped` field (already declared at `items.rs:1066` with `#[allow(dead_code)]`, reserved for exactly this purpose). The `defaults: Option<&JsonValue>` parameter is required because `items add-many` accepts `--defaults-json` — omitting it makes the dry-run preview diverge from the live path."
+summary = "`compute_add_many_mutation` signature missing `defaults` parameter and ambiguous on which underlying helper to call (`items_add_many` vs `items_add_many_with_dedupe` — different return types). `MutationPlan.skipped` field already exists (items.rs:1066) and was reserved for exactly this dedupe-aware case."
+status = "merged"
+dedup_id = "b09e1cd4fd8f59c5"
+
+[[items]]
+id = "P6"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "#### 6. Wire dispatch arms for capabilities + dry-run + apply audit rewrites in dispatch/items/io [L]"
+anchor_old = """
+#### 6. Wire dispatch arms for capabilities + dry-run + apply audit rewrites in dispatch/items/io [L]
+- **Files**: `tomlctl/src/cli/dispatch.rs`, `tomlctl/src/items.rs` (audit-only edits — error rewrites in items.rs sites identified by Agent 3), `tomlctl/src/io.rs` (audit-only edits)
+- **Depends on**: 1, 2, 3, 4, 5"""
+anchor_new = """
+#### 6a. Wire capabilities arm [S]
+- **Files**: `tomlctl/src/cli/dispatch.rs:446-460`, `tomlctl/src/cli/types.rs` (FEATURES const)
+- **Depends on**: 2
+- **Action**: Merge `capabilities::build_agent_context()` output under a new top-level `commands` key in the existing `Cmd::Capabilities` arm. Add `"agent_context"` to the `FEATURES` const.
+- **Acceptance**: `cargo build` succeeds; smoke check `tomlctl capabilities` JSON now contains a `commands` key.
+
+#### 6b. Wire dry-run dispatch arms [M]
+- **Files**: `tomlctl/src/cli/dispatch.rs` (6 write arms)
+- **Depends on**: 1, 3, 4
+- **Action**: For each of `Cmd::Set` / `Cmd::SetJson` / `Cmd::ArrayAppend` / `ItemsOp::Add` / `ItemsOp::AddMany` / `ItemsOp::Update`, add an `if dry_run { ... }` branch that calls `read_doc` (NOT `mutate_doc` — never acquires the lock or refreshes the sidecar on dry-run), runs the appropriate `compute_*_mutation`, and emits via `emit_dry_run_plan` or `emit_dry_run_scalar`. The reference pattern is `ItemsOp::Apply`'s dry-run branch at line 714.
+- **Acceptance**: `cargo test --manifest-path tomlctl/Cargo.toml` passes; new dry-run smoke checks return the expected envelope without writing.
+
+#### 6c. Apply audit rewrites in dispatch/items/io [M]
+- **Files**: `tomlctl/src/cli/dispatch.rs`, `tomlctl/src/items.rs`, `tomlctl/src/io.rs`
+- **Depends on**: 6a, 6b, audit-ledger-persistence (Phase 0)
+- **Action**: Apply the rewrites from `.claude/flows/glistening-wiggling-valiant/audit-error-rewrites.md` to error sites in these three files. Use `crate::convert::json_type_name` for the "got JSON X" partial-enum rewrites.
+- **Acceptance**: `cargo test`, `cargo clippy --all-targets -- -D warnings` pass.
+
+**Commit boundaries**: commit after 6a, after 6b, after 6c — three commits, not one. Each is independently shippable and rollback-safe."""
+summary = "Task 6 bundles ~30 edits across 4 files into a single 'L' task. Split into 6a (capabilities arm), 6b (dry-run dispatch wiring × 6 arms), 6c (audit rewrites). 6a and 6b can run in parallel (disjoint dispatch.rs regions); 6c serialises after, depending on the audit ledger persistence finding (P3)."
+status = "merged"
+dedup_id = "dc1a288699ede133"
+
+[[items]]
+id = "P7"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "## Verification"
+anchor_old = "7. Bypass-rollback check: `git diff` shows no changes to `claude/commands/*.md` (those are the consumers of tomlctl; this plan should not require any flow-command changes since both `capabilities` and `--dry-run` are additive)"
+anchor_new = """
+7. **Reinstall the binary**: `cargo install --path tomlctl --force` after the Cargo.toml version bump — without this, every `tomlctl` invocation in subsequent smoke checks resolves to the previously-installed 0.3.0 binary on PATH, masking acceptance failures (per `CLAUDE.md` 'rerun cargo install when the tomlctl binary version bumps').
+8. Bypass-rollback check: `git diff` shows no changes to `claude/commands/*.md` (those are the consumers of tomlctl; this plan should not require any flow-command changes since both `capabilities` and `--dry-run` are additive)"""
+summary = "Verification section omits the `cargo install --path tomlctl --force` step required after the version bump (per CLAUDE.md). Without it, downstream smoke checks invoke the stale 0.3.0 binary."
+status = "merged"
+dedup_id = "41f4ee22295781af"
+
+[[items]]
+id = "P8"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "## Verification"
+anchor_old = """
+5. Smoke check: `tomlctl capabilities | jq '.commands | keys'` returns the subcommand list
+6. Smoke check: `tomlctl set /tmp/scratch.toml status review --type str --dry-run --allow-outside` returns the scalar dry-run envelope without writing (use `--allow-outside` because /tmp is outside `.claude/`)"""
+anchor_new = '''
+5. Smoke check: `tomlctl capabilities` JSON output (via the integration test in `tests/capabilities.rs`) contains a `commands` key whose value is an object with subcommand entries. (Avoid `jq` dependency — the integration test in Task 7 already asserts the same shape and has no external prerequisites.)
+6. Smoke check: on Windows, `tomlctl set $env:TEMP\scratch.toml status review --type str --dry-run --allow-outside` (PowerShell). On Unix, `tomlctl set /tmp/scratch.toml status review --type str --dry-run --allow-outside`. The `/tmp` literal does not exist on Windows where this repo is primary.'''
+summary = "Smoke checks use Unix-style `/tmp/` paths that don't exist on Windows (the user's primary platform per CLAUDE.md MEMORY) and depend on `jq` which is not a documented prerequisite. Replace with portable forms or rely on the integration test."
+status = "merged"
+dedup_id = "e334031517cb27aa"
+
+[[items]]
+id = "P9"
+review_round = 1
+severity = "warning"
+category = "risk"
+plan_section = "#### 2. Implement clap-reflection capability schema [M]"
+anchor_old = "- **Action**: Create `pub(crate) fn build_agent_context() -> serde_json::Value` that walks `<Cli as CommandFactory>::command()` recursively. For each subcommand, emit `{flags: {...}, mutex_groups: [...]}`. For each flag, emit `{type, required, default?, values?, repeatable}` based on `Arg::get_action()` / `get_value_parser().possible_values()` / `is_required_set()` / `get_default_values()` / `is_multiple()` (or equivalent action-based detection for repeatable Vec flags)."
+anchor_new = "- **Action**: Create `pub(crate) fn build_agent_context() -> serde_json::Value` that walks `<Cli as CommandFactory>::command()` recursively (NB: `Command::get_subcommands()` returns only direct children — drive the recursion in `build_agent_context` itself, descending into each `&Command`'s own `get_subcommands()` until empty). For each subcommand, emit `{flags: {...}, mutex_groups: [...]}`. For each flag, emit `{type, required, default?, values?, repeatable}` based on `Arg::get_action()` / `get_value_parser().possible_values()` / `is_required_set()` / `get_default_values()`. Detect repeatable Vec flags via `match arg.get_action() { ArgAction::Append | ArgAction::Count => true, _ => false }` — `Arg::is_multiple()` does NOT exist in clap 4 (removed during the 3→4 ArgAction migration)."
+summary = "Plan mentions `Arg::is_multiple()` which doesn't exist in clap 4. Use `ArgAction::Append | ArgAction::Count` instead. Also clarify that `get_subcommands()` is shallow (consumer drives recursion)."
+status = "merged"
+dedup_id = "f2183e3cd143fc98"
+
+[[items]]
+id = "P10"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "#### Change 2 — `--dry-run` parity across write surface (Principle 4)"
+anchor_old = "**Output-shape backwards compat**: existing 3 dry-run subcommands keep their exact byte output. The integration tests at `items_dry_run.rs` still pass."
+anchor_new = """
+**Output-shape backwards compat**: existing 3 dry-run subcommands keep their exact byte output. The integration tests at `items_dry_run.rs` still pass.
+
+**Edge-case behaviour to specify and test**:
+- `--dry-run` against a non-existent file: dry-run reads via `read_doc`, which respects `--strict-read` for the read-side of the operation. For `items add` against a missing file (no `--strict-read`), the dry-run path bootstraps an empty doc just as the live path would; `--strict-read --dry-run` errors with `kind=not_found` before reaching the compute stage.
+- `items add --dedupe-by file,summary --dry-run` when the row matches an existing item: emit `{added:0,skipped:1,...}` populating `MutationPlan.skipped` (the field already exists at items.rs:1066). Without this, a deduped no-op is indistinguishable from `{added:0,...}` for an unrelated reason.
+- `--verify-integrity --dry-run`: the read side honours sidecar verification just as in the existing `items remove --dry-run` pattern. Not a new code path."""
+summary = "Plan does not document edge-case behaviour for dry-run + dedupe-by (output ambiguity), dry-run + missing file (bootstrap vs error), or dry-run + verify-integrity. Tests in Task 7 should cover these."
+status = "merged"
+dedup_id = "17a8b2ec6dfbd58c"
+
+[[items]]
+id = "P11"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "#### 5. Apply error-rewrite ledger to non-dispatch files [M]"
+anchor_old = "- **Acceptance**: All existing tests pass (rewrites preserve semantic content, just expand prose). New unit tests for at least 3 rewrites assert the message contains the enumerated valid set."
+anchor_new = "- **Acceptance**: All existing tests pass (rewrites preserve semantic content, just expand prose). New unit tests cover at least one rewrite per category (enum-rejection, state-precondition, path-shape, type-coercion, partial-enum extension) — minimum 5 tests, not 3 — asserting each rewritten message contains the enumerated valid set or the actual-vs-expected pair."
+summary = "Test floor of 3 is too low for ~70 rewrites. Require at least one test per rewrite category (5 categories) so silent-message-drift regressions are caught."
+status = "merged"
+dedup_id = "5391b2b4b12ddf66"
+
+[[items]]
+id = "P12"
+review_round = 1
+severity = "warning"
+category = "risk"
+plan_section = "#### 6. Wire dispatch arms for capabilities + dry-run + apply audit rewrites in dispatch/items/io [L]"
+anchor_old = "- **Action**: Three sub-pieces, all in this single task because they touch overlapping files:"
+anchor_new = "- **Action** (after splitting per P6): for sub-piece 6b's dry-run wiring, the branch MUST call `read_doc(&file, opts, |doc| ...)` for the read side and operate on a clone — it must NEVER call `mutate_doc` on the dry-run path. `mutate_doc` acquires the exclusive lockfile and refreshes the `.sha256` sidecar; both are write-side actions inappropriate for a no-op preview. The reference pattern is `ItemsOp::Apply`'s dry-run branch at `cli/dispatch.rs:714` — it explicitly calls `compute_apply_mutation` against a `read_doc`-loaded `TomlValue`, never `mutate_doc`. Three sub-pieces, all in this single task because they touch overlapping files:"
+summary = "Dry-run paths must short-circuit before lock acquisition and sidecar refresh. Plan should explicitly warn against routing dry-run through `mutate_doc` to 'reuse the closure plumbing' — that would be a containment / lock-contention regression."
+status = "merged"
+dedup_id = "a0252f45f1ff7cb7"
+
+[[items]]
+id = "P13"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "#### 8. Update docs + version bump [S]"
+anchor_old = '  - SKILL.md: Add a `### Agent-context schema (`tomlctl capabilities .commands`)` section under "Feature-gate with `tomlctl capabilities`". Update the `--dry-run` mentions throughout (currently scoped to remove/apply/backfill) to cover all 9 write subcommands. Add a new recipe to "Common recipes" demonstrating `tomlctl set foo.toml status review --dry-run`.'
+anchor_new = '  - SKILL.md: Add a `### Agent-context schema (`tomlctl capabilities .commands`)` section under "Feature-gate with `tomlctl capabilities`". Add `agent_context` row to the existing feature table at SKILL.md:114 (between `strict_read / dry_run` and `backfill_dedup_id / integrity_refresh`). Update the `--dry-run` mentions throughout (currently scoped to remove/apply/backfill) to cover all 9 write subcommands. Add a new recipe to "Common recipes" demonstrating `tomlctl set foo.toml status review --dry-run`.'
+summary = "SKILL.md feature table at line 114 documents the existing capability features as a discoverable catalogue; adding `agent_context` requires a new row, not just prose updates."
+status = "merged"
+dedup_id = "bfe5c88dfca066be"
+
+[[items]]
+id = "P14"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "#### 8. Update docs + version bump [S]"
+anchor_old = '  - README.md: Update the "Capabilities feature list" section under `## Contracts` to include `agent_context` in the example features array. Update the "## Design" bullet about dry-run.'
+anchor_new = '  - README.md: Update the "Capabilities feature list" section under `## Contracts` — the example JSON at lines 181-191 currently shows `"version": "0.2.0"` (already stale at 0.3.0). Update to `"version": "0.4.0"`, add `"agent_context"` to the `features` array, AND show the new `commands` key with at least one nested example so the README matches the schema users will actually see. Update the "## Design" bullet about dry-run.'
+summary = 'README.md example JSON at lines 181-191 pins `version: "0.2.0"` (already stale). Plan misses both the version refresh and the new `commands` key example.'
+status = "merged"
+dedup_id = "c422daacb9f2a2ce"
+
+[[items]]
+id = "P15"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "#### Change 3 — Enumerating-error rewrites (Principle 3)"
+anchor_old = '''
+Before: "--json must be a JSON object"
+After:  "--json must be a JSON object (e.g. {\"key\":\"value\"}); got: <actual JSON type>"'''
+anchor_new = '''
+Before: "--json must be a JSON object"
+After:  "--json must be a JSON object (e.g. {\"key\":\"value\"}); got JSON " + crate::convert::json_type_name(&v)
+
+(Use `crate::convert::json_type_name(v: &JsonValue) -> &'static str`, already defined at `convert.rs:416`. Returns lowercase `"null"`/`"bool"`/`"number"`/`"string"`/`"array"`/`"object"`. Do NOT use `serde_json::Value::variant_name()` — it doesn't exist.)'''
+summary = "`<actual JSON type>` placeholder is unbound; executor must invent the runtime expression. Project already has `crate::convert::json_type_name` at convert.rs:416 — use it. `serde_json::Value::variant_name()` does not exist."
+status = "merged"
+dedup_id = "19f7363b5bd11560"
+
+[[items]]
+id = "P16"
+review_round = 1
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 2. Implement clap-reflection capability schema [M]"
+anchor_old = """- **Detail**: Add a `MUTEX_GROUPS: &[(&str, &[&[&str]])]` const inside `capabilities.rs` for the semantic constraints clap doesn't expose (e.g. `[("items list", &[&["count","count_by","group_by","pluck","count_distinct"]])]`). Walk `Command::get_groups()` first — fall through to the const supplement only for groups that aren't represented there."""
+anchor_new = """- **Detail**: Add a `MUTEX_GROUPS: &[(&str, &[&[&str]])]` const inside `capabilities.rs` for the semantic constraints clap doesn't expose (e.g. `[("items list", &[&["count","count_by","group_by","pluck","count_distinct"]])]`). Walk `Command::get_groups()` first — fall through to the const supplement only for groups that aren't represented there. Also pre-declare `ENUM_VALUES: &[(&str, &[&str])]` covering the project's `ValueEnum` types (`ScalarType`, `DupTier`, `ErrorFormat`, `OpKind` if relevant); consult before declaring a flag's enum values empty (rolls in the Risk #1 fallback as a Task-2 deliverable rather than a discovered-at-runtime fix)."""
+summary = "Risk #1 mentions an `ENUM_VALUES` fallback const but Task 2 doesn't list it as a deliverable. Pre-declare the small const upfront so an executor working from Task 2 alone doesn't have to discover it via failed integration tests."
+status = "merged"
+dedup_id = "a5d71d05fb85de3a"
+
+[[vet_events]]
+timestamp = "2026-05-08T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked: dispatch.rs:374 confirmed exhaustive Cmd::Set destructure; convert.rs:105 confirmed set_at_path (plan was wrong about io.rs); items.rs:1066 confirmed MutationPlan.skipped field reservation. All 7 findings retained."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked: tests/capabilities.rs:1548-1554 confirmed strict count assertion + line 1576-1579 confirmed literal version 0.3.0 — both will fail under plan. README.md version drift confirmed by reading. Shared-blocks parity check is correctly identified as not affected (SKILL.md is not a carrier per scripts/shared-blocks.toml). All 9 findings retained."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked: Windows /tmp claim verified via project context (Windows 11 platform per system info). audit-error-rewrites.md persistence gap confirmed by file existence check (.claude/flows/<slug>/ did not exist before this run). Task 6 sub-piece overlap with Task 1 destructure issue confirmed independently by Agent 1's read. 7 findings retained, all consistent with Agent 1's parallel findings."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked: convert.rs:416 confirmed json_type_name (Agent 4 correctly identified the in-tree helper rather than non-existent serde_json::Value::variant_name). clap 4 Arg::is_multiple removal verified via cited clap 4.6.1 docs.rs link + GitHub issue #3822. cargo-audit clean status accepted on faith — re-running cargo audit at implement-time is the documented control. 7 findings retained."
+dedup_id = "45ca31c3315a5978"

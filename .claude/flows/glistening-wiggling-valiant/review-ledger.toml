@@ -1,0 +1,920 @@
+schema_version = 1
+last_updated = 2026-05-08
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R1"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 399
+symbol = "Cmd::Set/SetJson/ArrayAppend/ItemsOp::Add/AddMany/Update/Remove/Apply/BackfillDedupId dry_run branches"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Nine identical IntegrityOpts {write_sidecar:false, verify_on_read:integrity.verify_integrity, strict:false} literals across the new dry-run arms — extract a dry_run_read_opts(&WriteIntegrityArgs) helper next to read_integrity_opts/write_integrity_opts (lines 226/266)"
+description = "Sites: 399, 428, 492, 621, 722, 797, 823, 876, 1055. Verified by direct file reads at dispatch.rs:399-403/428-432/492-496. The same five-line struct literal appears nine times. Existing read_integrity_opts/write_integrity_opts establish the helper precedent."
+dedup_id = "319e52a2d6446bbc"
+resolved = 2026-05-08
+resolution = "Extracted dry_run_read_opts(&WriteIntegrityArgs) helper at dispatch.rs:274-280; replaced 9 inline IntegrityOpts literals across set/set-json/array-append/items add/add-many/update/remove/apply/backfill-dedup-id dry-run arms."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R2"
+file = "tomlctl/src/items.rs"
+line = 1472
+symbol = "compute_add_mutation/compute_add_many_mutation/compute_update_mutation/compute_array_append_mutation"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Stale #[allow(dead_code)] // wired by the dispatch task that lands alongside T10b annotations on all four compute helpers — dispatch wired them in commits 5170ef3 and aee3a0b; remove the suppression so dead-code lint catches future regressions"
+description = "items.rs lines 1472, 1514, 1602, 1624 carry the annotation. Dispatch call sites verified at dispatch.rs:629/636/728/803."
+dedup_id = "4385c7781dad3ee3"
+resolved = 2026-05-08
+resolution = "Stripped 4 stale #[allow(dead_code)] // wired by ... T10b annotations from compute_add_mutation/compute_add_many_mutation/compute_update_mutation/compute_array_append_mutation in items.rs (lines 1472/1514/1602/1624)."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R3"
+file = "tomlctl/tests/items_dry_run.rs"
+line = 840
+symbol = "items_add_dry_run_against_missing_file_bootstraps_empty_doc"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "Test name says 'bootstraps_empty_doc' but the body asserts the OPPOSITE — failure with kind=not_found, no file created. Rename to items_add_dry_run_against_missing_file_errors_not_found to match the pinned behaviour"
+description = "Function name reflects the original spec sketch; the docstring at lines 831-838 explicitly documents the spec-deviation. Rename + keep the docstring."
+dedup_id = "a392282059414b86"
+resolved = 2026-05-08
+resolution = "Renamed items_add_dry_run_against_missing_file_bootstraps_empty_doc -> items_add_dry_run_against_missing_file_errors_not_found in tomlctl/tests/items_dry_run.rs:789."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R4"
+file = "tomlctl/src/output.rs"
+line = 39
+symbol = "emit_dry_run_plan"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "emit_dry_run_plan does not surface 'skipped' count in the JSON envelope — plan required {added:0,skipped:1,...} for dedupe disambiguation; tests/items_dry_run.rs:886 acknowledges the deviation in a comment"
+description = "Without 'skipped' in the envelope, an items add --dedupe-by --dry-run that hits a duplicate emits {added:0,...} which is indistinguishable from {added:0,...} for an unrelated reason. compute_add_many_mutation populates MutationPlan.skipped; output.rs:39 ignores it."
+dedup_id = "4fdd1ad4a5cf78ce"
+resolved = 2026-05-08
+resolution = "Wired MutationPlan.skipped.len() into emit_dry_run_plan envelope as would_change.skipped (output.rs:48); updated test comment at items_dry_run.rs:886 and added skipped-count assertion in dedupe-by dry-run test."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R5"
+file = "tomlctl/src/items.rs"
+line = 1173
+symbol = "MutationPlan.skipped"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "MutationPlan.skipped retains #[allow(dead_code)] (items.rs:1173) even though compute_add_many_mutation now populates it (items.rs:1588) and a unit test reads it (items.rs:3502). Either remove the allow attribute (and wire the field into emit_dry_run_plan per R4) or remove the field if R4 is deferred"
+description = "Reservation slots in pub structs that mask future regressions are a smell. Pairs with R4."
+dedup_id = "d4c5f6cc1e04abff"
+resolved = 2026-05-08
+resolution = "Stripped #[allow(dead_code)] from MutationPlan.skipped (items.rs:1173). Field is now populated by compute_add_many_mutation and read by tests; suppression no longer needed."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R6"
+file = "tomlctl/src/capabilities.rs"
+line = 35
+symbol = "ENUM_VALUES"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "ENUM_VALUES const hard-codes ScalarType/DupTier/ErrorFormat variant lists; add a unit test asserting parity against <T as ValueEnum>::value_variants() so a new variant added to the enum can't silently desync the schema"
+description = "capabilities.rs:35-39 hard-codes 6/3/2 variants. The fallback path is exercised at runtime but no compile-time or test-time guard prevents drift if convert.rs ScalarType / dedup.rs DupTier / cli/types.rs ErrorFormat gains a variant."
+dedup_id = "22f9b39f2863352d"
+resolved = 2026-05-08
+resolution = "Added enum_values_match_value_enum_variants test using <T as ValueEnum>::value_variants() for ScalarType/DupTier/ErrorFormat. Test surfaced uppercase->lowercase drift on the tier const (was [A,B,C], DupTier kebab-cases to [a,b,c]); const updated in same edit."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R7"
+file = "tomlctl/src/capabilities.rs"
+line = 16
+symbol = "MUTEX_GROUPS"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = """MUTEX_GROUPS keys subcommands by space-joined path string ("items list") — refactoring a subcommand name silently breaks the mutex schema with no compiler error. Add a test asserting the path matches a real subcommand traversed via Cli's CommandFactory"""
+description = "capabilities.rs:16-25. Test at capabilities.rs:226 uses .any() so a stale path-string passes. Either co-locate with #[command(group(...))] in cli/types.rs or guard with a parity test."
+dedup_id = "4531d8b96b0d728a"
+resolved = 2026-05-08
+resolution = "Added mutex_groups_paths_match_real_subcommands test walking the live CommandFactory tree and asserting every MUTEX_GROUPS path is a real subcommand path."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R8"
+file = "tomlctl/src/capabilities.rs"
+line = 172
+symbol = "describe_mutex_groups"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "describe_mutex_groups appends MUTEX_GROUPS unconditionally without dedup against clap's native cmd.get_groups() — for items list the shape group may emit twice; the test uses .any() so duplication slips past"
+description = "capabilities.rs:194-205 iterates MUTEX_GROUPS without checking whether get_groups() already covered that flag set. Plan §Change 1 specified 'fall through to const supplement only for groups that aren't represented there.' Add a dedup step or a test asserting unique mutex-group entries."
+dedup_id = "b6694e42d7df2a6b"
+resolved = 2026-05-08
+resolution = "Deduped describe_mutex_groups against clap's native get_groups() via HashSet membership-equivalence (capabilities.rs:194-215); simplified per clippy manual_contains lint to existing_sets.contains(&candidate)."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R9"
+file = "tomlctl/src/items.rs"
+line = 1163
+symbol = "MutationPlan"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "MutationPlan struct fields are bare 'pub' but every other type in items.rs/io.rs uses 'pub(crate)' (AddOutcome, AddManyOutcome, SkippedRow, ScalarMutationPlan); tighten visibility for parity with module convention"
+description = "items.rs:1163-1166,1174,1182. tomlctl is a binary-only crate so behaviour is identical today, but the inconsistency violates established convention."
+dedup_id = "9ce83760868769f0"
+resolved = 2026-05-08
+resolution = "Tightened MutationPlan fields (new_doc, added, updated, removed, skipped) and union_ids method from pub to pub(crate) in items.rs:1163-1190 for parity with sibling types."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R10"
+file = "tomlctl/src/io.rs"
+line = 459
+symbol = "ScalarMutationPlan vs MutationPlan"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "ScalarMutationPlan and MutationPlan emit two incompatible JSON envelopes ({path,old,new} vs {added,updated,removed,ids}); a discriminated union ({kind:'scalar'|'items', ...}) at the wire format would let consumers branch on would_change.kind rather than on which subcommand they called"
+description = "output.rs:39 vs 125. Today an agent must pre-classify by subcommand to know which envelope shape to expect. README:192-209 documents the asymmetry inline."
+dedup_id = "f56a525fb5d00783"
+resolved = 2026-05-08
+resolution = 'Added kind discriminator to dry-run envelopes (additive): items shape gains kind:"items" as first field of would_change; scalar shape gains kind:"scalar". output.rs:46+134 plus inline mod tests. tests/items_dry_run.rs gained 8 wc["kind"] assertions. SKILL.md updated 8 envelope example sites. Backfill envelope unchanged (no would_change wrapper). User authorised the wire-format change via fix R10 disposition. Verified: 313 tests pass, clippy clean, shared-blocks OK.'
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R11"
+file = "tomlctl/src/capabilities.rs"
+line = 118
+symbol = "infer_type / commands schema stability"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "capabilities .commands schema implementation depends on clap-4 internals (ArgAction variants, possible_values()) but README's stability contract section does not document the schema as best-effort introspection vs stable contract — clarify in README.md or pin clap to ~4.x"
+description = "infer_type at capabilities.rs:118-127 has _ => 'string' wildcard; ArgAction is #[non_exhaustive] in clap. Cargo.toml:19 pins clap='^4'. Either tighten the pin (~4.5) or document the commands schema's stability scope explicitly."
+dedup_id = "1fbcadd76cdd3a9c"
+resolved = 2026-05-08
+resolution = "Added best-effort introspection paragraph to README.md Capabilities stability section (lines 220-224) explaining commands schema depends on clap-4 ArgAction surface and consumers must treat unknown type values as opaque strings; Cargo.toml clap pin unchanged per orchestrator pre-decision."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R12"
+file = "tomlctl/tests/items_dry_run.rs"
+line = 460
+symbol = "T-glistening dry-run test boilerplate"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Six T-glistening tests repeat a near-identical 5-step pattern (seed_ledger -> prime_sidecar -> snapshot before-bytes/sidecar -> run subcommand --dry-run -> assert byte-equality + parse JSON). Extract assert_dry_run_leaves_file_and_sidecar_unchanged(cmd_args, expected) so a 7th subcommand needs ~10 lines instead of ~60"
+description = "Lines 460-822. Sidecar/file-byte snapshot+restore is already partially extracted (sidecar_for at 430, prime_sidecar_via_update at 440); finish the job for the assert+invoke step."
+dedup_id = "9165b73c7b91496d"
+resolved = 2026-05-08
+resolution = "Extracted run_dry_run_invariant helper at items_dry_run.rs:457-495; refactored 4 T-glistening tests (items add, add-many, update, array-append) to use it. set/set-json tests left inline because their scalar envelope shape diverges from the items-shape and the helper would not reduce boilerplate."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R13"
+file = "tomlctl/src/capabilities.rs"
+line = 118
+symbol = "infer_type"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "infer_type unconditionally maps ArgAction::Append to 'string' regardless of element type, and has a wildcard arm that silently emits 'string' for unknown future ArgAction variants. Add a documenting comment pinning the simplification, plus a unit test exercising a non-string Append case"
+description = "capabilities.rs:118-127. clap 4 exhaustively has SetTrue/SetFalse/Set/Append/Count/Help/Version; the wildcard catches non_exhaustive future additions silently. Lower-priority: exhaustive match with non_exhaustive_omitted_patterns lint."
+dedup_id = "3c81d4384af781c2"
+resolved = 2026-05-08
+resolution = "Pinned infer_type Append->string simplification with explanatory comment above match arm in capabilities.rs; added infer_type_returns_string_for_repeatable_append unit test using --where (where_eq) on items list."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R14"
+file = "tomlctl/tests/items_dry_run.rs"
+line = 0
+symbol = "items backfill-dedup-id --dry-run"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "No integration test exercises 'items backfill-dedup-id --dry-run' — SKILL.md:120 and README:238 advertise --dry-run on all 9 write subcommands but the test suite covers only 8. Add a backfill --dry-run test asserting (a) would_backfill envelope shape, (b) file bytes unchanged, (c) sidecar bytes unchanged"
+description = "Grep across tomlctl/tests for 'backfill.*dry|dry_run.*backfill' returns no matches. The advertised contract has no regression guard for the backfill arm."
+dedup_id = "8bcd668d4ed1e97f"
+resolved = 2026-05-08
+resolution = "Added items_backfill_dedup_id_dry_run_does_not_touch_ledger_or_sidecar in items_dry_run.rs:903-958. Asserts file/sidecar bytes unchanged and envelope shape {ok, dry_run, would_backfill, ids} (no would_change wrapper for backfill — actual shape per dispatch.rs:1040-1045)."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R15"
+file = "tomlctl/src/query.rs"
+line = 960
+symbol = "--where typed-RHS error rewrites"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Audit ledger documents 11 sites under query.rs lines 960/971/982/993/1159/1233/1241/1249/1259/1267/1282 with distinct rewrite templates per type prefix (@int:/@float:/@bool:/@date:/@string:); no unit test exercises any of them — add at least one parameterised test (or 5 targeted tests, one per prefix) so the rewritten messages don't drift"
+description = "Grep for #[test] in query.rs returns 44 fixtures but none target typed-RHS error prose. Drift between audit ledger and live messages would only surface in an end-user error, not in CI."
+dedup_id = "776503a412735540"
+resolved = 2026-05-08
+resolution = "Added 5 unit tests in query.rs mod tests block (one per typed-RHS prefix: @int/@float/@bool/@date/@string). @str: exercises the type-mismatch path in cmp_pred (where-gt with @str: against an Integer field) since @str: parsing always succeeds at the parse stage."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R16"
+file = "tomlctl/tests/items_dry_run.rs"
+line = 98
+symbol = "sidecar mtime invariance"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "T10(a) checks sidecar.metadata().modified() equality; the six T-glistening dry-run tests check bytes only. Extend at least one T-glistening test to also assert mtime is unchanged — bytes-equality is weaker (proves no net write but not 'no write syscall')"
+description = "items_dry_run.rs T10-a at lines 98-101 demonstrates the mtime check pattern. The mtime invariant detects writes that happen to produce byte-identical output."
+dedup_id = "bdb85dec64b0890c"
+resolved = 2026-05-08
+resolution = "Extended items_add_dry_run_emits_envelope_and_leaves_file_unchanged with before/after fs::metadata(&sidecar).unwrap().modified() capture and equality assertion (items_dry_run.rs:497-537) — proves no write syscall, not just byte-equality."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R17"
+file = "tomlctl/src/capabilities.rs"
+line = 214
+symbol = "build_agent_context unit tests"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "capabilities.rs unit tests cover bool, mutex shape, and --where repeatability — but no test asserts type=='enum' with a values:[...] array. Add a test exercising --error-format or --type to verify describe_values + ENUM_VALUES fallback"
+description = "capabilities.rs:210-274 has three tests, none enum-typed. The ENUM_VALUES fallback (lines 154-165) is unit-untested; integration tests exercise it indirectly."
+dedup_id = "3a5e5f4f0b4f2dd6"
+resolved = 2026-05-08
+resolution = "Added build_agent_context_emits_enum_typed_flag_with_values test asserting set --type emits type=='enum' with all six ScalarType variant names (str/int/float/bool/date/datetime)."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R18"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 120
+symbol = "feature table dry_run row"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "Feature table line 120 advertises --dry-run on all 9 write subcommands but only 4 of 9 individual write-op sections document it (set recipe at line 69, items remove at 472, items apply at 490-495, backfill-dedup-id at 551). Add a one-line --dry-run note + envelope sample to the set-json, items add, items add-many, items update, and array-append sections"
+description = "Sections at SKILL.md lines 354/369/404/422/522 contain no --dry-run mention. An agent reading only items add does not learn the flag is available."
+dedup_id = "fd21a39a5aefd33c"
+resolved = 2026-05-08
+resolution = "Added --dry-run notes + envelope samples to set-json / items-add / items-add-many / items-update / array-append sections of SKILL.md (5 sites, 2-line code blocks each, all using the canonical 5-key {added,updated,removed,skipped,ids} shape)."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R19"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 3
+symbol = "frontmatter description"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "Frontmatter description is prose-only with no trigger-verb enumeration — agents searching for 'batch', 'NDJSON', 'parse', 'append', 'backfill', 'dry-run', or 'execution-record.toml' will not match this skill. Expand the description to enumerate the verbs and named files an agent would query for"
+description = "SKILL.md line 3. The skill activation contract relies on the description as the primary keyword index."
+dedup_id = "bb087453c6bb7aa6"
+resolved = 2026-05-08
+resolution = "Expanded SKILL.md frontmatter description with trigger-verb keywords (read/write/query/parse/filter/batch/append/apply/set/backfill/dry-run/dedupe/validate/verify) and named-file enumeration including execution-record.toml; closes the discoverability gap for keyword-based skill activation."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R20"
+file = "tomlctl/tests/capabilities.rs"
+line = 1482
+symbol = "capabilities_output_parses_as_json"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "The smoke test asserts version/features/subcommands keys but not the new commands key — a regression that strips commands would only fail in the deeper capabilities_emits_commands_key test. Add an obj.contains_key('commands') line to the smoke test for fail-fast"
+description = "tests/capabilities.rs:1495-1500 enumerates required keys explicitly without commands. The deeper coverage exists but the smoke test is the canonical entry point."
+dedup_id = "4e01d5d6f3d94f72"
+resolved = 2026-05-08
+resolution = 'Added obj.contains_key("commands") fail-fast assertion to capabilities_output_parses_as_json smoke test at tomlctl/tests/capabilities.rs:1501.'
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R21"
+file = "tomlctl/src/items.rs"
+line = 1483
+symbol = "capture_row_id duplication"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Four sites duplicate value.as_object().and_then(|o| o.get('id')).and_then(|v| v.as_str()).unwrap_or('').to_string() — items.rs:648 (apply_op_indexed add capture), items.rs:1483 (compute_add_mutation), items.rs:1533 (compute_add_many no-dedupe), items.rs:1557 (compute_add_many dedupe row_ids). Extract fn capture_row_id(v: &JsonValue) -> String"
+description = "Aligns with existing item_id / item_id_json helpers (io.rs:138/163)."
+dedup_id = "5228ff7630fd6a5e"
+resolved = 2026-05-08
+resolution = "Extracted capture_row_id helper in tomlctl/src/io.rs alongside item_id/item_id_json; replaced 4 inline duplicates in items.rs (apply_op_indexed, compute_add_mutation, compute_add_many_mutation no-dedupe and dedupe row_ids paths)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R22"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 393
+symbol = "dry-run read warn_if_read_outside_claude"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "Six dry-run arms call read_doc directly without warn_if_read_outside_claude — a caller passing 'items add --dry-run /etc/passwd' silently parses the file as TOML. Add warn_if_read_outside_claude(&file) at the top of each dry-run branch (set, set-json, array-append, items add, add-many, update). The advisory pattern is already used at dispatch.rs:957 on the cross-ledger FindDuplicates path"
+description = "warn_if_read_outside_claude is defined at io.rs:1104. Verified missing from dispatch.rs dry-run arms via grep."
+dedup_id = "27da37ac2f74f2e3"
+resolved = 2026-05-08
+resolution = "Added warn_if_read_outside_claude(&file) to seven dry-run arms in cli/dispatch.rs (Cmd::Set, Cmd::SetJson, Cmd::ArrayAppend, ItemsOp::Add, ItemsOp::AddMany, ItemsOp::Update, ItemsOp::Remove); also added defensively to ItemsOp::Apply while applying R45. Closes the dry-run path-traversal advisory gap"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "verified-clean"
+flow = "glistening-wiggling-valiant"
+id = "R23"
+file = "tomlctl/tests/items_dry_run.rs"
+line = 0
+symbol = "T6b sidecar invariance"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Pre-existing T10 tests (items remove/apply --dry-run) assert sidecar mtime invariance; T-glistening tests for the six newly-supported subcommands check ledger bytes but not sidecar bytes uniformly. Audit each T-glistening test and add a sidecar bytes-equality assertion where missing"
+description = "Pairs with R16 (mtime). Bytes-equality is the weaker invariant; the test for items_add_dry_run_with_dedupe_by_matching_existing_row_emits_skipped does check before/after sidecar bytes (line 932), but coverage is uneven across the six T-glistening tests."
+dedup_id = "0fc91d5800fbf81e"
+verified_note = "All six T-glistening dry-run tests already assert sidecar bytes equality — three via run_dry_run_invariant helper at items_dry_run.rs:492, two inline (set lines 666-669, set-json lines 730-733), one via helper. Coverage uniform; finding premise stale — audited during /review-apply 2026-05-08"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "wontfix"
+flow = "glistening-wiggling-valiant"
+id = "R24"
+file = "tomlctl/src/items.rs"
+line = 584
+symbol = "apply_op_indexed/apply_single_op with_context"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Audit ledger items.rs:559/563 entries for outer 'op[N] failed' wrappers were left at the original prose; the inner ops now enumerate but the outermost-visible message gives no shape hint. Extend the with_context to mention the op shape, conditional on the inner error not already enumerating"
+description = "The audit ledger row was tagged 'keep as-is if the inner op error already enumerates'. The inner ops do enumerate, so this is borderline — flag for review."
+dedup_id = "f73daeb905c2543f"
+wontfix_rationale = "Inner ops already enumerate via apply_single_op / apply_op_indexed (e.g. 'add op missing json field; required shape is ...', 'unknown op X; expected one of: add, update, remove'); outer with_context wrapper produces 'op[N] failed: <inner>' via anyhow chain. Per audit-ledger guidance, when inner enumerates the outer wrapper is redundant — keep as-is. Audited during /review-apply 2026-05-08"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R25"
+file = "tomlctl/src/capabilities.rs"
+line = 58
+symbol = "walk_commands / describe_flags"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Container subcommands (items, blocks, integrity) emit an empty 'flags':{} entry alongside their 'subcommands' map — agents traversing the tree must handle the empty case. Suppress the key when describe_flags returns no entries, OR document the empty-case explicitly in SKILL.md"
+description = "capabilities.rs:57-73 calls describe_flags unconditionally on every subcommand including containers. A guard 'if !flags.is_empty()' would clean the output."
+dedup_id = "0b713098d4b8e02f"
+resolved = 2026-05-08
+resolution = "Suppressed empty flags:{} on container subcommands in capabilities.rs walk_commands via flags.as_object().map_or(false, |m| !m.is_empty()) gate; populated flags map still emitted on leaf subcommands"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R26"
+file = "tomlctl/tests/items_dry_run.rs"
+line = 988
+symbol = "items_add_dry_run_with_strict_read_against_missing_file_errors"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Test asserts .failure() with an OR-predicate on stderr ('--strict-read' OR 'unexpected argument') — pin .code(2) (clap usage error) explicitly so a regression that errors with code=1 for an unrelated reason fails the test"
+description = "items_dry_run.rs:988-994. Current OR-predicate could match unrelated runtime failures."
+dedup_id = "e21d0485b6c51319"
+resolved = 2026-05-08
+resolution = "Pinned clap usage-error exit code 2 via .code(2) chained after .failure() in items_add_dry_run_with_strict_read_against_missing_file_errors (items_dry_run.rs:1020); kept stderr OR-predicate as additional tightening; updated inline rationale comment"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "verified-clean"
+flow = "glistening-wiggling-valiant"
+id = "R27"
+file = "tomlctl/src/io.rs"
+line = 1751
+symbol = "compute_set_json_mutation"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "compute_set_json_mutation has a captures_old_value test (Some branch) but no parallel test for the None branch (path absent). compute_set_mutation has both. Add compute_set_json_mutation_old_value_none_when_path_missing for parity"
+description = "io.rs:1733 (set: None branch) vs no analog for set_json."
+dedup_id = "24744fb82ff5daca"
+verified_note = "compute_set_json_mutation None-branch test already in place — audited during /review-apply 2026-05-08 (tier-1)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R28"
+file = "tomlctl/src/items.rs"
+line = 2422
+symbol = "partial-enum rewrite tests"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Phase 1 Task 5 acceptance required ≥5 unit tests across categories; the partial-enum class (~25 of ~70 audit rows) has zero coverage. Add at least one test asserting a partial-enum rewrite (e.g. items.rs:257 '--json must be a JSON object; got JSON <type>')"
+description = "Grep across tomlctl/src/ shows 8 error_message_* tests covering enum-rejection/state-precondition/path-shape/type-coercion; no partial-enum coverage."
+dedup_id = "d8d22a778a0553bd"
+resolved = 2026-05-08
+resolution = "Added error_message_partial_enum_rewrite_echoes_actual_json_type test at items.rs:2516+ inside existing tests mod; three sub-cases (array, number, string payload) pin the '--json must be a JSON object ... got JSON <type>' rewrite end-to-end through items_add_to"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R29"
+file = "tomlctl/src/output.rs"
+line = 39
+symbol = "emit_dry_run_plan"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "emit_dry_run_plan has no unit test — only its scalar sibling (build_dry_run_scalar_envelope) does. Refactor to a build_dry_run_plan_envelope pure builder + thin I/O wrapper (mirroring the scalar pattern) and add a shape test"
+description = "output.rs:39-50 vs 125-144. Integration tests cover the shape end-to-end but the unit-level asymmetry breaks the discipline established for scalar."
+dedup_id = "866c6f3ba8220832"
+resolved = 2026-05-08
+resolution = "Refactored emit_dry_run_plan in output.rs into build_dry_run_plan_envelope (pure builder) + thin I/O wrapper, mirroring scalar pattern at output.rs:125-144; added build_dry_run_plan_envelope_shape unit test (byte-pinned + discriminator pin). Signature of emit_dry_run_plan unchanged"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "verified-clean"
+flow = "glistening-wiggling-valiant"
+id = "R30"
+file = "tomlctl/src/items.rs"
+line = 3399
+symbol = "compute_array_append_mutation_targets_named_array"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "compute_array_append_mutation byte-equivalence test asserts plan_bytes only — add assert_eq!(plan.added, vec![...]) and an empty-skipped assertion to pin the full contract alongside the byte check"
+description = "items.rs:3560-3591. The bytes match is necessary but not sufficient."
+dedup_id = "28db74dec5124b90"
+verified_note = "Test at items.rs:3681-3684 already asserts plan.added==vec![String::new(),String::new()], plan.updated.is_empty(), plan.removed.is_empty(), plan.skipped.is_empty() — full contract pinning is in place. Audited during /review-apply 2026-05-08"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R31"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 494
+symbol = "items apply dry-run ids"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "items apply dry-run output shows ids as a flat list mixing added/updated/removed without sub-labelling — a caller cannot programmatically distinguish removal vs update vs add ids. Add a one-line note clarifying ids is the union, OR show a labelled breakdown"
+description = "SKILL.md:494 vs items remove example at 474. The shape mismatch is documented by the union_ids() method (items.rs:1182) but not surfaced in user-facing prose."
+dedup_id = "1b5d3f71d5910456"
+resolved = 2026-05-08
+resolution = "Added one-line note after items apply --dry-run output example in SKILL.md clarifying ids is the union of added+updated+removed combined"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "verified-clean"
+flow = "glistening-wiggling-valiant"
+id = "R32"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 3
+symbol = "frontmatter description"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Frontmatter description names context.toml/review-ledger.toml/optimise-findings.toml but omits execution-record.toml — a primary target written by /implement and /plan-new, used throughout the skill body. Add to the description"
+description = "SKILL.md:3. execution-record.toml appears at lines 33/37 and is a first-class target."
+dedup_id = "8982e4a655e17e0b"
+verified_note = "Frontmatter description at SKILL.md:3 already names execution-record.toml in the filename enumeration. Finding premise stale — audited during /review-apply 2026-05-08 (tier-1)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R33"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 111
+symbol = "capabilities section"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Capabilities section says 'Run the command itself for the authoritative list' but provides no example invocation of `tomlctl capabilities` — add a one-line invocation with truncated JSON output, consistent with the rest of the skill's recipe style"
+description = "SKILL.md:111. Every other section has at least one bash snippet."
+dedup_id = "11a90abac0df9041"
+resolved = 2026-05-08
+resolution = "Added tomlctl capabilities bash snippet with truncated JSON output example before the feature table in SKILL.md, replacing prose-only placeholder"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R34"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 131
+symbol = "Agent-context schema mutex_groups"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "SKILL.md describes mutex_groups as 'clap ArgGroup mutex sets' — but the implementation also reads MUTEX_GROUPS const supplements (capabilities.rs:16-25). Note the dual source so an agent extending the CLI knows to update both"
+description = "SKILL.md:131 single-source phrasing; capabilities.rs:194-205 dual-source assembly."
+dedup_id = "ec6c4662ae5d5cd7"
+resolved = 2026-05-08
+resolution = "Added dual-source note to mutex_groups bullet in SKILL.md explaining mutex groups come from both clap ArgGroup declarations and the MUTEX_GROUPS const in capabilities.rs:16-25, with guidance to update both when extending the CLI"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R35"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 69
+symbol = "set --dry-run recipe"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Recipe #6 shows 'tomlctl set foo.toml status review --type str --dry-run' against a relative path; against an absolute path outside .claude/ the command requires --allow-outside. Note this in the recipe"
+description = "SKILL.md:69. Plan Verification step 6 explicitly used --allow-outside on the smoke check."
+dedup_id = "58b5adcec2149e6a"
+resolved = 2026-05-08
+resolution = "Added inline comment to recipe #6 in SKILL.md noting that absolute paths outside .claude/ require --allow-outside"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R36"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 90
+symbol = "## When to use this skill"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "'## When to use this skill' appears at line 90 — after Quick Reference (line 13) and Common recipes (line 29). Move it before Quick Reference so an agent's top-down read of the skill encounters activation guidance before example commands"
+description = "Skill structural convention places the activation section near the top."
+dedup_id = "1a2b9ef54429d246"
+resolved = 2026-05-08
+resolution = "Moved ## When to use this skill section verbatim above ## Quick Reference (now at line 12); removed original occurrence below Install section. No cross-references existed to update"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R37"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 124
+symbol = "capabilities .commands notation"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "SKILL.md:124 and README.md:241 describe 'tomlctl capabilities .commands' as if .commands were a positional CLI argument; in fact Cmd::Capabilities is a unit variant and .commands is a jq-path on the JSON envelope. Re-phrase as 'tomlctl capabilities (the .commands field of the JSON output)'"
+description = "cli/types.rs:420 confirms unit variant. The .commands notation reads as a CLI subcommand to a first-time agent."
+dedup_id = "1bad161fe58c0c8d"
+resolved = 2026-05-08
+resolution = "Rephrased agent_context feature table entry from 'tomlctl capabilities .commands' emits... to 'tomlctl capabilities' (the .commands field of the JSON output) emits...; matching section heading also updated for consistency"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R38"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 700
+symbol = "## Permissions"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Permissions section asserts 'Bash(tomlctl --allow-outside *) is explicitly denied at .claude/settings.json' but provides no path/excerpt — embed the exact deny-rule snippet so the claim is self-verifying"
+description = "SKILL.md:700. The asserted file may drift independently of SKILL.md."
+dedup_id = "46caa52e6f5cee2d"
+resolved = 2026-05-08
+resolution = "Replaced single-sentence assertion in Permissions section with explicit JSON code block embedding all three deny rules from .claude/settings.json (lines 9-11), making the claim self-verifying"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "wontfix"
+flow = "glistening-wiggling-valiant"
+id = "R39"
+file = "tomlctl/src/capabilities.rs"
+line = 1
+symbol = "module placement"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "capabilities.rs is the only top-level src module that imports crate::cli::Cli; siblings (output.rs, query.rs, items.rs, io.rs) sit BELOW cli in the layering. Consider moving to cli/capabilities.rs and re-exporting via cli/mod.rs to make the layering one-directional"
+description = "capabilities.rs:10. Counter: if a future tomlctl explain reuses build_agent_context, top-level placement might be correct."
+dedup_id = "2899a86b43c0447a"
+wontfix_rationale = "Cross-file refactor exceeds 3-file cap. Moving capabilities.rs to cli/capabilities.rs would touch capabilities.rs (delete), cli/capabilities.rs (new), cli/mod.rs (re-export), main.rs (mod decl removal at :17), and cli/dispatch.rs (call site at :520) — 4-5 mutated files. Recommendation description names cli/capabilities.rs and cli/mod.rs but the importer files (main.rs / dispatch.rs) are implicit. Skipped per /review-apply hard cap"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R40"
+file = "tomlctl/src/cli/types.rs"
+line = 36
+symbol = "FEATURES const"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "agent_context entry uses 'T-glistening' (a flow slug) as its inline comment marker while every other entry uses T1..T11 stable task numbers. Pick one convention — either migrate older entries to flow-slugs or use a stable T-number"
+description = "types.rs:36. Same comment style mirrored in tests/capabilities.rs:1541."
+dedup_id = "3358d2c273cec8db"
+resolved = 2026-05-08
+resolution = "Replaced T-glistening flow-slug marker with T6a stable task-number at cli/types.rs:36 and tests/capabilities.rs:1542. T6a confirmed as the agent_context feature task by reading the plan and execution-record (E7 wire-capabilities-arm)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "wontfix"
+flow = "glistening-wiggling-valiant"
+id = "R41"
+file = "tomlctl/src/io.rs"
+line = 461
+symbol = "ScalarMutationPlan.old_value"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "old_value: Option<JsonValue> conflates 'absent' with 'present-as-JSON-null' on the wire (output.rs:131 emits 'old':null in both cases). Either drop the old key entirely on auto-vivify, or use a tagged variant (SetCreate vs SetUpdate)"
+description = "io.rs:459-463; output.rs:131. TOML cannot encode null at a leaf today, so the ambiguity is theoretical — but the typed-variant rewrite would also surface auto-vivify intent at the type level."
+dedup_id = "fb76ee97a9181e28"
+wontfix_rationale = "Requires user confirmation on dry-run JSON output shape change (theoretical issue per finding description — TOML cannot encode null at a leaf today, so the Option<JsonValue> ambiguity is not currently observable on the wire). db category + schema/output-shape change defaults to skip per /review-apply constraints. Both alternatives (tagged variant SetCreate/SetUpdate, or drop old key on auto-vivify) would change the dry-run wire shape"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "wontfix"
+flow = "glistening-wiggling-valiant"
+id = "R42"
+file = "tomlctl/src/capabilities.rs"
+line = 85
+symbol = "describe_flags arg keying"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Positional args are keyed as <id> (e.g. <file>) while flag args use --long; consumers must pre-classify before lookup. A uniform-id encoding with a kind:'positional'|'flag' discriminator would let agents iterate Object::values() and inspect kind"
+description = "capabilities.rs:85-92; README.md:197 documents the current encoding."
+dedup_id = "cf22fec38e1cccec"
+wontfix_rationale = "Requires user confirmation on JSON output shape change. Replacing <id>/--long keying with uniform-id keying would break existing agents reading flags['--count'], flags['<file>'] etc.; tests at tomlctl/tests/capabilities.rs:1937,2015 and tomlctl/src/capabilities.rs:239,286,391 pin the current shape. Purely-additive alternative (add kind alongside existing keys) does not deliver the recommended Object::values()-iteration behaviour"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "wontfix"
+flow = "glistening-wiggling-valiant"
+id = "R43"
+file = "tomlctl/src/output.rs"
+line = 15
+symbol = "output cross-module imports"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "output.rs imports both crate::io::ScalarMutationPlan and crate::items::MutationPlan. A small mod plan { ... } re-export shim or a new crate::mutation module would let output depend on a single layer name. Watch-item: revisit if a third dry-run plan type lands"
+description = "output.rs:15-16. Two cross-module type-bindings is a low-cost coupling; flag for tracking."
+dedup_id = "399bcb547c66b975"
+wontfix_rationale = "Watch-item per finding description — output.rs imports of ScalarMutationPlan + MutationPlan are a low-cost two-binding coupling, flagged for tracking only ('revisit when a third dry-run plan type lands'). No action required this round"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R44"
+file = "tomlctl/src/items.rs"
+line = 1568
+symbol = "compute_add_many_mutation HashSet"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "HashSet<usize> for skipped-row lookup is overkill — outcome.skipped_rows is sorted ascending (T5 contract at items.rs:1378) so a two-pointer merge is O(n). Either keep the HashSet (pragmatic) or document why the sorted invariant is being discarded"
+description = "items.rs:1568-1580."
+dedup_id = "c73c69ef7d54621f"
+resolved = 2026-05-08
+resolution = "Added documentation comment at items.rs:1582 explaining the HashSet-over-merge choice (outcome.skipped_rows is sorted but per-row contains expresses intent more directly; typical batch <1000 rows where per-row TOML mutation cost dominates the constant factor)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R45"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 856
+symbol = "Apply --ops double-parse"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Apply arm parses --ops twice: once at dispatch.rs:856 for the MAX_OPS_PER_APPLY cap check, then again inside compute_apply_mutation (items.rs:1217). Pass the parsed JsonValue (or its array length) into compute_apply_mutation to avoid the second parse"
+description = "At MAX_OPS_PER_APPLY=10_000 the double-parse cost is small; the optimisation matters only on the cap-rejection boundary."
+dedup_id = "85d9e4a9d44b1bab"
+resolved = 2026-05-08
+resolution = "Cross-file: changed compute_apply_mutation signature from ops_json:&str to ops:&JsonValue; dispatch.rs Apply arm now parses --ops once via read_json_value_from_arg at :881 and passes &parsed_ops; new items_apply_parsed_to_opts helper at items.rs:548 holds post-parse logic; original items_apply_to_opts(&str) retained #[cfg(test)] for test wrappers; two test sites at items.rs:3232,3300 updated"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R46"
+file = "tomlctl/src/items.rs"
+line = 1358
+symbol = "compute_backfill_mutation tier_b_fingerprint clone"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "tier_b_fingerprint(&TomlValue::Table(tbl.clone())) at items.rs:1358 clones the whole item table to wrap in TomlValue::Table. If tier_b_fingerprint accepted &toml::Table the clone disappears"
+description = "items.rs:1358. Per-table allocation × N items on backfill."
+dedup_id = "2b7fe23616fa9727"
+resolved = 2026-05-08
+resolution = "Added tier_b_fingerprint_table(&toml::Table)->String overload in dedup.rs:185; switched items.rs:1384 backfill caller from tier_b_fingerprint(&TomlValue::Table(tbl.clone())) to tier_b_fingerprint_table(tbl), eliminating per-row table clone. Original tier_b_fingerprint(&TomlValue) gated #[cfg(test)] since only test mod's six call sites need the wrapping form"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "glistening-wiggling-valiant"
+id = "R47"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 624
+symbol = "ItemsOp::Add dry-run two-branch parse"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Add dry-run arm parses --json two ways depending on dedupe_fields — read_json_arg(&json) for compute_add_mutation vs read_json_value_from_arg(&json) for compute_add_many_mutation. Give compute_add_mutation a JsonValue overload so both branches share the parse path"
+description = "dispatch.rs:624-637. The asymmetry is structural (compute_add takes &str; compute_add_many takes &[JsonValue]) but forces stdin reads to differ in cost between dedupe/no-dedupe branches."
+dedup_id = "8f5eb33b57b2478b"
+resolved = 2026-05-08
+resolution = "Changed compute_add_mutation signature from json:&str to patch:&JsonValue; ItemsOp::Add dry-run in dispatch.rs now lifts read_json_value_from_arg above the dedupe/no-dedupe branches so both arms share the parse path. Test at items.rs:3460 updated to pre-parse"
+
+[[vet_events]]
+timestamp = "2026-05-08T12:30:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (IntegrityOpts dup × 9), F3 (MutationPlan illegal states), F12 (compute_add_mutation), F8 (infer_type wildcard). All verified by direct file reads at dispatch.rs:399-403, items.rs:1162-1190, items.rs:1473-1498, capabilities.rs:118-127. Counter lines plausible. All 15 findings retained, deduped against Agent 3 / Agent 4 overlapping items at consolidation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T12:30:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 5
+dropped_count = 3
+downgraded_count = 0
+dropped_ids = [
+    "A2-F2",
+    "A2-F3",
+    "A2-F4",
+]
+rationale = "Sampled all 5 (Sonnet hard cap = 5). F1 warn_if_read_outside_claude missing on dry-run arms VERIFIED via grep — only dispatch.rs:957 and io.rs:1104 have it; six dry-run arms do not. RETAINED as R22. F2 (id echo in errors) self-confirmed-clean by agent's own analysis — JSON serialisation escapes special chars. F3 (capabilities reflection) self-confirmed-clean. F4 (TOCTOU) self-confirmed-clean. Three self-verified-clean findings dropped — they are vet results, not actionable. F5 sidecar-invariance gap retained as R23."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T12:30:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (MutationPlan visibility), F2 (MUTEX_GROUPS / ENUM_VALUES drift), F4 (IntegrityOpts × 9), F11 (stale dead_code). All verified at items.rs:1163-1166, capabilities.rs:16-39, dispatch.rs:399-403, items.rs:1472. Counter lines plausible. Several findings overlap A1 / A4 — deduped at consolidation: F4 merged into R1, F11 into R2, F5 into R5 / R10."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T12:30:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 6
+dropped_count = 1
+downgraded_count = 0
+dropped_ids = ["A4-F7"]
+rationale = "Sampled F1 (stale dead_code), F2 (test name), F3 (skipped envelope), F6 (mutex double-emit), F8 (skill recipe), F7 (Cargo.toml ✓). All verified. F7 is a verified-clean confirmation (Cargo.toml correctly bumped to 0.4.0) — dropped per Agent-2 rationale: clean passes are vet observations, not ledger items. Other 10 findings retained, deduped against A1/A3/A5: F1→R2, F11→R5, F2→R3, F3→R4, F6→R8, F9→R1, F8→R35, F4→R24, F5→R25, F10→R26."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T12:30:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 6
+dropped_count = 2
+downgraded_count = 0
+dropped_ids = [
+    "A5-F2",
+    "A5-F12",
+    "A5-F13",
+]
+rationale = "Sampled F1 (smoke test), F4 (mtime), F5 (Append type), F8 (set_json None), F11 (backfill --dry-run), F3 (test name dup). F2 dropped — agent treated `tomlctl capabilities .commands` as if .commands were a CLI argument; verified via cli/types.rs:420 that Cmd::Capabilities is a unit variant — .commands is a jq-path. F12 dropped — exact dup of F1. F13 dropped — exact dup of A4-F10 (covered by R26). 12 findings retained, deduped against A1/A4: F3→R3 (dup A4-F2), F5→R13 (dup A1-F8)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T12:30:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 6
+dropped_count = 2
+downgraded_count = 0
+dropped_ids = [
+    "A6-F6",
+    "A6-F9",
+]
+rationale = "Sampled F1 (frontmatter), F3 (feature table 9 dry-run), F4 (items apply ids), F5 (frontmatter execution-record), F6 (shared-block PASS), F8 (capabilities example). F6 dropped — explicit verified-clean confirmation (SKILL.md is not a shared-block carrier per scripts/shared-blocks.toml). F9 dropped — exact dup of F3 (items add no --dry-run example). 7 findings retained as R18, R19, R31, R32, R33, R36, R38."
+dedup_id = "45ca31c3315a5978"

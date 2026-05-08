@@ -1,0 +1,202 @@
+schema_version = 1
+last_updated = 2026-05-08
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-08
+agent = "implement"
+summary = "status draft → in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "2fb725502d5439ab"
+
+[[items]]
+id = "E2"
+type = "checkpoint"
+date = 2026-05-08
+agent = "implement"
+kind = "catchup"
+summary = "P17 plansDirectory schema verdict: string-only"
+scope_delta = "Claude Code settings schema (https://json.schemastore.org/claude-code-settings.json) and official docs both define plansDirectory as type=string with no array variant. User Decision 1 escalation path activates: store multi-path array under tomlctl-namespaced key tomlctl.plansDirectories; resolution treats plansDirectory (string) and tomlctl.plansDirectories (array) as both valid sources, with the namespaced key taking precedence when present."
+dedup_id = "72ef2b2794d7b4f9"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "land-cmd-flow-cmd-json-skeleton-dep-additions"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Phase A0 skeleton landed: Cmd::Flow / Cmd::Json with all FlowOp/ActiveOp/JsonOp/ArtifactKind enums, 8 stub leaf modules, globset+jiff deps, capabilities test extended"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/main.rs",
+    "tomlctl/Cargo.toml",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/src/flow/dispatch.rs",
+    "tomlctl/src/flow/active.rs",
+    "tomlctl/src/flow/find_plans.rs",
+    "tomlctl/src/flow/stale.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/flow/ensure_artifact.rs",
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/src/flow/doctor.rs",
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/src/json.rs",
+]
+commits = ["2983cdd"]
+status = "done"
+dedup_id = "fc2e083612e08fcd"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "land-cmd-flow-cmd-json-skeleton-dep-additions"
+summary = "Stub dispatch fns omit error_format param and use anyhow::bail! rather than tagged_err(ErrorKind::Other,...)"
+original_intent = 'Plan prose showed crate::flow::dispatch(op, cli.error_format) and tagged_err(ErrorKind::Other, None, "unimplemented") in the stub bodies'
+rationale = """Existing Cmd::{Items,Blocks,Integrity} dispatch arms do NOT thread error_format (it is captured in main.rs and consumed only by the top-level emit_error helper); errors.rs documents ErrorKind::Other as #[allow(dead_code)] and never constructed (JSON formatter defaults to "other" via downcast-miss fallback). Plan's explicit instruction was "match the signature pattern of the existing Cmd::Items arm" — the agent followed that, which produced the deviations. Both are codebase-correct."""
+commits = ["2983cdd"]
+dedup_id = "66571a8110ec0ef5"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-json-get-set-unset"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "tomlctl json {get,set,unset} with P16 sidecar-skip on settings.json; 10 integration + 5 unit tests passing"
+files = [
+    "tomlctl/src/json.rs",
+    "tomlctl/tests/json.rs",
+]
+commits = ["5ee8c9d"]
+status = "done"
+dedup_id = "0d06b4ea1c49ebed"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-active"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "tomlctl flow active list/add/remove/touch on .claude/active-flow.toml registry; 14 integration tests"
+files = [
+    "tomlctl/src/flow/active.rs",
+    "tomlctl/tests/flow_active.rs",
+]
+commits = ["5ee8c9d"]
+status = "done"
+dedup_id = "1597b0f9bce662e2"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-find-plans"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "tomlctl flow find-plans with 4-step resolution + P4 sentinel + multi-file outline detection; 14 integration + 3 unit tests"
+files = [
+    "tomlctl/src/flow/find_plans.rs",
+    "tomlctl/tests/flow_find_plans.rs",
+]
+commits = ["5ee8c9d"]
+status = "done"
+dedup_id = "2856f49032576903"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-stale"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "tomlctl flow stale staleness verdict with humantime parser + jiff Date arithmetic; 9 integration + 4 unit tests"
+files = [
+    "tomlctl/src/flow/stale.rs",
+    "tomlctl/tests/flow_stale.rs",
+]
+commits = ["5ee8c9d"]
+status = "done"
+dedup_id = "48b90389563920d9"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-json-get-set-unset"
+summary = "P19 implemented in two commits: positive half in T2 (json refuses .toml), symmetric negative half in follow-up (TOML writers refuse .json)"
+original_intent = "Plan T2 said TOML writers MUST refuse .json paths with kind=validation referencing tomlctl json set — implemented as an extension check at io::resolve_target for write operations"
+rationale = "T2's owned-files list excluded cli/dispatch.rs (which contains the TOML writer arms); T2 implemented the positive half in json.rs (refuse_toml_extension), left a #[ignore] stub for the negative half, surfaced the deferral. Follow-up commit 735cdae added refuse_json_extension_for_toml_writers in cli/dispatch.rs and called it from Cmd::Set/SetJson/ArrayAppend; replaced the stub with a real test. Symmetric-pair contract now fully enforced."
+commits = [
+    "5ee8c9d",
+    "735cdae",
+]
+dedup_id = "448d015985871234"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-json-get-set-unset"
+summary = "io::resolve_target does not exist; T2 composed io::guard_write_path + io::recheck_claude_containment instead"
+original_intent = "Plan T2 detail referenced io::resolve_target as the containment guard"
+rationale = "The actual surface in tomlctl/src/io.rs is guard_write_path (pre-lock, mkdir-p + canonicalise + symlink-leaf) plus recheck_claude_containment (in-lock, TOCTOU narrowing). Composing both produces the same effect as the plan's prose. Documented in the json.rs module-level docstring so future readers chasing the plan find the rename."
+commits = ["5ee8c9d"]
+dedup_id = "8c89d208e3f9fb0d"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-active"
+summary = "T3 expanded io::mutate_doc inline in active.rs to add a missing-file branch"
+original_intent = "Plan T3 detail said all upserts MUST go through io::mutate_doc or mutate_doc_conditional"
+rationale = "mutate_doc calls read_toml which errors kind=not_found on a missing file, but the plan also requires `add` to bootstrap a fresh registry on the first invocation (.claude/active-flow.toml is gitignored — fresh clones never have it). T3 expanded mutate_doc inline with a missing-file branch (empty_doc() instead of read_toml(file)?); the rest of the pipeline — guard_write_path, with_exclusive_lock, in-lock recheck_claude_containment, write_toml_with_sidecar — is byte-identical to mutate_doc. The TOCTOU contract (lock-held read+write window) is preserved. No raw fs::write in the upsert path. Recommendation for a future task: factor a mutate_doc_or_bootstrap helper into io.rs."
+commits = ["5ee8c9d"]
+dedup_id = "a0c794a97ff93cb5"
+
+[[items]]
+id = "E12"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-stale"
+summary = "T5 used jiff::civil::Date directly; convert::maybe_date_coerce was the wrong direction (JSON→TOML, not TOML→Date)"
+original_intent = "Plan T5 detail said to parse the TOML date via the existing convert::maybe_date_coerce path"
+rationale = "convert::maybe_date_coerce coerces a JSON string into a TOML datetime — wrong direction for staleness arithmetic, which needs to compare a TOML datetime against today as a Date. Plan explicitly named jiff's Date as an acceptable alternative (`or use jiff's Date`); T5 went with that. No semantic change."
+commits = ["5ee8c9d"]
+dedup_id = "27808441d299bb8a"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "phase-a-doc-sync"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Phase A doc sync: 4 subcommand groups documented in README.md + SKILL.md"
+files = [
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+commits = ["c1bad18"]
+status = "done"
+dedup_id = "47b721d65eb3517a"

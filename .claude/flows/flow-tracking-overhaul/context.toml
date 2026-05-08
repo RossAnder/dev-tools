@@ -1,0 +1,35 @@
+slug = "flow-tracking-overhaul"
+plan_path = "docs/plans/flow-tracking-overhaul.md"
+status = "in-progress"
+created = 2026-05-08
+updated = 2026-05-08
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/optimise-apply.md",
+    "claude/commands/review-apply.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/implement.md",
+    "claude/commands/review-plan.md",
+    "claude/commands/tdd.md",
+    "claude/agents/flow-bootstrap.md",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 18
+completed = 6
+in_progress = 3
+
+[artifacts]
+review_ledger = ".claude/flows/flow-tracking-overhaul/review-ledger.toml"
+optimise_findings = ".claude/flows/flow-tracking-overhaul/optimise-findings.toml"
+execution_record = ".claude/flows/flow-tracking-overhaul/execution-record.toml"
+plan_review_findings = ".claude/flows/flow-tracking-overhaul/plan-review-findings.toml"

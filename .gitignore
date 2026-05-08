@@ -7,5 +7,3 @@
 *.toml.lock
 *.lock
 !Cargo.lock
-
-.claude/

@@ -1,0 +1,23 @@
+slug = "glistening-wiggling-valiant"
+plan_path = ".claude/plans/glistening-wiggling-valiant.md"
+status = "review"
+created = 2026-05-08
+updated = 2026-05-08
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/**",
+]
+
+[tasks]
+total = 11
+completed = 11
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/glistening-wiggling-valiant/review-ledger.toml"
+optimise_findings = ".claude/flows/glistening-wiggling-valiant/optimise-findings.toml"
+execution_record = ".claude/flows/glistening-wiggling-valiant/execution-record.toml"
+plan_review_findings = ".claude/flows/glistening-wiggling-valiant/plan-review-findings.toml"
