@@ -365,7 +365,7 @@ Research focus should be tailored to the task. Broaden research focus beyond API
 
 **Sample size (per agent):** Spot-check at least 3 findings per agent (or all if fewer).
 
-**Lens-specific verification rules:** Confirm cited URL exists and matches the claim; confirm Library/API version pin matches the project manifest; confirm Context7 query references resolve to real library IDs. Drop fabrications with rationale logged — do NOT silently fix them, since Phase 4 / Phase 6 may reference the dropped finding indirectly and an audit trail makes the gap visible.
+**Lens-specific verification rules:** Confirm cited URL exists and matches the claim; confirm Library/API version pin matches the project manifest; confirm Context7 query references resolve to real library IDs. Drop fabrications with the rationale captured in the `[[vet_events]]` entry written in step 6 of the block — do NOT silently fix them, since Phase 4 / Phase 6 may reference the dropped finding indirectly and an audit trail makes the gap visible.
 
 <!-- SHARED-BLOCK:vet-flow-research START -->
 **Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
