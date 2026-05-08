@@ -1312,7 +1312,7 @@ body
         expect_hash(
             &report,
             "flow-context",
-            "6ca86274d31b5a32feaf8ecc3360ce4f773b84c37b46607edae8bef28951f60a",
+            "7cf84eeb44002586c63f2c3cda3ce2f19f3da944726f7b25ce6361d3a589627a",
         );
 
         // --- 4-file ledger-schema block ---
@@ -1325,7 +1325,7 @@ body
         expect_hash(
             &report,
             "ledger-schema",
-            "e4c4cbe0a0d014535e0a4e42a7be3f43934b004120b01e967037d28c48a345e8",
+            "cedae069af297e08e925b393b53a0cc664c8be6d86df9a3fd2a38a902a17ad08",
         );
 
         // --- 3-file execution-record-schema block ---
@@ -1338,7 +1338,7 @@ body
         expect_hash(
             &report,
             "execution-record-schema",
-            "6cbc2a72dbd05ba7fc68cc19ea2947b9c3df93aa9407f0a371c27f3ee1f0a735",
+            "1935f8dd41e561e1681f55ae0850260ef2885d4a404cbf7adea1ab94e3d209ea",
         );
 
         // --- 2-file apply-only blocks ---
@@ -1364,7 +1364,7 @@ body
         expect_hash(
             &report,
             "apply-rollback-protocol",
-            "60e5c94601da99267431825e6eae19f68477ad9d7405f5c7c24945b40cfabc8f",
+            "9e465d6b26bbb72bbd59c037c72657c172543c10555fdbc80ebaf9e097fc7db8",
         );
         expect_hash(
             &report,
