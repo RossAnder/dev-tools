@@ -111,6 +111,8 @@ type = "task-completion"
 date = 2026-04-18
 agent = "implement"
 task_ref = "add-retry-logic"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
 summary = "Added retry logic in src/retry.rs"
 files = ["src/retry.rs", "tests/retry_test.rs"]
 commits = ["abc1234"]
@@ -144,7 +146,7 @@ legacy_id = "D3"
 
 | Type | Required fields (in addition to the always-required five) |
 |------|-----------------------------------------------------------|
-| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`; `commits[]` OPTIONAL (see note below) |
+| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `dispatch_tier` ∈ {`lite`, `deep`}, `dispatch_agent` ∈ {`flow-implement-lite`, `flow-implement-deep`}; `commits[]` OPTIONAL (see note below) |
 | `verification` | `command`, `outcome` ∈ {`pass`, `fail`} |
 | `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
 | `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
@@ -155,6 +157,8 @@ legacy_id = "D3"
 **`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). Slugs are derived from the plan document's task heading, lowercased, hyphenated.
 
 **`commits` field** (task-completion, deviation): previously required; now optional. Populated by /implement Phase 2 step 5b after the git checkpoint (R21) — post-R21 entries should always carry it. Older bootstrap-phase entries and entries written before R21 may omit it; render-from-log treats absent `commits[]` as empty.
+
+**`dispatch_tier` / `dispatch_agent` fields** (task-completion): records the lite-vs-deep dispatch decision for post-hoc audit. `dispatch_tier` ∈ {`lite`, `deep`} is the abstract decision signal — what the lite-eligibility gate decided. `dispatch_agent` ∈ {`flow-implement-lite`, `flow-implement-deep`} is the concrete subagent_type that ran. The two are tightly correlated today (lite ↔ flow-implement-lite, deep ↔ flow-implement-deep) but the split future-proofs the schema for additional dispatch types (e.g. a future `flow-research-deep` task-completion writer). Both fields are required on new task-completion entries written by `/implement` Phase 2 step 5b. Fail-soft on unknown values: readers MUST treat unknown `dispatch_tier` as `deep` and preserve unknown `dispatch_agent` verbatim. Fields are forward-only — historical entries written before this schema addition lack both fields and render as `dispatch_tier = "(unknown)"` in derived views; no auto-backfill.
 
 ### Write contract — two-call pattern (canonical heredoc form)
 
@@ -466,6 +470,8 @@ For each batch:
    - `status` ∈ {`done`, `failed`, `skipped`} — `done` for clean completion, `failed` for tasks that exhausted the retry budget, `skipped` for tasks the orchestrator chose not to dispatch (e.g. blocked-by-failure cascade).
    - `files` — array of file paths the agent reported touching, taken verbatim from the agent's return summary, **after the path-validation filter below**.
    - `commits` — array containing the SHA captured from `git rev-parse HEAD` after step 5's commit landed. If step 5 skipped the commit (no dependent batch follows), pass `[]`.
+   - `dispatch_tier` — the lite-vs-deep dispatch decision recorded in the DISPATCH header for this task (`lite` if the lite-eligibility gate accepted the task, `deep` otherwise). Both `dispatch_tier` and `dispatch_agent` MUST be populated; the orchestrator has these values when assembling the agent prompt's DISPATCH header (Phase 2 step 2's lite-eligibility gate evaluation).
+   - `dispatch_agent` — the concrete subagent_type used: `flow-implement-lite` or `flow-implement-deep`. Tier↔agent invariant per the schema (lite↔flow-implement-lite, deep↔flow-implement-deep).
 
    **Path validation for `files[]` (mandatory, runs before the `tomlctl items add` call).** A buggy agent that touched `~/.aws/credentials`, `/etc/passwd`, or any absolute path during its run would otherwise leak that path into the committed execution-record log (and from there into rendered `PROGRESS-LOG.md`). For each candidate entry in `files[]`:
    1. **MUST be a repo-relative path** — reject if it begins with `/`, `\\`, or `~` (including `~/` and `~user/` forms).
@@ -480,7 +486,7 @@ For each batch:
    Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
 
    ```json
-   {"id":"E7","type":"task-completion","date":"2026-04-18","agent":"implement","task_ref":"add-retry-logic","summary":"Added retry logic in src/retry.rs","files":["src/retry.rs","tests/retry_test.rs"],"commits":["abc1234"],"status":"done"}
+   {"id":"E7","type":"task-completion","date":"2026-04-18","agent":"implement","task_ref":"add-retry-logic","dispatch_tier":"lite","dispatch_agent":"flow-implement-lite","summary":"Added retry logic in src/retry.rs","files":["src/retry.rs","tests/retry_test.rs"],"commits":["abc1234"],"status":"done"}
    ```
 
    Always conclude the two-call pattern with `tomlctl set <record> last_updated <today>`. Every call MUST use `<record>` (the fully-qualified `.claude/flows/<slug>/execution-record.toml` path resolved in Phase 1) — never the bare filename.
