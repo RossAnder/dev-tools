@@ -12,6 +12,7 @@ use anyhow::Result;
 use serde_json::Value as JsonValue;
 use std::io::{BufWriter, Write};
 
+use crate::io::ScalarMutationPlan;
 use crate::items::MutationPlan;
 use crate::query::{self, OutputShape, ShapeDispatch};
 
@@ -110,4 +111,72 @@ pub(crate) fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
     out.write_all(b"\n")?;
     out.flush()?;
     Ok(())
+}
+
+/// Build the dry-run JSON envelope for a single-scalar mutation (`set` /
+/// `set-json` `--dry-run`). Extracted from `emit_dry_run_scalar` so the
+/// envelope shape is testable without capturing stdout. The shape is:
+///
+/// ```json
+/// {"ok":true,"dry_run":true,"would_change":{"path":"<p>","old":<json|null>,"new":<json>}}
+/// ```
+///
+/// `old_value: None` (auto-vivify case) renders as `"old": null`.
+pub(crate) fn build_dry_run_scalar_envelope(plan: &ScalarMutationPlan) -> JsonValue {
+    serde_json::json!({
+        "ok": true,
+        "dry_run": true,
+        "would_change": {
+            "path": plan.path,
+            "old": plan.old_value.clone().unwrap_or(JsonValue::Null),
+            "new": plan.new_value,
+        },
+    })
+}
+
+/// T6a: emit the `--dry-run` envelope for `set` / `set-json`. Companion to
+/// `emit_dry_run_plan` (`items remove` / `items apply`); the two share
+/// `print_json_compact` so the compact-line format is byte-stable across
+/// every dry-run dispatch arm.
+pub(crate) fn emit_dry_run_scalar(plan: &ScalarMutationPlan) -> Result<()> {
+    let envelope = build_dry_run_scalar_envelope(plan);
+    print_json_compact(&envelope)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emit_dry_run_scalar_envelope_shape() {
+        let plan = ScalarMutationPlan {
+            path: "foo.bar".to_string(),
+            old_value: Some(serde_json::json!("old")),
+            new_value: serde_json::json!("new"),
+        };
+        let env = build_dry_run_scalar_envelope(&plan);
+        // Compact-serialised form must match the documented envelope byte
+        // for byte. `serde_json` is built with `preserve_order` (Cargo.toml),
+        // so insertion order in the `json!` macro is the on-wire order.
+        let s = serde_json::to_string(&env).unwrap();
+        assert_eq!(
+            s,
+            r#"{"ok":true,"dry_run":true,"would_change":{"path":"foo.bar","old":"old","new":"new"}}"#
+        );
+    }
+
+    #[test]
+    fn emit_dry_run_scalar_envelope_renders_missing_old_as_null() {
+        let plan = ScalarMutationPlan {
+            path: "foo.absent".to_string(),
+            old_value: None,
+            new_value: serde_json::json!(42),
+        };
+        let env = build_dry_run_scalar_envelope(&plan);
+        let s = serde_json::to_string(&env).unwrap();
+        assert_eq!(
+            s,
+            r#"{"ok":true,"dry_run":true,"would_change":{"path":"foo.absent","old":null,"new":42}}"#
+        );
+    }
 }

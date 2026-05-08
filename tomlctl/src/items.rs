@@ -1337,6 +1337,177 @@ pub(crate) fn items_add_many_with_dedupe(
     })
 }
 
+/// T10b: pure sibling of `items_add_to` / `items_add_value_to`. Clones the
+/// doc, runs the existing add pipeline on the clone, and records the new
+/// item's `id` (or empty string if the payload omitted one) in
+/// `plan.added`. Errors are byte-identical to the live path
+/// (`--json must be a JSON object`, date-coerce failures, etc.) since the
+/// same `items_add_value_to` funnel is used.
+///
+/// `apply_dedup_id_on_add` runs inside `items_add_value_to`, so the
+/// dry-run preview is byte-equivalent to a live add even when dedup_id
+/// auto-population fires — both paths observe the same env state.
+#[allow(dead_code)] // wired by the dispatch task that lands alongside T10b
+pub(crate) fn compute_add_mutation(
+    doc: &TomlValue,
+    array_name: &str,
+    json: &str,
+) -> Result<MutationPlan> {
+    // Capture the patch's id (if any) BEFORE mutation so the plan reports
+    // the same id the live path would persist. An add with no `id` field
+    // surfaces as an empty string, mirroring `compute_apply_mutation`'s
+    // contract for ad-hoc add ops.
+    let patch: JsonValue = serde_json::from_str(json).context("parsing --json")?;
+    let id = patch
+        .as_object()
+        .and_then(|o| o.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let mut new_doc = doc.clone();
+    items_add_value_to(&mut new_doc, patch, array_name)?;
+    Ok(MutationPlan {
+        new_doc,
+        added: vec![id],
+        updated: Vec::new(),
+        removed: Vec::new(),
+        skipped: Vec::new(),
+    })
+}
+
+/// T10b: pure sibling of `items_add_many` / `items_add_many_with_dedupe`.
+/// Empty `dedupe_fields` runs `items_add_many` on a cloned doc; non-empty
+/// runs `items_add_many_with_dedupe` and threads `AddManyOutcome.added`
+/// into `plan.added` (with per-row ids captured from the merged payloads
+/// on success) and `AddManyOutcome.skipped_rows` into `plan.skipped`.
+///
+/// `defaults` carries the same `--defaults-json` shape the live `items
+/// add-many` accepts; omitting it would make the dry-run preview diverge
+/// from the live path's stamping of default fields.
+///
+/// Per-row id capture: rows lacking an `id` field surface in `plan.added`
+/// as an empty string, matching `compute_apply_mutation`'s convention.
+/// On the dedupe path, only rows that successfully appended contribute
+/// to `plan.added`; skipped rows surface in `plan.skipped` instead.
+#[allow(dead_code)] // wired by the dispatch task that lands alongside T10b
+pub(crate) fn compute_add_many_mutation(
+    doc: &TomlValue,
+    array_name: &str,
+    rows: &[JsonValue],
+    defaults: Option<&JsonValue>,
+    dedupe_fields: &[String],
+) -> Result<MutationPlan> {
+    let mut new_doc = doc.clone();
+    if dedupe_fields.is_empty() {
+        // Pre-capture ids from the input rows. `items_add_many` returns
+        // only a count; we walk the rows once before delegating so the
+        // plan can report ids in input order. A row that fails validation
+        // inside `items_add_many` (non-object) errors before any partial
+        // ids leak — the discarded `Result` is the same surface as the
+        // live path.
+        let mut added: Vec<String> = Vec::with_capacity(rows.len());
+        for row in rows {
+            let id = row
+                .as_object()
+                .and_then(|o| o.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            added.push(id);
+        }
+        let count = items_add_many(&mut new_doc, array_name, rows, defaults)?;
+        // Defensive: trim to the number of rows actually appended so the
+        // plan never claims more ids than the live path persisted.
+        added.truncate(count);
+        Ok(MutationPlan {
+            new_doc,
+            added,
+            updated: Vec::new(),
+            removed: Vec::new(),
+            skipped: Vec::new(),
+        })
+    } else {
+        // Capture per-row ids up front; we'll filter to only the rows
+        // that actually appended after the dedupe outcome lands.
+        let row_ids: Vec<String> = rows
+            .iter()
+            .map(|row| {
+                row.as_object()
+                    .and_then(|o| o.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .collect();
+        let outcome =
+            items_add_many_with_dedupe(&mut new_doc, array_name, rows, defaults, dedupe_fields)?;
+        // `outcome.skipped_rows` carries 1-indexed row numbers; the
+        // remaining indices are the ones that appended in input order.
+        let skipped_set: std::collections::HashSet<usize> =
+            outcome.skipped_rows.iter().map(|r| r.row).collect();
+        let added: Vec<String> = row_ids
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, id)| {
+                if skipped_set.contains(&(i + 1)) {
+                    None
+                } else {
+                    Some(id)
+                }
+            })
+            .collect();
+        // Defensive: the appended-id count must equal `outcome.added`.
+        debug_assert_eq!(added.len(), outcome.added);
+        Ok(MutationPlan {
+            new_doc,
+            added,
+            updated: Vec::new(),
+            removed: Vec::new(),
+            skipped: outcome.skipped_rows,
+        })
+    }
+}
+
+/// T10b: pure sibling of `items_update_to` / `items_update_value_to`.
+/// Clones the doc, runs the update pipeline on the clone, and records
+/// the touched id in `plan.updated`. Errors are byte-identical to the
+/// live path (`no item with id = {id}`, `--json must be a JSON object`,
+/// date-coerce failures, etc.).
+///
+/// `apply_dedup_id_on_update` runs inside `items_update_value_to`, so
+/// the dry-run preview is byte-equivalent to a live update even when
+/// the dedup_id-recompute branch fires.
+#[allow(dead_code)] // wired by the dispatch task that lands alongside T10b
+pub(crate) fn compute_update_mutation(
+    doc: &TomlValue,
+    array_name: &str,
+    id: &str,
+    json: &str,
+    unset: &[String],
+) -> Result<MutationPlan> {
+    let mut new_doc = doc.clone();
+    items_update_to(&mut new_doc, array_name, id, json, unset)?;
+    Ok(MutationPlan {
+        new_doc,
+        added: Vec::new(),
+        updated: vec![id.to_string()],
+        removed: Vec::new(),
+        skipped: Vec::new(),
+    })
+}
+
+/// T10b: pure sibling of `array_append`. Thin forward to
+/// `compute_add_many_mutation` with no defaults and no dedupe — the
+/// `array-append` subcommand deliberately does not expose either.
+#[allow(dead_code)] // wired by the dispatch task that lands alongside T10b
+pub(crate) fn compute_array_append_mutation(
+    doc: &TomlValue,
+    array_name: &str,
+    rows: &[JsonValue],
+) -> Result<MutationPlan> {
+    compute_add_many_mutation(doc, array_name, rows, None, &[])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3039,5 +3210,219 @@ dedup_id = "fedcba9876543210"
         assert!(plan.updated.is_empty());
         assert!(plan.added.is_empty());
         assert!(plan.removed.is_empty());
+    }
+
+    // ----- T10b: compute_add / add_many / update / array_append -------------
+
+    /// T10b: `compute_add_mutation` produces a `new_doc` whose serialised
+    /// bytes are byte-identical to a live `items_add_to` on the same
+    /// fixture. Mirrors the byte-equivalence guarantee that underpins
+    /// `--dry-run` for the apply path.
+    #[test]
+    fn compute_add_mutation_matches_live_add_bytes() {
+        let _guard = env_lock();
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "first"
+severity = "warning"
+category = "quality"
+status = "open"
+"#;
+        let json = r#"{"id":"R2","file":"src/b.rs","summary":"second","severity":"warning","category":"quality","status":"open"}"#;
+
+        let mut live_doc: TomlValue = toml::from_str(fixture).unwrap();
+        items_add_to(&mut live_doc, "items", json).unwrap();
+        let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
+
+        let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan = compute_add_mutation(&plan_doc, "items", json).unwrap();
+        let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
+
+        assert_eq!(
+            live_bytes, plan_bytes,
+            "compute_add_mutation new_doc must serialise byte-identically to live add"
+        );
+        assert_eq!(plan.added, vec!["R2".to_string()]);
+        assert!(plan.updated.is_empty());
+        assert!(plan.removed.is_empty());
+    }
+
+    /// T10b: `compute_add_many_mutation` with empty `dedupe_fields`
+    /// (delegating to `items_add_many`) and with non-empty `dedupe_fields`
+    /// (delegating to `items_add_many_with_dedupe`) both produce
+    /// `new_doc` bytes equal to the corresponding live mutator on the
+    /// same fixture. Covers the defaults-stamping path so the dry-run
+    /// preview is faithful to `--defaults-json`.
+    #[test]
+    fn compute_add_many_mutation_matches_live_add_many_bytes() {
+        let _guard = env_lock();
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "first"
+severity = "warning"
+category = "quality"
+status = "open"
+"#;
+        let rows: Vec<JsonValue> = vec![
+            serde_json::json!({"id":"R2","file":"src/b.rs","summary":"second","severity":"warning","category":"quality","status":"open"}),
+            serde_json::json!({"id":"R3","file":"src/c.rs","summary":"third","severity":"warning","category":"quality","status":"open"}),
+        ];
+        let defaults = serde_json::json!({"first_flagged":"2026-04-08","rounds":1});
+
+        // --- Sub-case A: empty dedupe_fields → items_add_many path ---
+        let mut live_doc: TomlValue = toml::from_str(fixture).unwrap();
+        items_add_many(&mut live_doc, "items", &rows, Some(&defaults)).unwrap();
+        let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
+
+        let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan =
+            compute_add_many_mutation(&plan_doc, "items", &rows, Some(&defaults), &[]).unwrap();
+        let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
+        assert_eq!(
+            live_bytes, plan_bytes,
+            "compute_add_many_mutation (no dedupe) must byte-match live items_add_many"
+        );
+        assert_eq!(plan.added, vec!["R2".to_string(), "R3".to_string()]);
+        assert!(plan.skipped.is_empty());
+
+        // --- Sub-case B: non-empty dedupe_fields → items_add_many_with_dedupe path ---
+        // Add a duplicate of R2 (by `summary`) to force a skip on the
+        // second pass; both rows would otherwise append.
+        let dup_rows: Vec<JsonValue> = vec![
+            serde_json::json!({"id":"R4","file":"src/d.rs","summary":"first","severity":"warning","category":"quality","status":"open"}),
+            serde_json::json!({"id":"R5","file":"src/e.rs","summary":"fifth","severity":"warning","category":"quality","status":"open"}),
+        ];
+        let dedupe = vec!["summary".to_string()];
+
+        let mut live_doc: TomlValue = toml::from_str(fixture).unwrap();
+        let live_outcome =
+            items_add_many_with_dedupe(&mut live_doc, "items", &dup_rows, None, &dedupe).unwrap();
+        let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
+
+        let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan =
+            compute_add_many_mutation(&plan_doc, "items", &dup_rows, None, &dedupe).unwrap();
+        let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
+        assert_eq!(
+            live_bytes, plan_bytes,
+            "compute_add_many_mutation (dedupe) must byte-match live items_add_many_with_dedupe"
+        );
+        // R4 is the duplicate of R1 by `summary`; it should be skipped.
+        assert_eq!(plan.added, vec!["R5".to_string()]);
+        assert_eq!(plan.skipped.len(), 1);
+        assert_eq!(plan.skipped[0].row, 1);
+        assert_eq!(plan.skipped[0].matched_id, "R1");
+        assert_eq!(plan.added.len(), live_outcome.added);
+    }
+
+    /// T10b: `compute_update_mutation` produces a `new_doc` whose
+    /// serialised bytes are byte-identical to a live `items_update_to`
+    /// on the same fixture, including the `unset` keys path.
+    #[test]
+    fn compute_update_mutation_matches_live_update_bytes() {
+        let _guard = env_lock();
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "first"
+severity = "warning"
+category = "quality"
+status = "open"
+notes = "to be cleared"
+
+[[items]]
+id = "R2"
+file = "src/b.rs"
+summary = "second"
+severity = "warning"
+category = "quality"
+status = "open"
+"#;
+        let json = r#"{"status":"fixed","resolution":"fix in xyz","resolved":"2026-04-18"}"#;
+        let unset = vec!["notes".to_string()];
+
+        let mut live_doc: TomlValue = toml::from_str(fixture).unwrap();
+        items_update_to(&mut live_doc, "items", "R1", json, &unset).unwrap();
+        let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
+
+        let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan = compute_update_mutation(&plan_doc, "items", "R1", json, &unset).unwrap();
+        let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
+
+        assert_eq!(
+            live_bytes, plan_bytes,
+            "compute_update_mutation new_doc must serialise byte-identically to live update"
+        );
+        assert_eq!(plan.updated, vec!["R1".to_string()]);
+        assert!(plan.added.is_empty());
+        assert!(plan.removed.is_empty());
+    }
+
+    /// T10b: `compute_array_append_mutation` threads the array name
+    /// through to `array_append` faithfully — appending to a
+    /// non-default array (`rollback_events`) produces a `new_doc` with
+    /// bytes equal to a live `array_append` on the same target. This
+    /// exercises the "deliberately no defaults / no dedupe" forwarding
+    /// path of `compute_array_append_mutation`.
+    #[test]
+    fn compute_array_append_mutation_targets_named_array() {
+        let _guard = env_lock();
+        let fixture = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "first"
+
+[[rollback_events]]
+ts = "2026-04-01T00:00:00Z"
+note = "baseline"
+"#;
+        let rows: Vec<JsonValue> = vec![
+            serde_json::json!({"ts":"2026-04-18T12:00:00Z","note":"first rollback"}),
+            serde_json::json!({"ts":"2026-04-19T12:00:00Z","note":"second rollback"}),
+        ];
+
+        let mut live_doc: TomlValue = toml::from_str(fixture).unwrap();
+        array_append(&mut live_doc, "rollback_events", &rows).unwrap();
+        let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
+
+        let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
+        let plan =
+            compute_array_append_mutation(&plan_doc, "rollback_events", &rows).unwrap();
+        let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
+
+        assert_eq!(
+            live_bytes, plan_bytes,
+            "compute_array_append_mutation new_doc must serialise byte-identically to live array_append on a non-default array"
+        );
+        // rollback_events rows have no `id` field; ids surface as empty
+        // strings — same convention as `compute_apply_mutation` for ad-hoc add ops.
+        assert_eq!(plan.added, vec![String::new(), String::new()]);
+        assert!(plan.updated.is_empty());
+        assert!(plan.removed.is_empty());
+        assert!(plan.skipped.is_empty());
+
+        // Sanity: the items array in the original fixture is untouched.
+        let items = plan.new_doc.get("items").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(items.len(), 1);
+        let events = plan
+            .new_doc
+            .get("rollback_events")
+            .and_then(|v| v.as_array())
+            .unwrap();
+        assert_eq!(
+            events.len(),
+            3,
+            "1 baseline + 2 appended rows in the named array"
+        );
     }
 }

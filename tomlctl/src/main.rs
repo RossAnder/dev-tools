@@ -14,6 +14,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod blocks;
+mod capabilities;
 mod cli;
 mod convert;
 mod dedup;

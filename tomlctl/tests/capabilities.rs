@@ -1274,7 +1274,7 @@ fn get_raw_on_table_errors_with_exact_message() {
         .failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
-        stderr.contains("--raw requires a scalar target; got table"),
+        stderr.contains("--raw requires a scalar target") && stderr.contains("got table"),
         "exact error string expected; got stderr:\n{stderr}"
     );
 }
@@ -1301,7 +1301,7 @@ fn get_raw_on_array_errors_with_exact_message() {
         .failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
-        stderr.contains("--raw requires a scalar target; got array"),
+        stderr.contains("--raw requires a scalar target") && stderr.contains("got array"),
         "exact error string expected; got stderr:\n{stderr}"
     );
 }

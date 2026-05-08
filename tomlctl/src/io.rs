@@ -436,6 +436,91 @@ where
     })
 }
 
+/// Dry-run scalar mutation preview for `set` / `set-json`. Captures the
+/// pre-mutation value at `path` (as JSON, via `convert::toml_to_json`) plus
+/// the value the live `set_at_path` would write. `old_value` is `None` when
+/// the path didn't exist pre-mutation (auto-vivify case — the live writer
+/// would create the parent chain). The dry-run JSON envelope renders that
+/// `None` as `"old": null` (see `output::emit_dry_run_scalar`).
+///
+/// Scalar-type restriction: `old_value` uses direct `serde_json::Value`
+/// encoding — string / int / float / bool / null only. The dry-run path
+/// inherits the same restriction as the live `Cmd::Set` arm; if
+/// `convert::parse_scalar` rejects a value (e.g. an unparseable datetime),
+/// the helper bubbles that error back to the caller exactly as the live
+/// path would.
+#[derive(Debug, Clone)]
+pub(crate) struct ScalarMutationPlan {
+    pub(crate) path: String,
+    pub(crate) old_value: Option<serde_json::Value>,
+    pub(crate) new_value: serde_json::Value,
+}
+
+/// Compute a `ScalarMutationPlan` for `Cmd::Set` without touching disk.
+/// Mirrors the live arm in `cli/dispatch.rs` (`mutate_doc` closure):
+///   1. `parse_scalar(value, ty)` → `TomlValue`
+///   2. `navigate(&doc, path)` → captured `old_value` (None if missing)
+///   3. `set_at_path(&mut clone, path, parsed)` on a CLONE of the input doc
+///
+/// The input `doc` is borrowed read-only; the cloned `TomlValue` is
+/// discarded after the navigate-then-set cycle. The caller holds the lock
+/// and reads the live doc; this helper performs the compute step that the
+/// dry-run dispatch arm needs to assemble its preview envelope.
+pub(crate) fn compute_set_mutation(
+    doc: &TomlValue,
+    path: &str,
+    value: &str,
+    ty: Option<crate::convert::ScalarType>,
+) -> Result<ScalarMutationPlan> {
+    let parsed = crate::convert::parse_scalar(value, ty)?;
+    // Capture pre-mutation value (if any) before the destructive set. Use
+    // the live read against the borrowed doc — no need to clone for the
+    // navigate, since `navigate` is read-only.
+    let old_value = crate::convert::navigate(doc, path).map(crate::convert::toml_to_json);
+    let new_value = crate::convert::toml_to_json(&parsed);
+    // Run the destructive setter on a clone purely to surface any error
+    // that the live writer would also surface (out-of-bounds array index,
+    // non-table parent, etc.). The cloned doc is discarded.
+    let mut clone = doc.clone();
+    crate::convert::set_at_path(&mut clone, path, parsed)?;
+    Ok(ScalarMutationPlan {
+        path: path.to_string(),
+        old_value,
+        new_value,
+    })
+}
+
+/// Compute a `ScalarMutationPlan` for `Cmd::SetJson` without touching disk.
+/// Mirrors the live arm in `cli/dispatch.rs`:
+///   1. `last_key` = path's final segment (after rsplit on `.`)
+///   2. `maybe_date_coerce(last_key, &json)` → `TomlValue` (DATE_KEYS get
+///      auto-coerced to `Datetime`, all other keys go through
+///      `json_to_toml`)
+///   3. `set_at_path(&mut clone, path, coerced)` on a CLONE of the input doc
+///
+/// `new_value` in the returned plan is the ORIGINAL JSON payload (not the
+/// post-coerce TOML round-tripped back through `toml_to_json`), so the dry-
+/// run envelope shows the user exactly what they passed in. The coerce-then-
+/// set step is run only for its error path (the same way the live arm
+/// would fail on, say, an unrepresentable JSON null in a non-nullable
+/// position).
+pub(crate) fn compute_set_json_mutation(
+    doc: &TomlValue,
+    path: &str,
+    json: &serde_json::Value,
+) -> Result<ScalarMutationPlan> {
+    let last_key = path.rsplit_once('.').map(|(_, k)| k).unwrap_or(path);
+    let coerced = crate::convert::maybe_date_coerce(last_key, json)?;
+    let old_value = crate::convert::navigate(doc, path).map(crate::convert::toml_to_json);
+    let mut clone = doc.clone();
+    crate::convert::set_at_path(&mut clone, path, coerced)?;
+    Ok(ScalarMutationPlan {
+        path: path.to_string(),
+        old_value,
+        new_value: json.clone(),
+    })
+}
+
 /// Re-canonicalise `file`'s parent and assert it still starts with the
 /// `.claude/` canonical root. Used by `mutate_doc` to narrow the TOCTOU window
 /// described in R3.
@@ -1606,5 +1691,65 @@ resolution = "fix in abc123"
             inside_ok.is_ok(),
             "path inside .claude/ must be permitted without --allow-outside"
         );
+    }
+
+    #[test]
+    fn compute_set_mutation_captures_old_value() {
+        let src = r#"
+[foo]
+bar = "old"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let plan = compute_set_mutation(&doc, "foo.bar", "new", None).unwrap();
+        assert_eq!(plan.path, "foo.bar");
+        assert_eq!(plan.old_value, Some(serde_json::json!("old")));
+        assert_eq!(plan.new_value, serde_json::json!("new"));
+        // Clone-correctness: the input doc must not have been mutated. Read
+        // back the original `foo.bar` and assert it still says "old".
+        let still_old = crate::convert::navigate(&doc, "foo.bar")
+            .and_then(|v| v.as_str())
+            .unwrap();
+        assert_eq!(
+            still_old, "old",
+            "compute_set_mutation must clone before set_at_path"
+        );
+    }
+
+    #[test]
+    fn compute_set_mutation_old_value_none_when_path_missing() {
+        let src = r#"
+[foo]
+existing = 1
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        // Path doesn't exist — the auto-vivify case.
+        let plan = compute_set_mutation(&doc, "foo.absent", "42", None).unwrap();
+        assert_eq!(plan.path, "foo.absent");
+        assert_eq!(
+            plan.old_value, None,
+            "missing path must yield old_value == None"
+        );
+        // `42` infers as Int per `infer_type`, so the captured new_value is a
+        // JSON number, not a string.
+        assert_eq!(plan.new_value, serde_json::json!(42));
+    }
+
+    #[test]
+    fn compute_set_json_mutation_captures_old_value() {
+        let src = r#"
+arr = [1, 2]
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let new_json = serde_json::json!([1, 2, 3]);
+        let plan = compute_set_json_mutation(&doc, "arr", &new_json).unwrap();
+        assert_eq!(plan.path, "arr");
+        assert_eq!(plan.old_value, Some(serde_json::json!([1, 2])));
+        assert_eq!(plan.new_value, serde_json::json!([1, 2, 3]));
+        // Clone-correctness: `arr` in the input doc still has 2 elements.
+        let still_two = crate::convert::navigate(&doc, "arr")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap();
+        assert_eq!(still_two, 2);
     }
 }

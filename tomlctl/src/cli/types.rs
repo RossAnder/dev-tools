@@ -327,6 +327,13 @@ pub(crate) enum Cmd {
         value: String,
         #[arg(long = "type", value_enum)]
         ty: Option<ScalarType>,
+        /// T10: preview the operation without writing. Emits a `would_change`
+        /// summary on stdout and leaves the file + sidecar byte-identical.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -337,6 +344,13 @@ pub(crate) enum Cmd {
         path: String,
         #[arg(long, help = "JSON-encoded value; pass `-` to read from stdin")]
         json: String,
+        /// T10: preview the operation without writing. Emits a `would_change`
+        /// summary on stdout and leaves the file + sidecar byte-identical.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -378,6 +392,13 @@ pub(crate) enum Cmd {
         json: Option<String>,
         #[arg(long = "ndjson", conflicts_with = "json", help = "NDJSON source: `-` for stdin, otherwise a file path")]
         ndjson: Option<String>,
+        /// T10: preview the operation without writing. Emits a `would_change`
+        /// summary on stdout and leaves the file + sidecar byte-identical.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -542,6 +563,13 @@ pub(crate) enum ItemsOp {
             help = "Skip the add when an existing item matches these fields (raw equality; use --where for typed comparison)"
         )]
         dedupe_by: Option<String>,
+        /// T10: preview the operation without writing. Emits a `would_change`
+        /// summary on stdout and leaves the file + sidecar byte-identical.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -569,6 +597,13 @@ pub(crate) enum ItemsOp {
             help = "Skip rows whose values at these fields already exist (raw equality; use --where for typed comparison)"
         )]
         dedupe_by: Option<String>,
+        /// T10: preview the operation without writing. Emits a `would_change`
+        /// summary on stdout and leaves the file + sidecar byte-identical.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -587,6 +622,13 @@ pub(crate) enum ItemsOp {
         /// R57: target array-of-tables name. See `List --array`.
         #[arg(long, default_value = "items")]
         array: String,
+        /// T10: preview the operation without writing. Emits a `would_change`
+        /// summary on stdout and leaves the file + sidecar byte-identical.
+        #[arg(
+            long = "dry-run",
+            help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },

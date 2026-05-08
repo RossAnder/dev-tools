@@ -92,7 +92,7 @@ fn compile_user_regex(pattern: &str) -> Result<Regex> {
         .size_limit(REGEX_COMPILE_SIZE_LIMIT)
         .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
         .build()
-        .map_err(|e| anyhow::anyhow!("invalid regex `{}`: {}", pattern, e))
+        .map_err(|e| anyhow::anyhow!("invalid regex `{}`: {} (regex must compile under size_limit={}/dfa_size_limit={})", pattern, e, REGEX_COMPILE_SIZE_LIMIT, REGEX_DFA_SIZE_LIMIT))
 }
 
 /// Sort direction for a single `--sort-by` key.
@@ -298,7 +298,7 @@ impl ShapeDispatch for OutputShape {
                     .as_array()
                     .ok_or_else(|| anyhow::anyhow!("internal: --pluck output was not a JSON array"))?;
                 match arr.len() {
-                    0 => bail!("--raw requires single-value output (got 0 items)"),
+                    0 => bail!("--raw requires single-value output (got 0 items); for a possibly-empty pluck use `--pluck <f> --lines` to stream zero-or-more JSON values one per line"),
                     1 => emit_raw(&arr[0]),
                     n => bail!(
                         "--raw requires single-value output (got {} items); use --lines for newline-delimited",
@@ -312,7 +312,7 @@ impl ShapeDispatch for OutputShape {
                 // error rather than a corrupt pretty-print of a JSON array
                 // with quotes stripped. Byte-for-byte wording isn't pinned
                 // by the task spec for this case; keep it descriptive.
-                bail!("--raw requires a scalar target; got array");
+                bail!("--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON");
             }
             OutputShape::CountBy(_) | OutputShape::GroupBy(_) => {
                 // Unreachable in practice: `validate_query` rejects these
@@ -680,13 +680,13 @@ pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
         JsonValue::Number(n) => Ok(n.to_string()),
         JsonValue::Bool(b) => Ok(b.to_string()),
         JsonValue::Null => {
-            bail!("--raw cannot emit null value")
+            bail!("--raw cannot emit null value; --raw expects a scalar (string|number|bool) — use plain JSON output (omit --raw) to round-trip null")
         }
         JsonValue::Array(_) => {
-            bail!("--raw requires a scalar target; got array")
+            bail!("--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON")
         }
         JsonValue::Object(_) => {
-            bail!("--raw requires a scalar target; got table")
+            bail!("--raw requires a scalar target (string|number|bool); got table — use plain JSON output (omit --raw) to emit the object")
         }
     }
 }
@@ -958,7 +958,7 @@ fn parse_rhs_for_cache(rhs: &str, key: &str) -> Result<ParsedRhs> {
         TypeHint::Int => {
             let n: i64 = body.parse().map_err(|e| {
                 anyhow::anyhow!(
-                    "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                    "invalid typed RHS `{}` for --where predicate on key `{}`: {} (expected an integer after `@int:`, e.g. `@int:42`)",
                     rhs,
                     key,
                     e
@@ -969,7 +969,7 @@ fn parse_rhs_for_cache(rhs: &str, key: &str) -> Result<ParsedRhs> {
         TypeHint::Float => {
             let f: f64 = body.parse().map_err(|e| {
                 anyhow::anyhow!(
-                    "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                    "invalid typed RHS `{}` for --where predicate on key `{}`: {} (expected a finite float after `@float:`, e.g. `@float:1.5`)",
                     rhs,
                     key,
                     e
@@ -980,7 +980,7 @@ fn parse_rhs_for_cache(rhs: &str, key: &str) -> Result<ParsedRhs> {
         TypeHint::Bool => {
             let b: bool = body.parse().map_err(|e| {
                 anyhow::anyhow!(
-                    "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                    "invalid typed RHS `{}` for --where predicate on key `{}`: {} (expected `true` or `false` after `@bool:`)",
                     rhs,
                     key,
                     e
@@ -991,7 +991,7 @@ fn parse_rhs_for_cache(rhs: &str, key: &str) -> Result<ParsedRhs> {
         TypeHint::Date | TypeHint::DateTime => {
             let dt: toml::value::Datetime = body.parse().map_err(|e| {
                 anyhow::anyhow!(
-                    "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                    "invalid typed RHS `{}` for --where predicate on key `{}`: {} (expected ISO-8601 date or datetime after `@date:`/`@datetime:`, e.g. `@date:2026-01-15`)",
                     rhs,
                     key,
                     e
@@ -1157,7 +1157,7 @@ fn eq_typed(field: Option<&TomlValue>, rhs: &str, key: &str, pre: &ParsedRhs) ->
     if let Some((hint, _rest)) = split_type_hint(rhs) {
         let parsed = parse_typed_value(rhs).map_err(|e| {
             anyhow::anyhow!(
-                "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+                "invalid typed RHS `{}` for --where predicate on key `{}`: {} (recognised type prefixes: @int:, @float:, @bool:, @string:/@str:, @date:, @datetime:)",
                 rhs,
                 key,
                 e
@@ -1231,7 +1231,7 @@ fn cmp_pred(
         ParsedRhs::Int(n) => match f {
             TomlValue::Integer(i) => Some(Ok(i.cmp(n))),
             _ => Some(Err(anyhow::anyhow!(
-                "invalid typed RHS `{}` for --where predicate on key `{}`: type hint `int` doesn't match field type",
+                "invalid typed RHS `{}` for --where predicate on key `{}`: @int: requires an integer field; the field's TOML type is not Integer",
                 rhs,
                 key
             ))),
@@ -1239,7 +1239,7 @@ fn cmp_pred(
         ParsedRhs::Float(x) => match f {
             TomlValue::Float(g) => Some(Ok(g.partial_cmp(x).unwrap_or(Ordering::Equal))),
             _ => Some(Err(anyhow::anyhow!(
-                "invalid typed RHS `{}` for --where predicate on key `{}`: type hint `float` doesn't match field type",
+                "invalid typed RHS `{}` for --where predicate on key `{}`: @float: requires a float field; the field's TOML type is not Float",
                 rhs,
                 key
             ))),
@@ -1247,7 +1247,7 @@ fn cmp_pred(
         ParsedRhs::Bool(b) => match f {
             TomlValue::Boolean(c) => Some(Ok(c.cmp(b))),
             _ => Some(Err(anyhow::anyhow!(
-                "invalid typed RHS `{}` for --where predicate on key `{}`: bool RHS not comparable against non-bool field",
+                "invalid typed RHS `{}` for --where predicate on key `{}`: @bool: requires a boolean field; the field's TOML type is not Boolean",
                 rhs,
                 key
             ))),
@@ -1257,7 +1257,7 @@ fn cmp_pred(
                 Some(Ok(field_dt.to_string().cmp(&dt.to_string())))
             }
             _ => Some(Err(anyhow::anyhow!(
-                "invalid typed RHS `{}` for --where predicate on key `{}`: datetime RHS not comparable against non-datetime field",
+                "invalid typed RHS `{}` for --where predicate on key `{}`: @date:/@datetime: requires a datetime field; the field's TOML type is not Datetime",
                 rhs,
                 key
             ))),
@@ -1265,7 +1265,7 @@ fn cmp_pred(
         ParsedRhs::Str(body) => match f {
             TomlValue::String(s) => Some(Ok(s.as_str().cmp(body.as_str()))),
             _ => Some(Err(anyhow::anyhow!(
-                "invalid typed RHS `{}` for --where predicate on key `{}`: string RHS not comparable against non-string field",
+                "invalid typed RHS `{}` for --where predicate on key `{}`: @string:/@str: requires a string field; the field's TOML type is not String",
                 rhs,
                 key
             ))),
@@ -1280,7 +1280,7 @@ fn cmp_pred(
     // bug worth failing loudly on.
     let ord = compare_typed(f, rhs).map_err(|e| {
         anyhow::anyhow!(
-            "invalid typed RHS `{}` for --where predicate on key `{}`: {}",
+            "invalid typed RHS `{}` for --where predicate on key `{}`: {} (no @type: prefix — RHS was driven by the field's native type and parsing failed; consider an explicit prefix from: @int:, @float:, @bool:, @string:/@str:, @date:, @datetime:)",
             rhs,
             key,
             e
@@ -1679,10 +1679,10 @@ pub(crate) struct QueryInput {
 /// `--where-*` family.
 fn split_kv(s: &str) -> Result<(String, String)> {
     let Some((k, v)) = s.split_once('=') else {
-        bail!("expected KEY=VAL, got `{}`", s);
+        bail!("expected KEY=VAL (e.g. `status=open`), got `{}`", s);
     };
     if k.is_empty() {
-        bail!("KEY=VAL has empty key in `{}`", s);
+        bail!("KEY=VAL has empty key in `{}` (e.g. `status=open`); the LHS before `=` must be non-empty", s);
     }
     Ok((k.to_string(), v.to_string()))
 }
@@ -2949,5 +2949,20 @@ task_ref = "beta"
         };
         let out = run(&doc, "items", &q).unwrap();
         assert_eq!(out, serde_json::json!(["alpha", "beta"]));
+    }
+
+    // -- Phase 6 / T6: error-message rewrite contracts ------------------
+
+    /// Phase 6 / T6: path-shape rewrites must quote the expected form so an
+    /// agent that hands the CLI a malformed `KEY=VAL` argument sees a
+    /// concrete example. `split_kv` on a string without `=` now embeds an
+    /// example.
+    #[test]
+    fn error_message_path_shape_quotes_expected_kv_form() {
+        let err = split_kv("just-a-key").unwrap_err().to_string();
+        assert!(
+            err.contains("KEY=VAL") && err.contains("status=open"),
+            "path-shape error must quote an example KEY=VAL; got: {err}"
+        );
     }
 }

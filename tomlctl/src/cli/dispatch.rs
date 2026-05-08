@@ -376,6 +376,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             path,
             value,
             ty,
+            dry_run: _,
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);
@@ -385,7 +386,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             })?;
             print_json_compact(&serde_json::json!({"ok": true}))?;
         }
-        Cmd::SetJson { file, path, json, integrity } => {
+        Cmd::SetJson { file, path, json, dry_run: _, integrity } => {
             let opts = write_integrity_opts(&integrity);
             // O35: parse stdin/literal JSON straight into a `JsonValue`,
             // skipping the intermediate String allocation. The parse moves
@@ -412,6 +413,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             array,
             json,
             ndjson,
+            dry_run: _,
             integrity,
         } => {
             // clap's `conflicts_with` guarantees at most one is set; enforce
@@ -540,7 +542,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             )?;
             print_json(&out)?;
         }
-        ItemsOp::Add { file, json, array, dedupe_by, integrity } => {
+        ItemsOp::Add { file, json, array, dedupe_by, dry_run: _, integrity } => {
             let opts = write_integrity_opts(&integrity);
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
             if dedupe_fields.is_empty() {
@@ -600,6 +602,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             defaults_json,
             array,
             dedupe_by,
+            dry_run: _,
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);
@@ -671,6 +674,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             json,
             unset,
             array,
+            dry_run: _,
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);

@@ -129,7 +129,7 @@ pub(crate) fn scan_block_names_warn(contents: &str, src_label: Option<&str>) -> 
 
 pub(crate) fn blocks_verify(files: &[PathBuf], blocks: &[String]) -> Result<BlocksReport> {
     if files.is_empty() {
-        bail!("blocks verify: no files supplied");
+        bail!("blocks verify: no files supplied; pass one or more file paths (e.g. `tomlctl blocks verify a.md b.md`)");
     }
     // Preload every file once. R53: run typo-aware scan on each file's
     // contents up-front, so a `<!-- SHAREDBLOCK:... START -->` (missing
@@ -281,6 +281,19 @@ body
             names,
             vec!["foo".to_string()],
             "END marker must be recognised as canonical and not alter the names list"
+        );
+    }
+
+    /// Phase 6 / T6: path-shape rewrites in `blocks_verify` must quote the
+    /// expected invocation form when no files are supplied. The rewritten
+    /// message embeds an example invocation so an agent sees the shape
+    /// directly.
+    #[test]
+    fn error_message_path_shape_blocks_verify_quotes_expected_invocation() {
+        let err = blocks_verify(&[], &[]).unwrap_err().to_string();
+        assert!(
+            err.contains("no files supplied") && err.contains("tomlctl blocks verify"),
+            "path-shape error must quote an example invocation; got: {err}"
         );
     }
 }
