@@ -524,6 +524,8 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             print_json_compact(&serde_json::json!({"ok": true, "appended": appended}))?;
         }
         Cmd::Integrity { op } => integrity_dispatch(op)?,
+        Cmd::Flow { op } => crate::flow::dispatch(op)?,
+        Cmd::Json { op } => crate::json::dispatch(op)?,
         Cmd::Capabilities => {
             // T7: pretty-print matches the rest of the read-path surface
             // (`parse`, `get`, `items list`) — `print_json` is the same

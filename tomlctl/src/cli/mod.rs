@@ -25,4 +25,4 @@ mod dispatch;
 mod types;
 
 pub(crate) use dispatch::run;
-pub(crate) use types::{Cli, ErrorFormat};
+pub(crate) use types::{ActiveOp, Cli, ErrorFormat, FlowOp, JsonOp};

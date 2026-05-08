@@ -34,6 +34,15 @@ pub(crate) const FEATURES: &[&str] = &[
     "backfill_dedup_id",      // T11
     "integrity_refresh",      // sidecar bootstrap / recovery primitive
     "agent_context",          // T6a: capabilities .commands flag schema
+    // Flow-tracking-overhaul plan: new flow / json subcommand cluster.
+    "flow_resolve",
+    "flow_active",
+    "flow_doctor",
+    "flow_init",
+    "flow_ensure_artifact",
+    "flow_stale",
+    "flow_find_plans",
+    "json_ops",
 ];
 
 /// T7: user-facing top-level subcommand names, as they appear in
@@ -53,6 +62,8 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
     "array-append",
     "capabilities",
     "integrity",
+    "flow",
+    "json",
 ];
 
 #[derive(Parser)]
@@ -427,6 +438,240 @@ pub(crate) enum Cmd {
         #[command(subcommand)]
         op: IntegrityOp,
     },
+
+    /// Flow-aware operations: resolve the active flow, manage the
+    /// `.claude/active-flow.toml` registry, bootstrap flow artifacts, and
+    /// run invariant checks. Implemented in T1+ of
+    /// `docs/plans/flow-tracking-overhaul.md`.
+    Flow {
+        #[command(subcommand)]
+        op: FlowOp,
+    },
+
+    /// JSON-document read/write operations on a dotted path. Sibling of the
+    /// TOML-side `get` / `set` / `set-json` triple, scoped to JSON files
+    /// (e.g. `.claude/settings.json`). Implemented in T2 of
+    /// `docs/plans/flow-tracking-overhaul.md`.
+    Json {
+        #[command(subcommand)]
+        op: JsonOp,
+    },
+}
+
+/// Flow subcommand cluster — see `docs/plans/flow-tracking-overhaul.md`.
+/// Each leaf op maps onto a dedicated `flow/<leaf>.rs` module; T1 lands the
+/// skeleton + dispatch shell, leaf modules fill in T2..T11.
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum FlowOp {
+    /// Manage `.claude/active-flow.toml` registry.
+    Active {
+        #[command(subcommand)]
+        op: ActiveOp,
+    },
+    /// Discover plan files under configured directories.
+    FindPlans {
+        #[arg(long = "dirs", value_name = "DIR")]
+        dirs: Vec<PathBuf>,
+        #[arg(long = "json")]
+        json: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+    /// Report staleness of a flow's `context.toml`.
+    Stale {
+        #[arg(long = "slug")]
+        slug: String,
+        #[arg(long = "threshold", default_value = "7d")]
+        threshold: String,
+        #[arg(long = "json")]
+        json: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+    /// Initialise a new flow (idempotent).
+    Init {
+        #[arg(long = "slug")]
+        slug: String,
+        #[arg(long = "plan")]
+        plan: PathBuf,
+        #[arg(long = "branch")]
+        branch: Option<String>,
+        #[arg(long = "worktree")]
+        worktree: Option<PathBuf>,
+        #[arg(long = "scope")]
+        scope: Vec<String>,
+        #[arg(long = "json")]
+        json: bool,
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+    /// Report (and optionally bootstrap) a flow artifact.
+    EnsureArtifact {
+        #[arg(long = "slug")]
+        slug: String,
+        #[arg(long = "kind", value_enum)]
+        kind: ArtifactKind,
+        #[arg(long = "bootstrap")]
+        bootstrap: bool,
+        #[arg(long = "json")]
+        json: bool,
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+    /// Resolve the active flow via the 5-step algorithm.
+    Resolve {
+        #[arg(long = "flow")]
+        flow: Option<String>,
+        #[arg(long = "path", value_name = "PATH")]
+        path: Vec<PathBuf>,
+        #[arg(long = "branch")]
+        branch: Option<String>,
+        #[arg(long = "worktree")]
+        worktree: Option<PathBuf>,
+        #[arg(long = "cwd")]
+        cwd: Option<PathBuf>,
+        #[arg(long = "with-staleness")]
+        with_staleness: bool,
+        #[arg(long = "json", default_value_t = true)]
+        json: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+    /// Run invariant checks across flows.
+    Doctor {
+        #[arg(long = "slug")]
+        slug: Option<String>,
+        #[arg(long = "fix")]
+        fix: bool,
+        #[arg(long = "json")]
+        json: bool,
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+    /// List all flows.
+    List {
+        #[arg(long = "status")]
+        status: Option<String>,
+        #[arg(long = "branch")]
+        branch: Option<String>,
+        #[arg(long = "active-only")]
+        active_only: bool,
+        #[arg(long = "json")]
+        json: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+}
+
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum ActiveOp {
+    /// List entries in the active-flow registry.
+    List {
+        #[arg(long = "json")]
+        json: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+    /// Add (or update) a flow in the active-flow registry.
+    Add {
+        #[arg(long = "slug")]
+        slug: String,
+        #[arg(long = "branch")]
+        branch: Option<String>,
+        #[arg(long = "worktree")]
+        worktree: Option<PathBuf>,
+        #[arg(long = "scope")]
+        scope: Vec<String>,
+        #[arg(long = "json")]
+        json: bool,
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+    /// Remove a flow from the active-flow registry.
+    Remove {
+        #[arg(long = "slug")]
+        slug: String,
+        #[arg(long = "json")]
+        json: bool,
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+    /// Update a flow's last-touched timestamp in the registry.
+    Touch {
+        #[arg(long = "slug")]
+        slug: String,
+        #[arg(long = "json")]
+        json: bool,
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+}
+
+/// JSON-document read/write surface — sibling of the TOML side's
+/// `get` / `set` / `set-json`, scoped to JSON files (e.g.
+/// `.claude/settings.json`). Implemented in T2 of
+/// `docs/plans/flow-tracking-overhaul.md`.
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum JsonOp {
+    /// Read a value at a dotted path from a JSON file.
+    Get {
+        file: PathBuf,
+        path: String,
+        #[arg(long = "raw")]
+        raw: bool,
+        #[arg(long = "json")]
+        json: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+    /// Set a JSON-encoded value at a dotted path.
+    Set {
+        file: PathBuf,
+        path: String,
+        #[arg(long = "json", value_name = "VALUE")]
+        json: String,
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+    /// Remove the value at a dotted path.
+    Unset {
+        file: PathBuf,
+        path: String,
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+}
+
+/// Flow-artifact kinds surfaced by `flow ensure-artifact`. Variants are
+/// rendered by clap's default `value_enum` casing as kebab-case
+/// (`context`, `execution-record`, `review-ledger`, `optimise-findings`,
+/// `plan-review-findings`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ArtifactKind {
+    Context,
+    ExecutionRecord,
+    ReviewLedger,
+    OptimiseFindings,
+    PlanReviewFindings,
 }
 
 #[derive(Subcommand)]

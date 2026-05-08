@@ -23,6 +23,12 @@ clap = { version = "^4", default-features = false, features = [
     "usage",
 ] }
 anyhow = "^1"
+# Flow-tracking-overhaul plan T1: globset for plan-discovery glob matching
+# (`flow find-plans`); jiff for staleness arithmetic (`flow stale`,
+# `flow resolve --with-staleness`). Dependencies are added in T1 as part of
+# the structural skeleton; first consumer module lands in T3 (stale).
+globset = "^0.4"
+jiff = "^0.2"
 tempfile = "^3"
 # O56: mimalloc as the global allocator. tomlctl's hot paths are
 # small-allocation-heavy — TomlValue/JsonValue tree clones plus per-item

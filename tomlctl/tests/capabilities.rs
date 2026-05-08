@@ -1540,6 +1540,15 @@ fn capabilities_features_contains_every_plan_feature() {
         "backfill_dedup_id",      // T11
         "integrity_refresh",      // sidecar bootstrap / recovery primitive
         "agent_context",          // T6a: capabilities .commands flag schema
+        // Flow-tracking-overhaul plan: new flow / json subcommand cluster.
+        "flow_resolve",
+        "flow_active",
+        "flow_doctor",
+        "flow_init",
+        "flow_ensure_artifact",
+        "flow_stale",
+        "flow_find_plans",
+        "json_ops",
     ];
     for name in expected {
         assert!(
