@@ -1160,18 +1160,17 @@ pub(crate) fn array_append(
 /// inside the mutate closure rather than a pre-split plan).
 #[derive(Debug, Clone)]
 pub(crate) struct MutationPlan {
-    pub new_doc: TomlValue,
-    pub added: Vec<String>,
-    pub updated: Vec<String>,
-    pub removed: Vec<String>,
+    pub(crate) new_doc: TomlValue,
+    pub(crate) added: Vec<String>,
+    pub(crate) updated: Vec<String>,
+    pub(crate) removed: Vec<String>,
     /// Reserved for a future dedupe-aware apply path (T5's
     /// `items_add_many_with_dedupe` already populates a `Vec<SkippedRow>`
     /// today, but that lives on its own `AddManyOutcome`). Keeping the
     /// field here lets a later plan reuse the same `MutationPlan` shape
     /// without an API break. `compute_apply_mutation` /
     /// `compute_remove_mutation` leave it empty.
-    #[allow(dead_code)]
-    pub skipped: Vec<SkippedRow>,
+    pub(crate) skipped: Vec<SkippedRow>,
 }
 
 impl MutationPlan {
@@ -1179,7 +1178,7 @@ impl MutationPlan {
     /// `--dry-run` summary's `ids` field. First-appearance order within
     /// each category is preserved because the three vectors are built
     /// in input-order by `compute_apply_mutation`.
-    pub fn union_ids(&self) -> Vec<String> {
+    pub(crate) fn union_ids(&self) -> Vec<String> {
         let mut out =
             Vec::with_capacity(self.added.len() + self.updated.len() + self.removed.len());
         out.extend(self.added.iter().cloned());
@@ -1469,7 +1468,6 @@ pub(crate) fn items_add_many_with_dedupe(
 /// `apply_dedup_id_on_add` runs inside `items_add_value_to`, so the
 /// dry-run preview is byte-equivalent to a live add even when dedup_id
 /// auto-population fires — both paths observe the same env state.
-#[allow(dead_code)] // wired by the dispatch task that lands alongside T10b
 pub(crate) fn compute_add_mutation(
     doc: &TomlValue,
     array_name: &str,
@@ -1511,7 +1509,6 @@ pub(crate) fn compute_add_mutation(
 /// as an empty string, matching `compute_apply_mutation`'s convention.
 /// On the dedupe path, only rows that successfully appended contribute
 /// to `plan.added`; skipped rows surface in `plan.skipped` instead.
-#[allow(dead_code)] // wired by the dispatch task that lands alongside T10b
 pub(crate) fn compute_add_many_mutation(
     doc: &TomlValue,
     array_name: &str,
@@ -1599,7 +1596,6 @@ pub(crate) fn compute_add_many_mutation(
 /// `apply_dedup_id_on_update` runs inside `items_update_value_to`, so
 /// the dry-run preview is byte-equivalent to a live update even when
 /// the dedup_id-recompute branch fires.
-#[allow(dead_code)] // wired by the dispatch task that lands alongside T10b
 pub(crate) fn compute_update_mutation(
     doc: &TomlValue,
     array_name: &str,
@@ -1621,7 +1617,6 @@ pub(crate) fn compute_update_mutation(
 /// T10b: pure sibling of `array_append`. Thin forward to
 /// `compute_add_many_mutation` with no defaults and no dedupe — the
 /// `array-append` subcommand deliberately does not expose either.
-#[allow(dead_code)] // wired by the dispatch task that lands alongside T10b
 pub(crate) fn compute_array_append_mutation(
     doc: &TomlValue,
     array_name: &str,

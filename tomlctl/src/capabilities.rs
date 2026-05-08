@@ -34,7 +34,7 @@ const MUTEX_GROUPS: &[(&str, &[&[&str]])] = &[(
 /// `str`/`int`/`float`/`bool`/`date`/`datetime`.
 const ENUM_VALUES: &[(&str, &[&str])] = &[
     ("ty", &["str", "int", "float", "bool", "date", "datetime"]), // ScalarType (clap id is "ty" — see Cmd::Set)
-    ("tier", &["A", "B", "C"]),                                   // DupTier
+    ("tier", &["a", "b", "c"]),                                   // DupTier
     ("error_format", &["text", "json"]),                          // ErrorFormat
 ];
 
@@ -116,6 +116,9 @@ fn describe_flags(cmd: &Command) -> JsonValue {
 }
 
 fn infer_type(arg: &clap::Arg) -> &'static str {
+    // `Append` is treated as `"string"` because every Vec<_> repeatable in
+    // the current CLI is `Vec<String>`. A future Vec<PathBuf> / Vec<u64> flag
+    // would be misclassified — extend this match if that lands.
     match arg.get_action() {
         ArgAction::SetTrue | ArgAction::SetFalse => "bool",
         ArgAction::Count => "count",
@@ -191,10 +194,25 @@ fn describe_mutex_groups(cmd: &Command, sub_path: &str) -> JsonValue {
         })
         .collect();
 
-    // Then, append const-supplemented groups for this sub_path.
+    // Then, append const-supplemented groups for this sub_path that aren't
+    // already represented in clap's native get_groups() output.
+    let existing_sets: Vec<std::collections::HashSet<String>> = groups
+        .iter()
+        .filter_map(|g| g.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .collect();
     for (path, group_lists) in MUTEX_GROUPS {
         if *path == sub_path {
             for group in *group_lists {
+                let candidate: std::collections::HashSet<String> =
+                    group.iter().map(|n| n.to_string()).collect();
+                if existing_sets.contains(&candidate) {
+                    continue;
+                }
                 let names: Vec<_> = group
                     .iter()
                     .map(|n| JsonValue::String(n.to_string()))
@@ -270,5 +288,114 @@ mod tests {
             where_flag.get("repeatable").and_then(|v| v.as_bool()),
             Some(true)
         );
+    }
+
+    #[test]
+    fn infer_type_returns_string_for_repeatable_append() {
+        let cmd = <Cli as CommandFactory>::command();
+
+        fn walk<'a>(cmd: &'a Command, name: &str) -> Option<&'a Command> {
+            if cmd.get_name() == name {
+                return Some(cmd);
+            }
+            for sub in cmd.get_subcommands() {
+                if let Some(found) = walk(sub, name) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+
+        // `--where` on `items list` is a Vec<String> Append — its inferred
+        // type must be "string".
+        let items = walk(&cmd, "items").expect("items subcommand present");
+        let list = walk(items, "list").expect("items list present");
+        let where_arg = list
+            .get_arguments()
+            .find(|a| a.get_id().as_str() == "where_eq")
+            .expect("--where (id where_eq) flag present");
+        assert_eq!(infer_type(where_arg), "string");
+    }
+
+    #[test]
+    fn enum_values_match_value_enum_variants() {
+        use clap::ValueEnum;
+        use crate::cli::ErrorFormat;
+        use crate::convert::ScalarType;
+        use crate::dedup::DupTier;
+
+        fn variants_of<T: ValueEnum>() -> Vec<String> {
+            T::value_variants()
+                .iter()
+                .filter_map(|v| v.to_possible_value())
+                .map(|pv| pv.get_name().to_string())
+                .collect()
+        }
+
+        let scalar = variants_of::<ScalarType>();
+        let tier = variants_of::<DupTier>();
+        let fmt = variants_of::<ErrorFormat>();
+
+        for (name, vals) in ENUM_VALUES {
+            let actual: Vec<String> = match *name {
+                "ty" => scalar.clone(),
+                "tier" => tier.clone(),
+                "error_format" => fmt.clone(),
+                other => panic!(
+                    "ENUM_VALUES references unknown id `{other}` — add a branch to enum_values_match_value_enum_variants"
+                ),
+            };
+            let expected: Vec<String> = vals.iter().map(|s| s.to_string()).collect();
+            assert_eq!(
+                actual,
+                expected,
+                "ENUM_VALUES for `{name}` drifted from <T as ValueEnum>::value_variants(); update the const to match"
+            );
+        }
+    }
+
+    #[test]
+    fn mutex_groups_paths_match_real_subcommands() {
+        let cmd = <Cli as CommandFactory>::command();
+        let mut all_paths: Vec<String> = Vec::new();
+
+        fn walk(cmd: &Command, parent: &str, out: &mut Vec<String>) {
+            for sub in cmd.get_subcommands() {
+                let name = sub.get_name();
+                let full = if parent.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{parent} {name}")
+                };
+                out.push(full.clone());
+                walk(sub, &full, out);
+            }
+        }
+
+        walk(&cmd, "", &mut all_paths);
+
+        for (path, _) in MUTEX_GROUPS {
+            assert!(
+                all_paths.iter().any(|p| p == *path),
+                "MUTEX_GROUPS path `{path}` is not a real subcommand path; available paths: {all_paths:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_agent_context_emits_enum_typed_flag_with_values() {
+        let ctx = build_agent_context();
+        // `set` carries `--type` (ScalarType: str|int|float|bool|date|datetime).
+        let set = ctx.get("set").expect("set subcommand present");
+        let flags = set.get("flags").expect("set flags present");
+        let ty_flag = flags.get("--type").expect("--type flag present in set");
+        assert_eq!(ty_flag["type"], serde_json::json!("enum"));
+        let values = ty_flag["values"]
+            .as_array()
+            .expect("--type values array present");
+        let names: Vec<&str> = values.iter().filter_map(|v| v.as_str()).collect();
+        for v in &["str", "int", "float", "bool", "date", "datetime"] {
+            assert!(names.contains(v), "values missing variant `{v}`: {names:?}");
+        }
     }
 }

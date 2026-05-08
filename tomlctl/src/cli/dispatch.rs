@@ -271,6 +271,14 @@ fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
     }
 }
 
+fn dry_run_read_opts(integrity: &WriteIntegrityArgs) -> IntegrityOpts {
+    IntegrityOpts {
+        write_sidecar: false,
+        verify_on_read: integrity.verify_integrity,
+        strict: false,
+    }
+}
+
 /// R15: trivial field-copy adapter from the two clap-derive types
 /// (`LegacyShortcuts`, `QueryArgs`) into the POD `QueryInput` that
 /// `query.rs` owns. Lives here — on the cli side of the module boundary —
@@ -396,11 +404,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 // emitted via the scalar dry-run envelope. Mirrors the
                 // `ItemsOp::Apply` reference: never acquire the exclusive
                 // lock, never refresh the sidecar.
-                let read_opts = IntegrityOpts {
-                    write_sidecar: false,
-                    verify_on_read: integrity.verify_integrity,
-                    strict: false,
-                };
+                let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_set_mutation(doc, &path, &value, ty)
                 })?;
@@ -425,11 +429,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             // --json fails identically in dry-run and live mode).
             let parsed: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
             if dry_run {
-                let read_opts = IntegrityOpts {
-                    write_sidecar: false,
-                    verify_on_read: integrity.verify_integrity,
-                    strict: false,
-                };
+                let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_set_json_mutation(doc, &path, &parsed)
                 })?;
@@ -489,11 +489,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 parse_ndjson(&text)?
             };
             if dry_run {
-                let read_opts = IntegrityOpts {
-                    write_sidecar: false,
-                    verify_on_read: integrity.verify_integrity,
-                    strict: false,
-                };
+                let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_array_append_mutation(doc, &array, &rows)
                 })?;
@@ -618,11 +614,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // same `items_add_value_to` / `items_add_many_with_dedupe`
                 // funnels the live path uses, so validation surfaces and
                 // dedup_id auto-population are byte-identical.
-                let read_opts = IntegrityOpts {
-                    write_sidecar: false,
-                    verify_on_read: integrity.verify_integrity,
-                    strict: false,
-                };
+                let read_opts = dry_run_read_opts(&integrity);
                 let plan = if dedupe_fields.is_empty() {
                     let json_str = read_json_arg(&json)?;
                     read_doc(&file, read_opts, |doc| {
@@ -719,11 +711,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // helper the live dedupe path's compute-side mirrors, with
                 // `dedupe_fields` honoured (empty slice → `items_add_many`
                 // funnel inside the helper; non-empty → the dedupe funnel).
-                let read_opts = IntegrityOpts {
-                    write_sidecar: false,
-                    verify_on_read: integrity.verify_integrity,
-                    strict: false,
-                };
+                let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_add_many_mutation(doc, &array, &rows, defaults.as_ref(), &dedupe_fields)
                 })?;
@@ -794,11 +782,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // branches share the resolved string.
             let json = read_json_arg(&json)?;
             if dry_run {
-                let read_opts = IntegrityOpts {
-                    write_sidecar: false,
-                    verify_on_read: integrity.verify_integrity,
-                    strict: false,
-                };
+                let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_update_mutation(doc, &array, &id, &json, &unset)
                 })?;
@@ -820,11 +804,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // to `items_remove_from` on a cloned doc), so a missing
                 // id bails with the identical "no item with id = X"
                 // error a real remove would surface.
-                let read_opts = IntegrityOpts {
-                    write_sidecar: false,
-                    verify_on_read: integrity.verify_integrity,
-                    strict: false,
-                };
+                let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_remove_mutation(doc, &array, &id)
                 })?;
@@ -873,11 +853,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // validation gate — `--no-remove`, op-shape, missing id,
                 // dedup_id auto-populate — fires with a byte-identical
                 // error surface.
-                let read_opts = IntegrityOpts {
-                    write_sidecar: false,
-                    verify_on_read: integrity.verify_integrity,
-                    strict: false,
-                };
+                let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_apply_mutation(doc, &array, &ops, no_remove)
                 })?;
@@ -1052,11 +1028,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // to touch and writes byte-identical bytes — no data
             // corruption, just one redundant write. The common case
             // (genuine no-op) avoids the write altogether.
-            let read_opts = IntegrityOpts {
-                write_sidecar: false,
-                verify_on_read: integrity.verify_integrity,
-                strict: false,
-            };
+            let read_opts = dry_run_read_opts(&integrity);
             let preview = read_doc(&file, read_opts, |doc| {
                 compute_backfill_mutation(doc, &array)
             })?;

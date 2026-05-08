@@ -1,6 +1,6 @@
 ---
 name: tomlctl
-description: Read and write TOML files used by Claude Code flows — `.claude/flows/*/context.toml`, `review-ledger.toml`, `optimise-findings.toml`. The single blessed path for parsing, querying, and mutating these files. Works on Windows and Linux; outputs JSON for easy consumption.
+description: Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml — and their per-row [[items]] arrays. Verbs: read/parse/get, query/filter/list/count/group-by/pluck, write/set/set-json, append/array-append, items add/add-many/update/remove/apply/backfill-dedup-id, validate, integrity refresh/verify, dry-run preview, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux.
 ---
 
 # tomlctl
@@ -67,7 +67,7 @@ EOF
 ```bash
 # 6. Preview a scalar change without touching disk (dry-run on `set`)
 tomlctl set foo.toml status review --type str --dry-run
-# {"ok":true,"dry_run":true,"would_change":{"path":"status","old":"draft","new":"review"}}
+# {"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"status","old":"draft","new":"review"}}
 ```
 
 ## `--verify-integrity` support matrix
@@ -365,6 +365,12 @@ tomlctl set-json .claude/flows/auth/context.toml artifacts \
   --json '{"review_ledger":"x.toml","optimise_findings":"y.toml"}'
 ```
 
+```bash
+# Preview without touching disk
+tomlctl set-json .claude/flows/auth/context.toml scope --json '["src/auth/**"]' --dry-run
+# {"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"scope","old":[...],"new":["src/auth/**"]}}
+```
+
 ### Append a single new item
 
 `--json` takes one JSON object representing the new `[[items]]` entry. Field order in the JSON becomes field order in the emitted TOML, so pass fields in the canonical key order from `## Ledger Schema`:
@@ -388,6 +394,12 @@ tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{
 `dedup_id` is auto-populated by the write funnel if the payload doesn't set it — see [Dedup fingerprint contract](#dedup-fingerprint-contract). Rendered output (e.g. PROGRESS-LOG columns) is unaffected; the field only appears in the TOML.
 
 Date-shaped strings (`YYYY-MM-DD`) in the `DATE_KEYS` set (`created`, `updated`, `first_flagged`, `last_updated`, `resolved`, `date`) are automatically promoted to TOML date literals.
+
+```bash
+# Preview the add without touching disk
+tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{...}' --dry-run
+# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":0,"removed":0,"skipped":0,"ids":["O7"]}}
+```
 
 #### Pre-append dedup (`--dedupe-by`)
 
@@ -417,6 +429,12 @@ tomlctl items add-many .claude/flows/foo/review-ledger.toml \
 ```
 
 `--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed. `--dedupe-by <FIELDS>` works the same as on `items add`.
+
+```bash
+# Preview a batch append without touching disk
+tomlctl items add-many .claude/flows/foo/review-ledger.toml --ndjson .claude/flows/foo/_batch.ndjson --dry-run
+# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":N,"updated":0,"removed":0,"skipped":0,"ids":[...]}}
+```
 
 ### Patch an existing item
 
@@ -461,6 +479,12 @@ tomlctl items apply ledger.toml --ops '[
 ]'
 ```
 
+```bash
+# Preview a patch without touching disk
+tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json '{"status":"applied"}' --dry-run
+# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":0,"updated":1,"removed":0,"skipped":0,"ids":["R22"]}}
+```
+
 ### Remove an item
 
 Rare — IDs are never renumbered per spec — but occasionally needed for manual cleanup. Fails if the id does not exist.
@@ -470,7 +494,7 @@ tomlctl items remove .claude/flows/foo/review-ledger.toml R17
 
 # Preview with --dry-run — reports the computed mutation without touching disk
 tomlctl items remove .claude/flows/foo/review-ledger.toml R17 --dry-run
-# → {"ok":true,"dry_run":true,"would_change":{"added":0,"updated":0,"removed":1,"ids":["R17"]}}
+# → {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":0,"updated":0,"removed":1,"ids":["R17"]}}
 ```
 
 ### Batch multiple mixed item ops (`items apply`)
@@ -491,7 +515,7 @@ Preview with `--dry-run`:
 
 ```bash
 tomlctl items apply ledger.toml --ops '[...]' --dry-run
-# → {"ok":true,"dry_run":true,"would_change":{"added":1,"updated":1,"removed":1,"ids":["R17","R22","R24"]}}
+# → {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":1,"removed":1,"ids":["R17","R22","R24"]}}
 ```
 
 The dry-run path runs the same compute stage as the real path — mutation logic cannot drift between preview and apply.
@@ -541,6 +565,12 @@ tomlctl array-append <ledger> rollback_events \
 ```
 
 `items apply --array <name>` remains available for heterogeneous batches (add/update/remove on the same array in one parse+write). Use `array-append` when every op is an append.
+
+```bash
+# Preview an append without touching disk
+tomlctl array-append <ledger> rollback_events --json '{...}' --dry-run
+# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":0,"removed":0,"skipped":0,"ids":[]}}
+```
 
 ### Migrate legacy ledgers — `items backfill-dedup-id`
 

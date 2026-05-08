@@ -1498,6 +1498,7 @@ fn capabilities_output_parses_as_json() {
         obj.contains_key("subcommands"),
         "missing `subcommands` key: {v}"
     );
+    assert!(obj.contains_key("commands"), "capabilities output must include `commands` key (agent_context schema)");
 }
 
 /// T7-2: the `features` array advertises every T1..T11 feature the plan

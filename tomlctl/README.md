@@ -221,6 +221,8 @@ Stability contract:
 - `version` reads from `CARGO_PKG_VERSION` via `env!`, so `tomlctl/Cargo.toml`
   is the single source of truth.
 
+**`commands` key — best-effort introspection, not a stable contract.** The `version`, `features`, and `subcommands` top-level keys are stable across minor releases (additive only — new entries may appear, none are removed within a minor line). The `commands` key (added in 0.4.0, gated by the `agent_context` feature) is **best-effort runtime introspection** of the clap command tree. Its shape (`flags`, `mutex_groups`, nested `subcommands`) is intended to be additive across minor releases, but specific edge cases — particularly the `flags.<name>.type` mapping for repeatable / non-string Append flags — depend on clap-4 implementation details and may shift if clap evolves its `ArgAction` surface. Consumers MUST treat unknown `type` values as opaque strings rather than relying on a closed set of `{string, bool, enum, count}`. To audit the `commands` schema for a given release, run `tomlctl capabilities` against that binary directly rather than caching the shape across upgrades.
+
 Feature meanings:
 
 | Feature | What it enables |

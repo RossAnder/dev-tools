@@ -2965,4 +2965,134 @@ task_ref = "beta"
             "path-shape error must quote an example KEY=VAL; got: {err}"
         );
     }
+
+    // -- R15: typed-RHS parse-error rewrite contracts -------------------
+
+    /// R15: `@int:` with a non-integer RHS must surface an error that names
+    /// the type prefix, the offending input, and the enumeration hint.
+    #[test]
+    fn error_message_typed_rhs_int_enumerates_format() {
+        let doc = fixture();
+        let q = q_with(vec![Predicate::Where {
+            key: "rounds".into(),
+            rhs: "@int:not-a-number".into(),
+        }]);
+        let err = run(&doc, "items", &q).unwrap_err().to_string();
+        assert!(
+            err.contains("@int:"),
+            "error must reference the @int: prefix; got: {err}"
+        );
+        assert!(
+            err.contains("not-a-number"),
+            "error must include the offending input; got: {err}"
+        );
+        assert!(
+            err.contains("expected an integer"),
+            "error must enumerate the expected format; got: {err}"
+        );
+    }
+
+    /// R15: `@float:` with a non-float RHS must surface an error that names
+    /// the type prefix, the offending input, and the enumeration hint.
+    #[test]
+    fn error_message_typed_rhs_float_enumerates_format() {
+        let src = r#"
+[[items]]
+id = "F1"
+score = 1.5
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
+        let q = q_with(vec![Predicate::Where {
+            key: "score".into(),
+            rhs: "@float:not-a-float".into(),
+        }]);
+        let err = run(&doc, "items", &q).unwrap_err().to_string();
+        assert!(
+            err.contains("@float:"),
+            "error must reference the @float: prefix; got: {err}"
+        );
+        assert!(
+            err.contains("not-a-float"),
+            "error must include the offending input; got: {err}"
+        );
+        assert!(
+            err.contains("expected a finite float"),
+            "error must enumerate the expected format; got: {err}"
+        );
+    }
+
+    /// R15: `@bool:` with a non-boolean RHS must surface an error that names
+    /// the type prefix, the offending input, and the enumeration hint.
+    #[test]
+    fn error_message_typed_rhs_bool_enumerates_format() {
+        let doc = fixture();
+        let q = q_with(vec![Predicate::Where {
+            key: "active".into(),
+            rhs: "@bool:not-a-bool".into(),
+        }]);
+        let err = run(&doc, "items", &q).unwrap_err().to_string();
+        assert!(
+            err.contains("@bool:"),
+            "error must reference the @bool: prefix; got: {err}"
+        );
+        assert!(
+            err.contains("not-a-bool"),
+            "error must include the offending input; got: {err}"
+        );
+        assert!(
+            err.contains("expected `true` or `false`"),
+            "error must enumerate the expected format; got: {err}"
+        );
+    }
+
+    /// R15: `@date:` with an unparseable RHS must surface an error that names
+    /// the type prefix, the offending input, and the enumeration hint.
+    #[test]
+    fn error_message_typed_rhs_date_enumerates_format() {
+        let doc = fixture();
+        let q = q_with(vec![Predicate::Where {
+            key: "first_flagged".into(),
+            rhs: "@date:not-a-date".into(),
+        }]);
+        let err = run(&doc, "items", &q).unwrap_err().to_string();
+        assert!(
+            err.contains("@date:"),
+            "error must reference the @date: prefix; got: {err}"
+        );
+        assert!(
+            err.contains("not-a-date"),
+            "error must include the offending input; got: {err}"
+        );
+        assert!(
+            err.contains("expected ISO-8601"),
+            "error must enumerate the expected format; got: {err}"
+        );
+    }
+
+    /// R15: `@str:` used in an ordered comparison against a non-string field
+    /// must surface an error that names the type prefix, the offending input,
+    /// and the enumeration hint.
+    #[test]
+    fn error_message_typed_rhs_string_enumerates_format() {
+        let doc = fixture();
+        // `rounds` is an integer field; @str: in an ordered comparison against
+        // it triggers the type-mismatch rewrite in `cmp_pred`.
+        let q = q_with(vec![Predicate::WhereGt {
+            key: "rounds".into(),
+            rhs: "@str:foo".into(),
+        }]);
+        let err = run(&doc, "items", &q).unwrap_err().to_string();
+        assert!(
+            err.contains("@str:") || err.contains("@string:"),
+            "error must reference the @str:/@string: prefix; got: {err}"
+        );
+        assert!(
+            err.contains("foo"),
+            "error must include the offending input; got: {err}"
+        );
+        assert!(
+            err.contains("requires a string field"),
+            "error must enumerate the type requirement; got: {err}"
+        );
+    }
 }

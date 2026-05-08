@@ -29,21 +29,32 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
 /// `items apply --dry-run`. Output shape is a single compact JSON line:
 ///
 /// ```text
-/// {"ok":true,"dry_run":true,"would_change":{"added":N,"updated":N,"removed":N,"ids":[...]}}
+/// {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":N,"updated":N,"removed":N,"skipped":N,"ids":[...]}}
 /// ```
 ///
 /// `ids` is the concatenation `[...added, ...updated, ...removed]` in
 /// that order, matching `MutationPlan::union_ids`. `N` values are plain
 /// integer counts (not arrays) so the output stays stable and terse
-/// across both dispatch arms.
+/// across both dispatch arms. `skipped` surfaces the dedupe-skipped row
+/// count from `MutationPlan.skipped`.
+///
+/// R10: the `kind` discriminator — placed first inside `would_change` —
+/// lets consumers branch on `would_change.kind` rather than on which
+/// subcommand they invoked. Items-shape envelopes carry `kind:"items"`;
+/// scalar-shape envelopes (built by `build_dry_run_scalar_envelope`)
+/// carry `kind:"scalar"`. The discriminator was added alongside the
+/// existing keys (additive, no version bump): existing consumers reading
+/// `added`/`updated`/`removed`/`skipped`/`ids` continue to work.
 pub(crate) fn emit_dry_run_plan(plan: &MutationPlan) -> Result<()> {
     let summary = serde_json::json!({
         "ok": true,
         "dry_run": true,
         "would_change": {
+            "kind": "items",
             "added": plan.added.len(),
             "updated": plan.updated.len(),
             "removed": plan.removed.len(),
+            "skipped": plan.skipped.len(),
             "ids": plan.union_ids(),
         },
     });
@@ -118,15 +129,24 @@ pub(crate) fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
 /// envelope shape is testable without capturing stdout. The shape is:
 ///
 /// ```json
-/// {"ok":true,"dry_run":true,"would_change":{"path":"<p>","old":<json|null>,"new":<json>}}
+/// {"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"<p>","old":<json|null>,"new":<json>}}
 /// ```
 ///
 /// `old_value: None` (auto-vivify case) renders as `"old": null`.
+///
+/// R10: the `kind` discriminator — placed first inside `would_change` —
+/// lets consumers branch on `would_change.kind` rather than on which
+/// subcommand they invoked. Scalar-shape envelopes carry `kind:"scalar"`;
+/// items-shape envelopes (built by `emit_dry_run_plan`) carry
+/// `kind:"items"`. The discriminator was added alongside the existing
+/// keys (additive, no version bump): existing consumers reading
+/// `path`/`old`/`new` continue to work.
 pub(crate) fn build_dry_run_scalar_envelope(plan: &ScalarMutationPlan) -> JsonValue {
     serde_json::json!({
         "ok": true,
         "dry_run": true,
         "would_change": {
+            "kind": "scalar",
             "path": plan.path,
             "old": plan.old_value.clone().unwrap_or(JsonValue::Null),
             "new": plan.new_value,
@@ -158,11 +178,15 @@ mod tests {
         // Compact-serialised form must match the documented envelope byte
         // for byte. `serde_json` is built with `preserve_order` (Cargo.toml),
         // so insertion order in the `json!` macro is the on-wire order.
+        // R10: `kind` is the first field inside `would_change`.
         let s = serde_json::to_string(&env).unwrap();
         assert_eq!(
             s,
-            r#"{"ok":true,"dry_run":true,"would_change":{"path":"foo.bar","old":"old","new":"new"}}"#
+            r#"{"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"foo.bar","old":"old","new":"new"}}"#
         );
+        // Pin the discriminator independent of byte-for-byte order, so a
+        // future cosmetic key reorder still leaves the contract intact.
+        assert_eq!(env["would_change"]["kind"], serde_json::json!("scalar"));
     }
 
     #[test]
@@ -176,7 +200,8 @@ mod tests {
         let s = serde_json::to_string(&env).unwrap();
         assert_eq!(
             s,
-            r#"{"ok":true,"dry_run":true,"would_change":{"path":"foo.absent","old":null,"new":42}}"#
+            r#"{"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"foo.absent","old":null,"new":42}}"#
         );
+        assert_eq!(env["would_change"]["kind"], serde_json::json!("scalar"));
     }
 }
