@@ -32,7 +32,12 @@ The highest-frequency patterns. Deeper treatment in the linked sections.
 | Write value via json subcommand | `tomlctl json set <file> <path> --json <value>` |
 | Delete a key at path | `tomlctl json unset <file> <path>` |
 | Manage active-flow registry | `tomlctl flow active list\|add\|remove\|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...` |
+| Run flow invariant checks (optionally auto-fix) | `tomlctl flow doctor [--slug <s>] [--fix]` |
+| Report (or bootstrap) flow artifact + sidecar status | `tomlctl flow ensure-artifact --slug <s> --kind <k> [--bootstrap]` |
 | Locate plan files | `tomlctl flow find-plans [--dirs <d>...] [--strict-read]` |
+| Seed a new flow (context.toml + execution-record.toml + active entry) | `tomlctl flow init --slug <s> --plan <path> [--branch <b>] [--scope <glob>]...` |
+| Enumerate flows under .claude/flows/ | `tomlctl flow list [--status <s>] [--branch <b>] [--active-only]` |
+| Resolve the active flow (5-step algorithm, emits artifacts + scope) | `tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]` |
 | Check whether a flow is stale | `tomlctl flow stale --slug <s> [--threshold <duration>]` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` ([see sidecar files](#sidecar-files)) |
 

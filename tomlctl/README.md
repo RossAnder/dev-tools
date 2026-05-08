@@ -39,7 +39,12 @@ tomlctl items orphans  <file>                          # missing-file / symbol-m
 tomlctl array-append   <file> <array> --json '{...}'                # append one record
 tomlctl array-append   <file> <array> --ndjson -                    # batched append to e.g. rollback_events
 tomlctl flow active list|add|remove|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...  # manage active-flow registry
+tomlctl flow doctor [--slug <s>] [--fix]                            # invariant checks across flows; --fix regenerates sidecars / prunes stale registry entries
+tomlctl flow ensure-artifact --slug <s> --kind <k> [--bootstrap]    # report (or bootstrap execution-record) flow artifact + sidecar status
 tomlctl flow find-plans [--dirs <d>...] [--strict-read]             # locate plan files under given dirs
+tomlctl flow init --slug <s> --plan <path> [--branch <b>] [--scope <glob>]...   # seed context.toml + execution-record.toml + active-flow entry (idempotent)
+tomlctl flow list [--status <s>] [--branch <b>] [--active-only]     # enumerate flows under .claude/flows/
+tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]  # 5-step flow resolution; emits {resolved, slug, source, artifacts, ...}
 tomlctl flow stale --slug <s> [--threshold <duration>]              # check whether a flow is stale
 tomlctl blocks verify  <file>... [--block <marker-name>]...  # cross-file shared-block parity
 
