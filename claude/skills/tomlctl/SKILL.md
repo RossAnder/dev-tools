@@ -9,6 +9,10 @@ description: Read, write, query, batch-edit, and validate TOML files used by Cla
 
 A small Rust CLI that reads and writes the TOML files used by the `/plan-new`, `/implement`, `/plan-update`, `/review`, `/optimise`, `/review-apply`, and `/optimise-apply` commands.
 
+## When to use this skill
+
+Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, the review / optimise ledgers, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — prefer in-tool primitives (`--raw` / `--lines` / `--count-distinct` / `--count`) over piping through `jq -r .count` / `jq -r '.[]'` / `| sort -u | wc -l`.
+
 ## Quick Reference
 
 The highest-frequency patterns. Deeper treatment in the linked sections.
@@ -68,6 +72,8 @@ EOF
 # 6. Preview a scalar change without touching disk (dry-run on `set`)
 tomlctl set foo.toml status review --type str --dry-run
 # {"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"status","old":"draft","new":"review"}}
+# Note: if the target path is an absolute path outside .claude/ (e.g. /tmp/scratch.toml),
+# you must also pass --allow-outside.
 ```
 
 ## `--verify-integrity` support matrix
@@ -87,10 +93,6 @@ tomlctl set foo.toml status review --type str --dry-run
 
 `tomlctl blocks verify` intentionally does NOT accept `--verify-integrity` (it operates on markdown with no sidecar pair).
 
-## When to use this skill
-
-Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, the review / optimise ledgers, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — prefer in-tool primitives (`--raw` / `--lines` / `--count-distinct` / `--count`) over piping through `jq -r .count` / `jq -r '.[]'` / `| sort -u | wc -l`.
-
 ## Install
 
 One-time, per machine:
@@ -108,7 +110,14 @@ tomlctl --version
 
 ## Feature-gate with `tomlctl capabilities`
 
-`tomlctl capabilities` emits a stable JSON document (`{"version":"…","features":[…],"subcommands":[…]}`) so downstream templates can feature-gate at boot without parsing `--help` prose. Features are stable within a minor release; new flags add new feature entries rather than being version-qualified. Run the command itself for the authoritative list; representative entries:
+`tomlctl capabilities` emits a stable JSON document (`{"version":"…","features":[…],"subcommands":[…]}`) so downstream templates can feature-gate at boot without parsing `--help` prose. Features are stable within a minor release; new flags add new feature entries rather than being version-qualified. Example invocation (truncated):
+
+```bash
+tomlctl capabilities
+# {"version":"0.4.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
+```
+
+Representative entries:
 
 | Feature | What it enables |
 |---|---|
@@ -119,16 +128,16 @@ tomlctl --version
 | `error_format_json` | `--error-format json` + `ErrorKind` taxonomy |
 | `strict_read` / `dry_run` | `--strict-read` on reads / `--dry-run` on all 9 write subcommands (`set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`) |
 | `backfill_dedup_id` / `integrity_refresh` | legacy upgrade + sidecar regen |
-| `agent_context` | `tomlctl capabilities .commands` emits a per-subcommand flag schema (type/required/default/values/repeatable + mutex_groups) for runtime introspection without parsing --help prose. |
+| `agent_context` | `tomlctl capabilities` (the `.commands` field of the JSON output) emits a per-subcommand flag schema (type/required/default/values/repeatable + mutex_groups) for runtime introspection without parsing --help prose. |
 
-### Agent-context schema (`tomlctl capabilities .commands`)
+### Agent-context schema (`tomlctl capabilities` — `.commands` field)
 
 When `features` includes `agent_context`, the capabilities document also carries a `commands` key — a per-subcommand JSON tree that lets agents drive flag assembly programmatically instead of regex-matching `--help` text.
 
 Shape: `commands.<subcommand>` (recursively for nested subcommands like `items.subcommands.list`) carries:
 
 - `flags` — map of flag-name → entry. Each entry has `type` (`string` / `bool` / `enum`), `required` (bool), `repeatable` (bool), and optional `default` and `values` (allowed enum variants). Positional arguments appear with their angle-bracketed display name (e.g. `<file>`).
-- `mutex_groups` — list of clap `ArgGroup` mutex sets; an agent can refuse a combination locally without round-tripping through the binary.
+- `mutex_groups` — list of clap `ArgGroup` mutex sets; an agent can refuse a combination locally without round-tripping through the binary. Note: mutex groups are assembled from two sources — clap's generated `ArgGroup` declarations AND a supplementary `MUTEX_GROUPS` const in `capabilities.rs`. If you extend the CLI, update both; omitting the const supplement will produce incomplete mutex data in the capabilities output.
 - `subcommands` — present only when the command has nested subcommands (e.g. `items`, `blocks`, `integrity`).
 
 Feature-gate on its presence before driving flags from the schema:
@@ -516,6 +525,7 @@ Preview with `--dry-run`:
 ```bash
 tomlctl items apply ledger.toml --ops '[...]' --dry-run
 # → {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":1,"removed":1,"ids":["R17","R22","R24"]}}
+# Note: `ids` is the union of all affected ids (added + updated + removed combined).
 ```
 
 The dry-run path runs the same compute stage as the real path — mutation logic cannot drift between preview and apply.
@@ -728,7 +738,17 @@ tomlctl items list ledger.toml --where status=open --verify-integrity
 
 ## Permissions
 
-`Bash(tomlctl *)` is pre-approved in the project's `.claude/settings.json`. `Bash(tomlctl --allow-outside *)` is explicitly denied at the same layer, so any invocation passing `--allow-outside` falls through to an interactive permission prompt. Agents should never emit `--allow-outside` unattended — the write-path containment guard is default-on for a reason.
+`Bash(tomlctl *)` is pre-approved in the project's `.claude/settings.json`. Any invocation passing `--allow-outside` is explicitly denied by three deny rules in that same file and falls through to an interactive permission prompt:
+
+```json
+"deny": [
+  "Bash(tomlctl --allow-outside *)",
+  "Bash(tomlctl * --allow-outside)",
+  "Bash(tomlctl * --allow-outside *)"
+]
+```
+
+Agents should never emit `--allow-outside` unattended — the write-path containment guard is default-on for a reason.
 
 ## Advanced / maintenance
 

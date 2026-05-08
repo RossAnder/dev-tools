@@ -55,7 +55,16 @@ fn walk_commands(cmd: &Command, parent_path: &str, out: &mut Map<String, JsonVal
         };
 
         let mut node = Map::new();
-        node.insert("flags".to_string(), describe_flags(sub));
+        // R25: container subcommands (items / blocks / integrity) carry no
+        // leaf flags of their own — emitting `flags: {}` made every agent
+        // walking the tree pre-check for emptiness before reading. Suppress
+        // the key entirely when there are no flags so consumers can rely on
+        // `flags` being present iff non-empty. Leaves (set / get / list /
+        // capabilities / …) still emit a populated `flags` map.
+        let flags = describe_flags(sub);
+        if flags.as_object().map_or(false, |m| !m.is_empty()) {
+            node.insert("flags".to_string(), flags);
+        }
         node.insert(
             "mutex_groups".to_string(),
             describe_mutex_groups(sub, &sub_path),

@@ -25,8 +25,11 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
     Ok(())
 }
 
-/// T10: emit the `--dry-run` summary for `items remove --dry-run` and
-/// `items apply --dry-run`. Output shape is a single compact JSON line:
+/// T10: build the `--dry-run` JSON envelope for `items remove --dry-run`
+/// and `items apply --dry-run`. Extracted from `emit_dry_run_plan` so the
+/// envelope shape is testable without capturing stdout, mirroring the
+/// scalar-side `build_dry_run_scalar_envelope` split (R29). The shape is
+/// a single compact JSON object:
 ///
 /// ```text
 /// {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":N,"updated":N,"removed":N,"skipped":N,"ids":[...]}}
@@ -45,8 +48,8 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
 /// carry `kind:"scalar"`. The discriminator was added alongside the
 /// existing keys (additive, no version bump): existing consumers reading
 /// `added`/`updated`/`removed`/`skipped`/`ids` continue to work.
-pub(crate) fn emit_dry_run_plan(plan: &MutationPlan) -> Result<()> {
-    let summary = serde_json::json!({
+pub(crate) fn build_dry_run_plan_envelope(plan: &MutationPlan) -> JsonValue {
+    serde_json::json!({
         "ok": true,
         "dry_run": true,
         "would_change": {
@@ -57,8 +60,17 @@ pub(crate) fn emit_dry_run_plan(plan: &MutationPlan) -> Result<()> {
             "skipped": plan.skipped.len(),
             "ids": plan.union_ids(),
         },
-    });
-    print_json_compact(&summary)
+    })
+}
+
+/// T10: emit the `--dry-run` summary for `items remove --dry-run` and
+/// `items apply --dry-run`. Thin I/O wrapper over
+/// `build_dry_run_plan_envelope`; companion to `emit_dry_run_scalar`.
+/// Both dry-run dispatch arms funnel through `print_json_compact` so the
+/// compact-line format is byte-stable across every dry-run emitter.
+pub(crate) fn emit_dry_run_plan(plan: &MutationPlan) -> Result<()> {
+    let envelope = build_dry_run_plan_envelope(plan);
+    print_json_compact(&envelope)
 }
 
 /// Compact single-line sibling of `print_json`, used for the `{"ok":true,...}`
@@ -203,5 +215,32 @@ mod tests {
             r#"{"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"foo.absent","old":null,"new":42}}"#
         );
         assert_eq!(env["would_change"]["kind"], serde_json::json!("scalar"));
+    }
+
+    /// R29: shape test for the items-side dry-run envelope, mirroring the
+    /// scalar-side test above. Pins the on-wire byte order (insertion
+    /// order is preserved by serde_json's `preserve_order` feature in
+    /// Cargo.toml) and the `kind:"items"` discriminator.
+    #[test]
+    fn build_dry_run_plan_envelope_shape() {
+        let plan = MutationPlan {
+            // The envelope builder reads only `added`/`updated`/`removed`/
+            // `skipped`/`union_ids()`; `new_doc` content is irrelevant to
+            // this shape test, so any cheap `toml::Value` constructs it.
+            new_doc: toml::Value::Integer(0),
+            added: vec!["A1".to_string()],
+            updated: vec!["U1".to_string(), "U2".to_string()],
+            removed: vec!["R1".to_string()],
+            skipped: vec![],
+        };
+        let env = build_dry_run_plan_envelope(&plan);
+        let s = serde_json::to_string(&env).unwrap();
+        assert_eq!(
+            s,
+            r#"{"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":2,"removed":1,"skipped":0,"ids":["A1","U1","U2","R1"]}}"#
+        );
+        // Pin the discriminator independent of byte-for-byte order, so a
+        // future cosmetic key reorder still leaves the contract intact.
+        assert_eq!(env["would_change"]["kind"], serde_json::json!("items"));
     }
 }

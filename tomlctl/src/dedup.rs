@@ -169,6 +169,13 @@ fn promote_source_tag(mut group: JsonValue) -> JsonValue {
 /// **Field order is load-bearing.** Do not reorder or rename without also
 /// editing `FINGERPRINTED_FIELDS` and bumping every ledger's `dedup_id`
 /// (Task 11's `backfill-dedup-id` is the canonical rebuild path).
+/// R46: TomlValue-wrapping form retained for the cross-tier test harness
+/// that asserts byte-equivalence between this helper, its `_table`
+/// sibling, and `tier_b_fingerprint_json`. Production callers go through
+/// `tier_b_fingerprint_table` (which avoids the per-call clone for the
+/// `&Table` they already hold) or `tier_b_fingerprint_json` (which feeds
+/// the JSON write-funnel without the TomlValue intermediate).
+#[cfg(test)]
 pub(crate) fn tier_b_fingerprint(item: &TomlValue) -> String {
     let Some(tbl) = item.as_table() else {
         // Non-table items can't participate in tier-B grouping; return the
@@ -179,6 +186,18 @@ pub(crate) fn tier_b_fingerprint(item: &TomlValue) -> String {
         // rejects before this helper runs.
         return fingerprint_from_strs("", "", "", "", "");
     };
+    tier_b_fingerprint_table(tbl)
+}
+
+/// R46: borrow-friendly sibling of `tier_b_fingerprint` for callers that
+/// already have a `&toml::Table` in hand. The previous shape — wrapping
+/// `&Table` in `TomlValue::Table(tbl.clone())` to feed `tier_b_fingerprint`
+/// — cloned the whole item table once per backfilled row purely to
+/// satisfy the public signature. The backfill helper at items.rs walks
+/// every item in the array, so this clone scaled per-row × per-field;
+/// taking the table by reference here drops it entirely while preserving
+/// the byte-identical digest.
+pub(crate) fn tier_b_fingerprint_table(tbl: &toml::Table) -> String {
     fingerprint_from_strs(
         str_field(tbl, "file"),
         str_field(tbl, "summary"),

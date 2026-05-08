@@ -1016,12 +1016,19 @@ fn items_add_dry_run_with_strict_read_against_missing_file_errors() {
         .arg("--dry-run")
         .write_stdin("")
         .assert()
-        .failure();
+        .failure()
+        // R26: pin clap usage-error exit code 2 explicitly. The previous
+        // `.failure()`-only check accepted any non-zero status, so a
+        // regression that errored with code 1 (runtime error) for an
+        // unrelated reason would have silently passed the OR-predicate
+        // on stderr. Code 2 is clap's parse-rejection signal.
+        .code(2);
 
     // `--strict-read` is not on `items add`'s WriteIntegrityArgs, so clap
     // rejects with "unexpected argument" at parse time. The exit code is
-    // 2 (clap usage error) rather than 1 (runtime error) — assert the
-    // structural rejection without pinning the exact prose.
+    // pinned at 2 (clap usage error) above; the stderr predicate below
+    // tightens the structural rejection by requiring clap to surface the
+    // offending flag name OR the canonical "unexpected argument" prose.
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
         stderr.contains("--strict-read") || stderr.contains("unexpected argument"),

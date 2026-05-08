@@ -399,6 +399,13 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             integrity,
         } => {
             if dry_run {
+                // R22: a caller passing `tomlctl set --dry-run /etc/passwd`
+                // would otherwise silently parse the file as TOML and
+                // surface its parsed contents in the dry-run plan.
+                // Advisory warn (matches the cross-ledger FindDuplicates
+                // path); the actual containment refusal lives on the write
+                // side via `guard_write_path`.
+                warn_if_read_outside_claude(&file);
                 // T6b: dry-run path — read-only compute via the same
                 // `compute_set_mutation` the live writer would invoke,
                 // emitted via the scalar dry-run envelope. Mirrors the
@@ -429,6 +436,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             // --json fails identically in dry-run and live mode).
             let parsed: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
             if dry_run {
+                // R22: see `Cmd::Set` dry-run for the rationale on this
+                // advisory warn. Same threat shape: a caller passing
+                // `--dry-run /etc/passwd` to set-json would otherwise
+                // silently parse the file as TOML and echo it back in the
+                // plan envelope.
+                warn_if_read_outside_claude(&file);
                 let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_set_json_mutation(doc, &path, &parsed)
@@ -489,6 +502,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 parse_ndjson(&text)?
             };
             if dry_run {
+                // R22: advisory warn for dry-run reads outside `.claude/`.
+                // Same threat shape as the other dry-run arms — a caller
+                // pointing `array-append --dry-run` at an arbitrary file
+                // would otherwise leak the parsed TOML through the plan
+                // envelope.
+                warn_if_read_outside_claude(&file);
                 let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_array_append_mutation(doc, &array, &rows)
@@ -607,22 +626,35 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let opts = write_integrity_opts(&integrity);
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
             if dry_run {
+                // R22: a caller passing `tomlctl items add --dry-run
+                // /etc/passwd` would otherwise silently parse the file as
+                // TOML and surface its parsed contents in the dry-run plan.
+                // Advisory warn (matches the cross-ledger FindDuplicates
+                // path); the actual containment refusal lives on the write
+                // side via `guard_write_path`.
+                warn_if_read_outside_claude(&file);
                 // T6b: dry-run path mirrors the live arm's two-branch
-                // structure — `compute_add_mutation` (string JSON in) for
-                // the no-dedupe case, `compute_add_many_mutation` with a
-                // single-row vec for the dedupe case. Both go through the
-                // same `items_add_value_to` / `items_add_many_with_dedupe`
+                // structure — `compute_add_mutation` for the no-dedupe
+                // case, `compute_add_many_mutation` with a single-row vec
+                // for the dedupe case. Both go through the same
+                // `items_add_value_to` / `items_add_many_with_dedupe`
                 // funnels the live path uses, so validation surfaces and
                 // dedup_id auto-population are byte-identical.
+                //
+                // R47: parse `--json` once at the top so both branches
+                // share the parse semantics (and stdin cost) — the prior
+                // shape diverged here (`read_json_arg` String for no-dedupe
+                // vs `read_json_value_from_arg` JsonValue for dedupe), which
+                // made the per-branch stdin behaviour and `parsing --json`
+                // error site asymmetric.
+                let patch: JsonValue =
+                    read_json_value_from_arg(&json).context("parsing --json")?;
                 let read_opts = dry_run_read_opts(&integrity);
                 let plan = if dedupe_fields.is_empty() {
-                    let json_str = read_json_arg(&json)?;
                     read_doc(&file, read_opts, |doc| {
-                        compute_add_mutation(doc, &array, &json_str)
+                        compute_add_mutation(doc, &array, &patch)
                     })?
                 } else {
-                    let patch: JsonValue =
-                        read_json_value_from_arg(&json).context("parsing --json")?;
                     let rows = vec![patch];
                     read_doc(&file, read_opts, |doc| {
                         compute_add_many_mutation(doc, &array, &rows, None, &dedupe_fields)
@@ -707,6 +739,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 None => None,
             };
             if dry_run {
+                // R22: advisory warn for dry-run reads outside `.claude/`.
+                // Same threat shape as the other dry-run arms — a caller
+                // pointing `items add-many --dry-run` at an arbitrary file
+                // would otherwise leak the parsed TOML through the plan
+                // envelope.
+                warn_if_read_outside_claude(&file);
                 // T6b: dry-run flows through the same `compute_add_many_mutation`
                 // helper the live dedupe path's compute-side mirrors, with
                 // `dedupe_fields` honoured (empty slice → `items_add_many`
@@ -782,6 +820,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // branches share the resolved string.
             let json = read_json_arg(&json)?;
             if dry_run {
+                // R22: advisory warn for dry-run reads outside `.claude/`.
+                // Same threat shape as the other dry-run arms — a caller
+                // pointing `items update --dry-run` at an arbitrary file
+                // would otherwise leak the parsed TOML through the plan
+                // envelope.
+                warn_if_read_outside_claude(&file);
                 let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
                     compute_update_mutation(doc, &array, &id, &json, &unset)
@@ -797,6 +841,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         ItemsOp::Remove { file, id, array, dry_run, integrity } => {
             let opts = write_integrity_opts(&integrity);
             if dry_run {
+                // R22: advisory warn for dry-run reads outside `.claude/`.
+                // Same threat shape as the other dry-run arms — a caller
+                // pointing `items remove --dry-run` at an arbitrary file
+                // would otherwise leak the parsed TOML through the plan
+                // envelope.
+                warn_if_read_outside_claude(&file);
                 // T10: dry-run path — compute the plan on a locally-read
                 // doc (no exclusive lock) and emit the would_change
                 // summary. The compute phase runs the same validation
@@ -823,19 +873,28 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         }
         ItemsOp::Apply { file, ops, array, no_remove, dry_run, integrity } => {
             let opts = write_integrity_opts(&integrity);
-            let ops = read_json_arg(&ops)?;
+            // R45: parse `--ops` ONCE at the CLI boundary and thread the
+            // parsed `JsonValue` through both the `MAX_OPS_PER_APPLY` length
+            // check and `compute_apply_mutation`. Previously this arm parsed
+            // twice (here for the count cap, again inside
+            // `compute_apply_mutation` → `items_apply_to_opts`), which
+            // doubles the JSON parse cost on every Apply invocation
+            // (proportional to ops payload size). The post-O35
+            // `read_json_value_from_arg` helper already encapsulates the
+            // stdin / TTY / `MAX_STDIN_BYTES` discipline that `read_json_arg`
+            // does; we use it so the parse semantics stay identical.
+            let parsed_ops: JsonValue =
+                read_json_value_from_arg(&ops).context("parsing --ops")?;
             // R44: bound the ops count at the CLI boundary. `MAX_STDIN_BYTES`
             // only caps the raw payload size; a 32 MiB JSON array of minimal
             // `{"op":"update","id":"Rx"}` records can still hold tens of
             // thousands of ops, which `items_apply_to_opts` iterates serially.
-            // Check length here (before locking + parsing inside the mutator)
-            // so an over-large payload fails fast with a directed message,
-            // and the user-visible error predates any disk mutation.
+            // Check length here (before locking + the mutator runs) so an
+            // over-large payload fails fast with a directed message, and the
+            // user-visible error predates any disk mutation.
             // T10: the check also gates `--dry-run`, so an over-large preview
             // refuses with the same message a real run would emit.
-            let parsed_for_count: JsonValue =
-                serde_json::from_str(&ops).context("parsing --ops")?;
-            if let JsonValue::Array(arr) = &parsed_for_count
+            if let JsonValue::Array(arr) = &parsed_ops
                 && arr.len() > MAX_OPS_PER_APPLY
             {
                 bail!(
@@ -847,20 +906,27 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 );
             }
             if dry_run {
+                // R22: a caller passing `tomlctl items apply --dry-run
+                // /etc/passwd` would otherwise silently parse the file as
+                // TOML and surface its parsed contents in the dry-run plan.
+                // Advisory warn (matches the cross-ledger FindDuplicates
+                // path); the actual containment refusal lives on the write
+                // side via `guard_write_path`.
+                warn_if_read_outside_claude(&file);
                 // T10: same compute phase as the live path, but we stop
                 // before the I/O stage. `compute_apply_mutation` runs
-                // `items_apply_to_opts` on a cloned doc, so every
+                // `items_apply_parsed_to_opts` on a cloned doc, so every
                 // validation gate — `--no-remove`, op-shape, missing id,
                 // dedup_id auto-populate — fires with a byte-identical
                 // error surface.
                 let read_opts = dry_run_read_opts(&integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
-                    compute_apply_mutation(doc, &array, &ops, no_remove)
+                    compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
                 })?;
                 emit_dry_run_plan(&plan)?;
             } else {
                 mutate_doc_plan(&file, integrity.allow_outside, opts, |doc| {
-                    compute_apply_mutation(doc, &array, &ops, no_remove)
+                    compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
                 })?;
                 print_json_compact(&serde_json::json!({"ok": true}))?;
             }

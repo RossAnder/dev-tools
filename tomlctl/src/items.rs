@@ -14,9 +14,11 @@ use std::collections::HashMap;
 use toml::Value as TomlValue;
 
 use crate::convert::{json_type_name, maybe_date_coerce, str_field, toml_to_json, walk_json_path};
-use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint, tier_b_fingerprint_json};
+use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint_json, tier_b_fingerprint_table};
+#[cfg(test)]
+use crate::dedup::tier_b_fingerprint;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{item_id, items_array, items_array_mut};
+use crate::io::{capture_row_id, item_id, item_id_json, items_array, items_array_mut};
 
 /// T6b: env-var kill switch for every `dedup_id` auto-populate path. Any
 /// value (even empty) disables the hook; the user opts out by simply
@@ -525,14 +527,22 @@ pub(crate) fn items_apply_to(
 /// op flows by ownership into `apply_single_op`, eliminating per-op patch
 /// clones the previous `arr.iter()` path forced.
 ///
-/// O18: for batches with `> ID_INDEX_BUILD_THRESHOLD` `update` ops we build
-/// an `id → array_index` `HashMap` once and use it for O(1) lookups in
+/// R45: string-parsing wrapper retained for tests that exercise the live
+/// mutator from a JSON literal. Production dispatch goes through
+/// `compute_apply_mutation` → `items_apply_parsed_to_opts` so the parse
+/// happens once at the CLI boundary; this wrapper is kept for the
+/// internal test surface only.
+///
+/// O18: for batches with `> ID_INDEX_BUILD_THRESHOLD` `update` ops the
+/// post-parse path (`items_apply_parsed_to_opts`) builds an
+/// `id → array_index` `HashMap` once and uses it for O(1) lookups in
 /// `apply_op_indexed` (instead of the per-op linear scan inside
-/// `items_update_value_to` / `items_remove_from`). `add` ops append to the
-/// map; `remove` ops invalidate it and force a rebuild before the next
-/// indexed op needs it. Below threshold we keep the simpler linear-scan
-/// path — building the map costs a full array walk that doesn't pay off on
-/// small batches.
+/// `items_update_value_to` / `items_remove_from`). `add` ops append to
+/// the map; `remove` ops invalidate it and force a rebuild before the
+/// next indexed op needs it. Below threshold we keep the simpler
+/// linear-scan path — building the map costs a full array walk that
+/// doesn't pay off on small batches.
+#[cfg(test)]
 pub(crate) fn items_apply_to_opts(
     doc: &mut TomlValue,
     ops_json: &str,
@@ -542,6 +552,22 @@ pub(crate) fn items_apply_to_opts(
     let ops: JsonValue = serde_json::from_str(ops_json).context(
         "parsing --ops (expected JSON array of op objects, e.g. `[{\"op\":\"update\",\"id\":\"R1\",\"json\":{\"status\":\"resolved\"}}]`)"
     )?;
+    items_apply_parsed_to_opts(doc, ops, array_name, no_remove)
+}
+
+/// R45: post-parse sibling of `items_apply_to_opts`. Takes already-parsed
+/// `ops` (consumed by-value to feed the existing `.into_iter()` loop) so
+/// callers that have already validated the JSON shape — `compute_apply_mutation`
+/// (after walking the array for per-op id capture) and the CLI dispatch layer
+/// (after the `MAX_OPS_PER_APPLY` length check) — can avoid a second parse.
+/// All validation gates (`--no-remove`, op-shape errors, missing ids) and
+/// error surfaces are byte-identical to the string-parsing path.
+pub(crate) fn items_apply_parsed_to_opts(
+    doc: &mut TomlValue,
+    ops: JsonValue,
+    array_name: &str,
+    no_remove: bool,
+) -> Result<()> {
     let got_type = crate::convert::json_type_name(&ops);
     let JsonValue::Array(arr) = ops else {
         bail!(
@@ -643,12 +669,13 @@ fn apply_op_indexed(
                 })?;
             // Capture the new entry's id (if present + a string) before the
             // value is consumed; on success append it to the index so a
-            // later update/remove in the same batch can find it.
-            let new_id: Option<String> = json
-                .as_object()
-                .and_then(|o| o.get("id"))
-                .and_then(|v| v.as_str())
-                .map(str::to_string);
+            // later update/remove in the same batch can find it. R21:
+            // route through `item_id_json` so the index-insert path shares
+            // the same id-extraction predicate as the three `MutationPlan`
+            // capture sites (which use `capture_row_id` for their `String`
+            // form); divergence here would silently miss the index-insert
+            // for ids that those sites would still report in the plan.
+            let new_id: Option<String> = item_id_json(&json).map(str::to_string);
             // Capture the array length before the append so the inserted
             // index stays correct even if a future hook (dedupe-skip,
             // batched append) makes `items_add_value_to` grow the array
@@ -1201,25 +1228,24 @@ impl MutationPlan {
 /// real run, just without touching the filesystem.
 ///
 /// The add/update/remove id capture walks the parsed ops list once BEFORE
-/// handing it off to `items_apply_to_opts` (which consumes the list by
+/// handing it off to `items_apply_parsed_to_opts` (which consumes the list by
 /// value via `.into_iter()`). This keeps the capture cost O(ops) with no
 /// structural change to the existing dispatch loop.
 pub(crate) fn compute_apply_mutation(
     doc: &TomlValue,
     array_name: &str,
-    ops_json: &str,
+    ops: &JsonValue,
     no_remove: bool,
 ) -> Result<MutationPlan> {
-    // Parse first so a bad JSON payload fails fast with the same message
-    // the live path emits (`items_apply_to_opts` uses the same
-    // `parsing --ops` context).
-    let ops: JsonValue = serde_json::from_str(ops_json).context(
-        "parsing --ops (expected JSON array of op objects, e.g. `[{\"op\":\"update\",\"id\":\"R1\",\"json\":{\"status\":\"resolved\"}}]`)"
-    )?;
-    let JsonValue::Array(arr) = &ops else {
+    // R45: caller hands us an already-parsed `JsonValue`. The dispatch
+    // layer already parsed the `--ops` payload to enforce
+    // `MAX_OPS_PER_APPLY`; threading the parsed value through here (and
+    // into `items_apply_parsed_to_opts` below) avoids a second / third
+    // pass over the same bytes.
+    let JsonValue::Array(arr) = ops else {
         bail!(
             "--ops must be a JSON array (e.g. [{{\"op\":\"update\",\"id\":\"R1\",\"json\":{{...}}}}]); got JSON {}",
-            crate::convert::json_type_name(&ops)
+            crate::convert::json_type_name(ops)
         );
     };
     // Walk the ops once to capture per-op ids BEFORE mutation. Update
@@ -1259,8 +1285,11 @@ pub(crate) fn compute_apply_mutation(
     // items_add_value_to → apply_dedup_id_on_add, etc.) all fire with
     // byte-identical error surfaces. On error, `added/updated/removed`
     // above are discarded — the live path likewise would not have persisted.
+    // R45: clone `ops` here (rather than at the call site) so the by-ref
+    // signature stays ergonomic for the dispatch layer; the clone is over
+    // the parsed JSON tree, not a re-parse of the source bytes.
     let mut new_doc = doc.clone();
-    items_apply_to_opts(&mut new_doc, ops_json, array_name, no_remove)?;
+    items_apply_parsed_to_opts(&mut new_doc, ops.clone(), array_name, no_remove)?;
     Ok(MutationPlan {
         new_doc,
         added,
@@ -1348,13 +1377,17 @@ pub(crate) fn compute_backfill_mutation(
         if tbl.contains_key("dedup_id") {
             continue;
         }
-        // Use the TOML-side `tier_b_fingerprint` over the whole item table
+        // Use the TOML-side `tier_b_fingerprint_table` over the item table
         // so the backfill digest is byte-identical to what `find-duplicates
         // --tier B` produces. The JSON-side sibling in
         // `apply_dedup_id_on_add` is used at the add path because that path
         // starts from a JSON `Map` payload; here we have the parsed TOML
         // table directly, avoiding an intermediate `toml_to_json` clone.
-        let fp = tier_b_fingerprint(&TomlValue::Table(tbl.clone()));
+        // R46: `_table` variant takes `&Table` directly, eliminating the
+        // per-row `tbl.clone()` the previous `TomlValue::Table(...)` wrap
+        // forced — backfill walks every item in the array, so the clone
+        // scaled per-row.
+        let fp = tier_b_fingerprint_table(tbl);
         let id = tbl
             .get("id")
             .and_then(|v| v.as_str())
@@ -1468,24 +1501,35 @@ pub(crate) fn items_add_many_with_dedupe(
 /// `apply_dedup_id_on_add` runs inside `items_add_value_to`, so the
 /// dry-run preview is byte-equivalent to a live add even when dedup_id
 /// auto-population fires — both paths observe the same env state.
+///
+/// R47: takes a parsed `&JsonValue` so the dispatch layer's dedupe / no-dedupe
+/// dry-run branches can share one parse path. Previously the no-dedupe arm
+/// fed `&str` here while the dedupe arm parsed independently for
+/// `compute_add_many_mutation` — the asymmetry forced stdin reads to differ
+/// in cost between branches and made it easy to drift on the
+/// `parsing --json` context message. Cloning the patch here (rather than
+/// forcing the caller to hand ownership in) keeps the compute helper a
+/// pure-by-ref function the tests can call multiple times on the same
+/// `JsonValue` fixture.
 pub(crate) fn compute_add_mutation(
     doc: &TomlValue,
     array_name: &str,
-    json: &str,
+    patch: &JsonValue,
 ) -> Result<MutationPlan> {
     // Capture the patch's id (if any) BEFORE mutation so the plan reports
     // the same id the live path would persist. An add with no `id` field
     // surfaces as an empty string, mirroring `compute_apply_mutation`'s
     // contract for ad-hoc add ops.
-    let patch: JsonValue = serde_json::from_str(json).context("parsing --json")?;
-    let id = patch
-        .as_object()
-        .and_then(|o| o.get("id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    // R21: per-plan id capture funnels through `capture_row_id` so this
+    // site, the no-dedupe / dedupe arms of `compute_add_many_mutation`,
+    // and any future single-row capture share one `unwrap_or("")` rule.
+    let id = capture_row_id(patch);
     let mut new_doc = doc.clone();
-    items_add_value_to(&mut new_doc, patch, array_name)?;
+    // R47: clone here so the caller's borrow is preserved. `items_add_value_to`
+    // consumes the patch by-value (O27 — feeds owned `(String, JsonValue)`
+    // pairs into the merge loop without per-key clones); the price of a
+    // single top-level Value clone here is dominated by the doc clone above.
+    items_add_value_to(&mut new_doc, patch.clone(), array_name)?;
     Ok(MutationPlan {
         new_doc,
         added: vec![id],
@@ -1526,13 +1570,9 @@ pub(crate) fn compute_add_many_mutation(
         // live path.
         let mut added: Vec<String> = Vec::with_capacity(rows.len());
         for row in rows {
-            let id = row
-                .as_object()
-                .and_then(|o| o.get("id"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            added.push(id);
+            // R21: shared `capture_row_id` keeps this no-dedupe arm in step
+            // with `compute_add_mutation` and the dedupe arm below.
+            added.push(capture_row_id(row));
         }
         let count = items_add_many(&mut new_doc, array_name, rows, defaults)?;
         // Defensive: trim to the number of rows actually appended so the
@@ -1548,20 +1588,20 @@ pub(crate) fn compute_add_many_mutation(
     } else {
         // Capture per-row ids up front; we'll filter to only the rows
         // that actually appended after the dedupe outcome lands.
-        let row_ids: Vec<String> = rows
-            .iter()
-            .map(|row| {
-                row.as_object()
-                    .and_then(|o| o.get("id"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string()
-            })
-            .collect();
+        // R21: shared `capture_row_id` — the dedupe arm uses the same
+        // empty-on-missing convention as the no-dedupe arm above.
+        let row_ids: Vec<String> = rows.iter().map(capture_row_id).collect();
         let outcome =
             items_add_many_with_dedupe(&mut new_doc, array_name, rows, defaults, dedupe_fields)?;
         // `outcome.skipped_rows` carries 1-indexed row numbers; the
         // remaining indices are the ones that appended in input order.
+        // R44: HashSet kept for clarity even though `outcome.skipped_rows`
+        // is sorted ascending (T5 contract above) and a two-pointer merge
+        // would be O(n) without the hash overhead. The per-row `contains`
+        // call below expresses the "did this index get skipped?" intent
+        // more directly than threading a pointer through the filter, and
+        // the typical batch size is < 1000 rows where the constant-factor
+        // difference is dominated by the per-row TOML mutation cost.
         let skipped_set: std::collections::HashSet<usize> =
             outcome.skipped_rows.iter().map(|r| r.row).collect();
         let added: Vec<String> = row_ids
@@ -2475,6 +2515,57 @@ status = "open"
         );
     }
 
+    /// R28: audit-ledger row items.rs:266 (and parallel sites at 142, 184,
+    /// 219, 261, 320 — every funnel that demands a JSON object payload):
+    /// when the caller hands a non-object JSON value (array, number, string,
+    /// bool, null) the error must enumerate the actual JSON type so the
+    /// caller can correct the shape mismatch without re-reading the source.
+    /// The Phase 2 T6c partial-enum class accounted for ~25 of ~70
+    /// audit-ledger rewrite rows yet had zero unit-level coverage; this
+    /// test pins the convention end-to-end through the `items_add_to`
+    /// funnel (which feeds `items_add_value_to` at the line cited).
+    #[test]
+    fn error_message_partial_enum_rewrite_echoes_actual_json_type() {
+        let src = r#"schema_version = 1
+[[items]]
+id = "R1"
+status = "open"
+"#;
+        let mut doc: TomlValue = toml::from_str(src).unwrap();
+
+        // Sub-case A: JSON array (most common agent-mistake — wrapping the
+        // intended payload in a redundant outer array).
+        let err = items_add_to(&mut doc, "items", r#"[{"id":"R2"}]"#).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("--json must be a JSON object"),
+            "expected the `--json must be a JSON object` lead-in, got: {msg}"
+        );
+        assert!(
+            msg.contains("got JSON array"),
+            "expected the actual JSON type echoed (`array`) so the caller can spot the shape mismatch, got: {msg}"
+        );
+
+        // Sub-case B: JSON scalar (number) — the rewrite must echo
+        // `number` rather than the prior opaque "expected object" text.
+        let err = items_add_to(&mut doc, "items", "42").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("got JSON number"),
+            "expected `got JSON number` for scalar payload, got: {msg}"
+        );
+
+        // Sub-case C: JSON string — pins that the enumeration covers
+        // every JSON type, not just array/number. Same site as A/B
+        // (`json_type_name` produces a stable lowercase token per type).
+        let err = items_add_to(&mut doc, "items", r#""not an object""#).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("got JSON string"),
+            "expected `got JSON string` for string payload, got: {msg}"
+        );
+    }
+
     // ----- Task 4: items_infer_and_next_id --------------------------------
 
     #[test]
@@ -3209,7 +3300,8 @@ status = "open"
 
         // Compute path: pure, returns MutationPlan.
         let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
-        let plan = compute_apply_mutation(&plan_doc, "items", ops, false).unwrap();
+        let parsed_ops: JsonValue = serde_json::from_str(ops).unwrap();
+        let plan = compute_apply_mutation(&plan_doc, "items", &parsed_ops, false).unwrap();
         let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
 
         assert_eq!(
@@ -3273,8 +3365,8 @@ id = "R1"
 summary = "first"
 "#;
         let doc: TomlValue = toml::from_str(fixture).unwrap();
-        let ops = r#"[{"op":"remove","id":"R1"}]"#;
-        let err = compute_apply_mutation(&doc, "items", ops, true).unwrap_err();
+        let ops: JsonValue = serde_json::from_str(r#"[{"op":"remove","id":"R1"}]"#).unwrap();
+        let err = compute_apply_mutation(&doc, "items", &ops, true).unwrap_err();
         assert!(
             err.to_string().contains("is a remove op, but --no-remove was set"),
             "expected --no-remove gate message; got: {err}"
@@ -3417,7 +3509,8 @@ status = "open"
         let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
 
         let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
-        let plan = compute_add_mutation(&plan_doc, "items", json).unwrap();
+        let patch: JsonValue = serde_json::from_str(json).unwrap();
+        let plan = compute_add_mutation(&plan_doc, "items", &patch).unwrap();
         let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
 
         assert_eq!(

@@ -164,6 +164,21 @@ pub(crate) fn item_id_json(item: &serde_json::Value) -> Option<&str> {
     item.as_object()?.get("id")?.as_str()
 }
 
+/// R21: lossy String form of `item_id_json` for the `MutationPlan` id
+/// capture path. Three sites in `items.rs` (`compute_add_mutation`,
+/// `compute_add_many_mutation` no-dedupe and dedupe row-id pre-capture)
+/// need an owned `String` per row — empty on missing/non-string id —
+/// matching `compute_apply_mutation`'s convention that an op without an
+/// id surfaces in the plan as `""`. Concentrating the `unwrap_or("").to_string()`
+/// chain here keeps the four call sites that all share this exact shape
+/// from drifting on edge-case handling. The fourth original duplication
+/// site (`apply_op_indexed` add capture) still uses `item_id_json`
+/// directly because it needs an `Option<String>` (the index insert is
+/// conditional on the id being present).
+pub(crate) fn capture_row_id(v: &serde_json::Value) -> String {
+    item_id_json(v).unwrap_or("").to_string()
+}
+
 pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
     // T8: split the two failure modes so each gets the correct tag. A
     // `fs::read_to_string` failure whose inner `io::Error` is `NotFound` is

@@ -1539,7 +1539,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "dry_run",                // T10
         "backfill_dedup_id",      // T11
         "integrity_refresh",      // sidecar bootstrap / recovery primitive
-        "agent_context",          // T-glistening: capabilities .commands flag schema
+        "agent_context",          // T6a: capabilities .commands flag schema
     ];
     for name in expected {
         assert!(
