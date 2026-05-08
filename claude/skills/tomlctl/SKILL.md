@@ -64,6 +64,12 @@ tomlctl items apply ledger.toml --ops - <<'EOF'
 EOF
 ```
 
+```bash
+# 6. Preview a scalar change without touching disk (dry-run on `set`)
+tomlctl set foo.toml status review --type str --dry-run
+# {"ok":true,"dry_run":true,"would_change":{"path":"status","old":"draft","new":"review"}}
+```
+
 ## `--verify-integrity` support matrix
 
 `--verify-integrity` is a **per-subcommand flag**, not a global — it is accepted only on read subcommands that touch a TOML + sidecar pair. Verification is rejected (clap-layer error) on every other path. See [Sidecar files](#sidecar-files) for what it checks.
@@ -111,8 +117,31 @@ tomlctl --version
 | `dedupe_by` / `dedup_id_auto` | `--dedupe-by <FIELDS>` + auto-populate on every write |
 | `find_duplicates_across` | `items find-duplicates --across <other>` (tier A/B) |
 | `error_format_json` | `--error-format json` + `ErrorKind` taxonomy |
-| `strict_read` / `dry_run` | `--strict-read` on reads / `--dry-run` on writes |
+| `strict_read` / `dry_run` | `--strict-read` on reads / `--dry-run` on all 9 write subcommands (`set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`) |
 | `backfill_dedup_id` / `integrity_refresh` | legacy upgrade + sidecar regen |
+| `agent_context` | `tomlctl capabilities .commands` emits a per-subcommand flag schema (type/required/default/values/repeatable + mutex_groups) for runtime introspection without parsing --help prose. |
+
+### Agent-context schema (`tomlctl capabilities .commands`)
+
+When `features` includes `agent_context`, the capabilities document also carries a `commands` key — a per-subcommand JSON tree that lets agents drive flag assembly programmatically instead of regex-matching `--help` text.
+
+Shape: `commands.<subcommand>` (recursively for nested subcommands like `items.subcommands.list`) carries:
+
+- `flags` — map of flag-name → entry. Each entry has `type` (`string` / `bool` / `enum`), `required` (bool), `repeatable` (bool), and optional `default` and `values` (allowed enum variants). Positional arguments appear with their angle-bracketed display name (e.g. `<file>`).
+- `mutex_groups` — list of clap `ArgGroup` mutex sets; an agent can refuse a combination locally without round-tripping through the binary.
+- `subcommands` — present only when the command has nested subcommands (e.g. `items`, `blocks`, `integrity`).
+
+Feature-gate on its presence before driving flags from the schema:
+
+```
+# pseudocode
+caps = tomlctl_capabilities()
+if "agent_context" in caps.features:
+    schema = caps.commands["items"]["subcommands"]["update"]["flags"]
+    # build the invocation from schema
+else:
+    # fallback: parse `tomlctl items update --help`
+```
 
 ## Read operations
 

@@ -1538,6 +1538,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "dry_run",                // T10
         "backfill_dedup_id",      // T11
         "integrity_refresh",      // sidecar bootstrap / recovery primitive
+        "agent_context",          // T-glistening: capabilities .commands flag schema
     ];
     for name in expected {
         assert!(
@@ -1554,7 +1555,7 @@ fn capabilities_features_contains_every_plan_feature() {
     );
 }
 
-/// T7-3: the `version` string equals `0.3.0`. Literal assertion rather
+/// T7-3: the `version` string equals `0.4.0`. Literal assertion rather
 /// than reading Cargo.toml — the whole point of this task is the semver
 /// bump, so pinning the exact release marker keeps the acceptance criterion
 /// honest. Bump both sides in lockstep on the next minor release.
@@ -1574,8 +1575,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.3.0",
-        "expected version `0.3.0` (the 0.2.0 → 0.3.0 bump for the new integrity subcommand); got `{version}`"
+        version, "0.4.0",
+        "expected version `0.4.0` (the 0.3.0 → 0.4.0 bump for the new agent_context capabilities .commands schema); got `{version}`"
     );
 }
 

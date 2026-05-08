@@ -180,15 +180,35 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.2.0",
+  "version": "0.4.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "capabilities", "error_format_json", "strict_read",
-               "dry_run", "backfill_dedup_id"],
+               "dry_run", "backfill_dedup_id", "integrity_refresh",
+               "agent_context"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
-                  "items", "blocks", "array-append", "capabilities"]
+                  "items", "blocks", "array-append", "capabilities",
+                  "integrity"],
+  "commands": {
+    "items": {
+      "subcommands": {
+        "list": {
+          "flags": {
+            "<file>":  {"type": "string", "required": true,  "repeatable": false},
+            "--count": {"type": "bool",   "required": false, "values": ["true","false"], "repeatable": false},
+            "--array": {"type": "string", "required": false, "default": "items", "repeatable": false},
+            "--where": {"type": "string", "required": false, "repeatable": true},
+            "--pluck": {"type": "string", "required": false, "repeatable": false}
+          },
+          "mutex_groups": [["count","count_by","group_by","pluck","count_distinct"]]
+        }
+      }
+    }
+  }
 }
 ```
+
+(The `commands` slice above is abbreviated — every subcommand has an entry; run `tomlctl capabilities` for the full tree.) Each flag entry carries `type` (`string` / `bool` / `enum`), `required`, `repeatable`, and optional `default` / `values`. `mutex_groups` lists clap `ArgGroup` mutex sets so an agent can pre-validate a flag combination before invoking the binary.
 
 Stability contract:
 
@@ -215,5 +235,7 @@ Feature meanings:
 | `capabilities` | this subcommand itself |
 | `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
 | `strict_read` | `--strict-read` on every read subcommand |
-| `dry_run` | `--dry-run` on `items remove` / `items apply` / `items backfill-dedup-id` |
+| `dry_run` | `--dry-run` on all 9 write subcommands: `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id` |
 | `backfill_dedup_id` | `items backfill-dedup-id <file>` |
+| `integrity_refresh` | `tomlctl integrity refresh <file>` — sidecar bootstrap / recovery primitive |
+| `agent_context` | `tomlctl capabilities .commands` emits per-subcommand flag schema (type / required / default / values / repeatable + mutex_groups) for runtime introspection without parsing `--help` prose |
