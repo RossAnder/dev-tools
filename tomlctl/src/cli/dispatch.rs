@@ -25,18 +25,22 @@ use crate::dedup::{
 };
 use crate::integrity::{IntegrityOpts, refresh_sidecar, sidecar_path, verify_integrity};
 use crate::io::{
-    guard_write_path, mutate_doc, mutate_doc_conditional, mutate_doc_plan, read_doc,
-    read_doc_borrowed, read_doc_either, read_toml_str, recheck_claude_containment,
-    warn_if_read_outside_claude, with_exclusive_lock,
+    compute_set_json_mutation, compute_set_mutation, guard_write_path, mutate_doc,
+    mutate_doc_conditional, mutate_doc_plan, read_doc, read_doc_borrowed, read_doc_either,
+    read_toml_str, recheck_claude_containment, warn_if_read_outside_claude, with_exclusive_lock,
 };
 use crate::items::{
-    AddManyOutcome, AddOutcome, array_append, compute_apply_mutation, compute_backfill_mutation,
-    compute_remove_mutation, dedup_id_disabled, items_add_many, items_add_many_with_dedupe,
-    items_add_to, items_add_value_with_dedupe_to, items_get_from, items_get_from_json,
-    items_infer_and_next_id, items_next_id, items_update_to, parse_ndjson,
+    AddManyOutcome, AddOutcome, array_append, compute_add_many_mutation, compute_add_mutation,
+    compute_apply_mutation, compute_array_append_mutation, compute_backfill_mutation,
+    compute_remove_mutation, compute_update_mutation, dedup_id_disabled, items_add_many,
+    items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_get_from,
+    items_get_from_json, items_infer_and_next_id, items_next_id, items_update_to, parse_ndjson,
 };
 use crate::orphans::items_orphans;
-use crate::output::{emit_dry_run_plan, emit_list_raw, print_json, print_json_compact, print_raw_value};
+use crate::output::{
+    emit_dry_run_plan, emit_dry_run_scalar, emit_list_raw, print_json, print_json_compact,
+    print_raw_value,
+};
 use crate::query::{self, Query, ShapeDispatch};
 
 /// Maximum JSON payload accepted from stdin via the `-` sentinel. 32 MiB is
@@ -376,9 +380,26 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             path,
             value,
             ty,
-            dry_run: _,
+            dry_run,
             integrity,
         } => {
+            if dry_run {
+                // T6b: dry-run path — read-only compute via the same
+                // `compute_set_mutation` the live writer would invoke,
+                // emitted via the scalar dry-run envelope. Mirrors the
+                // `ItemsOp::Apply` reference: never acquire the exclusive
+                // lock, never refresh the sidecar.
+                let read_opts = IntegrityOpts {
+                    write_sidecar: false,
+                    verify_on_read: integrity.verify_integrity,
+                    strict: false,
+                };
+                let plan = read_doc(&file, read_opts, |doc| {
+                    compute_set_mutation(doc, &path, &value, ty)
+                })?;
+                emit_dry_run_scalar(&plan)?;
+                return Ok(());
+            }
             let opts = write_integrity_opts(&integrity);
             mutate_doc(&file, integrity.allow_outside, opts, |doc| {
                 let v = parse_scalar(&value, ty)?;
@@ -386,13 +407,29 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             })?;
             print_json_compact(&serde_json::json!({"ok": true}))?;
         }
-        Cmd::SetJson { file, path, json, dry_run: _, integrity } => {
-            let opts = write_integrity_opts(&integrity);
+        Cmd::SetJson { file, path, json, dry_run, integrity } => {
             // O35: parse stdin/literal JSON straight into a `JsonValue`,
             // skipping the intermediate String allocation. The parse moves
             // out of the `mutate_doc` closure, which is a side-benefit:
             // a malformed payload now fails before we open the doc.
+            //
+            // T6b: parsing also lifts above the `if dry_run` branch so
+            // both paths share the same parse semantics (and a malformed
+            // --json fails identically in dry-run and live mode).
             let parsed: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
+            if dry_run {
+                let read_opts = IntegrityOpts {
+                    write_sidecar: false,
+                    verify_on_read: integrity.verify_integrity,
+                    strict: false,
+                };
+                let plan = read_doc(&file, read_opts, |doc| {
+                    compute_set_json_mutation(doc, &path, &parsed)
+                })?;
+                emit_dry_run_scalar(&plan)?;
+                return Ok(());
+            }
+            let opts = write_integrity_opts(&integrity);
             mutate_doc(&file, integrity.allow_outside, opts, |doc| {
                 let last_key = path.rsplit_once('.').map(|(_, k)| k).unwrap_or(path.as_str());
                 let v = maybe_date_coerce(last_key, &parsed)?;
@@ -413,7 +450,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             array,
             json,
             ndjson,
-            dry_run: _,
+            dry_run,
             integrity,
         } => {
             // clap's `conflicts_with` guarantees at most one is set; enforce
@@ -422,7 +459,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             if json.is_none() && ndjson.is_none() {
                 bail!("array-append requires one of --json or --ndjson");
             }
-            let opts = write_integrity_opts(&integrity);
+            // T6b: lift the rows parse above the dry-run/live split so both
+            // paths share parse semantics. `--json` / `--ndjson` resolution
+            // (including stdin) happens once.
             let rows: Vec<JsonValue> = if let Some(j) = json {
                 // O35: parse straight to `JsonValue`, dropping the prior
                 // `read_json_arg` String + `serde_json::from_str` two-step.
@@ -437,6 +476,19 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 let text = read_ndjson_source(&nd)?;
                 parse_ndjson(&text)?
             };
+            if dry_run {
+                let read_opts = IntegrityOpts {
+                    write_sidecar: false,
+                    verify_on_read: integrity.verify_integrity,
+                    strict: false,
+                };
+                let plan = read_doc(&file, read_opts, |doc| {
+                    compute_array_append_mutation(doc, &array, &rows)
+                })?;
+                emit_dry_run_plan(&plan)?;
+                return Ok(());
+            }
+            let opts = write_integrity_opts(&integrity);
             let mut appended: usize = 0;
             mutate_doc(&file, integrity.allow_outside, opts, |doc| {
                 appended = array_append(doc, &array, &rows)?;
@@ -543,9 +595,38 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             )?;
             print_json(&out)?;
         }
-        ItemsOp::Add { file, json, array, dedupe_by, dry_run: _, integrity } => {
+        ItemsOp::Add { file, json, array, dedupe_by, dry_run, integrity } => {
             let opts = write_integrity_opts(&integrity);
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
+            if dry_run {
+                // T6b: dry-run path mirrors the live arm's two-branch
+                // structure — `compute_add_mutation` (string JSON in) for
+                // the no-dedupe case, `compute_add_many_mutation` with a
+                // single-row vec for the dedupe case. Both go through the
+                // same `items_add_value_to` / `items_add_many_with_dedupe`
+                // funnels the live path uses, so validation surfaces and
+                // dedup_id auto-population are byte-identical.
+                let read_opts = IntegrityOpts {
+                    write_sidecar: false,
+                    verify_on_read: integrity.verify_integrity,
+                    strict: false,
+                };
+                let plan = if dedupe_fields.is_empty() {
+                    let json_str = read_json_arg(&json)?;
+                    read_doc(&file, read_opts, |doc| {
+                        compute_add_mutation(doc, &array, &json_str)
+                    })?
+                } else {
+                    let patch: JsonValue =
+                        read_json_value_from_arg(&json).context("parsing --json")?;
+                    let rows = vec![patch];
+                    read_doc(&file, read_opts, |doc| {
+                        compute_add_many_mutation(doc, &array, &rows, None, &dedupe_fields)
+                    })?
+                };
+                emit_dry_run_plan(&plan)?;
+                return Ok(());
+            }
             if dedupe_fields.is_empty() {
                 // No-dedupe path: byte-identical behaviour to pre-T5 —
                 // same helper, same `{"ok":true}` output, same
@@ -603,7 +684,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             defaults_json,
             array,
             dedupe_by,
-            dry_run: _,
+            dry_run,
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);
@@ -621,6 +702,22 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 ),
                 None => None,
             };
+            if dry_run {
+                // T6b: dry-run flows through the same `compute_add_many_mutation`
+                // helper the live dedupe path's compute-side mirrors, with
+                // `dedupe_fields` honoured (empty slice → `items_add_many`
+                // funnel inside the helper; non-empty → the dedupe funnel).
+                let read_opts = IntegrityOpts {
+                    write_sidecar: false,
+                    verify_on_read: integrity.verify_integrity,
+                    strict: false,
+                };
+                let plan = read_doc(&file, read_opts, |doc| {
+                    compute_add_many_mutation(doc, &array, &rows, defaults.as_ref(), &dedupe_fields)
+                })?;
+                emit_dry_run_plan(&plan)?;
+                return Ok(());
+            }
             if dedupe_fields.is_empty() {
                 // No-dedupe path: byte-identical to pre-T5. Same helper,
                 // same output shape (`{"ok":true,"added":N}`), same
@@ -675,11 +772,27 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             json,
             unset,
             array,
-            dry_run: _,
+            dry_run,
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);
+            // T6b: lift the json arg parse above the dry-run/live split.
+            // `compute_update_mutation` takes the raw &str and parses
+            // internally (same surface as `items_update_to`), so both
+            // branches share the resolved string.
             let json = read_json_arg(&json)?;
+            if dry_run {
+                let read_opts = IntegrityOpts {
+                    write_sidecar: false,
+                    verify_on_read: integrity.verify_integrity,
+                    strict: false,
+                };
+                let plan = read_doc(&file, read_opts, |doc| {
+                    compute_update_mutation(doc, &array, &id, &json, &unset)
+                })?;
+                emit_dry_run_plan(&plan)?;
+                return Ok(());
+            }
             mutate_doc(&file, integrity.allow_outside, opts, |doc| {
                 items_update_to(doc, &array, &id, &json, &unset)
             })?;
