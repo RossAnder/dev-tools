@@ -200,3 +200,66 @@ files = [
 commits = ["c1bad18"]
 status = "done"
 dedup_id = "47b721d65eb3517a"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-init"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "tomlctl flow init with idempotent context.toml + execution-record bootstrap + inline active-flow registration; 11 tests"
+files = [
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/tests/flow_init.rs",
+]
+commits = ["58d9307"]
+status = "done"
+dedup_id = "283c34745abd97fc"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-ensure-artifact"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "tomlctl flow ensure-artifact with read-only report + execution-record bootstrap + slug containment guard; 9 tests"
+files = [
+    "tomlctl/src/flow/ensure_artifact.rs",
+    "tomlctl/tests/flow_ensure_artifact.rs",
+]
+commits = ["58d9307"]
+status = "done"
+dedup_id = "0ebaaeff3b5f5834"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-list"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "tomlctl flow list with status/branch/active-only filters + warn-and-skip on malformed context.toml; 9 tests"
+files = [
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/tests/flow_list.rs",
+]
+commits = ["58d9307"]
+status = "done"
+dedup_id = "0b2a9497c4a84ac0"
+
+[[items]]
+id = "E17"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-init"
+summary = "T7 ships inline active-flow upsert helper (duplicates T3's mutate_active pattern) — T3 doesn't expose pub(crate) helpers"
+original_intent = "Plan T7 detail said to register the slug via internal call to flow active add (i.e. reach into T3's helpers)"
+rationale = "T3's only public surface is dispatch(ActiveOp) which prints to stdout (would muddy T7's single-line JSON envelope). Per plan deviation protocol option (a), T7 ships an inline registration helper replicating T3's mutate_active lock-bootstrap + upsert pattern; the duplication is documented in init.rs module-level docs. Schema details (binding shape, RFC3339 last_used, schema-version backfill, post-lock containment recheck) match active.rs byte-for-byte. Future-task suggestion: factor a pub(crate) helper from active.rs and migrate init.rs onto it; until then keep the two implementations in lock-step."
+commits = ["58d9307"]
+dedup_id = "493d2c16392be306"
