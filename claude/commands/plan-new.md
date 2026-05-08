@@ -307,9 +307,9 @@ Works with:
 
 **Reason thoroughly through exploration strategy.** Based on the parsed task, decide which areas of the codebase need exploration and what each agent should focus on.
 
-Launch up to 3 **Explore agents** in parallel (subagent_type: "Explore", thoroughness: "very thorough"). Tailor each agent's focus to the task.
+Launch up to 3 **Explore agents** in parallel based on scope (single sub-area → 1; cross-cutting → up to 3); do NOT reduce below 1 once the count is decided based on plan scope. Use subagent_type: "Explore", thoroughness: "very thorough". Tailor each agent's focus to the task.
 
-**IMPORTANT: You MUST make all Explore agent calls in a single response message.** **Do NOT reduce the agent count** — launch the full complement of Explore agents specified above.
+**IMPORTANT: You MUST make all Explore agent calls in a single response message.**
 
 Common focus patterns (adapt to the task):
 - **Target module** — Explore the module/directory where changes will land. Map its current structure, public interfaces, existing patterns, and tests.
@@ -361,12 +361,23 @@ Research focus should be tailored to the task. Broaden research focus beyond API
 - **Benchmarking research** — when the plan proposes multiple viable approaches and the choice hinges on performance.
 - **Undocumented-behaviour research** — StackOverflow, GitHub Issues when the official docs are ambiguous or silent on the edge case.
 
-**Vet agent output before checkpoint.** The orchestrator (Opus) MUST vet returned findings before persisting them to `## Research Notes` — Sonnet's fetch-and-summarise contract carries fabrication risk that compounds when the findings flow into Phase 6 design. Procedure:
+**Vet agent output before checkpoint.** The orchestrator (Opus) MUST vet returned findings before persisting them to `## Research Notes` — Sonnet's fetch-and-summarise contract carries fabrication risk that compounds when the findings flow into Phase 6 design.
 
-1. **Honour `ESCALATE-TO-DEEP` flags.** If a Sonnet agent returned `ESCALATE-TO-DEEP: <reason>` at the top of its report, re-dispatch the topic to `flow-research-deep` with the escalation reason in the prompt before proceeding.
-2. **Drop unverified `low-confidence:` findings** unless framed as an explicit hypothesis with a verification step.
-3. **Spot-check at least 3 findings per agent** (or all if fewer) — confirm the cited URL exists and matches the claim, confirm the `Library/API` version pin matches the manifest, confirm Context7 query references resolve to real library IDs.
-4. **Drop fabrications** with rationale logged. Do NOT silently fix them — Phase 4 / Phase 6 may reference the dropped finding indirectly, and an audit trail makes the gap visible.
+**Sample size (per agent):** Spot-check at least 3 findings per agent (or all if fewer).
+
+**Lens-specific verification rules:** Confirm cited URL exists and matches the claim; confirm Library/API version pin matches the project manifest; confirm Context7 query references resolve to real library IDs. Drop fabrications with rationale logged — do NOT silently fix them, since Phase 4 / Phase 6 may reference the dropped finding indirectly and an audit trail makes the gap visible.
+
+<!-- SHARED-BLOCK:vet-flow-research START -->
+**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+
+1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
+2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
+3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
+4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
+5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
+6. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
+7. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
+<!-- SHARED-BLOCK:vet-flow-research END -->
 
 Persist only post-vet findings to `## Research Notes`.
 
@@ -413,7 +424,7 @@ Launch **up to 1 research agent** with a narrow scope. **Default `subagent_type:
 The agent MUST:
 - Return structured findings scoped strictly to the topic introduced by Phase 4 answers — do not re-investigate topics already covered in `## Research Notes`.
 
-**Vet returned findings** with the same procedure as Phase 3 (honour ESCALATE-TO-DEEP, drop unverified low-confidence, spot-check). If the directed research agent returns zero actionable findings, note this under the `### Phase 5 outcome` sub-heading inside `## User Decisions` (e.g. `— directed research surfaced nothing actionable`) and proceed to Phase 6 without appending to Research Notes.
+**Vet returned findings** with the same procedure as Phase 3 — see SHARED-BLOCK:vet-flow-research above (the block defines the universal procedure; Phase 5 inherits it via this back-reference rather than carrying a second block instance, which would break shared-block parity since multi-instance content hashes 2× the size). If the directed research agent returns zero actionable findings, note this under the `### Phase 5 outcome` sub-heading inside `## User Decisions` (e.g. `— directed research surfaced nothing actionable`) and proceed to Phase 6 without appending to Research Notes.
 
 **Checkpoint**: Append Phase 5 findings under a dedicated `### Directed research additions` sub-heading at the bottom of the Research Notes section so `/plan-update reformat` preserves the provenance boundary when extracting RESEARCH-NOTES.md.
 
@@ -651,7 +662,7 @@ Also output the plan path and the resolved flow slug so the user has both refere
 
 - **Plan mode restrictions apply** — The main conversation can only edit the plan file. All other actions must be read-only (Glob, Grep, Read, git commands, Context7, WebSearch). Sub-agents operate in their own contexts and are not restricted by plan mode, but their prompts should instruct them to perform read-only exploration or research only — no edits.
 - **Front-load complex analysis in the main conversation** — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Give agents specific exploration or research tasks, not open-ended design problems.
-- **Explore agents for exploration, flow-research / flow-research-deep for research** — Use subagent_type "Explore" for codebase navigation. For Context7/WebSearch research, default to `flow-research` (Sonnet — mechanical fetch-and-summarise) and escalate to `flow-research-deep` (Opus — judgement-licensed) when the topic requires architectural inference, library comparison, or benchmarking-driven trade-offs. The orchestrator (Opus) MUST vet `flow-research` output before persisting to `## Research Notes` (see Phase 3).
+- **Explore for exploration, flow-research / flow-research-deep for research, Plan for design alternatives** — Use subagent_type "Explore" for codebase navigation. For Context7/WebSearch research, default to `flow-research` (Sonnet — mechanical fetch-and-summarise) and escalate to `flow-research-deep` (Opus — judgement-licensed) when the topic requires architectural inference, library comparison, or benchmarking-driven trade-offs. The orchestrator (Opus) MUST vet `flow-research` output before persisting to `## Research Notes` (see Phase 3). Use subagent_type "Plan" for optional design-alternative generation in Phase 6.
 - **Context budget** — Cap explore agent output at ~500 words and research agent output at ~500 words / 10 findings. Persist findings to the plan file between phases as checkpoints. If context becomes constrained, use `/compact` with specific preservation instructions before continuing.
 - **Don't over-plan** — The plan should be detailed enough to execute without ambiguity, but not so detailed that it prescribes every line of code. Implementation agents will read the target files and make tactical decisions.
 - **Reuse over reinvention** — Actively search for existing patterns, utilities, and abstractions. The plan should reference them by file path.

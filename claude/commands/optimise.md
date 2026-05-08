@@ -440,6 +440,8 @@ Launch **all five** agents in parallel using the Agent tool (subagent_type: "flo
 
 **Why Opus across all five lenses (not the cheaper Sonnet `flow-research`)**: optimisation is judgement-heavy across the board — distinguishing real bottlenecks from theoretical ones, knowing when an idiomatic-looking pattern is actually anti-optimal in the project's runtime, weighing fix cost against perf gain. Sonnet's fetch-and-summarise contract produces surface-level findings that the orchestrator must heavily vet or discard; Opus's deeper reasoning + mandatory Counter-line discipline produces fewer findings of higher signal. The cost premium is justified by avoiding harmful "optimisations" that ship to production. If a future lens here turns out to be genuinely mechanical (pure version-bump research, dependency advisory lookups), it can be peeled out to `flow-research`; today's five are not.
 
+**Asymmetry note vs `/review`**: `/review`'s mixed-model dispatch (Sonnet for security / completeness / testability / package-quality; Opus for quality / architecture) reflects that those four Sonnet lenses are checklist-driven against documented best practices — OWASP catalogues, error-path enumeration, log-level conventions, package-frontmatter rules. `/optimise`'s lenses are NOT checklist-driven — even the most surface-looking lens (Agent 2, Data Shape and Wire Efficiency) requires reasoning about when an in-place vs cloned representation actually pays for the change in the surrounding hot path, when a serializer's "faster" mode silently relaxes a schema-evolution invariant, when zero-copy buys nothing because the consumer immediately materializes anyway. The cost asymmetry of a wrong finding also runs the other way: a misjudged `/optimise` finding ("apply this serializer change") can break invariants or regress performance once shipped, where a misjudged `/review` finding ("this is fine actually") is recoverable in the next round. Opus-everywhere is the conservative choice for an irreversible-blast-radius lens; the all-five vs mixed asymmetry with `/review` is intentional and recorded here so future passes do not re-flag it (companion to the Step 1.5 Design Note on the small-diff-shortcut asymmetry).
+
 **IMPORTANT: You MUST make all five Agent tool calls in a single response message.** Do not launch them one at a time. Emit one message containing five Agent tool use blocks so they execute concurrently. **Do NOT reduce the agent count below five** — launch ALL FIVE agents. Each agent provides specialized, independent research (Context7 lookups, WebSearches, lens-specific analysis) that cannot be replicated by fewer passes.
 
 **Prompt-cache tip**: When dispatching the five agents, place shared context — file list, classification, tech stack, focal points, CLAUDE.md optimisation-focus excerpt — as a literal-equal preamble at the top of each agent prompt, with per-agent divergence (lens, specific concerns) below a clear divider. The 5-minute TTL prompt cache reuses the shared prefix across agents, reducing latency and cost. Keep the shared text byte-identical — whitespace differences defeat the cache.
@@ -518,17 +520,21 @@ Focus on the idioms and primitives of the project's async runtime. Common runtim
 
 After all five `flow-research-deep` agents return but BEFORE the interim checkpoint persists anything to the ledger, the orchestrator (Opus) MUST vet the returned findings. Even Opus agents produce wrong findings — vetting catches them before they enter the ledger and survive across rounds as zombie work-items.
 
-**Vetting procedure:**
+**Sample size (per agent):** Spot-check at least 3 per agent (or all if the agent returned fewer than 3).
 
-1. **Triage by evidence-grade.** Group every finding by its `Evidence-grade: high | medium | low` tag. Counts per grade go in the console output for transparency.
-2. **Drop unverified `low` findings.** A `low` finding without an explicit `low — hypothesis: …` framing AND a concrete verification step (profile, benchmark, test) the user can take is a fabrication risk. Drop it; log the drop in console.
-3. **Spot-check `medium` and `high` findings.** Sample at least **3 per agent** (or all if the agent returned fewer than 3). For each sampled finding:
-   - Read the file at the cited `file:line` and confirm the code matches the finding's `Details`.
-   - Confirm the `Counter` line is plausible — a finding with a Counter that contradicts the Finding itself is broken.
-   - For library-version findings, confirm the version pin in the manifest matches what the agent claimed.
-   - If the sampled finding fails any check, **expand the sample** to include all findings from that agent — the sample failure indicates the agent's whole output is unreliable.
-4. **Drop or downgrade** findings that fail vetting. Drop with rationale logged; downgrades (e.g. `high → medium`) are appended as `_orchestrator-downgrade: <reason>` to the finding's evidence-grade line.
-5. **Re-dispatch on systemic failure.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens to a fresh `flow-research-deep` instance with the failure pattern in the prompt (e.g. "the prior agent's findings did not match the cited line numbers; verify every `file:line` claim before returning").
+**Lens-specific verification rules:** For each sampled finding: verify Counter line is plausible; verify lib-version pins. If any check fails, expand the sample to all findings from that agent (the expand-on-failure rule is stricter than /review's because /optimise dispatches all-Opus).
+
+<!-- SHARED-BLOCK:vet-flow-research START -->
+**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+
+1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
+2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
+3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
+4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
+5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
+6. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
+7. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
+<!-- SHARED-BLOCK:vet-flow-research END -->
 
 This vet pass is what makes the Opus dispatch worth the cost — the orchestrator turns a probabilistically-correct sample into a verified one. Skipping the vet pass squanders the model upgrade.
 

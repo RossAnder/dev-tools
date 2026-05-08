@@ -277,24 +277,33 @@ For `ci_provider != github-actions`, the SHA-pin requirement still applies in sp
 
 ### Phase 2 cache
 
-Cache the full agent payload (all 4 returns, raw) to `<target>/.claude/.test-bootstrap-research.json` for the duration of the invocation. Phase 3 reads from this cache so a re-prompt during the AskUserQuestion step does NOT re-spend agent tokens. The cache file is **transient** — delete it on Phase 5 success or on `abort`. Phase 2 itself is stateless; safe to re-run, but outputs may differ run-to-run as ecosystems evolve.
+Cache the full agent payload (all 4 returns, raw) to `<target>/.claude/.test-bootstrap-research.json` AFTER Phase 2.5 vet completes — see Phase 2.5 for the timing rule. Phase 3 reads from this cache so a re-prompt during the AskUserQuestion step does NOT re-spend agent tokens. The cache file is **transient** — delete it on Phase 5 success or on `abort`. Phase 2 itself is stateless; safe to re-run, but outputs may differ run-to-run as ecosystems evolve.
 
-### Phase 2 vetting (orchestrator)
+## Phase 2.5: Vet agent output (orchestrator)
 
-Before the cache write — and before Phase 3 synthesises the stack candidates — the orchestrator (Opus) MUST vet each Sonnet agent's output. Tool research is one of the most fabrication-prone domains: agents recommend stale package versions, broken install commands, deprecated config syntax. The targeted reject-and-re-prompt rules already in the agent specs above (SHA pinning for Agent D, `workflow_dispatch`/cron for Agent C mutation, no shared-state in Agent A showcase) are NOT a substitute for general vetting — they catch only those specific patterns.
+After all 4 research agents return but BEFORE the Phase 2 cache write — and before Phase 3 synthesises stack candidates — the orchestrator (Opus) MUST vet each agent's output. All four test-bootstrap agents are Sonnet `flow-research`, whose fetch-and-summarise contract carries higher fabrication risk than `flow-research-deep`. Tool research is one of the most fabrication-prone Sonnet domains: agents recommend stale package versions, broken install commands, deprecated config syntax, fabricated CI snippets.
 
-**Vetting procedure (per agent):**
+**Pre-vet targeted rules (run BEFORE the general vet pass below):** The targeted reject-and-re-prompt rules already in the Phase 2 agent specs (SHA pinning for Agent D, `workflow_dispatch`/cron for Agent C mutation, no shared-state in Agent A showcase) are quick mechanical checks the agent's spec embeds — they run first and reject candidates that violate the targeted constraints. They are NOT a substitute for the general vet pass below; they catch only those specific patterns. Both layers are mandatory.
 
-1. **Honour `ESCALATE-TO-DEEP` flags.** If a Sonnet agent returned `ESCALATE-TO-DEEP: <reason>` (e.g. "framework choice depends on benchmarking trade-offs the project profile cannot decide"), re-dispatch the agent's decision domain to `flow-research-deep` with the escalation reason in the prompt. Merge results.
-2. **Verify install commands.** For each candidate's `install command`, confirm the package name resolves on the relevant registry (npm / PyPI / crates.io / Go module proxy) — a 30-second WebFetch or registry probe per candidate is cheap. A typo like `jest-stryker` instead of `stryker-mutator/core` would otherwise survive into Phase 4 and break the user's first install.
-3. **Verify version ranges against the registry.** A candidate that pins `^4.2.0` when the latest stable is `7.x` indicates the agent's training data is stale — re-dispatch the agent with the correct latest version range as a hint.
-4. **Verify config-file template syntax.** If the candidate ships a `vitest.config.ts` / `pytest.ini` / etc. template, confirm the syntax matches the documented config schema for the version range. Sonnet has been observed conflating major-version config schemas (e.g. emitting Vitest v0.x config under a v1.x version pin).
-5. **Drop unverified `low-confidence:` candidates.** A "best practice" or "recommended threshold" claim without a citation is a guess; drop it from the candidate.
-6. **Re-dispatch on systemic failure.** If more than 30% of an agent's candidates fail vetting, re-dispatch the entire agent with the failure pattern in the prompt (or escalate to `flow-research-deep`).
+**Sample size (per agent):** Spot-check at least 5 candidates per agent (or all if the agent returned fewer than 5). Higher sample size than other carriers because all four agents are Sonnet (uniform fabrication-risk profile).
 
-The targeted reject-and-re-prompt rules (SHA pinning, mutation CI shape, showcase isolation) run BEFORE this vetting pass — they are quick mechanical checks the agent's spec embeds. The general vetting pass above runs AFTER, catching everything those targeted rules don't cover. Both layers are mandatory.
+**Lens-specific verification rules:** Verify package version pin matches registry (npm / PyPI / crates.io / Go module proxy); confirm install command syntax parses for the chosen package manager; confirm config-file template syntax matches the version's documented schema (Sonnet often conflates major-version schemas). For Agent D specifically, confirm the CI-config snippet parses as YAML / `.gitlab-ci.yml` / Jenkinsfile. Lens names: Agent-A (test-runner), Agent-B (coverage), Agent-C (mutation+property), Agent-D (ci-integration).
 
-Cache only post-vet output to `.test-bootstrap-research.json`.
+<!-- SHARED-BLOCK:vet-flow-research START -->
+**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+
+1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
+2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
+3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
+4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
+5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
+6. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
+7. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
+<!-- SHARED-BLOCK:vet-flow-research END -->
+
+**Vet pass is NOT optional.** Skipping it ships fabricated package names, broken install commands, or stale config templates straight into the user's project — costs the user trust on first run and is hard to unwind once the marker block has been written.
+
+Cache only post-vet output to `.test-bootstrap-research.json` (see Phase 2 cache for cache lifecycle).
 
 ## Phase 3: Synthesis into stack candidates
 

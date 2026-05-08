@@ -1,6 +1,6 @@
 ---
 description: Review an implementation plan for feasibility, completeness, risks, and agent-executability
-argument-hint: <path to plan file or directory>
+argument-hint: [path to plan file or directory]
 ---
 
 <!-- SHARED-BLOCK:flow-context START -->
@@ -199,19 +199,21 @@ Are the plan's technology assumptions current and are risks adequately addressed
 
 After all four `flow-research-deep` agents return but BEFORE the Step 3 consolidation, the orchestrator (Opus) MUST vet the returned findings. Even Opus output for a judgement-heavy lens like plan critique can include incorrect claims (e.g. "file X doesn't exist" when it does, "API Y is deprecated" when it isn't), and these false claims, if promoted into the report, cause real implementation churn.
 
-**Vetting procedure:**
+**Sample size (per agent):** Spot-check at least 3 per agent (or all if fewer).
 
-1. **Triage by evidence-grade.** Group every finding by `Evidence-grade: high | medium | low`. Counts per grade go in the console output.
-2. **Verify every "stale reference" / "file does not exist" / "API has changed" claim.** Plan-critique findings of this shape are the most dangerous when wrong — the plan author will doubt their plan and rewrite work that was actually correct. For each such claim, the orchestrator runs the cheap verification directly:
-   - `file does not exist` → `ls <path>` or Glob check.
-   - `API X has changed` → re-query Context7 to confirm.
-   - `signature mismatch` → Read the file at the cited line and confirm.
-   Drop any finding whose verification fails; log the drop with the verification evidence.
-3. **Drop unverified `low` findings.** Same rubric as /review and /optimise.
-4. **Spot-check `medium` and `high` findings.** Sample at least 3 per agent (or all if the agent returned fewer than 3); confirm `file:line` anchors and Counter-line plausibility.
-5. **Re-dispatch on systemic failure.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens.
+**Lens-specific verification rules:** Verify every "stale reference" / "file does not exist" / "API has changed" claim before sampling: file-does-not-exist → `ls` / Glob check; API-X-has-changed → re-query Context7; signature mismatch → Read file at cited line. Drop any claim whose verification fails; log with verification evidence. The verification step is the highest-value one for plan critique specifically — a plan reviewer that flags non-existent stale references is worse than no plan reviewer.
 
-The verification step (item 2 above) is the highest-value one for plan critique specifically. A plan reviewer that flags non-existent stale references is worse than no plan reviewer.
+<!-- SHARED-BLOCK:vet-flow-research START -->
+**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+
+1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
+2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
+3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
+4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
+5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
+6. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
+7. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
+<!-- SHARED-BLOCK:vet-flow-research END -->
 
 ## Step 3: Consolidate Results
 

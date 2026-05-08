@@ -75,3 +75,14 @@ files = [
   "claude/commands/optimise-apply.md",
   "claude/commands/review-apply.md",
 ]
+
+[[block]]
+name = "vet-flow-research"
+files = [
+  "claude/commands/optimise.md",
+  "claude/commands/plan-new.md",
+  "claude/commands/plan-update.md",
+  "claude/commands/review.md",
+  "claude/commands/review-plan.md",
+  "claude/commands/test-bootstrap.md",
+]

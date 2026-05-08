@@ -336,7 +336,26 @@ git ls-tree -r <red-commit> -- <test-glob> | sha256sum | awk '{print $1}'
 
 4. **Dispatch** `/implement --flow <parent-slug>-tdd-<NNN>` against the mini-plan path. `/implement` runs its standard 3-phase loop unmodified (research → execute → verify). Note the dispatch passes `--flow <cycle-slug>` so flow-resolution rule 1 picks up the cycle sub-flow even though `/implement`'s frontmatter `argument-hint` doesn't advertise `--flow` (see Acceptance smoke-check).
 
-5. **On return**: recompute the test-file fingerprint via the same pipeline (POST-COMMIT from HEAD of the GREEN attempt) and require **strict equality** with the value persisted at RED step 6. Mismatch means a test file was mutated between RED and GREEN — revert the GREEN commit and halt.
+5. **On return**: recompute the test-file fingerprint via the same pipeline (POST-COMMIT from HEAD of the GREEN attempt) and require **strict equality** with the value persisted at RED step 6. Mismatch means a test file was mutated between RED and GREEN.
+
+   **Mismatch handling (mandatory recovery sequence — do all three steps before halting)**:
+
+   1. **Revert the GREEN commit if `/implement` landed one.** Prefer `git revert --no-edit <green-sha>` against the most recent commit (safe across shared history). Use `git reset --hard HEAD~1` ONLY when no other commits or refs depend on the GREEN sha (single-developer linear history, no push since the GREEN landed) — revert is the default. If `/implement` exited before committing (e.g. its retry budget exhausted pre-commit), skip this step.
+
+   2. **Update the cycle sub-flow's execution-record to mark the failed cycle.** `/implement` Phase 4.5 will have appended a `task-completion` entry with `status=done` for the cycle's deterministic `task_ref` into `.claude/flows/<parent-slug>-tdd-<NNN>/execution-record.toml`. That entry would otherwise convince the resume protocol (and `/implement`'s Phase 2 skip-list) that the cycle is complete. Because the execution-record is append-only with supersession (see `### Append-only + supersession`), append a NEW `task-completion` entry that supersedes the original:
+
+      ```
+      cat <<'EOF' | tomlctl items add <cycle-record> --json -
+      {"id":"<E{n+1}>","type":"task-completion","date":"<today>","agent":"tdd","task_ref":"tdd-cycle-<NNN>-<short-name>","summary":"GREEN fingerprint mismatch — reverted","files":[],"status":"failed","failure_reason":"fingerprint-mismatch","red_fingerprint":"<sha256-from-RED-step-6>","green_fingerprint":"<sha256-recomputed-at-GREEN-step-5>","supersedes_entry":"<E-id-of-original-done-entry>"}
+      EOF
+      tomlctl set <cycle-record> last_updated <today>
+      ```
+
+      `failure_reason` is an optional discriminator field on `task-completion` (the execution-record-schema's always-required set does NOT proscribe additional keys); the resume FSM pivots on `status=failed` AND `failure_reason="fingerprint-mismatch"` together. Including both fingerprint hashes in the entry preserves the diagnostic for future audit. Do NOT mutate the original `status=done` entry in place — supersession is the canonical correction mechanism.
+
+   3. **Halt the cycle without dispatching REFACTOR.** Do NOT advance the cycle counter. Do NOT copy up entries to the parent flow's execution-record (the REFACTOR phase performs that copy-up; halting before REFACTOR means the parent flow stays clean of the failed attempt's noise). Surface a diagnostic to the user naming the offending test files (computed by re-running `git ls-tree -r <green-sha> -- <test-glob>` and diffing against the RED tree).
+
+   **Resume protocol contract for fingerprint-mismatch state**: the resume FSM (see `## Resume protocol` below) MUST treat a `task-completion` entry with `status=failed` AND `failure_reason="fingerprint-mismatch"` as a re-RED trigger for the SAME cycle-NNN. The resume target is the failed cycle's sub-flow (NOT a fresh cycle-NNN+1), and the recovery action is to discard the failed mini-plan's GREEN attempt and re-enter RED step 1 with a fresh fingerprint capture against a freshly-authored RED test. The cycle counter does NOT advance until the resume re-RED produces a clean GREEN.
 
 6. Commit `green: <cycle-slug>` once both the test passes AND the fingerprint matches.
 
@@ -422,7 +441,7 @@ The lockfile is released when `/tdd` exits (cleanly or via abort). On a stale lo
 - **Cycle exceeds 5 minutes**: warn the user, do NOT auto-split. Long cycles often indicate a too-large behaviour-step; the user should decide whether to continue or break the cycle and re-scope.
 - **`/implement` retry-budget exhausted** (`/implement` Phase 3 exits with all per-task retries used): surface to the user with three choices — **revise** (edit the mini-plan and re-dispatch), **abort** (revert the cycle and halt the `/tdd` session), **retry** (re-dispatch the same mini-plan, e.g. after a flake).
 - **User abort mid-cycle**: the cycle sub-flow remains on disk. Recovery is via `/tdd resume` reading the most recent uncompleted cycle sub-flow (see `## Resume protocol` below).
-- **Idempotency-on-resume**: each cycle's mini-plan task uses a deterministic `task_ref` of the form `tdd-cycle-<NNN>-<short-name>`. On re-dispatch, `/implement`'s Phase 2 skip-list (keyed on `task_ref`) recognises the cycle as already-completed if the cycle sub-flow's execution-record shows a `task-completion` entry with `status=done` for that ref — so a re-dispatch is a no-op rather than a duplicate run.
+- **Idempotency-on-resume**: each cycle's mini-plan task uses a deterministic `task_ref` of the form `tdd-cycle-<NNN>-<short-name>`. On re-dispatch, `/implement`'s Phase 2 skip-list (keyed on `task_ref`) recognises the cycle as already-completed if the cycle sub-flow's execution-record shows a `task-completion` entry with `status=done` for that ref (after applying supersession — see `### Append-only + supersession`) — so a re-dispatch is a no-op rather than a duplicate run. A superseded `status=failed` entry (e.g. from a fingerprint-mismatch revert per GREEN step 5) does NOT satisfy the skip-list, so the resume re-RED → GREEN runs end-to-end against the same `task_ref`.
 - **Coverage tool absent**: if the parent plan's Verification Commands block has no `coverage:` line and the `test:` command doesn't accept `--coverage`, REFACTOR's coverage gate is downgraded to a warning ("coverage tool not detected; gate skipped") rather than a halt.
 - **Verification stdout privacy**: GREEN/REFACTOR `verification` entries are stored verbatim — no automatic redaction. Test runners routinely echo environment variables (`pytest --showlocals`, vitest verbose reporter, `go test` failure dumps) which can leak secrets into the cycle sub-flow's execution-record. Projects handling regulated data should add a conftest/setup hook to redact known-secret env vars BEFORE running tests, or invoke `/tdd` with `--no-stdout-capture` to record only outcome + exit code. Cycle sub-flow directories carry the same retention/scrubbing sensitivity as the parent's `context.toml`.
 
@@ -432,13 +451,15 @@ Invoking `/tdd resume` (with no other arguments) resumes the most recent uncompl
 
 1. Resolve the parent flow via the standard flow-resolution order.
 2. List `.claude/flows/<parent-slug>-tdd-*/` directories sorted by their `<NNN>` suffix descending.
-3. For each, read the cycle sub-flow's `execution-record.toml` and check whether a `task-completion` entry with `status=done` exists for the cycle's deterministic `task_ref`.
-4. The first directory WITHOUT such an entry is the resume target.
-5. Inspect the cycle's recorded state:
+3. For each, read the cycle sub-flow's `execution-record.toml` and check the **latest** (highest-id, post-supersession) `task-completion` entry for the cycle's deterministic `task_ref`.
+4. The first directory whose latest `task-completion` entry has `status` ∈ {absent, `failed`} — OR no `task-completion` entry at all — is the resume target. Directories whose latest entry is `status=done` are treated as complete and skipped.
+5. Inspect the resume target's recorded state and dispatch into the correct branch of the FSM:
    - **No `verification` entry yet** → resume from RED step 1.
-   - **`verification` with `outcome=fail` recorded but no green commit** → resume from GREEN step 2 (re-dispatch `/implement` against the existing mini-plan; the deterministic `task_ref` makes this idempotent).
-   - **Green commit exists but no REFACTOR entry** → resume from REFACTOR.
-6. If all cycle sub-flows are complete, halt with `"no uncompleted /tdd cycle to resume"` and prompt the user to start a new cycle.
+   - **`verification` with `outcome=fail` recorded but no `task-completion` entry** → resume from GREEN step 2 (re-dispatch `/implement` against the existing mini-plan; the deterministic `task_ref` makes this idempotent).
+   - **Latest `task-completion` has `status=failed` AND `failure_reason="fingerprint-mismatch"`** → re-RED branch: re-enter RED step 1 for the SAME cycle-NNN. Discard the failed mini-plan's GREEN attempt (the supersession entry already records the failure for audit). Capture a fresh fingerprint against a freshly-authored RED test, then continue forward through GREEN normally. The cycle counter does NOT advance until this re-RED produces a clean GREEN. Note: `/implement`'s Phase 2 skip-list keys on `task_ref` AND requires the latest `task-completion` to be `status=done` — a superseded `status=failed` does NOT satisfy the skip-list, so the re-dispatch runs the work rather than no-op-ing.
+   - **Latest `task-completion` has `status=failed` with any other (or absent) `failure_reason`** → surface to user with three choices (revise mini-plan / abort cycle / retry GREEN) per the `/implement retry-budget exhausted` edge case in `## Edge-case handling`.
+   - **Green commit exists (latest `task-completion` is `status=done`) but no REFACTOR entry copied up to parent** → resume from REFACTOR.
+6. If all cycle sub-flows are complete (every latest `task-completion` is `status=done`), halt with `"no uncompleted /tdd cycle to resume"` and prompt the user to start a new cycle.
 
 `/tdd resume` MUST acquire the same per-parent-flow lockfile before any state read.
 

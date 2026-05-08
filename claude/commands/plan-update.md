@@ -430,7 +430,7 @@ Move a plan item to the deferrals section. The agent MUST:
 The two-call heredoc shape matches the `deviation` op example above; substitute `type=deferral` and the deferral-specific required fields (`task_ref`, `reason`, `reevaluate_when`) per the Execution Record Schema type vocabulary.
 
 #### `reconcile` — Full plan-code reconciliation
-The most comprehensive operation. Launch **two** agents in parallel:
+The most comprehensive operation. Launch **two** `general-purpose` agents in parallel (subagent_type: "general-purpose"):
 
 **IMPORTANT: You MUST make both Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch both agents. Each provides a distinct reconciliation perspective (forward vs reverse) that cannot be combined.
 
@@ -499,7 +499,7 @@ Read the entire existing plan (single file or multi-file directory) and rewrite 
 
 **IMPORTANT: This operation ONLY restructures documents. It does NOT perform reconciliation, status updates, or codebase validation. Those are handled by `reconcile` and `status` as a separate step after reformatting.**
 
-Launch **two** agents in parallel:
+Launch **two** `general-purpose` agents in parallel (subagent_type: "general-purpose"):
 
 **IMPORTANT: You MUST make both Agent tool calls in a single response message.** **Do NOT reduce the agent count** — launch both agents.
 
@@ -622,7 +622,7 @@ For old or unimplemented plans that have fallen behind the codebase. Performs de
 
 **This operation runs in three phases sequentially. Do not skip phases or wait for user input between them.**
 
-**Phase 1: Deep exploration and fresh research** — Launch **three** agents in parallel:
+**Phase 1: Deep exploration and fresh research** — Launch **three** agents in parallel (Agents 1 + 3: subagent_type: "general-purpose"; Agent 2: subagent_type: "flow-research" — see each agent heading for the explicit declaration):
 
 <!-- Migration note (specialised-flow-agents.md Wave 2 §16):
      Agent 2 → subagent_type: "flow-research" (Sonnet) — research workload (fetch-and-summarise technology state).
@@ -650,17 +650,25 @@ Research the current state of every technology, library, and framework version r
 **Agent 3: Content extraction and classification**
 Same as the `reformat` Agent 1 — read every plan document and extract the full classified inventory (tasks, completed items, research notes, deviations, deferrals, verification criteria, dependencies, context).
 
-**Phase 1.5: Vet agent output (orchestrator)** — Before Phase 2 synthesis, the orchestrator (Opus) MUST vet Agent 2's output (the Sonnet `flow-research` tech-research run). The catchup operation is the most expensive op in /plan-update — propagating fabricated tech findings into a rewritten plan corrupts the plan and the user's trust in the catchup. Procedure:
+**Phase 1.5: Vet agent output (orchestrator)** — Before Phase 2 synthesis, the orchestrator (Opus) MUST vet Agent 2's output (the Sonnet `flow-research` tech-research run). The catchup operation is the most expensive op in /plan-update — propagating fabricated tech findings into a rewritten plan corrupts the plan and the user's trust in the catchup.
 
-1. **Honour `ESCALATE-TO-DEEP`** if Agent 2 returned the flag — re-dispatch to `flow-research-deep` with the escalation reason before proceeding.
-2. **Verify every "deprecated" / "removed" / "superseded" claim.** These are the highest-impact assertions because they drive plan rewrites. For each claim, the orchestrator runs the cheap verification:
-   - Re-query Context7 for the API in question.
-   - Check the library's official changelog (WebFetch on the changelog URL).
-   - Confirm the version pin in the project manifest matches Agent 2's claimed version.
-   Drop any claim whose verification fails; log the drop with verification evidence.
-3. **Drop unverified `low-confidence:` findings** unless framed as an explicit hypothesis.
-4. **Spot-check at least 3 findings** from Agent 2; confirm cited URLs resolve and match the claim.
-5. Agents 1 + 3 (`general-purpose`) are not vetted at the same depth — they are reconcile / synthesis workloads and the orchestrator already cross-references their outputs in Phase 2 below.
+**Scope:** This vet pass applies to Agent 2 (Sonnet `flow-research` tech research) only. Agents 1 + 3 (general-purpose reconcile / synthesis) are vetting-exempt because the orchestrator already cross-references their outputs in Phase 2.
+
+**Sample size:** Spot-check at least 3 findings from Agent 2 (or all if fewer).
+
+**Lens-specific verification rules:** Verify every "deprecated" / "removed" / "superseded" claim before sampling: re-query Context7 for the API in question; check the library's official changelog (WebFetch on the changelog URL); confirm the version pin in the project manifest matches Agent 2's claimed version. These are the highest-impact assertions because they drive plan rewrites.
+
+<!-- SHARED-BLOCK:vet-flow-research START -->
+**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+
+1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
+2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
+3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
+4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
+5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
+6. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
+7. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
+<!-- SHARED-BLOCK:vet-flow-research END -->
 
 Carry only post-vet Agent 2 findings into Phase 2 synthesis.
 

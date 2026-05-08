@@ -322,6 +322,7 @@ Skip this check when no flow resolved, when `status != "in-progress"`, or when `
 2. **If $ARGUMENTS is empty or only specifies a focus lens**, detect scope from git: on a feature branch use `git diff --name-only $(git merge-base HEAD main)..HEAD` (try `main`, fall back to `master`), otherwise use `git diff --name-only HEAD~1`. Also include `git diff --name-only` for unstaged changes.
 3. If no files are found from either approach, ask the user what to review.
 4. Classify each file by area (backend service, API endpoint, frontend component, infrastructure, config, etc.) — share this classification with all agents so they can focus on what's relevant to their lens.
+5. **Scope-input safety invariant** (applies to step 1's `$ARGUMENTS` handling): when `$ARGUMENTS` is a path or glob, MUST resolve under the git top-level (reject `..` traversal that escapes the repo, refuse absolute paths outside the repo root). When `$ARGUMENTS` is a feature/area name driving Grep/Glob, MUST cap glob breadth to a sensible limit (e.g. ≤200 matched files) — over-broad matches get truncated with a console note so an unbounded user input can't sweep the agent's read scope across `.claude/secrets/*` or other out-of-band paths.
 
 ### Scope classification delegation
 
@@ -448,12 +449,12 @@ Launch **all five** review agents in parallel using the Agent tool. Provide each
 
 | Lens | Agent | subagent_type | Rationale |
 |---|---|---|---|
-| 1. Quality, DRY, Idioms & Pattern Conformance | Agent 1 | **`flow-research-deep`** (Opus) | Type-design expressiveness, idiomatic API choice, internal-consistency judgement against the broader codebase — pure judgement, the kind of lens where a Sonnet shortcut produces "looks fine to me" output that misses the real issues. |
-| 2. Security & Trust Boundaries | Agent 2 | **`flow-research`** (Sonnet) | Hard-capped at 5 findings; the lens is essentials-and-quick-wins, well-known attack surfaces (auth, input validation, secrets, injection), checklist-driven against documented OWASP / framework-specific patterns. The orchestrator's vet pass catches anything over-claimed. |
-| 3. Architecture, Dependencies & Project Structure | Agent 3 | **`flow-research-deep`** (Opus) | Layering, domain modelling, persistence-boundary judgement, cross-aggregate-reference detection — the lens explicitly requires mapping how *types* fit the *domain*, which is the synthesis Sonnet's contract forbids. |
-| 4. Completeness & Robustness | Agent 4 | **`flow-research`** (Sonnet) | Edge-case enumeration, error-path coverage, TODO sweeps — checklist-driven against the changed code's surface. |
-| 5. Testability, Diagnostics & DX | Agent 5 | **`flow-research`** (Sonnet) | Coverage gaps, log-level appropriateness, error-message quality, CLI/help-text discoverability — surface-level lens against documented patterns. |
-| 6. Package Quality (conditional) | Agent 6 | **`flow-research`** (Sonnet) | Static analysis against 6 weighted dimensions, frontmatter / structure / shared-block compliance — purely checklist-driven. |
+| 1. Quality, DRY, Idioms & Pattern Conformance | Agent 1 | **`flow-research-deep` (Opus)** | Type-design expressiveness, idiomatic API choice, internal-consistency judgement against the broader codebase — pure judgement, the kind of lens where a Sonnet shortcut produces "looks fine to me" output that misses the real issues. |
+| 2. Security & Trust Boundaries | Agent 2 | **`flow-research` (Sonnet)** | Hard-capped at 5 findings; the lens is essentials-and-quick-wins, well-known attack surfaces (auth, input validation, secrets, injection), checklist-driven against documented OWASP / framework-specific patterns. The orchestrator's vet pass catches anything over-claimed. |
+| 3. Architecture, Dependencies & Project Structure | Agent 3 | **`flow-research-deep` (Opus)** | Layering, domain modelling, persistence-boundary judgement, cross-aggregate-reference detection — the lens explicitly requires mapping how *types* fit the *domain*, which is the synthesis Sonnet's contract forbids. |
+| 4. Completeness & Robustness | Agent 4 | **`flow-research` (Sonnet)** | Edge-case enumeration, error-path coverage, TODO sweeps — checklist-driven against the changed code's surface. |
+| 5. Testability, Diagnostics & DX | Agent 5 | **`flow-research` (Sonnet)** | Coverage gaps, log-level appropriateness, error-message quality, CLI/help-text discoverability — surface-level lens against documented patterns. |
+| 6. Package Quality (conditional) | Agent 6 | **`flow-research` (Sonnet)** | Static analysis against 6 weighted dimensions, frontmatter / structure / shared-block compliance — purely checklist-driven. |
 
 The Sonnet agents (2, 4, 5, 6) absorb the Context7-first/WebSearch-second contract, version-pinning requirements, evidence-grade rubric, and `escalate-to-deep` tag in `flow-research`'s system prompt. The Opus agents (1, 3) absorb the same plus the mandatory Counter-line, cross-cutting-synthesis licence, and tighter ≤8-finding default in `flow-research-deep`'s system prompt; per-call instructions below override the cap to 20 findings for /review.
 
@@ -569,21 +570,21 @@ Severity scale matches the rest of `/review`: `critical | warning | suggestion` 
 
 After all review agents return but BEFORE the interim checkpoint persists anything to the ledger, the orchestrator (Opus) MUST vet the returned findings. Sonnet sub-agents (Agents 2, 4, 5, 6) are the primary vet target — `flow-research`'s contract is fetch-and-summarise, so its findings carry higher fabrication risk than `flow-research-deep` output (Agents 1, 3). The vet pass is mandatory for both, but the spot-check sample size is asymmetric (see below).
 
-**Vetting procedure:**
+**Sample size (per agent):** Spot-check at least 5 findings per Sonnet (`flow-research`) agent and at least 3 per Opus (`flow-research-deep`) agent (or all if the agent returned fewer). Fabrication risk is higher for Sonnet; broader sample is needed. Record the vet outcome alongside the per-finding tally — the console line format in step 6 of the block below mirrors `review-apply.md` Step 4.5's `vet: cluster <id> — ...` format so vet observability is symmetric across review-time and apply-time gates.
 
-1. **Triage by source agent and evidence-grade.** Group every finding by `(agent_id, evidence-grade)`. Counts per group go in the console output for transparency.
-2. **Honour `ESCALATE-TO-DEEP` flags.** If a Sonnet agent returned `ESCALATE-TO-DEEP: <reason>` at the top of its report, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt. Merge results when the deep run returns.
-3. **Drop unverified `low` findings.** A `low` finding without an explicit `low-confidence:` prefix AND a concrete verification step the user can take is a fabrication risk. Drop it; log the drop in console.
-4. **Spot-check sample sizes (per agent):**
-   - **Sonnet agents (2, 4, 5, 6)**: sample at least **5 findings per agent** (or all if the agent returned fewer). Fabrication risk is higher; broader sample is needed.
-   - **Opus agents (1, 3)**: sample at least **3 findings per agent**. Counter-line discipline reduces but does not eliminate the need to vet.
-5. **For each sampled finding:**
-   - Read the file at the cited `file:line` and confirm the code matches the finding's `summary`/`description`.
-   - For Opus findings, confirm the `Counter` line is plausible — a finding with a Counter that contradicts the Finding itself is broken.
-   - For library-version findings, confirm the version pin in the manifest matches what the agent claimed.
-   - Sanity-check the recommendation: is it deprecated, is it contradicted by surrounding code, would applying it actually be harmful? Sonnet agents are particularly prone to recommending out-of-date patterns.
-6. **Drop or downgrade.** Drop findings that fail vetting with rationale logged. Downgrades (e.g. `high → medium`) are appended as `_orchestrator-downgrade: <reason>` to the finding's evidence-grade line.
-7. **Re-dispatch on systemic failure.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy for Sonnet).
+**Lens-specific verification rules:** For Opus agents, also verify the `Counter` line is plausible — a finding with a Counter that contradicts the Finding itself is broken. For library-version findings, confirm the version pin in the manifest matches what the agent claimed. Sanity-check every sampled recommendation: is it deprecated, is it contradicted by surrounding code, would applying it actually be harmful? Sonnet agents are particularly prone to recommending out-of-date patterns.
+
+<!-- SHARED-BLOCK:vet-flow-research START -->
+**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+
+1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
+2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
+3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
+4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
+5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
+6. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
+7. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
+<!-- SHARED-BLOCK:vet-flow-research END -->
 
 **Why the asymmetric sample.** Sonnet's fetch-and-summarise contract produces findings whose surface looks reasonable but whose grounding is weaker — fabricated `file:line` anchors, recommendations from older library versions, "best practice" claims without sources. Opus's mandatory Counter line forces the agent to articulate the failure mode of its own finding, which catches the worst fabrications inside the agent before they reach the orchestrator. Vet both, but vet Sonnet harder.
 
@@ -705,6 +706,8 @@ Persist the merged state to the ledger file at the path resolved in Step 1 — `
    EOF
    ```
 3. Stamp the header in ONE call: `tomlctl set <ledger> last_updated <YYYY-MM-DD>`.
+
+**Torn-write recovery**: if the run is interrupted between the items batch (call 1) and the `last_updated` stamp (call 2), the ledger has fresh items but a stale header date. On the next /review run that resolves to the same ledger, the orchestrator MUST detect this (header `last_updated` < newest item's `first_flagged`) and re-stamp `last_updated` to today before proceeding. Do NOT roll back the inserts — the items are durable agent output and the latest-report selector in `/review-apply` would otherwise silently exclude them.
 
 `schema_version` MUST be preserved verbatim on every write (`tomlctl` does this automatically — never re-emit or modify it). Do NOT delete the ledger file.
 
