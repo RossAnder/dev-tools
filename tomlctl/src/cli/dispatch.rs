@@ -1511,7 +1511,7 @@ body
         expect_hash(
             &report,
             "flow-context",
-            "7cf84eeb44002586c63f2c3cda3ce2f19f3da944726f7b25ce6361d3a589627a",
+            "2757ea6f7c29b1b658a1ef9ff0015d1dbc8b5bd1e609a98f17601122cac42680",
         );
 
         // --- 4-file ledger-schema block ---
