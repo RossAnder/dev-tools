@@ -73,6 +73,26 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
 
 **Carrier-specific note (`/plan-new`)**: For a fresh plan, no flow exists yet — `envelope.resolved.resolved == false` is the expected outcome and the carrier proceeds to Phase 1 (Scope & Parse) without halting. The bootstrap is still dispatched to detect the rare collision case where a pre-existing flow already matches (e.g. a `/plan-new` re-invocation on the same plan path or branch); on collision, surface `envelope.resolved.tie_candidates` and ask the user whether to resume the existing flow or proceed with a new slug. Phase 7 ("Write Plan") performs the actual flow-creation bootstrap (`context.toml` + execution-record write); the bootstrap agent does NOT create flows — it is read-only.
 
+## Step 0.5: First-use `plansDirectory` prompt (per-carrier)
+
+Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent normalises both the unset case AND the literal `"__DONT_ASK__"` sentinel to `null` — see `flow-bootstrap.md` Contract). When non-null, skip this step entirely; the resolved value is already bound for downstream phases. The wording below is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` (per Task 17 of `docs/plans/flow-tracking-overhaul.md`); do not edit one carrier's copy without mirroring the other two — drift will surface at the next `diff` audit.
+
+1. Build the option list. Always include `docs/plans/` (recommended), `other → free-text`, and `Don't ask again`. Conditionally include `.claude/plans/` ONLY when `[ -d .claude/plans/ ]` returns true at carrier dispatch time (the option must not appear when the directory is absent — listing a non-existent target risks the user picking it).
+2. Dispatch `AskUserQuestion` as a multi-select with the option list from step 1, in the order: `docs/plans/` (recommended) → `.claude/plans/` (when included) → `other → free-text` → `Don't ask again`. Recommended-first ordering follows CLAUDE.md guidance.
+3. **Headless / `acceptEdits` empty-answer detection**: if the AUQ response is a single empty-string answer (per Claude Code issues [#29618](https://github.com/anthropics/claude-code/issues/29618), [#29547](https://github.com/anthropics/claude-code/issues/29547)), bind `plans_directory = ["docs/plans/"]` IN-MEMORY for the remainder of this carrier invocation and DO NOT persist anything — neither the array nor the sentinel. The next interactive session will re-fire this prompt because `settings.json` still lacks the key. Then proceed to step 7 (skip steps 4–6).
+4. **Arbitration rule**: if the user's selection includes `Don't ask again`, discard all other selections and write the literal string `"__DONT_ASK__"` (NOT an array). Otherwise, the selection becomes an array of the chosen path strings (preserve order).
+5. **Free-text follow-up**: if the user's selection includes `other → free-text`, dispatch a follow-up `AskUserQuestion` with a single option labelled `Enter directory path` plus the AUQ "Other" affordance to capture the user's typed value. Append the captured value to the selection array. If the follow-up returns empty (no path supplied), drop the `other` slot from the array entirely (treat as "skip — use default"); do NOT substitute `docs/plans/` here — step 7 already covers the empty-array fallback.
+6. **Persist**: write the result to `.claude/settings.json` via:
+
+   ```bash
+   cat <<'EOF' | tomlctl json set .claude/settings.json plansDirectory --json -
+   <JSON value: either "__DONT_ASK__" string literal OR ["dir1", "dir2", ...] array>
+   EOF
+   ```
+
+   `tomlctl json` skips sidecar maintenance on `settings.json` per P16, so the harness's out-of-band writes (e.g. `/config`) remain compatible.
+7. Bind `plans_directory` for downstream phases: if the user selected `Don't ask again` (sentinel persisted) OR the persisted array is empty after step 5's drop, treat as `["docs/plans/"]` in-memory (the default-of-defaults). Otherwise bind the array as written. Any downstream code that consumed `envelope.plans_directory == null` should now consume this in-memory value.
+
 <!-- SHARED-BLOCK:execution-record-schema START -->
 ## Execution Record Schema
 
