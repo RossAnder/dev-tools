@@ -22,6 +22,9 @@ Quick tour:
 tomlctl get         <file> [path]                     # JSON of value (or whole file)
 tomlctl set         <file> <path> <value> [--type T]  # scalar
 tomlctl set-json    <file> <path> --json <json>       # array / object / scalar
+tomlctl json get    <file> <path>                     # read a value via the json subcommand
+tomlctl json set    <file> <path> --json <value>      # write a value (array / object / scalar)
+tomlctl json unset  <file> <path>                     # delete a key at path
 tomlctl validate    <file>                            # parse-check
 tomlctl items list  <file> [--status X] [--category Y] [--newer-than YYYY-MM-DD] [--file PATH] [--count]
 tomlctl items get   <file> <id>
@@ -35,6 +38,9 @@ tomlctl items find-duplicates <file> [--tier A|B|C] [--across <other>]   # dedup
 tomlctl items orphans  <file>                          # missing-file / symbol-missing / dangling-dep
 tomlctl array-append   <file> <array> --json '{...}'                # append one record
 tomlctl array-append   <file> <array> --ndjson -                    # batched append to e.g. rollback_events
+tomlctl flow active list|add|remove|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...  # manage active-flow registry
+tomlctl flow find-plans [--dirs <d>...] [--strict-read]             # locate plan files under given dirs
+tomlctl flow stale --slug <s> [--threshold <duration>]              # check whether a flow is stale
 tomlctl blocks verify  <file>... [--block <marker-name>]...  # cross-file shared-block parity
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):

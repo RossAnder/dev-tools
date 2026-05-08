@@ -28,6 +28,12 @@ The highest-frequency patterns. Deeper treatment in the linked sections.
 | Next monotonic id | `tomlctl items next-id <file> --prefix R\|O\|E\|P` |
 | Bump scalar field | `tomlctl set <file> <key.path> <value>` |
 | Set array / sub-table | `tomlctl set-json <file> <key.path> --json '<json>'` |
+| Read value via json subcommand | `tomlctl json get <file> <path>` |
+| Write value via json subcommand | `tomlctl json set <file> <path> --json <value>` |
+| Delete a key at path | `tomlctl json unset <file> <path>` |
+| Manage active-flow registry | `tomlctl flow active list\|add\|remove\|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...` |
+| Locate plan files | `tomlctl flow find-plans [--dirs <d>...] [--strict-read]` |
+| Check whether a flow is stale | `tomlctl flow stale --slug <s> [--threshold <duration>]` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` ([see sidecar files](#sidecar-files)) |
 
 ## Common recipes
