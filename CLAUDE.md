@@ -16,13 +16,15 @@ Do not bypass the hook with `--no-verify` on these files — shared-block drift 
 
 **Supply-chain note**: once `core.hooksPath` points at `.githooks/`, every commit runs `.githooks/pre-commit` and everything it invokes (currently `scripts/verify-shared-blocks.sh`). Review PR diffs touching `.githooks/**` or `scripts/verify-shared-blocks.sh` with the same scrutiny you'd apply to an unsandboxed CI step — a malicious commit to those paths runs on your next `git commit` without confirmation.
 
+**Windows note**: `scripts/verify-shared-blocks.sh` requires GNU awk. The default Git Bash for Windows ships mawk, which is not compatible. Install GNU awk via `pacman -S gawk` (MSYS2) or `scoop install gawk` (Scoop) before relying on the pre-commit hook.
+
 ## Build & test
 
 - `cargo build --manifest-path tomlctl/Cargo.toml` — build tomlctl
 - `cargo install --path tomlctl` — install the `tomlctl` binary onto your PATH (run once per clone; rerun when the tomlctl binary version bumps)
 - `cargo test --manifest-path tomlctl/Cargo.toml` — run tomlctl tests
 - `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` — lint
-- `cargo audit --file tomlctl/Cargo.lock` — RUSTSEC advisory check (install once via `cargo install cargo-audit`; run before releases and when updating dependencies)
+- `cargo audit --file tomlctl/Cargo.lock` — RUSTSEC advisory check (install once via `cargo install cargo-audit`; run before releases and when updating dependencies). Run `cargo audit` weekly or before each release; the snapshot in CI/per-task acceptance is not a substitute for cadence.
 - `bash scripts/verify-shared-blocks.sh` — verify shared-block parity across flow-command files (run before committing changes to any of the carriers; the pre-commit hook also runs this automatically when `core.hooksPath` is set per `## Developer setup`)
 
 ## Testing discipline
@@ -40,3 +42,21 @@ Run once per feature INSIDE an existing `/plan-new` flow. Prerequisite: `/test-b
 ### `test-author` skill
 
 Model-discoverable polyglot skill. Activates automatically when the user asks for tests ("write tests for X", "add coverage for Y", "test this function", "generate test cases", "scaffold tests"). Composed by `/tdd`'s RED phase; usable standalone. Framework detection follows a 5-step precedence: (1) target project's CLAUDE.md `<!-- TEST-BOOTSTRAP:STACK -->` marker block (highest priority — set by a prior `/test-bootstrap` run); (2) parent flow's plan-file `## Verification Commands` block; (3) repo manifest walk (Cargo.toml → pyproject/requirements → package.json → go.mod); (4) closest manifest by directory (monorepo tiebreaker); (5) halt with `"No test framework detectable. Run /test-bootstrap first."` Per-language output idioms (Rust / Python / TypeScript / Go) are documented inline in `claude/skills/test-author/SKILL.md` — there are no separate per-language reference docs to maintain.
+
+## Flow registry & plansDirectory
+
+The `plansDirectory` setting in `.claude/settings.json` controls where plan files are stored. It accepts either a string or an array of strings (e.g. `["docs/plans/", ".claude/plans/"]`). Note: the upstream Claude Code settings schema (`https://json.schemastore.org/claude-code-settings.json`) may define `plansDirectory` as string-only — if so, `tomlctl` stores the array under a namespaced key (`tomlctl.plansDirectories`) and reads both for back-compat. Use `tomlctl json get .claude/settings.json plansDirectory` to inspect the current value.
+
+### Adopting the flow registry
+
+When switching an existing repo to the `tomlctl`-backed flow registry (`.claude/active-flow.toml`), perform this one-time migration:
+
+1. Clear the old per-flow state directories: `rm -rf .claude/flows/`
+2. Delete the legacy single-line active-flow file: `rm -f .claude/active-flow`
+3. For each flow that should be recreated, run:
+   ```bash
+   tomlctl flow init --slug <slug> --plan <path/to/plan.md>
+   ```
+   This seeds `context.toml` + `execution-record.toml` under `.claude/flows/<slug>/` and registers the flow in `.claude/active-flow.toml`.
+
+After migration, all flow commands (`tomlctl flow list`, `tomlctl flow resolve`, etc.) read from `.claude/active-flow.toml` exclusively; the legacy `.claude/active-flow` file is ignored.

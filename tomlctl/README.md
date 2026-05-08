@@ -68,6 +68,20 @@ All commands print JSON on stdout, exit non-zero on failure.
 - Dates round-trip as TOML date literals; JSON strings matching `YYYY-MM-DD` are promoted to dates on write.
 - **Integrity sidecar.** Every write emits `<file>.sha256` alongside the target, in standard `sha256sum` format (`<64-hex>  <basename>\n`), written atomically after the primary rename so an interleaved reader cannot see a torn pair. Pass `--no-write-integrity` to opt out. Pass `--verify-integrity` on any invocation to verify the target against its sidecar before every read — a missing sidecar or digest mismatch aborts with expected/actual hashes named in the error. `tomlctl` never auto-repairs; a mismatch means either an out-of-band edit or a corrupted sidecar, and a human should decide which. **Threat model.** The sidecar is a consistency check against accidental corruption and collaborative out-of-band edits — it is **not** a MAC or tamper-proof signature. An attacker with ledger write access can trivially rewrite the sidecar; hostile-actor threat models still require auditing the ledger's git history.
 
+### Editing settings.json safely
+
+Use `tomlctl json` as the safe edit path for `.claude/settings.json` rather than `tomlctl set` or `tomlctl set-json` — TOML writers refuse `.json` paths with a `kind=validation` error directing you to `tomlctl json set`. Quick reference:
+
+```bash
+tomlctl json get .claude/settings.json plansDirectory        # read current value
+tomlctl json set .claude/settings.json plansDirectory --json '["docs/plans/"]'  # write
+tomlctl json unset .claude/settings.json plansDirectory      # delete the key
+```
+
+**Whitespace-churn caveat.** `tomlctl json` uses `serde_json`'s pretty-printer (2-space indent, trailing newline). If `settings.json` was previously hand-formatted or written by a different tool with different indentation, a round-trip through `tomlctl json set` will normalise the entire file's whitespace. This shows as a large diff in `git diff` even when only one value changed — it is cosmetic and safe to commit.
+
+**Sidecar.** `tomlctl json` does not maintain a `.sha256` sidecar for `settings.json` because the Claude Code harness writes that file out-of-band (e.g. on `/config`). Sidecar refresh is skipped by default on paths matching `**/settings.json`; pass `--no-write-integrity` explicitly on other `.json` files if you wish the same behaviour there.
+
 ## Contracts
 
 ### Dedup fingerprint
