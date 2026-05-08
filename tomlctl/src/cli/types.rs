@@ -33,6 +33,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "dry_run",                // T10
     "backfill_dedup_id",      // T11
     "integrity_refresh",      // sidecar bootstrap / recovery primitive
+    "agent_context",          // T-glistening: capabilities .commands flag schema
 ];
 
 /// T7: user-facing top-level subcommand names, as they appear in

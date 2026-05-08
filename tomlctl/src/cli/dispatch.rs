@@ -457,6 +457,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 "version": env!("CARGO_PKG_VERSION"),
                 "features": FEATURES,
                 "subcommands": SUBCOMMANDS,
+                "commands": crate::capabilities::build_agent_context(),
             });
             print_json(&output)?;
         }

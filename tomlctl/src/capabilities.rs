@@ -3,12 +3,6 @@
 //! CommandFactory>::command()` tree and emits a per-subcommand flag schema
 //! suitable for agents that need to introspect `tomlctl`'s surface without
 //! parsing `--help` prose.
-//!
-//! NOTE: `#![allow(dead_code)]` is intentional — this module is not yet
-//! wired into the live binary. Task T6a will remove this attribute when it
-//! integrates `build_agent_context()` into the `Cmd::Capabilities` dispatch
-//! arm.
-#![allow(dead_code)]
 
 use clap::{ArgAction, Command, CommandFactory};
 use serde_json::{Map, Value as JsonValue};
