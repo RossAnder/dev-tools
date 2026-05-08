@@ -120,14 +120,8 @@ fn infer_type(arg: &clap::Arg) -> &'static str {
         ArgAction::SetTrue | ArgAction::SetFalse => "bool",
         ArgAction::Count => "count",
         ArgAction::Append => "string", // Vec<String> repeatable — element type is string
-        ArgAction::Set => {
-            // Could be string, enum, path, etc. Probe possible_values.
-            if arg.get_value_parser().possible_values().is_some() {
-                "enum"
-            } else {
-                "string"
-            }
-        }
+        ArgAction::Set if arg.get_value_parser().possible_values().is_some() => "enum",
+        ArgAction::Set => "string",
         _ => "string",
     }
 }
