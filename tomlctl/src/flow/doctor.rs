@@ -151,9 +151,16 @@ impl Check {
         obj.insert("name".to_string(), JsonValue::String(self.name.to_string()));
         obj.insert("scope".to_string(), JsonValue::String(self.scope.clone()));
         obj.insert("ok".to_string(), JsonValue::Bool(self.ok));
-        if let Some(d) = &self.detail {
-            obj.insert("detail".to_string(), JsonValue::String(d.clone()));
-        }
+        // R41: always emit `detail` key (null when absent) so orchestrators
+        // iterating checks can read `.detail` uniformly without panicking on
+        // key absence.
+        obj.insert(
+            "detail".to_string(),
+            self.detail
+                .as_ref()
+                .map(|d| JsonValue::String(d.clone()))
+                .unwrap_or(JsonValue::Null),
+        );
         JsonValue::Object(obj)
     }
 }
@@ -240,6 +247,10 @@ fn check_one_flow(
     }
 
     // 3. context.toml sidecar.
+    // R35: always emit the sidecar check. When the underlying TOML is
+    // missing, the check passes trivially with a "skipped: …" detail —
+    // structurally present, semantically not-applicable. This keeps the
+    // per-flow check count stable at 6 (8 total once globals are added).
     if context_exists {
         match sidecar_state(&context_file)? {
             Some(SidecarStatus::Ok) => {
@@ -281,6 +292,15 @@ fn check_one_flow(
                 stale_sidecars.push((context_file.clone(), slug.to_string()));
             }
         }
+    } else {
+        // Trivially-not-applicable: context.toml is missing, so the
+        // sidecar check passes with a directed `detail` skip-reason.
+        checks.push(Check {
+            name: "context-sidecar",
+            scope: slug.to_string(),
+            ok: true,
+            detail: Some("skipped: context.toml does not exist".to_string()),
+        });
     }
 
     // 4. execution-record sidecar.
@@ -322,6 +342,14 @@ fn check_one_flow(
                 stale_sidecars.push((er_file.clone(), slug.to_string()));
             }
         }
+    } else {
+        // Trivially-not-applicable: execution-record.toml is missing.
+        checks.push(Check {
+            name: "execution-record-sidecar",
+            scope: slug.to_string(),
+            ok: true,
+            detail: Some("skipped: execution-record.toml does not exist".to_string()),
+        });
     }
 
     // 5 & 6 — only meaningful when context.toml parses. A parse failure on
@@ -679,6 +707,17 @@ pub(crate) fn dispatch(
 
     // 4. .gitignore warning — surfaced as a warning, not a check failure.
     let mut warnings: Vec<JsonValue> = Vec::new();
+
+    // R48: `--dry-run` without `--fix` is silently a no-op — the envelope's
+    // `dry_run` field is computed as `dry_run && fix`, so passing only
+    // `--dry-run` produces `dry_run: false`. Surface a clear warning so
+    // callers don't wonder why the preview is empty. Doctor is JSON-only
+    // (no stderr breadcrumb path), so warnings ride the envelope.
+    if dry_run && !fix {
+        warnings.push(JsonValue::String(
+            "--dry-run has no effect without --fix; add --fix to preview changes".to_string(),
+        ));
+    }
     let gitignore_hit = detect_gitignored_claude(&root);
     if let Some(line) = gitignore_hit.as_ref() {
         // R31: gitignore-claude is a warning, NOT a check failure. Per the

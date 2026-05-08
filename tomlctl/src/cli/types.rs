@@ -541,7 +541,7 @@ pub(crate) enum FlowOp {
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
-    /// Resolve the active flow via the 5-step algorithm.
+    /// Resolve the active flow via the 6-step algorithm.
     Resolve {
         /// Step-1 explicit override: bypass discovery and use this slug.
         #[arg(long = "flow", help = "Step-1 override: resolve to this flow slug verbatim")]

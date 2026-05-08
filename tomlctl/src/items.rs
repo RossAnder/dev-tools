@@ -1665,6 +1665,117 @@ pub(crate) fn compute_array_append_mutation(
     compute_add_many_mutation(doc, array_name, rows, None, &[])
 }
 
+/// R19: typed error for disposition-specific required-field validation.
+///
+/// The `[[items]]` ledger schema couples `status` to a small cluster of
+/// disposition-specific required fields (see `claude/commands/review.md`
+/// `## Ledger Schema → Disposition-specific fields`). Today every read/write
+/// path in this module reaches into `TomlValue::Table` directly, so a row
+/// with `status = "deferred"` but missing `defer_reason` parses as valid
+/// TOML and only surfaces as malformed at render time.
+///
+/// `Item::validate` (below) is the parse-time check that catches the
+/// missing-disposition-field case. It is intentionally additive — no
+/// existing call site is wired through it yet; callers opt in. The
+/// `#[allow(dead_code)]` annotations match the pattern in `errors.rs`
+/// for `ErrorKind` variants reserved for future wiring.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum DispositionError {
+    /// The payload is not a JSON object — disposition validation only makes
+    /// sense over an object payload.
+    NotAnObject { got: &'static str },
+    /// `status` is required for disposition-specific validation but absent
+    /// or non-string. (An item without `status` is malformed under the
+    /// schema; the field is required for every `[[items]]` row.)
+    MissingStatus,
+    /// `status` is set to a disposition value (`fixed`, `applied`,
+    /// `deferred`, `wontfix`, `wontapply`, `verified-clean`) but one or
+    /// more of its required companion fields is missing or empty.
+    MissingDispositionField {
+        status: String,
+        field: &'static str,
+    },
+}
+
+impl std::fmt::Display for DispositionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotAnObject { got } => {
+                write!(f, "item payload must be a JSON object; got {got}")
+            }
+            Self::MissingStatus => f.write_str("item is missing required field `status`"),
+            Self::MissingDispositionField { status, field } => write!(
+                f,
+                "item with status=\"{status}\" is missing required field `{field}`"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DispositionError {}
+
+/// R19: zero-sized typed wrapper that exposes the disposition-required-field
+/// check as `Item::validate`. The call sites in this module continue to
+/// operate on `TomlValue::Table` / `JsonValue` directly — `Item` is a
+/// namespace handle, not a parsed-row container — so adding this entry
+/// point does not perturb the existing `items_*` flow.
+#[allow(dead_code)]
+pub(crate) struct Item;
+
+#[allow(dead_code)]
+impl Item {
+    /// Validate that a JSON item payload satisfies the disposition-specific
+    /// required-field cluster for its `status`. Returns `Ok(())` for the
+    /// `open` status (no companion fields required) and for any unknown
+    /// status (forward-compatible — new dispositions silently pass until
+    /// the taxonomy here is widened). Items without a `status` field error
+    /// with `MissingStatus`.
+    ///
+    /// Required-field clusters mirror `claude/commands/review.md`
+    /// `## Ledger Schema → Disposition-specific fields`:
+    ///   - `fixed` / `applied`           → `resolved`, `resolution`
+    ///   - `deferred`                    → `defer_reason`, `defer_trigger`
+    ///   - `wontfix` / `wontapply`       → `wontfix_rationale`
+    ///   - `verified-clean`              → `verified_note`
+    ///
+    /// "Missing" means absent OR present with an empty value (`""`, `[]`,
+    /// `null`) — matching `is_empty_json` semantics so a placeholder field
+    /// the agent never filled in is detected as a gap rather than papered
+    /// over. `resolved` (a date) is required to be present and non-null;
+    /// `is_empty_json` returns `false` for non-string non-null types so a
+    /// JSON date string or number passes through.
+    pub(crate) fn validate(value: &JsonValue) -> std::result::Result<(), DispositionError> {
+        let JsonValue::Object(map) = value else {
+            return Err(DispositionError::NotAnObject {
+                got: json_type_name(value),
+            });
+        };
+        let status = map
+            .get("status")
+            .and_then(|v| v.as_str())
+            .ok_or(DispositionError::MissingStatus)?;
+        let required: &[&'static str] = match status {
+            "fixed" | "applied" => &["resolved", "resolution"],
+            "deferred" => &["defer_reason", "defer_trigger"],
+            "wontfix" | "wontapply" => &["wontfix_rationale"],
+            "verified-clean" => &["verified_note"],
+            // "open" and any forward-compat unknown status: no companion fields.
+            _ => &[],
+        };
+        for field in required {
+            let present = map.get(*field).is_some_and(|v| !is_empty_json(v));
+            if !present {
+                return Err(DispositionError::MissingDispositionField {
+                    status: status.to_string(),
+                    field,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3696,5 +3807,150 @@ note = "baseline"
             3,
             "1 baseline + 2 appended rows in the named array"
         );
+    }
+
+    // R19: disposition-field validation tests for `Item::validate`.
+
+    #[test]
+    fn item_validate_rejects_non_object_payload() {
+        let arr = serde_json::json!(["R1"]);
+        let err = Item::validate(&arr).unwrap_err();
+        assert!(matches!(err, DispositionError::NotAnObject { .. }));
+    }
+
+    #[test]
+    fn item_validate_rejects_payload_missing_status() {
+        let v = serde_json::json!({"id": "R1", "summary": "x"});
+        assert_eq!(Item::validate(&v), Err(DispositionError::MissingStatus));
+    }
+
+    #[test]
+    fn item_validate_accepts_open_status_with_no_companion_fields() {
+        let v = serde_json::json!({"id": "R1", "status": "open"});
+        assert!(Item::validate(&v).is_ok());
+    }
+
+    #[test]
+    fn item_validate_accepts_unknown_status_forward_compat() {
+        // Forward-compat: a status the validator doesn't know about passes.
+        let v = serde_json::json!({"id": "R1", "status": "rumination-pending"});
+        assert!(Item::validate(&v).is_ok());
+    }
+
+    #[test]
+    fn item_validate_flags_fixed_missing_resolution() {
+        let v = serde_json::json!({"id": "R1", "status": "fixed", "resolved": "2026-04-08"});
+        let err = Item::validate(&v).unwrap_err();
+        assert_eq!(
+            err,
+            DispositionError::MissingDispositionField {
+                status: "fixed".to_string(),
+                field: "resolution"
+            }
+        );
+    }
+
+    #[test]
+    fn item_validate_flags_applied_missing_resolved() {
+        let v = serde_json::json!({"id": "O1", "status": "applied", "resolution": "fix in abc"});
+        let err = Item::validate(&v).unwrap_err();
+        assert_eq!(
+            err,
+            DispositionError::MissingDispositionField {
+                status: "applied".to_string(),
+                field: "resolved"
+            }
+        );
+    }
+
+    #[test]
+    fn item_validate_flags_deferred_missing_defer_trigger() {
+        let v =
+            serde_json::json!({"id": "R1", "status": "deferred", "defer_reason": "blocked"});
+        let err = Item::validate(&v).unwrap_err();
+        assert_eq!(
+            err,
+            DispositionError::MissingDispositionField {
+                status: "deferred".to_string(),
+                field: "defer_trigger"
+            }
+        );
+    }
+
+    #[test]
+    fn item_validate_accepts_complete_deferred() {
+        let v = serde_json::json!({
+            "id": "R1",
+            "status": "deferred",
+            "defer_reason": "blocked",
+            "defer_trigger": "when channel lands",
+        });
+        assert!(Item::validate(&v).is_ok());
+    }
+
+    #[test]
+    fn item_validate_flags_wontfix_missing_rationale() {
+        let v = serde_json::json!({"id": "R1", "status": "wontfix"});
+        let err = Item::validate(&v).unwrap_err();
+        assert_eq!(
+            err,
+            DispositionError::MissingDispositionField {
+                status: "wontfix".to_string(),
+                field: "wontfix_rationale"
+            }
+        );
+    }
+
+    #[test]
+    fn item_validate_flags_wontapply_missing_rationale() {
+        let v = serde_json::json!({"id": "O1", "status": "wontapply"});
+        let err = Item::validate(&v).unwrap_err();
+        assert_eq!(
+            err,
+            DispositionError::MissingDispositionField {
+                status: "wontapply".to_string(),
+                field: "wontfix_rationale"
+            }
+        );
+    }
+
+    #[test]
+    fn item_validate_flags_verified_clean_missing_note() {
+        let v = serde_json::json!({"id": "R1", "status": "verified-clean"});
+        let err = Item::validate(&v).unwrap_err();
+        assert_eq!(
+            err,
+            DispositionError::MissingDispositionField {
+                status: "verified-clean".to_string(),
+                field: "verified_note"
+            }
+        );
+    }
+
+    #[test]
+    fn item_validate_treats_empty_string_as_missing() {
+        // A placeholder field the agent left blank counts as missing — mirrors
+        // `is_empty_json` so the validator catches the gap rather than papers
+        // over an empty rationale.
+        let v = serde_json::json!({"id": "R1", "status": "wontfix", "wontfix_rationale": ""});
+        let err = Item::validate(&v).unwrap_err();
+        assert_eq!(
+            err,
+            DispositionError::MissingDispositionField {
+                status: "wontfix".to_string(),
+                field: "wontfix_rationale"
+            }
+        );
+    }
+
+    #[test]
+    fn item_validate_accepts_complete_fixed() {
+        let v = serde_json::json!({
+            "id": "R1",
+            "status": "fixed",
+            "resolved": "2026-04-08",
+            "resolution": "fixed in abc123",
+        });
+        assert!(Item::validate(&v).is_ok());
     }
 }

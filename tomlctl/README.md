@@ -38,8 +38,9 @@ tomlctl items find-duplicates <file> [--tier A|B|C] [--across <other>]   # dedup
 tomlctl items orphans  <file>                          # missing-file / symbol-missing / dangling-dep
 tomlctl array-append   <file> <array> --json '{...}'                # append one record
 tomlctl array-append   <file> <array> --ndjson -                    # batched append to e.g. rollback_events
-tomlctl flow active list|add|remove|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...  # manage active-flow registry
-tomlctl flow doctor [--slug <s>] [--fix]                            # invariant checks across flows; --fix regenerates sidecars / prunes stale registry entries
+tomlctl flow active list|add|remove [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...  # manage active-flow registry
+tomlctl flow active touch --slug <s> [--dry-run]                    # refresh last_used timestamp for a flow in the registry
+tomlctl flow doctor [--slug <s>] [--fix] [--dry-run]                # invariant checks across flows; always emits JSON; --fix regenerates sidecars / prunes stale registry entries
 tomlctl flow ensure-artifact --slug <s> --kind <k> [--bootstrap]    # report (or bootstrap execution-record) flow artifact + sidecar status
 tomlctl flow find-plans [--dirs <d>...] [--strict-read]             # locate plan files under given dirs
 tomlctl flow init --slug <s> --plan <path> [--branch <b>] [--scope <glob>]...   # seed context.toml + execution-record.toml + active-flow entry (idempotent)

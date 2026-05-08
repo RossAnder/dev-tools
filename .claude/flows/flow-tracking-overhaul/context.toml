@@ -1,6 +1,6 @@
 slug = "flow-tracking-overhaul"
 plan_path = "docs/plans/flow-tracking-overhaul.md"
-status = "review"
+status = "complete"
 created = 2026-05-08
 updated = 2026-05-08
 branch = "main"

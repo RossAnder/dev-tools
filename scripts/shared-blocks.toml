@@ -1,9 +1,26 @@
 # Shared-block parity manifest.
 # Each block must be byte-identical across all listed files.
 # Consumed by scripts/verify-shared-blocks.sh.
+#
+# Carrier-list scope rule (re asymmetry between flow-context and
+# vet-flow-research below):
+#   - flow-context covers ONLY flow-resolving carriers — commands that
+#     read .claude/active-flow.toml and operate inside a flow lifecycle
+#     (plan-new, plan-update, implement, review, optimise, review-plan,
+#     review-apply, optimise-apply, tdd).
+#   - vet-flow-research covers carriers that fan out research agents and
+#     vet their output. test-bootstrap is intentionally a vet-flow-research
+#     carrier (Phase 2.5 vets agent output) but is intentionally NOT a
+#     flow-context carrier: /test-bootstrap is not flow-aware (see the
+#     opening note in claude/commands/test-bootstrap.md — it does not read
+#     .claude/active-flow.toml and does not participate in the plan/
+#     implement/review lifecycle). The two lists are therefore not subsets
+#     of each other by design; do not "rationalise" them by aligning
+#     coverage.
 
 [[block]]
 name = "flow-context"
+# Flow-resolving carriers only — see carrier-list scope rule at top of file.
 files = [
   "claude/commands/optimise.md",
   "claude/commands/review.md",
@@ -78,6 +95,8 @@ files = [
 
 [[block]]
 name = "vet-flow-research"
+# Includes test-bootstrap.md (a non-flow-aware carrier) — see carrier-list
+# scope rule at top of file. Asymmetry vs flow-context is intentional.
 files = [
   "claude/commands/optimise.md",
   "claude/commands/plan-new.md",

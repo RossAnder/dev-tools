@@ -63,6 +63,23 @@
 | E59 | Consolidated 3 active-flow registry parsers into flow::schema (R17 user-authorised overrid | 2026-05-08 | `—` | DB warning (R17) reopened after user-authorised override of cluster scope-confinement. Created tomlctl/src/flow/schema.rs as single source o | — |
 | E60 | Removed --cwd flag from flow resolve (R26 user-authorised override) | 2026-05-08 | `—` | Architecture warning (R26) reopened after user-authorised override of public-CLI-surface gate. Removed --cwd from cli/types.rs FlowOp::Resol | — |
 | E61 | R16 doc-only addition: integrity sidecar (.sha256) scope subsection added to CLAUDE.md | 2026-05-08 | `—` | Applied via /review-apply for review-ledger item R16. CLAUDE.md is in the flow's scope globs, so the doc addition is recorded as a plan dev | — |
+| E62 | Added Item::validate(&JsonValue) -> Result<(), DispositionError> + DispositionError enum t | 2026-05-08 | `—` | Review finding R19 surfaced parse-time disposition-required-field validation as a correctness improvement; agent added Item::validate as | — |
+| E63 | Narrowed 11/11 flow leaf modules from pub(crate) to plain mod | 2026-05-08 | `—` | Review finding R21 surfaced over-broad visibility scope; agent re-confirmed all callers are intra-flow then narrowed all 11 leaves to pl | — |
+| E64 | Unified resolver step-count documentation to 6-step across resolve.rs:1 and cli/types.rs:5 | 2026-05-08 | `—` | Review finding R23 surfaced inconsistency; agent verified resolver code emits 6 distinct source paths and unified docs to 6-step; flow- | — |
+| E65 | Replaced stale P19 deferred-work comment in json.rs L18-22 with cross-reference to wired r | 2026-05-08 | `—` | Review finding R28 surfaced the comment is stale (P19 already implemented at cli/dispatch.rs:274-281 and wired at L425/L454/L502); agen | — |
+| E66 | doctor.rs always emits sidecar checks even when underlying TOML missing | 2026-05-08 | `—` | Review finding R35 surfaced shape inconsistency; agent normalised to always emit sidecar checks with skip-detail recording why when TOM | — |
+| E67 | Check::to_json now always emits detail key (null when None) | 2026-05-08 | `—` | Review finding R41 surfaced shape-stability issue for orchestrators iterating checks; agent normalised to always emit detail (serde_jso | — |
+| E68 | Added doctor_corrupt_active_flow_toml_silent_passes_stale_check integration test | 2026-05-08 | `—` | Review finding R42 surfaced gap in integration coverage; agent added the test (existing flow_resolve.rs:628 covered the resolver path o | — |
+| E69 | Added step_3_binding_tie_falls_through_to_active_latest integration test | 2026-05-08 | `—` | Review finding R44 surfaced gap; agent added the integration test pinning step-3-tie -> step-4-active-latest fallthrough via the full C | — |
+| E70 | Added tie_resolution_envelope_carries_canonical_5_keys shape-pin | 2026-05-08 | `—` | Review finding R45 surfaced gap; agent added shape-pin for the 5-key tie-resolution envelope (resolved/source/ties_broken/tie_candidate | — |
+| E71 | README Quick tour now demonstrates orchestrator-facing flag forms | 2026-05-08 | `—` | Review finding R46 surfaced missing orchestrator-facing flag forms; agent added separate flow active touch line, retained --with-stalen | — |
+| E72 | Surfaced --dry-run-without-fix UX warning via envelope warnings[] channel | 2026-05-08 | `—` | Review finding R48 surfaced UX gap; agent chose envelope-warnings channel (spec's alternative path) since doctor is JSON-only via print | — |
+| E73 | Extended envelope shape-stability tests to 4 additional resolution paths | 2026-05-08 | `—` | Review finding R49 surfaced 13-key requirement is contractual across all paths; agent added scope-glob/active-binding/active-latest/bra | — |
+| E74 | Expanded inline-bypass tradeoff comment in tdd.md L392 | 2026-05-08 | `—` | Review finding R51 surfaced opaque tradeoff; agent expanded the comment to enumerate bypassed gates (version-check, doctor) and articul | — |
+| E75 | Corrected three -> four command count in flow-bootstrap.md:84 hard-rules block | 2026-05-08 | `—` | Review finding R54 surfaced off-by-one count typo; agent corrected three -> four to match actual list of literals (--version, flow reso | — |
+| E76 | Added envelope_version: 1 to flow-bootstrap.md frontmatter | 2026-05-08 | `—` | Review finding R55 surfaced version-tracking gap; agent added envelope_version: 1 (integer for numeric comparability) with preceding YA | — |
+| E77 | Removed redundant parenthetical at tdd.md L439 | 2026-05-08 | `—` | Review finding R57 surfaced redundant content noise (Step 0 guarantee already documented in SHARED-BLOCK:flow-context block at L31-72); | — |
+| E78 | Added scope-rationale comments documenting carrier-list asymmetry in shared-blocks.toml | 2026-05-08 | `—` | Review finding R59 surfaced potential reader confusion; agent confirmed asymmetry is intentional (test-bootstrap is non-flow-aware per | — |
 
 ---
 
@@ -78,4 +95,4 @@
 
 | Date | Changes | Commits |
 |------|---------|---------|
-| 2026-05-08 | 61 entries: status-transition × 2, checkpoint × 1, task-completion × 18, deviation × 30, verification × 10 | 0134ce4, 2983cdd, 494254e, 4b29c9a, 58d9307, 5ee8c9d, 6aa837a, 735cdae, 8ffa35f, b8c6f8c, c1bad18, cf03863 |
+| 2026-05-08 | 79 entries: status-transition × 3, checkpoint × 1, task-completion × 18, deviation × 47, verification × 10 | 0134ce4, 2983cdd, 494254e, 4b29c9a, 58d9307, 5ee8c9d, 6aa837a, 735cdae, 8ffa35f, b8c6f8c, c1bad18, cf03863 |

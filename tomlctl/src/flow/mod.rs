@@ -4,17 +4,17 @@
 //! composite tasks (T7–T11) can each edit their own file without colliding on
 //! `flow/mod.rs` or `flow/dispatch.rs`.
 
-pub(crate) mod active;
-pub(crate) mod artifacts;
-pub(crate) mod doctor;
-pub(crate) mod ensure_artifact;
-pub(crate) mod find_plans;
-pub(crate) mod init;
-pub(crate) mod list;
-pub(crate) mod resolve;
-pub(crate) mod schema;
-pub(crate) mod stale;
-pub(crate) mod time;
+mod active;
+mod artifacts;
+mod doctor;
+mod ensure_artifact;
+mod find_plans;
+mod init;
+mod list;
+mod resolve;
+mod schema;
+mod stale;
+mod time;
 
 mod dispatch;
 

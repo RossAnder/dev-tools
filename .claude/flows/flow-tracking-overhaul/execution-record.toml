@@ -795,3 +795,200 @@ summary = "R16 doc-only addition: integrity sidecar (.sha256) scope subsection a
 original_intent = "The plan task list did not include CLAUDE.md threat-model documentation for the integrity sidecar; R16 surfaced via /review as a security-category suggestion outside the original plan scope"
 rationale = "Applied via /review-apply for review-ledger item R16. CLAUDE.md is in the flow's scope globs, so the doc addition is recorded as a plan deviation. The added subsection at CLAUDE.md:66-70 documents that the .sha256 sidecar detects accidental corruption only and is not a tamper-evident seal against an attacker with write access to .claude/ — closing R16's documentation request without changing any tomlctl source code"
 dedup_id = "dd97c24dff5b6377"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E62"
+task_ref = "review-finding-R19"
+summary = "Added Item::validate(&JsonValue) -> Result<(), DispositionError> + DispositionError enum to items.rs as additive opt-in API"
+original_intent = "Plan tasked items.rs with TomlValue::Table-direct ops; no typed-row wrapper API was specified"
+rationale = "Review finding R19 surfaced parse-time disposition-required-field validation as a correctness improvement; agent added Item::validate as additive opt-in API with 13 unit tests; not yet wired into items_* call sites (zero behavioural change today, additive surface for future wiring)"
+dedup_id = "a7faad659ac09d3e"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E63"
+task_ref = "review-finding-R21"
+summary = "Narrowed 11/11 flow leaf modules from pub(crate) to plain mod"
+original_intent = "Plan declared flow leaves as pub(crate) per CLI dispatch surface convention"
+rationale = "Review finding R21 surfaced over-broad visibility scope; agent re-confirmed all callers are intra-flow then narrowed all 11 leaves to plain mod (finding's premise about leaf import map being dispatch-only was wrong but conclusion still held — Rust mod scoping permits the narrowing for siblings)"
+dedup_id = "18f4945b75cc3a1f"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E64"
+task_ref = "review-finding-R23"
+summary = "Unified resolver step-count documentation to 6-step across resolve.rs:1 and cli/types.rs:544"
+original_intent = "Plan documented resolver as 5-step in some carriers and 6-step in others (drift accumulated during implementation as the source enum grew the scope-glob path)"
+rationale = "Review finding R23 surfaced inconsistency; agent verified resolver code emits 6 distinct source paths and unified docs to 6-step; flow-context.md template and tdd.md:395 already correct"
+dedup_id = "ca2afd0ff0571aef"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E65"
+task_ref = "review-finding-R28"
+summary = "Replaced stale P19 deferred-work comment in json.rs L18-22 with cross-reference to wired refusal helper"
+original_intent = "Plan deferred P19 symmetric refusal as 'follow-up commit' per json.rs L18-22 module docstring"
+rationale = "Review finding R28 surfaced the comment is stale (P19 already implemented at cli/dispatch.rs:274-281 and wired at L425/L454/L502); agent replaced with cross-reference; comment-only edit, no behaviour change"
+dedup_id = "8b8918a8ae11d806"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E66"
+task_ref = "review-finding-R35"
+summary = "doctor.rs always emits sidecar checks even when underlying TOML missing"
+original_intent = "Plan documented doctor as emitting 8 checks per flow but implementation conditionally skipped sidecar checks when TOML absent"
+rationale = "Review finding R35 surfaced shape inconsistency; agent normalised to always emit sidecar checks with skip-detail recording why when TOML missing"
+dedup_id = "0c222d5daf9af09a"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E67"
+task_ref = "review-finding-R41"
+summary = "Check::to_json now always emits detail key (null when None)"
+original_intent = "Plan emitted Check.detail conditionally only when self.detail.is_some()"
+rationale = "Review finding R41 surfaced shape-stability issue for orchestrators iterating checks; agent normalised to always emit detail (serde_json::Value::Null when None) so consumers can read uniformly without panicking on key absence"
+dedup_id = "8d94a4e130db1d82"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E68"
+task_ref = "review-finding-R42"
+summary = "Added doctor_corrupt_active_flow_toml_silent_passes_stale_check integration test"
+original_intent = "Plan included unit tests for malformed registry but no integration test for doctor's silent-pass behaviour at L443"
+rationale = "Review finding R42 surfaced gap in integration coverage; agent added the test (existing flow_resolve.rs:628 covered the resolver path only — separate function with separate silent-pass implementation)"
+dedup_id = "85f409cd294cbe81"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E69"
+task_ref = "review-finding-R44"
+summary = "Added step_3_binding_tie_falls_through_to_active_latest integration test"
+original_intent = "Plan included step-3-tie unit test in resolve.rs:940-960 but no integration test for full CLI fallthrough composition"
+rationale = "Review finding R44 surfaced gap; agent added the integration test pinning step-3-tie -> step-4-active-latest fallthrough via the full CLI path"
+dedup_id = "770e2d0645c050ca"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E70"
+task_ref = "review-finding-R45"
+summary = "Added tie_resolution_envelope_carries_canonical_5_keys shape-pin"
+original_intent = "Plan included resolved-happy-path 13-key shape-pin at flow_resolve.rs:585; no companion shape-pin for the unresolved-with-ties envelope"
+rationale = "Review finding R45 surfaced gap; agent added shape-pin for the 5-key tie-resolution envelope (resolved/source/ties_broken/tie_candidates/warnings)"
+dedup_id = "556d7acb5295a02d"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E71"
+task_ref = "review-finding-R46"
+summary = "README Quick tour now demonstrates orchestrator-facing flag forms"
+original_intent = "Plan documented README Quick tour with abbreviated flag set"
+rationale = "Review finding R46 surfaced missing orchestrator-facing flag forms; agent added separate flow active touch line, retained --with-staleness on flow resolve (already present), and updated flow doctor comment to 'always emits JSON' instead of adding the intentionally-dropped --json flag (per types.rs:587 R7 fix). Lite-cluster vet confirmed --json drop interpretation correct."
+dedup_id = "77eddbaa23aae21a"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E72"
+task_ref = "review-finding-R48"
+summary = "Surfaced --dry-run-without-fix UX warning via envelope warnings[] channel"
+original_intent = "Plan emitted envelope dry_run as `dry_run && fix` (silently dropped --dry-run alone, confusing UX)"
+rationale = "Review finding R48 surfaced UX gap; agent chose envelope-warnings channel (spec's alternative path) since doctor is JSON-only via print_json_compact and existing warnings[] entries follow the same idiom; envelope dry_run semantics unchanged"
+dedup_id = "dcf98f8c351bd6e3"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E73"
+task_ref = "review-finding-R49"
+summary = "Extended envelope shape-stability tests to 4 additional resolution paths"
+original_intent = "Plan included envelope shape-stability test at flow_resolve.rs:585 only on explicit-flag resolution path"
+rationale = "Review finding R49 surfaced 13-key requirement is contractual across all paths; agent added scope-glob/active-binding/active-latest/branch-match shape-pin tests via RESOLVED_ENVELOPE_KEYS const + assert_resolved_keys helper (chose helper-plus-4-tests over rstest parameterisation for clearer per-path failure surfacing)"
+dedup_id = "bb4b0e490d2f8c2d"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E74"
+task_ref = "review-finding-R51"
+summary = "Expanded inline-bypass tradeoff comment in tdd.md L392"
+original_intent = "Plan called `tomlctl flow resolve --flow <slug> --json` inline at tdd.md L392 with terse 'intentional bypass' comment"
+rationale = "Review finding R51 surfaced opaque tradeoff; agent expanded the comment to enumerate bypassed gates (version-check, doctor) and articulate why bypass is safe (Step 0 already cleared both for parent flow; this is a re-read for plan_path projection, not a fresh resolution)"
+dedup_id = "f904b6767b72e7f8"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E75"
+task_ref = "review-finding-R54"
+summary = "Corrected three -> four command count in flow-bootstrap.md:84 hard-rules block"
+original_intent = "Plan documented hard-rules block as 'three command literals' followed by four literals (--version, flow resolve, flow doctor, json get)"
+rationale = "Review finding R54 surfaced off-by-one count typo; agent corrected three -> four to match actual list"
+dedup_id = "f262a0c81cb3fa9f"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E76"
+task_ref = "review-finding-R55"
+summary = "Added envelope_version: 1 to flow-bootstrap.md frontmatter"
+original_intent = "Plan declared flow-bootstrap.md frontmatter without a version/since field for the envelope contract"
+rationale = "Review finding R55 surfaced version-tracking gap; agent added envelope_version: 1 (integer for numeric comparability) with preceding YAML comment pointing to Contract section; bump on breaking envelope-shape changes"
+dedup_id = "46d5fc373436f953"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E77"
+task_ref = "review-finding-R57"
+summary = "Removed redundant parenthetical at tdd.md L439"
+original_intent = "Plan included Resume protocol step 1 with parenthetical restating Step 0's guarantee"
+rationale = "Review finding R57 surfaced redundant content noise (Step 0 guarantee already documented in SHARED-BLOCK:flow-context block at L31-72); agent removed the parenthetical"
+dedup_id = "7d8c6e566db72af0"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E78"
+task_ref = "review-finding-R59"
+summary = "Added scope-rationale comments documenting carrier-list asymmetry in shared-blocks.toml"
+original_intent = "Plan declared vet-flow-research and flow-context block manifests as separate carrier lists with asymmetric coverage of test-bootstrap.md"
+rationale = "Review finding R59 surfaced potential reader confusion; agent confirmed asymmetry is intentional (test-bootstrap is non-flow-aware per its own opening note) and added Option A (document inline) — comment block at top of shared-blocks.toml plus reciprocal notes near both block tables; verifier still reports parity OK"
+dedup_id = "f6d3f373630f83be"
+
+[[items]]
+id = "E79"
+type = "status-transition"
+date = 2026-05-08
+agent = "plan-update"
+from_status = "review"
+to_status = "complete"
+summary = "User explicitly marked flow complete via /plan-update flow-tracking-overhaul complete"
+dedup_id = "bdeb082c52ad5b11"

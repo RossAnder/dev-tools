@@ -660,3 +660,276 @@ slug = "broken"
         "stderr must surface the registry-unreadable warning: {stderr}"
     );
 }
+
+/// R42: contract pin for `tomlctl flow doctor`'s independent silent-pass
+/// path on a malformed `.claude/active-flow.toml`. Doctor's
+/// `collect_stale_active_slugs` swallows the parse error and returns an
+/// empty stale-slug list (mirrors the resolver's `load_active_entries`
+/// behaviour but is a separate code path). The intentional silent-pass is
+/// documented in `doctor.rs` with the comment "Malformed registry: surface
+/// zero stale entries"; this test locks the contract in so a future
+/// refactor can't accidentally escalate the parse failure to a hard error.
+#[test]
+fn doctor_corrupt_active_flow_toml_silent_passes_stale_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join(".claude")).unwrap();
+    // Unclosed `[[active]]` array-of-tables — toml parser rejects this.
+    let body = r#"schema_version = 1
+[[active
+slug = "broken"
+"#;
+    seed_active_registry(root, body);
+
+    // Run doctor with no slug filter → it walks the (empty) flows dir and
+    // runs the global active-flow-registry check. The malformed registry
+    // must NOT escalate to a hard error; doctor must succeed and emit a
+    // passing `active-flow-registry` check (empty stale list).
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", root)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("flow")
+        .arg("doctor")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("stdout must parse as JSON");
+    let checks = v["checks"].as_array().expect("checks array");
+    let registry_check = checks
+        .iter()
+        .find(|c| c["name"].as_str() == Some("active-flow-registry"))
+        .expect("active-flow-registry check present");
+    assert_eq!(
+        registry_check["ok"],
+        serde_json::json!(true),
+        "malformed registry must silent-pass the stale check; got: {registry_check}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// R44: step-3 tie → step-4 active-latest fallthrough composition
+// ---------------------------------------------------------------------------
+
+/// R44: Two registry entries whose `binding.branch` both equal the caller's
+/// `--branch` produce a step-3 binding-match tie. The tie causes
+/// `best_binding_match` to return `None`, falling through to step-4
+/// active-latest. Pins the full CLI composition of step-3-tie →
+/// step-4-fallthrough that previously had only a unit test in resolve.rs.
+#[test]
+fn step_3_binding_tie_falls_through_to_active_latest() {
+    let (dir, _claude) = fresh_root();
+    seed_flow_context(
+        dir.path(),
+        "feature-x",
+        &make_context("feature-x", "in-progress", Some("feat/x"), &[]),
+    );
+    seed_flow_context(
+        dir.path(),
+        "feature-y",
+        &make_context("feature-y", "in-progress", Some("feat/x"), &[]),
+    );
+    seed_all_canonical_artifacts(dir.path(), "feature-x");
+    seed_all_canonical_artifacts(dir.path(), "feature-y");
+
+    // Both bindings target the SAME branch (feat/x) → step-3 ties on
+    // score=1, returns None, and the resolver falls through to step-4.
+    // `feature-y`'s `last_used` is later, so step-4 picks it.
+    seed_active_registry(
+        dir.path(),
+        r#"schema_version = 1
+
+[[active]]
+slug = "feature-x"
+last_used = "2026-05-08T10:00:00Z"
+[active.binding]
+branch = "feat/x"
+
+[[active]]
+slug = "feature-y"
+last_used = "2026-05-09T12:00:00Z"
+[active.binding]
+branch = "feat/x"
+"#,
+    );
+
+    let v = run_resolve(&dir, &["--branch", "feat/x"]);
+    assert_eq!(v["resolved"], serde_json::json!(true));
+    assert_eq!(
+        v["source"],
+        serde_json::json!("active-latest"),
+        "step-3 tie must fall through to step-4 active-latest; got: {v}"
+    );
+    assert_eq!(v["slug"], serde_json::json!("feature-y"));
+}
+
+// ---------------------------------------------------------------------------
+// R45: tie-resolution envelope shape pin (5-key shape)
+// ---------------------------------------------------------------------------
+
+/// R45: pair the resolved-happy-path 13-key shape pin with a 5-key shape
+/// pin for the tie-resolution envelope. The unresolved-with-ties envelope
+/// emits exactly 5 keys: `resolved`, `source`, `ties_broken`,
+/// `tie_candidates`, `warnings`. Adding or dropping a key in
+/// `ResolveEnvelope::to_json` must trip this test.
+#[test]
+fn tie_resolution_envelope_carries_canonical_5_keys() {
+    let (dir, _claude) = fresh_root();
+    // Two flows whose scope globs both match the caller's --path → step-2
+    // tie path → `build_unresolved_envelope_with_ties`.
+    seed_flow_context(
+        dir.path(),
+        "alpha",
+        &make_context("alpha", "in-progress", Some("feat/a"), &["src/foo/**"]),
+    );
+    seed_flow_context(
+        dir.path(),
+        "beta",
+        &make_context("beta", "in-progress", Some("feat/b"), &["src/**"]),
+    );
+    seed_all_canonical_artifacts(dir.path(), "alpha");
+    seed_all_canonical_artifacts(dir.path(), "beta");
+
+    let v = run_resolve(&dir, &["--path", "src/foo/bar.rs"]);
+    assert_eq!(v["resolved"], serde_json::json!(false));
+    let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(|s| s.as_str()).collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec![
+            "resolved",
+            "source",
+            "tie_candidates",
+            "ties_broken",
+            "warnings",
+        ],
+        "tie-resolution envelope must carry exactly the 5 canonical keys; got: {v}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// R49: 13-key resolved-envelope shape pin across all resolution paths
+// ---------------------------------------------------------------------------
+
+/// Canonical 13-key set for the resolved envelope. Used by the
+/// per-resolution-path shape pins below. Sorted lexically.
+const RESOLVED_ENVELOPE_KEYS: &[&str] = &[
+    "artifacts",
+    "branch",
+    "context_path",
+    "plan_path",
+    "resolved",
+    "scope",
+    "slug",
+    "source",
+    "stale",
+    "status",
+    "tie_candidates",
+    "ties_broken",
+    "warnings",
+];
+
+/// Assert the supplied envelope's top-level key set equals the 13 canonical
+/// keys (sorted-key comparison). Used to pin the resolved-envelope shape
+/// across every resolution path.
+fn assert_resolved_keys(v: &serde_json::Value, source_label: &str) {
+    let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(|s| s.as_str()).collect();
+    keys.sort();
+    assert_eq!(
+        keys, RESOLVED_ENVELOPE_KEYS,
+        "{source_label}: resolved envelope must carry the 13 canonical keys; got: {v}"
+    );
+}
+
+/// R49: scope-glob resolution path emits the 13-key resolved envelope.
+#[test]
+fn resolved_envelope_keys_via_scope_glob() {
+    let (dir, _claude) = fresh_root();
+    seed_flow_context(
+        dir.path(),
+        "feature-x",
+        &make_context("feature-x", "in-progress", Some("feat/x"), &["src/foo/**"]),
+    );
+    seed_all_canonical_artifacts(dir.path(), "feature-x");
+
+    let v = run_resolve(&dir, &["--path", "src/foo/bar.rs"]);
+    assert_eq!(v["resolved"], serde_json::json!(true));
+    assert_eq!(v["source"], serde_json::json!("scope-glob"));
+    assert_resolved_keys(&v, "scope-glob");
+}
+
+/// R49: active-binding resolution path emits the 13-key resolved envelope.
+#[test]
+fn resolved_envelope_keys_via_active_binding() {
+    let (dir, _claude) = fresh_root();
+    seed_flow_context(
+        dir.path(),
+        "feature-x",
+        &make_context("feature-x", "in-progress", Some("feat/x"), &[]),
+    );
+    seed_all_canonical_artifacts(dir.path(), "feature-x");
+    seed_active_registry(
+        dir.path(),
+        r#"schema_version = 1
+
+[[active]]
+slug = "feature-x"
+last_used = "2026-05-08T10:00:00Z"
+[active.binding]
+branch = "feat/x"
+"#,
+    );
+
+    let v = run_resolve(&dir, &["--branch", "feat/x"]);
+    assert_eq!(v["resolved"], serde_json::json!(true));
+    assert_eq!(v["source"], serde_json::json!("active-binding"));
+    assert_resolved_keys(&v, "active-binding");
+}
+
+/// R49: active-latest resolution path emits the 13-key resolved envelope.
+#[test]
+fn resolved_envelope_keys_via_active_latest() {
+    let (dir, _claude) = fresh_root();
+    seed_flow_context(
+        dir.path(),
+        "feature-x",
+        &make_context("feature-x", "in-progress", Some("feat/x"), &[]),
+    );
+    seed_all_canonical_artifacts(dir.path(), "feature-x");
+    // Registry entry without a binding-branch match → step-3 produces no
+    // hit; step-4 active-latest picks the only entry.
+    seed_active_registry(
+        dir.path(),
+        r#"schema_version = 1
+
+[[active]]
+slug = "feature-x"
+last_used = "2026-05-08T10:00:00Z"
+"#,
+    );
+
+    let v = run_resolve(&dir, &[]);
+    assert_eq!(v["resolved"], serde_json::json!(true));
+    assert_eq!(v["source"], serde_json::json!("active-latest"));
+    assert_resolved_keys(&v, "active-latest");
+}
+
+/// R49: branch-match resolution path emits the 13-key resolved envelope.
+/// (Registry intentionally absent → step-5 fires.)
+#[test]
+fn resolved_envelope_keys_via_branch_match() {
+    let (dir, _claude) = fresh_root();
+    seed_flow_context(
+        dir.path(),
+        "current-feat",
+        &make_context("current-feat", "in-progress", Some("feat/x"), &[]),
+    );
+    seed_all_canonical_artifacts(dir.path(), "current-feat");
+
+    let v = run_resolve(&dir, &["--branch", "feat/x"]);
+    assert_eq!(v["resolved"], serde_json::json!(true));
+    assert_eq!(v["source"], serde_json::json!("branch-match"));
+    assert_resolved_keys(&v, "branch-match");
+}

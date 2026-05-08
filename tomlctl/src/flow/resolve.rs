@@ -1,5 +1,4 @@
-//! T10: `tomlctl flow resolve` — the 5-step (in practice 6-step) flow
-//! resolution keystone.
+//! T10: `tomlctl flow resolve` — the 6-step flow resolution keystone.
 //!
 //! Read-only. Composes Phase A primitives via internal Rust calls (NOT
 //! subprocesses): the `.claude/active-flow.toml` parser is mirrored from

@@ -15,11 +15,10 @@
 //!     The skip is path-name-keyed so a project's own `settings.json`
 //!     under `.claude/flows/<slug>/...` is also exempt.
 //!
-//! P19 is partially implemented in this module: the JSON writers refuse a
-//! `.toml` target with `kind=validation`. The symmetric refusal on the TOML
-//! side (e.g. `tomlctl set foo.json key val` → "use tomlctl json set ...")
-//! requires editing `cli/dispatch.rs`, which is outside this task's owned
-//! files; the orchestrator will pick that up as a follow-up commit.
+//! P19 (both halves): JSON writers refuse a `.toml` target (`kind=validation`);
+//! the symmetric TOML-side refusal lives in
+//! `cli::dispatch::refuse_json_extension_for_toml_writers` (wired at
+//! dispatch.rs L425, L454, L502).
 //!
 //! Plan deviation: the plan referenced `io::resolve_target` as the
 //! containment helper. The actual containment guard in `io.rs` is

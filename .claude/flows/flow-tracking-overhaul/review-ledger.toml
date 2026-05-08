@@ -317,7 +317,7 @@ resolution = "Introduced struct ResolveEnvelope with to_json() method preserving
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R19"
 file = "tomlctl/src/items.rs"
@@ -328,6 +328,8 @@ effort = "medium"
 category = "db"
 summary = "`[[items]]` schema (~25 fields with disposition-specific required-field clusters) documented in review.md prose only; items.rs has no `struct Item` — every read/write reaches into TomlValue::Table directly. Add a thin `Item::validate(&JsonValue) -> Result<(), DispositionError>` for missing-disposition-field detection at parse time without sacrificing extensibility"
 dedup_id = "83e2f5926d4760b0"
+resolved = 2026-05-08
+resolution = "Added Item::validate(&JsonValue) -> Result<(), DispositionError> + DispositionError enum (zero-sized struct, pub(crate)) to items.rs as additive opt-in API for parse-time disposition-required-field validation; 13 unit tests; not yet wired into items_* call sites (additive only — wiring deferred per dispatch instruction)"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -349,7 +351,7 @@ resolution = "Added history-loss WARNING blockquote in CLAUDE.md 'Adopting the f
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R21"
 file = "tomlctl/src/flow/mod.rs"
@@ -360,6 +362,8 @@ effort = "trivial"
 category = "architecture"
 summary = "8 flow leaf modules declared `pub(crate)` but only flow/dispatch.rs imports them (grep `crate::flow::(active|resolve|init|doctor|stale|find_plans|ensure_artifact|list)::` outside flow/ returns empty); narrow visibility to plain `mod` unless future whitebox tests require the wider surface"
 dedup_id = "5b8d6afe7f83b2f2"
+resolved = 2026-05-08
+resolution = "Narrowed 11 of 11 flow leaf modules to plain mod (active, artifacts, doctor, ensure_artifact, find_plans, init, list, resolve, schema, stale, time); finding's premise about leaf-import map was wrong (init/active/list/resolve/doctor/ensure_artifact/stale all import siblings) but Rust mod scoping still permits narrowing for all 11; dispatch leaf was already plain mod with pub(crate) use dispatch::dispatch re-export"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -381,7 +385,7 @@ resolution = "Extended active.rs module docstring with last-writer-wins / adviso
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R23"
 file = "tomlctl/src/flow/resolve.rs"
@@ -392,6 +396,8 @@ effort = "trivial"
 category = "architecture"
 summary = "Resolver step-count inconsistent: '5-in-practice-6' (resolve.rs:1), '5-step algorithm' (cli/types.rs:526), '6-step algorithm' (templates/flow-context.md:241, tdd.md:395) — pick one count and document consistently"
 dedup_id = "b3e164b4bd45ead2"
+resolved = 2026-05-08
+resolution = "Unified resolver step-count to 6-step across tomlctl/src/flow/resolve.rs:1 and tomlctl/src/cli/types.rs:544; templates/flow-context.md and tdd.md:395 already said 6-step and required no edit"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -413,7 +419,7 @@ resolution = "pick_active_latest now parses each last_used to jiff::Timestamp at
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "flow-tracking-overhaul"
 id = "R25"
 file = "tomlctl/src/flow/active.rs"
@@ -424,6 +430,7 @@ effort = "small"
 category = "db"
 summary = "`.claude/active-flow.toml` schema documented only in active.rs's private module docstring; context.toml schema inline in init.rs::build_seed_doc; promote both to docs/flow-schemas.md or a `crate::flow::schema` module with serde::Deserialize derives so a single grep finds the schema definition"
 dedup_id = "b2d653d468c3ed2a"
+verified_note = "crate::flow::schema centralises both ActiveDoc/ActiveEntry/Binding (active-flow.toml) and FlowProjection (context.toml) with hand-rolled from_toml_value parsers; consumer sites already route through it; serde derives intentionally absent (defensive missing-field semantics) — audited during /review-apply 2026-05-08"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -463,7 +470,7 @@ resolution = "Annotated `prompt-required` as reserved-never-emitted in resolve.r
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R28"
 file = "tomlctl/src/json.rs"
@@ -474,6 +481,8 @@ effort = "trivial"
 category = "completeness"
 summary = "json.rs L18-22 says P19 symmetric refusal on the TOML side is deferred to a follow-up commit; cli/dispatch.rs:274-281 actually implements `refuse_json_extension_for_toml_writers` and dispatch.rs:425/454/502 wire it. Update or remove the stale deferral comment to avoid future contributors adding duplicate logic"
 dedup_id = "be055870f7299236"
+resolved = 2026-05-08
+resolution = "Replaced stale P19 deferred-work comment in tomlctl/src/json.rs L18-22 with cross-reference to cli::dispatch::refuse_json_extension_for_toml_writers wired at dispatch.rs L425/L454/L502; comment-only edit, no behaviour change"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -580,7 +589,7 @@ resolution = "Aligned load_active_entries to silent-zero on read_toml Err (match
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R35"
 file = "tomlctl/src/flow/doctor.rs"
@@ -591,11 +600,13 @@ effort = "small"
 category = "completeness"
 summary = "When execution-record.toml is missing, doctor records execution-record-exists as a failing check but silently skips execution-record-sidecar (`if er_exists { ... }` wrap); same pattern for context-sidecar at L266-290. A flow with a missing execution-record shows 7 checks rather than the 8 documented in the plan spec"
 dedup_id = "751c0cd06555fe3e"
+resolved = 2026-05-08
+resolution = "doctor.rs always emits sidecar checks even when underlying TOML missing — skip-detail records why; per-flow check count stable across present/missing states (matches plan's 8-checks contract for fully-populated flows; partial flows now consistently render the same shape with skip detail)"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "flow-tracking-overhaul"
 id = "R36"
 file = "tomlctl/tests/flow_resolve.rs"
@@ -606,6 +617,7 @@ effort = "small"
 category = "completeness"
 summary = "Plan Task 10 acceptance required 6 in-test fixtures (one per source path: explicit-flag, scope-glob, active-binding, active-latest, branch-match, none); validate that active-binding and active-latest fixture coverage actually exists since both depend on synthetic active-flow.toml registry fixtures most easily omitted"
 dedup_id = "ad104d6c495067c6"
+verified_note = "Fixtures for active-binding (L319) and active-latest (L365) confirmed present via Explore pre-analysis — audited during /review-apply 2026-05-08"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -678,7 +690,7 @@ resolution = "Added corrupt_active_flow_toml_falls_through_to_none integration t
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R41"
 file = "tomlctl/src/flow/doctor.rs"
@@ -689,11 +701,13 @@ effort = "trivial"
 category = "testability"
 summary = "Check::to_json conditionally inserts `detail` only when `self.detail.is_some()`; successful checks have shape `{name, scope, ok}` while failing have `{name, scope, ok, detail}`. Orchestrators iterating checks and reading `.detail` panic on key absence rather than null"
 dedup_id = "79363446624d351c"
+resolved = 2026-05-08
+resolution = "Check::to_json now always emits detail key (serde_json::Value::Null when None) so orchestrators can read uniformly without panicking on key absence; previously detail was conditionally inserted only when self.detail.is_some()"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R42"
 file = "tomlctl/src/flow/doctor.rs"
@@ -704,6 +718,8 @@ effort = "trivial"
 category = "testability"
 summary = "Corrupt active-flow.toml silently returns Ok(Vec::new()) in doctor (silent-pass, code comment 'Malformed registry: surface zero stale entries'); no integration test seeds malformed registry to verify silent-pass is intentional and orchestrators relying on doctor to catch registry corruption miss this case"
 dedup_id = "2e074d4a26380d18"
+resolved = 2026-05-08
+resolution = "Added doctor_corrupt_active_flow_toml_silent_passes_stale_check integration test in tests/flow_resolve.rs locking doctor.rs:443 silent-pass contract on malformed registry; existing flow_resolve.rs:628 test only covers the resolver path (load_active_entries — separate function)"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -725,7 +741,7 @@ resolution = "Added one-line help='...' annotations to every FlowOp::{FindPlans,
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R44"
 file = "tomlctl/tests/flow_resolve.rs"
@@ -736,11 +752,13 @@ effort = "trivial"
 category = "testability"
 summary = "Step-3 tie path (multiple entries with equal binding score) has unit test in resolve.rs:940-960 but no integration test exercises step-3-tie → step-4 active-latest fallthrough composition via the full CLI path"
 dedup_id = "201043fa91f073fb"
+resolved = 2026-05-08
+resolution = "Added step_3_binding_tie_falls_through_to_active_latest integration test pinning step-3-tie -> step-4-fallthrough composition via the full CLI path"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R45"
 file = "tomlctl/src/flow/resolve.rs"
@@ -751,11 +769,13 @@ effort = "trivial"
 category = "testability"
 summary = "Tie-resolution envelope (scope-glob multi-match) emits 5 keys (resolved/source/ties_broken/tie_candidates/warnings); no shape-pin test pairs the resolved-happy-path 13-key test at flow_resolve.rs:585, so future refactors could drop or add keys silently"
 dedup_id = "b282d5191475cc6f"
+resolved = 2026-05-08
+resolution = "Added tie_resolution_envelope_carries_canonical_5_keys shape-pin for the unresolved-with-ties envelope (5 keys: resolved/source/ties_broken/tie_candidates/warnings)"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R46"
 file = "tomlctl/README.md"
@@ -766,6 +786,8 @@ effort = "trivial"
 category = "testability"
 summary = "README Quick tour shows `flow resolve` without --with-staleness (which flow-bootstrap.md:62 always passes), `flow doctor` without --json (machine-readable mode used by all orchestrators), and `flow active touch` is not called out separately from add/remove"
 dedup_id = "995ea424cf3699ef"
+resolved = 2026-05-08
+resolution = "README Quick tour now demonstrates orchestrator-facing flag forms: --with-staleness was already present on flow resolve; flow doctor comment updated to 'always emits JSON' (--json flag intentionally dropped per types.rs:587 R7 fix, so could not be added to syntax); added separate flow active touch line. (Lite cluster, vet-recommended; orchestrator confirmed --json drop interpretation correct)"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -787,7 +809,7 @@ resolution = "Replaced sidecar_state Option<bool> with Option<SidecarStatus> enu
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R48"
 file = "tomlctl/src/flow/doctor.rs"
@@ -798,11 +820,13 @@ effort = "trivial"
 category = "testability"
 summary = "doctor envelope `dry_run` key is `dry_run && fix`; passing only --dry-run without --fix silently emits dry_run: false. First-time user reading the envelope assumes the flag was ignored — surface the `--dry-run-without-fix` case explicitly or accept --dry-run as a standalone preview"
 dedup_id = "a6dc039b12d61b68"
+resolved = 2026-05-08
+resolution = "Chose envelope-warnings channel (spec's alternative path) since doctor is JSON-only via print_json_compact and existing warnings[] entries follow the same idiom (e.g. .gitignore advisory) — added warning entry when --dry-run passed without --fix; envelope's dry_run field semantics unchanged"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R49"
 file = "tomlctl/tests/flow_resolve.rs"
@@ -813,6 +837,8 @@ effort = "trivial"
 category = "testability"
 summary = "Envelope shape stability test exercises only explicit-flag resolution path; the 13-key requirement is equally contractual for scope-glob/active-binding/active-latest/branch-match — future branch-specific shortcut omitting a key would pass without triggering shape test"
 dedup_id = "82d6edc4418b4752"
+resolved = 2026-05-08
+resolution = "Added 4 shape-stability tests (resolved_envelope_keys_via_scope_glob/active_binding/active_latest/branch_match) via RESOLVED_ENVELOPE_KEYS const + assert_resolved_keys helper; chose helper-plus-4-tests over rstest parameterisation for clearer per-path failure surfacing matching existing one-test-per-acceptance idiom"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -834,7 +860,7 @@ resolution = "Replaced bare `model: haiku` alias with fully-qualified unpinned `
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R51"
 file = "claude/commands/tdd.md"
@@ -845,6 +871,8 @@ effort = "small"
 category = "package-quality"
 summary = "tdd.md L392 calls `tomlctl flow resolve --flow <slug> --json` inline rather than dispatching flow-bootstrap; intentional bypass per the inline comment (slug already bound from Step 0; --flow forces explicit-flag path) but skips version-check and doctor gates flow-bootstrap provides — document the bypass tradeoff or route through flow-bootstrap"
 dedup_id = "eb340bc933b719f4"
+resolved = 2026-05-08
+resolution = "Expanded inline-bypass tradeoff comment in tdd.md L392 area — enumerated bypassed gates (version-check, doctor) and articulated why bypass is safe (Step 0 already cleared both for parent flow; this is a re-read for plan_path projection, not a fresh resolution)"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -883,7 +911,7 @@ resolution = "Updated plan-new.md cross-reference :594-602 → :606 in tdd.md L4
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R54"
 file = "claude/agents/flow-bootstrap.md"
@@ -894,11 +922,13 @@ effort = "trivial"
 category = "package-quality"
 summary = "Hard rules states 'Run ONLY the three command literals named above' followed by FOUR commands (--version, flow resolve, flow doctor, json get). Off-by-one in the count makes a reader distrust the rule"
 dedup_id = "3d6c1d91afafcfef"
+resolved = 2026-05-08
+resolution = "Corrected three -> four command count in hard-rules block at flow-bootstrap.md:84 to match the four literals listed (--version, flow resolve, flow doctor, json get)"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R55"
 file = "claude/agents/flow-bootstrap.md"
@@ -909,11 +939,13 @@ effort = "trivial"
 category = "package-quality"
 summary = "Agent frontmatter (name, description, tools, model, color) lacks a version/since field to track when the input/output envelope contract changed; without it carriers cannot gate on bootstrap version at runtime and maintainers cannot quickly see when the envelope contract last changed"
 dedup_id = "b1b5dbfc26091c3d"
+resolved = 2026-05-08
+resolution = "Added envelope_version: 1 (integer) to flow-bootstrap.md frontmatter with preceding YAML comment pointing to Contract section; bump on breaking envelope-shape changes; integer for numeric comparability from Bash callers; appended after existing keys to preserve current ordering (name, description, tools, model, color, envelope_version)"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "flow-tracking-overhaul"
 id = "R56"
 file = "claude/commands/plan-new.md"
@@ -924,11 +956,12 @@ effort = "trivial"
 category = "package-quality"
 summary = "plan-new.md appends a carrier-specific Step 0 note (fresh-plan case, collision detection, read-only nature of the bootstrap agent); plan-update.md and review-plan.md lack equivalent carrier-specific notes despite divergent expectations (plan-update should always resolve; review-plan can work flow-less). Asymmetric DX"
 dedup_id = "0209c657dbf9297e"
+verified_note = "plansDirectory carrier-specific notes synchronized across plan-new.md, plan-update.md, review-plan.md per Explore pre-analysis — audited during /review-apply 2026-05-08"
 
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R57"
 file = "claude/commands/tdd.md"
@@ -939,6 +972,8 @@ effort = "trivial"
 category = "package-quality"
 summary = "Resume protocol step 1 parenthetical 'When /tdd resume is invoked standalone, Step 0 still runs and resolves the parent flow via the bootstrap agent' restates what Step 0 already guarantees for every invocation. Minor content noise"
 dedup_id = "51c8896b4b7766f5"
+resolved = 2026-05-08
+resolution = "Removed redundant parenthetical at tdd.md L439 — Step 0 guarantee already documented in SHARED-BLOCK:flow-context block at L31-72; in-line restatement was pure noise"
 
 [[items]]
 first_flagged = 2026-05-08
@@ -960,7 +995,7 @@ resolution = "Corrected envelope path to parent_envelope.resolved.plan_path; col
 [[items]]
 first_flagged = 2026-05-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "flow-tracking-overhaul"
 id = "R59"
 file = "scripts/shared-blocks.toml"
@@ -971,6 +1006,8 @@ effort = "trivial"
 category = "package-quality"
 summary = "vet-flow-research block manifest covers test-bootstrap.md but flow-context block manifest does not; the two carrier lists are not subsets of each other — a reader scanning the manifest may expect them to be. Document the asymmetry inline or rationalise via a unified carrier list"
 dedup_id = "6cf319dcfa0281be"
+resolved = 2026-05-08
+resolution = "Added scope-rationale comment block at top of scripts/shared-blocks.toml plus reciprocal notes near [blocks.flow-context] and [blocks.vet-flow-research] explaining flow-context lists only flow-resolving carriers and test-bootstrap is intentionally excluded; chose Option A (document inline) — confirmed via test-bootstrap.md:12 that it is intentionally not flow-aware so Option B (rationalising lists) would be wrong; verifier still reports parity OK (comments are line-level outside files arrays)"
 
 [[items]]
 first_flagged = 2026-05-08

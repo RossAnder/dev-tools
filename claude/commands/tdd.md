@@ -392,8 +392,22 @@ At `/tdd` startup, `/tdd` MUST detect whether the project has a usable test fram
 1. Re-resolve the parent flow via `tomlctl flow resolve --flow <parent-slug> --json`
    (where `<parent-slug>` is the parent flow slug already bound from Step 0's
    `envelope.resolved.slug`). The `--flow` flag forces the explicit-flag resolver path,
-   so this is a deterministic single-flow lookup, not the full 6-step algorithm. Parse
-   stdout as `parent_envelope`; extract `plan_path = parent_envelope.resolved.plan_path`. If
+   so this is a deterministic single-flow lookup, not the full 6-step algorithm.
+
+   **Why a direct `tomlctl` call rather than re-dispatching `flow-bootstrap`**: this
+   call deliberately bypasses the bootstrap agent's pre-flight gates — namely the
+   `tomlctl --version` check and the `tomlctl flow doctor` invariant sweep — that Step 0
+   ran on entry. The bypass is safe because (a) Step 0 already cleared both gates for
+   the parent flow at the start of this `/tdd` invocation, so re-running them would be
+   redundant work without diagnostic value, and (b) this is a re-read of an
+   already-validated parent flow's projection (`plan_path`), not a fresh resolution
+   that could land on a different flow. The trade-off: if `tomlctl` itself was upgraded
+   or the parent flow's invariants were broken between Step 0 and this point, the
+   direct call won't catch it. That window is small and the failure mode is loud
+   (the next read of `context.toml` would error on a schema mismatch), so the saved
+   sub-agent dispatch + version/doctor cost is worth it for the loop-iteration lookup.
+
+   Parse stdout as `parent_envelope`; extract `plan_path = parent_envelope.resolved.plan_path`. If
    `parent_envelope.resolved == false` (the parent flow's `context.toml` was deleted
    between Step 0 and now), halt with the literal message `parent flow context.toml
    missing — re-run the parent command first`.
@@ -436,7 +450,7 @@ The lockfile is released when `/tdd` exits (cleanly or via abort). On a stale lo
 
 Invoking `/tdd resume` (with no other arguments) resumes the most recent uncompleted cycle in the resolved parent flow:
 
-1. Bind the parent flow's `slug` from Step 0's `envelope.resolved.slug`. (When `/tdd resume` is invoked standalone, Step 0 still runs and resolves the parent flow via the bootstrap agent — no separate re-resolution is needed here.)
+1. Bind the parent flow's `slug` from Step 0's `envelope.resolved.slug`.
 2. List `.claude/flows/<parent-slug>-tdd-*/` directories sorted by their `<NNN>` suffix descending.
 3. For each, read the cycle sub-flow's `execution-record.toml` and check the **latest** (highest-id, post-supersession) `task-completion` entry for the cycle's deterministic `task_ref`.
 4. The first directory whose latest `task-completion` entry has `status` ∈ {absent, `failed`} — OR no `task-completion` entry at all — is the resume target. Directories whose latest entry is `status=done` are treated as complete and skipped.
