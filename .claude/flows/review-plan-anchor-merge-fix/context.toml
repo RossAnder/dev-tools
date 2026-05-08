@@ -1,0 +1,18 @@
+slug = "review-plan-anchor-merge-fix"
+plan_path = "docs/plans/review-plan-anchor-merge-fix.md"
+status = "complete"
+created = 2026-04-25
+updated = 2026-04-25
+branch = "main"
+scope = ["claude/commands/review-plan.md"]
+
+[tasks]
+total = 1
+completed = 1
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/review-plan-anchor-merge-fix/review-ledger.toml"
+optimise_findings = ".claude/flows/review-plan-anchor-merge-fix/optimise-findings.toml"
+execution_record = ".claude/flows/review-plan-anchor-merge-fix/execution-record.toml"
+plan_review_findings = ".claude/flows/review-plan-anchor-merge-fix/plan-review-findings.toml"

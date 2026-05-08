@@ -73,6 +73,7 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
 
 **Carrier-specific note (`/plan-new`)**: For a fresh plan, no flow exists yet — `envelope.resolved.resolved == false` is the expected outcome and the carrier proceeds to Phase 1 (Scope & Parse) without halting. The bootstrap is still dispatched to detect the rare collision case where a pre-existing flow already matches (e.g. a `/plan-new` re-invocation on the same plan path or branch); on collision, surface `envelope.resolved.tie_candidates` and ask the user whether to resume the existing flow or proceed with a new slug. Phase 7 ("Write Plan") performs the actual flow-creation bootstrap (`context.toml` + execution-record write); the bootstrap agent does NOT create flows — it is read-only.
 
+<!-- SHARED-BLOCK:plansdirectory-prompt START -->
 ## Step 0.5: First-use `plansDirectory` prompt (per-carrier)
 
 Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent normalises both the unset case AND the literal `"__DONT_ASK__"` sentinel to `null` — see `flow-bootstrap.md` Contract). When non-null, skip this step entirely; the resolved value is already bound for downstream phases. The wording below is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` (per Task 17 of `docs/plans/flow-tracking-overhaul.md`); do not edit one carrier's copy without mirroring the other two — drift will surface at the next `diff` audit.
@@ -92,6 +93,7 @@ Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent nor
 
    `tomlctl json` skips sidecar maintenance on `settings.json` per P16, so the harness's out-of-band writes (e.g. `/config`) remain compatible.
 7. Bind `plans_directory` for downstream phases: if the user selected `Don't ask again` (sentinel persisted) OR the persisted array is empty after step 5's drop, treat as `["docs/plans/"]` in-memory (the default-of-defaults). Otherwise bind the array as written. Any downstream code that consumed `envelope.plans_directory == null` should now consume this in-memory value.
+<!-- SHARED-BLOCK:plansdirectory-prompt END -->
 
 <!-- SHARED-BLOCK:execution-record-schema START -->
 ## Execution Record Schema

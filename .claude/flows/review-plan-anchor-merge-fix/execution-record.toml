@@ -1,0 +1,43 @@
+schema_version = 1
+last_updated = 2026-04-25
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-04-25
+agent = "implement"
+summary = "status draft → in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "2fb725502d5439ab"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-04-25
+agent = "implement"
+task_ref = "rewrite-review-plan-step-4-with-change-a-change-b"
+summary = "Rewrote review-plan.md Step 4 with anchor-overlap simulation loop (Change A) and preview+Q1.5 confirm (Change B); collapsed old steps 5+6, renumbered 3-12 → 4-12 with steps now ending at 12"
+files = ["claude/commands/review-plan.md"]
+status = "done"
+dedup_id = "ffa31789008145be"
+
+[[items]]
+id = "E3"
+type = "verification"
+date = 2026-04-25
+agent = "implement"
+summary = "shared-block parity check passed"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "80c5725846b0754c"
+
+[[items]]
+id = "E4"
+type = "status-transition"
+date = 2026-04-25
+agent = "plan-update"
+summary = "status in-progress → complete"
+from_status = "in-progress"
+to_status = "complete"
+dedup_id = "2faa4446b2a4e85d"

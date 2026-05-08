@@ -263,3 +263,524 @@ original_intent = "Plan T7 detail said to register the slug via internal call to
 rationale = "T3's only public surface is dispatch(ActiveOp) which prints to stdout (would muddy T7's single-line JSON envelope). Per plan deviation protocol option (a), T7 ships an inline registration helper replicating T3's mutate_active lock-bootstrap + upsert pattern; the duplication is documented in init.rs module-level docs. Schema details (binding shape, RFC3339 last_used, schema-version backfill, post-lock containment recheck) match active.rs byte-for-byte. Future-task suggestion: factor a pub(crate) helper from active.rs and migrate init.rs onto it; until then keep the two implementations in lock-step."
 commits = ["58d9307"]
 dedup_id = "493d2c16392be306"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-resolve"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = """Implemented tomlctl flow resolve 5-step (6-path) keystone with full envelope; 15 integration + 6 unit tests. Notes: emits source="scope-glob" as a 7th literal beyond the plan's 6-string enum, documented in module-doc; --cwd accepted but currently a no-op; --with-staleness uses hardcoded 7d threshold (custom threshold lives on flow stale)."""
+files = [
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/tests/flow_resolve.rs",
+]
+commits = ["cf03863"]
+status = "done"
+dedup_id = "d41198bce8eb7da6"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "implement-tomlctl-flow-doctor"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Implemented tomlctl flow doctor invariant checks with --fix path that regenerates stale sidecars and prunes stale active-flow registry entries; --fix never creates missing artifacts. 8 integration tests cover clean/tampered/missing/stale/gitignore/dry-run paths. Inlined sidecar_state and canonical_artifacts helpers since flow::ensure_artifact does not expose pub(crate) checks."
+files = [
+    "tomlctl/src/flow/doctor.rs",
+    "tomlctl/tests/flow_doctor.rs",
+]
+commits = ["cf03863"]
+status = "done"
+dedup_id = "05ce6a21b59a66e0"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "phase-b-doc-sync"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Bumped tomlctl 0.4.0 -> 0.5.0 in Cargo.toml and tests/capabilities.rs; added 5 composite-subcommand entries (flow init/ensure-artifact/list/resolve/doctor) to tomlctl/README.md Quick tour and claude/skills/tomlctl/SKILL.md Quick Reference. CLAUDE.md unchanged (umbrella convention, no per-binary listing). Commit message carries the required cargo install --path tomlctl reminder."
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+commits = ["b8c6f8c"]
+status = "done"
+dedup_id = "81f49d09db0f56e5"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "author-flow-bootstrap-agent"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Authored claude/agents/flow-bootstrap.md (Haiku peer of verification.md). 6-step body: parse input envelope, tomlctl --version pre-flight, flow resolve, flow doctor (no --fix), conditional plansDirectory read for plan-touching commands, emit single JSON envelope. P12 acceptance greps all green (model: haiku, tools: Bash, 3x flow resolve, 4x flow doctor, 2x plansDirectory, 1x tomlctl 0.5.)."
+files = ["claude/agents/flow-bootstrap.md"]
+commits = ["6aa837a"]
+status = "done"
+dedup_id = "c24dda816889626a"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "design-flow-context-template"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Materialised scripts/templates/flow-context.md (4 sections, 246 lines). Replacement block 24 lines (vs current 90); Step-0 collapse template parameterised by COMMAND/PATH_ARGS_JSON/REQUIRE_ARTIFACTS; envelope reference JSON blocks parse via jq -e and key-set match claude/agents/flow-bootstrap.md; tdd.md L415 rewrite uses tomlctl flow resolve --flow direct (no nested sub-agent). All P12 acceptance greps green."
+files = ["scripts/templates/flow-context.md"]
+commits = ["0134ce4"]
+status = "done"
+dedup_id = "f170bdbca4600bd4"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "coordinated-shared-block-rewrite"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Single-agent coordinated rewrite of 11 files: replaced flow-context shared block + collapsed Step-0 in 9 carriers (review/optimise/optimise-apply/review-apply/plan-new/plan-update/implement/review-plan/tdd) per scripts/templates/flow-context.md verbatim. tdd.md L415 + L440 second-call-site rewrites. test-bootstrap.md L12 literal-string update. SKILL.md Quick Reference patched with flow-bootstrap agent entry. plan-new.md Phase 7 legacy .claude/active-flow write migrated to tomlctl flow active add for internal consistency. Net +571/-843. bash scripts/verify-shared-blocks.sh exits 0; pre-commit hook passes."
+files = [
+    "claude/commands/optimise.md",
+    "claude/commands/review.md",
+    "claude/commands/optimise-apply.md",
+    "claude/commands/review-apply.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/implement.md",
+    "claude/commands/review-plan.md",
+    "claude/commands/tdd.md",
+    "claude/commands/test-bootstrap.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+commits = ["8ffa35f"]
+status = "done"
+dedup_id = "3c671834af6207bb"
+
+[[items]]
+id = "E24"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "coordinated-shared-block-rewrite"
+summary = "Per-carrier net deletion 15-43 lines (vs plan target ≥70)"
+original_intent = "Plan acceptance: each of 9 carriers shows ≥70 lines net deletion in git diff --numstat"
+rationale = "T14's canonical Step-0 template (~44 lines after slot substitution) plus the 24-line replacement shared block adds back nearly as much as the 90-line shared block + Step-0 deleted. Agent did NOT silently compress to hit the target, per the plan's explicit instruction to 'copy from the template, do not regenerate the design from prose'. The hard load-bearing parity criterion (verify-shared-blocks.sh exits 0) is satisfied. Total net deletion across 11 files is -272 lines."
+commits = ["8ffa35f"]
+dedup_id = "0cb017d3cfaaa44d"
+
+[[items]]
+id = "E25"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "coordinated-shared-block-rewrite"
+summary = "test-bootstrap.md grep acceptance regex semantically incorrect"
+original_intent = '''Plan acceptance: grep -c '\.claude/active-flow\b' claude/commands/test-bootstrap.md returns 0'''
+rationale = '''The new replacement string '.claude/active-flow.toml' literally contains '.claude/active-flow' followed by a period (non-word char), which IS a \b word-boundary match. Grep returns 1, not 0. The criterion's semantic intent ('no legacy unsuffixed reference remains') is satisfied — the only match is the new .toml-suffixed reference. Companion criterion (grep -c '.claude/active-flow.toml' returns ≥1) passes. Acceptance regex bug, not implementation deviation.'''
+commits = ["8ffa35f"]
+dedup_id = "b9fc994223c28567"
+
+[[items]]
+id = "E26"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "coordinated-shared-block-rewrite"
+summary = "Scope expanded to sweep tdd.md L440 + plan-new.md L547/L646 + implement.md L270 stray legacy references"
+original_intent = "Plan task 15 enumerated only the shared-block replacement, Step-0 collapse, tdd.md L415 second-call-site, test-bootstrap.md L12, and SKILL.md patch — total 11 file scope confined to those edits"
+rationale = "Three additional sites carried the legacy 5-step / .claude/active-flow prose and would have shipped contradictions with the new shared block: (a) tdd.md L440 Resume protocol used identical legacy prose to L415; (b) plan-new.md Phase 7 step 8 wrote the legacy single-line .claude/active-flow file (now declared ignored by the new shared block); (c) plan-new.md L646 + implement.md L270 had stray '5-step flow resolution order' references. All swept for internal consistency. grep '5-step flow resolution order' claude/commands/*.md now returns 0. File scope unchanged (no new files added)."
+commits = ["8ffa35f"]
+dedup_id = "cbe89daf5efe1460"
+
+[[items]]
+id = "E27"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Smoke: tomlctl flow resolve resolves flow-tracking-overhaul via explicit-flag with full envelope (artifacts, scope, branch, status, stale annotation, missing-artifact warnings)"
+command = "tomlctl flow resolve --flow flow-tracking-overhaul --json --with-staleness"
+outcome = "pass"
+dedup_id = "b7191c70823475f3"
+
+[[items]]
+id = "E28"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Smoke: tomlctl flow doctor on flow-tracking-overhaul reports ok=true with 8 named checks all passing"
+command = "tomlctl flow doctor --slug flow-tracking-overhaul --json"
+outcome = "pass"
+dedup_id = "df563b264c639b2a"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Smoke: tomlctl json get .claude/settings.json plansDirectory returns docs/plans (existing setting)"
+command = "tomlctl json get .claude/settings.json plansDirectory --json"
+outcome = "pass"
+dedup_id = "e80a0410b77d4aca"
+
+[[items]]
+id = "E30"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "phase-d-smoke"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Phase D smoke: installed tomlctl 0.5.0 via cargo install --path tomlctl and ran the three bootstrap moving parts against the live flow-tracking-overhaul flow. tomlctl flow resolve returned full envelope (slug=flow-tracking-overhaul, source=explicit-flag, all 4 artifacts populated, stale=false, 2 missing-artifact warnings); tomlctl flow doctor returned ok=true with 8 named checks; tomlctl json get returned plansDirectory=docs/plans. All three exit 0. Three verification entries logged (E27/E28/E29). Full /review skill-dispatch smoke deferred to user fresh session (skills cache loads at session start; new shared block requires fresh load)."
+status = "done"
+dedup_id = "709393e403da22db"
+
+[[items]]
+id = "E31"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "plansdirectory-first-use-prompt"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Wired identical 20-line Step 0.5 plansDirectory first-use prompt into plan-new.md, plan-update.md, review-plan.md (60 lines added total). Byte-identical across all 3 carriers; AUQ mechanics per P14 (arbitration rule for Don't ask again sentinel, free-text follow-up via Other, headless empty-answer rule, persistence via tomlctl json set heredoc). bash scripts/verify-shared-blocks.sh exits 0; the block lives outside the flow-context shared block."
+files = [
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/review-plan.md",
+]
+commits = ["494254e"]
+status = "done"
+dedup_id = "1c8c05be284344a9"
+
+[[items]]
+id = "E32"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "phase-e-doc-sync"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Phase E doc sync: CLAUDE.md gets gawk/Windows note (P24), cargo audit cadence note (P26), and a new Flow registry & plansDirectory section with Adopting the flow registry sub-section (P20+P17). tomlctl/README.md gets a new Editing settings.json safely subsection (P19+P16). All 4 P12 grep acceptance checks pass."
+files = [
+    "CLAUDE.md",
+    "tomlctl/README.md",
+]
+commits = ["4b29c9a"]
+status = "done"
+dedup_id = "14eaed6eb73edda9"
+
+[[items]]
+id = "E33"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Phase 3 build pass (run 1)"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "03046e106f186526"
+
+[[items]]
+id = "E34"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Phase 3 test fail (run 1): flow-context pinned-hash drift in tomlctl/src/cli/dispatch.rs:1514 — old block hash 7cf84eeb..., new content hashes to 2757ea6f..."
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "fail"
+dedup_id = "fe0767c37e876ac7"
+
+[[items]]
+id = "E35"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Phase 3 build pass (run 2 after pinned-hash fix at commit 8504c40)"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "5748a12afebe5298"
+
+[[items]]
+id = "E36"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Phase 3 test pass (run 2 after pinned-hash fix)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+supersedes_entry = "E34"
+dedup_id = "ddb91618c5245fe0"
+
+[[items]]
+id = "E37"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Phase 3 clippy pass (run 2)"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "4737d63d71769e78"
+
+[[items]]
+id = "E38"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Phase 3 audit pass (run 2)"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+dedup_id = "ebe357bde5117b93"
+
+[[items]]
+id = "E39"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "Phase 3 shared-block parity pass (run 2)"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "1fc814d10a8297fe"
+
+[[items]]
+id = "E40"
+type = "status-transition"
+date = 2026-05-08
+agent = "plan-update"
+summary = "All 18 tasks done; status in-progress → review awaiting explicit /plan-update flow-tracking-overhaul complete"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "de21dd33ff467e54"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E41"
+task_ref = "review-finding-R15"
+summary = "Added slug validation to active.rs::add/remove/touch (R15 fix from /review)"
+original_intent = "Plan delivered the active-flow registry write surface (T3) with init.rs's strict regex applied at write-time only"
+rationale = '''Path-traversal threat (R15, security/warning): slug stored verbatim in registry, joined into <root>/.claude/flows/<slug>/... downstream. Mirrored ensure_artifact.rs's lenient deny-list (denies /, \, .., ., NUL, empty) into active.rs and called from add/remove/touch. Lenient form chosen so grandfathered slugs are not broken.'''
+dedup_id = "1ce74f42fc781c3f"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E42"
+task_ref = "review-finding-R20"
+summary = "Added history-loss WARNING blockquote to CLAUDE.md migration section"
+original_intent = "Plan delivered the flow registry adoption procedure (T18) instructing users to rm -rf .claude/flows/ as step 1 without warning that this destroys history"
+rationale = "Architecture warning (R20): no tomlctl flow migrate command exists yet; users with in-flight flows would silently lose execution-record/ledger/findings. Doc-only minimum-change adds explicit warning before step 1 recommending backup or skipping migration."
+dedup_id = "7e6a289cf555cf55"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E43"
+task_ref = "review-finding-R22"
+summary = "Documented last-writer-wins natural-key semantics in active.rs module docstring"
+original_intent = "Plan delivered the active-flow registry (T3) with binding metadata framed as supporting parallel-session use cases"
+rationale = "DB warning (R22): registry's natural key is bare slug; find_slug_index matches slug-only; same-slug entries clobber each other regardless of binding. Doc-only minimum-change clarifies last-writer-wins. Composite-key refactor would touch 5 sites — out of cluster scope."
+dedup_id = "76726d2a1c72b8e8"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E44"
+task_ref = "review-finding-R27"
+summary = "Annotated `prompt-required` source value as reserved-never-emitted in resolve.rs docstring"
+original_intent = "Plan's resolver source-enum (T10) listed prompt-required alongside emitted values without distinguishing reserved values"
+rationale = "Completeness warning (R27): the value is dead documentation that misleads readers about resolver behaviour. Annotated as reserved-never-emitted; broader divergence with public contract docs is deferred (cross-file)."
+dedup_id = "77c1ca40a6a34055"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E45"
+task_ref = "review-finding-R29"
+summary = "Added envelope.warnings entry when both --branch and --worktree are None at step-3"
+original_intent = "Plan's 6-step resolver (T10) included step-3 active-binding match without explicitly handling the both-None input case"
+rationale = "Completeness warning (R29): carriers that don't pass branch/worktree silently skip step-3 with no envelope.warnings entry. Added the warning at the dispatch call site; best_binding_match signature unchanged."
+dedup_id = "551a3ca1957bab61"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E46"
+task_ref = "review-finding-R30"
+summary = "Replaced contradictory literal-prefix version check with regex-based semver comparison"
+original_intent = "Plan's flow-bootstrap agent contract (T13) used literal prefix `tomlctl 0.5.` with parenthetical `or higher minor` — internally contradictory"
+rationale = 'Completeness warning (R30): literal-prefix check would reject 0.6.0 even though parenthetical says accept. Switched to regex `tomlctl (\d+)\.(\d+)` with explicit major/minor comparison.'
+dedup_id = "f61cbb8976ab0a66"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E47"
+task_ref = "review-finding-R31"
+summary = "Changed gitignore-claude check from Check{ok:false} to Check::ok (warning-only)"
+original_intent = "Plan's doctor checks (T11) listed gitignore-claude as a check entry; implementation set ok=false flipping top-level envelope ok"
+rationale = "Completeness warning (R31): plan spec said gitignore-claude should be warning not check failure. Carriers using flow-bootstrap on a repo where .claude/ is gitignored (this repo) would surface a false doctor-fail. Fix retains warning push (actionable surface) but uses Check::ok. Test flow_doctor.rs updated to assert ok=true and warnings-array presence."
+dedup_id = "b59093a74b07830d"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E48"
+task_ref = "review-finding-R32"
+summary = "Added stderr eprintln when ties_broken=true on branch-match path"
+original_intent = "Plan's 6-step resolver (T10) called for a console note when branch-match ties existed; only the envelope flag was set"
+rationale = "Completeness warning (R32): plan called for a console note when ties existed. Added eprintln warning when ties_broken=true so operator can disambiguate via --flow."
+dedup_id = "ed2d5f57e1e96eb3"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E49"
+task_ref = "review-finding-R33"
+summary = "Added step 3.5 'Validate required artifacts' to flow-bootstrap.md procedure"
+original_intent = "Plan's flow-bootstrap agent contract (T13) parsed require_artifacts from input envelope but never validated it against resolved.artifacts.*"
+rationale = "Completeness warning (R33): missing artifacts only surfaced via warnings; carriers like /implement that need execution_record could proceed when absent. Step 3.5 reads resolved.artifacts.<name> for each required artifact, halts with error envelope on absence, skips when resolved=false."
+dedup_id = "dff1fa83c458bb86"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E50"
+task_ref = "review-finding-R34"
+summary = "Aligned load_active_entries to silent-zero on read_toml Err (matches doctor.rs)"
+original_intent = "Plan's resolver (T10) and doctor (T11) had divergent treatment of malformed active-flow.toml: resolve.rs hard-errored, doctor.rs silent-zeroed"
+rationale = "Completeness warning (R34): corrupt registry blocked ALL resolution including step-5 fallback. Aligned resolve.rs to silent-zero with stderr breadcrumb, matching doctor.rs:443-449 policy."
+dedup_id = "481bea5640316e1c"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E51"
+task_ref = "review-finding-R37"
+summary = "Wrapped Step 0.5 plansDirectory prompt in SHARED-BLOCK delimiters across 3 carriers + manifest entry"
+original_intent = "Plan's plansDirectory first-use prompt (T17) was wired into 3 carriers as shared verbatim wording but lived outside SHARED-BLOCK delimiters and was not in scripts/shared-blocks.toml"
+rationale = "Completeness warning (R37): pre-commit hook did not enforce parity, drift would surface only at manual diff audit. Added SHARED-BLOCK:plansdirectory-prompt delimiters across plan-new.md/plan-update.md/review-plan.md and registered block in scripts/shared-blocks.toml. bash scripts/verify-shared-blocks.sh passes."
+dedup_id = "15318148fc34d427"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E52"
+task_ref = "review-finding-R38"
+summary = "Extended read_plans_directory to accept array-of-strings shape at canonical plansDirectory key"
+original_intent = "Plan's plansDirectory resolution (T17) described the canonical key as accepting string-or-array; implementation only handled string at the canonical key"
+rationale = "Completeness warning (R38): users writing arrays at canonical plansDirectory key per CLAUDE.md prose found them silently ignored. Extended read_plans_directory to handle both shapes (symmetric with read_tomlctl_plans_directories). 5 new unit tests added."
+dedup_id = "e3581bc76d495532"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E53"
+task_ref = "review-finding-R47"
+summary = "Replaced sidecar_state Option<bool> with Option<SidecarStatus> enum carrying expected/actual hashes"
+original_intent = "Plan's doctor (T11) implemented sidecar checks via sidecar_state returning bool; failure detail was `sidecar digest mismatch for <path>` without hex values"
+rationale = "Testability warning (R47): CLAUDE.md contract promises both expected + actual hashes on mismatch (wired in maybe_verify_integrity, not in doctor's check path). Replaced bool with enum SidecarStatus { Ok, Mismatch{expected, actual}, Malformed }; failure detail now includes both hex values."
+dedup_id = "b57a44817e340281"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E54"
+task_ref = "review-finding-R50"
+summary = "Replaced bare `model: haiku` alias with fully-qualified `claude-haiku-4-5`"
+original_intent = "Plan's flow-bootstrap agent (T13) frontmatter used the bare `haiku` alias"
+rationale = "Package-quality warning (R50): bare alias can silently shift to a newer generation when Anthropic rotates the alias. Replaced with claude-haiku-4-5 (fully-qualified unpinned form) for stability."
+dedup_id = "d338ed0b207a1128"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E55"
+task_ref = "review-finding-R52"
+summary = "Updated implement.md cross-reference :334 → :310 in tdd.md"
+original_intent = "Plan's tdd.md edits (T6/T18) referenced implement.md:334 for verification-commands extraction"
+rationale = "Package-quality warning (R52): :334 was stale (now Phase 2: Execute header); actual line of `Extract verification commands` is :310. Updated cross-reference."
+dedup_id = "fb552d6d8aa64a06"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E56"
+task_ref = "review-finding-R53"
+summary = "Updated plan-new.md cross-reference :594-602 → :606 in tdd.md"
+original_intent = "Plan's tdd.md edits (T6/T18) referenced plan-new.md:594-602 for canonical Verification Commands block"
+rationale = "Package-quality warning (R53): :594-602 was stale (range inside Research Notes template); ## Verification Commands heading at L606. Updated cross-reference."
+dedup_id = "6d2675f6d0788868"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E57"
+task_ref = "review-finding-R58"
+summary = "Corrected envelope path to parent_envelope.resolved.plan_path; collapsed redundant context.toml read step"
+original_intent = "Plan's tdd.md Bootstrap-missing fallback (T6) extracted plan_path via two paths: parent_envelope.plan_path (top-level) and context.toml.plan_path (file read)"
+rationale = "Package-quality warning (R58): tomlctl flow resolve --json output nests plan_path under .resolved.plan_path; prose was confused between sources. Aligned to single source. Removed redundant 'Read context.toml.plan_path' step; renumbered downstream steps."
+dedup_id = "3cb3bc105adb1416"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E58"
+task_ref = "review-finding-R60"
+summary = "Removed stale cautionary note from tdd.md Acceptance smoke-check about implement.md argument-hint"
+original_intent = "Plan's tdd.md Acceptance smoke-check (T6) warned that /implement's frontmatter argument-hint did not advertise --flow"
+rationale = "Package-quality warning (R60): implement.md frontmatter has been updated to `[--flow <slug>] [plan path or task description]`, so the cautionary note is stale. Removed the stale clause from the smoke-check paragraph."
+dedup_id = "d6fbc461188d58b0"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E59"
+task_ref = "review-finding-R17"
+summary = "Consolidated 3 active-flow registry parsers into flow::schema (R17 user-authorised override)"
+original_intent = "Plan delivered the active-flow registry (T3+T10) with three independent parsers across active.rs/resolve.rs/list.rs"
+rationale = "DB warning (R17) reopened after user-authorised override of cluster scope-confinement. Created tomlctl/src/flow/schema.rs as single source of truth for ActiveDoc/ActiveEntry/Binding with manual TomlValue projection (no new serde-derive dep per cluster constraint). All 3 parsers now route through ActiveDoc::from_toml_value; load_active_entries shrank 50→13 lines, load_active_slug_set 18→4 lines."
+dedup_id = "7e50e93bdbe3017b"
+
+[[items]]
+type = "deviation"
+date = 2026-05-08
+agent = "plan-update"
+id = "E60"
+task_ref = "review-finding-R26"
+summary = "Removed --cwd flag from flow resolve (R26 user-authorised override)"
+original_intent = "Plan's resolver dispatch (T10) plumbed --cwd CLI → FlowOp → resolve::dispatch with the inner fn taking _cwd unused"
+rationale = "Architecture warning (R26) reopened after user-authorised override of public-CLI-surface gate. Removed --cwd from cli/types.rs FlowOp::Resolve, flow/dispatch.rs destructure+call, flow::resolve::dispatch signature, and flow-bootstrap.md procedure. Carriers in shared-block still pass cwd in envelope; agent now tolerates+ignores extra fields. Coordinated 9-carrier shared-block edit deferred."
+dedup_id = "1cac00bc2be28d19"

@@ -393,19 +393,18 @@ At `/tdd` startup, `/tdd` MUST detect whether the project has a usable test fram
    (where `<parent-slug>` is the parent flow slug already bound from Step 0's
    `envelope.resolved.slug`). The `--flow` flag forces the explicit-flag resolver path,
    so this is a deterministic single-flow lookup, not the full 6-step algorithm. Parse
-   stdout as `parent_envelope`; extract `plan_path = parent_envelope.plan_path`. If
+   stdout as `parent_envelope`; extract `plan_path = parent_envelope.resolved.plan_path`. If
    `parent_envelope.resolved == false` (the parent flow's `context.toml` was deleted
    between Step 0 and now), halt with the literal message `parent flow context.toml
    missing — re-run the parent command first`.
-2. Read `context.toml.plan_path` to locate the parent plan markdown file.
-3. Re-parse the plan markdown's `## Verification Commands` block (canonical block at `claude/commands/plan-new.md:594-602` — a fenced code block with `key: value` lines). The flow's `context.toml` does NOT carry verification commands; `/implement` extracts them transiently from the plan file (`claude/commands/implement.md:334`) without persisting, so `/tdd` MUST also re-parse rather than relying on `context.toml`.
-4. Extract the `test:` line. If the line is absent or empty, halt with the literal message:
+2. Re-parse the plan markdown's `## Verification Commands` block (canonical block at `claude/commands/plan-new.md:606` — a fenced code block with `key: value` lines). The flow's `context.toml` does NOT carry verification commands; `/implement` extracts them transiently from the plan file (`claude/commands/implement.md:310`) without persisting, so `/tdd` MUST also re-parse rather than relying on `context.toml`.
+3. Extract the `test:` line. If the line is absent or empty, halt with the literal message:
 
    ```
    No test framework detected. Run /test-bootstrap first.
    ```
 
-5. Do NOT auto-bootstrap from inside `/tdd` — single-responsibility. The user must run `/test-bootstrap` separately, then re-run `/tdd`.
+4. Do NOT auto-bootstrap from inside `/tdd` — single-responsibility. The user must run `/test-bootstrap` separately, then re-run `/tdd`.
 
 ## Concurrency: per-parent-flow lockfile
 
@@ -453,6 +452,6 @@ Invoking `/tdd resume` (with no other arguments) resumes the most recent uncompl
 
 ## Acceptance smoke-check
 
-This command spec asserts that `/implement <test-plan-path> --flow <test-slug>` resolves correctly. Note: `/implement`'s frontmatter `argument-hint` is `[plan path or task description]` and does not advertise `--flow` — the runtime resolution path works (per flow-context resolution step 1, which honours an explicit `--flow <slug>` argument verbatim), but if a future contributor refactors `/implement`'s argument parsing based solely on the hint, the dispatch silently breaks. This smoke-check guards against that regression: any change to `/implement`'s argument parser MUST preserve `--flow <slug>` recognition, or `/tdd`'s GREEN-phase dispatch fails to land in the correct cycle sub-flow.
+This command spec asserts that `/implement <test-plan-path> --flow <test-slug>` resolves correctly. This smoke-check guards against that regression: any change to `/implement`'s argument parser MUST preserve `--flow <slug>` recognition, or `/tdd`'s GREEN-phase dispatch fails to land in the correct cycle sub-flow.
 
 The smoke-check is verifiable manually: create a throwaway flow at `.claude/flows/tdd-smoke/`, write a one-task plan at `/tmp/tdd-smoke-plan.md`, invoke `/implement /tmp/tdd-smoke-plan.md --flow tdd-smoke`, and confirm `/implement` writes its `task-completion` entry into `.claude/flows/tdd-smoke/execution-record.toml` (rather than auto-resolving via scope glob or branch).

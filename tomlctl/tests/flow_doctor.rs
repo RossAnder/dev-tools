@@ -402,15 +402,26 @@ fn gitignored_claude_emits_warning() {
         "warnings must include a gitignore line; got: {warnings:?}"
     );
     let chk = find_check(&v, "gitignore-claude", Some("global"));
-    assert_eq!(chk["ok"], JsonValue::Bool(false));
+    assert_eq!(
+        chk["ok"],
+        JsonValue::Bool(true),
+        "gitignore-claude is a non-failing check post-R31 — the warning is the actionable surface, the check entry stays ok=true so envelope.ok is not flipped"
+    );
 
     // Plain `.claude` (no trailing slash) also matches.
     fs::write(root.join(".gitignore"), ".claude\n").unwrap();
     let v2 = run_doctor(&root, &["--slug", "feature-x"]);
     assert_eq!(
         find_check(&v2, "gitignore-claude", Some("global"))["ok"],
-        JsonValue::Bool(false),
-        "plain `.claude` (no trailing slash) must also fire the warning"
+        JsonValue::Bool(true),
+        "gitignore-claude check is non-failing post-R31"
+    );
+    let warnings2 = v2["warnings"].as_array().expect("warnings must be array");
+    assert!(
+        warnings2
+            .iter()
+            .any(|w| w.as_str().unwrap_or("").contains(".gitignore")),
+        "plain `.claude` (no trailing slash) must still fire the warning entry"
     );
 
     // Comments and blank lines are NOT matches.

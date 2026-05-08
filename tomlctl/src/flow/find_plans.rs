@@ -161,10 +161,28 @@ fn read_tomlctl_plans_directories(doc: &JsonValue) -> Option<Vec<PathBuf>> {
     if dirs.is_empty() { None } else { Some(dirs) }
 }
 
-/// Read `plansDirectory` from a parsed settings doc. Returns `Some` when
-/// the key is a non-sentinel string, `None` when absent or sentinel.
+/// Read `plansDirectory` from a parsed settings doc. Accepts either the
+/// upstream string form OR an array-of-strings form (CLAUDE.md prose
+/// describes both shapes; the upstream JSON schema is string-only, but
+/// users who edit `.claude/settings.json` by hand routinely write arrays
+/// and we should honour them at the canonical key rather than silently
+/// ignoring them and forcing the namespaced `tomlctl.plansDirectories`
+/// workaround). Returns `None` when the key is absent, when a string
+/// value is the sentinel, or when an array is empty / sentinel-only.
 fn read_plans_directory(doc: &JsonValue) -> Option<Vec<PathBuf>> {
-    let s = doc.get("plansDirectory").and_then(|v| v.as_str())?;
+    let v = doc.get("plansDirectory")?;
+    // Array form: pattern-match `read_tomlctl_plans_directories` above.
+    if let Some(arr) = v.as_array() {
+        let dirs: Vec<PathBuf> = arr
+            .iter()
+            .filter_map(|el| el.as_str())
+            .filter(|s| *s != SENTINEL_UNSET)
+            .map(PathBuf::from)
+            .collect();
+        return if dirs.is_empty() { None } else { Some(dirs) };
+    }
+    // String form (upstream schema).
+    let s = v.as_str()?;
     if s == SENTINEL_UNSET {
         return None;
     }
@@ -409,5 +427,50 @@ mod tests {
         });
         let dirs = read_tomlctl_plans_directories(&doc).unwrap();
         assert_eq!(dirs, vec![PathBuf::from("docs/plans/"), PathBuf::from("other/")]);
+    }
+
+    #[test]
+    fn plans_directory_accepts_string() {
+        let doc: JsonValue = serde_json::json!({"plansDirectory": "docs/plans/"});
+        let dirs = read_plans_directory(&doc).unwrap();
+        assert_eq!(dirs, vec![PathBuf::from("docs/plans/")]);
+    }
+
+    #[test]
+    fn plans_directory_accepts_array() {
+        let doc: JsonValue = serde_json::json!({
+            "plansDirectory": ["docs/plans/", ".claude/plans/"]
+        });
+        let dirs = read_plans_directory(&doc).unwrap();
+        assert_eq!(
+            dirs,
+            vec![PathBuf::from("docs/plans/"), PathBuf::from(".claude/plans/")]
+        );
+    }
+
+    #[test]
+    fn plans_directory_array_filters_sentinel_entries() {
+        let doc: JsonValue = serde_json::json!({
+            "plansDirectory": ["docs/plans/", "__DONT_ASK__", "other/"]
+        });
+        let dirs = read_plans_directory(&doc).unwrap();
+        assert_eq!(
+            dirs,
+            vec![PathBuf::from("docs/plans/"), PathBuf::from("other/")]
+        );
+    }
+
+    #[test]
+    fn plans_directory_array_all_sentinel_falls_through() {
+        let doc: JsonValue = serde_json::json!({
+            "plansDirectory": ["__DONT_ASK__"]
+        });
+        assert!(read_plans_directory(&doc).is_none());
+    }
+
+    #[test]
+    fn plans_directory_empty_array_falls_through() {
+        let doc: JsonValue = serde_json::json!({"plansDirectory": []});
+        assert!(read_plans_directory(&doc).is_none());
     }
 }

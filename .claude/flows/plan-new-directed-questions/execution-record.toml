@@ -1,0 +1,59 @@
+schema_version = 1
+last_updated = 2026-04-18
+
+[[items]]
+id = "E1"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "restructure-plan-new-md-phases-rewrite-internal-cross-references"
+summary = "Renumbered Phases 4-6 to 6-8, dropped Phase 3 skip clause, inserted Phase 4 (Directed Questions) and Phase 5 (Directed Research), updated intra-file cross-references"
+files = ["claude/commands/plan-new.md"]
+status = "done"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "update-phase-1-requirements-check"
+summary = "Replaced Phase 1 step 4 with deferred-to-Phase-4 wording; scope-split check preserved in step 3"
+files = ["claude/commands/plan-new.md"]
+status = "done"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-04-18
+agent = "implement"
+task_ref = "add-important-constraints-bullet-on-new-phase-budget"
+summary = "Appended Phase budget bullet to Important Constraints documenting unconditional Phase 3, always-on Phase 4, conditional Phase 5, and total up-to-8-agent budget"
+files = ["claude/commands/plan-new.md"]
+status = "done"
+
+[[items]]
+id = "E4"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "shared-block parity check passed"
+command = "scripts/verify-shared-blocks.sh"
+outcome = "pass"
+
+[[items]]
+id = "E5"
+type = "verification"
+date = 2026-04-18
+agent = "implement"
+summary = "Phase-numbering grep returned 1-8 without gaps"
+command = "grep -E '^## Phase [0-9]+' claude/commands/plan-new.md | awk '{print $3}' | sort -un"
+outcome = "pass"
+
+[[items]]
+id = "E6"
+type = "status-transition"
+date = 2026-04-18
+agent = "plan-update"
+summary = "All 3 plan items complete; flow transitioned to complete"
+from_status = "in-progress"
+to_status = "complete"

@@ -2,7 +2,7 @@
 name: flow-bootstrap
 description: Compose tomlctl flow primitives (resolve + doctor + optional plansDirectory read) into a single JSON envelope for per-command pre-flight. Used by the flow-context shared block in /review, /optimise, /plan-new, /plan-update, /implement, /review-plan, /tdd, /optimise-apply, /review-apply.
 tools: Bash
-model: haiku
+model: claude-haiku-4-5
 color: cyan
 ---
 
@@ -19,7 +19,6 @@ Input: a single JSON-encoded envelope passed by the caller (read it from your pr
   "path_args": [],
   "branch": "feat/x",
   "worktree": "/abs/path",
-  "cwd": "/abs/path",
   "require_artifacts": ["execution_record"],
   "staleness_threshold": "7d"
 }
@@ -42,9 +41,9 @@ Output: a single JSON-encoded envelope as your final message. Shape:
 
 Run the steps below in order. Stop early on the first hard error and emit `{"ok": false, "errors": ["..."], "warnings": [], "resolved": null, "doctor": null, "plans_directory": null}`.
 
-1. **Parse input envelope.** Read the JSON-encoded envelope from your prompt and bind: `command`, `flow_override`, `path_args` (array of strings), `branch`, `worktree`, `cwd`, `require_artifacts`, `staleness_threshold`. All fields except `command` may be null/empty.
+1. **Parse input envelope.** Read the JSON-encoded envelope from your prompt and bind: `command`, `flow_override`, `path_args` (array of strings), `branch`, `worktree`, `require_artifacts`, `staleness_threshold`. All fields except `command` may be null/empty. (Carriers may pass extra fields — e.g. a legacy `cwd` — which are tolerated and ignored.)
 
-2. **Pre-flight version check.** Run `tomlctl --version`. If stdout does not start with `tomlctl 0.5.` (or a higher minor — `0.6.`, `0.7.`, etc.), halt and emit:
+2. **Pre-flight version check.** Run `tomlctl --version`. If stdout's version (matching regex `tomlctl (\d+)\.(\d+)`) is below 0.5 — i.e. major < 0 OR (major == 0 AND minor < 5) — halt and emit:
 
    ```json
    {"ok":false,"errors":["tomlctl ≥0.5.0 required; run \"cargo install --path tomlctl\" to upgrade"],"warnings":[],"resolved":null,"doctor":null,"plans_directory":null}
@@ -57,11 +56,12 @@ Run the steps below in order. Stop early on the first hard error and emit `{"ok"
    - `--path <p>` once per element of `path_args`
    - `--branch <branch>` if non-null
    - `--worktree <worktree>` if non-null
-   - `--cwd <cwd>` if non-null
    - `--with-staleness` always (so the envelope carries the staleness verdict)
    - `--json` always
 
    Capture stdout as the `resolved` value. On non-zero exit, append the stderr to `errors` and halt with `ok: false` (the rest of the procedure depends on resolve succeeding).
+
+3.5. **Validate required artifacts.** When `resolved.resolved == false`, skip this step entirely (no flow resolved means `require_artifacts` is unreachable; treat as a soft warning rather than a hard error). Otherwise, for each artifact name in `require_artifacts` (parsed in step 1), check that `resolved.artifacts.<name>` is non-empty AND that the path actually exists on disk (use `[ -e <path> ]` via Bash). If any required artifact is absent, append `"required artifact missing: <name> at <path>"` to `errors`, set `ok` to `false`, and halt with the standard error envelope (do not proceed to step 4).
 
 4. **Doctor.** If `resolved.resolved == true` and `resolved.slug` is a non-empty string, invoke `tomlctl flow doctor --slug <resolved.slug> --json` (NEVER pass `--fix` — bootstrap is read-only). Capture stdout as the `doctor` value. On non-zero exit, append stderr to `errors`, set `doctor` to `null`, and continue (doctor failure is a warning condition, not a halt). If `resolved.resolved == false`, skip this step and set `doctor` to `null`.
 

@@ -24,6 +24,13 @@
 //! suffix) exists at list time, emit a one-shot stderr warning pointing
 //! at the cutover instructions in CLAUDE.md. The legacy file is NEVER
 //! auto-migrated or deleted — that's an explicit user step per the plan.
+//!
+//! The natural key is `slug` (bare). When two parallel sessions bind the
+//! same slug to different worktrees, the second `add` REPLACES the first
+//! entry — `last writer wins`. The `binding.branch` / `binding.worktree`
+//! / `binding.scope` fields are advisory metadata for resolve.rs's step-3
+//! binding match, not part of the entry's identity. Code touching the
+//! registry MUST treat slug as the unique key.
 
 use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
@@ -32,6 +39,7 @@ use toml::Value as TomlValue;
 
 use crate::cli::{ActiveOp, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
+use crate::flow::schema::{ActiveDoc, ActiveEntry as SchemaEntry};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::{
     guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
@@ -128,42 +136,89 @@ fn active_array_mut(doc: &mut TomlValue) -> Result<&mut Vec<TomlValue>> {
 
 /// Render a single `[[active]]` entry as a JSON object — used both by the
 /// `list` output and to populate `would_change.new_entry` in dry-run
-/// envelopes. Returns `null` for non-table entries (defensive — ill-formed
-/// input would surface as `null` rather than panicking the dispatch).
+/// envelopes. Returns `null` for non-table entries or entries without a
+/// `slug` field (defensive — ill-formed input surfaces as `null` rather
+/// than panicking the dispatch).
+///
+/// R17: routes through the canonical `flow::schema` projection so the
+/// JSON shape is built from the same typed view that `flow::resolve` and
+/// `flow::list` consume. Pre-consolidation, three sites independently
+/// walked the `TomlValue` tree; future schema additions now require a
+/// single edit in `schema.rs` plus opt-in JSON-shape extension here.
 fn entry_to_json(entry: &TomlValue) -> JsonValue {
-    let Some(tbl) = entry.as_table() else {
+    let Some(parsed) = SchemaEntry::from_toml_value(entry) else {
         return JsonValue::Null;
     };
+    schema_entry_to_json(&parsed)
+}
+
+/// Project a typed `flow::schema::ActiveEntry` into the JSON-output shape
+/// the `list` envelope uses. Optional fields (`branch`, `worktree`,
+/// `scope`) are omitted when absent / empty so the JSON shape matches the
+/// pre-consolidation byte-output exactly. The `binding` table itself is
+/// omitted when all three optional fields are absent — `Binding::is_empty`.
+fn schema_entry_to_json(entry: &SchemaEntry) -> JsonValue {
     let mut out = serde_json::Map::new();
-    if let Some(slug) = tbl.get("slug").and_then(|v| v.as_str()) {
-        out.insert("slug".to_string(), JsonValue::String(slug.to_string()));
-    }
-    if let Some(last_used) = tbl.get("last_used").and_then(|v| v.as_str()) {
+    out.insert("slug".to_string(), JsonValue::String(entry.slug.clone()));
+    if !entry.last_used.is_empty() {
         out.insert(
             "last_used".to_string(),
-            JsonValue::String(last_used.to_string()),
+            JsonValue::String(entry.last_used.clone()),
         );
     }
-    if let Some(binding) = tbl.get("binding").and_then(|v| v.as_table()) {
+    if !entry.binding.is_empty() {
         let mut b = serde_json::Map::new();
-        if let Some(branch) = binding.get("branch").and_then(|v| v.as_str()) {
+        if let Some(branch) = entry.binding.branch.as_deref() {
             b.insert("branch".to_string(), JsonValue::String(branch.to_string()));
         }
-        if let Some(wt) = binding.get("worktree").and_then(|v| v.as_str()) {
+        if let Some(wt) = entry.binding.worktree.as_deref() {
             b.insert("worktree".to_string(), JsonValue::String(wt.to_string()));
         }
-        if let Some(scope) = binding.get("scope").and_then(|v| v.as_array()) {
-            let scope_json: Vec<JsonValue> = scope
+        if !entry.binding.scope.is_empty() {
+            let scope_json: Vec<JsonValue> = entry
+                .binding
+                .scope
                 .iter()
-                .filter_map(|v| v.as_str().map(|s| JsonValue::String(s.to_string())))
+                .map(|s| JsonValue::String(s.clone()))
                 .collect();
             b.insert("scope".to_string(), JsonValue::Array(scope_json));
         }
-        if !b.is_empty() {
-            out.insert("binding".to_string(), JsonValue::Object(b));
-        }
+        out.insert("binding".to_string(), JsonValue::Object(b));
     }
     JsonValue::Object(out)
+}
+
+/// Reject slugs containing path separators, parent-dir traversal, absolute
+/// roots, or NUL bytes. Mirrors `ensure_artifact::validate_slug`'s lenient
+/// deny-list (narrower than `init.rs`'s strict regex `^[a-z0-9][a-z0-9-]{0,63}$`)
+/// because `add` / `remove` / `touch` may operate on slugs minted under
+/// earlier conventions; the strict regex would break legitimate use.
+/// Defends downstream readers (`resolve.rs`, `doctor.rs`) that join the
+/// stored slug into `<root>/.claude/flows/<slug>/...` without canonicalisation.
+fn validate_slug(slug: &str) -> Result<()> {
+    if slug.is_empty() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "invalid slug: empty",
+        ));
+    }
+    if slug.contains('/')
+        || slug.contains('\\')
+        || slug == ".."
+        || slug == "."
+        || slug.starts_with("..")
+        || slug.contains('\0')
+    {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!(
+                "invalid slug `{slug}`: must not contain path separators, traversal components, or NUL"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Find the index of an entry whose `slug` field equals `slug`. Returns
@@ -324,17 +379,12 @@ fn list(integrity: ReadIntegrityArgs) -> Result<()> {
     maybe_warn_legacy(&file)?;
     let opts = read_integrity_opts(&integrity);
     let doc = read_doc_or_default(&file, opts)?;
-    let schema_version = doc
-        .get("schema_version")
-        .and_then(|v| v.as_integer())
-        .unwrap_or(1);
-    let entries: Vec<JsonValue> = doc
-        .get("active")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().map(entry_to_json).collect())
-        .unwrap_or_default();
+    // R17: project through the canonical typed schema so the JSON
+    // shape stays aligned with `flow::resolve`'s consumption path.
+    let parsed = ActiveDoc::from_toml_value(&doc);
+    let entries: Vec<JsonValue> = parsed.active.iter().map(schema_entry_to_json).collect();
     let envelope = json!({
-        "schema_version": schema_version,
+        "schema_version": parsed.schema_version,
         "active": entries,
     });
     print_json_compact(&envelope)
@@ -348,6 +398,7 @@ fn add(
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
+    validate_slug(&slug)?;
     let file = active_flow_path()?;
     let now = now_rfc3339();
     let new_entry = build_entry(
@@ -391,6 +442,7 @@ fn add(
 }
 
 fn remove(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<()> {
+    validate_slug(&slug)?;
     let file = active_flow_path()?;
     if dry_run {
         // Compute the would-be-removed entry by reading the doc without
@@ -444,6 +496,7 @@ fn remove(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<
 }
 
 fn touch(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<()> {
+    validate_slug(&slug)?;
     let file = active_flow_path()?;
     let now = now_rfc3339();
     if dry_run {

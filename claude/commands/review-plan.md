@@ -71,6 +71,7 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
    `/optimise`, invoke the `plan-update` skill with literal arg `reconcile` before
    continuing.
 
+<!-- SHARED-BLOCK:plansdirectory-prompt START -->
 ## Step 0.5: First-use `plansDirectory` prompt (per-carrier)
 
 Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent normalises both the unset case AND the literal `"__DONT_ASK__"` sentinel to `null` — see `flow-bootstrap.md` Contract). When non-null, skip this step entirely; the resolved value is already bound for downstream phases. The wording below is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` (per Task 17 of `docs/plans/flow-tracking-overhaul.md`); do not edit one carrier's copy without mirroring the other two — drift will surface at the next `diff` audit.
@@ -90,6 +91,7 @@ Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent nor
 
    `tomlctl json` skips sidecar maintenance on `settings.json` per P16, so the harness's out-of-band writes (e.g. `/config`) remain compatible.
 7. Bind `plans_directory` for downstream phases: if the user selected `Don't ask again` (sentinel persisted) OR the persisted array is empty after step 5's drop, treat as `["docs/plans/"]` in-memory (the default-of-defaults). Otherwise bind the array as written. Any downstream code that consumed `envelope.plans_directory == null` should now consume this in-memory value.
+<!-- SHARED-BLOCK:plansdirectory-prompt END -->
 
 # Plan Review
 

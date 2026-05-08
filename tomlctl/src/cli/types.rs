@@ -533,8 +533,6 @@ pub(crate) enum FlowOp {
         branch: Option<String>,
         #[arg(long = "worktree")]
         worktree: Option<PathBuf>,
-        #[arg(long = "cwd")]
-        cwd: Option<PathBuf>,
         #[arg(long = "with-staleness")]
         with_staleness: bool,
         #[arg(long = "json", default_value_t = true)]

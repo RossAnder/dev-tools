@@ -1,0 +1,23 @@
+slug = "effervescent-hugging-mist"
+plan_path = ".claude/plans/effervescent-hugging-mist.md"
+status = "complete"
+created = 2026-04-25
+updated = 2026-04-25
+branch = "main"
+scope = [
+    "claude/commands/**",
+    "claude/skills/test-author/**",
+    "scripts/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 6
+completed = 6
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/effervescent-hugging-mist/review-ledger.toml"
+optimise_findings = ".claude/flows/effervescent-hugging-mist/optimise-findings.toml"
+execution_record = ".claude/flows/effervescent-hugging-mist/execution-record.toml"
+plan_review_findings = ".claude/flows/effervescent-hugging-mist/plan-review-findings.toml"

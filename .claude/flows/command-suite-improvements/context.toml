@@ -1,0 +1,22 @@
+slug = "command-suite-improvements"
+plan_path = ".claude/plans/command-suite-improvements.md"
+status = "complete"
+created = 2026-04-17
+updated = 2026-04-17
+branch = "main"
+scope = [
+    "claude/commands/**",
+    "tomlctl/**",
+    "scripts/**",
+    ".githooks/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 34
+completed = 34
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/command-suite-improvements/review-ledger.toml"
+optimise_findings = ".claude/flows/command-suite-improvements/optimise-findings.toml"

@@ -44,6 +44,7 @@ use toml::Value as TomlValue;
 
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
+use crate::flow::schema::ActiveDoc;
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json;
 
@@ -268,20 +269,16 @@ fn load_active_slug_set(root: &Path) -> Result<std::collections::HashSet<String>
                 .with_context(|| format!("reading {}", registry.display()));
         }
     };
-    let doc: TomlValue = match toml::from_str(&s) {
+    // R17: route through the canonical schema parser so list.rs and
+    // resolve.rs share one source of truth for the registry's wire shape.
+    // Malformed TOML degrades to "no active flows" — same defensive
+    // contract the previous TomlValue walk maintained.
+    let doc = match ActiveDoc::from_toml_str(&s) {
         Ok(d) => d,
         Err(_) => return Ok(set),
     };
-    if let Some(arr) = doc.get("active").and_then(|v| v.as_array()) {
-        for entry in arr {
-            if let Some(slug) = entry
-                .as_table()
-                .and_then(|t| t.get("slug"))
-                .and_then(|v| v.as_str())
-            {
-                set.insert(slug.to_string());
-            }
-        }
+    for entry in doc.active {
+        set.insert(entry.slug);
     }
     Ok(set)
 }

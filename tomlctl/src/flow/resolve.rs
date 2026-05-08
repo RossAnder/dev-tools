@@ -9,7 +9,8 @@
 //!
 //! The plan's envelope sketch lists six `source` strings:
 //! `explicit-flag | active-binding | active-latest | branch-match |
-//! prompt-required | none`. The algorithm body, however, has SIX distinct
+//! prompt-required | none` (`prompt-required` is reserved — never emitted
+//! by the current resolver). The algorithm body, however, has SIX distinct
 //! paths plus the terminal "none" outcome — the scope-glob match (step 2)
 //! has no dedicated string in the plan's enum.
 //!
@@ -44,6 +45,7 @@ use toml::Value as TomlValue;
 
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
+use crate::flow::schema::{ActiveDoc, ActiveEntry};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::{read_toml, repo_or_cwd_root};
 use crate::output::print_json_compact;
@@ -58,7 +60,6 @@ pub(crate) fn dispatch(
     path: Vec<PathBuf>,
     branch: Option<String>,
     worktree: Option<PathBuf>,
-    _cwd: Option<PathBuf>,
     with_staleness: bool,
     _json: bool,
     integrity: ReadIntegrityArgs,
@@ -190,7 +191,15 @@ fn resolve(
     };
 
     if !registry_entries.is_empty() {
-        // Step 3: best-binding match.
+        // Step 3: best-binding match. When neither --branch nor --worktree is
+        // supplied, step-3 has nothing to score against — emit a breadcrumb
+        // warning before falling through to step-4 so callers don't wonder
+        // why active-binding never fires.
+        if branch.is_none() && worktree.is_none() {
+            warnings.push(
+                "step-3 binding-match skipped: no --branch or --worktree provided".to_string(),
+            );
+        }
         if let Some(best) = best_binding_match(&registry_entries, branch, worktree) {
             // Confirm the resolved flow's context.toml actually exists; if
             // not, surface a warning and fall through.
@@ -262,6 +271,13 @@ fn resolve(
                 Vec::new()
             };
             let ties_broken = tie_slugs.len() > 1;
+            if ties_broken {
+                eprintln!(
+                    "warning: {n} flows tied on branch+updated — picked {chosen}; pass --flow to disambiguate",
+                    n = tie_slugs.len(),
+                    chosen = chosen_slug,
+                );
+            }
             return build_resolved_envelope(
                 root,
                 &chosen_slug,
@@ -500,64 +516,28 @@ fn read_or_compute_artifacts(table: &toml::map::Map<String, TomlValue>, slug: &s
 }
 
 // ---------------------------------------------------------------------------
-// Active-flow registry parsing (mirrors flow::active)
+// Active-flow registry parsing (delegates to flow::schema for the canonical
+// typed projection; R17 consolidated the three per-site walks).
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-struct ActiveEntry {
-    slug: String,
-    last_used: String,
-    binding: BindingFields,
-}
-
-#[derive(Debug, Clone, Default)]
-struct BindingFields {
-    branch: Option<String>,
-    worktree: Option<String>,
-    scope: Vec<String>,
-}
 
 fn active_flow_path(root: &Path) -> PathBuf {
     root.join(".claude").join("active-flow.toml")
 }
 
 fn load_active_entries(file: &Path) -> Result<Vec<ActiveEntry>> {
-    let doc = read_toml(file)?;
-    let arr = doc
-        .get("active")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let mut out: Vec<ActiveEntry> = Vec::with_capacity(arr.len());
-    for entry in arr {
-        let Some(tbl) = entry.as_table() else { continue };
-        let Some(slug) = tbl.get("slug").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let last_used = tbl
-            .get("last_used")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let binding = tbl.get("binding").and_then(|v| v.as_table());
-        let mut b = BindingFields::default();
-        if let Some(bt) = binding {
-            b.branch = bt.get("branch").and_then(|v| v.as_str()).map(str::to_string);
-            b.worktree = bt.get("worktree").and_then(|v| v.as_str()).map(str::to_string);
-            if let Some(scope_arr) = bt.get("scope").and_then(|v| v.as_array()) {
-                b.scope = scope_arr
-                    .iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect();
-            }
+    // Align with `flow::doctor`'s silent-zero behaviour on a malformed
+    // registry: surface zero entries (with a stderr breadcrumb) so resolve
+    // falls through to step-5 instead of hard-erroring on a corrupt file.
+    let doc = match read_toml(file) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!(
+                "warning: active-flow.toml unreadable — falling through to step-5; {e}"
+            );
+            return Ok(Vec::new());
         }
-        out.push(ActiveEntry {
-            slug: slug.to_string(),
-            last_used,
-            binding: b,
-        });
-    }
-    Ok(out)
+    };
+    Ok(ActiveDoc::from_toml_value(&doc).active)
 }
 
 /// Pick the registry entry whose binding best matches the caller's
@@ -584,8 +564,8 @@ fn best_binding_match(
             score += 1;
         }
         if let Some(want) = want_worktree
-            && let Some(wt) = entry.binding.worktree.as_deref()
-            && Path::new(wt) == want
+            && let Some(wt) = entry.binding.worktree_path()
+            && wt == want
         {
             score += 1;
         }
@@ -911,13 +891,15 @@ mod tests {
         ));
     }
 
+    use crate::flow::schema::Binding;
+
     #[test]
     fn best_binding_match_returns_unique_top_score() {
         let entries = vec![
             ActiveEntry {
                 slug: "a".to_string(),
                 last_used: "2026-05-08T00:00:00Z".to_string(),
-                binding: BindingFields {
+                binding: Binding {
                     branch: Some("feat/x".to_string()),
                     ..Default::default()
                 },
@@ -925,7 +907,7 @@ mod tests {
             ActiveEntry {
                 slug: "b".to_string(),
                 last_used: "2026-05-09T00:00:00Z".to_string(),
-                binding: BindingFields {
+                binding: Binding {
                     branch: Some("feat/y".to_string()),
                     ..Default::default()
                 },
@@ -942,7 +924,7 @@ mod tests {
             ActiveEntry {
                 slug: "a".to_string(),
                 last_used: "2026-05-08T00:00:00Z".to_string(),
-                binding: BindingFields {
+                binding: Binding {
                     branch: Some("feat/x".to_string()),
                     ..Default::default()
                 },
@@ -950,7 +932,7 @@ mod tests {
             ActiveEntry {
                 slug: "b".to_string(),
                 last_used: "2026-05-09T00:00:00Z".to_string(),
-                binding: BindingFields {
+                binding: Binding {
                     branch: Some("feat/x".to_string()),
                     ..Default::default()
                 },
@@ -966,12 +948,12 @@ mod tests {
             ActiveEntry {
                 slug: "a".to_string(),
                 last_used: "2026-05-08T00:00:00Z".to_string(),
-                binding: BindingFields::default(),
+                binding: Binding::default(),
             },
             ActiveEntry {
                 slug: "b".to_string(),
                 last_used: "2026-05-09T00:00:00Z".to_string(),
-                binding: BindingFields::default(),
+                binding: Binding::default(),
             },
         ];
         let latest = pick_active_latest(&entries);

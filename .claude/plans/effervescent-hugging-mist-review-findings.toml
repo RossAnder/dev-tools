@@ -1,0 +1,621 @@
+schema_version = 1
+last_updated = 2026-04-25
+round = 2
+
+[[items]]
+id = "P1"
+review_round = 1
+severity = "critical"
+category = "completeness"
+plan_section = "### 9. Add 6th `package-quality` lens to /review [M]"
+anchor_old = "(b) widen ledger category enum at line 183 to include `package-quality`;"
+anchor_new = "(b) widen ledger category enum at line 183 to include `package-quality` — note: line 183 is INSIDE the `ledger-schema` shared block which lives byte-identical across `claude/commands/{review,review-apply,optimise,optimise-apply}.md` per `scripts/shared-blocks.toml`. The widened enum MUST be applied to all 4 carriers in the same commit, otherwise `scripts/verify-shared-blocks.sh` rejects the commit. Task 9's `Files` field becomes 4 files, not 1;"
+summary = "Line-183 enum is inside a 4-file shared block — editing only review.md trips the parity check immediately"
+status = "merged"
+
+[[items]]
+id = "P2"
+review_round = 1
+severity = "critical"
+category = "completeness"
+plan_section = "### 10. Document new conventions in root CLAUDE.md [S]"
+anchor_old = "NO build/test/lint/audit commands need to be added (no new binaries — evalctl was dropped)."
+anchor_new = "(c) Update the hardcoded trigger-list in the existing 'Developer setup' section — the prose currently reads `claude/commands/{optimise,review,optimise-apply,review-apply,plan-new,plan-update,implement,review-plan}.md`; insert `tdd` so it becomes `{optimise,review,optimise-apply,review-apply,plan-new,plan-update,implement,review-plan,tdd}.md` since Task 8 widens the manifest to include it. NO build/test/lint/audit commands need to be added (no new binaries — evalctl was dropped)."
+summary = "CLAUDE.md line 11 trigger-list is hand-maintained prose; will silently lie once Task 8 widens the manifest"
+status = "merged"
+
+[[items]]
+id = "P3"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "### 2. Write `/test-bootstrap` Rust reference [M]"
+anchor_old = "### 2. Write `/test-bootstrap` Rust reference [M]"
+anchor_new = "### 2. Write `/test-bootstrap` Rust reference [M] (Wave 0 — must complete before Tasks 3-5)"
+summary = "Tasks 3/4/5 say 'same structure as Rust ref' but no template exists — either Task 2 must run first as Wave 0, or the Approach section must embed the reference template inline"
+description = "Wave 1 fans out Tasks 2-5 in parallel with the same six-word Action 'Per-language reference, same structure as Rust ref.' Without a shared template, four agents will independently invent four different section orderings. Either re-sequence Task 2 before 3-5, or embed a 'Per-language reference template' subsection in Approach enumerating required headings: Framework + version, Rationale, Baseline config, Smoke-test template, CI snippet, Coverage tool config, Mutation tool config (gated behind --with-mutation), Pre-commit hook recipe."
+status = "merged"
+
+[[items]]
+id = "P4"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "### 1. Write `/test-bootstrap` command spec [M]"
+anchor_old = "- **Detail**: Phases — (1) Detect language(s) by walking manifests; (2) Read existing test infra; (3) Propose stack via `AskUserQuestion` referencing the per-language reference file; (4) Scaffold config + smoke test + CI snippet; (5) Append marked stack block to target CLAUDE.md; (6) Print verification commands. Support `--with-mutation` flag. Reject silent overwrites — re-runs require explicit confirmation."
+anchor_new = "- **Detail**: Phases — (1) Detect language(s) by walking manifests in priority order Cargo.toml → pyproject.toml/requirements.txt → package.json → go.mod, halting if none found; in monorepos use the manifest closest to CWD; (2) Read existing test infra by globbing tests/, test/, **/*_test.* per language; (3) Propose stack via single `AskUserQuestion` (multi-choice: 'Recommended (per reference) | Recommended + mutation | Custom | Abort'); (4) Scaffold config + smoke test + CI snippet by copying templates verbatim from the per-language reference file with placeholder substitution only on documented placeholders; (5) Create or append marked stack block (HTML-comment-delimited) to target CLAUDE.md after re-run guard; (6) Append target-project .gitignore patterns for coverage/mutation artifacts (marked block for idempotency); (7) Print verification commands as `build:` / `test:` / `lint:` / `coverage:` lines. Support `--with-mutation` flag (also scaffolds mutation tool config). Re-run guard fires on existing `<!-- TEST-BOOTSTRAP:STACK START -->` marker — prompts upgrade/add-gates/remove/abort, never writes without confirmation."
+summary = "Task 1's six phases are headlines, not a spec — manifest walk priority, AskUserQuestion shape, and placeholder-substitution rules all left to the implementer"
+status = "merged"
+
+[[items]]
+id = "P5"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "### 7. Write `/tdd` command spec [L]"
+anchor_old = "### 7. Write `/tdd` command spec [L]"
+anchor_new = "### 7a. /tdd frontmatter + shared blocks [M] / 7b. Cycle FSM + RED/GREEN/REFACTOR phase prose [M] / 7c. Sub-flow lifecycle + parent-flow propagation [M] / 7d. Anti-cheat SHA256 fingerprint pipeline + /implement dispatch + edge cases [M]"
+summary = "Task 7 [L] bundles 6 distinct concerns (frontmatter, 2 shared blocks, FSM, sub-flows, anti-cheat pipeline, /implement dispatch, 3 edge cases) — too much for one focused agent session; split into 7a/7b/7c/7d"
+description = "Comparable existing commands: implement.md is 550 lines, plan-new.md is 672, optimise.md is 653 — each single-purpose. /tdd combines (1) shared-block carriage (mechanical paste, error-prone), (2) cycle FSM, (3) sub-flow lifecycle + parent-flow propagation contract, (4) anti-cheat pipeline (non-trivial shell), (5) /implement dispatch, (6) three edge cases. Split into 4 sub-tasks of similar size."
+status = "merged"
+
+[[items]]
+id = "P6"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "### 9. Add 6th `package-quality` lens to /review [M]"
+anchor_old = '- **Detail**: Conditional dispatch text — "If reviewed files include any path under `claude/commands/` or `claude/skills/`, also launch Agent 6 in the same parallel batch (normal runs spawn 6; small-diff runs collapse 5+6 into the combined agent with a 20-finding cap)." Agent 6 subsection: focus on package-quality scoring per the 6-dimension rubric in Approach. Findings emitted with `category=package-quality`, severity per existing scale, dedup rule unchanged.'
+anchor_new = "- **Detail**: Four precise edits, anchored to current line numbers in claude/commands/review.md: (a) line 183 — replace the Review enum line with the same line widened to add `package-quality` immediately after `testability` (apply byte-identically across all 4 ledger-schema carriers per finding P1); (b) line 425 — REWRITE the small-diff shortcut text in place — currently says 'all five lenses' / 'cap of 15 findings'; new text says 'all six lenses (5 standard + package-quality if any reviewed file is under claude/commands/ or claude/skills/)' / 'cap of 20 findings'; (c) after line 425 and before line 433 — insert one paragraph: '**Conditional 6th lens (package-quality)**: If any reviewed file's path begins with claude/commands/ or claude/skills/, also launch Agent 6 in the same parallel batch (6 agents instead of 5).'; (d) after line 532 (Agent 5 closing) and before line 534 — insert `### Agent 6: Package Quality (conditional)` subsection with verbatim 6-dimension rubric from Approach (Frontmatter 20% / Trigger coverage 18% / Structural 20% / Content depth 22% / Consistency 12% / Shared-block compliance 8%), scoping rule (only fires when scope contains paths under claude/commands/ or claude/skills/), finding emission contract."
+summary = "Task 9 missing 4th edit at line 425 (small-diff text bump 5→6 lenses, 15→20 cap) AND existing 3 edits lack exact replacement text"
+description = "Compound finding from Agents 1 + 3. Agent 1 noticed the 4th edit gap (the small-diff prose still says 'five lenses' / 'cap of 15' — must be rewritten in place). Agent 3 noticed the existing 3 edits give only line numbers, not exact text — an agent will improvise ~30 lines of new prose freehand."
+status = "merged"
+
+[[items]]
+id = "P7"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "### 7. Write `/tdd` command spec [L]"
+anchor_old = '/implement dispatch via `Skill("implement", "<plan-path> --flow <cycle-slug>")`.'
+anchor_new = """/implement dispatch via `Skill("implement", "<plan-path> --flow <cycle-slug>")`. Note: /implement's frontmatter argument-hint is currently `[plan path or task description]` and does not advertise `--flow` — the runtime resolution path works (per flow-context resolution step 1), but if a future contributor refactors /implement's argument parsing based on the hint, the dispatch silently breaks. Acceptance MUST include a smoke check: `/implement <test-plan-path> --flow <test-slug>` resolves correctly."""
+summary = "/implement frontmatter argument-hint doesn't advertise --flow; runtime works but contract is fragile"
+status = "merged"
+
+[[items]]
+id = "P8"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "### 9. Add 6th `package-quality` lens to /review [M]"
+anchor_old = "Findings emitted with `category=package-quality`. Severity scale matches existing /review (info / minor / major / critical). Dedup rule unchanged (same file + same symbol/summary collapses)."
+anchor_new = "Findings emitted with `category=package-quality`. Severity scale matches existing /review (info / minor / major / critical). Dedup rule unchanged (same file + same symbol/summary collapses). **Sister-command sync**: `/review-apply` reads `category` and dispatches a category-specific verification sidebar (claude/commands/review-apply.md ~line 531). Add a one-line `package-quality` sidebar entry: 're-run `bash scripts/verify-shared-blocks.sh` if the touched file is a shared-block carrier; verify YAML frontmatter still parses; otherwise treat like `quality` (build + tests).'"
+summary = "/review-apply has category-specific verification at line 531 — plan never updates it for new package-quality category, apply-side will silently skip parity gate"
+status = "merged"
+
+[[items]]
+id = "P9"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "### 10. Document new conventions in root CLAUDE.md [S]"
+anchor_old = '- **Acceptance**: CLAUDE.md still well-formed; new sections placed logically (sub-dir convention near top of "Developer setup"; testing-discipline commands as a new top-level "## Testing discipline" section).'
+anchor_new = """- **Acceptance**: CLAUDE.md still well-formed; new sections placed logically (sub-dir convention near top of "Developer setup"; testing-discipline commands as a new top-level "## Testing discipline" section). Also update the "## Build & test" section to add `bash scripts/verify-shared-blocks.sh` as an explicit listed command — today it's only mentioned in prose under "Developer setup". The new Task 7 widens the parity-check footprint, so making the verification command first-class in the build/test list is consistent with the bin commands listed there."""
+summary = "Plan delivers a new shared-block carrier but never adds the parity command to the 'Build & test' listed commands"
+status = "merged"
+
+[[items]]
+id = "P10"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "### 7. Write `/tdd` command spec [L]"
+anchor_old = "- **Acceptance**: File parses; both shared blocks present byte-identical to canonical; `bash scripts/verify-shared-blocks.sh` PASSES (after Task 8 widens manifest); cycle FSM phases all documented."
+anchor_new = "- **Acceptance**: File parses; both shared blocks present byte-identical to canonical; `bash scripts/verify-shared-blocks.sh` PASSES (after Task 8 widens manifest); cycle FSM phases all documented. **Idempotency-on-resume**: tdd.md MUST document how `/tdd resume` interacts with `/implement`'s `task_ref` skip-list — each cycle's mini-plan task uses a deterministic `task_ref` of the form `tdd-cycle-<NNN>-<short-name>` so a re-dispatched cycle is recognised as already-completed when the cycle sub-flow's execution-record shows `task-completion` for it."
+summary = "Plan never specifies how /tdd resume interacts with /implement's task-completion skip-list — task_ref minting pattern undocumented"
+status = "merged"
+
+[[items]]
+id = "P11"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "### 2. Write `/test-bootstrap` Rust reference [M]"
+anchor_old = "Reference this repo's own `tomlctl/Cargo.toml` as a real-world example."
+anchor_new = "Reference this repo's own `tomlctl/Cargo.toml` as a real-world example. **Also document**: (a) target-project `.gitignore` additions for coverage artifacts (`*.profraw`, `coverage/`, `mutants.out/`); (b) recommended parallelisation flag (`--test-threads=N` / `cargo test --jobs`); (c) snapshot review workflow (`cargo insta review`). Apply the same `.gitignore` augmentation to per-language refs: Python (`.pytest_cache/`, `htmlcov/`, `.coverage`, `mutants/`); TypeScript (`coverage/`, `.stryker-tmp/`); Go (`coverage.out`, `*.coverprofile`)."
+summary = "All 4 per-language references omit .gitignore patterns for coverage/mutation artifacts — generated outputs leak into commits"
+status = "merged"
+
+[[items]]
+id = "P12"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "### 6. Write `test-author` skill spec [M]"
+anchor_old = "- **Acceptance**: Frontmatter matches `tomlctl/SKILL.md` schema (name + description); description contains at least 3 distinct trigger phrases; 5-phase procedure documented with per-language output examples."
+anchor_new = """- **Acceptance**: Frontmatter matches `tomlctl/SKILL.md` schema (name + description); description contains at least 5 distinct trigger phrases ("write tests for", "add coverage for", "test this function", "generate test cases", "scaffold tests" — at minimum, matching armory-class skill discoverability); 5-phase procedure documented with at least one fully-worked per-language output example (Rust, embedded inline as a code block) and a 1-line "see references/<lang>.md" pointer for the other three languages. **Permissions/allowlist note**: skill body MUST acknowledge that test-runner bash invocations (`pytest`, `npm test`, `go test`) may need allowlisting in target projects' `.claude/settings.json` — only `cargo test *` is allowlisted in dev-tools today."""
+summary = "Trigger floor 3 too low (bump to 5); per-language output examples undefined (embed at least one worked Rust example); permissions allowlist not addressed"
+status = "merged"
+
+[[items]]
+id = "P13"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "### 1. Write `/test-bootstrap` command spec [M]"
+anchor_old = "- **Acceptance**: File parses as valid markdown; frontmatter matches existing command convention; `bash scripts/verify-shared-blocks.sh` passes (no drift since no blocks added)."
+anchor_new = "- **Acceptance**: `awk 'NR==1{exit !/^---$/} NR>1 && /^---$/{exit 0}' claude/commands/test-bootstrap.md` exits 0 (frontmatter delimiters present); `head -n 5 claude/commands/test-bootstrap.md` shows non-empty `description:` and `argument-hint:`; `grep -c '^## Phase' claude/commands/test-bootstrap.md` returns 7 (six numbered phases + summary); `bash scripts/verify-shared-blocks.sh` exits 0 (no drift since no blocks added). Same mechanical-acceptance pattern applies to Tasks 7 and 10 (currently say 'cycle FSM phases all documented' / 'CLAUDE.md still well-formed' — neither runnable)."
+summary = "Acceptance criteria for Tasks 1, 7, 10 are qualitative — replace with grep/awk-runnable assertions"
+status = "merged"
+
+[[items]]
+id = "P14"
+review_round = 1
+severity = "warning"
+category = "risk"
+plan_section = "### Composition design (validated by Plan agent)"
+anchor_old = "- **RED**: capture `red_test_fingerprint = sha256` over project test glob → invoke `test-author` skill → run tests → require `outcome=fail` for the new test → commit `red: <cycle-slug>`."
+anchor_new = "- **RED**: capture `red_test_fingerprint = sha256` over project test glob (excluding generated snapshot artifacts: `**/__snapshots__/**`, `*.snap`, `*.snap.*`, `**/snapshots/**`, `*.snapshot`, `.snap.new`) — capture POST-COMMIT from the just-recorded `red:` commit's tree (via `git ls-tree -r red-commit -- <test-glob> | sha256sum`), NOT pre-commit from the working tree → invoke `test-author` skill → run tests → require `outcome=fail` for the new test → commit `red: <cycle-slug>`. Canonical fingerprint pipeline (single source of truth, cited from Task 7 Detail): `git ls-tree -r <red-commit> -- <test-glob> | sha256sum | awk '{print $1}'`. Per-language test-globs: rust `tests/**/*.rs` + `src/**/*.rs:#[cfg(test)]`; python `tests/**/*.py` + `**/test_*.py`; ts `**/*.test.{ts,tsx}` + `__tests__/**`; go `**/*_test.go`. Globs persisted in cycle sub-flow's context.toml so GREEN re-runs against the same set."
+summary = "Anti-cheat fingerprint: glob undefined, snapshot artifacts not excluded (jest/vitest/insta will trip false positives), pre-vs-post-commit timing unspecified — three failure modes on the load-bearing mechanism"
+description = "Compound finding from Agents 1 + 3 + 4. Agent 1 noted the glob is undefined. Agent 3 noted three valid pipelines have different rename-stability semantics — the choice belongs in the plan. Agent 4 noted snapshot artifacts (jest __snapshots__/, insta .snap.new, vitest inline) regenerate during normal test execution and would falsely trip anti-cheat. Combined: pick post-commit `git ls-tree`-based pipeline, exclude snapshot artifacts, persist the glob in cycle sub-flow."
+status = "merged"
+
+[[items]]
+id = "P15"
+review_round = 1
+severity = "warning"
+category = "risk"
+plan_section = "### Composition design (validated by Plan agent)"
+anchor_old = "**Cycle sub-flows**: each cycle gets a transient flow at `.claude/flows/<parent-slug>/tdd/cycle-<NNN>/context.toml`"
+anchor_new = "**Cycle sub-flows**: each cycle gets a transient flow at `.claude/flows/<parent-slug>/tdd/cycle-<NNN>/context.toml`. **Concurrency**: `/tdd` MUST acquire a per-parent-flow lockfile at `.claude/flows/<parent-slug>/tdd/.tdd.lock` (mirroring tomlctl + /implement convention) before incrementing the cycle counter — prevents two concurrent /tdd invocations from racing on cycle-NNN allocation or interleaving RED/GREEN entries during parent-flow execution-record copy-up. Halt with 'another /tdd session active in this flow' on contention."
+summary = "tomlctl + /implement lockfiles don't cover /tdd's cycle-counter increment — concurrent /tdd sessions on same parent flow can collide"
+status = "merged"
+
+[[items]]
+id = "P16"
+review_round = 1
+severity = "warning"
+category = "risk"
+plan_section = "### Idempotency for `/test-bootstrap` re-runs"
+anchor_old = 'On re-run, `/test-bootstrap` detects the marker and offers: `"Already bootstrapped on <date> with <stack>. Choose: upgrade stack / add coverage gates / abort."` Never silently overwrites.'
+anchor_new = 'On re-run, `/test-bootstrap` detects the marker and offers: `"Already bootstrapped on <date> with <stack>. Choose: upgrade stack / add coverage gates / remove (clean uninstall) / abort."` Never silently overwrites. The `remove` mode strips the marked CLAUDE.md block and prints a checklist of generated files (CI workflow, smoke test, conftest/snapshot dirs) the user may want to delete manually — /test-bootstrap does not delete user code, only the marked block.'
+summary = "Plan offers upgrade/add/abort but no remove mode; marked CLAUDE.md block becomes orphaned if project later abandons /test-bootstrap"
+status = "merged"
+
+[[items]]
+id = "P17"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "### 6. Write `test-author` skill spec [M]"
+anchor_old = "Polyglot: must handle at minimum the languages covered by /test-bootstrap references."
+anchor_new = "Polyglot: must handle at minimum the languages covered by /test-bootstrap references. **Permissions context**: when invoking framework binaries, the harness will prompt for permission unless the bash pattern is allowlisted in the target project's `.claude/settings.json`. Today only `cargo test *` is allowlisted in this repo's settings — pytest/npm test/go test will prompt. Skill body should note the allowlist patterns users may want to pre-approve for an unattended workflow."
+summary = "Skill invokes test-runner binaries; only `cargo test *` is allowlisted in dev-tools today — pytest/npm test/go test will prompt"
+status = "merged"
+
+[[items]]
+id = "P18"
+review_round = 1
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 5. Write `/test-bootstrap` Go reference [M]"
+anchor_old = "Stack — `go test` + `testify` (assertions, optional) + `gotestsum` (output formatting) + `go test -cover` + `go-mutesting` or `gremlins` (mutation, opt-in)."
+anchor_new = "Stack — `go test` + `testify` (assertions, optional) + `gotestsum` (output formatting) + `go test -cover` + `gremlins` (mutation, opt-in — recommended default; actively maintained by go-gremlins, modern docs, designed for CI quality gates). Note: original `zimmski/go-mutesting` is dormant since 2014; `avito-tech/go-mutesting` fork exists as fallback but `gremlins` is the 2026 default."
+summary = "Listing go-mutesting and gremlins as equal alternatives understates the gap — gremlins is the 2026 default; cite avito-tech fork only as fallback"
+status = "merged"
+
+[[items]]
+id = "P19"
+review_round = 1
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 8. Widen shared-blocks manifest [S]"
+anchor_old = "**Detail**: Add `claude/commands/tdd.md` to the `files` array of the `flow-context` block AND the `execution-record-schema` block. Preserve TOML key ordering and array formatting style of existing entries. Do NOT add `tdd.md` to `ledger-schema` (it does not produce review/optimise findings) and do NOT add to `apply-*` blocks."
+anchor_new = "**Detail**: Add `claude/commands/tdd.md` to the `files` array of the `flow-context` block AND the `execution-record-schema` block. Preserve TOML key ordering and array formatting style of existing entries. Do NOT add `tdd.md` to `ledger-schema` (it does not produce review/optimise findings) and do NOT add to `apply-*` blocks. **Cost acknowledgement**: tdd.md will carry ~272 lines of shared-block boilerplate (~90 lines flow-context + ~182 lines execution-record-schema) before its own FSM content — this is deliberate, since /tdd is a primary writer of the execution-record (appends task-completion + verification entries to parent flow's record). Implementer must NOT slim the shared blocks to reduce file size."
+summary = "tdd.md will carry ~272 lines of shared-block boilerplate; the cost is deliberate but the rationale should be explicit so an implementer doesn't try to slim and break parity"
+status = "merged"
+
+[[items]]
+id = "P20"
+review_round = 1
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 1. Write `/test-bootstrap` command spec [M]"
+anchor_old = "- **Acceptance**: File parses as valid markdown; frontmatter matches existing command convention; `bash scripts/verify-shared-blocks.sh` passes (no drift since no blocks added)."
+anchor_new = "- **Acceptance**: File parses as valid markdown; frontmatter matches existing command convention; `bash scripts/verify-shared-blocks.sh` passes (no drift since no blocks added). **Slash-command discovery smoke check**: confirm only `/test-bootstrap` (not `/test-bootstrap/references/rust`) shows up in the slash-command list after Wave 1 lands — verifies the harness does not recurse into per-command sub-directories. (Note: Agent 1 verified file/directory coexistence at `claude/commands/test-bootstrap{.md,/}` is filesystem-legal; this is a defensive smoke test for the harness convention.)"
+summary = "Wave 1 introduces file/directory coexistence at claude/commands/test-bootstrap (file) + test-bootstrap/ (dir); Task 1 should add a smoke check that nested .md files don't accidentally register as slash-commands"
+status = "discarded"
+
+[[items]]
+id = "P21"
+review_round = 1
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 1. Write `/test-bootstrap` command spec [M]"
+anchor_old = "(5) Append marked stack block to target CLAUDE.md;"
+anchor_new = "(5) If target CLAUDE.md exists: append marked stack block. If it does not exist (common for greenfield projects — exactly the audience for /test-bootstrap): create CLAUDE.md with the testing-stack block as initial content;"
+summary = "Plan doesn't define behaviour when target project has no CLAUDE.md — bootstrap should create one rather than skip the marker block (otherwise re-run check breaks)"
+status = "merged"
+
+[[items]]
+id = "P22"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Verification"
+anchor_old = '6. **Functional dry-run (manual, post-merge)** — invoke `/test-bootstrap` against a throwaway project for each language; invoke `/tdd` against a small feature in a flow created by `/plan-new`; invoke `/review claude/commands/test-bootstrap.md` and confirm the 6th `package-quality` lens fires (look for findings with `category="package-quality"` in the resulting ledger).'
+anchor_new = """6. **Functional dry-run (manual, post-merge)** — invoke `/test-bootstrap` against a throwaway project for each language; invoke `/tdd` against a small feature in a flow created by `/plan-new`; invoke `/review claude/commands/test-bootstrap.md` and confirm the 6th `package-quality` lens fires (look for findings with `category="package-quality"` in the resulting ledger). **Dogfooding step**: also invoke `/test-bootstrap` against the dev-tools repo itself (which has `tomlctl/Cargo.toml` — Rust). Should detect existing tests and surface 'already bootstrapped'-equivalent path; if it offers to add coverage gates, that smoke-tests the Rust reference recipe end-to-end."""
+summary = "Dogfood /test-bootstrap on tomlctl/ — proves the Rust reference recipe is valid against a live target and tests the 'already bootstrapped' idempotency path"
+status = "merged"
+
+[[items]]
+id = "P23"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 1. Write `/test-bootstrap` command spec [M]"
+anchor_old = "Reject silent overwrites — re-runs require explicit confirmation."
+anchor_new = "Reject silent overwrites — re-runs require explicit confirmation. **Per-phase idempotency**: each side-effecting phase MUST be safe to re-run. Phase (4) skips files that already exist with non-stub content. Phase (5) re-uses the marked-block updater pattern. Phase (6) — gitignore — adds entries only if marker block absent or patterns missing. Otherwise the 'one-shot, idempotent on re-runs' claim only holds for the CLAUDE.md marker (the simplest case)."
+summary = "Idempotency model only covers CLAUDE.md marker; phases (4), (5), and the missing gitignore phase need their own idempotency contracts for resumability"
+status = "merged"
+
+[[items]]
+id = "P24"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Shared-block parity implications"
+anchor_old = "### Shared-block parity implications"
+anchor_new = """
+### `/optimise` mirror — explicitly out of scope
+
+`/optimise` parallels `/review` in many ways, but a `package-quality` equivalent for `/optimise` is intentionally NOT in scope: `package-quality` is a static-analysis lens (frontmatter, structure, shared-block compliance), not a runtime-performance lens. The asymmetry mirrors the existing 'Design Note: Intentional Asymmetry' callout in `claude/commands/review.md`. This is a Design Note to prevent future review cycles from re-flagging the omission.
+
+### Shared-block parity implications"""
+summary = "Add explicit Design Note that /optimise has no package-quality counterpart by design — prevents future review cycles re-flagging the asymmetry"
+status = "merged"
+
+[[items]]
+id = "P25"
+review_round = 1
+severity = "suggestion"
+category = "executability"
+plan_section = "## Dependency Graph"
+anchor_old = """
+Wave 2 (sequential — 2 files):
+  Task 7 (tdd.md) → Task 8 (shared-blocks.toml widening)
+  Task 8 must follow Task 7 because the manifest references the file's path,
+  and the parity check needs both staged together to pass."""
+anchor_new = """
+Wave 2 (parallel — 2 files, single commit):
+  Tasks 7 + 8 are authored in parallel but committed atomically. The parity
+  hook fires only at commit-time, so as long as both files appear in the same
+  staged commit, ordering is irrelevant. Task 8's edit (adding two lines to
+  shared-blocks.toml) does not depend on Task 7's contents — only on Task 7's
+  filename, which is fixed by the plan."""
+summary = "Task 8 declares dependency on Task 7 but only depends on Task 7's filename (fixed by plan); they could run parallel and commit atomically"
+status = "merged"
+
+[[items]]
+id = "P26"
+review_round = 1
+severity = "suggestion"
+category = "executability"
+plan_section = "## Risks"
+anchor_old = "- **/tdd cycle sub-flow proliferation** — long TDD sessions create many `.claude/flows/<parent-slug>/tdd/cycle-<NNN>/` directories. **Mitigation**: cycle sub-flows are intentionally retained for audit; `.gitignore` keeps `.claude/flows/` out of git in most repos so the on-disk noise doesn't leak. Document the retention policy in `tdd.md`."
+anchor_new = """
+- **/tdd cycle sub-flow proliferation** — long TDD sessions create many `.claude/flows/<parent-slug>/tdd/cycle-<NNN>/` directories. **Mitigation**: cycle sub-flows are intentionally retained for audit; `.gitignore` keeps `.claude/flows/` out of git in most repos so the on-disk noise doesn't leak. Disk: 100 cycles × ~5KB = ~500KB per parent flow — negligible. **Privacy/PII**: cycle sub-flows may contain test code snippets, file paths, and (via copy-up) verification stdout/stderr — same sensitivity as parent flow. Document in tdd.md that users handling regulated data should treat `.claude/flows/<parent-slug>/tdd/**` with the same retention/scrubbing policy as the parent flow's context.toml.
+
+- **Wave 1 partial-failure recovery** — if Tasks 1-3 succeed but 4-6 fail, /implement's idempotency skip-list (per execution-record schema) handles re-runs at task granularity. For half-written-file states: `git restore <path>` then re-run. For Task 7 partial-write (shared-block content drift): `git restore claude/commands/tdd.md` and re-run — the parity hook blocks the broken commit anyway, so partial-write states cannot leave HEAD non-parity."""
+summary = "Risks section missing two entries: cycle sub-flow PII hygiene + Wave 1 partial-failure recovery procedure"
+status = "merged"
+
+[[items]]
+id = "P27"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "### 4. Write `/test-bootstrap` TypeScript reference [M]"
+anchor_old = "Stack — `vitest` (preferred for modern projects) + `fast-check` (property) + `@vitest/coverage-v8` + `stryker-mutator` (mutation, opt-in). Note jest fallback for legacy projects."
+anchor_new = "Stack — `vitest` (preferred for modern projects; downloads have grown ~3.5× in 2 years; Nuxt/SvelteKit/Astro/Angular all default to it) + `fast-check` (property) + `@vitest/coverage-v8` + `stryker-mutator` (mutation, opt-in; latest StrykerJS 6.x line, use `@stryker-mutator/typescript-checker` package — note the older `@stryker-mutator/typescript` package is unmaintained, do NOT reference). **Jest fallback ONLY for React Native projects** — RN is the only ecosystem in 2026 that still officially requires Jest; everywhere else, plain 'legacy project' should not be a reason to choose Jest."
+summary = "TS reference: scope jest-fallback narrowly (React Native only); steer mutation users to @stryker-mutator/typescript-checker (active) not @stryker-mutator/typescript (5-year stale)"
+status = "merged"
+
+[[items]]
+id = "P28"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "### 3. Write `/test-bootstrap` Python reference [M]"
+anchor_old = "Stack — `pytest` ≥7.0 + `pytest-asyncio` (conditional) + `hypothesis` (property) + `pytest-cov` (coverage with branch) + `mutmut` (mutation, opt-in)."
+anchor_new = 'Stack — `pytest` ≥8.4 (required by pytest-asyncio 1.0+, current stable is pytest-asyncio 1.3 with 1.4 in alpha) + `pytest-asyncio` ≥1.0 (note: `event_loop` fixture removed; use `@pytest.mark.asyncio(loop_scope="...")` and `asyncio.get_running_loop()`) + `hypothesis` (property) + `pytest-cov` (coverage with branch) + `mutmut` ≥3.5 (mutation, opt-in — actively maintained, Feb 2026 release; consider `cosmic-ray` as alternative for projects needing broader operator coverage).'
+summary = "Python ref: pytest baseline is too lax (≥7.0 conflicts with pytest-asyncio 1.x ≥8.4 requirement); ref must warn about removed event_loop fixture"
+status = "merged"
+
+[[items]]
+id = "P29"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "### 1. Write `/test-bootstrap` command spec [M]"
+anchor_old = "Support `--with-mutation` flag."
+anchor_new = "Support `--with-mutation` flag. Documentation MUST include per-tool runtime expectations and recommended CI policy: cargo-mutants ≈ (build_time + test_time) × N_mutants (minutes-to-tens-of-minutes); mutmut/stryker have similar 10×-100× profile. Default opt-in CI snippet: separate workflow, `timeout-minutes: 30`, `continue-on-error: true` (advisory not blocking), PR-only with sharding. Without this guidance, projects enable it and discover their CI takes hours."
+summary = "--with-mutation enables tools whose runtime is 10-100× normal CI; without runtime guidance + recommended CI policy, the package ships a footgun"
+status = "merged"
+
+[[items]]
+id = "P30"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+anchor_old = "- **/tdd cycle sub-flow proliferation** — long TDD sessions create many `.claude/flows/<parent-slug>/tdd/cycle-<NNN>/` directories."
+anchor_new = ""
+summary = "(Subsumed into P26 which covers PII hygiene + recovery in the same Risks section edit.)"
+description = "Discarded as duplicate — P26 carries the consolidated Risks edit."
+status = "discarded"
+
+[[items]]
+id = "P31"
+review_round = 2
+severity = "critical"
+category = "completeness"
+plan_section = "## Tasks"
+anchor_old = "**Per-batch file count**: Wave 1 = 6 files (at ceiling), Wave 2 = 2 files (sequential anyway), Wave 3 = 2 files. Total plan scope = 10 unique files (well under 15-file overall guard)."
+anchor_new = "**Per-batch file count**: Wave 1 = 6 files. **Note**: `/implement` Phase 1 documents a 3-4 parallel-agent ceiling (`claude/commands/implement.md:348, 543`), not 6. Wave 1 must split into two 3-file batches when dispatched via `/implement` (Wave 1a: Tasks 1, 2, 3; Wave 1b: Tasks 4, 5, 6). Wave 2 = 2 files (sequential). Wave 3 = 2 files. Total plan scope = 10 unique files (well under 15-file overall guard)."
+summary = "Wave 1's 6-file parallel batch contradicts /implement's documented 3-4 agent ceiling"
+description = "implement.md:348 says 'Target 3-4 parallel agents maximum for implementation' and line 543 reiterates '3-4 parallel implementation agents max — more creates coordination overhead.' No 6-file ceiling exists in the codebase. When /implement dispatches Wave 1, it will halve the batch anyway, defeating the plan's claimed parallelism. Re-graph as two 3-file sub-waves or surface the constraint explicitly."
+status = "merged"
+dedup_id = "169eddb1a916bf9b"
+
+[[items]]
+id = "P32"
+review_round = 2
+severity = "critical"
+category = "feasibility"
+plan_section = "### 9. Add 6th `package-quality` lens to /review [M]"
+anchor_old = "Edit existing file in 3 spots: (a) after Step 2 small-diff shortcut (~line 425), add the conditional dispatch; (b) widen ledger category enum at line 183 to include `package-quality`; (c) after Agent 5 (~line 532), add `### Agent 6: Package Quality (conditional)` subsection."
+anchor_new = 'Edit existing file in 5 spots: (a) line 425 small-diff shortcut text (bump 5→6 lenses, 15→20 cap); (b) line 183 ledger category enum (note: this is in a 4-file shared block — see P1); (c) line 437 TaskCreate-once-per-lens list ("5 tasks for a normal run" → "6 tasks" with `Package Quality` added to the lens-name list); (d) lines 443/445 ("all five Agent tool calls" / "five agents") → conditional language for 5-or-6; (e) after Agent 5 (~line 532), add `### Agent 6: Package Quality (conditional)` subsection.'
+summary = "Task 9's '3 spots' miscount — review.md hard-codes 'five'/'5' at lines 437, 443, 445 too; Task 9 misses these"
+description = "grep -n 'five|5 tasks|all five' claude/commands/review.md returns lines 425, 429, 431, 437, 443, 445. Plan Task 9 names only line 425 and the post-532 insertion. Lines 437 ('5 tasks for a normal run') and 443/445 ('you MUST make all five Agent tool calls' / 'launch the full complement of five agents') would survive Task 9 unedited and contradict the new Agent 6 — an orchestrator following review.md:443 would launch 5 agents while the rubric expects 6."
+status = "merged"
+dedup_id = "e4438dd80e92739c"
+
+[[items]]
+id = "P33"
+review_round = 2
+severity = "critical"
+category = "completeness"
+plan_section = "### 6. Write `test-author` skill spec [M]"
+anchor_old = "Frontmatter matches `tomlctl/SKILL.md` schema (name + description); description contains at least 3 distinct trigger phrases; 5-phase procedure documented with per-language output examples."
+anchor_new = 'Frontmatter matches `claude/skills/tomlctl/SKILL.md` schema (name + description); description contains at least 3 distinct trigger phrases; 5-phase procedure documented with per-language output examples. **Fingerprint algorithm pinned in skill body**: per-file `sha256(file bytes)` over the test-file glob, sorted by path, joined with `\n`, then `sha256` of the concatenation — single concrete formula matching the precision of `claude/skills/tomlctl/SKILL.md:634` integrity-sidecar canonicalisation, otherwise the /tdd anti-cheat RED→GREEN comparison falsely-passes/fails on whitespace-only differences.'
+summary = "Task 6 acceptance has wrong path (`tomlctl/SKILL.md` does not exist; actual is `claude/skills/tomlctl/SKILL.md`); fingerprint canonicalisation algorithm undefined"
+description = "ls /home/ross/Dev/dev-tools/tomlctl/SKILL.md returns 'No such file or directory'. The only SKILL.md in the repo is at claude/skills/tomlctl/SKILL.md. Separately, the /tdd anti-cheat fingerprint (Approach §'/tdd cycle FSM') is described as 'test-file SHA256 fingerprint' but never defines: which test files (glob), how to combine multiple files (concat? per-file map? merkle root), whitespace canonicalisation (BOM, trailing newline, line-ending normalisation). Without a precise spec, RED/GREEN comparison flakes across editors and platforms."
+status = "merged"
+dedup_id = "be648dc0dbff444f"
+
+[[items]]
+id = "P34"
+review_round = 2
+severity = "warning"
+category = "feasibility"
+plan_section = "### Composition design (validated by Plan agent)"
+anchor_old = "dispatch `/implement --flow <parent-slug>__tdd-<NNN>`"
+anchor_new = "dispatch `/implement --flow <parent-slug>-tdd-<NNN>` (flat slug; satisfies `claude/commands/plan-new.md:479`'s `^[a-z0-9][a-z0-9-]{0,63}$` regex which rejects underscores, and lives at `.claude/flows/<parent-slug>-tdd-<NNN>/` so flow-resolution rule 1 — single-segment `.claude/flows/<slug>/` per `implement.md:299` — can match)"
+summary = "Cycle slug `__tdd-<NNN>` violates plan-new slug regex; nested `.claude/flows/<parent>/tdd/cycle-<NNN>/` cannot be resolved"
+description = "claude/commands/plan-new.md:479 enforces `^[a-z0-9][a-z0-9-]{0,63}$` — underscores rejected. The plan's `__tdd-<NNN>` slug fails the gate. Disk layout `.claude/flows/<parent>/tdd/cycle-<NNN>/` is 3 segments; implement.md:299 and plan-new.md:71 only resolve single-segment `.claude/flows/<slug>/`. The composition pattern is structurally unbuildable as written."
+status = "merged"
+dedup_id = "71ce5b1953366e01"
+
+[[items]]
+id = "P35"
+review_round = 2
+severity = "warning"
+category = "feasibility"
+plan_section = "### Composition design (validated by Plan agent)"
+anchor_old = "**Cycle sub-flows**: each cycle gets a transient flow at `.claude/flows/<parent-slug>/tdd/cycle-<NNN>/context.toml` (with its own one-task execution-record)."
+anchor_new = '''**Cycle sub-flows**: each cycle gets a transient flow at `.claude/flows/<parent-slug>-tdd-<NNN>/context.toml` (flat path matching the slug regex; with its own one-task execution-record). `/tdd` MUST bootstrap the sub-flow's `execution-record.toml` per `claude/commands/plan-new.md:59` — single `Write` of `schema_version = 1\nlast_updated = <today>\n` followed by `tomlctl integrity refresh <path>` — BEFORE any `tomlctl items add` against it; otherwise the cycle's first RED-phase verification entry trips `--verify-integrity` with `sidecar missing`.'''
+summary = "Cycle sub-flow execution-record creation skips the mandatory atomic 2-line bootstrap + integrity refresh; first /tdd RED-phase write fails"
+description = "claude/commands/plan-new.md:59 mandates the bootstrap protocol for any new execution_record path. Without it, --verify-integrity reads return 'sidecar missing' and items add against a missing file errors with 'No such file or directory'. /tdd writes verification entries on the RED phase — that is the first /tdd write into a fresh cycle dir, so this bites cycle 1 of the very first /tdd invocation."
+status = "merged"
+dedup_id = "16557a723a27f487"
+
+[[items]]
+id = "P36"
+review_round = 2
+severity = "warning"
+category = "feasibility"
+plan_section = "## Risks"
+anchor_old = """**/implement skip-list collision** — if cycle slugs accidentally overlap with parent plan task slugs (unlikely but possible if a parent task is named "tdd-cycle-001-foo"), `/implement` would skip the cycle thinking it was completed. **Mitigation**: cycle sub-flows have their OWN execution-record (separate file), so /implement's skip-list query operates against the cycle flow's record, not the parent's. Documented in tdd.md."""
+anchor_new = "**/implement skip-list collision (post-copy-up variant)** — `/implement` Phase 2 (`claude/commands/implement.md:331-333`) builds the skip-list from the resolved flow's `execution-record.toml` via `tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref`. The current 'separate file' mitigation only holds during cycle execution; the moment Approach line 100 copies cycle entries up into the parent's record, copied `task_ref`s pollute the parent's skip-list AND cycle `E1..En` IDs collide with parent's already-minted `E*` IDs. **Mitigation**: on copy-up, /tdd MUST (a) prefix `task_ref` to `tdd-cycle-<NNN>-<original>` so no parent task slug collides; (b) re-mint `E`-prefix IDs against `tomlctl items next-id <parent-record> --prefix E` to avoid double-IDs (which would violate the schema's monotonic-ID contract). Documented in tdd.md."
+summary = "Risk #3's 'separate file' mitigation collapses on copy-up to parent (Approach line 100); needs task_ref prefixing + E-ID re-minting"
+description = "Approach line 100 explicitly copies cycle entries into parent's execution-record. That parent record is what /implement queries (implement.md:331). After copy-up, a parent /implement run whose plan has a task whose slug matches the cycle's task_ref silently skips it. Plus: next-id --prefix E is monotonic per file — cycle starts at E1, copying E1 into a parent that already has E1 produces duplicate IDs."
+status = "merged"
+dedup_id = "dcfd0c083886d710"
+
+[[items]]
+id = "P37"
+review_round = 2
+severity = "warning"
+category = "completeness"
+plan_section = "### Composition design (validated by Plan agent)"
+anchor_old = """**Bootstrap-missing fallback**: at `/tdd` startup, check parent flow's `Verification Commands` for a test command. If absent, halt with `"No test framework detected. Run /test-bootstrap first."` Do not auto-bootstrap from inside `/tdd` — single-responsibility."""
+anchor_new = """**Bootstrap-missing fallback**: at `/tdd` startup, parse the parent **plan file's** `## Verification Commands` block (the canonical block defined at `claude/commands/plan-new.md:594-602` — a fenced code block with `key: value` lines). The flow's `context.toml` does NOT carry verification commands; `/implement` extracts them transiently from the plan file (`claude/commands/implement.md:334`) without persisting. `/tdd` must therefore (a) resolve `context.toml.plan_path`, (b) re-parse the plan markdown's fenced block, (c) extract the `test:` line. If the test line is absent or empty, halt with `"No test framework detected. Run /test-bootstrap first."` Do not auto-bootstrap from inside `/tdd` — single-responsibility."""
+summary = "/tdd reading 'parent flow's Verification Commands' assumes persistence that does not exist — block lives in plan markdown, not context.toml"
+description = "plan-new.md:594-602 puts Verification Commands in plan markdown under `## Verification Commands`. The flow's context.toml has no [verification] section. /tdd has to read context.plan_path then re-parse the markdown — different IO + failure mode than reading TOML. Skill spec must be unambiguous or the precedence rule fires arbitrarily depending on which path the agent picks."
+status = "merged"
+dedup_id = "e8f9e53e7e57d806"
+
+[[items]]
+id = "P38"
+review_round = 2
+severity = "warning"
+category = "completeness"
+plan_section = "### `/review` package-quality lens — 6th conditional Agent"
+anchor_old = "Severity scale matches existing `/review` (info / minor / major / critical)."
+anchor_new = "Severity scale matches existing `/review` — `critical | warning | suggestion` per the ledger schema's required-field validation (NOT `info / minor / major / critical`, which would fail the malformed-item check at read time and be excluded from dedup/resolution)."
+summary = "Plan's 'info / minor / major / critical' severity scale contradicts the actual ledger schema's `critical | warning | suggestion`"
+description = "The ledger schema (shared block, present at review.md:148, review-apply.md:148, etc.) defines severity as `critical | warning | suggestion`. Items written with severity='minor'/'info'/'major' would fail the malformed-item check at read time. This is a hard correctness bug in the plan's lens spec, separate from the line-183 enum widening already raised as P1."
+status = "merged"
+dedup_id = "727568daf8023531"
+
+[[items]]
+id = "P39"
+review_round = 2
+severity = "warning"
+category = "executability"
+plan_section = "### 7. Write `/tdd` command spec [L]"
+anchor_old = "Per-cycle mini-plan structure at `docs/plans/<parent-slug>/tdd/cycle-<NNN>-<short-name>.md`. Cycle sub-flows at `.claude/flows/<parent-slug>/tdd/cycle-<NNN>/`."
+anchor_new = "Per-cycle mini-plan structure at `docs/plans/<parent-slug>/tdd/cycle-<NNN>-<short-name>.md`. **`<NNN>` = zero-padded 3-digit decimal (001, 002, …); `<short-name>` derivation = first 4 words of the failing test name lowercased + hyphenated, max 30 chars; collision rule = if two cycles produce the same slug, append `-2`, `-3`, … to the second.** Cycle sub-flows at `.claude/flows/<parent-slug>-tdd-<NNN>/` (flat path; see P34/P35)."
+summary = "Cycle slug components `<NNN>` and `<short-name>` have no derivation rule — two agents executing the same cycle produce different slugs"
+description = "Per-cycle mini-plan path embeds <short-name>, but nowhere does the plan say where that string comes from. <NNN> width is also unspecified (3 digits implied; not stated). Two agents executing the same cycle on different runs would mint different slugs, breaking idempotency on resume. Specify NNN width, short-name derivation, and conflict resolution."
+status = "merged"
+dedup_id = "385d88a10046b4a7"
+
+[[items]]
+id = "P40"
+review_round = 2
+severity = "warning"
+category = "executability"
+plan_section = "### `test-author` skill — polyglot framework detection"
+anchor_old = "Test-author follows the standard 5-phase armory procedure (reconnaissance → case enumeration → fixture design → mock strategy → output) but the *output* shape is framework-specific."
+anchor_new = "Test-author follows a 5-phase procedure documented inline in `SKILL.md` (reconnaissance: enumerate target file's symbols and imports → case enumeration: list happy-path/edge/error cases → fixture design: name fixtures and their lifecycle → mock strategy: identify mock boundaries → output: emit framework-specific test files). The phase contract — inputs, outputs, sequencing — is defined in the skill body, not by external reference. The *output* shape is framework-specific."
+summary = "'Standard 5-phase armory procedure' referenced as authoritative but never defined; agent has no procedural template"
+description = "The phrase 'standard 5-phase armory procedure' appears in Approach and is echoed in Task 6 as something the SKILL.md must document. There is no link, no schema, no inline definition of what each phase actually requires. An agent writing the SKILL.md has no source-of-truth to copy from. Either inline a procedural rubric or drop the 'standard' framing."
+status = "merged"
+dedup_id = "1853a9dd509184ed"
+
+[[items]]
+id = "P41"
+review_round = 2
+severity = "warning"
+category = "executability"
+plan_section = "### 9. Add 6th `package-quality` lens to /review [M]"
+anchor_old = '**Detail**: Conditional dispatch text — "If reviewed files include any path under `claude/commands/` or `claude/skills/`, also launch Agent 6 in the same parallel batch (normal runs spawn 6; small-diff runs collapse 5+6 into the combined agent with a 20-finding cap)."'
+anchor_new = """**Detail**: Conditional dispatch text — "If reviewed files include any path under `claude/commands/` or `claude/skills/`, also launch Agent 6 in the same parallel batch (normal runs spawn 6; small-diff runs collapse 5+6 into the combined agent with a 20-finding cap)." **The existing 'cap of 15 findings' sentence in the small-diff shortcut text MUST be replaced with the 20 cap as part of edit (a)** — leaving the 15-cap line intact while adding the 20-cap dispatch produces contradictory caps in the same file."""
+summary = "Task 9 introduces a 20-cap but doesn't direct edit (a) to overwrite the existing 15-cap sentence — leaves contradictory caps"
+description = "review.md (in the small-diff shortcut around line 425-427) currently contains 'a cap of 15 findings'. Task 9's action list (a/b/c) does not target this 15-cap sentence — it only adds new conditional-dispatch text. An agent following the action list literally would produce contradictory caps within the same file."
+status = "merged"
+dedup_id = "306c774ad6dcd42c"
+
+[[items]]
+id = "P42"
+review_round = 2
+severity = "warning"
+category = "executability"
+plan_section = "### 10. Document new conventions in root CLAUDE.md [S]"
+anchor_old = "**Depends on**: 1, 7, 9 (commands must exist before docs reference them)"
+anchor_new = "**Depends on**: 1, 7, 8, 9 (commands AND the widened shared-block manifest must exist before docs reference them — Task 8 added because the new 'Testing-discipline' subsection mentions /tdd's shared-block carriership). **Wave 3 cannot run Tasks 9 + 10 in parallel** since Task 10 depends on Task 9 — the Dependency Graph's 'Wave 3 (parallel — 2 files)' claim contradicts Task 10's own deps line. Either run 9 then 10 sequentially in Wave 3, or move Task 10 to a Wave 4."
+summary = "Task 10 deps include Task 9 yet Wave 3 runs them in parallel; missing Task 8 dep (widened manifest)"
+description = "Dependency Graph says 'Wave 3 (parallel — 2 files): Tasks 9, 10 — Independent edits to review.md and CLAUDE.md.' But Task 10's deps line includes 9. These statements contradict. If Task 10 documents Task 9's package-quality lens (which it must — the 'Testing-discipline commands' subsection has to describe what /review's new lens does), then 10 truly depends on 9. Plus: Task 10 should also depend on Task 8 (shared-block manifest widening)."
+status = "merged"
+dedup_id = "350543621f7d679b"
+
+[[items]]
+id = "P43"
+review_round = 2
+severity = "warning"
+category = "risk"
+plan_section = "### 2. Write `/test-bootstrap` Rust reference [M]"
+anchor_old = "CI snippet for GitHub Actions. Pre-commit hook recipe using `.githooks/`. Reference this repo's own `tomlctl/Cargo.toml` as a real-world example."
+anchor_new = "CI snippet for GitHub Actions — **all third-party actions MUST be pinned to a full-length commit SHA, not a tag** (e.g. `actions/checkout@<40-char-sha> # v5.0.0`, not `@v5`). The 2025 tj-actions/changed-files compromise (CVE-2025-30066, ~23k repos) and reviewdog/action-setup compromise both exploited tag mutability — every project bootstrapped with `@v4`-style tags inherits that exposure. Apply the same SHA-pinning rule across all 4 per-language references for `actions/checkout`, `actions/setup-{rust,python,node,go}`, `codecov/codecov-action`, `pnpm/action-setup`, etc. Also include a one-line `.github/dependabot.yml` snippet with `package-ecosystem: github-actions` for automated SHA-bumps. Pre-commit hook recipe using `.githooks/`. Reference this repo's own `tomlctl/Cargo.toml` as a real-world example."
+summary = "All 4 reference CI snippets must mandate SHA-pinning third-party Actions; tag-pinning propagates 2025-class supply-chain risk to every bootstrapped project"
+description = "tj-actions/changed-files (March 2025, CVE-2025-30066) compromised ~350 git tags affecting ~23k repos by mutating @v1/@v45 tags. reviewdog/action-setup used the same vector. GitHub's 2026 Actions security roadmap moves toward SHA-pinned `dependencies:` mirroring go.mod/go.sum. StepSecurity reports only 3.9% of public repos pin 100% of third-party Actions. /test-bootstrap ships CI YAML INTO target projects (Task 1 phase 4) — reference templates ARE the supply-chain policy for every adopting project."
+status = "merged"
+dedup_id = "4fa6c94ffdf7975b"
+
+[[items]]
+id = "P44"
+review_round = 2
+severity = "warning"
+category = "risk"
+plan_section = "### 5. Write `/test-bootstrap` Go reference [M]"
+anchor_old = "Stack — `go test` + `testify` (assertions, optional) + `gotestsum` (output formatting) + `go test -cover` + `go-mutesting` or `gremlins` (mutation, opt-in)."
+anchor_new = "Stack — `go test` + `testify` (assertions, optional — note: testify is feature-frozen at v1; maintainer publicly declared v2 will never happen as `github.com/stretchr/testify`, only bug fixes accepted) + `gotestsum` (output formatting) + `go test -cover` + `gremlins` (mutation, opt-in — caveat: gremlins is in pre-1.0 (0.x); per its own SemVer policy 'only the current minor release will be maintained' → no patch releases for older minors, forced upgrades on every 0.y bump). Pin reference to current 0.x stable and document the upgrade-cadence implication in the bootstrapped CLAUDE.md stack block."
+summary = "Go reference understates two maintenance risks — testify is permanently feature-frozen at v1; gremlins is pre-1.0 with no LTS for older minors"
+description = "stretchr/testify maintainer publicly stated 'v2 will never happen ... as github.com/stretchr/testify' — repo accepts only bug fixes, no breaking changes ever. gremlins README states 'while in 0.x.x releases, only the current minor release will be maintained.' Round 1 P18 elevated gremlins over go-mutesting (correct) but didn't flag the 0.x semver instability — projects pinning to gremlins 0.5 lose security/bugfix patches the moment 0.6 ships."
+status = "merged"
+dedup_id = "941eb4cfd12b122b"
+
+[[items]]
+id = "P45"
+review_round = 2
+severity = "warning"
+category = "risk"
+plan_section = "### 4. Write `/test-bootstrap` TypeScript reference [M]"
+anchor_old = "Stack — `vitest` (preferred for modern projects) + `fast-check` (property) + `@vitest/coverage-v8` + `stryker-mutator` (mutation, opt-in). Note jest fallback for legacy projects. CI snippet for both pnpm and npm."
+anchor_new = "Stack — `vitest` (preferred for modern projects; **pin a target major in the scaffolded config** — recommend `vitest@^3` for stability or `^4` for greenfield. Vitest v4 removed `coverage.all` and rewrote V8 coverage remapping → coverage numbers shift between v3 and v4; v3 renamed `VITE_NODE_DEPS_MODULE_DIRECTORIES` → `VITEST_MODULE_DIRECTORIES`; v2 flipped pool default to `forks`; v1 dropped Node <18) + `fast-check` (property) + `@vitest/coverage-v8` (must match vitest major; **scaffolded config MUST set `coverage.include` explicitly** — mandatory in v4, otherwise coverage drops can flip the 80%/90% gates on a clean dependency upgrade) + `stryker-mutator` (mutation, opt-in). Note jest fallback for legacy projects. CI snippet for both pnpm and npm."
+summary = "TS reference must pin a vitest major and pre-populate `coverage.include` — vitest v3→v4 changes flip CI gates without code changes"
+description = "Vitest v4 (a) removed `coverage.all`, (b) defaults to 'include only covered files' — without `coverage.include` set, every project upgrading to v4 sees coverage numbers shift, potentially dropping below the 80% line / 90% changed-lines gates the bootstrap installs; (c) removed reporter callback APIs (onCollected/onSpecsCollected/onPathsCollected/onTaskUpdate/onFinished). Plan currently says only 'vitest (preferred for modern projects)' — version-agnostic, no coverage.include baseline."
+status = "merged"
+dedup_id = "5adae929fdd7be8c"
+
+[[items]]
+id = "P46"
+review_round = 2
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+anchor_old = "- **User course-correcting again after seeing the plan** — the user already cut items 4 + 5 mid-flight; could cut more. **Mitigation**: each task is independently shippable. Cutting Task 9 (lens) leaves the 3 new packages intact; cutting Task 7 leaves /test-bootstrap + test-author as a useful pair; cutting all but Task 6 still ships a useful skill. Sequence supports incremental commit."
+anchor_new = """
+- **User course-correcting again after seeing the plan** — the user already cut items 4 + 5 mid-flight; could cut more. **Mitigation**: each task is independently shippable. Cutting Task 9 (lens) leaves the 3 new packages intact; cutting Task 7 leaves /test-bootstrap + test-author as a useful pair; cutting all but Task 6 still ships a useful skill. Sequence supports incremental commit.
+
+- **Wave 2 inter-commit drift window** — `verify-shared-blocks.sh` only validates files listed in the manifest. If Task 7 (commit A: `tdd.md` carrying ~272 lines of `flow-context` + `execution-record-schema`) and Task 8 (commit B: manifest widening) land as separate commits, the post-A pre-B state has `tdd.md` carrying shared-block content WITHOUT being enumerated — the hook is silent during this window. Any editor (human, IDE auto-format, future Claude session) touching `tdd.md` in that interval can de-sync the blocks invisibly. **Mitigation**: stage Tasks 7 + 8 as a single atomic commit — `git add claude/commands/tdd.md scripts/shared-blocks.toml && git commit`. Non-negotiable.
+
+- **Verification stdout privacy in cycle sub-flows** — `/tdd`'s GREEN/REFACTOR phases append `verification` entries containing test-runner stdout/stderr to the cycle sub-flow's execution-record. Failed tests routinely echo environment variables (pytest `--showlocals`, vitest verbose reporter, go test failure dumps). Storing verbatim stdout in a flow file retained for audit creates a token-leak vector specific to /tdd. **Mitigation**: tdd.md MUST document (a) verification entries are stored verbatim — no automatic redaction; (b) recommended pre-test guard for projects handling secrets: a conftest/setup hook that redacts known-secret env-var values; (c) a `--no-stdout-capture` flag that records only outcome and exit code."""
+summary = "Risks section missing two entries — Wave 2 inter-commit drift window (parity hook silent on unmanifested files) and verification-stdout secret-capture vector"
+description = "(1) Drift window: verify-shared-blocks.sh only validates files in the manifest. Task 7's commit lands tdd.md carrying flow-context content but NOT manifested. Any tooling editing tdd.md between commit A and B can de-sync blocks invisibly; surfaces only when Task 8 commits. (2) Stdout: pytest, jest, vitest, go test all dump env-relevant context on failure (--showlocals, --tb=long, verbose reporter). Storing verbatim stdout in a flow file retained for audit creates a token-leak vector specific to /tdd."
+status = "merged"
+dedup_id = "9b8037168a54ff18"
+
+[[items]]
+id = "P47"
+review_round = 2
+severity = "warning"
+category = "risk"
+plan_section = "### `/review` package-quality lens — 6th conditional Agent"
+anchor_old = "Dedup rule unchanged (same file + same symbol/summary collapses)."
+anchor_new = "Dedup rule extended for cross-category overlap: when emitting a `package-quality` finding on a path under `claude/commands/` or `claude/skills/`, the dedup check MUST also scan existing `quality` findings (Agent 1's domain) for matching `(file, symbol)` tuples. Without this, the same problem (e.g. 'missing `argument-hint` frontmatter key') may land twice — once under `quality` from Agent 1 and once under `package-quality` from Agent 6. Treat `package-quality` ⊂ `quality` for dedup-only purposes; emit under `package-quality` if Agent 6 is the canonical reporter, otherwise leave as `quality` and back-reference."
+summary = "package-quality lens overlaps with Agent 1's quality lens on shared-block files; without cross-category dedup, the same finding lands twice"
+description = "Agent 1 (Quality) covers idiom adherence, dead code, and 'code that looks wrong.' When Agent 6 reviews a command file like claude/commands/test-bootstrap.md, 'missing argument-hint' is BOTH a frontmatter issue (Agent 6's 20%-weight rubric) AND a convention violation Agent 1 might raise. Round 1 P8 covered the apply-side mismatch but didn't surface the read-side dedup overlap. Current dedup is category-scoped — add a cross-category clause."
+status = "merged"
+dedup_id = "6f77761e5ac7b5c3"
+
+[[items]]
+id = "P48"
+review_round = 2
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Verification"
+anchor_old = '6. **Functional dry-run (manual, post-merge)** — invoke `/test-bootstrap` against a throwaway project for each language; invoke `/tdd` against a small feature in a flow created by `/plan-new`; invoke `/review claude/commands/test-bootstrap.md` and confirm the 6th `package-quality` lens fires (look for findings with `category="package-quality"` in the resulting ledger).'
+anchor_new = "6. **Functional dry-run (manual, post-merge)** — invoke `/test-bootstrap` against a throwaway project for each language; invoke `/tdd` against a small feature in a flow created by `/plan-new`; invoke `/review claude/commands/test-bootstrap.md` and confirm the 6th `package-quality` lens fires (positive case). **ALSO** invoke `/review src/foo.rs` (a non-package scope) and confirm Agent 6 does NOT spawn (negative case — guards against the conditional misfiring on Rust source). **ALSO** invoke `/review claude/commands/tdd.md` (single file, ≤3 in scope) and confirm the small-diff shortcut collapses 5+6 into one combined agent with the new 20-finding cap (Risk #4 path)."
+summary = "Verification step 6 only probes the positive dispatch path; needs negative case (Agent 6 NOT spawning on non-package scope) and small-diff collapse path"
+description = "Conditional dispatch is Task 9's load-bearing change. Without a negative test, a regression where Agent 6 fires on src/**/*.rs (wasted parallelism + irrelevant package-quality findings on Rust source) goes undetected. Risk #4 documents the small-diff collapse path; verification should explicitly probe it."
+status = "merged"
+dedup_id = "2da5b3294dfcac65"
+
+[[items]]
+id = "P49"
+review_round = 2
+severity = "suggestion"
+category = "executability"
+plan_section = "### 7. Write `/tdd` command spec [L]"
+anchor_old = "**Acceptance**: File parses; both shared blocks present byte-identical to canonical; `bash scripts/verify-shared-blocks.sh` PASSES (after Task 8 widens manifest); cycle FSM phases all documented."
+anchor_new = "**Acceptance**: File parses; both shared blocks present byte-identical to canonical (verifiable in isolation by manual diff against `claude/commands/implement.md`); `bash scripts/verify-shared-blocks.sh` PASSES against the staged combination of Task 7 + Task 8 (joint acceptance — neither task verifies in isolation, matches the wording of Task 8's acceptance criterion); cycle FSM phases (RED, GREEN, REFACTOR, cycle decision) all documented."
+summary = "Task 7 acceptance unverifiable in isolation — parity check requires Task 8's manifest widening, but Task 8 depends on Task 7"
+description = "Task 7 declares parity check passes 'after Task 8 widens manifest', but Task 8 depends on Task 7 (file must exist before manifest references it). An agent finishing Task 7 cannot verify the acceptance criterion independently — the parity check fails until Task 8 also lands. Task 8's acceptance already says 'passes against the staged combination of Task 7 + Task 8' (correct). Align Task 7's wording."
+status = "merged"
+dedup_id = "936ff9399dec21a1"
+
+[[items]]
+id = "P50"
+review_round = 2
+severity = "suggestion"
+category = "risk"
+plan_section = "### 1. Write `/test-bootstrap` command spec [M]"
+anchor_old = "Support `--with-mutation` flag."
+anchor_new = "Support `--with-mutation` flag. **Discoverability requirements** — flag MUST appear in: (a) the command's frontmatter `argument-hint` (e.g. `argument-hint: [language] [--with-mutation]`); (b) the command body's 'Usage' section as a documented option with a 2-line description; (c) the per-language reference files' 'Mutation tool' section, prefixed 'Enabled by `/test-bootstrap --with-mutation`'; (d) a sentence in the bootstrapped target-project CLAUDE.md stack block: 'Mutation testing: <tool> (opt-in via `--with-mutation`; not in default CI).'"
+summary = "--with-mutation discoverability never specified — flag will exist but argument-hint, usage prose, references, and target CLAUDE.md never advertise it"
+description = "Round 1 P29 addressed the runtime cost of --with-mutation once enabled. This is an orthogonal gap: a user with /test-bootstrap installed has no way to discover the flag exists. Plan currently mentions --with-mutation only twice (Task 1 detail + Out of scope) — both in the plan, neither in the deliverables. Mutation testing is the highest-value optional capability the plan adds; shipping with zero discoverability surface is wasteful."
+status = "merged"
+dedup_id = "6a8642f10673a263"

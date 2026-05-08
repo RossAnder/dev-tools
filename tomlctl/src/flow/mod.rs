@@ -11,6 +11,7 @@ pub(crate) mod find_plans;
 pub(crate) mod init;
 pub(crate) mod list;
 pub(crate) mod resolve;
+pub(crate) mod schema;
 pub(crate) mod stale;
 
 mod dispatch;

@@ -1,0 +1,215 @@
+schema_version = 1
+last_updated = 2026-05-08
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-08
+agent = "implement"
+summary = "status draft → in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "2fb725502d5439ab"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "add-vet-flow-research-to-manifest"
+summary = "Added vet-flow-research [[block]] entry to scripts/shared-blocks.toml manifest (10th block, 6 carriers listed alphabetically)"
+files = ["scripts/shared-blocks.toml"]
+commits = ["0f47d6b4e5a0deca49d8a8ee1445dbca42e7dc59"]
+status = "done"
+dedup_id = "b4b0f174ec5a015a"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "insert-vet-flow-research-block-in-6-carriers"
+summary = "Inserted byte-identical vet-flow-research SHARED-BLOCK in 6 vet-section carriers; carrier prose retained for sample sizes and lens-specific rules"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/review-plan.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/test-bootstrap.md",
+]
+commits = ["0f47d6b4e5a0deca49d8a8ee1445dbca42e7dc59"]
+status = "done"
+dedup_id = "d8c8c9091bafa9ba"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "add-vet-events-schema-to-ledger-schema"
+summary = "Added [[vet_events]] schema definition + field docs to SHARED-BLOCK:ledger-schema in 4 carriers, mirroring rollback_events structure"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/review-apply.md",
+    "claude/commands/optimise.md",
+    "claude/commands/optimise-apply.md",
+]
+commits = ["b91c7ca04b676f10e96e69508f9b5fd3823a1471"]
+status = "done"
+dedup_id = "dc01e006256efd2c"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "add-vet-events-writer-directive-to-block"
+summary = "Inserted step 6 (vet_events writer directive) into vet-flow-research SHARED-BLOCK in 6 carriers; renumbered subsequent steps; parity verified"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/review-plan.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/test-bootstrap.md",
+]
+commits = ["0a9887c6a3194c1c2b3d2ba8d88718cc7146b2af"]
+status = "done"
+dedup_id = "de9cd74cd6e69c27"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "clean-up-rationale-logged-stub-prose"
+summary = "Updated 2 carrier-prose lines (review-plan.md:204, plan-new.md:368) to point at the durable [[vet_events]] entry rather than the pre-extraction 'logged' wording"
+files = [
+    "claude/commands/review-plan.md",
+    "claude/commands/plan-new.md",
+]
+commits = ["90e5236ca94ce88b856228d93ab5820af7d1b29d"]
+status = "done"
+dedup_id = "8a4a102bcfd1ab7e"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "add-dispatch-fields-to-execution-record-schema"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added dispatch_tier and dispatch_agent fields to SHARED-BLOCK:execution-record-schema in 4 carriers (canonical TOML example + type-vocabulary table + new sub-section paragraph)"
+files = [
+    "claude/commands/plan-new.md",
+    "claude/commands/implement.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/tdd.md",
+]
+commits = ["d0032922a415910eb8c4ebc821f70282300375dc"]
+status = "done"
+dedup_id = "b60f5eea605a56e7"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "update-implement-writer-with-dispatch-fields"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Updated implement.md Phase 2 step 5b writer prose + JSON example payload to include dispatch_tier and dispatch_agent"
+files = ["claude/commands/implement.md"]
+commits = ["d0032922a415910eb8c4ebc821f70282300375dc"]
+status = "done"
+dedup_id = "d58f2a0050a67476"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-08
+agent = "implement"
+task_ref = "mark-r104-r119-r120-fixed-in-ledger"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Transitioned R104, R119, R120 from wontfix to fixed in .claude/reviews/claude-commands.toml with resolution strings citing the phase commits"
+files = [".claude/reviews/claude-commands.toml"]
+status = "done"
+dedup_id = "1f121b8d7de7ec23"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+task_ref = "phase-3-verification"
+summary = "Refreshed 4 stale pinned-hash constants in tomlctl test (out of plan scope but required for CI)"
+original_intent = "Plan said 'out of scope: any change to tomlctl source (no Rust edits)'"
+rationale = "Pinned-hash test in tomlctl/src/cli/dispatch.rs:1305-1373 caches SHA256 of 6 SHARED-BLOCKs. Phase 2 (ledger-schema) and Phase 3 (execution-record-schema) intentionally changed two of those blocks; flow-context and apply-rollback-protocol were already pre-drifted. Test-data constant refresh keeps CI green; not a logic change."
+commits = ["TBD-after-this-commit"]
+dedup_id = "f5a568bb6b3ee5ea"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-05-08
+agent = "implement"
+supersedes_entry = "E10"
+task_ref = "phase-3-verification"
+summary = "Refreshed 4 stale pinned-hash constants in tomlctl test (out of plan scope but required for CI)"
+original_intent = "Plan said 'out of scope: any change to tomlctl source (no Rust edits)'"
+rationale = "Pinned-hash test in tomlctl/src/cli/dispatch.rs:1305-1373 caches SHA256 of 6 SHARED-BLOCKs. Phase 2 (ledger-schema) and Phase 3 (execution-record-schema) intentionally changed two of those blocks; flow-context and apply-rollback-protocol were already pre-drifted. Test-data constant refresh keeps CI green; not a logic change."
+commits = ["07a08bee8a6532a5b7f6edf478c4bd6270a81460"]
+dedup_id = "f5a568bb6b3ee5ea"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "shared-block parity check passed"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "80c5725846b0754c"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "cargo build passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "cargo test passed (271 tests, 0 failed)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "dc99d07a87a031a1"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-05-08
+agent = "implement"
+summary = "cargo clippy clean"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "4860156a6c648e1f"
+
+[[items]]
+id = "E16"
+type = "status-transition"
+date = 2026-05-08
+agent = "plan-update"
+summary = "status in-progress → review (all 8 plan items completed)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "ae4fe53d057b3a03"

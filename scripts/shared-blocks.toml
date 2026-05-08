@@ -86,3 +86,11 @@ files = [
   "claude/commands/review-plan.md",
   "claude/commands/test-bootstrap.md",
 ]
+
+[[block]]
+name = "plansdirectory-prompt"
+files = [
+  "claude/commands/plan-new.md",
+  "claude/commands/plan-update.md",
+  "claude/commands/review-plan.md",
+]

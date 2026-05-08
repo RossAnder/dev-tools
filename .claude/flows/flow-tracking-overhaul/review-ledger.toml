@@ -1,0 +1,1017 @@
+schema_version = 1
+last_updated = 2026-05-08
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R1"
+file = "tomlctl/src/flow/init.rs"
+line = 232
+symbol = "build_active_entry / find_active_slug_index / empty_active_doc / upsert_active_entry"
+severity = "warning"
+effort = "medium"
+category = "quality"
+summary = "T7 init.rs duplicates ~7 active-flow registry helpers verbatim from active.rs (build_entry, find_slug_index, empty_doc, mutate_active body, write_integrity_opts, now_rfc3339, entry_to_json) — promote helpers to active.rs pub(crate) instead of branching"
+dedup_id = "3c735c3d50a7f3fc"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R2"
+file = "tomlctl/src/flow/find_plans.rs"
+line = 350
+symbol = "relativise"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "find_plans::relativise has reversed (path, root) argument order vs sibling flow modules' (root, path); promote one to crate::io shared helper to remove 4× duplication and the lone reversed signature"
+dedup_id = "b5022e59a3722111"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R3"
+file = "tomlctl/src/flow/active.rs"
+line = 62
+symbol = "read_integrity_opts / write_integrity_opts"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Integrity-args translators duplicated 6× (cli/dispatch + 5 flow leaves) — promote cli/dispatch helpers to pub(crate) or impl From<&Args> for IntegrityOpts in integrity.rs"
+dedup_id = "ac03b2f1a147eda2"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R4"
+file = "tomlctl/src/flow/resolve.rs"
+line = 96
+symbol = "resolve / source: &str"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Resolution `source` carried as bare &str across build_resolved_envelope / build_unresolved_envelope_with_ties — convert to enum ResolveSource so the 6 known values are non-stringly-typed and the build_unresolved scope-glob branch becomes a match arm"
+dedup_id = "d1b4b271e4c1154a"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R5"
+file = "tomlctl/src/flow/resolve.rs"
+line = 733
+symbol = "any_path_matches_scope"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "any_path_matches_scope uses Vec<GlobMatcher> + nested loop where idiomatic globset is GlobSet::is_match (single Aho-Corasick traversal); also recompiled per resolve invocation across flows — cache compiled GlobSet per FlowSummary in enumerate_flows"
+dedup_id = "b4653da9f5d812d1"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R6"
+file = "tomlctl/src/flow/stale.rs"
+line = 127
+symbol = "verdict_from_iso_string / compute_staleness / now_rfc3339 / today_toml_date / today_utc_iso"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "5 different ad-hoc jiff time helpers across flow leaves; the staleness arithmetic in stale.rs:127-191 and resolve.rs:768-846 are copy-paste with diverged error messages — consolidate into flow::time module (now_rfc3339, today_utc, parse_iso_to_date)"
+dedup_id = "519bedb16dc4bf71"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R7"
+file = "tomlctl/src/cli/types.rs"
+line = 476
+symbol = "FlowOp/ActiveOp --json"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "`--json` flag accepted on every flow subcommand but ignored at every dispatch site (8× `_json: bool`); FlowOp::Resolve uniquely has `default_value_t = true` — drop the flag everywhere or honour it consistently"
+dedup_id = "570db3892a6ba038"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R8"
+file = "tomlctl/src/flow/list.rs"
+line = 294
+symbol = "read_dir_sorted"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Sorted directory-listing helper duplicated 4× across list/find_plans/doctor/resolve — extract to crate::io::read_dir_sorted; the 'parallel-safety during B-phase rollout' rationale has expired"
+dedup_id = "b11c55b778452b2b"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R9"
+file = "tomlctl/src/flow/init.rs"
+line = 115
+symbol = "Artifacts struct + canonical_artifacts"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Canonical-artifact path map computed in 3 places (init::artifacts_for, resolve::canonical_artifacts, doctor::canonical_artifacts) with three different shapes — extract one source of truth so a future schema addition doesn't require editing three locations"
+dedup_id = "50d561d7236e9ee0"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R10"
+file = "tomlctl/src/flow/find_plans.rs"
+line = 49
+symbol = "SENTINEL_UNSET"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "P4 sentinel `__DONT_ASK__` is a private const in find_plans.rs only; if a second consumer adds the same opt-out semantics, promote to a crate-level constant before drift lands"
+dedup_id = "2183bb792e17b6ea"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R11"
+file = "tomlctl/src/flow/init.rs"
+line = 47
+symbol = "validate_slug (init.rs vs ensure_artifact.rs)"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Two different slug validators share the name `validate_slug` (strict regex `^[a-z0-9][a-z0-9-]{0,63}$` in init.rs vs deny-list in ensure_artifact.rs); rename the lenient one to `validate_slug_lenient` or gate via `SlugKind` argument"
+dedup_id = "e900f24da3da12b0"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R12"
+file = "tomlctl/src/flow/active.rs"
+line = 393
+symbol = "remove (dry_run inline find) / touch (dry_run inline find)"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Dry-run paths in active::remove and active::touch reimplement slug-lookup inline (4-line closures) instead of using existing find_slug_index helper at line 171"
+dedup_id = "b20303077710b5af"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R13"
+file = "tomlctl/src/flow/resolve.rs"
+line = 627
+symbol = "FlowSummary / FlowRecord"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "FlowSummary (resolve.rs:627) and FlowRecord (list.rs:99) project the same context.toml subset with the same parse loop (~70 LOC vs ~48 LOC); extract a shared FlowProjection iterator with per-caller error-tolerance config"
+dedup_id = "c7a2073f9c0d09e3"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R14"
+file = "tomlctl/src/flow/active.rs"
+line = 282
+symbol = "maybe_warn_legacy"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Legacy-pointer warning is documented as 'one-shot stderr warning' but emits on every `flow active list` invocation; either implement OnceLock-based once-per-process suppression or correct the docstring to say 'every-call'"
+dedup_id = "cf87bdd2b7a044d8"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R15"
+file = "tomlctl/src/flow/active.rs"
+line = 343
+symbol = "add"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "`flow active add` accepts arbitrary slug strings without validation — slug like `../../etc/passwd` stored in registry verbatim, later joined into read paths in resolve/doctor (resolve.rs:646, doctor.rs:204-224) without containment guard; init.rs has strict allowlist regex, ensure_artifact has deny-list, active.rs::add has neither"
+evidence = [
+    "tomlctl/src/flow/active.rs:343-359 no validate_slug call",
+    "tomlctl/src/flow/resolve.rs:646-651 read path",
+    "tomlctl/src/flow/init.rs:57-68 strict allowlist",
+    "tomlctl/src/flow/ensure_artifact.rs:112-136 deny-list",
+]
+dedup_id = "5bf1724d488ffbe4"
+resolved = 2026-05-08
+resolution = "Added validate_slug (lenient deny-list mirroring ensure_artifact.rs:107-136) and wired into active.rs::add/remove/touch — defends downstream slug-joins in resolve.rs/doctor.rs against path traversal"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R16"
+file = "tomlctl/src/integrity.rs"
+line = 152
+symbol = "verify_integrity"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "Sidecar (.sha256) is not itself integrity-protected — attacker who can write `.claude/` can update both TOML and sidecar atomically and the check passes; the contract is accidental-corruption detection, not tamper-evidence — document the scope explicitly in CLAUDE.md so consumers don't treat `--verify-integrity` as a tamper-evident seal"
+evidence = ["tomlctl/src/integrity.rs:152-207"]
+dedup_id = "5a0cac4d2fcec697"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R17"
+file = "tomlctl/src/flow/resolve.rs"
+line = 524
+symbol = "load_active_entries / ActiveEntry"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "Active-flow registry has 3 separate parsers (active.rs::entry_to_json, resolve.rs::ActiveEntry+load_active_entries, list.rs::load_active_slug_set); consolidate into flow::schema::{ActiveDoc, ActiveEntry, Binding} with serde::Deserialize and one parse fn so a schema_version=2 migration touches one file, not four"
+dedup_id = "f1d186dbe62599eb"
+wontfix_rationale = "Cross-file consolidation requires coordinated dispatch across active.rs and list.rs in the same run; orchestrator's per-cluster file-disjointness rule precluded it in this batch. To revisit: re-flag via /review or the user can promote with `defer R17 — pending coordinated 3-file dispatch — trigger: when a follow-up cluster spans active.rs+resolve.rs+list.rs`"
+resolved = 2026-05-08
+resolution = "User-authorised override of cluster scope-confinement. Created tomlctl/src/flow/schema.rs (NEW, 211 lines) housing canonical typed ActiveDoc/ActiveEntry/Binding with from_toml_str+from_toml_value (manual TomlValue projection — no new serde-derive dep). Updated active.rs/list.rs/resolve.rs to route through ActiveDoc; reduced load_active_entries from 50→13 lines and load_active_slug_set from 18→4 lines. 5 unit tests in schema.rs cover canonical/missing-version/malformed/empty/partial-binding cases. Test count 198→203."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R18"
+file = "tomlctl/src/flow/resolve.rs"
+line = 381
+symbol = "build_resolved_envelope"
+severity = "suggestion"
+effort = "medium"
+category = "db"
+summary = "Resolve envelope (~13 keys) hand-built via serde_json::Map insertions in build_resolved_envelope and build_unresolved_envelope_with_ties; introducing `#[derive(Serialize)] ResolveEnvelope` would type the wire schema and enable a future Rust-library API that flow-bootstrap could call in-process"
+dedup_id = "5b12b167cf06a1d7"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R19"
+file = "tomlctl/src/items.rs"
+line = 1
+symbol = "(absent) Item / Ledger structs"
+severity = "suggestion"
+effort = "medium"
+category = "db"
+summary = "`[[items]]` schema (~25 fields with disposition-specific required-field clusters) documented in review.md prose only; items.rs has no `struct Item` — every read/write reaches into TomlValue::Table directly. Add a thin `Item::validate(&JsonValue) -> Result<(), DispositionError>` for missing-disposition-field detection at parse time without sacrificing extensibility"
+dedup_id = "83e2f5926d4760b0"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R20"
+file = "CLAUDE.md"
+line = 50
+symbol = "Adopting the flow registry"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Migration story requires `rm -rf .claude/flows/` which permanently destroys execution-record / review-ledger / optimise-findings / plan-review-findings history; no `tomlctl flow migrate` command exists and CLAUDE.md does not warn about history loss"
+dedup_id = "b90a83a9ba795065"
+resolved = 2026-05-08
+resolution = "Added history-loss WARNING blockquote in CLAUDE.md 'Adopting the flow registry' section warning that rm -rf .claude/flows/ destroys execution-record/ledger/findings and recommending backup or skipping migration until a migrate command lands"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R21"
+file = "tomlctl/src/flow/mod.rs"
+line = 7
+symbol = "pub(crate) mod active / doctor / resolve / etc."
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "8 flow leaf modules declared `pub(crate)` but only flow/dispatch.rs imports them (grep `crate::flow::(active|resolve|init|doctor|stale|find_plans|ensure_artifact|list)::` outside flow/ returns empty); narrow visibility to plain `mod` unless future whitebox tests require the wider surface"
+dedup_id = "5b8d6afe7f83b2f2"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R22"
+file = "tomlctl/src/flow/active.rs"
+line = 171
+symbol = "find_slug_index — natural key"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "Active-flow registry's natural key is bare `slug` — find_slug_index matches on slug only and add()'s upsert replaces same-slug entries regardless of binding.branch / binding.worktree. Two parallel sessions on same slug different worktrees clobber each other's last_used + binding, contradicting the plan's parallel-session use case. Either change identity to (slug, worktree) composite or document 'last writer wins' in active.rs's module docstring"
+dedup_id = "d234825248889adf"
+resolved = 2026-05-08
+resolution = "Extended active.rs module docstring with last-writer-wins / advisory-binding-fields paragraph (doc-only minimum-change; find_slug_index and call sites untouched per cluster scope)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R23"
+file = "tomlctl/src/flow/resolve.rs"
+line = 1
+symbol = "module docstring vs cli/types.rs / templates"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Resolver step-count inconsistent: '5-in-practice-6' (resolve.rs:1), '5-step algorithm' (cli/types.rs:526), '6-step algorithm' (templates/flow-context.md:241, tdd.md:395) — pick one count and document consistently"
+dedup_id = "b3e164b4bd45ead2"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R24"
+file = "tomlctl/src/flow/resolve.rs"
+line = 616
+symbol = "pick_active_latest"
+severity = "warning"
+effort = "trivial"
+category = "db"
+summary = "pick_active_latest sorts last_used by lexicographic string compare; safe today (active.rs writes UTC-Z always via jiff::Timestamp::now().to_string()) but a hand-edited registry entry with TZ offset would silently produce wrong 'latest' picks. Parse to jiff::Timestamp at load time so a malformed entry surfaces at parse rather than via a wrong pick"
+dedup_id = "d4f7db6015968d3d"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R25"
+file = "tomlctl/src/flow/active.rs"
+line = 1
+symbol = "module docstring (schema doc)"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "`.claude/active-flow.toml` schema documented only in active.rs's private module docstring; context.toml schema inline in init.rs::build_seed_doc; promote both to docs/flow-schemas.md or a `crate::flow::schema` module with serde::Deserialize derives so a single grep finds the schema definition"
+dedup_id = "b2d653d468c3ed2a"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R26"
+file = "tomlctl/src/flow/resolve.rs"
+line = 56
+symbol = "FlowOp::Resolve --cwd"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "`flow resolve --cwd` plumbed all the way from CLI → FlowOp → flow::resolve::dispatch but inner fn takes `_cwd: Option<PathBuf>` (underscore-prefixed unused); flow-bootstrap.md:60 documents passing it. Either implement cwd-based scope-filtering or remove the flag from cli/types.rs:537 + flow-bootstrap.md"
+dedup_id = "4bf7720afb692732"
+wontfix_rationale = "Both removal and implementation paths exceed single-cluster scope: removal touches cli/types.rs (public CLI surface) + flow-bootstrap.md (agent contract); implementation is a non-trivial new feature (cwd-relative scope-glob filtering). Requires user confirmation on which path to take"
+resolved = 2026-05-08
+resolution = "User-authorised override of public-CLI-surface gate. Removed --cwd flag from FlowOp::Resolve (cli/types.rs), removed cwd from flow/dispatch.rs destructure + call, removed _cwd parameter from flow::resolve::dispatch signature. Updated flow-bootstrap.md procedure step 3 to drop --cwd bullet, removed cwd from input envelope example, added tolerance clause for legacy carriers (the 9 flow-context shared-block carriers still pass `cwd` per envelope template; out-of-cluster shared-block coordinated edit deferred — agent now ignores extra fields)."
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R27"
+file = "tomlctl/src/flow/resolve.rs"
+line = 11
+symbol = "source enum / step numbering"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Resolver emits 7 distinct source values including `scope-glob` but flow-bootstrap.md / flow-context Section 3 documents only 6; `prompt-required` is reserved-but-never-emitted (resolve.rs:26). Either remove the reserved value, emit it on the no-flow-resolves path, or document the divergence in the public contract"
+dedup_id = "9277307e7c2b3c4c"
+resolved = 2026-05-08
+resolution = "Annotated `prompt-required` as reserved-never-emitted in resolve.rs module docstring"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R28"
+file = "tomlctl/src/json.rs"
+line = 18
+symbol = "P19 deferral comment"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "json.rs L18-22 says P19 symmetric refusal on the TOML side is deferred to a follow-up commit; cli/dispatch.rs:274-281 actually implements `refuse_json_extension_for_toml_writers` and dispatch.rs:425/454/502 wire it. Update or remove the stale deferral comment to avoid future contributors adding duplicate logic"
+dedup_id = "be055870f7299236"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R29"
+file = "tomlctl/src/flow/resolve.rs"
+line = 575
+symbol = "best_binding_match"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "best_binding_match returns None silently when both --branch and --worktree are None — step-3 unconditionally bypassed without any envelope.warnings entry. Carriers that don't pass branch/worktree (common case) silently skip step-3 active-binding match; record the skip in envelope.warnings so callers know binding-match was not attempted"
+dedup_id = "46620b37a04e6837"
+resolved = 2026-05-08
+resolution = "Added envelope.warnings entry at the dispatch call site when both --branch and --worktree are None — best_binding_match signature unchanged"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R30"
+file = "claude/agents/flow-bootstrap.md"
+line = 47
+symbol = "version-check regex"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Version-check instruction says 'starts with `tomlctl 0.5.`' (literal prefix) but adds parenthetical 'or higher minor — `0.6.`, `0.7.`, etc.' — the two are contradictory. Literal-prefix check would reject 0.6.0 even though parenthetical says accept. Switch to a semver compare or pin the literal prefix and remove the parenthetical"
+dedup_id = "10a80d954ecb8c4a"
+resolved = 2026-05-08
+resolution = 'Replaced contradictory literal-prefix version check with regex-based semver comparison matching tomlctl (\d+)\.(\d+); accepts any version >= 0.5'
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R31"
+file = "tomlctl/src/flow/doctor.rs"
+line = 685
+symbol = "gitignore-claude check"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Plan spec says gitignore-claude should be a 'warning, not check failure' but doctor.rs emits `Check { ok: false }` which flips top-level envelope `ok = checks.iter().all(|c| c.ok)` to false (line 709). Carriers using flow-bootstrap on a repo where `.claude/` is gitignored (this very repo) will surface a false doctor-fail and the orchestrator will prompt the user before mutating any artifact"
+dedup_id = "19437b2db44becf1"
+resolved = 2026-05-08
+resolution = "Changed gitignore-claude check entry from Check{ok:false} to Check::ok — warning push retained as actionable surface; envelope.ok no longer flips on this check. Test flow_doctor.rs::gitignored_claude_emits_warning updated to assert ok=true and warnings-array presence"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R32"
+file = "tomlctl/src/flow/resolve.rs"
+line = 251
+symbol = "branch-match tie detection"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Branch-match tie detection sorts by `updated` as raw string (resolve.rs:251-275); enumerate_flows defaults missing `updated` to empty string (L706-712). If ALL branch-matching flows have a missing `updated` field, all are tied, ties_broken=true, and arbitrary winner chosen at index 0. Plan called for a console note when ties existed — only the envelope flag is set"
+dedup_id = "b368e9bac1690de4"
+resolved = 2026-05-08
+resolution = "Added stderr eprintln when ties_broken=true on branch-match path — surfaces ties to operator (envelope shape unchanged)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R33"
+file = "claude/agents/flow-bootstrap.md"
+line = 23
+symbol = "require_artifacts field"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "flow-bootstrap parses `require_artifacts` in step 1 but never consults it in steps 3-5; missing artifacts surface only via envelope.resolved.warnings, not envelope.errors. Carriers like /implement that need execution_record may proceed when it's absent — wire a step 3.5 that reads `resolved.artifacts.<name>` for each name in `require_artifacts` and elevates absence to errors"
+dedup_id = "9d43ca90e9b7ceb8"
+resolved = 2026-05-08
+resolution = "Added step 3.5 'Validate required artifacts' to flow-bootstrap.md procedure between Resolve and Doctor — reads resolved.artifacts.<name> for each name in require_artifacts, halts with error envelope when any required artifact is absent, skips when resolved.resolved == false"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R34"
+file = "tomlctl/src/flow/resolve.rs"
+line = 524
+symbol = "load_active_entries"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Malformed `active-flow.toml` is hard-error in resolve.rs (read_toml propagates Err via ?) but silent-zero in doctor.rs:443-449 ('Malformed registry: surface zero stale entries'). Divergent treatment means a corrupted registry blocks ALL resolution including step-5 fallback in resolve, but passes silently in doctor. Pick one policy and apply consistently"
+dedup_id = "b494616c581ec0e2"
+resolved = 2026-05-08
+resolution = "Aligned load_active_entries to silent-zero on read_toml Err (matches doctor.rs:443-449) — resolve falls through to step-5 with stderr breadcrumb instead of hard-erroring on a corrupt registry"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R35"
+file = "tomlctl/src/flow/doctor.rs"
+line = 294
+symbol = "check_one_flow / execution-record-sidecar"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "When execution-record.toml is missing, doctor records execution-record-exists as a failing check but silently skips execution-record-sidecar (`if er_exists { ... }` wrap); same pattern for context-sidecar at L266-290. A flow with a missing execution-record shows 7 checks rather than the 8 documented in the plan spec"
+dedup_id = "751c0cd06555fe3e"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R36"
+file = "tomlctl/tests/flow_resolve.rs"
+line = 1
+symbol = "flow_resolve test fixtures"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Plan Task 10 acceptance required 6 in-test fixtures (one per source path: explicit-flag, scope-glob, active-binding, active-latest, branch-match, none); validate that active-binding and active-latest fixture coverage actually exists since both depend on synthetic active-flow.toml registry fixtures most easily omitted"
+dedup_id = "ad104d6c495067c6"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R37"
+file = "claude/commands/plan-new.md"
+line = 76
+symbol = "Step 0.5 plansDirectory prompt"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Step 0.5 plansDirectory prompt wording is shared verbatim across plan-new.md / plan-update.md / review-plan.md but lives outside SHARED-BLOCK delimiters and is NOT in scripts/shared-blocks.toml; pre-commit hook does not enforce parity, drift will surface only at manual diff audit"
+dedup_id = "d6e3d90e394f5f7e"
+resolved = 2026-05-08
+resolution = "Wrapped Step 0.5 plansDirectory prompt in SHARED-BLOCK:plansdirectory-prompt delimiters across plan-new.md/plan-update.md/review-plan.md + registered plansdirectory-prompt block in scripts/shared-blocks.toml; bash scripts/verify-shared-blocks.sh passes"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R38"
+file = "tomlctl/src/flow/find_plans.rs"
+line = 166
+symbol = "read_plans_directory"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "CLAUDE.md describes `plansDirectory` as accepting 'either a string or an array of strings' but read_plans_directory only handles the string form (`.as_str()` returns None for arrays); arrays must go to namespaced `tomlctl.plansDirectories` per the back-compat note. Either accept arrays in `plansDirectory` directly or make the back-compat caveat the headline rather than the parenthetical in CLAUDE.md"
+dedup_id = "4abc9dc6ede5948f"
+resolved = 2026-05-08
+resolution = "Extended read_plans_directory in find_plans.rs to accept array-of-strings shape at canonical plansDirectory key (was string-only); 5 new unit tests cover string/array/mixed-sentinel/all-sentinel/empty-array. Function signature unchanged"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R39"
+file = "tomlctl/src/flow/stale.rs"
+line = 155
+symbol = "verdict_from_iso_string / compute_staleness"
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "verdict_from_iso_string + resolve.rs::compute_staleness call jiff::Timestamp::now() directly with no injection seam; tests asserting age_seconds == 0 (flow_stale.rs:43-50, flow_resolve.rs:513) are fragile across UTC midnight; identical compute logic duplicated across stale.rs:127-191 and resolve.rs:768-846 without unit tests on either copy"
+dedup_id = "c265c9a4efdabe05"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R40"
+file = "tomlctl/tests/flow_resolve.rs"
+line = 1
+symbol = "resolve — corrupt registry"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "load_active_entries propagates parse-error as Err; no test in flow_resolve.rs seeds malformed active-flow.toml to verify user-facing error kind/message and whether fallthrough or hard error is the intended contract — paired with R34 (divergent treatment)"
+dedup_id = "0a97b71dcb615ac7"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R41"
+file = "tomlctl/src/flow/doctor.rs"
+line = 168
+symbol = "Check::to_json"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Check::to_json conditionally inserts `detail` only when `self.detail.is_some()`; successful checks have shape `{name, scope, ok}` while failing have `{name, scope, ok, detail}`. Orchestrators iterating checks and reading `.detail` panic on key absence rather than null"
+dedup_id = "79363446624d351c"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R42"
+file = "tomlctl/src/flow/doctor.rs"
+line = 443
+symbol = "collect_stale_active_slugs"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Corrupt active-flow.toml silently returns Ok(Vec::new()) in doctor (silent-pass, code comment 'Malformed registry: surface zero stale entries'); no integration test seeds malformed registry to verify silent-pass is intentional and orchestrators relying on doctor to catch registry corruption miss this case"
+dedup_id = "2e074d4a26380d18"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R43"
+file = "tomlctl/src/cli/types.rs"
+line = 527
+symbol = "FlowOp::Resolve / FlowOp::Init args"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = 'FlowOp::Resolve flags (--flow, --path, --branch, --worktree, --cwd, --with-staleness, --json) and FlowOp::Init flags (--slug, --plan) lack `help = "..."` annotations; running `tomlctl flow resolve --help` shows only flag names with no semantic description. By contrast QueryArgs flags (cli/types.rs:193-293) have extensive help strings'
+dedup_id = "cbdc7d30130c1e28"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R44"
+file = "tomlctl/tests/flow_resolve.rs"
+line = 322
+symbol = "active-binding tie composition"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Step-3 tie path (multiple entries with equal binding score) has unit test in resolve.rs:940-960 but no integration test exercises step-3-tie → step-4 active-latest fallthrough composition via the full CLI path"
+dedup_id = "201043fa91f073fb"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R45"
+file = "tomlctl/src/flow/resolve.rs"
+line = 280
+symbol = "build_unresolved_envelope_with_ties"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Tie-resolution envelope (scope-glob multi-match) emits 5 keys (resolved/source/ties_broken/tie_candidates/warnings); no shape-pin test pairs the resolved-happy-path 13-key test at flow_resolve.rs:585, so future refactors could drop or add keys silently"
+dedup_id = "b282d5191475cc6f"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R46"
+file = "tomlctl/README.md"
+line = 41
+symbol = "Quick tour"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "README Quick tour shows `flow resolve` without --with-staleness (which flow-bootstrap.md:62 always passes), `flow doctor` without --json (machine-readable mode used by all orchestrators), and `flow active touch` is not called out separately from add/remove"
+dedup_id = "995ea424cf3699ef"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R47"
+file = "tomlctl/src/flow/doctor.rs"
+line = 96
+symbol = "sidecar_state"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "doctor.rs::sidecar_state returns Option<bool>; check failure detail is 'sidecar digest mismatch for <path>' without expected/actual hex values. CLAUDE.md contract promises both — wired correctly in maybe_verify_integrity but not in doctor's check path"
+dedup_id = "9292b80efea80384"
+resolved = 2026-05-08
+resolution = "Replaced sidecar_state Option<bool> with Option<SidecarStatus> enum (Ok / Mismatch{expected,actual} / Malformed); both call sites at context-sidecar and execution-record-sidecar now emit 'sidecar digest mismatch for <path>: expected <hex>, actual <hex>' matching CLAUDE.md integrity contract"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R48"
+file = "tomlctl/src/flow/doctor.rs"
+line = 714
+symbol = "envelope dry_run key"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "doctor envelope `dry_run` key is `dry_run && fix`; passing only --dry-run without --fix silently emits dry_run: false. First-time user reading the envelope assumes the flag was ignored — surface the `--dry-run-without-fix` case explicitly or accept --dry-run as a standalone preview"
+dedup_id = "a6dc039b12d61b68"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R49"
+file = "tomlctl/tests/flow_resolve.rs"
+line = 585
+symbol = "resolved_envelope_carries_canonical_keys"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Envelope shape stability test exercises only explicit-flag resolution path; the 13-key requirement is equally contractual for scope-glob/active-binding/active-latest/branch-match — future branch-specific shortcut omitting a key would pass without triggering shape test"
+dedup_id = "82d6edc4418b4752"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R50"
+file = "claude/agents/flow-bootstrap.md"
+line = 5
+symbol = "frontmatter"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "Agent frontmatter uses bare `model: haiku` alias instead of fully-qualified ID (e.g. `claude-haiku-4-5`); pinned model can silently change when Anthropic rotates the alias to a newer generation, shifting latency/capability budgets invisibly"
+dedup_id = "5d85b71128e57099"
+resolved = 2026-05-08
+resolution = "Replaced bare `model: haiku` alias with fully-qualified unpinned `model: claude-haiku-4-5`"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R51"
+file = "claude/commands/tdd.md"
+line = 392
+symbol = "Bootstrap-missing fallback resolver"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "tdd.md L392 calls `tomlctl flow resolve --flow <slug> --json` inline rather than dispatching flow-bootstrap; intentional bypass per the inline comment (slug already bound from Step 0; --flow forces explicit-flag path) but skips version-check and doctor gates flow-bootstrap provides — document the bypass tradeoff or route through flow-bootstrap"
+dedup_id = "eb340bc933b719f4"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R52"
+file = "claude/commands/tdd.md"
+line = 401
+symbol = "implement.md cross-reference"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "tdd.md L401 references 'claude/commands/implement.md:334' for verification-commands extraction; actual location is line 310 ('Extract verification commands'). :334 is the '## Phase 2: Execute' header — stale line reference will mislead anyone navigating to it"
+dedup_id = "d7cc4861ab1e78a8"
+resolved = 2026-05-08
+resolution = "Updated implement.md cross-reference :334 → :310 in tdd.md L401 ('Extract verification commands' is at line 310; :334 was the Phase 2 header)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R53"
+file = "claude/commands/tdd.md"
+line = 401
+symbol = "plan-new.md cross-reference"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "tdd.md L401 references 'plan-new.md:594-602' as canonical Verification Commands block; that range is inside the Research Notes template — Verification Commands heading is at line 606. Stale line reference"
+dedup_id = "059cd0f1b0211e90"
+resolved = 2026-05-08
+resolution = "Updated plan-new.md cross-reference :594-602 → :606 in tdd.md L401 (## Verification Commands heading is at line 606; :594-602 was inside Research Notes template)"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R54"
+file = "claude/agents/flow-bootstrap.md"
+line = 84
+symbol = "Hard rules"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Hard rules states 'Run ONLY the three command literals named above' followed by FOUR commands (--version, flow resolve, flow doctor, json get). Off-by-one in the count makes a reader distrust the rule"
+dedup_id = "3d6c1d91afafcfef"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R55"
+file = "claude/agents/flow-bootstrap.md"
+line = 1
+symbol = "frontmatter version field"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Agent frontmatter (name, description, tools, model, color) lacks a version/since field to track when the input/output envelope contract changed; without it carriers cannot gate on bootstrap version at runtime and maintainers cannot quickly see when the envelope contract last changed"
+dedup_id = "b1b5dbfc26091c3d"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R56"
+file = "claude/commands/plan-new.md"
+line = 74
+symbol = "Step 0 carrier-specific note"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "plan-new.md appends a carrier-specific Step 0 note (fresh-plan case, collision detection, read-only nature of the bootstrap agent); plan-update.md and review-plan.md lack equivalent carrier-specific notes despite divergent expectations (plan-update should always resolve; review-plan can work flow-less). Asymmetric DX"
+dedup_id = "0209c657dbf9297e"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R57"
+file = "claude/commands/tdd.md"
+line = 440
+symbol = "Resume protocol step 1"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Resume protocol step 1 parenthetical 'When /tdd resume is invoked standalone, Step 0 still runs and resolves the parent flow via the bootstrap agent' restates what Step 0 already guarantees for every invocation. Minor content noise"
+dedup_id = "51c8896b4b7766f5"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R58"
+file = "claude/commands/tdd.md"
+line = 396
+symbol = "parent_envelope.plan_path"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "tdd.md L396 says 'extract plan_path = parent_envelope.plan_path' but tomlctl flow resolve --json output nests under .resolved.plan_path (per flow-bootstrap.md Contract); L400 then says 'Read context.toml.plan_path' — the section is confused between resolve output vs reading context.toml directly. Pick one source and align the prose"
+dedup_id = "db5934c83409a691"
+resolved = 2026-05-08
+resolution = "Corrected envelope path to parent_envelope.resolved.plan_path; collapsed redundant 'Read context.toml.plan_path' step; downstream steps renumbered 3→2, 4→3, 5→4 in Bootstrap-missing fallback"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "open"
+flow = "flow-tracking-overhaul"
+id = "R59"
+file = "scripts/shared-blocks.toml"
+line = 80
+symbol = "vet-flow-research vs flow-context manifests"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "vet-flow-research block manifest covers test-bootstrap.md but flow-context block manifest does not; the two carrier lists are not subsets of each other — a reader scanning the manifest may expect them to be. Document the asymmetry inline or rationalise via a unified carrier list"
+dedup_id = "6cf319dcfa0281be"
+
+[[items]]
+first_flagged = 2026-05-08
+rounds = 1
+status = "fixed"
+flow = "flow-tracking-overhaul"
+id = "R60"
+file = "claude/commands/tdd.md"
+line = 456
+symbol = "Acceptance smoke-check"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "tdd.md L456 warns '/implement frontmatter argument-hint is [plan path or task description] and does not advertise --flow' — implement.md frontmatter has been updated to include `[--flow <slug>] [plan path or task description]`, so the cautionary smoke-check note is stale and should be removed or rewritten"
+dedup_id = "b22c1db80163d678"
+resolved = 2026-05-08
+resolution = "Removed stale cautionary note from Acceptance smoke-check about implement.md argument-hint not advertising --flow (frontmatter has been updated to [--flow <slug>] [plan path or task description])"
+
+[[vet_events]]
+timestamp = "2026-05-08T20:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+rationale = "Spot-checked: find_plans relativise reversed signature (verified at find_plans.rs:350); init.rs build_active_entry duplication (verified by reading active.rs:100-227 vs init.rs:232-396); any_path_matches_scope GlobMatcher claim (PARTIAL FAIL — matchers ARE hoisted once per call at L738-743, not per-iteration; per-resolve-call recompile across flows is real, so finding kept but downgraded warning→suggestion and reframed). All 16 findings retained, 1 downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T20:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 3
+dropped_count = 1
+downgraded_count = 1
+rationale = "All 3 findings sampled. (1) flow active add slug validation — VERIFIED at active.rs:343-359 vs init.rs:57-68 vs ensure_artifact.rs:112-136; kept as warning. (2) Sidecar not independently authenticated — VERIFIED at integrity.rs:152-207; downgraded info→suggestion (severity normalisation since 'info' is not in the canonical critical|warning|suggestion vocab) and effort none→trivial. (3) Pre-commit hook safe — DROPPED, this is a positive confirmation rather than a finding. Net: 2 findings retained."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T20:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked: active-flow registry parsers (3 separate parsers verified — active.rs:133-167, resolve.rs:506-561, list.rs:253-289 distinct shapes); --cwd plumbed-but-unused (verified at resolve.rs:56 _cwd: Option<PathBuf> + flow-bootstrap.md:60 documented); natural-key slug-only (verified at active.rs:171-179 + L375-381 add() upserts on slug-only). All 15 findings retained. Cross-merged with Agent 1's R1 (init duplication), Agent 1's R3 (integrity translators), and Agent 5's R26 (--cwd unused) into single canonical entries."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T20:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 6
+dropped_count = 1
+downgraded_count = 0
+rationale = "Spot-checked: gitignore-claude ok=false (verified at doctor.rs:682-689 + L709 envelope ok aggregation); step-3 fallthrough (verified at resolve.rs:575-576); version-check ambiguity (verified at flow-bootstrap.md:47); require_artifacts unused (verified by reading entire flow-bootstrap.md procedure — never consulted in steps 3-5); json.rs P19 stale comment (verified — dispatch.rs:274-281 implements refuse_json_extension_for_toml_writers); plansDirectory array silently ignored (verified at find_plans.rs:166-172 — as_str() on array returns None). 1 dropped: 'E26 fix landed correctly' was a positive confirmation, not a finding. Severity normalisation: high→warning, medium→warning, low→suggestion across all retained items."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T20:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked: jiff Timestamp::now() non-injectable (verified at stale.rs:155 + resolve.rs:768-846); Check::to_json shape inconsistency (verified at doctor.rs:168-177 conditional detail insert); --help missing on FlowOp::Resolve/Init (verified at cli/types.rs:527-543, 496-508 vs QueryArgs:193-293 with full help strings); README Quick tour omissions (verified — text-only finding); shape-pin test gap (verified at flow_resolve.rs:585-615 single-source coverage); doctor sidecar-mismatch detail lacks hashes (verified at doctor.rs:96-116 sidecar_state returns Option<bool>). All 15 findings retained; severity normalisation: low→suggestion, medium→warning. Merged R26 (--cwd) into Agent 3's canonical entry."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-08T20:00:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 6
+dropped_count = 4
+downgraded_count = 1
+rationale = "Spot-checked: model: haiku alias (verified at flow-bootstrap.md:5); tdd.md L392 bypasses flow-bootstrap (verified at L392-400 — bypass is intentional per inline comment, downgraded warning→suggestion); implement.md:334 stale ref (verified — actual line 310, :334 is Phase 2 header); plan-new.md:594-602 stale ref (verified — heading at L606); three-vs-four (verified at flow-bootstrap.md:84 — 4 commands listed); tdd.md L456 stale (verified — implement.md frontmatter HAS [--flow <slug>]). 4 DROPPED as positive confirmations (not findings): 'flow-context byte-identical', 'plansDirectory prompt parity', 'all 9 carriers have valid frontmatter', 'tomlctl SKILL.md frontmatter consistent'. 1 downgraded (R51). Net: 11 findings retained."
+dedup_id = "45ca31c3315a5978"

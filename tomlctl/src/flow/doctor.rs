@@ -91,28 +91,47 @@ fn relativise(root: &Path, path: &Path) -> String {
     rel.to_string_lossy().replace('\\', "/")
 }
 
+/// Outcome of a sidecar-state probe. `Mismatch` carries the expected and
+/// actual hex digests so the caller can format a directed failure detail
+/// matching the CLAUDE.md contract (R47).
+enum SidecarStatus {
+    Ok,
+    Mismatch { expected: String, actual: String },
+    Malformed,
+}
+
 /// Test whether the `<file>.sha256` sidecar carries a 64-hex digest equal
 /// to a fresh recompute of `file`'s on-disk bytes. Returns:
 /// - `None` when the sidecar is missing.
-/// - `Some(false)` when present-but-mismatched (or malformed).
-/// - `Some(true)` when present-and-matching.
-fn sidecar_state(file: &Path) -> Result<Option<bool>> {
+/// - `Some(SidecarStatus::Malformed)` when the sidecar is unreadable or
+///   doesn't contain a 64-hex-char digest as its first whitespace token.
+/// - `Some(SidecarStatus::Mismatch { expected, actual })` when present and
+///   parseable, but the digest disagrees with the file's current bytes.
+/// - `Some(SidecarStatus::Ok)` when present-and-matching.
+fn sidecar_state(file: &Path) -> Result<Option<SidecarStatus>> {
     let sidecar = sidecar_path(file);
     if !sidecar.exists() {
         return Ok(None);
     }
     let raw = match fs::read_to_string(&sidecar) {
         Ok(s) => s,
-        Err(_) => return Ok(Some(false)),
+        Err(_) => return Ok(Some(SidecarStatus::Malformed)),
     };
     let Some(expected) = raw.split_whitespace().next() else {
-        return Ok(Some(false));
+        return Ok(Some(SidecarStatus::Malformed));
     };
     if expected.len() != 64 || !expected.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Ok(Some(false));
+        return Ok(Some(SidecarStatus::Malformed));
     }
     let actual = sha256_hex_of_file(file)?;
-    Ok(Some(expected.eq_ignore_ascii_case(&actual)))
+    if expected.eq_ignore_ascii_case(&actual) {
+        Ok(Some(SidecarStatus::Ok))
+    } else {
+        Ok(Some(SidecarStatus::Mismatch {
+            expected: expected.to_string(),
+            actual,
+        }))
+    }
 }
 
 /// Canonical artifact-path map for a slug (matches `flow::init::artifacts_for`).
@@ -265,8 +284,23 @@ fn check_one_flow(
     // 3. context.toml sidecar.
     if context_exists {
         match sidecar_state(&context_file)? {
-            Some(true) => checks.push(Check::ok("context-sidecar", slug.to_string())),
-            Some(false) => {
+            Some(SidecarStatus::Ok) => {
+                checks.push(Check::ok("context-sidecar", slug.to_string()))
+            }
+            Some(SidecarStatus::Mismatch { expected, actual }) => {
+                checks.push(Check::fail(
+                    "context-sidecar",
+                    slug.to_string(),
+                    format!(
+                        "sidecar digest mismatch for {}: expected {}, actual {}",
+                        relativise(root, &context_file),
+                        expected,
+                        actual
+                    ),
+                ));
+                stale_sidecars.push((context_file.clone(), slug.to_string()));
+            }
+            Some(SidecarStatus::Malformed) => {
                 checks.push(Check::fail(
                     "context-sidecar",
                     slug.to_string(),
@@ -294,8 +328,23 @@ fn check_one_flow(
     // 4. execution-record sidecar.
     if er_exists {
         match sidecar_state(&er_file)? {
-            Some(true) => checks.push(Check::ok("execution-record-sidecar", slug.to_string())),
-            Some(false) => {
+            Some(SidecarStatus::Ok) => {
+                checks.push(Check::ok("execution-record-sidecar", slug.to_string()))
+            }
+            Some(SidecarStatus::Mismatch { expected, actual }) => {
+                checks.push(Check::fail(
+                    "execution-record-sidecar",
+                    slug.to_string(),
+                    format!(
+                        "sidecar digest mismatch for {}: expected {}, actual {}",
+                        relativise(root, &er_file),
+                        expected,
+                        actual
+                    ),
+                ));
+                stale_sidecars.push((er_file.clone(), slug.to_string()));
+            }
+            Some(SidecarStatus::Malformed) => {
                 checks.push(Check::fail(
                     "execution-record-sidecar",
                     slug.to_string(),
@@ -675,18 +724,13 @@ pub(crate) fn dispatch(
     let mut warnings: Vec<JsonValue> = Vec::new();
     let gitignore_hit = detect_gitignored_claude(&root);
     if let Some(line) = gitignore_hit.as_ref() {
-        // Surface as both a warning AND as an explicit (non-failing) check
-        // entry — the check entry pins coverage so the docs/test contract
-        // can assert on `name=gitignore-claude`, while the warning is the
-        // actionable surface for human readers / orchestrator caches.
-        checks.push(Check {
-            name: "gitignore-claude",
-            scope: "global".to_string(),
-            ok: false,
-            detail: Some(format!(
-                "`.gitignore` matches `.claude/` (line: `{line}`) — flow state will be lost on fresh worktrees"
-            )),
-        });
+        // R31: gitignore-claude is a warning, NOT a check failure. Per the
+        // plan spec, the check entry stays informational (`ok=true`) so the
+        // top-level envelope `ok` doesn't flip on this surface. The
+        // actionable detail lives on the warning string; the check entry
+        // pins coverage for docs/test contracts asserting on
+        // `name=gitignore-claude`.
+        checks.push(Check::ok("gitignore-claude", "global"));
         warnings.push(JsonValue::String(format!(
             ".gitignore masks .claude/ (line: `{line}`)"
         )));

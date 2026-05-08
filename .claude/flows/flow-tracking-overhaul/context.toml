@@ -1,6 +1,6 @@
 slug = "flow-tracking-overhaul"
 plan_path = "docs/plans/flow-tracking-overhaul.md"
-status = "in-progress"
+status = "review"
 created = 2026-05-08
 updated = 2026-05-08
 branch = "main"
@@ -25,7 +25,7 @@ scope = [
 
 [tasks]
 total = 18
-completed = 9
+completed = 18
 in_progress = 0
 
 [artifacts]
