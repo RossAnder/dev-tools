@@ -123,7 +123,13 @@ pub(crate) fn items_array_mut<'a>(
         .or_insert_with(|| TomlValue::Array(Vec::new()));
     entry
         .as_array_mut()
-        .ok_or_else(|| anyhow!("`{}` is not an array", name))
+        .ok_or_else(|| {
+            anyhow!(
+                "`{}` is not an array (the named --array key exists but its value is not a TOML array; expected array-of-tables form `[[{}]]`)",
+                name,
+                name
+            )
+        })
 }
 
 /// Pull the `id` field of an item table as `&str`, returning `None` when
@@ -958,9 +964,12 @@ fn canonicalize_for_write(file: &Path) -> Result<PathBuf> {
     let parent_canonical = parent
         .canonicalize()
         .with_context(|| format!("parent directory {} not found", parent.display()))?;
-    let name = file
-        .file_name()
-        .ok_or_else(|| anyhow!("write target `{}` has no file name", file.display()))?;
+    let name = file.file_name().ok_or_else(|| {
+        anyhow!(
+            "write target `{}` has no file name (path must end in a filename component, e.g. `.claude/flows/<slug>/context.toml`)",
+            file.display()
+        )
+    })?;
     let joined = parent_canonical.join(name);
     // Reject ParentDir / RootDir components past the canonical parent prefix.
     // Canonicalize() normalised the prefix, so anything in `joined.components()`
@@ -1130,7 +1139,12 @@ pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
     // returns `Cow::Borrowed`, so this also drops the redundant clone.
     let basename = file
         .file_name()
-        .ok_or_else(|| anyhow!("target `{}` has no file name", file.display()))?
+        .ok_or_else(|| {
+            anyhow!(
+                "target `{}` has no file name (path must end in a filename component for sidecar derivation)",
+                file.display()
+            )
+        })?
         .to_string_lossy();
     let sidecar_contents = format!("{}  {}\n", hex, basename);
     atomic_write(&sidecar_path(file), sidecar_contents.as_bytes())

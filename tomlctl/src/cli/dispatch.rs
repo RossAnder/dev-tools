@@ -116,7 +116,9 @@ fn parse_dedupe_fields(raw: Option<&str>) -> Result<Vec<String>> {
         .map(String::from)
         .collect();
     if fields.is_empty() {
-        bail!("--dedupe-by requires at least one field name");
+        bail!(
+            "--dedupe-by requires at least one field name (e.g. `--dedupe-by source,target` for a comma-separated list)"
+        );
     }
     Ok(fields)
 }
@@ -154,7 +156,7 @@ fn read_json_arg(arg: &str) -> Result<String> {
             .read_to_string(&mut buf)
             .context("reading JSON from stdin")?;
         if buf.trim().is_empty() {
-            bail!("stdin was empty — expected JSON payload");
+            bail!("stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)");
         }
         Ok(buf)
     } else {
@@ -202,7 +204,7 @@ fn read_json_value_from_arg(arg: &str) -> Result<JsonValue> {
         // and we want our own message rather than serde's EOF wording.
         let initial = r.fill_buf().context("reading JSON from stdin")?;
         if initial.is_empty() {
-            bail!("stdin was empty — expected JSON payload");
+            bail!("stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)");
         }
         // `from_reader` consumes the BufReader's internal buffer before
         // refilling from the underlying `Take<StdinLock>`, so the peek
@@ -359,7 +361,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 Ok(match path.as_deref() {
                     None | Some("") => toml_to_json(doc),
                     Some(p) => toml_to_json(
-                        navigate(doc, p).ok_or_else(|| anyhow!("key path `{}` not found", p))?,
+                        navigate(doc, p).ok_or_else(|| {
+                            anyhow!(
+                                "key path `{}` not found (run `tomlctl parse <file>` to inspect the document tree, or `tomlctl get <file>` with no --path to print the whole doc)",
+                                p
+                            )
+                        })?,
                     ),
                 })
             })?;
@@ -457,7 +464,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             // "at least one" here since clap has no first-class
             // required-exactly-one primitive on optional flags.
             if json.is_none() && ndjson.is_none() {
-                bail!("array-append requires one of --json or --ndjson");
+                bail!(
+                    "array-append requires one of --json or --ndjson (e.g. `--json '{{\"k\":\"v\"}}'` for a single row, `--ndjson rows.ndjson` for a batch)"
+                );
             }
             // T6b: lift the rows parse above the dry-run/live split so both
             // paths share parse semantics. `--json` / `--ndjson` resolution
@@ -468,7 +477,10 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 let parsed: JsonValue =
                     read_json_value_from_arg(&j).context("parsing --json")?;
                 if !parsed.is_object() {
-                    bail!("--json must be a JSON object");
+                    bail!(
+                        "--json must be a JSON object (e.g. {{\"k\":\"v\"}}); got JSON {}",
+                        crate::convert::json_type_name(&parsed)
+                    );
                 }
                 vec![parsed]
             } else {
@@ -899,7 +911,9 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // caller's remediation is the same either way.
             if !file.exists() {
                 if infer_from_file {
-                    bail!("--infer-from-file requires a non-empty ledger or explicit --prefix");
+                    bail!(
+                        "--infer-from-file requires a non-empty ledger or explicit --prefix (the file does not exist yet; pass --prefix R/O/A/E directly to bootstrap)"
+                    );
                 }
                 let prefix = prefix.as_deref().expect("clap required_unless_present guarantees prefix is Some when infer_from_file is false");
                 // R26: route the missing-file prefix validation through

@@ -195,7 +195,10 @@ pub(crate) fn items_get_from(doc: &TomlValue, array_name: &str, id: &str) -> Res
             return Ok(toml_to_json(item));
         }
     }
-    bail!("no item with id = {}", id)
+    bail!(
+        "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+        id
+    )
 }
 
 /// O64: JSON-side sibling of `items_get_from`. Walks a `JsonValue` doc's
@@ -221,7 +224,10 @@ pub(crate) fn items_get_from_json(
             return Ok(item.clone());
         }
     }
-    bail!("no item with id = {}", id)
+    bail!(
+        "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+        id
+    )
 }
 
 #[cfg(test)]
@@ -231,7 +237,8 @@ pub(crate) fn items_add(doc: &mut TomlValue, json: &str) -> Result<()> {
 
 /// R57: array-parametric `items add`. See `List --array`.
 pub(crate) fn items_add_to(doc: &mut TomlValue, array_name: &str, json: &str) -> Result<()> {
-    let patch: JsonValue = serde_json::from_str(json).context("parsing --json")?;
+    let patch: JsonValue = serde_json::from_str(json)
+        .context("parsing --json (expected JSON object, e.g. `{\"id\":\"R1\",\"status\":\"resolved\"}`)")?;
     items_add_value_to(doc, patch, array_name)
 }
 
@@ -253,8 +260,12 @@ pub(crate) fn items_add_value_to(
     patch: JsonValue,
     array_name: &str,
 ) -> Result<()> {
+    let got_type = crate::convert::json_type_name(&patch);
     let JsonValue::Object(mut obj) = patch else {
-        bail!("--json must be a JSON object");
+        bail!(
+            "--json must be a JSON object (e.g. {{\"id\":\"R1\",\"status\":\"open\"}}); got JSON {}",
+            got_type
+        );
     };
     // T6b: auto-populate `dedup_id` from the payload BEFORE conversion to
     // TOML, unless the caller already set it or the env-var kill switch is
@@ -429,7 +440,8 @@ pub(crate) fn items_update_to(
     json: &str,
     unset: &[String],
 ) -> Result<()> {
-    let patch: JsonValue = serde_json::from_str(json).context("parsing --json")?;
+    let patch: JsonValue = serde_json::from_str(json)
+        .context("parsing --json (expected JSON object, e.g. `{\"status\":\"resolved\"}`)")?;
     items_update_value_to(doc, array_name, id, patch, unset)
 }
 
@@ -450,8 +462,12 @@ pub(crate) fn items_update_value_to(
     patch: JsonValue,
     unset: &[String],
 ) -> Result<()> {
+    let got_type = crate::convert::json_type_name(&patch);
     let JsonValue::Object(mut patch_obj) = patch else {
-        bail!("--json must be a JSON object");
+        bail!(
+            "--json must be a JSON object (e.g. {{\"status\":\"resolved\"}}); got JSON {}",
+            got_type
+        );
     };
 
     let arr = items_array_mut(doc, array_name)?;
@@ -480,7 +496,10 @@ pub(crate) fn items_update_value_to(
         }
         return Ok(());
     }
-    bail!("no item with id = {}", id)
+    bail!(
+        "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+        id
+    )
 }
 
 #[cfg(test)]
@@ -520,9 +539,15 @@ pub(crate) fn items_apply_to_opts(
     array_name: &str,
     no_remove: bool,
 ) -> Result<()> {
-    let ops: JsonValue = serde_json::from_str(ops_json).context("parsing --ops")?;
+    let ops: JsonValue = serde_json::from_str(ops_json).context(
+        "parsing --ops (expected JSON array of op objects, e.g. `[{\"op\":\"update\",\"id\":\"R1\",\"json\":{\"status\":\"resolved\"}}]`)"
+    )?;
+    let got_type = crate::convert::json_type_name(&ops);
     let JsonValue::Array(arr) = ops else {
-        bail!("--ops must be a JSON array");
+        bail!(
+            "--ops must be a JSON array (e.g. [{{\"op\":\"update\",\"id\":\"R1\",\"json\":{{...}}}}]); got JSON {}",
+            got_type
+        );
     };
     // O54: fail-before-mutate for `--no-remove` is a required property (the
     // flag exists precisely so review-apply/optimise-apply never partially
@@ -591,19 +616,31 @@ fn apply_op_indexed(
     array_name: &str,
     id_index: &mut Option<HashMap<String, usize>>,
 ) -> Result<()> {
+    let got_type = crate::convert::json_type_name(&op);
     let JsonValue::Object(mut obj) = op else {
-        bail!("op must be a JSON object");
+        bail!(
+            "op must be a JSON object (e.g. {{\"op\":\"update\",\"id\":\"R1\",\"json\":{{...}}}}); got JSON {}",
+            got_type
+        );
     };
     let op_name = obj
         .get("op")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("op missing `op` field"))?
+        .ok_or_else(|| {
+            anyhow!(
+                "op missing `op` field; required shape is {{\"op\":\"add|update|remove\",\"id\":\"<id>\",\"json\":{{...}}}}"
+            )
+        })?
         .to_string();
     match op_name.as_str() {
         "add" => {
             let json = obj
                 .remove("json")
-                .ok_or_else(|| anyhow!("add op missing `json` field"))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "add op missing `json` field; required shape is {{\"op\":\"add\",\"json\":{{<row fields>}}}}"
+                    )
+                })?;
             // Capture the new entry's id (if present + a string) before the
             // value is consumed; on success append it to the index so a
             // later update/remove in the same batch can find it.
@@ -627,11 +664,19 @@ fn apply_op_indexed(
             let id = obj
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("update op missing `id` field"))?
+                .ok_or_else(|| {
+                    anyhow!(
+                        "update op missing `id` field; required shape is {{\"op\":\"update\",\"id\":\"<id>\",\"json\":{{<patch>}}}}"
+                    )
+                })?
                 .to_string();
             let json = obj
                 .remove("json")
-                .ok_or_else(|| anyhow!("update op missing `json` field"))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "update op missing `json` field; required shape is {{\"op\":\"update\",\"id\":\"<id>\",\"json\":{{<patch>}}}}"
+                    )
+                })?;
             let unset = take_unset(obj.remove("unset"))?;
             // Lazy-rebuild the index if a previous remove invalidated it.
             if id_index.is_none() {
@@ -639,7 +684,10 @@ fn apply_op_indexed(
             }
             let map = id_index.as_ref().expect("rebuilt above");
             let Some(&idx) = map.get(&id) else {
-                bail!("no item with id = {}", id);
+                bail!(
+                    "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+                    id
+                );
             };
             // R57: update honours --array. Direct-index update bypasses
             // the linear scan in `items_update_value_to`.
@@ -649,7 +697,11 @@ fn apply_op_indexed(
             let id = obj
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("remove op missing `id` field"))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "remove op missing `id` field; required shape is {{\"op\":\"remove\",\"id\":\"<id>\"}}"
+                    )
+                })?;
             // R57: remove also follows --array. Order-preserving `Vec::remove`
             // (via `retain`) shifts later indexes by 1.
             //
@@ -685,7 +737,7 @@ fn apply_op_indexed(
             }
             Ok(())
         }
-        other => bail!("unknown op `{}`", other),
+        other => bail!("unknown op `{}`; expected one of: add, update, remove", other),
     }
 }
 
@@ -701,7 +753,7 @@ fn take_unset(unset: Option<JsonValue>) -> Result<Vec<String>> {
                 match entry {
                     JsonValue::String(s) => out.push(s),
                     other => bail!(
-                        "update op `unset` must be an array of strings, got {} at index {}",
+                        "update op `unset` must be an array of strings (e.g. `[\"status\",\"resolution\"]`), got JSON {} at index {}",
                         json_type_name(&other),
                         idx
                     ),
@@ -710,7 +762,7 @@ fn take_unset(unset: Option<JsonValue>) -> Result<Vec<String>> {
             Ok(out)
         }
         Some(other) => bail!(
-            "update op `unset` must be a JSON array of strings, got {}",
+            "update op `unset` must be a JSON array of strings (e.g. `[\"status\",\"resolution\"]`), got JSON {}",
             json_type_name(&other)
         ),
     }
@@ -728,18 +780,31 @@ fn update_at_index(
     patch: JsonValue,
     unset: &[String],
 ) -> Result<()> {
+    let got_type = crate::convert::json_type_name(&patch);
     let JsonValue::Object(mut patch_obj) = patch else {
-        bail!("--json must be a JSON object");
+        bail!(
+            "--json must be a JSON object (e.g. {{\"status\":\"resolved\"}}); got JSON {}",
+            got_type
+        );
     };
     let arr = items_array_mut(doc, array_name)?;
-    let item = arr
-        .get_mut(idx)
-        .ok_or_else(|| anyhow!("no item with id = {}", expected_id))?;
-    let tbl = item
-        .as_table_mut()
-        .ok_or_else(|| anyhow!("no item with id = {}", expected_id))?;
+    let item = arr.get_mut(idx).ok_or_else(|| {
+        anyhow!(
+            "no item with id = {} (stale id-index; run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+            expected_id
+        )
+    })?;
+    let tbl = item.as_table_mut().ok_or_else(|| {
+        anyhow!(
+            "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+            expected_id
+        )
+    })?;
     if tbl.get("id").and_then(|v| v.as_str()) != Some(expected_id) {
-        bail!("no item with id = {}", expected_id);
+        bail!(
+            "no item with id = {} (id-index drift; run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+            expected_id
+        );
     }
     // T6b: parity with `items_update_value_to` — run the recompute-branch
     // classifier before the merge loop. The indexed and linear-scan paths
@@ -771,30 +836,50 @@ pub(crate) fn apply_single_op(
     op: JsonValue,
     array_name: &str,
 ) -> Result<()> {
+    let got_type = crate::convert::json_type_name(&op);
     let JsonValue::Object(mut obj) = op else {
-        bail!("op must be a JSON object");
+        bail!(
+            "op must be a JSON object (e.g. {{\"op\":\"update\",\"id\":\"R1\",\"json\":{{...}}}}); got JSON {}",
+            got_type
+        );
     };
     let op_name = obj
         .get("op")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("op missing `op` field"))?
+        .ok_or_else(|| {
+            anyhow!(
+                "op missing `op` field; required shape is {{\"op\":\"add|update|remove\",...}}"
+            )
+        })?
         .to_string();
     match op_name.as_str() {
         "add" => {
             let json = obj
                 .remove("json")
-                .ok_or_else(|| anyhow!("add op missing `json` field"))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "add op missing `json` field; required shape is {{\"op\":\"add\",\"json\":{{<row fields>}}}}"
+                    )
+                })?;
             items_add_value_to(doc, json, array_name)
         }
         "update" => {
             let id = obj
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("update op missing `id` field"))?
+                .ok_or_else(|| {
+                    anyhow!(
+                        "update op missing `id` field; required shape is {{\"op\":\"update\",\"id\":\"<id>\",\"json\":{{<patch>}}}}"
+                    )
+                })?
                 .to_string();
             let json = obj
                 .remove("json")
-                .ok_or_else(|| anyhow!("update op missing `json` field"))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "update op missing `json` field; required shape is {{\"op\":\"update\",\"id\":\"<id>\",\"json\":{{<patch>}}}}"
+                    )
+                })?;
             // R2: share the `unset` parser with `apply_op_indexed` via the
             // `take_unset` helper so the two dispatch paths can't drift on
             // shape errors or `null` handling.
@@ -808,11 +893,15 @@ pub(crate) fn apply_single_op(
             let id = obj
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("remove op missing `id` field"))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "remove op missing `id` field; required shape is {{\"op\":\"remove\",\"id\":\"<id>\"}}"
+                    )
+                })?;
             // R57: remove also follows the --array parameter.
             items_remove_from(doc, array_name, id)
         }
-        other => bail!("unknown op `{}`", other),
+        other => bail!("unknown op `{}`; expected one of: add, update, remove", other),
     }
 }
 
@@ -827,7 +916,10 @@ pub(crate) fn items_remove_from(doc: &mut TomlValue, array_name: &str, id: &str)
     let before = arr.len();
     arr.retain(|item| item_id(item) != Some(id));
     if arr.len() == before {
-        bail!("no item with id = {}", id);
+        bail!(
+            "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+            id
+        );
     }
     Ok(())
 }
@@ -895,7 +987,9 @@ pub(crate) fn items_infer_and_next_id(doc: &TomlValue) -> Result<String> {
         }
     }
     match prefixes.len() {
-        0 => bail!("--infer-from-file requires a non-empty ledger or explicit --prefix"),
+        0 => bail!(
+            "--infer-from-file requires a non-empty ledger or explicit --prefix (the file has no items with a letter-prefixed `id` to infer from; pass --prefix R/O/A/E directly)"
+        ),
         1 => {
             let prefix = prefixes.into_iter().next().expect("len == 1");
             items_next_id(doc, &prefix)
@@ -933,7 +1027,7 @@ pub(crate) fn parse_ndjson(s: &str) -> Result<Vec<JsonValue>> {
             continue;
         }
         let v: JsonValue = serde_json::from_str(line)
-            .with_context(|| format!("line {}", n))?;
+            .with_context(|| format!("line {} (expected one JSON object per line; e.g. {{\"id\":\"R1\",\"status\":\"open\"}})", n))?;
         rows.push(v);
     }
     Ok(rows)
@@ -948,7 +1042,12 @@ fn defaults_base(defaults: Option<&JsonValue>) -> Result<serde_json::Map<String,
     match defaults {
         Some(v) => Ok(v
             .as_object()
-            .ok_or_else(|| anyhow!("--defaults-json must be a JSON object"))?
+            .ok_or_else(|| {
+                anyhow!(
+                    "--defaults-json must be a JSON object (e.g. {{\"status\":\"open\",\"severity\":\"warning\"}}); got JSON {}",
+                    crate::convert::json_type_name(v)
+                )
+            })?
             .clone()),
         None => Ok(serde_json::Map::new()),
     }
@@ -1012,12 +1111,21 @@ pub(crate) fn items_add_many(
     // merge shape with `items_add_many_with_dedupe`.
     let base = defaults_base(defaults)?;
     for (i, row) in rows.iter().enumerate() {
-        let row_obj = row
-            .as_object()
-            .ok_or_else(|| anyhow!("row {}: must be a JSON object", i + 1))?;
+        let row_obj = row.as_object().ok_or_else(|| {
+            anyhow!(
+                "row {}: must be a JSON object (e.g. {{\"id\":\"R1\",\"summary\":\"...\"}}); got JSON {}",
+                i + 1,
+                crate::convert::json_type_name(row)
+            )
+        })?;
         let merged = merge_row_over_base(&base, row_obj);
         items_add_value_to(doc, JsonValue::Object(merged), array_name)
-            .with_context(|| format!("row {}", i + 1))?;
+            .with_context(|| {
+                format!(
+                    "row {} (per-row add failed; row must be a JSON object with at minimum an `id` field)",
+                    i + 1
+                )
+            })?;
     }
     Ok(rows.len())
 }
@@ -1106,9 +1214,14 @@ pub(crate) fn compute_apply_mutation(
     // Parse first so a bad JSON payload fails fast with the same message
     // the live path emits (`items_apply_to_opts` uses the same
     // `parsing --ops` context).
-    let ops: JsonValue = serde_json::from_str(ops_json).context("parsing --ops")?;
+    let ops: JsonValue = serde_json::from_str(ops_json).context(
+        "parsing --ops (expected JSON array of op objects, e.g. `[{\"op\":\"update\",\"id\":\"R1\",\"json\":{\"status\":\"resolved\"}}]`)"
+    )?;
     let JsonValue::Array(arr) = &ops else {
-        bail!("--ops must be a JSON array");
+        bail!(
+            "--ops must be a JSON array (e.g. [{{\"op\":\"update\",\"id\":\"R1\",\"json\":{{...}}}}]); got JSON {}",
+            crate::convert::json_type_name(&ops)
+        );
     };
     // Walk the ops once to capture per-op ids BEFORE mutation. Update
     // and remove ops carry `id`; add ops carry `json.id`. An op that
@@ -1312,9 +1425,13 @@ pub(crate) fn items_add_many_with_dedupe(
     let mut skipped_rows: Vec<SkippedRow> = Vec::new();
     for (i, row) in rows.iter().enumerate() {
         let row_num = i + 1;
-        let row_obj = row
-            .as_object()
-            .ok_or_else(|| anyhow!("row {}: must be a JSON object", row_num))?;
+        let row_obj = row.as_object().ok_or_else(|| {
+            anyhow!(
+                "row {}: must be a JSON object (e.g. {{\"id\":\"R1\",\"summary\":\"...\"}}); got JSON {}",
+                row_num,
+                crate::convert::json_type_name(row)
+            )
+        })?;
         // Build the merged payload first so dedupe sees the same fields
         // `items_add_value_to` would otherwise persist.
         let merged_val = JsonValue::Object(merge_row_over_base(&base, row_obj));
@@ -1328,7 +1445,12 @@ pub(crate) fn items_add_many_with_dedupe(
             continue;
         }
         items_add_value_to(doc, merged_val, array_name)
-            .with_context(|| format!("row {}", row_num))?;
+            .with_context(|| {
+                format!(
+                    "row {} (per-row dedupe-add failed; row must be a JSON object with at minimum an `id` field)",
+                    row_num
+                )
+            })?;
         added += 1;
     }
     Ok(AddManyOutcome {
@@ -2297,6 +2419,67 @@ status = "open"
         );
     }
 
+    // ----- Audit-ledger error-message rewrites (Phase 2 T6c): enum-rejection
+    // and state-precondition coverage on the categories T5 couldn't cover
+    // from its 4 files. -----------------------------------------------------
+
+    /// Audit-ledger row items.rs:688/815: an unknown op token must enumerate
+    /// the valid set in the message so an agent's malformed apply payload
+    /// gets a directed remediation instead of an opaque "unknown op" line.
+    #[test]
+    fn error_message_enum_rejection_lists_valid_ops() {
+        let src = r#"schema_version = 1
+[[items]]
+id = "R1"
+status = "open"
+"#;
+        let mut doc: TomlValue = toml::from_str(src).unwrap();
+        // A single bad-op batch flows through `apply_single_op` (linear path)
+        // because the update_count is below the O18 threshold.
+        let ops = r#"[{"op":"frobnicate","id":"R1","json":{"status":"fixed"}}]"#;
+        let err = items_apply(&mut doc, ops).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("unknown op `frobnicate`"),
+            "expected unknown-op echo of the bad token, got: {msg}"
+        );
+        assert!(
+            msg.contains("expected one of: add, update, remove"),
+            "expected enumeration of the valid op set, got: {msg}"
+        );
+    }
+
+    /// Audit-ledger row items.rs:198/224/483/642/737/740/742/830: a missing
+    /// item id must include the `tomlctl items list ... --pluck id`
+    /// discovery hint so the caller can enumerate the available ids without
+    /// digging into the source file.
+    #[test]
+    fn error_message_state_precondition_suggests_discovery_command() {
+        let src = r#"schema_version = 1
+[[items]]
+id = "R1"
+status = "open"
+"#;
+        let mut doc: TomlValue = toml::from_str(src).unwrap();
+        // `items_remove_from` (and every other "no item with id" site)
+        // routes through the same prose. Pick the simplest funnel that
+        // exercises the rewrite.
+        let err = items_remove_from(&mut doc, "items", "R999").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("no item with id = R999"),
+            "expected missing-id echo, got: {msg}"
+        );
+        assert!(
+            msg.contains("tomlctl items list"),
+            "expected discovery-command suggestion, got: {msg}"
+        );
+        assert!(
+            msg.contains("--pluck id"),
+            "expected `--pluck id` hint for enumeration, got: {msg}"
+        );
+    }
+
     // ----- Task 4: items_infer_and_next_id --------------------------------
 
     #[test]
@@ -2332,9 +2515,10 @@ summary = "out of order"
     fn items_infer_and_next_id_empty_ledger_errors() {
         let doc: TomlValue = toml::from_str("schema_version = 1\n").unwrap();
         let err = items_infer_and_next_id(&doc).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "--infer-from-file requires a non-empty ledger or explicit --prefix"
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--infer-from-file requires a non-empty ledger or explicit --prefix"),
+            "expected canonical empty-ledger error prose, got: {msg}"
         );
     }
 
