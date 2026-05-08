@@ -610,8 +610,18 @@ After all review agents return but BEFORE the interim checkpoint persists anythi
 3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
 4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
 5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
-6. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
-7. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
+6. **Append a durable `[[vet_events]]` entry to the ledger** via the canonical heredoc form — one entry per vetted agent, the `agent_index` field discriminates:
+
+   ```bash
+   cat <<'EOF' | tomlctl array-append <ledger> vet_events --json -
+   {"timestamp":"<ISO 8601>","command":"<review|optimise|review-plan|plan-new|plan-update|test-bootstrap>","agent_index":<n>,"lens":"<lens>","sampled_count":<N>,"dropped_count":<M>,"downgraded_count":<K>,"dropped_ids":["<R{n}>",...],"rationale":"<≤8 KiB rationale>"}
+   EOF
+   tomlctl set <ledger> last_updated <YYYY-MM-DD>
+   ```
+
+   See `SHARED-BLOCK:ledger-schema` → `Vet event log` for the full field set.
+7. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
+8. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
 <!-- SHARED-BLOCK:vet-flow-research END -->
 
 **Why the asymmetric sample.** Sonnet's fetch-and-summarise contract produces findings whose surface looks reasonable but whose grounding is weaker — fabricated `file:line` anchors, recommendations from older library versions, "best practice" claims without sources. Opus's mandatory Counter line forces the agent to articulate the failure mode of its own finding, which catches the worst fabrications inside the agent before they reach the orchestrator. Vet both, but vet Sonnet harder.
