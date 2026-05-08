@@ -32,6 +32,7 @@ The highest-frequency patterns. Deeper treatment in the linked sections.
 | Write value via json subcommand | `tomlctl json set <file> <path> --json <value>` |
 | Delete a key at path | `tomlctl json unset <file> <path>` |
 | Manage active-flow registry | `tomlctl flow active list\|add\|remove\|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...` |
+| Pre-flight envelope (resolve + doctor + plansDirectory in one dispatch) | `Task(subagent_type: "flow-bootstrap", prompt: <input-envelope-JSON>)` ([see `claude/agents/flow-bootstrap.md`](#flow-bootstrap-agent-entrypoint)) |
 | Run flow invariant checks (optionally auto-fix) | `tomlctl flow doctor [--slug <s>] [--fix]` |
 | Report (or bootstrap) flow artifact + sidecar status | `tomlctl flow ensure-artifact --slug <s> --kind <k> [--bootstrap]` |
 | Locate plan files | `tomlctl flow find-plans [--dirs <d>...] [--strict-read]` |
@@ -40,6 +41,8 @@ The highest-frequency patterns. Deeper treatment in the linked sections.
 | Resolve the active flow (5-step algorithm, emits artifacts + scope) | `tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]` |
 | Check whether a flow is stale | `tomlctl flow stale --slug <s> [--threshold <duration>]` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` ([see sidecar files](#sidecar-files)) |
+
+<a id="flow-bootstrap-agent-entrypoint"></a>**`flow-bootstrap` agent entrypoint**: per-command pre-flight is delegated to the `flow-bootstrap` sub-agent (`claude/agents/flow-bootstrap.md`), which composes `tomlctl flow resolve --with-staleness`, `tomlctl flow doctor`, and (for `plan-new` / `plan-update` / `review-plan`) `tomlctl json get .claude/settings.json plansDirectory` into a single JSON envelope. Each carrier's `## Step 0: Pre-flight (flow resolution + doctor)` section dispatches via `Task` with `subagent_type: "flow-bootstrap"` and a JSON-encoded input envelope; downstream phases consume `envelope.resolved.{slug,context_path,artifacts.*,status,plan_path,scope,stale}` plus `envelope.doctor.ok` instead of running the resolve / doctor primitives inline. The agent is read-only — never passes `--fix` to doctor — so auto-repair stays an orchestrator decision.
 
 ## Common recipes
 

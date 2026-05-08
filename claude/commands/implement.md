@@ -6,93 +6,70 @@ argument-hint: [--flow <slug>] [plan path or task description]
 <!-- SHARED-BLOCK:flow-context START -->
 ## Flow Context
 
-All `.claude/...` paths below resolve to the **project-local** `.claude/` directory at the git top-level. If no git top-level is available, refuse rather than fall back to `~/.claude/`.
+Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent
+(`claude/agents/flow-bootstrap.md`). Each carrier's Step-0 builds a JSON input envelope,
+dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.{slug,
+context_path, artifacts.*, status, plan_path, scope, stale}` plus `envelope.doctor.ok` for
+downstream phases. Canonical input/output envelope shapes: see `flow-bootstrap.md` Contract
+section (mirrored at `scripts/templates/flow-context.md` Section 3).
 
-### Canonical Flow Schema
+All `.claude/...` paths resolve to the project-local `.claude/` at the git top-level. No
+fallback to `~/.claude/`. **Status vocabulary**: `status ∈ {draft, in-progress, review,
+complete}`; auto-transitions to `complete` from non-`plan-update-complete` ops are
+forbidden (route through `review`); unknown values fail-soft to `in-progress` on read.
+**Slug derivation**: filename minus `.md` (multi-file plan: parent directory name); no
+further slugification. **Canonical artifacts**:
+`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings}.toml`
+— read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
+`context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
+flows are filtered out of scope-glob + branch-match resolution but remain targetable via
+explicit `--flow <slug>`. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
+single-line slug file is no longer consulted; the registry lives at
+`.claude/active-flow.toml` (multi-entry, gitignored per-clone state).
+<!-- SHARED-BLOCK:flow-context END -->
 
-**No inline comments in the schema** — `Edit` tool's exact-string matching clobbers trailing comments during single-field updates. Status values and other enumerations are documented in the Shared Rules below, not in the schema block.
+## Step 0: Pre-flight (flow resolution + doctor)
 
-```toml
-slug = "auth-overhaul"
-plan_path = "docs/plans/auth-overhaul.md"
-status = "in-progress"
-created = 2026-04-08
-updated = 2026-04-16
-branch = "auth-overhaul"
+Dispatch the `flow-bootstrap` sub-agent with a single JSON-encoded input envelope. The
+agent emits one JSON object on stdout; parse it as `envelope`. All downstream phases consume
+fields from `envelope.resolved` and `envelope.doctor`.
 
-scope = ["src/auth/**", "src/middleware/auth.rs"]
+Input envelope (build at dispatch time):
 
-[tasks]
-total = 10
-completed = 3
-in_progress = 1
-
-[artifacts]
-review_ledger = ".claude/flows/auth-overhaul/review-ledger.toml"
-optimise_findings = ".claude/flows/auth-overhaul/optimise-findings.toml"
-execution_record = ".claude/flows/auth-overhaul/execution-record.toml"
-plan_review_findings = ".claude/flows/auth-overhaul/plan-review-findings.toml"
+```json
+{
+  "command": "implement",
+  "flow_override": <--flow value or null>,
+  "path_args": <$ARGUMENTS-derived path list — array of strings, [] if no path args>,
+  "branch": <git branch --show-current or null>,
+  "worktree": <git rev-parse --show-toplevel or null>,
+  "cwd": <pwd or null>,
+  "require_artifacts": ["execution_record"],
+  "staleness_threshold": "7d"
+}
 ```
 
-### Shared Rules
+Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse:
 
-#### Status vocabulary
-
-`status` takes one of four string values: `draft`, `in-progress`, `review`, `complete`.
-
-- `draft` — written by `plan-new` at creation.
-- `in-progress` — written by `implement` when it starts a task; written by `plan-update` after work resumes.
-- `review` — written by `plan-update` when implementation finishes (every item done or all remainders deferred) or when a plan enters a review phase between rounds. Awaits explicit user sign-off via `/plan-update <plan> complete`.
-- `complete` — written ONLY by `plan-update`'s explicit `complete` op (user-invoked). Auto-transitions to `complete` from any other op (`status`, `defer`, `reconcile`, `/implement` Phase 4.5) are forbidden — they route through `review` instead.
-
-**Unknown-value rule**: if a command reads a `status` it doesn't recognise, it MUST treat it as `in-progress` (fail-soft) and proceed. Do not error.
-
-#### Field responsibilities
-
-- `slug` — immutable after creation. Only `plan-new` writes it.
-- `plan_path` — immutable after creation. For multi-file plans, `plan_path` points at the **outline file** (e.g. `docs/plans/auth-overhaul/00-outline.md`), not the directory.
-- `created` — immutable after creation. **Every command that rewrites `context.toml` MUST preserve `created` verbatim.** Never regenerate it.
-- `updated` — writeable by `plan-new`, `implement`, `plan-update`. Set to today's date (ISO 8601) on every write.
-- `branch` — optional. `plan-new` sets it from `git branch --show-current` if that produces a non-empty string; otherwise the field is **omitted entirely** (not written as empty string). No other command writes `branch`. Resolution step 3 skips flows whose `branch` key is absent.
-- `scope` — writeable by `plan-new` (initial derivation from the plan's "Affected areas" section, globs like `<dir>/**`) and by `plan-update reconcile` (may refine based on actual edits). Never empty after initial creation — if `plan-new` cannot derive anything, it writes the plan's affected directories as `<dir>/**` patterns.
-- `[tasks]` — writeable by `plan-update` (all ops that touch progress); writeable by `implement` (`in_progress` counter only when starting/finishing).
-- `[artifacts]` — **canonical, always written.** Paths are computed from `slug` but must be persisted in the TOML for stability. If `[artifacts]` is absent OR if any canonical key within `[artifacts]` is missing (currently: `review_ledger`, `optimise_findings`, `execution_record`, `plan_review_findings`), commands compute the missing path(s) from `slug` and MUST write them back on their next TOML write. For `execution_record` specifically, writing back the path is NOT sufficient on its own — if the computed file does not yet exist, the command MUST ALSO perform the **atomic 2-line bootstrap followed by sidecar materialisation**: a single `Write` tool call whose content is exactly `schema_version = 1\nlast_updated = <today>\n` (literal newlines; `<today>` is ISO 8601), then `tomlctl integrity refresh <path>` to produce the `<path>.sha256` sidecar, both before any `tomlctl items add` / `list` / `get` call. This keeps the contract self-healing: a legacy flow's first writer (from any command, not just `/plan-new`) produces a valid-TOML log file with its integrity sidecar rather than erroring with `No such file or directory` or later tripping `sidecar ... is missing` on the first `--verify-integrity` read. The bootstrap is **two-step but effectively atomic**: the `Write` materialises a parseable file in one syscall, and the `integrity refresh` adds the sidecar in a lock-protected second syscall — a concurrent `/implement` or `/plan-update` that observes the file strictly between the Write and the refresh would fail its `--verify-integrity` read, but the self-healing guard in every downstream command MUST recover via `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`. For `plan_review_findings` specifically, the self-healing path is simpler: commands compute `plan_review_findings = .claude/flows/<slug>/plan-review-findings.toml` from `slug` when absent and write it back on the next TOML write. No atomic bootstrap is needed — `/review-plan` is the sole writer and creates the file on first persistence.
-
-#### Slug derivation
-
-Slug = plan filename minus `.md` extension. Examples:
-- `docs/plans/auth-overhaul.md` → slug `auth-overhaul`
-- `docs/plans/auth-overhaul/00-outline.md` (multi-file) → slug `auth-overhaul` (parent directory name)
-
-No additional slugification — the filename is already the slug.
-
-#### Flow resolution order (every command, every invocation)
-
-1. **Explicit `--flow <slug>` argument**. If provided, use it verbatim. If `.claude/flows/<slug>/` doesn't exist, error.
-2. **Scope glob match on the path argument**. For each `.claude/flows/*/context.toml` where `status != "complete"`, read the `scope` array. For each pattern, invoke the `Glob` tool with the pattern and check whether the target path appears in the result. If exactly one flow matches, use it. Skip `status == "complete"` flows entirely.
-3. **Git branch match**. Run `git branch --show-current`. If the output is non-empty, look for a flow whose `context.branch` equals it (exact match, case-sensitive). Skip this step if output is empty (detached HEAD).
-4. **`.claude/active-flow` fallback**. Read the single-line slug. If `.claude/flows/<slug>/` exists with a valid `context.toml`, use it. If the pointed-at directory is missing or the TOML is malformed, proceed to step 5.
-5. **Ambiguous / none found**: list candidate flows (all non-complete flows with summary: slug, plan_path, status), ask the user.
-
-#### TOML read/write contract
-
-- **Reading**: if `context.toml` is missing required fields (`slug`, `plan_path`, `status`, `created`, `updated`, `scope`, `[tasks]`, `[artifacts]`), prompt the user with the specific missing fields and the plan's current path. Do not synthesise defaults silently.
-- **Reading**: if `context.toml` is syntactically invalid (can't be parsed as TOML), report the parse error and ask the user to fix manually. Do not attempt auto-repair.
-- **Writing (preferred)**: use `tomlctl` (see skill `tomlctl`) — `tomlctl set <file> <key-path> <value>` for a scalar, `tomlctl set-json <file> <key-path> --json <value>` for arrays or sub-tables. `tomlctl` preserves `created` verbatim, preserves key order, holds an exclusive sidecar `.lock`, and writes atomically via tempfile + rename. One tool call per field — no Read/Edit choreography required.
-- **Writing (fallback)**: if `tomlctl` is unavailable, Read the file, modify only the target line(s) via `Edit`, Write back. Preserve `created` verbatim. Preserve key order. Do not introduce inline comments.
-
-#### Flow-less fallback
-
-When `/review` or `/optimise` run on code outside any flow (resolution ends at step 5 and user picks "no flow"):
-- `/review` → `.claude/reviews/<scope>.toml`
-- `/optimise` → `.claude/optimise-findings/<scope>.toml`
-
-Slug derivation for flow-less scope: lowercase, replace `/\` with `-`, collapse `--`, strip leading `-` (preserved from pre-redesign).
-
-#### Completed-flow handling
-
-Flows with `status = "complete"` are skipped by resolution step 2 (scope glob match). They remain on disk for audit but do not participate in auto-resolution. Users can still target them via explicit `--flow <slug>`.
-<!-- SHARED-BLOCK:flow-context END -->
+1. **Gate on `envelope.ok`**. If `false`, surface `envelope.errors` to the user verbatim
+   and halt. Do not proceed to scope analysis or any downstream phase.
+2. **Bind for downstream**: `slug = envelope.resolved.slug`, `context_path =
+   envelope.resolved.context_path`, `artifacts = envelope.resolved.artifacts` (object with
+   `review_ledger` / `optimise_findings` / `execution_record` / `plan_review_findings`),
+   `doctor_ok = envelope.doctor.ok` when `envelope.doctor` is non-null.
+3. **No-flow fallback**: when `envelope.resolved.resolved == false`, the carrier follows
+   its flow-less convention (`/review` → `.claude/reviews/<scope>.toml`; `/optimise` →
+   `.claude/optimise-findings/<scope>.toml`; plan/implement/tdd carriers prompt the user
+   per `envelope.warnings`). `envelope.resolved.tie_candidates` (when non-empty) lists the
+   slugs surfaced for the user prompt.
+4. **Doctor-fail handling**: when `envelope.doctor.ok == false`, surface
+   `envelope.doctor.checks` (filtering for `ok == false`) and ask the user before the
+   carrier mutates any artifact. Auto-repair (`tomlctl flow doctor --fix`) is the
+   orchestrator's call — bootstrap is read-only.
+5. **Staleness**: read `envelope.resolved.stale.stale` (boolean) plus
+   `envelope.resolved.stale.reason`. When `true` AND the carrier is `/review` or
+   `/optimise`, invoke the `plan-update` skill with literal arg `reconcile` before
+   continuing.
 
 <!-- SHARED-BLOCK:execution-record-schema START -->
 ## Execution Record Schema
@@ -290,7 +267,7 @@ Works with:
 - **Plan directories** — `/implement docs/plans/todo/prod_preparation/`
 - **Specific items** — `/implement items 3,4,5 from docs/plans/todo/prod_preparation/00-outline.md`
 - **Inline tasks** — `/implement add account lockout with progressive delays`
-- **No arguments** — `/implement` auto-resolves the active flow via the 5-step flow resolution order (see Flow Context above): explicit `--flow <slug>`, scope glob match, git branch match, `.claude/active-flow` pointer, or user prompt
+- **No arguments** — `/implement` auto-resolves the active flow via the `flow-bootstrap` agent's pre-flight envelope (see `## Step 0: Pre-flight` above): explicit `--flow <slug>`, scope glob match, git branch match, `.claude/active-flow.toml` registry, or user prompt
 
 > **Effort**: Requires `xhigh` or `max` — lower effort may reduce agent spawning, tool usage, and deviation detection.
 
@@ -299,13 +276,7 @@ Works with:
 **Reason thoroughly through analysis and decomposition.** Front-load analysis here — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Research novel patterns, resolve ambiguities, and produce precise agent instructions.
 
 1. **Load the work**:
-   - **Resolve the flow** using the 5-step order documented in the Flow Context section above:
-     1. Explicit `--flow <slug>` argument wins. If provided, use it verbatim; error if `.claude/flows/<slug>/` is missing.
-     2. Scope glob match on the path argument — for each non-complete `.claude/flows/*/context.toml`, test every `scope` pattern via the `Glob` tool; use the flow if exactly one matches.
-     3. Git branch match — `git branch --show-current`; pick the flow whose `context.branch` equals the output (skip on empty / detached HEAD).
-     4. `.claude/active-flow` fallback — read the single-line slug; use it if `.claude/flows/<slug>/context.toml` exists and parses; otherwise fall through.
-     5. Ambiguous / none found — list candidate non-complete flows (slug, plan_path, status) and ask the user.
-   - Once a flow resolves, read its `context.toml` and extract `plan_path`. Read that plan file.
+   - **Bind from Step 0**: the resolved flow's `slug` and `context_path` are already bound from Step 0's `envelope.resolved`. Read its `context.toml` and extract `plan_path`. Read that plan file.
    - **Plan-path validation (mandatory, runs before any Read of the plan content).** The plan file's contents are embedded verbatim into every Phase 2 implementation agent's prompt — an attacker-controlled markdown file at e.g. `/tmp/malicious.md` would inject prompt content into N parallel agents simultaneously. Before reading the plan file, resolve the candidate path (whether it came from `$ARGUMENTS`, the resolved flow's `context.plan_path`, or an outline/detail document derivation) and verify it falls under the git top-level. **Reject** the path if any of the following hold: (1) it contains `..` components after normalisation (escapes via parent-traversal); (2) it is absolute and does not start with the git top-level prefix (e.g. paths under `/tmp/`, `/var/`, `/etc/`, `~/`, or any directory outside the repo); (3) it resolves outside the repo via symlink. The plan MUST be a tracked or working-tree file under the repo root — refuse to read otherwise, halt with a clear error naming the offending path, and do not dispatch any Phase 2 agent. This guard binds equally to the initial plan-file read, the outline/detail document reads in the directory branch below, and any subsequent re-read during Phase 4.5.
    - If $ARGUMENTS points to a plan directory, start with the **outline/master document** (e.g. `00-outline.md`) to understand scope, items, dependencies, and file targets. Then read only the detail documents relevant to the items being implemented — not every file in the directory.
    - If $ARGUMENTS points to a single plan file, read that file. If a flow also resolved, prefer the explicit plan-file argument but retain the flow context for Phase 4.5 writes.

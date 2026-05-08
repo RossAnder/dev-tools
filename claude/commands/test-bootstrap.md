@@ -9,7 +9,7 @@ Stand up a modern, opinionated test framework in the current project. This comma
 
 > **Effort**: Requires `max` — Phase 2 dispatches 4 concurrent research agents (Context7 + WebSearch). Lower effort may collapse the dispatch and degrade recommendation quality.
 
-This command is intentionally **not flow-aware**. It does NOT inline `flow-context` or `execution-record-schema` shared blocks; it does NOT read `.claude/active-flow`; it does NOT participate in the `/plan-new` → `/implement` → `/review` lifecycle. Re-runs are gated by a marker block in the target's `CLAUDE.md`, not by a flow ledger.
+This command is intentionally **not flow-aware**. It does NOT inline `flow-context` or `execution-record-schema` shared blocks; it does NOT read `.claude/active-flow.toml`; it does NOT participate in the `/plan-new` → `/implement` → `/review` lifecycle. Re-runs are gated by a marker block in the target's `CLAUDE.md`, not by a flow ledger.
 
 ## Usage
 
