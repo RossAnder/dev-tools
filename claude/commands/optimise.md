@@ -221,6 +221,34 @@ Fields:
 
 `[[rollback_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.rollback-history.toml`; no command automates this yet.
 
+#### Vet event log
+
+When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-flow-research procedure (see `SHARED-BLOCK:vet-flow-research` in those carriers' vet sections), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root:
+
+```toml
+[[vet_events]]
+timestamp = 2026-05-08T14:32:00Z
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+dropped_ids = ["R47"]
+rationale = "R47 cited file:line that does not exist on disk"
+```
+
+Fields:
+- `timestamp` — ISO 8601 date-time (seconds precision).
+- `command` — one of `"review"`, `"optimise"`, `"review-plan"`, `"plan-new"`, `"plan-update"`, `"test-bootstrap"`.
+- `agent_index` — integer 1..N matching the `Agent-{n}` index in the mandatory console line emitted by step 6 of the `vet-flow-research` block.
+- `lens` — string. The lens name as printed in the console line (e.g. `"security"`, `"test-runner"`, `"coverage"`).
+- `sampled_count`, `dropped_count`, `downgraded_count` — integers matching the N / M / K values in the console line.
+- `dropped_ids` — array of `R{n}` / `O{n}` ledger IDs that were vetted-out (dropped or downgraded). Empty array when nothing was dropped.
+- `rationale` — string capped at 8 KiB per the field-length-cap convention. Multi-line allowed (TOML multi-line strings).
+
+`[[vet_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.vet-history.toml`; no command automates this yet. Distinguish from `[[rollback_events]]` (which captures Step 5.5 working-tree reverts, not Step 2.5 / Phase 1.5 / Phase 2.5 / Phase 3 vet-pass actions).
+
 ### Ledger TOML read/write contract
 
 Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`. This contract is DIFFERENT from the `context.toml` contract (single-object file, line-edit-safe) because ledgers use arrays-of-tables which are fragile under line-based editing (two items with identical `status = "open"` / `rounds = 1` lines defeat the Edit tool uniqueness).
