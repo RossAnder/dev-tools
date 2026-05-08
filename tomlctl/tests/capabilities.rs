@@ -1871,3 +1871,151 @@ fn items_backfill_dedup_id_then_count_distinct_reports_n() {
         "after backfill, --count-distinct dedup_id --raw must report exactly N=3; got:\n{stdout}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// T-glistening: capabilities `.commands` schema. The new top-level key
+// describes every subcommand's flag surface (types, defaults, mutex groups)
+// so downstream agents can introspect the CLI without parsing `--help`.
+// `build_agent_context()` walks the live `<Cli as CommandFactory>::command()`
+// tree at runtime (see src/capabilities.rs); these tests pin the user-facing
+// shape: `--count` is bool on `items list`, the shape ArgGroup surfaces as
+// a mutex_groups entry, and clap-derive flags like `--dry-run` show up
+// automatically without per-flag wiring.
+// ---------------------------------------------------------------------------
+
+/// T-glistening: `tomlctl capabilities` emits a non-empty `commands`
+/// JSON object. Pins the bare existence of the schema before any of the
+/// per-flag assertions run — a regression that wiped `commands` would
+/// fail here loudly rather than producing confusing per-flag failures.
+#[test]
+fn capabilities_emits_commands_key() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}; stdout:\n{stdout}"));
+    let commands = v
+        .get("commands")
+        .expect("capabilities output must carry a top-level `commands` key");
+    let obj = commands
+        .as_object()
+        .expect("`commands` must be a JSON object");
+    assert!(
+        !obj.is_empty(),
+        "`commands` must be a non-empty object — clap-reflection produced 0 subcommands; raw:\n{stdout}"
+    );
+}
+
+/// T-glistening: `commands.items.subcommands.list.flags["--count"]` exists
+/// and has `type == "bool"`. Pins the user-facing flag-schema shape on a
+/// concrete representative flag (the `items list --count` boolean is one
+/// of the oldest agent-facing surfaces in the binary). A clap reflection
+/// regression that flipped this to "string" or "enum" would fail here.
+#[test]
+fn capabilities_commands_includes_items_list_with_count_flag() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+
+    let count = v
+        .get("commands")
+        .and_then(|c| c.get("items"))
+        .and_then(|i| i.get("subcommands"))
+        .and_then(|s| s.get("list"))
+        .and_then(|l| l.get("flags"))
+        .and_then(|f| f.get("--count"))
+        .expect("commands.items.subcommands.list.flags['--count'] must be present");
+    assert_eq!(
+        count.get("type").and_then(|t| t.as_str()),
+        Some("bool"),
+        "`--count` must be type=bool; got: {count}"
+    );
+}
+
+/// T-glistening: `commands.items.subcommands.list.mutex_groups` is an array
+/// containing a group set-equal to `[count, count_by, group_by, pluck,
+/// count_distinct]` (the shape ArgGroup declared on `ItemsOp::List`). Set
+/// equality (not order-equality) — clap doesn't promise a stable ordering
+/// when emitting group members, and the const-supplemented `MUTEX_GROUPS`
+/// fallback in `src/capabilities.rs` lists them in declaration order which
+/// happens to match clap's ordering today, but pinning a specific order
+/// would couple this test to an implementation detail.
+#[test]
+fn capabilities_commands_includes_mutex_groups_for_items_list() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+
+    let groups = v
+        .get("commands")
+        .and_then(|c| c.get("items"))
+        .and_then(|i| i.get("subcommands"))
+        .and_then(|s| s.get("list"))
+        .and_then(|l| l.get("mutex_groups"))
+        .and_then(|m| m.as_array())
+        .expect("commands.items.subcommands.list.mutex_groups must be an array");
+
+    let expected: std::collections::BTreeSet<&str> =
+        ["count", "count_by", "group_by", "pluck", "count_distinct"]
+            .into_iter()
+            .collect();
+    let found = groups.iter().any(|g| {
+        let names: std::collections::BTreeSet<&str> = g
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|n| n.as_str()).collect())
+            .unwrap_or_default();
+        names == expected
+    });
+    assert!(
+        found,
+        "expected a mutex group with members {:?}; got groups: {:?}",
+        expected, groups
+    );
+}
+
+/// T-glistening: `commands.set.flags["--dry-run"]["type"]` is `"bool"`.
+/// `--dry-run` was added to the `Set` clap variant in T1; the agent-context
+/// builder picks it up automatically via clap-reflection (no per-flag
+/// allowlist). This test pins that the reflection path covers the
+/// dry-run flag specifically — a regression that hid `--dry-run` from the
+/// `set` schema would fail here even though `--help` still showed it.
+#[test]
+fn capabilities_commands_set_arm_includes_dry_run_flag() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+
+    let dry_run = v
+        .get("commands")
+        .and_then(|c| c.get("set"))
+        .and_then(|s| s.get("flags"))
+        .and_then(|f| f.get("--dry-run"))
+        .expect("commands.set.flags['--dry-run'] must be present");
+    assert_eq!(
+        dry_run.get("type").and_then(|t| t.as_str()),
+        Some("bool"),
+        "set --dry-run must be type=bool; got: {dry_run}"
+    );
+}

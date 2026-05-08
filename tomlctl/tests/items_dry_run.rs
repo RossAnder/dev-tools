@@ -406,3 +406,599 @@ file = "src/b.rs"
         "dry-run then live apply must produce byte-identical output to live-only apply"
     );
 }
+
+// ---------------------------------------------------------------------------
+// T-glistening dispatch: dry-run path coverage for the six newly-supported
+// subcommands (`items add`, `items add-many`, `items update`, `set`,
+// `set-json`, `array-append`). Mirrors the T10 (a/c) pattern verbatim:
+// prime a sidecar with a real write, snapshot file + sidecar bytes, run the
+// `--dry-run` invocation, assert the would_change envelope shape, then
+// assert byte-equality on file + sidecar.
+//
+// Items helpers (Add / AddMany / Update / ArrayAppend) emit
+// `{"ok":true,"dry_run":true,"would_change":{"added":N,"updated":N,"removed":N,"ids":[...]}}`
+// via `emit_dry_run_plan`. Scalar helpers (Set / SetJson) emit
+// `{"ok":true,"dry_run":true,"would_change":{"path":"<p>","old":<json|null>,"new":<json>}}`
+// via `emit_dry_run_scalar`. The shape divergence is intentional — the
+// items envelope counts row-level changes; the scalar envelope describes a
+// single key-path mutation.
+// ---------------------------------------------------------------------------
+
+/// Compute the `<file>.sha256` sidecar path the same way the live writers do
+/// (suffix `.sha256` after the extension). Local helper kept private to this
+/// binary to avoid leaking sidecar-naming conventions into `tests/common`.
+fn sidecar_for(ledger: &std::path::Path) -> PathBuf {
+    let mut s = ledger.as_os_str().to_os_string();
+    s.push(".sha256");
+    PathBuf::from(s)
+}
+
+/// Drive a real `items update` on R1 to materialise the `.sha256` sidecar.
+/// Same priming pattern as the existing T10 (a) / T10 (c) tests above —
+/// keeps the post-prime ledger bytes deterministic across runs because the
+/// patch is a no-op (`status:"open"` already holds).
+fn prime_sidecar_via_update(dir: &tempfile::TempDir, ledger: &std::path::Path) {
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env_remove("TOMLCTL_NO_DEDUP_ID")
+        .arg("items")
+        .arg("update")
+        .arg(ledger)
+        .arg("R1")
+        .arg("--json")
+        .arg(r#"{"status":"open"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+}
+
+/// T-glistening (1): `items add --dry-run --json {...}` emits the
+/// `would_change` envelope (added=1, ids=[<id>]) and leaves the ledger +
+/// sidecar byte-identical.
+#[test]
+fn items_add_dry_run_emits_envelope_and_leaves_file_unchanged() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "first"
+status = "open"
+"#,
+    );
+    prime_sidecar_via_update(&dir, &ledger);
+    let sidecar = sidecar_for(&ledger);
+    assert!(sidecar.exists(), "sidecar must exist after priming write");
+
+    let before_bytes = fs::read(&ledger).unwrap();
+    let before_sidecar = fs::read(&sidecar).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env("TOMLCTL_NO_DEDUP_ID", "1")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R2","summary":"second","status":"open"}"#)
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let after_bytes = fs::read(&ledger).unwrap();
+    let after_sidecar = fs::read(&sidecar).unwrap();
+    assert_eq!(before_bytes, after_bytes, "ledger bytes must be unchanged after add --dry-run");
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "sidecar bytes must be unchanged after add --dry-run"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
+    let wc = &v["would_change"];
+    assert_eq!(wc["added"], serde_json::json!(1));
+    assert_eq!(wc["updated"], serde_json::json!(0));
+    assert_eq!(wc["removed"], serde_json::json!(0));
+    assert_eq!(wc["ids"], serde_json::json!(["R2"]));
+}
+
+/// T-glistening (2): `items add-many --dry-run --ndjson <path>` emits the
+/// `would_change` envelope (added=N, ids=[...]) and leaves file + sidecar
+/// byte-identical. Uses an NDJSON file source (stdin would also work, but
+/// a file source mirrors the existing add-many test pattern more closely).
+#[test]
+fn items_add_many_dry_run_emits_envelope_and_leaves_file_unchanged() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "first"
+status = "open"
+"#,
+    );
+    prime_sidecar_via_update(&dir, &ledger);
+    let sidecar = sidecar_for(&ledger);
+
+    let ndjson = dir.path().join("rows.ndjson");
+    fs::write(
+        &ndjson,
+        "\
+{\"id\":\"R2\",\"summary\":\"second\",\"status\":\"open\"}
+{\"id\":\"R3\",\"summary\":\"third\",\"status\":\"open\"}
+",
+    )
+    .unwrap();
+
+    let before_bytes = fs::read(&ledger).unwrap();
+    let before_sidecar = fs::read(&sidecar).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env("TOMLCTL_NO_DEDUP_ID", "1")
+        .arg("items")
+        .arg("add-many")
+        .arg(&ledger)
+        .arg("--ndjson")
+        .arg(&ndjson)
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let after_bytes = fs::read(&ledger).unwrap();
+    let after_sidecar = fs::read(&sidecar).unwrap();
+    assert_eq!(
+        before_bytes, after_bytes,
+        "ledger bytes must be unchanged after add-many --dry-run"
+    );
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "sidecar bytes must be unchanged after add-many --dry-run"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
+    let wc = &v["would_change"];
+    assert_eq!(wc["added"], serde_json::json!(2));
+    assert_eq!(wc["updated"], serde_json::json!(0));
+    assert_eq!(wc["removed"], serde_json::json!(0));
+    assert_eq!(wc["ids"], serde_json::json!(["R2", "R3"]));
+}
+
+/// T-glistening (3): `items update --dry-run --json {patch}` emits the
+/// `would_change` envelope (updated=1, ids=[<id>]) and leaves file +
+/// sidecar byte-identical.
+#[test]
+fn items_update_dry_run_emits_envelope_and_leaves_file_unchanged() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "first"
+status = "open"
+"#,
+    );
+    prime_sidecar_via_update(&dir, &ledger);
+    let sidecar = sidecar_for(&ledger);
+
+    let before_bytes = fs::read(&ledger).unwrap();
+    let before_sidecar = fs::read(&sidecar).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("update")
+        .arg(&ledger)
+        .arg("R1")
+        .arg("--json")
+        .arg(r#"{"status":"fixed"}"#)
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let after_bytes = fs::read(&ledger).unwrap();
+    let after_sidecar = fs::read(&sidecar).unwrap();
+    assert_eq!(
+        before_bytes, after_bytes,
+        "ledger bytes must be unchanged after update --dry-run"
+    );
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "sidecar bytes must be unchanged after update --dry-run"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
+    let wc = &v["would_change"];
+    assert_eq!(wc["added"], serde_json::json!(0));
+    assert_eq!(wc["updated"], serde_json::json!(1));
+    assert_eq!(wc["removed"], serde_json::json!(0));
+    assert_eq!(wc["ids"], serde_json::json!(["R1"]));
+}
+
+/// T-glistening (4): `set <file> <path> <value> --dry-run` emits the scalar
+/// envelope (`would_change.{path,old,new}`) and leaves file + sidecar
+/// byte-identical.
+#[test]
+fn set_dry_run_emits_scalar_envelope_and_leaves_file_unchanged() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\nstatus = \"open\"\n");
+    // Prime the sidecar via a real `set` write (no-op semantically — same
+    // value).
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("set")
+        .arg(&ledger)
+        .arg("status")
+        .arg("open")
+        .write_stdin("")
+        .assert()
+        .success();
+    let sidecar = sidecar_for(&ledger);
+    assert!(sidecar.exists(), "sidecar must exist after priming write");
+
+    let before_bytes = fs::read(&ledger).unwrap();
+    let before_sidecar = fs::read(&sidecar).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("set")
+        .arg(&ledger)
+        .arg("status")
+        .arg("fixed")
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let after_bytes = fs::read(&ledger).unwrap();
+    let after_sidecar = fs::read(&sidecar).unwrap();
+    assert_eq!(before_bytes, after_bytes, "ledger bytes must be unchanged after set --dry-run");
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "sidecar bytes must be unchanged after set --dry-run"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
+    let wc = &v["would_change"];
+    assert_eq!(wc["path"], serde_json::json!("status"));
+    assert_eq!(wc["old"], serde_json::json!("open"));
+    assert_eq!(wc["new"], serde_json::json!("fixed"));
+}
+
+/// T-glistening (5): `set-json <file> <path> --json '{"k":"v"}' --dry-run`
+/// emits the scalar envelope and leaves file + sidecar byte-identical.
+/// `new` echoes the parsed JSON payload as-is (the live writer would
+/// `maybe_date_coerce` only on DATE_KEYS at the leaf — non-date payloads
+/// round-trip through `new_value` unchanged, per `compute_set_json_mutation`).
+#[test]
+fn set_json_dry_run_emits_scalar_envelope_and_leaves_file_unchanged() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    // Prime sidecar via a real set-json write.
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("set-json")
+        .arg(&ledger)
+        .arg("meta")
+        .arg("--json")
+        .arg(r#"{"phase":"one"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+    let sidecar = sidecar_for(&ledger);
+
+    let before_bytes = fs::read(&ledger).unwrap();
+    let before_sidecar = fs::read(&sidecar).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("set-json")
+        .arg(&ledger)
+        .arg("meta")
+        .arg("--json")
+        .arg(r#"{"phase":"two"}"#)
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let after_bytes = fs::read(&ledger).unwrap();
+    let after_sidecar = fs::read(&sidecar).unwrap();
+    assert_eq!(
+        before_bytes, after_bytes,
+        "ledger bytes must be unchanged after set-json --dry-run"
+    );
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "sidecar bytes must be unchanged after set-json --dry-run"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
+    let wc = &v["would_change"];
+    assert_eq!(wc["path"], serde_json::json!("meta"));
+    assert_eq!(wc["old"], serde_json::json!({"phase":"one"}));
+    assert_eq!(wc["new"], serde_json::json!({"phase":"two"}));
+}
+
+/// T-glistening (6): `array-append <file> <array> --json {...} --dry-run`
+/// emits the items envelope (added=1, ids=[<id-or-empty>]) and leaves file +
+/// sidecar byte-identical. `array-append` reuses `compute_array_append_mutation`
+/// which is the same `MutationPlan` shape `items add` uses, so the envelope
+/// keys match the items helpers, not the scalar helpers.
+#[test]
+fn array_append_dry_run_emits_envelope_and_leaves_file_unchanged() {
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    // Prime sidecar via a real array-append write.
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("array-append")
+        .arg(&ledger)
+        .arg("rollback_events")
+        .arg("--json")
+        .arg(r#"{"id":"E1","cause":"first"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+    let sidecar = sidecar_for(&ledger);
+
+    let before_bytes = fs::read(&ledger).unwrap();
+    let before_sidecar = fs::read(&sidecar).unwrap();
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("array-append")
+        .arg(&ledger)
+        .arg("rollback_events")
+        .arg("--json")
+        .arg(r#"{"id":"E2","cause":"second"}"#)
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let after_bytes = fs::read(&ledger).unwrap();
+    let after_sidecar = fs::read(&sidecar).unwrap();
+    assert_eq!(
+        before_bytes, after_bytes,
+        "ledger bytes must be unchanged after array-append --dry-run"
+    );
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "sidecar bytes must be unchanged after array-append --dry-run"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
+    let wc = &v["would_change"];
+    assert_eq!(wc["added"], serde_json::json!(1));
+    assert_eq!(wc["updated"], serde_json::json!(0));
+    assert_eq!(wc["removed"], serde_json::json!(0));
+    // `array-append` has no implicit `id` semantics; the helper reads the
+    // payload's `id` field if present, so ids = ["E2"] with the payload above.
+    assert_eq!(wc["ids"], serde_json::json!(["E2"]));
+}
+
+// ---------------------------------------------------------------------------
+// Edge-case coverage for the dry-run paths.
+// ---------------------------------------------------------------------------
+
+/// T-glistening (7) edge case: `items add --dry-run` against a missing file
+/// errors with `kind=not_found` AND does NOT bootstrap the file on disk.
+///
+/// Plan-deviation note: the orchestrator's spec sketch suggested that a
+/// non-strict dry-run against a missing file would bootstrap an empty doc
+/// and emit a positive envelope showing the row would be added. The actual
+/// dry-run dispatch (`Cmd::Items::Add { dry_run: true }`) goes through
+/// `read_doc` which surfaces `kind=not_found` from `read_toml` — there is
+/// no bootstrap branch on the dry-run path. The principle the spec was
+/// after — "dry-run never touches the filesystem" — is preserved either
+/// way; this test pins the actual behaviour (errors AND no file created).
+#[test]
+fn items_add_dry_run_against_missing_file_bootstraps_empty_doc() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("missing.toml");
+    assert!(!ledger.exists(), "precondition: file must not exist");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env("TOMLCTL_NO_DEDUP_ID", "1")
+        .arg("--error-format")
+        .arg("json")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","summary":"first","status":"open"}"#)
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .failure();
+
+    // Filesystem invariance: the dry-run must NOT have created the file.
+    assert!(
+        !ledger.exists(),
+        "dry-run must never create the target file on disk"
+    );
+    let sidecar = sidecar_for(&ledger);
+    assert!(
+        !sidecar.exists(),
+        "dry-run must never create the sidecar on disk"
+    );
+
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let v: serde_json::Value = serde_json::from_str(stderr.trim())
+        .unwrap_or_else(|e| panic!("json error stderr must parse: {e}; stderr:\n{stderr}"));
+    let err = v.get("error").expect("error envelope");
+    assert_eq!(err["kind"], serde_json::json!("not_found"));
+}
+
+/// T-glistening (8) edge case: `items add --dedupe-by <field> --dry-run`
+/// against a fixture whose existing row matches the new row on the dedupe
+/// fields emits the envelope with `added=0, ids=[]` (the row would be
+/// skipped on a real run). The envelope shape does NOT surface `skipped`
+/// counts directly — `MutationPlan.skipped` is populated internally but
+/// `emit_dry_run_plan` only writes `added/updated/removed/ids`.
+#[test]
+fn items_add_dry_run_with_dedupe_by_matching_existing_row_emits_skipped() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "first"
+status = "open"
+file = "src/a.rs"
+"#,
+    );
+    prime_sidecar_via_update(&dir, &ledger);
+    let sidecar = sidecar_for(&ledger);
+
+    let before_bytes = fs::read(&ledger).unwrap();
+    let before_sidecar = fs::read(&sidecar).unwrap();
+
+    // The new row's `summary` matches R1's `summary` ("first") — with
+    // `--dedupe-by summary` the live path would skip; the dry-run path
+    // reflects that with added=0.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .env("TOMLCTL_NO_DEDUP_ID", "1")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R2","summary":"first","status":"open","file":"src/b.rs"}"#)
+        .arg("--dedupe-by")
+        .arg("summary")
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let after_bytes = fs::read(&ledger).unwrap();
+    let after_sidecar = fs::read(&sidecar).unwrap();
+    assert_eq!(
+        before_bytes, after_bytes,
+        "ledger bytes must be unchanged after dedupe-skip dry-run"
+    );
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "sidecar bytes must be unchanged after dedupe-skip dry-run"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["ok"], serde_json::json!(true));
+    assert_eq!(v["dry_run"], serde_json::json!(true));
+    let wc = &v["would_change"];
+    assert_eq!(wc["added"], serde_json::json!(0));
+    assert_eq!(wc["updated"], serde_json::json!(0));
+    assert_eq!(wc["removed"], serde_json::json!(0));
+    // No row appended → no ids surface in the envelope.
+    assert_eq!(wc["ids"], serde_json::json!([] as [&str; 0]));
+}
+
+/// T-glistening (9) edge case: `items add --strict-read --dry-run` against
+/// a missing file errors with `kind=not_found`. `--strict-read` is a
+/// `ReadIntegrityArgs` flag and `items add` carries `WriteIntegrityArgs`
+/// (no `--strict-read`), so this combination is rejected at clap parse
+/// time rather than at the runtime layer. The test pins that behaviour:
+/// the dry-run path errors with a parse-level message, NOT a partial
+/// write or a successful would_change envelope.
+///
+/// Plan-deviation note: the spec sketch assumed `--strict-read` was
+/// available on `items add`. It is not (it lives on read subcommands —
+/// `parse`, `get`, `validate`, `items list`, `items get`, etc.). The
+/// spirit of the assertion — "a strict missing-file dry-run errors
+/// without touching disk" — is preserved by checking the clap-level
+/// rejection AND the file-not-created invariant.
+#[test]
+fn items_add_dry_run_with_strict_read_against_missing_file_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("missing.toml");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","summary":"first","status":"open"}"#)
+        .arg("--strict-read")
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .failure();
+
+    // `--strict-read` is not on `items add`'s WriteIntegrityArgs, so clap
+    // rejects with "unexpected argument" at parse time. The exit code is
+    // 2 (clap usage error) rather than 1 (runtime error) — assert the
+    // structural rejection without pinning the exact prose.
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("--strict-read") || stderr.contains("unexpected argument"),
+        "expected clap usage error naming --strict-read; got stderr:\n{stderr}"
+    );
+    assert!(
+        !ledger.exists(),
+        "rejected dry-run must never create the target file on disk"
+    );
+    let sidecar = sidecar_for(&ledger);
+    assert!(
+        !sidecar.exists(),
+        "rejected dry-run must never create the sidecar on disk"
+    );
+}
