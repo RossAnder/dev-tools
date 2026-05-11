@@ -584,7 +584,13 @@ pub(crate) enum FlowOp {
         /// Auto-repair sidecar mismatches and prune stale active-flow entries.
         #[arg(long = "fix")]
         fix: bool,
-        // R7: `--json` flag dropped — `flow doctor` always emits JSON.
+        /// Accepted no-op (compat). `flow doctor` always emits JSON on stdout —
+        /// the flag exists so callers may uniformly pass `--json` across every
+        /// tomlctl subcommand without per-command special-casing. Reintroduced
+        /// after R7 inadvertently broke `flow-bootstrap`'s doctor invocation;
+        /// see `claude/agents/flow-bootstrap.md` step 4.
+        #[arg(long = "json")]
+        _json: bool,
         /// Preview `--fix` actions without writing.
         #[arg(long = "dry-run")]
         dry_run: bool,

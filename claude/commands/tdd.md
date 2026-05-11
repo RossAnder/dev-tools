@@ -23,7 +23,14 @@ further slugification. **Canonical artifacts**:
 — read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
 `context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
 flows are filtered out of scope-glob + branch-match resolution but remain targetable via
-explicit `--flow <slug>`. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
+explicit `--flow <slug>`. **Bootstrap-summary line**: after `flow-bootstrap` returns the
+envelope, the carrier MUST emit one console line before any other action —
+`flow resolved: <slug> (status=<s>, stale=<b>); doctor: <pass | fail: <N> issues | not-run: <reason>>`.
+Substitute `no flow resolved (<source>);` for the flow clause when
+`envelope.resolved.resolved == false`. Use the `not-run: <reason>` form when
+`envelope.doctor == null` (tomlctl invocation failure, skipped on no-flow, etc.) — the
+carrier proceeds without the doctor gate but the user sees the omission explicitly rather
+than silently. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
 single-line slug file is no longer consulted; the registry lives at
 `.claude/active-flow.toml` (multi-entry, gitignored per-clone state).
 <!-- SHARED-BLOCK:flow-context END -->

@@ -552,7 +552,37 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Integrity { op } => integrity_dispatch(op)?,
         Cmd::Flow { op } => crate::flow::dispatch(op)?,
-        Cmd::Json { op } => crate::json::dispatch(op)?,
+        Cmd::Json { op } => {
+            // Resolve `--json -` stdin sentinel for `json set` at the CLI
+            // boundary, mirroring TOML `set-json` / `items add` behaviour.
+            // Without this, `json::handle_set` receives the literal string
+            // `"-"` and fails with `parsing --json value `-`: EOF while
+            // parsing a value`. The plan-new / plan-update / review-plan
+            // carriers all instruct callers to write plansDirectory via the
+            // stdin-heredoc form (`cat <<'EOF' | tomlctl json set … --json -`).
+            // `read_json_arg` honours the STDIN_CONSUMED + TTY + size guards
+            // already in force across the TOML write paths.
+            let op = match op {
+                crate::cli::types::JsonOp::Set {
+                    file,
+                    path,
+                    json,
+                    dry_run,
+                    integrity,
+                } => {
+                    let json = read_json_arg(&json).context("parsing --json")?;
+                    crate::cli::types::JsonOp::Set {
+                        file,
+                        path,
+                        json,
+                        dry_run,
+                        integrity,
+                    }
+                }
+                other => other,
+            };
+            crate::json::dispatch(op)?
+        }
         Cmd::Capabilities => {
             // T7: pretty-print matches the rest of the read-path surface
             // (`parse`, `get`, `items list`) — `print_json` is the same
@@ -1511,7 +1541,7 @@ body
         expect_hash(
             &report,
             "flow-context",
-            "2757ea6f7c29b1b658a1ef9ff0015d1dbc8b5bd1e609a98f17601122cac42680",
+            "d837b01f92067bccd9c0b75531902b4bfe8669265304d73b3e4760fa2020bf82",
         );
 
         // --- 4-file ledger-schema block ---
@@ -1568,7 +1598,7 @@ body
         expect_hash(
             &report,
             "apply-constraints",
-            "e136930179c1ac9145e769eaa4389826cfa572432a5a57aba2fba6b591066509",
+            "398ea2a01f6a87b0b207ed85abfd41cae4c18ddfede0057925cc0a642b50767e",
         );
     }
 

@@ -23,7 +23,14 @@ further slugification. **Canonical artifacts**:
 — read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
 `context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
 flows are filtered out of scope-glob + branch-match resolution but remain targetable via
-explicit `--flow <slug>`. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
+explicit `--flow <slug>`. **Bootstrap-summary line**: after `flow-bootstrap` returns the
+envelope, the carrier MUST emit one console line before any other action —
+`flow resolved: <slug> (status=<s>, stale=<b>); doctor: <pass | fail: <N> issues | not-run: <reason>>`.
+Substitute `no flow resolved (<source>);` for the flow clause when
+`envelope.resolved.resolved == false`. Use the `not-run: <reason>` form when
+`envelope.doctor == null` (tomlctl invocation failure, skipped on no-flow, etc.) — the
+carrier proceeds without the doctor gate but the user sees the omission explicitly rather
+than silently. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
 single-line slug file is no longer consulted; the registry lives at
 `.claude/active-flow.toml` (multi-entry, gitignored per-clone state).
 <!-- SHARED-BLOCK:flow-context END -->
@@ -311,6 +318,11 @@ Implement the optimisation findings produced by `/optimise`. This command expect
      - Selected `O{n}` with `status = "deferred"` → **hard error**: "`O{n}` is deferred; run `/optimise` to re-open or use `/optimise`'s disposition protocol." Deferred items require a user-committed re-evaluation trigger before `/optimise-apply` may act on them.
      - Selected `O{n}` with `status ∈ {applied, wontapply}` → **console warn and skip** (idempotent no-op). Do not re-transition.
      - Selected `O{n}` not present in the ledger → report to the user and skip.
+   - **Override flags** (optional, position-independent): `$ARGUMENTS` may include `--file-budget <N>` (numeric ceiling, N ≥ 3) or `--allow-cross-file` (cap fully lifted) to override the default 3-file-per-item cap defined in `## Important Constraints` § *Hard cap*. Scope is per-invocation only — no ledger mutation, no persistent state. Two forms:
+     - **Bare** (`--file-budget 8` or `--allow-cross-file`): applies to ALL ledger items selected by this invocation.
+     - **Scoped** (`--allow-cross-file O4,O19` or `--file-budget 8 O4`): the trailing id list scopes the override to those ids only; other selected items retain the default cap.
+
+     The orchestrator MUST honour the override by emitting one extra header line per affected cluster in the agent prompt, immediately after the existing `DISPATCH:` header: `FILE-BUDGET: <N | unlimited> for <id-list>`. Items without an override are not mentioned in the header and inherit the default 3-file cap from the shared constraints block. The flags do NOT alter the lite-eligibility gate (Step 4); cross-file work continues to route to `flow-implement-deep` regardless.
 4. If $ARGUMENTS is "all", apply every item with `status = "open"` in the ledger, including suggestions.
 5. If $ARGUMENTS is "critical", apply only `status = "open"` items with `severity = "critical"`.
 6. If $ARGUMENTS is "critical,warnings", apply `status = "open"` items with `severity = "critical"` or `severity = "warning"`.
@@ -475,6 +487,8 @@ Dispatch:
 - Cluster fails ANY criterion → `subagent_type: "flow-implement-deep"` (Opus — DEFAULT; cross-file / ambiguous / security-sensitive)
 
 Record the lite-vs-deep choice as a one-line `DISPATCH:` header at the top of each agent's prompt with the rationale (e.g. `DISPATCH: flow-implement-lite — cluster passes lite-eligibility (1 file, fully-specified action, no cross-cutting impact, non-security path, no coupled deep items)` or `DISPATCH: flow-implement-deep — coupling-isolation: cluster contains item O5 (severity=critical, category=memory) which fails criterion #4`). The header is captured in the execution record for audit.
+
+When the `--file-budget <N>` / `--allow-cross-file` override (per Step 1.3 selector semantics) names any item in the cluster, emit a second one-line header immediately after `DISPATCH:`: `FILE-BUDGET: <N | unlimited> for <comma-sep id-list>`. The header lifts the shared-block 3-file cap for ONLY the listed ids; items not in the list inherit the default cap. Omit the header entirely when no item in the cluster has an override.
 
 This gate is **separate from** the critical-finding user-confirmation gate near the bottom of this command (severity=critical AND category∈{memory,query,concurrency}); that gate suppresses silent automated wontapply transitions, not lite/deep selection.
 
@@ -724,7 +738,7 @@ Because `plan-update` itself performs the 5-step flow resolution, no arguments p
 - **Preserve behaviour** — every applied change must leave the application's observable contract intact unless the finding explicitly calls for a behaviour change. If you're unsure, emit `skipped <item id>: <reason>` and let the orchestrator surface the decision.
 - **One concern per edit** — don't combine an applied finding with a refactor or style change. Keep every change attributable to a specific finding's ledger id.
 - **Apply the minimum change that resolves the cited finding.** If a broader refactor is warranted, emit `skipped <item id>: requires deliberate refactor` and let the orchestrator surface the decision rather than widening the edit.
-- **Hard cap: no more than 3 files touched per ledger item** unless the finding's `description` explicitly lists more. Cross-file refactors exceed this cap by definition and must be `skipped <item id>: cross-file refactor exceeds 3-file cap` with a refactor note.
+- **Hard cap: no more than 3 files touched per ledger item** by default. The cap is lifted when EITHER (a) the finding's `description` explicitly lists more files, OR (b) the orchestrator passes a `FILE-BUDGET: <N | unlimited> for <ids>` header in the agent prompt (set by the carrier's `--file-budget <N>` / `--allow-cross-file` invocation flags — see each carrier's Step 1.3 selector semantics). When the cap applies and an item would exceed it, emit `skipped <item id>: cross-file refactor exceeds 3-file cap (re-run with --file-budget <N> or --allow-cross-file <id> to authorise)` with a refactor note. The override is per-invocation and per-id; it lifts only the numeric file-count cap, not the "Apply the minimum change" or "One concern per edit" rules above.
 - **No auto-commit**. The orchestrator does not invoke `git commit`. `resolution` captures the change description; commit SHA is optional and backfillable by a later `/plan-update status` or manual edit.
 <!-- SHARED-BLOCK:apply-constraints END -->
 

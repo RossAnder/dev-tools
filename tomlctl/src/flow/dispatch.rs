@@ -56,6 +56,7 @@ pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
         FlowOp::Doctor {
             slug,
             fix,
+            _json: _,
             dry_run,
             integrity,
         } => crate::flow::doctor::dispatch(slug, fix, dry_run, integrity),
