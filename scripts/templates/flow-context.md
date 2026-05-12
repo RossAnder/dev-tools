@@ -59,9 +59,11 @@ Replace `<COMMAND>` with the carrier's literal command name (`review`, `optimise
 `tdd`). Replace `<PATH_ARGS_JSON>` with the carrier's path-argument projection (typically
 `$ARGUMENTS`-derived; an empty array `[]` when the carrier takes no path args).
 `<REQUIRE_ARTIFACTS>` is the carrier-specific list of artifact keys that downstream phases
-will consume (`["review_ledger"]` for `/review`, `["optimise_findings"]` for `/optimise`,
-`["execution_record"]` for `/implement`, `/plan-update`, `/tdd`, `["plan_review_findings"]`
-for `/review-plan`, `[]` for `/plan-new`).
+consume (`["execution_record"]` for `/implement`, `/plan-update`, `/tdd`; `[]` for
+`/plan-new`, `/review`, `/optimise`, `/review-plan` — these four lazily create their output
+artifacts, so the bootstrap's existence-gate at step 3.5 would halt on first run; the empty
+list short-circuits the gate while the carrier's internal "file missing → initialise" branch
+handles the absent-artifact case).
 
 ```markdown
 ## Step 0: Pre-flight (flow resolution + doctor)

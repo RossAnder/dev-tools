@@ -1,0 +1,197 @@
+schema_version = 1
+last_updated = 2026-05-12
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "verified-clean"
+id = "R1"
+file = "claude/commands/plan-new.md"
+line = 623
+symbol = "Phase 9 step 6"
+severity = "critical"
+effort = "small"
+category = "quality"
+summary = "Phase 9 step 6 writes context.toml via Write but does not run `tomlctl integrity refresh` for the sidecar — downstream --verify-integrity reads from flow-bootstrap/implement/plan-update will fail with 'sidecar missing'"
+evidence = [
+    "claude/commands/plan-new.md:269 (read-path integrity contract requires --verify-integrity on every context.toml read)",
+    "tomlctl/src/flow/init.rs:1-21 (canonical flow init writes BOTH sidecars)",
+]
+dedup_id = "bc3a18f07302357e"
+verified_note = "dissolved by R9 — manual Write for context.toml is gone; tomlctl flow init writes both sidecars atomically per tomlctl/src/flow/init.rs:8-11 — audited during /review-apply 2026-05-12"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "fixed"
+id = "R2"
+file = "scripts/templates/flow-context.md"
+line = 63
+symbol = "REQUIRE_ARTIFACTS recipe"
+severity = "critical"
+effort = "trivial"
+category = "completeness"
+summary = "Canonical mirror at scripts/templates/flow-context.md:63-64 still prescribes ['review_ledger'], ['optimise_findings'], ['plan_review_findings'] for /review, /optimise, /review-plan — disagrees with the carriers' now-cleared require_artifacts:[], creating re-introduction risk on next refactor"
+evidence = ["scripts/templates/flow-context.md:60-64"]
+dedup_id = "ba6b5cfc3612d10d"
+resolved = 2026-05-12
+resolution = "updated REQUIRE_ARTIFACTS recipe at scripts/templates/flow-context.md:61-66 — [] now documented for /review,/optimise,/review-plan,/plan-new; ['execution_record'] kept for /implement,/plan-update,/tdd"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "verified-clean"
+id = "R3"
+file = "claude/commands/plan-new.md"
+line = 595
+symbol = "Phase 9 partial-failure recovery"
+severity = "warning"
+effort = "medium"
+category = "completeness"
+summary = "Phase 9 steps 3, 6, 8 lack failure-mode/recovery prose. Worst case: step 8 (tomlctl flow active add) errors after steps 6-7 succeed, leaving a fully-written flow on disk with no active-flow registry entry — invisible to flow-bootstrap on next invocation"
+evidence = ["claude/commands/plan-new.md:595-678 (only step 7 names recovery commands)"]
+dedup_id = "c1baad43a0728345"
+verified_note = "dissolved by R9 — old steps 3,6,8 removed; tomlctl flow init is all-or-nothing with single failure point — audited during /review-apply 2026-05-12"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "verified-clean"
+id = "R4"
+file = "claude/commands/plan-new.md"
+line = 671
+symbol = "Phase 9 step 7 self-reference"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Step 7 prose says 'the existence check in step 7 will short-circuit' — step 7 IS the step containing the existence check; the self-reference is recursive and reads as if it references a different step"
+dedup_id = "c3010015d0fcb357"
+verified_note = "dissolved by R9 — old step 7 prose ('existence check in step 7 will short-circuit') removed entirely with the manual orchestration — audited during /review-apply 2026-05-12"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "fixed"
+id = "R5"
+file = "claude/commands/plan-new.md"
+line = 593
+symbol = "Phase 8 boundary prose"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Phase 8 says 'ExitPlanMode is the boundary between the read-only planning phases (1–7) and the write phase (9)' — elides Phase 8 itself from its own boundary description and omits Phase 10"
+dedup_id = "efc836911e236a1d"
+resolved = 2026-05-12
+resolution = "Phase 8 boundary prose at plan-new.md:593 now reads 'read-only planning phases (1–7) and the post-approval phases (9–10)' — Phase 8 and Phase 10 both included in the framing"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "fixed"
+id = "R6"
+file = "claude/commands/plan-new.md"
+line = 693
+symbol = "Important Constraints enumeration"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Important Constraints lists Phase 9 Bash calls as 'tomlctl integrity refresh, tomlctl flow active add' — should be 'tomlctl integrity refresh (×2 — once per TOML)' once R1 is fixed"
+dedup_id = "0442e4ea1e042168"
+resolved = 2026-05-12
+resolution = "Important Constraints bullet at plan-new.md:662 now describes Phase 9's single tomlctl flow init Bash call, replacing the legacy 'tomlctl integrity refresh + tomlctl flow active add' pair"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "verified-clean"
+id = "R7"
+file = "claude/commands/plan-new.md"
+line = 602
+symbol = "Phase 9 step 2 collision check"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Step 2 'proceed (idempotent)' branch is ambiguous re subsequent steps. Legitimate idempotent re-run halts at step 7's existence guard with 'partial completion' error, which is FALSE in the legitimate-re-run scenario"
+dedup_id = "a62d8bea99e5d7cf"
+verified_note = "dissolved by R9 — old step 2 'proceed (idempotent)' ambiguity removed; new step 2 explicitly leverages tomlctl flow init's native idempotent re-run — audited during /review-apply 2026-05-12"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "fixed"
+id = "R8"
+file = "claude/commands/plan-new.md"
+line = 593
+symbol = "Phase 8 clean-state claim"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Phase 8 'nothing persists outside the plan markdown file itself' technically discloses the plan file but framing implies cleanliness — the plan markdown survives rejection and may affect future resolver heuristics"
+dedup_id = "a4c1b14b27516be9"
+resolved = 2026-05-12
+resolution = "Phase 8 clean-state claim at plan-new.md:593 now explicitly acknowledges the plan markdown file is the only state written by Phases 1–8 and persists across rejection"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "fixed"
+id = "R9"
+file = "claude/commands/plan-new.md"
+line = 595
+symbol = "Phase 9 vs tomlctl flow init"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "Phase 9 steps 3-8 reinvent `tomlctl flow init --slug --plan --branch --worktree --scope ...` — the existing CLI handles atomic context.toml + execution-record + active-flow + BOTH sidecars + idempotent re-run in one call. Replacing the manual sequence resolves R1, R3, R6, R7 in one stroke"
+evidence = ["tomlctl/src/flow/init.rs:1-21 (canonical flow init contract)"]
+dedup_id = "c4155ee318cf36ca"
+resolved = 2026-05-12
+resolution = "replaced Phase 9 steps 3-8 manual orchestration with single tomlctl flow init invocation; new Phase 9 has 5 numbered steps (slug + sanitiser, collision check, scope + validation, branch + validation, flow init) per tomlctl/src/flow/init.rs contract — plan-new.md:595-648"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "fixed"
+id = "R10"
+file = "docs/plans/flow-tracking-overhaul.md"
+line = 75
+symbol = "stale Phase 7 reference"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "docs/plans/flow-tracking-overhaul.md:75 and :511 still call bootstrap 'Phase 7'; docs/plans/specialised-flow-agents.md:422 same. Historical plan docs, low operational impact but contradict the code"
+dedup_id = "6265bd09ec5e1229"
+resolved = 2026-05-12
+resolution = "updated three stale Phase-7 refs to Phase-9 for /plan-new bootstrap writer at docs/plans/flow-tracking-overhaul.md:75,511 and docs/plans/specialised-flow-agents.md:422; flow-tracking-overhaul.revised.md left untouched per snapshot rule"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "fixed"
+id = "R11"
+file = "claude/agents/flow-bootstrap.md"
+line = 26
+symbol = "input envelope example"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = """flow-bootstrap.md input envelope example shows 'require_artifacts: ["execution_record"]' — after three carriers changed to [], the example is no longer representative of the majority of callers"""
+dedup_id = "3fe2a644e5511d87"
+resolved = 2026-05-12
+resolution = "flow-bootstrap.md input envelope example at line 24 now shows 'require_artifacts: []' with one-line explanatory note at line 29 clarifying /implement,/plan-update,/tdd still pass ['execution_record']"
+
+[[items]]
+first_flagged = 2026-05-12
+rounds = 1
+status = "fixed"
+id = "R12"
+file = "claude/commands/plan-new.md"
+line = 595
+symbol = "Phase 9 silent gap"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "No console status marker between ExitPlanMode return and first Phase 9 write. On slow `tomlctl integrity refresh`, the user sees nothing between approval and Phase 10 — a 'bootstrapping flow <slug>...' marker would bound the silent window"
+dedup_id = "6f20bd8699a91ce3"
+resolved = 2026-05-12
+resolution = "added 'bootstrapping flow: <slug>...' console marker at top of Phase 9 (plan-new.md:599), bounding the silent window between ExitPlanMode and the first filesystem write"

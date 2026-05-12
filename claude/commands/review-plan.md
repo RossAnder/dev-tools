@@ -51,7 +51,7 @@ Input envelope (build at dispatch time):
   "branch": <git branch --show-current or null>,
   "worktree": <git rev-parse --show-toplevel or null>,
   "cwd": <pwd or null>,
-  "require_artifacts": ["plan_review_findings"],
+  "require_artifacts": [],
   "staleness_threshold": "7d"
 }
 ```

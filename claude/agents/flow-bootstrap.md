@@ -21,10 +21,12 @@ Input: a single JSON-encoded envelope passed by the caller (read it from your pr
   "path_args": [],
   "branch": "feat/x",
   "worktree": "/abs/path",
-  "require_artifacts": ["execution_record"],
+  "require_artifacts": [],
   "staleness_threshold": "7d"
 }
 ```
+
+`[]` is the common case for `/review`, `/optimise`, `/review-plan`, and `/plan-new` (those carriers lazily create their output artifacts); `/implement`, `/plan-update`, and `/tdd` pass `["execution_record"]` because they read the record before writing to it.
 
 Output: a single JSON-encoded envelope as your final message. Shape:
 

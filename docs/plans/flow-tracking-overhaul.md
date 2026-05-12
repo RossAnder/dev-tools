@@ -72,7 +72,7 @@ This plan replaces the prose-driven algorithm with deterministic `tomlctl` primi
   - `optimise.md` ~L340+
   - `optimise-apply.md` ~L319+
   - `review-apply.md` ~L319+
-  - `plan-new.md` ~L295+ (the bootstrap WRITER — Phase 7)
+  - `plan-new.md` ~L295+ (the bootstrap WRITER — Phase 9)
   - `plan-update.md` ~L294+
   - `implement.md` ~L297+
   - `review-plan.md` ~L107+
@@ -508,6 +508,6 @@ End-to-end after the full plan lands:
 
 ## Plan-mode artefacts
 
-- This file was originally written by plan-mode to `.claude/plans/stateful-greeting-sedgewick.md`, then renamed to `docs/plans/flow-tracking-overhaul.md` post-`ExitPlanMode`. The `plan_path` field in `.claude/flows/flow-tracking-overhaul/context.toml` (created during plan-new's Phase 7 bootstrap) reflects the final destination.
+- This file was originally written by plan-mode to `.claude/plans/stateful-greeting-sedgewick.md`, then renamed to `docs/plans/flow-tracking-overhaul.md` post-`ExitPlanMode`. The `plan_path` field in `.claude/flows/flow-tracking-overhaul/context.toml` (created during plan-new's Phase 9 bootstrap) reflects the final destination.
 - 3 Explore agents + 1 Plan agent dispatched during planning. Findings persisted in this file's Research Notes section.
 - Round 1 `/review-plan` (2026-05-08) produced 26 findings; 6 critical / 14 warning / 6 suggestion. All findings persisted at `.claude/flows/flow-tracking-overhaul/plan-review-findings.toml`. This document integrates fixes for all 26; original (pre-revision) text remains at `docs/plans/flow-tracking-overhaul.md` until accepted.

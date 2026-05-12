@@ -78,7 +78,7 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
    `/optimise`, invoke the `plan-update` skill with literal arg `reconcile` before
    continuing.
 
-**Carrier-specific note (`/plan-new`)**: For a fresh plan, no flow exists yet — `envelope.resolved.resolved == false` is the expected outcome and the carrier proceeds to Phase 1 (Scope & Parse) without halting. The bootstrap is still dispatched to detect the rare collision case where a pre-existing flow already matches (e.g. a `/plan-new` re-invocation on the same plan path or branch); on collision, surface `envelope.resolved.tie_candidates` and ask the user whether to resume the existing flow or proceed with a new slug. Phase 7 ("Write Plan") performs the actual flow-creation bootstrap (`context.toml` + execution-record write); the bootstrap agent does NOT create flows — it is read-only.
+**Carrier-specific note (`/plan-new`)**: For a fresh plan, no flow exists yet — `envelope.resolved.resolved == false` is the expected outcome and the carrier proceeds to Phase 1 (Scope & Parse) without halting. The bootstrap is still dispatched to detect the rare collision case where a pre-existing flow already matches (e.g. a `/plan-new` re-invocation on the same plan path or branch); on collision, surface `envelope.resolved.tie_candidates` and ask the user whether to resume the existing flow or proceed with a new slug. Phase 9 ("Bootstrap Flow") performs the actual flow-creation bootstrap (`context.toml` + execution-record write + active-flow registry entry), AFTER `ExitPlanMode` (Phase 8) so the post-approval writes are no longer blocked by plan-mode's "only edit the plan file" restriction; the bootstrap agent itself does NOT create flows — it is read-only.
 
 <!-- SHARED-BLOCK:plansdirectory-prompt START -->
 ## Step 0.5: First-use `plansDirectory` prompt (per-carrier)
@@ -493,89 +493,7 @@ Determine the plan file location:
 3. Name the file descriptively: `{feature-name}.md` (e.g., `account-lockout.md`, `auth-overhaul.md`).
 4. For large plans that will use the multi-file format, create a subdirectory: `docs/plans/{feature-name}/00-outline.md`.
 
-**Create the flow directory**: After writing the plan, create `.claude/flows/<slug>/` under the git top-level and populate it so that `/review-plan`, `/implement`, `/plan-update`, `/review`, `/optimise`, and `/optimise-apply` can locate the flow without requiring the path each time.
-
-1. **Derive the slug** per the Shared Rules: plan filename minus `.md`. For multi-file plans where `plan_path` points at `docs/plans/<feature>/00-outline.md`, the slug is the parent directory name (`<feature>`).
-
-   **Slug sanitiser (local guard, applied BEFORE any filesystem op that uses the slug)**: the derived slug MUST match the regex `^[a-z0-9][a-z0-9-]{0,63}$`. If the derived slug contains `/`, `\`, `..`, `.`, a leading `-`, or exceeds 64 characters, refuse to proceed and prompt the user via `AskUserQuestion` with: "Derived slug `<bad-slug>` is unsafe (contains path-traversal components, slashes, or exceeds 64 chars). Please provide a replacement slug matching `^[a-z0-9][a-z0-9-]{0,63}$`." Use the user-supplied replacement in place of the derived slug for all subsequent steps. This sanitiser exists because `.claude/flows/<slug>/` is path-joined in later steps; an unsanitised slug (e.g. from a plan named `..md` or a symlink trick) could escape the flows directory.
-2. **Check for slug collision**: if `.claude/flows/<slug>/` already exists, read its `context.toml` and compare `plan_path`. If it matches the plan being created, proceed (idempotent). If `plan_path` differs, prompt the user via `AskUserQuestion` to disambiguate (rename the new plan, pick a suffixed slug, or abort). Do not silently overwrite another flow's context.
-3. **Create the directory**: `.claude/flows/<slug>/` (create the parent `.claude/flows/` and `.claude/` as needed — all paths are relative to the git top-level).
-4. **Derive `scope`** from the plan document's "Affected areas" field:
-   - For each named area that is a directory, write `<dir>/**` as a glob pattern.
-   - For each named file, write the literal repo-relative path.
-   - If the "Affected areas" field is empty or nothing parseable can be extracted, prompt the user (via `AskUserQuestion`) for scope patterns before writing the TOML. `scope` must never be empty after creation.
-
-   **Scope entry validation (applied to each derived entry BEFORE writing `scope`)**: each entry MUST satisfy ALL of:
-   - Repo-relative path — MUST NOT start with `/` (absolute paths forbidden).
-   - No `..` path components anywhere in the entry (path-traversal forbidden).
-   - For directory entries, the pre-glob `<dir>` (i.e. the entry before appending `/**`) MUST exist as a directory under the repo root so the resulting glob resolves within the repo.
-
-   If any entry fails validation, refuse to write `scope` and prompt the user via `AskUserQuestion` with: "Affected-areas entry `<bad-entry>` cannot be used as a scope glob — it's outside the repo root or contains path-traversal components. Please provide a repo-relative path or remove the entry." This validation prevents a plan with `../../../` or leading `/` from producing `../../../**` or `/**` patterns in `context.toml`, which would collapse flow-resolution step 2's scope-glob matching across every flow in the repo.
-5. **Derive `branch`**: run `git branch --show-current`. If the output is a non-empty string, set `branch = "<value>"`. If the output is empty (detached HEAD, worktree oddity), **omit the `branch` key entirely** — do not write it as an empty string.
-
-   **Branch name validation (applied BEFORE writing `branch`)**: the captured value MUST match the regex `^[A-Za-z0-9._/-]+$`. Git permits branches containing control characters (e.g. a branch created via `git branch -c $'foo\nbar'` produces output with an embedded newline), which would produce malformed TOML via the `Edit`-tool fallback write path (the `tomlctl` path is safer because it routes through `toml_edit`, but the fallback is permitted and both must be robust). If the captured value fails the regex, prompt the user via `AskUserQuestion` with the observed value (rendered with control chars escaped for display) and the three choices:
-   1. Omit the `branch` field entirely — flow resolution step 3 will then skip this flow, which is a safe fallback.
-   2. Provide an override identifier — user supplies a sanitised name that matches the regex; use that in place of the git output.
-   3. Abort plan creation — halt the flow without writing `context.toml`.
-
-   Do not silently sanitise the value (e.g. by stripping control chars); the mismatch between `branch` in `context.toml` and the actual git branch would break resolution step 3's exact-match check.
-6. **Write `.claude/flows/<slug>/context.toml`**. Use today's date (ISO 8601) as an unquoted TOML date for both `created` and `updated`. `[artifacts]` paths are computed from the slug and must be persisted in the file.
-
-Initial `context.toml` (omit the `branch` line when `git branch --show-current` is empty):
-
-```toml
-slug = "<slug>"
-plan_path = "<repo-relative plan path>"
-status = "draft"
-created = <today ISO 8601 date, unquoted>
-updated = <today ISO 8601 date, unquoted>
-branch = "<current branch>"
-
-scope = ["<derived glob or path>", ...]
-
-[tasks]
-total = 0
-completed = 0
-in_progress = 0
-
-[artifacts]
-review_ledger = ".claude/flows/<slug>/review-ledger.toml"
-optimise_findings = ".claude/flows/<slug>/optimise-findings.toml"
-execution_record = ".claude/flows/<slug>/execution-record.toml"
-```
-
-7. **Bootstrap the execution record**. The execution record is the per-flow append-only log defined in the `## Execution Record Schema` shared block above; `/implement` and `/plan-update` append entries to it via `tomlctl items add`, and `tomlctl set` errors on non-existent targets. Perform **a single atomic step**:
-
-   **Pre-Write defensive guard** (the `Write` tool bypasses tomlctl's `.claude/` containment check and `.sha256` sidecar, so we enforce the invariants inline here):
-   - The target path MUST be `.claude/flows/<slug>/execution-record.toml` under the git top-level, AND `<slug>` MUST be the value that already passed the slug sanitiser in step 1. Do not skip the sanitiser and hope for the best — an unsanitised slug could escape the flows directory via `/` or `..`.
-   - The target path MUST NOT already exist on disk. Check via `[ -e <path> ]` (or equivalent) before calling `Write`; the `Write` tool truncates its target, so a pre-existing file would silently lose its contents. If the file exists, refuse and halt with the message: "Bootstrap target already exists — refusing to truncate. Did a prior bootstrap partially complete?" The user can then inspect the existing file (legitimate re-run of an idempotent bootstrap, or collision from a spoofed slug) and decide whether to remove it manually.
-   
-   Only after both checks pass, proceed with the `Write`.
-
-   **Use the `Write` tool** to create `.claude/flows/<slug>/execution-record.toml` with the literal content:
-
-   ```
-   schema_version = 1
-   last_updated = <today>
-   ```
-
-   (two lines, trailing newline; `<today>` is the same ISO 8601 date written for `created` / `updated` in `context.toml` above.) This single `Write` materialises a valid-TOML file in one filesystem operation, so the bootstrap is atomic: a concurrent writer that observes the file between this `Write` and the next `tomlctl items add` never sees a zero-byte or partial-TOML intermediate state. **Future readers / refactorers MUST NOT split this into a zero-byte `Write` followed by `tomlctl set` calls** — the legacy 3-step form was non-atomic (between steps, a concurrent reader could parse a zero-byte file as invalid TOML), and the 2-line direct `Write` was introduced specifically to close that TOCTOU window. The single-`Write` form also avoids the `tomlctl set`-on-non-existent-path error mode without re-introducing the zero-byte intermediate.
-
-   **Materialise the `.sha256` sidecar**. Immediately after the `Write` succeeds, run:
-
-   ```
-   tomlctl integrity refresh .claude/flows/<slug>/execution-record.toml
-   ```
-
-   The `Write` tool does not produce the `<file>.sha256` sidecar that tomlctl's write pipeline would, so without this step the first downstream `tomlctl items list ... --verify-integrity` call from `/implement` or `/plan-update` fails with "sidecar ... is missing". `integrity refresh` computes the digest against the just-written bytes and writes the sidecar atomically under an exclusive lock — it does NOT modify the TOML. After it succeeds, every downstream read can honour the integrity contract unconditionally. If the refresh fails (rare — the lock or sidecar write errored), halt with a surfaced error message that MUST include the exact recovery command for the user to rerun: `tomlctl integrity refresh .claude/flows/<slug>/execution-record.toml`. Do NOT leave the TOML in place if the user indicates they will re-run `/plan-new` for the same slug — `rm` the just-written TOML first, or the existence check in step 7 will short-circuit the bootstrap and leave the partial state entrenched. Downstream verify-integrity reads will fail until the sidecar is materialised, so recovery via `tomlctl integrity refresh` (not `--no-verify-integrity`) is the only path that respects the integrity contract.
-
-   Do NOT add any `[[items]]` entries here — the empty-log state (no `items` key present, or an empty `items` array) is the canonical initial state, and the first `tomlctl items add` call from `/implement` or `/plan-update` will create the `[[items]]` table-array implicitly. Refer to the `## Execution Record Schema` block for the field contract; do not duplicate the schema here.
-
-   **Verification**: confirm that the path you just bootstrapped matches the value of `[artifacts].execution_record` in the `context.toml` you wrote in step 6. They must be identical (`.claude/flows/<slug>/execution-record.toml`). If they diverge, fix `context.toml` — the `[artifacts]` paths are the authoritative resolution source for downstream commands.
-
-8. **Register the flow in the active-flow registry**: invoke `tomlctl flow active add --slug <slug> [--branch <branch>] [--worktree <worktree>] [--scope <glob>]...` to register the newly-created flow in `.claude/active-flow.toml` (the gitignored, multi-entry registry that replaced the pre-overhaul single-line `.claude/active-flow` pointer). Pass the same `branch`, `worktree`, and `scope` values that were written into `context.toml` so the registry entry mirrors the canonical flow metadata.
-
-**Reminder**: `created` is immutable from this point forward. Every command that later rewrites `context.toml` (including `/implement`, `/plan-update`, `/plan-update reconcile`) MUST preserve the value written here verbatim — never regenerate it.
+Phase 7 writes ONLY the plan markdown file — flow-directory creation and active-flow registration are deferred to Phase 9 (after `ExitPlanMode`) because plan-mode prevents the carrier from writing anywhere outside the plan file. See Phase 9 for the flow-bootstrap procedure.
 
 Write the plan using this structure:
 
@@ -668,11 +586,70 @@ Batch 3 (sequential): Task 6
 - Tasks should target 3-4 parallel agents max when grouped by dependency level
 - Group tasks into phases/waves if there are more than 8
 
-## Phase 8: Exit Plan Mode & Next Steps
+## Phase 8: Exit Plan Mode
 
 Call `ExitPlanMode` to present the plan for user approval.
 
-After the plan is approved, suggest next steps. The flow is now registered, so downstream commands resolve it automatically via the `flow-bootstrap` agent's pre-flight envelope (see `## Step 0: Pre-flight` above) — no plan path argument is required:
+`ExitPlanMode` is the boundary between the read-only planning phases (1–7) and the post-approval phases (9–10). The plan markdown file is the only state written by Phases 1–8 — it persists across rejection. No `.claude/flows/<slug>/` directory or active-flow registry entry exists yet; those are gated on plan approval and created in Phase 9. On approval, proceed to Phase 9.
+
+## Phase 9: Bootstrap Flow (after plan approval)
+
+Plan-mode write restrictions are lifted at this point — `ExitPlanMode` has returned, the user approved the plan, and the carrier may now create `.claude/flows/<slug>/` and register the flow in `.claude/active-flow.toml`. Performing the bootstrap in this phase (rather than alongside the Phase 7 plan write) is what keeps Phase 7 within plan-mode's "only edit the plan file" rule while still ensuring `/review-plan`, `/implement`, `/plan-update`, `/review`, `/optimise`, and `/optimise-apply` can locate the flow on the very next invocation.
+
+**Immediately after `ExitPlanMode` returns the user's approval, before any filesystem operation, emit one console line: `bootstrapping flow: <slug>...`** This marker gives the user a visible boundary between plan-mode and the post-approval writes, and gives any downstream log scraper a stable string to anchor on.
+
+1. **Derive the slug** per the Shared Rules: plan filename minus `.md`. For multi-file plans where `plan_path` points at `docs/plans/<feature>/00-outline.md`, the slug is the parent directory name (`<feature>`).
+
+   **Slug sanitiser (local guard, applied BEFORE invoking `tomlctl flow init`)**: the derived slug MUST match the regex `^[a-z0-9][a-z0-9-]{0,63}$`. If the derived slug contains `/`, `\`, `..`, `.`, a leading `-`, or exceeds 64 characters, refuse to proceed and prompt the user via `AskUserQuestion` with: "Derived slug `<bad-slug>` is unsafe (contains path-traversal components, slashes, or exceeds 64 chars). Please provide a replacement slug matching `^[a-z0-9][a-z0-9-]{0,63}$`." Use the user-supplied replacement in place of the derived slug for all subsequent steps. This carrier-side sanitiser mirrors the regex `tomlctl flow init` enforces internally (per `tomlctl/src/flow/init.rs`), so we surface the same prompt before the CLI rejects the value.
+2. **Check for slug collision**: if `.claude/flows/<slug>/` already exists, read its `context.toml` and compare `plan_path`. If `plan_path` matches the plan being created, proceed — `tomlctl flow init` is itself idempotent (re-running on an existing slug preserves `created` verbatim, leaves the execution record's bytes untouched, and upserts the active-flow registry entry; see `tomlctl/src/flow/init.rs`). If `plan_path` differs, prompt the user via `AskUserQuestion` to disambiguate (rename the new plan, pick a suffixed slug, or abort). Do not silently overwrite another flow's context.
+3. **Derive `scope`** from the plan document's "Affected areas" field:
+   - For each named area that is a directory, write `<dir>/**` as a glob pattern.
+   - For each named file, write the literal repo-relative path.
+   - If the "Affected areas" field is empty or nothing parseable can be extracted, prompt the user (via `AskUserQuestion`) for scope patterns before invoking `tomlctl flow init`. `scope` must never be empty after creation.
+
+   **Scope entry validation (applied to each derived entry BEFORE passing it as `--scope`)**: each entry MUST satisfy ALL of:
+   - Repo-relative path — MUST NOT start with `/` (absolute paths forbidden).
+   - No `..` path components anywhere in the entry (path-traversal forbidden).
+   - For directory entries, the pre-glob `<dir>` (i.e. the entry before appending `/**`) MUST exist as a directory under the repo root so the resulting glob resolves within the repo.
+
+   If any entry fails validation, refuse to invoke `flow init` and prompt the user via `AskUserQuestion` with: "Affected-areas entry `<bad-entry>` cannot be used as a scope glob — it's outside the repo root or contains path-traversal components. Please provide a repo-relative path or remove the entry." This validation prevents a plan with `../../../` or leading `/` from producing `../../../**` or `/**` patterns in `context.toml`, which would collapse flow-resolution step 2's scope-glob matching across every flow in the repo.
+4. **Derive `branch`**: run `git branch --show-current`. If the output is a non-empty string, pass `--branch <value>` to `tomlctl flow init`. If the output is empty (detached HEAD, worktree oddity), **omit the `--branch` flag entirely** — `flow init` will then write no `branch` key in `context.toml` (per the schema, the empty string is forbidden in its place).
+
+   **Branch name validation (applied BEFORE passing `--branch`)**: the captured value MUST match the regex `^[A-Za-z0-9._/-]+$`. Git permits branches containing control characters (e.g. a branch created via `git branch -c $'foo\nbar'` produces output with an embedded newline). If the captured value fails the regex, prompt the user via `AskUserQuestion` with the observed value (rendered with control chars escaped for display) and the three choices:
+   1. Omit `--branch` entirely — flow resolution step 3 will then skip this flow, which is a safe fallback.
+   2. Provide an override identifier — user supplies a sanitised name that matches the regex; use that as `--branch`.
+   3. Abort plan creation — halt the flow without invoking `flow init`.
+
+   Do not silently sanitise the value (e.g. by stripping control chars); the mismatch between `branch` in `context.toml` and the actual git branch would break resolution step 3's exact-match check.
+5. **Invoke `tomlctl flow init`** with the validated inputs:
+
+   ```bash
+   tomlctl flow init \
+     --slug <slug> \
+     --plan <plan_path> \
+     [--branch <branch>] \
+     [--worktree <worktree>] \
+     [--scope <glob>]...
+   ```
+
+   This single invocation atomically performs every write the bootstrap requires (see `tomlctl/src/flow/init.rs` for the authoritative contract):
+
+   - Creates `.claude/flows/<slug>/` and writes `context.toml` with the canonical schema (`slug`, `plan_path`, `status="draft"`, `created`/`updated` set to today's date, `branch` (when supplied), `scope`, `[tasks]`, and the four `[artifacts]` paths).
+   - Bootstraps `execution-record.toml` with the 2-line `schema_version = 1` / `last_updated = <today>` skeleton via the same atomic-write primitive used elsewhere.
+   - Materialises both `.sha256` sidecars (`context.toml.sha256` and `execution-record.toml.sha256`), so the first downstream `--verify-integrity` read lands on a file with a valid sidecar — no bootstrap-grace branch required.
+   - Upserts the active-flow registry entry in `.claude/active-flow.toml` with the same `branch`, `worktree`, and `scope` values.
+
+   Pass `--worktree $(git rev-parse --show-toplevel)` when the carrier has access to the worktree path (the active-flow binding needs this to disambiguate multi-clone setups); omit it otherwise.
+
+   **Idempotent re-run**: if step 2's collision check found a matching `plan_path`, `flow init` is safe to invoke unconditionally — its noop path preserves `created` verbatim, leaves the execution record's bytes untouched (refreshing its sidecar only if missing), and upserts the active-flow entry. Use this for self-healing recovery when a previous `/plan-new` invocation crashed between context-write and registry-upsert.
+
+   **Failure mode**: `flow init` is all-or-nothing — its atomicity collapses the pre-R9 multi-step bootstrap (mkdir → context Write → integrity refresh → execution-record Write → integrity refresh → `flow active add`) into one CLI invocation with a single failure point. If the call errors, surface the error verbatim and halt; the user reruns `/plan-new` once the underlying issue (disk full, permissions, lock contention) is resolved, and the idempotent re-run path picks up cleanly.
+
+**Reminder**: `created` is immutable from this point forward. Every command that later rewrites `context.toml` (including `/implement`, `/plan-update`, `/plan-update reconcile`) MUST preserve the value written here verbatim — never regenerate it. `flow init`'s noop branch encodes this invariant — a re-init does not overwrite `created`.
+
+## Phase 10: Next Steps
+
+After the flow is bootstrapped (Phase 9), suggest next steps. The flow is now registered, so downstream commands resolve it automatically via the `flow-bootstrap` agent's pre-flight envelope (see `## Step 0: Pre-flight` above) — no plan path argument is required:
 
 - **Simple plans** (≤5 tasks): *"Run `/implement` to execute."*
 - **Complex plans** (>5 tasks or novel patterns): *"Run `/review-plan` to validate, then `/implement` to execute."*
@@ -682,7 +659,7 @@ Also output the plan path and the resolved flow slug so the user has both refere
 
 ## Important Constraints
 
-- **Plan mode restrictions apply** — The main conversation can only edit the plan file. All other actions must be read-only (Glob, Grep, Read, git commands, Context7, WebSearch). Sub-agents operate in their own contexts and are not restricted by plan mode, but their prompts should instruct them to perform read-only exploration or research only — no edits.
+- **Plan mode restrictions apply (Phases 1–7)** — During Phases 1–7 the main conversation can only edit the plan markdown file. All other actions must be read-only (Glob, Grep, Read, git commands, Context7, WebSearch). Sub-agents operate in their own contexts and are not restricted by plan mode, but their prompts should instruct them to perform read-only exploration or research only — no edits. Phase 8 calls `ExitPlanMode` and Phase 9 (Bootstrap Flow) runs AFTER the user approves the plan, so its single `Bash` call (`tomlctl flow init`, which atomically writes `.claude/flows/<slug>/{context,execution-record}.toml`, both `.sha256` sidecars, and the active-flow registry entry) is no longer plan-mode-restricted. Phase 9's writes are deliberately gated on plan approval — a rejected plan leaves no `.claude/flows/<slug>/` directory or active-flow registry entry behind, so the next `/plan-new` run starts from a clean slate.
 - **Front-load complex analysis in the main conversation** — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Give agents specific exploration or research tasks, not open-ended design problems.
 - **Explore for exploration, flow-research / flow-research-deep for research, Plan for design alternatives** — Use subagent_type "Explore" for codebase navigation. For Context7/WebSearch research, default to `flow-research` (Sonnet — mechanical fetch-and-summarise) and escalate to `flow-research-deep` (Opus — judgement-licensed) when the topic requires architectural inference, library comparison, or benchmarking-driven trade-offs. The orchestrator (Opus) MUST vet `flow-research` output before persisting to `## Research Notes` (see Phase 3). Use subagent_type "Plan" for optional design-alternative generation in Phase 6.
 - **Context budget** — Cap explore agent output at ~500 words and research agent output at ~500 words / 10 findings. Persist findings to the plan file between phases as checkpoints. If context becomes constrained, use `/compact` with specific preservation instructions before continuing.
