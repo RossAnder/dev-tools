@@ -35,7 +35,7 @@ Output: a single JSON-encoded envelope as your final message. Shape:
   "ok": true,
   "resolved": {/* tomlctl flow resolve output */},
   "doctor": {/* tomlctl flow doctor output */},
-  "plans_directory": ["docs/plans/"] | null,
+  "plans_directory": "docs/plans/" | null,
   "warnings": [],
   "errors": []
 }
@@ -97,7 +97,7 @@ Run the steps below in order. Stop early on the first hard error and emit `{"ok"
 Success (resolved + doctor + plans_directory):
 
 ```json
-{"ok":true,"resolved":{"resolved":true,"slug":"feature-x","source":"active-binding","ties_broken":false,"tie_candidates":[],"context_path":".claude/flows/feature-x/context.toml","artifacts":{"review_ledger":"...","optimise_findings":"...","execution_record":"...","plan_review_findings":"..."},"plan_path":"docs/plans/feature-x.md","scope":["src/foo/**"],"branch":"feat/x","status":"in-progress","stale":{"stale":false,"age_seconds":12345,"reason":"updated within threshold"},"warnings":[]},"doctor":{"ok":true,"checks":[],"fixes_applied":[]},"plans_directory":["docs/plans/"],"warnings":[],"errors":[]}
+{"ok":true,"resolved":{"resolved":true,"slug":"feature-x","source":"active-binding","ties_broken":false,"tie_candidates":[],"context_path":".claude/flows/feature-x/context.toml","artifacts":{"review_ledger":"...","optimise_findings":"...","execution_record":"...","plan_review_findings":"..."},"plan_path":"docs/plans/feature-x.md","scope":["src/foo/**"],"branch":"feat/x","status":"in-progress","stale":{"stale":false,"age_seconds":12345,"reason":"updated within threshold"},"warnings":[]},"doctor":{"ok":true,"checks":[],"fixes_applied":[]},"plans_directory":"docs/plans/","warnings":[],"errors":[]}
 ```
 
 Version mismatch (halt at step 2):
