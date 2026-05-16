@@ -75,7 +75,7 @@ Run the steps below in order. Stop early on the first hard error and emit `{"ok"
    tomlctl json get .claude/settings.json plansDirectory --json --strict-read
    ```
 
-   - On success: parse stdout and bind the result to `plans_directory`. If the parsed value is the literal string `"__DONT_ASK__"` (the "don't ask again" sentinel), set `plans_directory` to `null`. Otherwise pass through (string or array, both shapes are valid).
+   - On success: parse stdout and bind the result to `plans_directory`. If the parsed value is the literal string `"__DONT_ASK__"` (the "don't ask again" sentinel), set `plans_directory` to `null`. If the parsed value is a string, pass it through. If the parsed value is an array (user hand-edited `.claude/settings.json` — upstream schema is string-only, but `tomlctl/src/flow/find_plans.rs` accepts arrays for back-compat), pick the first non-sentinel string element and pass it through; if the array is empty or contains only `"__DONT_ASK__"`, set `plans_directory` to `null`. The envelope's `plans_directory` field is string-only by contract (see Contract section).
    - On `kind=not_found` (the leaf `plansDirectory` key is absent or the file does not exist): set `plans_directory` to `null` and continue. Do NOT add to `errors`.
    - On any other non-zero exit: append stderr to `warnings` and set `plans_directory` to `null`.
 

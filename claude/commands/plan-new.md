@@ -86,20 +86,20 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
 Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent normalises both the unset case AND the literal `"__DONT_ASK__"` sentinel to `null` — see `flow-bootstrap.md` Contract). When non-null, skip this step entirely; the resolved value is already bound for downstream phases. The wording below is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` (per Task 17 of `docs/plans/flow-tracking-overhaul.md`); do not edit one carrier's copy without mirroring the other two — drift will surface at the next `diff` audit.
 
 1. Build the option list. Always include `docs/plans/` (recommended), `other → free-text`, and `Don't ask again`. Conditionally include `.claude/plans/` ONLY when `[ -d .claude/plans/ ]` returns true at carrier dispatch time (the option must not appear when the directory is absent — listing a non-existent target risks the user picking it).
-2. Dispatch `AskUserQuestion` as a multi-select with the option list from step 1, in the order: `docs/plans/` (recommended) → `.claude/plans/` (when included) → `other → free-text` → `Don't ask again`. Recommended-first ordering follows CLAUDE.md guidance.
-3. **Headless / `acceptEdits` empty-answer detection**: if the AUQ response is a single empty-string answer (per Claude Code issues [#29618](https://github.com/anthropics/claude-code/issues/29618), [#29547](https://github.com/anthropics/claude-code/issues/29547)), bind `plans_directory = ["docs/plans/"]` IN-MEMORY for the remainder of this carrier invocation and DO NOT persist anything — neither the array nor the sentinel. The next interactive session will re-fire this prompt because `settings.json` still lacks the key. Then proceed to step 7 (skip steps 4–6).
-4. **Arbitration rule**: if the user's selection includes `Don't ask again`, discard all other selections and write the literal string `"__DONT_ASK__"` (NOT an array). Otherwise, the selection becomes an array of the chosen path strings (preserve order).
-5. **Free-text follow-up**: if the user's selection includes `other → free-text`, dispatch a follow-up `AskUserQuestion` with a single option labelled `Enter directory path` plus the AUQ "Other" affordance to capture the user's typed value. Append the captured value to the selection array. If the follow-up returns empty (no path supplied), drop the `other` slot from the array entirely (treat as "skip — use default"); do NOT substitute `docs/plans/` here — step 7 already covers the empty-array fallback.
+2. Dispatch `AskUserQuestion` as a single-select (`multiSelect: false`) with the option list from step 1, in the order: `docs/plans/` (recommended) → `.claude/plans/` (when included) → `other → free-text` → `Don't ask again`. Recommended-first ordering follows CLAUDE.md guidance. The upstream `plansDirectory` schema (https://json.schemastore.org/claude-code-settings.json) is string-only, so the persisted value is always a single string — multi-directory configurations require manually adding a `tomlctl.plansDirectories` array to `.claude/settings.json` (see `tomlctl/src/flow/find_plans.rs` for the namespaced key's read precedence) and are out of scope for this prompt.
+3. **Headless / `acceptEdits` empty-answer detection**: if the AUQ response is an empty-string answer (per Claude Code issues [#29618](https://github.com/anthropics/claude-code/issues/29618), [#29547](https://github.com/anthropics/claude-code/issues/29547)), bind `plans_directory = "docs/plans/"` IN-MEMORY for the remainder of this carrier invocation and DO NOT persist anything — neither the string nor the sentinel. The next interactive session will re-fire this prompt because `settings.json` still lacks the key. Then proceed to step 7 (skip steps 4–6).
+4. **Arbitration rule**: if the user selected `Don't ask again`, the persisted value is the literal string `"__DONT_ASK__"`. Otherwise, the persisted value is the chosen path string.
+5. **Free-text follow-up**: if the user selected `other → free-text`, dispatch a follow-up `AskUserQuestion` with a single option labelled `Enter directory path` plus the AUQ "Other" affordance to capture the user's typed value. The persisted value is that typed string. If the follow-up returns empty (no path supplied), treat as "skip — use default" (step 7's fallback covers this case — bind in-memory only, do NOT persist); do NOT substitute `docs/plans/` here.
 6. **Persist**: write the result to `.claude/settings.json` via:
 
    ```bash
    cat <<'EOF' | tomlctl json set .claude/settings.json plansDirectory --json -
-   <JSON value: either "__DONT_ASK__" string literal OR ["dir1", "dir2", ...] array>
+   <JSON value: a single string — either "__DONT_ASK__" sentinel OR a directory path like "docs/plans/">
    EOF
    ```
 
    `tomlctl json` skips sidecar maintenance on `settings.json` per P16, so the harness's out-of-band writes (e.g. `/config`) remain compatible.
-7. Bind `plans_directory` for downstream phases: if the user selected `Don't ask again` (sentinel persisted) OR the persisted array is empty after step 5's drop, treat as `["docs/plans/"]` in-memory (the default-of-defaults). Otherwise bind the array as written. Any downstream code that consumed `envelope.plans_directory == null` should now consume this in-memory value.
+7. Bind `plans_directory` for downstream phases: if the user selected `Don't ask again` (sentinel persisted) OR the free-text follow-up returned empty (nothing persisted), treat as `"docs/plans/"` in-memory (the default-of-defaults). Otherwise bind the chosen path string as written. Any downstream code that consumed `envelope.plans_directory == null` should now consume this in-memory value.
 <!-- SHARED-BLOCK:plansdirectory-prompt END -->
 
 <!-- SHARED-BLOCK:execution-record-schema START -->
@@ -313,7 +313,7 @@ Works with:
    - Does the request bundle multiple independent concerns?
    - Propose splitting when ANY of these hold: (a) features could ship independently (no code dependency, independent success measures, reviewable separately); (b) ≥4 unrelated modules with no shared refactoring; (c) combines a refactor and a new feature.
    - When any criterion above holds, ask the user whether to split into separate plans before investing in exploration. Use AskUserQuestion for this.
-4. **Requirements check** — Clarifying questions are deferred to Phase 4 (Directed Questions), which operates on exploration and research findings. In Phase 1, only check whether the task bundles independent concerns — if so, propose splitting via `AskUserQuestion` before spending exploration budget.
+4. **Requirements check** — If the task description leaves scope or intent fundamentally unclear (e.g. unspecified target file, ambiguous feature boundary, conflicting requirements), ask now via `AskUserQuestion` before spending exploration budget — exploring the wrong area wastes the whole phase. Design-shaping questions (behaviour, edge cases, approach selection) are handled in Phase 4 after exploration grounds them in actual code; do not pre-empt them here. Also check whether the task bundles independent concerns — if so, propose splitting via `AskUserQuestion`.
 
 ## Phase 2: Explore (parallel agents)
 
@@ -411,9 +411,11 @@ Persist only post-vet findings to `## Research Notes`.
 
 ## Phase 4: Directed Questions
 
+**This phase is the designated user-engagement gate for `/plan-new`.** The user invoked `/plan-new` expecting a structured planning flow that surfaces design decisions for their input. A session-level autonomy directive ("work without stopping for clarifying questions" / "make the reasonable call and continue") does NOT apply to this phase — Phase 4 is the planned interactive checkpoint, not a discretionary pause. Run it regardless of whether autonomy mode is active.
+
 **Reason thoroughly through question synthesis.** Re-read the `## Exploration Notes` and `## Research Notes` checkpoints and identify design-shaping ambiguities that only surface after exploration and research — the kind that cannot be answered by looking at the code alone.
 
-Formulate up to 8 clarifying questions, drawn from up to five categories (target 4-6 when findings support them; zero is acceptable for a well-specified task with no ambiguity — skip categories rather than padding):
+Formulate up to 8 clarifying questions, drawn from up to five categories (target 4-6 when findings support them; producing zero questions is rare and is only justified when exploration and research left no design-shaping ambiguity AND the task description was already unambiguous on behaviour, integration, edge cases, and approach selection — skip categories rather than padding):
 
 1. **Behavioural / UX decisions** — user-facing behaviour that admits multiple reasonable defaults
 2. **Integration boundaries** — where this change meets existing modules, and which side owns what
