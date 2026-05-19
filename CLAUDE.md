@@ -43,6 +43,10 @@ Run once per feature INSIDE an existing `/plan-new` flow. Prerequisite: `/test-b
 
 Model-discoverable polyglot skill. Activates automatically when the user asks for tests ("write tests for X", "add coverage for Y", "test this function", "generate test cases", "scaffold tests"). Composed by `/tdd`'s RED phase; usable standalone. Framework detection follows a 5-step precedence: (1) target project's CLAUDE.md `<!-- TEST-BOOTSTRAP:STACK -->` marker block (highest priority — set by a prior `/test-bootstrap` run); (2) parent flow's plan-file `## Verification Commands` block; (3) repo manifest walk (Cargo.toml → pyproject/requirements → package.json → go.mod); (4) closest manifest by directory (monorepo tiebreaker); (5) halt with `"No test framework detectable. Run /test-bootstrap first."` Per-language output idioms (Rust / Python / TypeScript / Go) are documented inline in `claude/skills/test-author/SKILL.md` — there are no separate per-language reference docs to maintain.
 
+## Commit conventions
+
+**`commit-conventions`** — Model-discoverable skill that drafts commit messages and PR descriptions per the project's resolved convention (Conventional Commits, gitmoji, plain, or custom regex). Lives at `claude/skills/commit-conventions/`. Per-project config at `.claude/commit-conventions.toml`. Also invocable as `/commit`.
+
 ## Flow registry & plansDirectory
 
 The `plansDirectory` setting in `.claude/settings.json` controls where plan files are stored. It accepts either a string or an array of strings (e.g. `["docs/plans/", ".claude/plans/"]`). Note: the upstream Claude Code settings schema (`https://json.schemastore.org/claude-code-settings.json`) may define `plansDirectory` as string-only — if so, `tomlctl` stores the array under a namespaced key (`tomlctl.plansDirectories`) and reads both for back-compat. Use `tomlctl json get .claude/settings.json plansDirectory` to inspect the current value.

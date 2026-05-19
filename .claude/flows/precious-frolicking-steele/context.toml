@@ -13,8 +13,8 @@ scope = [
 
 [tasks]
 total = 8
-completed = 0
-in_progress = 8
+completed = 5
+in_progress = 3
 
 [artifacts]
 review_ledger = ".claude/flows/precious-frolicking-steele/review-ledger.toml"

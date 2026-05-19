@@ -10,3 +10,73 @@ summary = "status draft -> in-progress"
 from_status = "draft"
 to_status = "in-progress"
 dedup_id = "06a4136536fc5c7b"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "skill-md"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Authored claude/skills/commit-conventions/SKILL.md (186 lines, ~1500 words, 9 H2 sections in spec order, sentinel-token carve-out in Step 1)"
+files = ["claude/skills/commit-conventions/SKILL.md"]
+commits = ["561e4cadf2d2c113d1864b6628fd13bb724476e9"]
+status = "done"
+dedup_id = "512427c27d1a57a1"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "examples-md"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Copied sample examples.md verbatim and appended Other dialects section (gitmoji + plain) — 195 lines, 5528 bytes"
+files = ["claude/skills/commit-conventions/references/examples.md"]
+commits = ["561e4cadf2d2c113d1864b6628fd13bb724476e9"]
+status = "done"
+dedup_id = "de98a37d28d24e3e"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "detection-md"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Authored polyglot detection.md (404 lines, ~2450 words) — 8 H2 sections, 4 ecosystem H3 subsections (TS/Rust/.NET/Universal), per-tool parse routines, 4 dialect classifier regexes, TOML schema with 4 sub-tables (added [plain] sub-table beyond plan's 3)"
+files = ["claude/skills/commit-conventions/references/detection.md"]
+commits = ["561e4cadf2d2c113d1864b6628fd13bb724476e9"]
+status = "done"
+dedup_id = "2b81a9333e4b3e70"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "pr-descriptions-md"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Authored pr-descriptions.md (69 lines, ≤80 cap) — opens with H1, covers 5 topics (opener, commits, reviewer attention, Fixes #N, attribution)"
+files = ["claude/skills/commit-conventions/references/pr-descriptions.md"]
+commits = ["561e4cadf2d2c113d1864b6628fd13bb724476e9"]
+status = "done"
+dedup_id = "3c950c63cc6a9175"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "toml-example"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Authored commit-conventions.toml.example (22 lines) — parses via tomlctl, all fields have inline comments"
+files = ["claude/skills/commit-conventions/templates/commit-conventions.toml.example"]
+commits = ["561e4cadf2d2c113d1864b6628fd13bb724476e9"]
+status = "done"
+dedup_id = "f9b3c38748f398a2"
