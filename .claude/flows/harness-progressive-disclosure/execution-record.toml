@@ -112,3 +112,108 @@ original_intent = "Add a flat EnvelopeBuild variant to FlowOp per plan T5 sketch
 rationale = "clap-derive renders enum variants as single kebab tokens (envelope-build); 3-word CLI spelling tomlctl flow envelope build requires nested op pattern matching existing FlowOp::Active{op:ActiveOp}"
 commits = ["5f5ed73"]
 dedup_id = "7575026f96253c0f"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "rewrite-review-as-100-loc-skeleton"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Rewrote claude/commands/review.md from 777 LOC to 62 LOC skeleton invoking 4 contract skills + tomlctl envelope builder"
+files = ["claude/commands/review.md"]
+commits = ["561e4ca"]
+status = "done"
+dedup_id = "a1b67beea5720265"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "drop-review-from-shared-blocks-manifest"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-deep"
+summary = "Removed claude/commands/review.md from 4 block carrier lists; added migration policy comment"
+files = ["scripts/shared-blocks.toml"]
+commits = ["561e4ca"]
+status = "done"
+dedup_id = "75a97431439e1441"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-05-19
+agent = "implement"
+summary = "cargo build passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-05-19
+agent = "implement"
+summary = "cargo test passed (461 tests across 16 suites)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "eacb86b7cef7b2cc"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-05-19
+agent = "implement"
+summary = "cargo clippy passed (pre-existing unnecessary_map_or warning in capabilities.rs not introduced by this work)"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "e05412c159fa098a"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-05-19
+agent = "implement"
+summary = "shared-block parity verifier green"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "625d06aea2a91a8a"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "end-to-end-pilot-validation"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Orchestrator-side pilot validation — build/test/clippy/parity all green; structural checks on review.md passed (62 LOC, 7 headers, 0 SHARED-BLOCK markers, 4 skill references, envelope-build present); skill metadata well-formed; live /review run deferred to user"
+commits = ["f7c230f"]
+status = "done"
+dedup_id = "86a11d26a1f2e854"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "document-pilot-lessons"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Wrote PILOT-LESSONS.md with 5 required sections plus 9 propagation recommendations"
+files = ["docs/plans/harness-progressive-disclosure/PILOT-LESSONS.md"]
+commits = ["03a7def"]
+status = "done"
+dedup_id = "08df925ca6eb13a7"
+
+[[items]]
+id = "E17"
+type = "status-transition"
+date = 2026-05-19
+agent = "plan-update"
+summary = "status in-progress -> review (all 9 plan tasks done)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "94867785b805e4ec"
