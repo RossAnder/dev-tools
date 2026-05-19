@@ -80,3 +80,95 @@ files = ["claude/skills/commit-conventions/templates/commit-conventions.toml.exa
 commits = ["561e4cadf2d2c113d1864b6628fd13bb724476e9"]
 status = "done"
 dedup_id = "f9b3c38748f398a2"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "commit-slash-command"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Authored /commit slash command (83 lines, 4 phases — pre-flight / invoke skill / confirm & commit / hook-failure-handling) — cites commit-conventions 8 times, AskUserQuestion for atomicity + final confirmation"
+files = ["claude/commands/commit.md"]
+commits = ["a21988518055484b69b83d4adb53d36a76ff7339"]
+status = "done"
+dedup_id = "cf3f4fc6e0c1ef43"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "implement-md-xref"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Inserted commit-conventions cross-reference blockquote at line 444 of claude/commands/implement.md, before the Phase 2 step 5 Git checkpoint anchor — verify-shared-blocks.sh exit 0"
+files = ["claude/commands/implement.md"]
+commits = ["a21988518055484b69b83d4adb53d36a76ff7339"]
+status = "done"
+dedup_id = "cbe415b7a31ffc2e"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "claude-md-skills-section"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Added ## Commit conventions section to CLAUDE.md between ## Testing discipline and ## Flow registry & plansDirectory — single paragraph body"
+files = ["CLAUDE.md"]
+commits = ["a21988518055484b69b83d4adb53d36a76ff7339"]
+status = "done"
+dedup_id = "a83a4f1400fae91c"
+
+[[items]]
+id = "E10"
+type = "verification"
+date = 2026-05-19
+agent = "implement"
+summary = "verify-shared-blocks.sh passed"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "181d0d2f15ce304b"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-05-19
+agent = "implement"
+summary = "cargo build passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-05-19
+agent = "implement"
+summary = "cargo test passed (224 tests)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "5d1c7c8d75b6375b"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-05-19
+agent = "implement"
+summary = "cargo clippy passed (one style suggestion, non-blocking)"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "6385e2b185e522a1"
+
+[[items]]
+id = "E14"
+type = "status-transition"
+date = 2026-05-19
+agent = "plan-update"
+summary = "status in-progress -> review (all 8 tasks done, verification passed)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "b6ba62e1527e493c"

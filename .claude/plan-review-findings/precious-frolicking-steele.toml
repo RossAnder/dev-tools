@@ -1,0 +1,148 @@
+schema_version = 1
+last_updated = 2026-05-19
+round = 1
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Approach"
+anchor_old = "`tomlctl json get .claude/commit-conventions.toml dialect`"
+anchor_new = "`tomlctl get .claude/commit-conventions.toml dialect`"
+summary = "tomlctl json refuses .toml targets; use `tomlctl get`"
+dedup_id = "b689e14a6bb8b25a"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 5. Write `claude/skills/commit-conventions/templates/commit-conventions.toml.example` [S]"
+anchor_old = "File parses as valid TOML (`tomlctl json get <file> dialect` returns the value)"
+anchor_new = "File parses as valid TOML (`tomlctl get <file> dialect` returns the value)"
+summary = "Task 5 acceptance uses tomlctl json on .toml; will fail"
+dedup_id = "e620f582a312c14d"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Verification"
+anchor_old = '`tomlctl json get claude/skills/commit-conventions/templates/commit-conventions.toml.example dialect` returns `"conventional-commits"`'
+anchor_new = '`tomlctl get claude/skills/commit-conventions/templates/commit-conventions.toml.example dialect` returns `"conventional-commits"`'
+summary = "Verification step 7 uses tomlctl json on .toml; will fail"
+dedup_id = "b731aacbe5d51ba6"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Research Notes"
+anchor_old = "| `claude/skills/test-author/SKILL.md` | Model-discoverable skill, no slash command, polyglot via 5-step framework-detection precedence, references-folder pattern (`references/<topic>.md`). | Mirror the structure. Use a similar numbered precedence list for convention detection. |"
+anchor_new = "| `claude/skills/test-author/SKILL.md` | Model-discoverable skill, no slash command, polyglot via 5-step framework-detection precedence; everything inline (no `references/` folder — CLAUDE.md:44 says so explicitly). | Mirror the model-discoverability and numbered-precedence patterns. The `references/<topic>.md` IA used by this plan is borrowed from Anthropic's published skill conventions, not test-author. |"
+summary = "Research Notes falsely claims test-author uses a references/ folder"
+dedup_id = "25583590e2cfda93"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "critical"
+category = "executability"
+plan_section = "## Approach"
+anchor_old = "On approval, invoke `git commit -m <message>` using the HEREDOC form from the global CLAUDE.md commit guidance."
+anchor_new = '''On approval, invoke `git commit -F -` with the drafted message on stdin via a single-quoted bash heredoc (`git commit -F - <<'COMMIT_MSG'\n<subject>\n\n<body>\nCOMMIT_MSG`). The literal HEREDOC form is pinned here because neither `~/.claude/CLAUDE.md` nor the repo `CLAUDE.md` documents one — the pattern lives in Claude Code's built-in commit guidance.'''
+summary = "References nonexistent CLAUDE.md HEREDOC guidance; agent will fabricate"
+dedup_id = "c6add197a2b55bdf"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Research Notes"
+anchor_old = "The `implement.md` cross-reference edit must land OUTSIDE the four shared blocks present in that file (`flow-context`, `execution-record-schema`, `apply-*`, `forbidden-working-tree-ops`)."
+anchor_new = "The `implement.md` cross-reference edit must land OUTSIDE the two shared blocks present in that file (`flow-context` lines 6-36, `execution-record-schema` lines 81-266). `apply-*` lives in `optimise-apply.md` / `review-apply.md`; `forbidden-working-tree-ops` lives in `flow-implement-{deep,lite}.md`."
+summary = "implement.md has 2 shared blocks, not 4"
+dedup_id = "230f1e72961c3fce"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "executability"
+plan_section = "#### 7. Edit `claude/commands/implement.md` to cross-reference the skill [S]"
+anchor_old = "The edit MUST land outside all four `SHARED-BLOCK:*` ranges (`flow-context`, `execution-record-schema`, `apply-*`, `forbidden-working-tree-ops`). Step 5 prose is outside all of them."
+anchor_new = "The edit MUST land outside both `SHARED-BLOCK:*` ranges present in this file (`flow-context` lines 6-36, `execution-record-schema` lines 81-266). Step 5 prose at line ~444 sits well outside both."
+summary = "Task 7 detail repeats the 4-blocks-in-implement.md error"
+dedup_id = "5b60ea8c73bd31d5"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "completeness"
+plan_section = "## Verification"
+anchor_old = "Manual verification is the primary gate — there is no automated harness test for the skill markdown."
+anchor_new = "Manual verification is the primary gate; the repo's `/review` Agent 6 (package-quality lens, `claude/commands/review.md:540-557`) provides automated frontmatter/structure/trigger-coverage checks when invoked over `claude/skills/commit-conventions/` and `claude/commands/commit.md` post-merge."
+summary = "Plan denies existence of /review Agent 6 skill-quality lens"
+dedup_id = "9e439c1cf12bba22"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "completeness"
+plan_section = "### `claude/commands/commit.md` (NEW slash command)"
+anchor_old = "4. **Post-commit** — print the committed SHA."
+anchor_new = """
+4. **Hook-failure handling** — if `git commit` exits non-zero (pre-commit hook rejected), surface stderr verbatim, halt without retry, and explicitly do NOT suggest `--no-verify` if the staged set intersects `scripts/shared-blocks.toml` carriers (mirrors `/implement` Phase 2 step 5 halt protocol).
+5. **Post-commit** — print the committed SHA."""
+summary = "/commit has no hook-failure recovery path"
+dedup_id = "42e35715de5fb25a"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "completeness"
+plan_section = "### `claude/commands/commit.md` (NEW slash command)"
+anchor_old = "If the user originally ran `/commit` from inside an active flow (per `flow-bootstrap`), do NOT auto-append a `task-completion` entry — that responsibility stays with `/implement` Phase 2 step 5b. `/commit` is a manual-path command and never writes to `execution-record.toml`."
+anchor_new = 'If the user ran `/commit` from inside an active flow (detect via a cheap `tomlctl flow resolve` call in Phase 1 pre-flight), emit a warning ("active flow `<slug>` detected; commit will not appear in execution-record.toml — consider `/implement` instead") and require explicit user confirmation before proceeding. `/commit` never writes to `execution-record.toml`; the explicit warning makes the resulting commit-history vs execution-record divergence visible rather than silent.'
+summary = "Execution-record drift risk when /commit runs in an active flow"
+dedup_id = "d05ed0ccbaf7b594"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "executability"
+plan_section = "#### 6. Write `claude/commands/commit.md` [M]"
+anchor_old = "Uses `AskUserQuestion` for the atomicity-split prompt and for the final commit confirmation."
+anchor_new = "Uses `AskUserQuestion` for the atomicity-split prompt (options: `Commit anyway` → bypass gate and proceed; `Split now` → halt and instruct the user to re-stage; `Abort` → halt with no commit) and for the final commit confirmation (options: `Approve` → run `git commit -F -`; `Revise` → re-draft once based on user free-text; `Cancel` → halt). Halts surface stderr verbatim and exit cleanly; no retries beyond the single revision round."
+summary = "AskUserQuestion calls under-specified — branch behaviour undefined"
+dedup_id = "8f727fffc0f4a427"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### `CLAUDE.md` edit"
+anchor_old = "Add a brief `## Skills` subsection after the existing `## Testing discipline` section, pointing at the new skill:"
+anchor_new = "Add a `## Commit conventions` section after `## Testing discipline` (and before `## Flow registry & plansDirectory`), pointing at the new skill. The repo's other skill (`test-author`) is documented in-place under `## Testing discipline:### test-author skill` (CLAUDE.md:42-44) — leave it there rather than consolidating, since each skill is most discoverable next to its functional domain."
+summary = "## Skills heading creates inconsistent skill cataloguing"
+dedup_id = "a52ba9722fcb9bdd"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "suggestion"
+category = "risk"
+plan_section = "### SKILL.md design (the spine)"
+anchor_old = "Per-repo `<repo>/.claude/skills/` overrides `~/.claude/skills/` on naming collision (standard skill precedence)."
+anchor_new = "Per Anthropic's documented skill-loading precedence, `<repo>/.claude/skills/` overrides `~/.claude/skills/` on naming collision; verify against current Claude Code skill docs at install time. Cloned repos can therefore silently override a user-level skill — review project-level `.claude/skills/` content before first commit on a new clone (mirrors the supply-chain note in `CLAUDE.md` Developer setup)."
+summary = "Project-over-user precedence asserted without citation"
+dedup_id = "339c136ca842bd66"

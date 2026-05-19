@@ -1,0 +1,31 @@
+schema_version = 1
+
+[[active]]
+slug = "harness-progressive-disclosure"
+last_used = "2026-05-19T12:12:46.1168498Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "claude/commands/review.md",
+    "claude/skills/**",
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "scripts/shared-blocks.toml",
+    "docs/plans/harness-progressive-disclosure/**",
+]
+
+[[active]]
+slug = "precious-frolicking-steele"
+last_used = "2026-05-19T13:13:25.6117608Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "claude/skills/commit-conventions/**",
+    "claude/commands/commit.md",
+    "claude/commands/implement.md",
+    "CLAUDE.md",
+]
