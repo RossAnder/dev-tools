@@ -33,6 +33,7 @@ The highest-frequency patterns. Deeper treatment in the linked sections.
 | Delete a key at path | `tomlctl json unset <file> <path>` |
 | Manage active-flow registry | `tomlctl flow active list\|add\|remove\|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...` |
 | Pre-flight envelope (resolve + doctor + plansDirectory in one dispatch) | `Task(subagent_type: "flow-bootstrap", prompt: <input-envelope-JSON>)` ([see `claude/agents/flow-bootstrap.md`](#flow-bootstrap-agent-entrypoint)) |
+| Build the flow-bootstrap input envelope (Step-0 of every flow carrier) | `tomlctl flow envelope build --command <c> [--branch <b>] [--worktree <w>] [--cwd <p>] [--path-arg <p>]... [--require-artifact <a>]...` ([see Envelope construction](#envelope-construction--flow-envelope-build)) |
 | Run flow invariant checks (optionally auto-fix) | `tomlctl flow doctor [--slug <s>] [--fix]` |
 | Report (or bootstrap) flow artifact + sidecar status | `tomlctl flow ensure-artifact --slug <s> --kind <k> [--bootstrap]` |
 | Locate plan files | `tomlctl flow find-plans [--dirs <d>...] [--strict-read]` |
@@ -663,6 +664,25 @@ tomlctl items add-many .claude/flows/<slug>/ledger.toml \
 ```
 
 For `--json` / `--ops` / `--defaults-json` (which don't accept a file path directly), write the payload to a sibling file and pipe it in: `cat .claude/flows/<slug>/_patch.json | tomlctl … --json -`. A single-line heredoc (`<<'EOF'\n{"...":"..."}\nEOF`) is fine on Windows for one-line patches — only multi-line bodies are risky.
+
+## Envelope construction — `flow envelope build`
+
+Emit the canonical `flow-bootstrap` input envelope as JSON on stdout. Replaces the ~15 lines of inline carrier prose that hand-rolled this envelope in every flow command's Step-0 dispatch. Pure / read-only — no filesystem writes, no flow-state mutation. The emitted shape matches the `Contract` section of `claude/agents/flow-bootstrap.md` byte-for-byte; bumping that contract means bumping this subcommand in lock-step.
+
+```bash
+tomlctl flow envelope build \
+  --command review \
+  --branch "$(git branch --show-current)" \
+  --worktree "$(git rev-parse --show-toplevel)" \
+  --cwd "$(pwd)"
+# {"command":"review","flow_override":null,"path_args":[],"branch":"main","worktree":"/abs/work","cwd":"/abs/cwd","require_artifacts":[],"staleness_threshold":"7d"}
+```
+
+`--command` is required and must be one of: `review`, `optimise`, `plan-new`, `plan-update`, `implement`, `review-plan`, `tdd`, `review-apply`, `optimise-apply`, `test-bootstrap`. Unknown values are rejected with `kind=validation`.
+
+`--path-arg` and `--require-artifact` are repeatable. `--require-artifact` values are validated against the canonical artifact set (`review_ledger`, `optimise_findings`, `execution_record`, `plan_review_findings`); a typo errors with `kind=validation`. `--staleness-threshold` defaults to `"7d"`; pass another duration (`"1d"`, `"48h"`, …) when the carrier needs a tighter or looser staleness gate.
+
+`--flow-override`, `--branch`, `--worktree`, and `--cwd` are optional and round-trip as JSON `null` when omitted (rather than being dropped from the envelope — the bootstrap agent's contract expects every documented key to be present).
 
 ## Dedup fingerprint contract
 

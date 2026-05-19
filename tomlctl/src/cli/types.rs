@@ -40,6 +40,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "flow_doctor",
     "flow_init",
     "flow_ensure_artifact",
+    "flow_envelope_build",
     "flow_stale",
     "flow_find_plans",
     "json_ops",
@@ -521,6 +522,14 @@ pub(crate) enum FlowOp {
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
+    /// Build the canonical flow-bootstrap input envelope as JSON and emit
+    /// it on stdout. Replaces ~15 lines of inline carrier prose that
+    /// hand-rolled this envelope in every flow command's Step-0 dispatch.
+    /// See `claude/agents/flow-bootstrap.md` for the schema this emits.
+    Envelope {
+        #[command(subcommand)]
+        op: EnvelopeOp,
+    },
     /// Report (and optionally bootstrap) a flow artifact.
     EnsureArtifact {
         /// Flow slug whose artifact is under inspection.
@@ -668,6 +677,49 @@ pub(crate) enum ActiveOp {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+    },
+}
+
+/// `flow envelope` subcommand cluster — currently a single `build` leaf
+/// that emits the canonical `flow-bootstrap` input envelope. Lives as its
+/// own nested enum (rather than a flat `FlowOp::EnvelopeBuild` variant) so
+/// the on-CLI spelling is `tomlctl flow envelope build …` — matches the
+/// invocation form documented in the `flow-bootstrap` agent contract and
+/// the carriers' Step-0 prose.
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum EnvelopeOp {
+    /// Build the canonical flow-bootstrap input envelope as JSON and emit
+    /// it on stdout. Pure / read-only: no filesystem writes, no flow-state
+    /// mutation. Validates `--command` against the carrier whitelist and
+    /// `--require-artifact` against the canonical artifact set.
+    Build {
+        /// Carrier command this envelope is for (e.g. "review", "implement", "plan-new").
+        #[arg(long)]
+        command: String,
+        /// Optional explicit flow slug override (passed through to the bootstrap agent).
+        #[arg(long = "flow-override")]
+        flow_override: Option<String>,
+        /// Repeatable path argument; each value is appended to the envelope's
+        /// `path_args` array verbatim.
+        #[arg(long = "path-arg")]
+        path_arg: Vec<String>,
+        /// Current git branch — typically `$(git branch --show-current)`. Omit if detached HEAD.
+        #[arg(long)]
+        branch: Option<String>,
+        /// Git worktree top-level — typically `$(git rev-parse --show-toplevel)`.
+        #[arg(long)]
+        worktree: Option<String>,
+        /// Current working directory — typically `$(pwd)`.
+        #[arg(long)]
+        cwd: Option<String>,
+        /// Repeatable artifact key that must exist (review_ledger,
+        /// optimise_findings, execution_record, plan_review_findings).
+        #[arg(long = "require-artifact")]
+        require_artifact: Vec<String>,
+        /// Staleness threshold (default "7d").
+        #[arg(long = "staleness-threshold", default_value = "7d")]
+        staleness_threshold: String,
     },
 }
 

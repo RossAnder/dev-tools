@@ -8,6 +8,7 @@ mod active;
 mod artifacts;
 mod doctor;
 mod ensure_artifact;
+mod envelope;
 mod find_plans;
 mod init;
 mod list;

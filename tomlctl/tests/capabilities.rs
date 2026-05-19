@@ -1546,6 +1546,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "flow_doctor",
         "flow_init",
         "flow_ensure_artifact",
+        "flow_envelope_build",
         "flow_stale",
         "flow_find_plans",
         "json_ops",

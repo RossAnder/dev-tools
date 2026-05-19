@@ -21,3 +21,59 @@ summary = "Used 2-field skill frontmatter (name + description) instead of plan's
 original_intent = "5-field skill frontmatter: name, description, when_to_use, user-invocable, disable-model-invocation per research-derived schema"
 rationale = "On-disk truth — existing skills (claude/skills/tomlctl, claude/skills/test-author) use only name + description; when_to_use content merged into description string"
 dedup_id = "b1bfff5af6d65a97"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "create-flow-contract-flow-context-skill"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Created claude/skills/flow-contract-flow-context/SKILL.md from review.md lines 7-35"
+files = ["claude/skills/flow-contract-flow-context/SKILL.md"]
+commits = ["b96e3c5"]
+status = "done"
+dedup_id = "a5d0c0aa7e768c35"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "create-flow-contract-ledger-schema-skill"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Created claude/skills/flow-contract-ledger-schema/SKILL.md from review.md lines 82-294"
+files = ["claude/skills/flow-contract-ledger-schema/SKILL.md"]
+commits = ["b96e3c5"]
+status = "done"
+dedup_id = "ceb3832c2a0d0f78"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "create-flow-contract-vet-research-skill"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Created claude/skills/flow-contract-vet-research/SKILL.md from review.md lines 570-588"
+files = ["claude/skills/flow-contract-vet-research/SKILL.md"]
+commits = ["b96e3c5"]
+status = "done"
+dedup_id = "45b0fcba3e653a7f"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "create-flow-contract-ledger-disposition-sweep-skill"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Created claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md from review.md lines 377-417"
+files = ["claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md"]
+commits = ["b96e3c5"]
+status = "done"
+dedup_id = "4c3ecf1527ece0be"

@@ -6,7 +6,7 @@
 
 use anyhow::Result;
 
-use crate::cli::FlowOp;
+use crate::cli::{EnvelopeOp, FlowOp};
 
 pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
     match op {
@@ -29,6 +29,27 @@ pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
             dry_run,
             integrity,
         } => crate::flow::init::dispatch(slug, plan, branch, worktree, scope, dry_run, integrity),
+        FlowOp::Envelope { op } => match op {
+            EnvelopeOp::Build {
+                command,
+                flow_override,
+                path_arg,
+                branch,
+                worktree,
+                cwd,
+                require_artifact,
+                staleness_threshold,
+            } => crate::flow::envelope::dispatch(
+                command,
+                flow_override,
+                path_arg,
+                branch,
+                worktree,
+                cwd,
+                require_artifact,
+                staleness_threshold,
+            ),
+        },
         FlowOp::EnsureArtifact {
             slug,
             kind,
