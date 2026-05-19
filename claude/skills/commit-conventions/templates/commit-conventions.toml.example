@@ -1,0 +1,22 @@
+# Per-project commit-conventions config. Copy to .claude/commit-conventions.toml and edit.
+# Read by the commit-conventions skill in priority order; overrides commitlint and git-log inference.
+
+dialect = "conventional-commits"  # one of: conventional-commits, gitmoji, plain, custom
+
+[conventional-commits]
+allowed_types = ["feat", "fix", "perf", "refactor", "docs", "test", "build", "ci", "chore", "revert", "style"]  # type prefixes accepted by the conventional-commits dialect
+allowed_scopes = ["api", "auth", "db", "ui", "cli", "docs", "ci", "deps"]  # scopes accepted (when require_scope = true)
+require_scope = false  # if true, every commit must declare a scope
+require_body_for = ["feat", "perf"]  # types that always need a body
+subject_max_length = 72  # hard limit; messages exceeding this are rejected
+subject_preferred_length = 50  # soft target — skill suggests trimming above this
+body_wrap_at = 72  # column at which body paragraphs are wrapped
+ban_subjects = ["wip", "fix", "update", "changes", "stuff", "misc", "address review comments"]
+
+[gitmoji]
+# Only used when dialect = "gitmoji". Set the emoji vocabulary you allow.
+allowed_emoji = [":sparkles:", ":bug:", ":zap:", ":recycle:", ":memo:", ":white_check_mark:"]
+
+[custom]
+# Only used when dialect = "custom".
+header_regex = '^\[[A-Z]+-[0-9]+\]\s.+'  # e.g. "[PROJ-123] subject"

@@ -1,0 +1,23 @@
+slug = "precious-frolicking-steele"
+plan_path = "docs/plans/precious-frolicking-steele.md"
+status = "in-progress"
+created = 2026-05-19
+updated = 2026-05-19
+branch = "main"
+scope = [
+    "claude/skills/commit-conventions/**",
+    "claude/commands/commit.md",
+    "claude/commands/implement.md",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 8
+completed = 0
+in_progress = 8
+
+[artifacts]
+review_ledger = ".claude/flows/precious-frolicking-steele/review-ledger.toml"
+optimise_findings = ".claude/flows/precious-frolicking-steele/optimise-findings.toml"
+execution_record = ".claude/flows/precious-frolicking-steele/execution-record.toml"
+plan_review_findings = ".claude/flows/precious-frolicking-steele/plan-review-findings.toml"

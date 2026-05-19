@@ -77,3 +77,38 @@ files = ["claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md"]
 commits = ["b96e3c5"]
 status = "done"
 dedup_id = "4c3ecf1527ece0be"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-19
+agent = "implement"
+task_ref = "add-tomlctl-flow-envelope-build-subcommand"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added tomlctl flow envelope build subcommand emitting canonical flow-bootstrap input envelope as JSON"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/flow/envelope.rs",
+    "tomlctl/src/flow/dispatch.rs",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/tests/flow_envelope.rs",
+    "tomlctl/tests/capabilities.rs",
+    "claude/skills/tomlctl/SKILL.md",
+]
+commits = ["5f5ed73"]
+status = "done"
+dedup_id = "cba8fe56276b8594"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-05-19
+agent = "implement"
+task_ref = "add-tomlctl-flow-envelope-build-subcommand"
+summary = "Used nested FlowOp::Envelope{op:EnvelopeOp::Build} instead of flat FlowOp::EnvelopeBuild"
+original_intent = "Add a flat EnvelopeBuild variant to FlowOp per plan T5 sketch"
+rationale = "clap-derive renders enum variants as single kebab tokens (envelope-build); 3-word CLI spelling tomlctl flow envelope build requires nested op pattern matching existing FlowOp::Active{op:ActiveOp}"
+commits = ["5f5ed73"]
+dedup_id = "7575026f96253c0f"

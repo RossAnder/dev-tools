@@ -2,6 +2,14 @@
 # Each block must be byte-identical across all listed files.
 # Consumed by scripts/verify-shared-blocks.sh.
 #
+# Migration policy (progressive-disclosure overhaul, started 2026-05-19):
+#   Carriers are progressively externalising shared blocks into
+#   claude/skills/flow-contract-*/SKILL.md. As each carrier migrates,
+#   its entry is removed from the affected block's `files` list. When
+#   a block's `files` list becomes empty, the entire `[[block]]` entry
+#   is deleted — the verifier becomes vacuous for that contract.
+#   Pilot carrier: claude/commands/review.md (removed from 4 blocks).
+#
 # Carrier-list scope rule (re asymmetry between flow-context and
 # vet-flow-research below):
 #   - flow-context covers ONLY flow-resolving carriers — commands that
@@ -21,9 +29,9 @@
 [[block]]
 name = "flow-context"
 # Flow-resolving carriers only — see carrier-list scope rule at top of file.
+# review.md migrated to claude/skills/flow-contract-flow-context/SKILL.md (2026-05-19).
 files = [
   "claude/commands/optimise.md",
-  "claude/commands/review.md",
   "claude/commands/optimise-apply.md",
   "claude/commands/review-apply.md",
   "claude/commands/plan-new.md",
@@ -35,9 +43,9 @@ files = [
 
 [[block]]
 name = "ledger-schema"
+# review.md migrated to claude/skills/flow-contract-ledger-schema/SKILL.md (2026-05-19).
 files = [
   "claude/commands/optimise.md",
-  "claude/commands/review.md",
   "claude/commands/optimise-apply.md",
   "claude/commands/review-apply.md",
 ]
@@ -74,8 +82,8 @@ files = [
 
 [[block]]
 name = "ledger-disposition-sweep"
+# review.md migrated to claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md (2026-05-19).
 files = [
-  "claude/commands/review.md",
   "claude/commands/optimise.md",
 ]
 
@@ -97,11 +105,11 @@ files = [
 name = "vet-flow-research"
 # Includes test-bootstrap.md (a non-flow-aware carrier) — see carrier-list
 # scope rule at top of file. Asymmetry vs flow-context is intentional.
+# review.md migrated to claude/skills/flow-contract-vet-research/SKILL.md (2026-05-19).
 files = [
   "claude/commands/optimise.md",
   "claude/commands/plan-new.md",
   "claude/commands/plan-update.md",
-  "claude/commands/review.md",
   "claude/commands/review-plan.md",
   "claude/commands/test-bootstrap.md",
 ]

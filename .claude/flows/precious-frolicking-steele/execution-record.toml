@@ -1,0 +1,12 @@
+schema_version = 1
+last_updated = 2026-05-19
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-19
+agent = "implement"
+summary = "status draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "06a4136536fc5c7b"
