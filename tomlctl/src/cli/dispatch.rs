@@ -1395,9 +1395,10 @@ body
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
         let cmd_dir = repo_root.join("claude").join("commands");
-        let flow_context_eight = [
+        // review.md migrated to claude/skills/flow-contract-* (2026-05-19) —
+        // removed from flow_context and ledger_schema carrier lists.
+        let flow_context_seven = [
             cmd_dir.join("optimise.md"),
-            cmd_dir.join("review.md"),
             cmd_dir.join("optimise-apply.md"),
             cmd_dir.join("review-apply.md"),
             cmd_dir.join("plan-new.md"),
@@ -1405,9 +1406,8 @@ body
             cmd_dir.join("implement.md"),
             cmd_dir.join("review-plan.md"),
         ];
-        let ledger_schema_four = [
+        let ledger_schema_three = [
             cmd_dir.join("optimise.md"),
-            cmd_dir.join("review.md"),
             cmd_dir.join("optimise-apply.md"),
             cmd_dir.join("review-apply.md"),
         ];
@@ -1424,8 +1424,8 @@ body
         // Only run when every file is present. The test crate is consumable
         // in isolation; degrade gracefully if someone packages it without
         // the command tree.
-        if !flow_context_eight.iter().all(|p| p.exists())
-            || !ledger_schema_four.iter().all(|p| p.exists())
+        if !flow_context_seven.iter().all(|p| p.exists())
+            || !ledger_schema_three.iter().all(|p| p.exists())
             || !execution_record_three.iter().all(|p| p.exists())
         {
             eprintln!(
@@ -1531,9 +1531,9 @@ body
             panic!("{msg}");
         };
 
-        // --- 8-file flow-context block ---
+        // --- 7-file flow-context block (post review.md migration) ---
         let report = blocks_verify(
-            &flow_context_eight,
+            &flow_context_seven,
             &["flow-context".to_string()],
         )
         .unwrap();
@@ -1544,9 +1544,9 @@ body
             "d837b01f92067bccd9c0b75531902b4bfe8669265304d73b3e4760fa2020bf82",
         );
 
-        // --- 4-file ledger-schema block ---
+        // --- 3-file ledger-schema block (post review.md migration) ---
         let report = blocks_verify(
-            &ledger_schema_four,
+            &ledger_schema_three,
             &["ledger-schema".to_string()],
         )
         .unwrap();
