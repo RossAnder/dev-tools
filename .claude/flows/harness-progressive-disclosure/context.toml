@@ -1,0 +1,25 @@
+slug = "harness-progressive-disclosure"
+plan_path = "docs/plans/harness-progressive-disclosure.md"
+status = "in-progress"
+created = 2026-05-19
+updated = 2026-05-19
+branch = "main"
+scope = [
+    "claude/commands/review.md",
+    "claude/skills/**",
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "scripts/shared-blocks.toml",
+    "docs/plans/harness-progressive-disclosure/**",
+]
+
+[tasks]
+total = 9
+completed = 0
+in_progress = 4
+
+[artifacts]
+review_ledger = ".claude/flows/harness-progressive-disclosure/review-ledger.toml"
+optimise_findings = ".claude/flows/harness-progressive-disclosure/optimise-findings.toml"
+execution_record = ".claude/flows/harness-progressive-disclosure/execution-record.toml"
+plan_review_findings = ".claude/flows/harness-progressive-disclosure/plan-review-findings.toml"

@@ -1,0 +1,23 @@
+schema_version = 1
+last_updated = 2026-05-19
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-19
+agent = "implement"
+summary = "status draft → in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "2fb725502d5439ab"
+
+[[items]]
+id = "E2"
+type = "deviation"
+date = 2026-05-19
+agent = "implement"
+task_ref = "flow-contract-skill-frontmatter"
+summary = "Used 2-field skill frontmatter (name + description) instead of plan's 5-field design"
+original_intent = "5-field skill frontmatter: name, description, when_to_use, user-invocable, disable-model-invocation per research-derived schema"
+rationale = "On-disk truth — existing skills (claude/skills/tomlctl, claude/skills/test-author) use only name + description; when_to_use content merged into description string"
+dedup_id = "b1bfff5af6d65a97"
