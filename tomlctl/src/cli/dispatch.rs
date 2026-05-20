@@ -1397,7 +1397,7 @@ body
         let cmd_dir = repo_root.join("claude").join("commands");
         // review.md migrated to claude/skills/flow-contract-* (2026-05-19) —
         // removed from flow_context and ledger_schema carrier lists.
-        let flow_context_seven = [
+        let flow_context_eight = [
             cmd_dir.join("optimise.md"),
             cmd_dir.join("optimise-apply.md"),
             cmd_dir.join("review-apply.md"),
@@ -1405,16 +1405,18 @@ body
             cmd_dir.join("plan-update.md"),
             cmd_dir.join("implement.md"),
             cmd_dir.join("review-plan.md"),
+            cmd_dir.join("tdd.md"),
         ];
         let ledger_schema_three = [
             cmd_dir.join("optimise.md"),
             cmd_dir.join("optimise-apply.md"),
             cmd_dir.join("review-apply.md"),
         ];
-        let execution_record_three = [
+        let execution_record_four = [
             cmd_dir.join("plan-new.md"),
             cmd_dir.join("plan-update.md"),
             cmd_dir.join("implement.md"),
+            cmd_dir.join("tdd.md"),
         ];
         let apply_pair = [
             cmd_dir.join("optimise-apply.md"),
@@ -1424,9 +1426,9 @@ body
         // Only run when every file is present. The test crate is consumable
         // in isolation; degrade gracefully if someone packages it without
         // the command tree.
-        if !flow_context_seven.iter().all(|p| p.exists())
+        if !flow_context_eight.iter().all(|p| p.exists())
             || !ledger_schema_three.iter().all(|p| p.exists())
-            || !execution_record_three.iter().all(|p| p.exists())
+            || !execution_record_four.iter().all(|p| p.exists())
         {
             eprintln!(
                 "blocks_verify_reproduces_shell_hashes: command files not found, skipping"
@@ -1531,9 +1533,9 @@ body
             panic!("{msg}");
         };
 
-        // --- 7-file flow-context block (post review.md migration) ---
+        // --- 8-file flow-context block (post review.md migration, incl. tdd.md) ---
         let report = blocks_verify(
-            &flow_context_seven,
+            &flow_context_eight,
             &["flow-context".to_string()],
         )
         .unwrap();
@@ -1557,9 +1559,9 @@ body
             "cedae069af297e08e925b393b53a0cc664c8be6d86df9a3fd2a38a902a17ad08",
         );
 
-        // --- 3-file execution-record-schema block ---
+        // --- 4-file execution-record-schema block (incl. tdd.md) ---
         let report = blocks_verify(
-            &execution_record_three,
+            &execution_record_four,
             &["execution-record-schema".to_string()],
         )
         .unwrap();

@@ -13,8 +13,8 @@ After the ledger loads and before the dispatch section, walk every `[[items]]` e
 For each orphan, emit a one-line console note in Step 3's report:
 
 ```
-orphan <id>7 — file `src/old-module.rs` no longer present (check for rename; run the active flow command if the work has moved)
-orphan <id>12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run the active flow command at the new location)
+orphan R7 — file `src/old-module.rs` no longer present (check for rename; run the active flow command if the work has moved)
+orphan R12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run the active flow command at the new location)
 ```
 
 Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above.

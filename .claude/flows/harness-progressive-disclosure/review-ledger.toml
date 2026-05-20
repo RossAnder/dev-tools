@@ -1,0 +1,496 @@
+schema_version = 1
+last_updated = 2026-05-20
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R1"
+file = "claude/commands/review.md"
+line = 28
+symbol = "Step 0 envelope dispatch"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Carrier instructs --flow but tomlctl flag is --flow-override"
+description = "review.md:28 says 'Pass --flow <slug> when the user supplied --flow'. The actual tomlctl flag is --flow-override; passing --flow errors with 'unexpected argument found'. Guaranteed failure whenever a user names a flow. Confirmed live in this /review run (the orchestrator hit the error and had to retry with --flow-override). Carrier-to-CLI prose drift of exactly the kind the pilot risks."
+flow = "harness-progressive-disclosure"
+dedup_id = "fdc6854137b20ee5"
+resolved = 2026-05-20
+resolution = "review.md:28 — tomlctl invocation flag corrected --flow to --flow-override (user still types --flow)"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "deferred"
+id = "R2"
+file = "claude/commands/review.md"
+line = 28
+symbol = "Step 0 staleness reconciliation"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "invoke the plan-update skill references a nonexistent skill"
+description = "review.md:28 says 'invoke the plan-update skill with literal arg reconcile'. There is no claude/skills/plan-update/; plan-update is a slash command (claude/commands/plan-update.md). The staleness-reconcile path will fail to find a skill body. Flagged by quality, completeness, and package-quality lenses. Fix: 'invoke /plan-update reconcile' (a command). The flow-contract-flow-context skill body also omits this directive entirely."
+flow = "harness-progressive-disclosure"
+dedup_id = "6752dfc3e021968c"
+defer_reason = "User wants to rework the staleness-reconcile / plan-update invocation separately, not as part of this apply batch."
+defer_trigger = "When the staleness-reconcile path (review.md:28 plan-update directive) is reworked."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R3"
+file = "claude/commands/review.md"
+line = 0
+symbol = "scope/flow resolution"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Flow resolution should present freshest-flow options when multiple flows are fresh"
+description = "Flow detection has been painful with multiple active flows. Two concrete problems seen this run: (1) a bare arg that is itself a flow slug (harness-progressive-disclosure) was fed only as --path-arg, so bootstrap resolved via active-latest and silently picked the WRONG flow (precious-frolicking-steele); the orchestrator had to re-resolve manually with --flow-override. (2) active-latest auto-picks the most-recently-used flow with no user visibility. User preference (standing): when more than one flow is fresh (within the staleness threshold), the resolver MUST present the freshest candidates as options for the user to choose, rather than silently auto-picking one. Also: if a path token exactly matches a registered flow slug, treat it as --flow-override. This likely belongs in tomlctl flow resolve / flow-bootstrap (ties_broken / tie_candidates already exist in the envelope) and the carrier Step-0 prose."
+flow = "harness-progressive-disclosure"
+dedup_id = "2755b2294368e34d"
+resolved = 2026-05-20
+resolution = "review.md Step 1 routes an arg matching a registered flow slug to --flow-override; flow-bootstrap.md step 3 surfaces tie_candidates/ties_broken when >1 fresh flow and no override. tomlctl resolve-algorithm chooser deferred to propagation follow-up (tracked in R23 checklist)."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R4"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 1400
+symbol = "flow_context_seven"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Rust parity fixtures omit tdd.md, drifting from shared-blocks.toml"
+description = "flow_context_seven (dispatch.rs:1400-1408) lists 7 carriers and omits tdd.md; shared-blocks.toml flow-context lists 8 incl tdd.md (line 41), and tdd.md:6 carries the block. Same for execution_record_three (1414-1418, 3 carriers) vs the manifest's 4 (line 59); tdd.md:81 carries that block too. The in-Rust oracle is a second hand-maintained copy of the manifest that has drifted, so tdd.md block drift would not surface via cargo test. The bash verifier (authoritative pre-commit gate) does cover tdd.md, so this is a secondary-oracle coverage gap, not a live correctness hole. Fix: load fixtures from shared-blocks.toml at test time."
+flow = "harness-progressive-disclosure"
+dedup_id = "6cb414dbed66d031"
+resolved = 2026-05-20
+resolution = "cli/dispatch.rs — added tdd.md to flow_context (renamed _seven to _eight) and execution_record (_three to _four) parity fixtures + guards/call sites; parity test green"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "wontfix"
+id = "R5"
+file = "scripts/verify-shared-blocks.sh"
+line = 42
+symbol = "manifest-driven verifier"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "No parity check between externalised skill bodies and still-embedded carrier copies"
+description = "verify-shared-blocks.sh derives (block,file) pairs solely from shared-blocks.toml; skill paths never enter the pipeline. Each migrated block now lives both in a flow-contract-* skill AND embedded in 1-8 un-migrated carriers, with nothing asserting they stay byte-identical. During the multi-PR migration window a fix to an embedded copy (or the skill) silently diverges. PILOT-LESSONS recommends a verify-against-skill check; deferred, not implemented."
+flow = "harness-progressive-disclosure"
+dedup_id = "f3d1dee38bc22fd0"
+wontfix_rationale = "New verify-against-skill parity check is a feature on the unsandboxed supply-chain pre-commit hook. Skill bodies use YAML frontmatter (not SHARED-BLOCK markers), so a correct check needs a shared-blocks.toml schema addition (skill= field, only 4 of 11 blocks externalised, non-derivable block-to-skill names), frontmatter-stripping extraction, and a whitespace-normalisation rule — each a false-positive/commit-rejection risk mid-migration. Recommend a dedicated plan, ideally a tested tomlctl blocks verify Rust pass rather than extending the awk script. Bodies confirmed byte-identical today."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R6"
+file = "docs/plans/harness-progressive-disclosure/PILOT-LESSONS.md"
+line = 59
+symbol = "skill-invocation mechanism"
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "Skill-invocation mechanism has no automated test (partially validated live this run)"
+description = "The carrier-to-skill binding is natural-language prose (Invoke the X skill); PILOT-LESSONS flags as the #1 unvalidated risk that nothing guarantees the body loads at the right phase, and propagation MUST NOT proceed until validated. UPDATE from this run: the mechanism demonstrably worked end-to-end here. The orchestrator loaded flow-contract-flow-context, -ledger-schema, -ledger-disposition-sweep, and -vet-research at their correct phase boundaries. This validates the core thesis once, but it remains untestable by the CLI toolchain (a model-behaviour property). Recommend recording this run as the validation evidence and adding a fixture-based smoke check before propagation."
+flow = "harness-progressive-disclosure"
+dedup_id = "180181b8f5d36c6c"
+resolved = 2026-05-20
+resolution = "PILOT-LESSONS — appended dated 2026-05-20 live-validation note (skill-invocation mechanism loaded all 4 contract skills at correct phases); retained smoke-check recommendation"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R7"
+file = "tomlctl/src/flow/envelope.rs"
+line = 86
+symbol = "dispatch"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "path_args/branch/worktree/cwd emitted unvalidated; scope-safety invariant unenforced at CLI"
+description = "dispatch validates --command and --require-artifact against whitelists but emits path_args, branch, worktree, cwd verbatim into the JSON envelope consumed by the flow-bootstrap sub-agent as its prompt. The carrier (review.md:32) claims a scope-safety invariant (reject .. traversal, refuse absolute paths, cap glob breadth) but that lives only as model-instruction prose, not a structural CLI guarantee. path_args is highest-risk (carries user $ARGUMENTS tokens). Add .. / absolute-path rejection and a length cap in dispatch, mirroring the existing whitelist pattern; add a traversal-rejection test."
+flow = "harness-progressive-disclosure"
+dedup_id = "1a1c6364e1f6c2aa"
+resolved = 2026-05-20
+resolution = "envelope.rs — path_args validated before envelope build: reject .. traversal segments (both separators), absolute/drive-letter paths, and >512-char tokens via tagged_err(Validation)"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R8"
+file = "tomlctl/src/flow/envelope.rs"
+line = 55
+symbol = "dispatch"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "staleness_threshold accepted as freeform string with no format validation"
+description = "--staleness-threshold (default 7d) is echoed verbatim into the envelope with no check against the documented <n>{s|m|h|d|w} grammar that flow stale enforces. Malformed values (banana, 0, a pathologically long string) reach the downstream agent as an instruction parameter, deferring failure to a less-diagnosable layer. Quick win: add a ^[0-9]+[smhdw]$ value_parser and document the format in --help."
+flow = "harness-progressive-disclosure"
+dedup_id = "75745555e30ec415"
+resolved = 2026-05-20
+resolution = "envelope.rs — staleness_threshold validated against <n>{s|m|h|d|w} via manual ASCII char scan (no regex dep added)"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R9"
+file = "claude/skills/flow-contract-vet-research/SKILL.md"
+line = 22
+symbol = "ledger-schema cross-reference"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Stale SHARED-BLOCK:ledger-schema cross-reference in skill body"
+description = "Line 22 reads 'See SHARED-BLOCK:ledger-schema -> Vet event log'. The SHARED-BLOCK marker notation was the pre-extraction in-carrier convention; when this skill is loaded standalone in /review there is no such marker in context. Replace with 'See the flow-contract-ledger-schema skill -> Vet event log section'."
+flow = "harness-progressive-disclosure"
+dedup_id = "4ae0c13be8425c64"
+resolved = 2026-05-20
+resolution = "flow-contract-vet-research/SKILL.md:22 — replaced SHARED-BLOCK:ledger-schema marker ref with direct flow-contract-ledger-schema skill ref"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R10"
+file = "claude/skills/flow-contract-ledger-schema/SKILL.md"
+line = 134
+symbol = "vet-flow-research cross-reference"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Stale SHARED-BLOCK:vet-flow-research cross-reference in skill body"
+description = "Line 134 says 'see SHARED-BLOCK:vet-flow-research in those carriers vet sections'. Post-migration that marker is absent from /review's context. Replace with a direct reference to the flow-contract-vet-research skill."
+flow = "harness-progressive-disclosure"
+dedup_id = "f01e12937603132a"
+resolved = 2026-05-20
+resolution = "flow-contract-ledger-schema/SKILL.md:134 — replaced SHARED-BLOCK:vet-flow-research marker ref with direct flow-contract-vet-research skill ref"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R11"
+file = "claude/skills/flow-contract-ledger-schema/SKILL.md"
+line = 8
+symbol = "embedded-verbatim prose"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Skill asserts it is embedded verbatim into review.md, which it no longer is"
+description = "Line 8: 'This section is embedded verbatim into review.md, review-apply.md, optimise.md, and optimise-apply.md'. Post-migration review.md carries zero SHARED-BLOCK markers. The same stale claim appears in the flow-contract-ledger-disposition-sweep description ('Embedded into review/optimise/...'). Faithful verbatim extraction preserved the stale sentence; fix in a content pass: drop review.md from the embedder list (and add a note that it is now the source)."
+flow = "harness-progressive-disclosure"
+dedup_id = "a2d03b549733e5f5"
+resolved = 2026-05-20
+resolution = "flow-contract-ledger-schema/SKILL.md:3,8 — corrected stale embedder list (dropped review.md; declared this skill canonical, copies remain in review-apply/optimise/optimise-apply pending migration)"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R12"
+file = "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md"
+line = 13
+symbol = "orphan console-line example"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Orphan example shows mangled <id>7 / <id>12 placeholders"
+description = "Lines 13-17 emit 'orphan <id>7 — file ...' and 'orphan <id>12 — symbol ...'. The <id> placeholder has stray digits glued on (originally R7/R12). A model rendering the one-line note may copy <id>7 literally into console output. Fix the example to 'orphan R7 — ...' / 'orphan R12 — ...'."
+flow = "harness-progressive-disclosure"
+dedup_id = "346c917cef17a6cd"
+resolved = 2026-05-20
+resolution = "flow-contract-ledger-disposition-sweep/SKILL.md:16-17 — orphan example placeholders <id>7/<id>12 changed to concrete R7/R12"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "wontfix"
+id = "R13"
+file = "tomlctl/src/flow/envelope.rs"
+line = 24
+symbol = "VALID_COMMANDS"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "VALID_COMMANDS is a third hand-maintained carrier list with no cross-check"
+description = "The 10-command whitelist (envelope.rs:24-35) duplicates the carrier enumeration also encoded in shared-blocks.toml and the dispatch.rs parity fixtures, with no test pinning it against flow-bootstrap.md. Adding/renaming a carrier requires synced edits across all copies — the same duplicate-state problem the refactor exists to reduce (and R4 already shows the fixtures drifted). Consider a single source consumed by all."
+flow = "harness-progressive-disclosure"
+dedup_id = "8135397075524b99"
+wontfix_rationale = "Single-source-of-truth refactor spans shared-blocks.toml + test fixtures. VALID_COMMANDS (10, incl test-bootstrap/optimise-apply/review-apply) is intentionally neither equal to nor a subset of any single manifest list (flow-context excludes test-bootstrap by design), so no cheap correct manifest-pin exists. Needs dedicated cross-file work."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R14"
+file = "claude/commands/review.md"
+line = 24
+symbol = "git branch --show-current"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Detached HEAD yields --branch empty-string, not omitted"
+description = """Step-0 passes --branch "$(git branch --show-current)" unconditionally; in detached HEAD that expands to --branch "", so the envelope records branch:"" rather than branch:null. types.rs:707 doc-comment says 'Omit if detached HEAD', acknowledging the case, but the carrier never omits. flow-bootstrap / flow resolve may treat empty-string vs null differently. Guard the flag or document the contract."""
+flow = "harness-progressive-disclosure"
+dedup_id = "4eca941152361f01"
+resolved = 2026-05-20
+resolution = "review.md — added detached-HEAD note: omit --branch when git branch --show-current is empty so envelope records null not empty-string"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R15"
+file = "docs/plans/harness-progressive-disclosure.md"
+line = 178
+symbol = "Approach frontmatter/skeleton spec"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Plan spec contradicts shipped reality (frontmatter, desc budget, Phase vs Step headings)"
+description = "The plan still specifies a 5-field skill frontmatter (when_to_use, user-invocable:false, disable-model-invocation) and a <=150-char description budget, and uses ## Phase N skeleton headings. Shipped skills use a 2-field name+description schema with ~500-1500-char descriptions (deviation logged in PILOT-LESSONS), and review.md uses ## Step N. Propagation authors reading the plan as the spec will follow stale guidance. Back-propagate the corrections into the plan."
+flow = "harness-progressive-disclosure"
+dedup_id = "9b0ddd7ee0d31f1a"
+resolved = 2026-05-20
+resolution = "plan.md Approach — added post-pilot Spec corrections note (2-field frontmatter, ~500-1500 char descriptions, Step-vs-Phase headers) as additive note preserving historical spec"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R16"
+file = "tomlctl/tests/flow_envelope.rs"
+line = 130
+symbol = "flow_envelope_build_rejects_unknown_command"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Tests assert exit 1 but plan T5 specified exit 2 for validation errors"
+description = "Plan T5 Detail states invalid --command -> exit 2. Tests at lines 130 and 166 assert .code(1) (the anyhow/tagged_err Validation path). Either the exit-2 requirement was dropped (then document the deviation in PILOT-LESSONS alongside E2/E8) or the tests mispin the code. Currently undocumented."
+flow = "harness-progressive-disclosure"
+dedup_id = "a674eb2f9603ba92"
+resolved = 2026-05-20
+resolution = "flow_envelope.rs — added test-side comments at both .code(1) assertions explaining exit 1 is the intentional ErrorKind::Validation/anyhow convention (plan T5 exit-2 superseded); source unchanged"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "verified-clean"
+id = "R17"
+file = "tomlctl/src/flow/envelope.rs"
+line = 82
+symbol = "json! envelope build"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Envelope hand-built via json! rather than the typed struct plan T5 specified"
+description = "Plan T5 specified a typed Rust struct so the schema is structurally guaranteed by the type system; the impl builds a serde_json::json! object (defensible: preserve_order + explicit null rendering). Consequence: agreement between this emitter and the flow-bootstrap consumer contract is enforced only by flow_envelope.rs's key-set assertion, not the compiler. Either adopt the struct or document the deliberate deviation."
+flow = "harness-progressive-disclosure"
+dedup_id = "3f8be489d5c5cea9"
+verified_note = "serde_json::json! is intentional and documented at envelope.rs:82 (field order byte-for-byte + Option fields render as explicit null); a typed struct would regress both. No bytes written — audited during /review-apply 2026-05-20"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R18"
+file = "tomlctl/tests/flow_envelope.rs"
+line = 44
+symbol = "key-order assertion"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Key SET asserted via sorted compare; documented byte-order never asserted"
+description = "Line 44 sorts keys before comparing, pinning the key set but not insertion order. envelope.rs:10-14 promises field order matches the schema doc byte-for-byte (preserve_order engaged). No test asserts the raw byte/field order, so a future drop of preserve_order would silently break the documented contract. Add a literal-string ordered-output assertion, or drop the byte-order promise from the doc-comment."
+flow = "harness-progressive-disclosure"
+dedup_id = "72fda3cbe4cebce5"
+resolved = 2026-05-20
+resolution = "flow_envelope.rs — added raw-stdout field-ORDER assertion over documented key order; kept existing key-set assertion"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R19"
+file = "tomlctl/tests/capabilities.rs"
+line = 1624
+symbol = "R44 help-surface pattern"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "No --help flag-surface test for flow envelope build"
+description = "capabilities.rs has a systematic R44 pattern pinning each subcommand's flags via --help assertions. flow envelope build is absent: no test invokes 'tomlctl flow envelope build --help' to confirm --command/--path-arg/--require-artifact/--staleness-threshold appear. The feature token is listed at line 1549 but that only confirms existence, not the documented flag surface."
+flow = "harness-progressive-disclosure"
+dedup_id = "e2b9db713c288265"
+resolved = 2026-05-20
+resolution = "capabilities.rs — added flow envelope build --help flag-surface test (R44 pattern) asserting --command/--path-arg/--require-artifact/--staleness-threshold/--flow-override"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R20"
+file = "tomlctl/tests/flow_envelope.rs"
+line = 0
+symbol = "duplicate require-artifact"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "No test for duplicate --require-artifact values"
+description = "require_artifacts is a clap multi-value Vec emitted without dedup, so --require-artifact execution_record twice yields a duplicate array entry. Whether downstream flow-bootstrap accepts or rejects duplicates is unspecified and untested. Either test a dedup-before-output policy or pin an explicit reject-duplicates contract."
+flow = "harness-progressive-disclosure"
+dedup_id = "3e7c6cb13e5f1be0"
+resolved = 2026-05-20
+resolution = "flow_envelope.rs — added duplicate --require-artifact test pinning current no-dedup contract"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R21"
+file = "tomlctl/src/flow/envelope.rs"
+line = 92
+symbol = "cwd field"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "cwd emitted as canonical but flow-bootstrap contract calls it tolerated-and-ignored"
+description = "envelope.rs and the tomlctl SKILL.md treat cwd as a canonical envelope field, but flow-bootstrap.md:48 lists cwd as a legacy extra that is tolerated and ignored. The two contracts disagree on whether cwd is canonical or vestigial. Reconcile: either consume cwd in the agent and document it, or drop it from the emitter."
+flow = "harness-progressive-disclosure"
+dedup_id = "5c38cd56c3f8fc2e"
+resolved = 2026-05-20
+resolution = "envelope.rs:92 — added comment documenting cwd canonical-vs-tolerated divergence with flow-bootstrap.md; full reconciliation needs agent-doc edit (noted)"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R22"
+file = "docs/plans/harness-progressive-disclosure/PILOT-LESSONS.md"
+line = 0
+symbol = "T9 cache-behaviour section"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "PILOT-LESSONS missing the cache-behaviour/token-count section required by T9"
+description = "Plan T9 Detail requires five sections including cache-behaviour observations (token counts before/after), and Risk 3 mitigation called for validating this by inspecting cache_* fields. The doc has the other four named sections but no cache/token data and no note that it was intentionally deferred."
+flow = "harness-progressive-disclosure"
+dedup_id = "170833099ea2470e"
+resolved = 2026-05-20
+resolution = "PILOT-LESSONS — added 'Cache-behaviour observations — NOT MEASURED' section making the T9 gap explicit (no numbers fabricated)"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+id = "R23"
+file = "docs/plans/harness-progressive-disclosure.md"
+line = 168
+symbol = "deferred carriers / propagation gate"
+severity = "suggestion"
+effort = "medium"
+category = "completeness"
+summary = "9 deferred carriers and the must-pass validation gate are prose-only with no tracking artefact"
+description = "The Scope section defers 9 carriers to follow-up plans and PILOT-LESSONS says propagation MUST NOT proceed until the skill-invocation mechanism is validated, but there is no follow-up plan stub, ledger item, or flow entry that gates propagation. The guidance is captured in prose only and is easy to miss when the next plan starts. Create a tracked follow-up (plan stub or backlog item)."
+flow = "harness-progressive-disclosure"
+dedup_id = "e6938d1b9c3b74ac"
+resolved = 2026-05-20
+resolution = "plan.md Scope — added Propagation follow-up subsection: 9 deferred carriers as checklist + gate prerequisites (skill-invocation validated per R6; verify-against-skill drift check + smoke check still open)"
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "wontfix"
+id = "R24"
+file = "tomlctl/src/flow/envelope.rs"
+line = 46
+symbol = "dispatch signature"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "8-positional-arg dispatch with clippy::too_many_arguments suppression"
+description = "dispatch takes 8 positional String/Option/Vec args and suppresses clippy::too_many_arguments. The EnvelopeOp::Build variant already groups these fields; passing the variant (or a small EnvelopeArgs struct) would remove the suppression and read better. Locally consistent with sibling flow dispatches, so low priority, but it reproduces the param-soup R69 refactored away elsewhere."
+flow = "harness-progressive-disclosure"
+dedup_id = "dd2afcea00a7e61f"
+wontfix_rationale = "Deliberate refactor: the dispatch caller is in tomlctl/src/flow/dispatch.rs (finding's cli/dispatch.rs location was stale); collapsing the 8-arg signature into EnvelopeOp::Build spans that out-of-cluster file, and sibling flow dispatches use the same destructure-positional idiom. Defer to a dedicated refactor."
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked plan-update skill ref (review.md:28), VALID_COMMANDS duplication, 8-arg dispatch, embedded-verbatim prose, orphan placeholder — all verified-from-file. No drops."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 5 within cap. Verified envelope.rs validates only command/require-artifact; path_args/branch/staleness pass through verbatim. Merged the two path-validation findings into R7 and staleness into R8; folded the scope-safety-skill and supply-chain-hook notes into R7 description. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 5
+rationale = "Verified F1/F2 dispatch.rs fixture drift (tdd.md omitted from flow_context_seven/execution_record_three vs manifest) and F9 VALID_COMMANDS dup. Downgraded F1,F2,F3,F5,F6 from high to warning: bash verifier is the authoritative pre-commit gate and covers tdd.md, so the Rust-fixture gap is a secondary-oracle coverage hole, not a live correctness bug. Positives F10 (manifest asymmetry intentional), F11 (module layering clean), F12/F13 ruled clean, not persisted."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified plan-update skill ref (R2), detached-HEAD empty-branch (R14), exit-1-vs-2 (R16). Deduped #1/#12 into R2, #6/#7 into R23, #3/#4 into R9/R10. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+rationale = "Verified key-order sorted-compare gap (R18) and detached-HEAD test gap. Downgraded the skill-invocation-untestable finding (R6) from high to warning: the mechanism was validated live in this run (all four flow-contract-* skills loaded at correct phases). Folded version-pin, cfg-test, write_stdin, text-mode-error minors out of the persisted set (noted in console)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 5
+dropped_count = 2
+downgraded_count = 0
+rationale = "DROPPED #9 (claimed --status is not a valid items list flag — tomlctl items list --help shows --status <STATUS> exists; fabrication) and #5 (argument-hint is a valid Claude Code frontmatter key; low-confidence non-issue). 2/12=17%, under the 30% systemic threshold. Verified stale SHARED-BLOCK refs (R9/R10/R11) and orphan placeholder (R12)."
+dedup_id = "45ca31c3315a5978"

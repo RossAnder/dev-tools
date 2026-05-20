@@ -1803,6 +1803,36 @@ fn dry_run_flag_listed_in_items_remove_help() {
     );
 }
 
+/// R19 (T5): `flow envelope build --help` lists every documented flag as a
+/// discrete entry. Clones the R44 shape for the envelope-build subcommand so
+/// a clap refactor that silently drops or hides one of the envelope flags
+/// fails here in CI rather than during an agent-facing invocation.
+#[test]
+fn flow_envelope_build_flags_listed_in_help() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("flow")
+        .arg("envelope")
+        .arg("build")
+        .arg("--help")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    for flag in [
+        "--command",
+        "--path-arg",
+        "--require-artifact",
+        "--staleness-threshold",
+        "--flow-override",
+    ] {
+        assert!(
+            stdout.contains(flag),
+            "flow envelope build --help must list `{flag}` as a discrete flag; got:\n{stdout}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // R45: plan T11 acceptance (d) — the end-to-end contract linking
 // `items backfill-dedup-id` to the T1 query surface. Seed a ledger with

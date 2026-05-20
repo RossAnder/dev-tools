@@ -79,6 +79,80 @@ pub(crate) fn dispatch(
         }
     }
 
+    // R7 (SECURITY): each `path_args` entry is emitted verbatim into the
+    // JSON envelope that the flow-bootstrap sub-agent consumes as its
+    // prompt, so untrusted `$ARGUMENTS` path tokens must be sanitised
+    // before they cross that boundary. Reject `..` traversal segments,
+    // absolute paths, and absurdly long tokens (length cap 512).
+    const MAX_PATH_ARG_LEN: usize = 512;
+    for p in &path_args {
+        if p.len() > MAX_PATH_ARG_LEN {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "invalid --path-arg value (len {}); must be at most {} chars",
+                    p.len(),
+                    MAX_PATH_ARG_LEN
+                ),
+            ));
+        }
+        // Path-traversal: reject any `..` component. Check both `/` and `\`
+        // separators so a Windows-style token can't sneak a parent ref past
+        // a Unix-only split.
+        let has_dotdot = p
+            .split(['/', '\\'])
+            .any(|seg| seg == "..");
+        if has_dotdot {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "invalid --path-arg value '{}'; must not contain '..' path-traversal segments",
+                    p
+                ),
+            ));
+        }
+        // Absolute paths: Unix `/foo`, Windows `\foo` / `C:\foo` / `C:/foo`.
+        let is_absolute = p.starts_with('/')
+            || p.starts_with('\\')
+            || p.as_bytes()
+                .get(1)
+                .is_some_and(|&b| b == b':');
+        if is_absolute {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "invalid --path-arg value '{}'; must be a repo-relative path, not absolute",
+                    p
+                ),
+            ));
+        }
+    }
+
+    // R8 (SECURITY): `staleness_threshold` is echoed verbatim into the
+    // envelope; pin it to the documented grammar `<n>{s|m|h|d|w}` so a
+    // freeform token can't ride through. Manual char scan rather than a
+    // `regex::Regex` build — the grammar is trivial and this avoids
+    // pulling the dependency into a hot, single-shot path.
+    {
+        let bytes = staleness_threshold.as_bytes();
+        let valid = bytes.len() >= 2
+            && bytes[..bytes.len() - 1].iter().all(u8::is_ascii_digit)
+            && matches!(bytes[bytes.len() - 1], b's' | b'm' | b'h' | b'd' | b'w');
+        if !valid {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "invalid --staleness-threshold value '{}'; must match <n>{{s|m|h|d|w}} (e.g. 7d)",
+                    staleness_threshold
+                ),
+            ));
+        }
+    }
+
     // Build the envelope by hand (rather than via a #[derive(Serialize)]
     // struct) so the field order matches the schema documentation byte
     // for byte, and so `Option<String>` fields render as JSON `null`
@@ -89,6 +163,11 @@ pub(crate) fn dispatch(
         "path_args": path_args,
         "branch": branch,
         "worktree": worktree,
+        // R21: `cwd` is emitted as a canonical schema field here, but
+        // `claude/agents/flow-bootstrap.md` (step 48) treats it as a
+        // tolerated-and-ignored legacy extra. The two contracts disagree;
+        // reconciling them means editing that agent doc (a separate
+        // change). Until then `cwd` is emitted but the consumer ignores it.
         "cwd": cwd,
         "require_artifacts": require_artifacts,
         "staleness_threshold": staleness_threshold,

@@ -1,11 +1,11 @@
 ---
 name: flow-contract-ledger-schema
-description: Canonical schema for review/optimise ledgers — `[[items]]` table shape, required and optional fields, status vocabulary, vet-event log, dedupe contract, and write idioms for `review-ledger.toml` and `optimise-findings.toml` (both flow-local and flow-less `.claude/reviews/<scope>.toml` / `.claude/optimise-findings/<scope>.toml`). Embedded into review/optimise/review-apply/optimise-apply carriers; defines every field a finding must carry plus the reconciler's behaviour on schema drift. Consult before any read, write, or update against a review or optimise ledger TOML file.
+description: Canonical schema for review/optimise ledgers — `[[items]]` table shape, required and optional fields, status vocabulary, vet-event log, dedupe contract, and write idioms for `review-ledger.toml` and `optimise-findings.toml` (both flow-local and flow-less `.claude/reviews/<scope>.toml` / `.claude/optimise-findings/<scope>.toml`). Canonical source for this schema, with identical copies still embedded in the optimise/review-apply/optimise-apply carriers pending migration; defines every field a finding must carry plus the reconciler's behaviour on schema drift. Consult before any read, write, or update against a review or optimise ledger TOML file.
 ---
 
 ## Ledger Schema
 
-All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `review-apply.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
+All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This skill is the canonical source for the schema; identical copies remain embedded verbatim in `review-apply.md`, `optimise.md`, and `optimise-apply.md` pending their migration to reference this skill, so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
 
 ### Canonical Ledger Schema (single source of truth)
 
@@ -131,7 +131,7 @@ Fields:
 
 #### Vet event log
 
-When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-flow-research procedure (see `SHARED-BLOCK:vet-flow-research` in those carriers' vet sections), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root:
+When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-flow-research procedure (see the `flow-contract-vet-research` skill), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root:
 
 ```toml
 [[vet_events]]

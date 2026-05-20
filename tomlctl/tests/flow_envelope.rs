@@ -56,6 +56,70 @@ fn flow_envelope_build_minimal_args_emits_default_envelope() {
             "worktree",
         ]
     );
+
+    // R18: the key-set assertion above pins only the SET of keys. envelope.rs
+    // documents that field ORDER matches the schema doc byte-for-byte (serde_json
+    // `preserve_order` enabled), so assert the actual emission order on the raw
+    // stdout string — a HashMap round-trip would lose insertion order and not
+    // catch a reordering regression. Each key must appear, and at a strictly
+    // increasing byte offset, in the documented order.
+    let documented_order = [
+        "command",
+        "flow_override",
+        "path_args",
+        "branch",
+        "worktree",
+        "cwd",
+        "require_artifacts",
+        "staleness_threshold",
+    ];
+    let mut last_offset: Option<usize> = None;
+    for key in documented_order {
+        let needle = format!("\"{key}\"");
+        let offset = stdout.find(&needle).unwrap_or_else(|| {
+            panic!("emitted JSON must contain key {needle}; got stdout:\n{stdout}")
+        });
+        if let Some(prev) = last_offset {
+            assert!(
+                offset > prev,
+                "field `{key}` must appear after the preceding documented field \
+                 (preserve_order byte-for-byte schema order); got stdout:\n{stdout}"
+            );
+        }
+        last_offset = Some(offset);
+    }
+}
+
+/// R20: passing the same `--require-artifact` value twice pins the current
+/// contract — the impl does NOT de-duplicate, so both occurrences land in
+/// `require_artifacts` as a duplicate array `["execution_record",
+/// "execution_record"]`. This documents (not changes) the behaviour: if a
+/// future refactor adds dedup, this test trips so the contract change is
+/// deliberate rather than silent.
+#[test]
+fn flow_envelope_build_duplicate_require_artifact_preserved_verbatim() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("flow")
+        .arg("envelope")
+        .arg("build")
+        .arg("--command")
+        .arg("implement")
+        .arg("--require-artifact")
+        .arg("execution_record")
+        .arg("--require-artifact")
+        .arg("execution_record")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be parseable JSON");
+    assert_eq!(
+        v["require_artifacts"],
+        serde_json::json!(["execution_record", "execution_record"]),
+        "duplicate --require-artifact values are preserved verbatim (no dedup); got:\n{stdout}"
+    );
 }
 
 /// Acceptance: every flag wired together produces a faithful echo. Two
@@ -127,6 +191,12 @@ fn flow_envelope_build_rejects_unknown_command() {
         .write_stdin("")
         .assert()
         .failure()
+        // R16: exit 1 is intentional. The impl tags this via
+        // `tagged_err(ErrorKind::Validation, ...)`, which routes through the
+        // binary's anyhow-error convention (exit 1) consistently across every
+        // validation site. Plan T5's "exit 2 for validation errors" was
+        // aspirational and superseded by that convention — do not "fix" this to
+        // `.code(2)`; the source exit code is the contract being pinned here.
         .code(1);
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let err = parse_json_error_envelope(&stderr);
@@ -163,6 +233,10 @@ fn flow_envelope_build_rejects_unknown_require_artifact() {
         .write_stdin("")
         .assert()
         .failure()
+        // R16: exit 1 is intentional here too — same ErrorKind::Validation /
+        // anyhow convention as the `--command` path above. Plan T5's "exit 2"
+        // was superseded; the asserted `.code(1)` pins the binary's real
+        // contract.
         .code(1);
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let err = parse_json_error_envelope(&stderr);

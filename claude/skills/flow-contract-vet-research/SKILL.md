@@ -19,6 +19,6 @@ description: Universal vet-pass procedure for research-agent output — the orch
    tomlctl set <ledger> last_updated <YYYY-MM-DD>
    ```
 
-   See `SHARED-BLOCK:ledger-schema` → `Vet event log` for the full field set.
+   See the `flow-contract-ledger-schema` skill → Vet event log section for the full field set.
 7. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
 8. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
