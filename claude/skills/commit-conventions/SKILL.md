@@ -140,6 +140,10 @@ Run through this checklist on the drafted message. Fix any failure before commit
 
 If `commitlint` is installed, pipe the draft through it as a final check: `echo "<msg>" | npx --no-install commitlint`.
 
+## Step 5: Execute the commit
+
+Pass the message with one `-m` per paragraph: `git commit -m "<subject>" -m "<body para 1>" -m "<body para 2>" …`. Git joins the `-m` values with blank lines, so each `-m` becomes its own paragraph. Keep each `-m` value a single line with **no embedded newlines** — this is what makes the invocation portable across cmd / PowerShell / bash, since there is no heredoc terminator, CRLF-sensitive sentinel, or nested quoting for a shell to mangle. Do not use heredocs, here-strings (`@'…'@`), or temp-file `-F` plumbing, and match the shell syntax to the tool you are calling.
+
 ## Anti-patterns
 
 Refuse to produce these:
