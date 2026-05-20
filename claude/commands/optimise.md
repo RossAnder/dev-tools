@@ -3,37 +3,15 @@ description: Research performance and efficiency opportunities — targets speci
 argument-hint: [file paths, directories, feature name, branch1..branch2, or empty for recent changes]
 ---
 
-<!-- SHARED-BLOCK:flow-context START -->
+# Performance and Efficiency Research
+
+> Skim-readable orchestrator. Full contract bodies load on demand via skill invocations.
+
 ## Flow Context
 
-Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent
-(`claude/agents/flow-bootstrap.md`). Each carrier's Step-0 builds a JSON input envelope,
-dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.{slug,
-context_path, artifacts.*, status, plan_path, scope, stale}` plus `envelope.doctor.ok` for
-downstream phases. Canonical input/output envelope shapes: see `flow-bootstrap.md` Contract
-section (mirrored at `scripts/templates/flow-context.md` Section 3).
+Flow resolution and doctor checks are delegated to the `flow-bootstrap` sub-agent: Step 0 builds a JSON input envelope, dispatches the agent, gates on `envelope.ok`, and binds the resolved `slug` / `context_path` / `artifacts.*` / `status` / `stale` plus `doctor.ok` for downstream phases. The contract covers envelope input/output shapes, the project-local `.claude/` path rule (no `~/.claude/` fallback), the status vocabulary and forbidden auto-`complete` transitions, slug derivation, canonical artifact paths, completed-flow filtering, the mandatory bootstrap-summary console line, and the legacy `.claude/active-flow` ignore rule.
 
-All `.claude/...` paths resolve to the project-local `.claude/` at the git top-level. No
-fallback to `~/.claude/`. **Status vocabulary**: `status ∈ {draft, in-progress, review,
-complete}`; auto-transitions to `complete` from non-`plan-update-complete` ops are
-forbidden (route through `review`); unknown values fail-soft to `in-progress` on read.
-**Slug derivation**: filename minus `.md` (multi-file plan: parent directory name); no
-further slugification. **Canonical artifacts**:
-`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings}.toml`
-— read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
-`context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
-flows are filtered out of scope-glob + branch-match resolution but remain targetable via
-explicit `--flow <slug>`. **Bootstrap-summary line**: after `flow-bootstrap` returns the
-envelope, the carrier MUST emit one console line before any other action —
-`flow resolved: <slug> (status=<s>, stale=<b>); doctor: <pass | fail: <N> issues | not-run: <reason>>`.
-Substitute `no flow resolved (<source>);` for the flow clause when
-`envelope.resolved.resolved == false`. Use the `not-run: <reason>` form when
-`envelope.doctor == null` (tomlctl invocation failure, skipped on no-flow, etc.) — the
-carrier proceeds without the doctor gate but the user sees the omission explicitly rather
-than silently. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
-single-line slug file is no longer consulted; the registry lives at
-`.claude/active-flow.toml` (multi-entry, gitignored per-clone state).
-<!-- SHARED-BLOCK:flow-context END -->
+Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelope contract (input/output shapes, `envelope.ok` gating, `envelope.resolved.*` / `envelope.doctor.*` binding rules, no-flow fallback, doctor-fail handling, staleness reconciliation, and the bootstrap-summary line).
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
@@ -78,223 +56,13 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
    `/optimise`, invoke the `plan-update` skill with literal arg `reconcile` before
    continuing.
 
-<!-- SHARED-BLOCK:ledger-schema START -->
 ## Ledger Schema
 
-All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `review-apply.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
+Both `review-ledger.toml` and `optimise-findings.toml` — whether flow-local or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share one canonical schema. The contract defines required and optional `[[items]]` fields, the disposition-specific field requirements, category vocabularies (optimise: `memory` | `serialization` | `query` | `algorithm` | `concurrency`), unknown-value fail-soft rules, the disposition vocabulary (`open` / `deferred` / `applied` / `wontapply` for optimise — no `verified-clean` counterpart), the render-to-markdown contract, the append-only `[[rollback_events]]` and `[[vet_events]]` logs, the mandatory parse-rewrite (tomlctl) read/write contract, the key-order convention, and the item-ID assignment + dedup/regression rules. Read these rules before touching any ledger read/write logic in this carrier.
 
-### Canonical Ledger Schema (single source of truth)
+Invoke the `flow-contract-ledger-schema` skill to load the canonical ledger schema (item fields, disposition vocabulary, category vocabularies, fail-soft rules, the `[[rollback_events]]` / `[[vet_events]]` event logs, the tomlctl parse-rewrite read/write contract, and the ID-assignment + dedup/regression rules).
 
-Both `review-ledger.toml` and `optimise-findings.toml` share this schema. Required fields marked — others optional. No inline comments in emitted TOML.
-
-```toml
-schema_version = 1
-last_updated = 2026-04-16
-
-[[items]]
-id = "R1"
-file = "src/accounting/postings.rs"
-line = 66
-severity = "critical"
-effort = "small"
-category = "quality"
-summary = "Trade sell wrong journal entries"
-first_flagged = 2026-04-08
-rounds = 1
-status = "fixed"
-resolved = 2026-04-08
-resolution = "Gated with BooksError in ca44570"
-flow = "warm-meandering-zebra"
-
-[[items]]
-id = "R22"
-file = "src/events/listeners.rs"
-line = 84
-symbol = "listeners::trigger"
-severity = "suggestion"
-effort = "small"
-category = "architecture"
-summary = "Listeners bypass pipeline API, call deriver directly"
-description = "Re-entrancy risk: pipeline mutex could deadlock if listeners call pipeline service."
-first_flagged = 2026-04-08
-rounds = 1
-status = "deferred"
-defer_reason = "Architectural change with re-entrancy risk"
-defer_trigger = "When pipeline mutex is replaced with a channel-based design"
-related = []
-```
-
-#### Required fields (every item)
-
-- `id` — `R{n}` for review items, `O{n}` for optimise items. Stable; never renumbered; monotonic per-ledger.
-- `file` — repo-relative file path.
-- `line` — integer. Use `0` if no specific line applies.
-- `severity` — `critical` | `warning` | `suggestion`.
-- `effort` — `trivial` | `small` | `medium`.
-- `category` — see vocabulary below.
-- `summary` — one-line description.
-- `first_flagged` — TOML date, ISO 8601.
-- `rounds` — integer, incremented each time the same issue is re-flagged in a later run.
-- `status` — see disposition vocabulary below.
-
-#### Optional fields
-
-- `symbol` — function / struct / trait method name. **Strongly recommended** for line-drift resilience; omit if no natural anchor applies.
-- `description` — longer explanation when `summary` is insufficient.
-- `evidence` — array of strings: doc URLs, Context7 query citations, benchmark links.
-- `related` — array of peer IDs (e.g. `["R5", "R8"]`).
-- `flow` — slug of the flow that contains or resolved this item. Empty/omitted for flow-less ledgers.
-- `depends_on` — array of ledger IDs (e.g. `["O7", "R12"]`) this item must apply AFTER. Consumed by the topological sort in `/review-apply` and `/optimise-apply` Step 3. Forward references to non-existent IDs are harmless — the topo sort restricts the DAG to the selected set — but `tomlctl items orphans <ledger>` surfaces dangling refs for hygiene (emits `{"id":...,"class":"dangling-dep","dangling_deps":[...]}` records alongside `missing-file` and `symbol-missing` classes).
-- `fingerprint` — opaque string computed by `tomlctl` (not hand-authored). Produced by `tomlctl items find-duplicates --tier B` as a 16-char SHA-256 truncation over `file|summary|severity|category|symbol`; current ledgers leave this field absent. Consumers treat absence as "fingerprint not yet computed".
-- `rollback_rationale` — string; present on items whose transition was reverted by a Step 5.5 rollback in `/review-apply` or `/optimise-apply`. Set when a rollback flips an item from `fixed`/`applied` back to `open`. Preserved across subsequent rounds so the rollback history surfaces in future reports.
-- `reopen_rationale` — string; present on items whose status was transitioned from `deferred` back to `open` via the deferred-trigger reopen sweep (`/review` and `/optimise` Step 1). Captures the trigger event that fired.
-
-#### Disposition-specific fields (required only when status matches)
-
-- `status = "fixed"` / `status = "applied"`:
-  - `resolved` (date, required)
-  - `resolution` (string, required) — commit SHA + short description.
-- `status = "deferred"`:
-  - `defer_reason` (string, required)
-  - `defer_trigger` (string, required) — concrete re-evaluation condition.
-- `status = "wontfix"` / `status = "wontapply"`:
-  - `wontfix_rationale` (string, required).
-- `status = "verified-clean"`:
-  - `verified_note` (string, required) — the audit note (e.g. "Round 2 (2026-04-14) — migrations.rs idioms already match").
-
-#### Category vocabularies
-
-- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `testability` | `package-quality` | `verified-clean` (reserved for items with `status = "verified-clean"`).
-- **Optimise** (`optimise-findings.toml`): `memory` | `serialization` | `query` | `algorithm` | `concurrency`.
-
-**Unknown-value fail-soft rules** (mandatory):
-- Unknown `status` → treat as `open`.
-- Unknown `category` → treat as `quality` (review) or `memory` (optimise); write a one-line warning to the command's console output but do not error.
-
-#### Disposition vocabulary
-
-- `open` — active, needs resolution.
-- `deferred` — not acting now, with a concrete re-eval trigger.
-- `fixed` (review) / `applied` (optimise) — resolved with commit evidence.
-- `wontfix` (review) / `wontapply` (optimise) — intentional non-action with rationale.
-- `verified-clean` (review only) — explicitly audited and confirmed clean; kept to avoid re-flagging via dedup. `/optimise` has no `verified-clean` counterpart — bytes-written findings land in `applied`, already-correct cases land in `wontapply` with rationale.
-
-#### Render-to-markdown contract
-
-Commands emit TOML as the authoritative artifact. For human-readable console output, commands render items as grouped markdown tables (severity-grouped for new-finding reports; disposition-grouped for full ledger views) inline in their response. The rendered markdown is not persisted.
-
-#### Rollback event log
-
-When `/review-apply` or `/optimise-apply` Step 5.5 reverts a batch of transitions, the protocol appends one `[[rollback_events]]` table to the ledger root:
-
-```toml
-[[rollback_events]]
-timestamp = 2026-04-17T14:32:00Z
-command = "review-apply"
-cause = "build failure on src/accounting/postings.rs:122"
-items = ["R3", "R7"]
-stash_ref = "stash@{0}"
-```
-
-Fields:
-- `timestamp` — ISO 8601 date-time (seconds precision).
-- `command` — `"review-apply"` or `"optimise-apply"`.
-- `cause` — short description (build fail, test regression, or claimed-applied-without-diff).
-- `items` — array of ledger IDs that were reverted back to `status = "open"`.
-- `stash_ref` — `git stash` reference for the rolled-back working-tree state so the user can recover the changes if desired.
-
-`[[rollback_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.rollback-history.toml`; no command automates this yet.
-
-#### Vet event log
-
-When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-flow-research procedure (see `SHARED-BLOCK:vet-flow-research` in those carriers' vet sections), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root:
-
-```toml
-[[vet_events]]
-timestamp = 2026-05-08T14:32:00Z
-command = "review"
-agent_index = 2
-lens = "security"
-sampled_count = 5
-dropped_count = 1
-downgraded_count = 0
-dropped_ids = ["R47"]
-rationale = "R47 cited file:line that does not exist on disk"
-```
-
-Fields:
-- `timestamp` — ISO 8601 date-time (seconds precision).
-- `command` — one of `"review"`, `"optimise"`, `"review-plan"`, `"plan-new"`, `"plan-update"`, `"test-bootstrap"`.
-- `agent_index` — integer 1..N matching the `Agent-{n}` index in the mandatory console line emitted by step 6 of the `vet-flow-research` block.
-- `lens` — string. The lens name as printed in the console line (e.g. `"security"`, `"test-runner"`, `"coverage"`).
-- `sampled_count`, `dropped_count`, `downgraded_count` — integers matching the N / M / K values in the console line.
-- `dropped_ids` — array of `R{n}` / `O{n}` ledger IDs that were vetted-out (dropped or downgraded). Empty array when nothing was dropped.
-- `rationale` — string capped at 8 KiB per the field-length-cap convention. Multi-line allowed (TOML multi-line strings).
-
-`[[vet_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.vet-history.toml`; no command automates this yet. Distinguish from `[[rollback_events]]` (which captures Step 5.5 working-tree reverts, not Step 2.5 / Phase 1.5 / Phase 2.5 / Phase 3 vet-pass actions).
-
-### Ledger TOML read/write contract
-
-Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`. This contract is DIFFERENT from the `context.toml` contract (single-object file, line-edit-safe) because ledgers use arrays-of-tables which are fragile under line-based editing (two items with identical `status = "open"` / `rounds = 1` lines defeat the Edit tool uniqueness).
-
-#### Read rules
-
-- **Missing `schema_version`**: treat as `1` and write it back on the next write. This is the only silent-default allowed.
-- **`schema_version > 1`**: halt and ask the user — we don't know this format.
-- **Missing required item field**: flag the item in the console output as malformed, skip it for resolution / dedup; do NOT attempt auto-repair.
-- **TOML parse error**: report the error location; do NOT attempt auto-repair; ask the user to fix or restore from backup.
-
-#### Write strategy (MANDATORY)
-
-**Ledger writes MUST use parse-rewrite, not line-edit.** Preferred path — `tomlctl` (see skill `tomlctl`):
-
-- `tomlctl items add <ledger> --json '{...}'` — append a new item.
-- `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
-- `tomlctl items remove <ledger> <id>` — delete by id.
-- `tomlctl items apply <ledger> --ops -` (stdin heredoc — preferred) or `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` (argv; small fixed-string batches only) — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N. Feed the ops array via heredoc — the same `<<'EOF' … EOF` pattern as the `add-many` example below, except the payload is a JSON array of op objects piped into `--ops -` instead of NDJSON. Never stage the ops payload via a tempfile; the `-` sentinel is the agent-native replacement for that round-trip.
-- `tomlctl items add-many <ledger> --ndjson - [--defaults-json '{...}']` — batch-append **homogeneous** new items via newline-delimited JSON on stdin; shared fields go in `--defaults-json` and per-row keys win. Prefer this over a hand-rolled `--ops` array when every op is `"add"`. Example:
-  ```bash
-  tomlctl items add-many <ledger> \
-    --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
-    --ndjson - <<'EOF'
-  {"id":"R40","file":"src/a.rs","line":10,"severity":"warning","effort":"small","category":"quality","summary":"..."}
-  {"id":"R41","file":"src/b.rs","line":22,"severity":"suggestion","effort":"trivial","category":"quality","summary":"..."}
-  EOF
-  ```
-- `tomlctl array-append <ledger> <array-name> --json '{...}'` (or `--ndjson -` for many) — append to an append-only array-of-tables (e.g. `rollback_events`) without op-type JSON framing. Thin shim over `items apply --array <name>`; use this for readable single-entry appends.
-- `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated`.
-- `tomlctl items next-id <ledger> --prefix R|O` — compute the next monotonic id.
-- **Reads / queries** — `tomlctl items list <ledger>` carries a full query surface; reach for it instead of piping `tomlctl parse` through another language:
-  - `--status open --count` — gate count (emits `{"count": N}`).
-  - `--group-by file --select id,symbol` — regression-style grouping (emits `{"<file>":[{id, symbol}, ...], ...}`).
-  - `--count-by status` — disposition histogram.
-  - `--pluck id` — flat `["R1","R2",...]` list.
-  - `--where KEY=VAL`, `--where-in KEY=V1,V2`, `--where-has KEY`, `--where-gte KEY=@date:YYYY-MM-DD`, `--where-regex KEY=PAT` — filter composition. Typed RHS via `@date:` / `@int:` / `@float:` / `@bool:` prefixes; bare strings otherwise.
-- **Stdin for `--ops` / `--json` / `--ndjson`**: every JSON-accepting flag above treats `-` as a sentinel meaning "read JSON from stdin" — e.g. `printf '%s' "$OPS" | tomlctl items apply <ledger> --ops -`. Prefer this for large batches or payloads containing shell metacharacters (embedded quotes, `$`, backticks, or newlines in agent-produced `resolution` / `wontfix_rationale` / `verified_note` strings); avoids the tempfile round-trip and eliminates the argv-level quoting surface entirely. Empty stdin errors clearly.
-
-`tomlctl` writes go through `tempfile::NamedTempFile::persist` (atomic rename) and hold an exclusive advisory lock on a sidecar `.lock` file, so concurrent invocations are safe and an interrupted write cannot corrupt the ledger.
-
-If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`.
-
-#### Key-order convention (for serialisers that don't preserve order)
-
-When re-serialising an item, emit keys in this order:
-`id, file, line, symbol, severity, effort, category, summary, description, evidence, first_flagged, rounds, related, status, <disposition-specific fields>, flow`
-
-The file-level keys come first: `schema_version`, `last_updated`, then `[[items]]` entries. `schema_version` MUST be preserved on every write.
-
-### Item-ID assignment and dedup
-
-- **ID assignment**: R-numbers for review items, O-numbers for optimise items. New items get `max(existing) + 1`. Never renumber. IDs retired by deletion are never reused.
-- **Dedup rule (same for new-item merge AND regression detection)**: two findings match iff they have the **same `file`** AND (**same non-empty `symbol`** OR **exact `summary` string match**). No fuzzy matching, no keyword clustering. When in doubt, new ID.
-- **Merge behaviour**:
-  - New finding matches an `open` item → reuse the existing ID; increment `rounds`; update `last_updated` of the ledger.
-  - New finding matches a `fixed` / `applied` item → **regression**; assign a new ID; write `related = ["<old id>"]`; flag prominently in the console report.
-  - New finding matches a `deferred` / `wontfix` / `wontapply` / `verified-clean` item → treat as existing (no change); do not emit a new item; do not increment `rounds`. Note in console: "this matches an existing <status> item, not re-reporting."
-- **Chronic-item escalation**: `rounds >= 3` on `open` items escalates in the summary output.
-<!-- SHARED-BLOCK:ledger-schema END -->
-
-# Performance and Efficiency Research
+## Overview
 
 Research code for performance and efficiency opportunities. This command is research-only — it produces a structured findings report. Use `/optimise-apply` afterward to implement the findings.
 
@@ -337,49 +105,9 @@ Identify the files to analyse:
 
 **Small scope note**: When 3 or fewer files are in scope, still launch all five research agents — their value comes from specialized, parallel research (independent Context7 lookups, WebSearches, and deep lens-specific analysis), not from dividing file reads. Tell each agent the scope is small so it can skip broad exploration and focus its research depth on the specific code paths in those files.
 
-<!-- SHARED-BLOCK:ledger-disposition-sweep START -->
-### Orphan surfacing (read-only)
+After the ledger loads and before the dispatch section, run the ledger disposition sweep: a read-only orphan surfacing pass (open items whose `file` no longer exists or whose `symbol` is absent from the tree — surfaced as console one-liners, never auto-transitioned, IDs preserved across renames; prefer `tomlctl items orphans <ledger>`) followed by the deferred-item reopen sweep (test each `deferred` item's `defer_trigger` against the known trigger forms, prompt `[y]/[n]/[a]` per fired trigger, and queue confirmed reopens into one atomic `tomlctl items apply --ops -` that sets `status = "open"` and records `reopen_rationale`). Non-interactive invocations surface candidates only and do not mutate the ledger.
 
-After the ledger loads and before the dispatch section, walk every `[[items]]` entry in the resolved ledger whose `status == "open"` and report orphans to the console without auto-transitioning:
-
-- **File orphan**: the item's `file` path no longer exists. Detect via a single `Glob` call per unique path, or — for small ledgers — a batched `Test-Path` / `[ -e <path> ]` check.
-- **Symbol orphan**: the item has a non-empty `symbol` field and a `Grep` for that symbol (name-only, not exact-match) against the current file tree returns no results. Use one `Grep` call with `output_mode: "files_with_matches"` over the repo to avoid per-item lookups.
-
-For each orphan, emit a one-line console note in Step 3's report:
-
-```
-orphan <id>7 — file `src/old-module.rs` no longer present (check for rename; run the active flow command if the work has moved)
-orphan <id>12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run the active flow command at the new location)
-```
-
-Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above.
-
-### Deferred-item reopen sweep
-
-After orphan surfacing and before the dispatch section, walk every `[[items]]` entry with `status = "deferred"` and check whether each item's `defer_trigger` has fired. Known trigger forms (literal substring match on `defer_trigger`):
-
-- `after <path> exists` → test `[ -e <path> ]` (or `Test-Path <path>` on Windows).
-- `after <file>:<symbol> landed` → test `<file>` exists AND `grep -qF "<symbol>" <file>` finds a match.
-- `when <id> resolves` → look up `<id>` in the same ledger; fires when its `status` is any of `fixed`, `applied`, `verified-clean`, `wontfix`, or `wontapply`.
-- `after <branch> merges` → test `git merge-base --is-ancestor <branch> HEAD`.
-- `after <YYYY-MM-DD>` → fires when today's ISO date is ≥ the embedded date.
-- Any other free-text trigger → surface to the console as a reminder; do not attempt automated detection.
-
-For each fired trigger, prompt the user with the item's `id`, `summary`, and the matched trigger text:
-
-```
-deferred <id> — trigger fired: <matched trigger>
-  summary: <summary>
-Reopen?
-  [y] reopen (status → open, reopen_rationale recorded)
-  [n] skip (leave deferred)
-  [a] abort sweep (do not inspect further candidates)
-```
-
-On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops -` at the end of the sweep: set `status = "open"`, preserve `defer_reason` (audit trail), drop `defer_trigger`, set `reopen_rationale = "trigger fired: <matched trigger text>"`. Never auto-transition silently — every reopen passes through the prompt.
-
-Non-interactive invocations surface candidates only (`found N deferred items with fired triggers; re-run interactively to reopen`) and do not mutate the ledger.
-<!-- SHARED-BLOCK:ledger-disposition-sweep END -->
+Invoke the `flow-contract-ledger-disposition-sweep` skill to load the disposition-sweep contract (orphan-surfacing detection rules and console format, the deferred-trigger forms and reopen-prompt protocol, and the atomic queued-transition write).
 
 If `tomlctl items orphans` is unavailable (older binary predating the subcommand), fall back to a one-off `Glob` sweep over each item's `file` plus a `Grep` sweep over each item's `symbol` to flag missing paths and missing symbols; `depends_on` dangling-refs then go unchecked until the binary is updated (`cargo install --path tomlctl`).
 
@@ -518,27 +246,9 @@ After all five `flow-research-deep` agents return but BEFORE the interim checkpo
 
 **Lens-specific verification rules:** For each sampled finding: verify Counter line is plausible; verify lib-version pins. If any check fails, expand the sample to all findings from that agent (the expand-on-failure rule is stricter than /review's because /optimise dispatches all-Opus).
 
-<!-- SHARED-BLOCK:vet-flow-research START -->
-**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+The vet-pass procedure runs here on the five returned `flow-research-deep` agents: triage findings by source agent and evidence-grade, honour any `ESCALATE-TO-DEEP` flags, drop unverified `low`-confidence findings, spot-check sampled findings against the cited `file:line` and library/Context7 pins, drop or downgrade what fails (with rationale), append one durable `[[vet_events]]` entry per vetted agent via the canonical heredoc, emit the mandatory `vet: Agent-{n} (<lens>) — N sampled, M dropped, K downgraded` console line per agent, and re-dispatch any lens that exceeds the >30% systemic-failure threshold. This is the gate that distinguishes "research returned" from "research findings are trustworthy" — the build/test verification agent does not catch fabricated references or made-up version pins. The sample size and lens names are the optimise-specific values fixed just above (≥3 per agent, lenses Memory / Serialization / Queries / Algorithm / Async).
 
-1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
-2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
-3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
-4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
-5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
-6. **Append a durable `[[vet_events]]` entry to the ledger** via the canonical heredoc form — one entry per vetted agent, the `agent_index` field discriminates:
-
-   ```bash
-   cat <<'EOF' | tomlctl array-append <ledger> vet_events --json -
-   {"timestamp":"<ISO 8601>","command":"<review|optimise|review-plan|plan-new|plan-update|test-bootstrap>","agent_index":<n>,"lens":"<lens>","sampled_count":<N>,"dropped_count":<M>,"downgraded_count":<K>,"dropped_ids":["<R{n}>",...],"rationale":"<≤8 KiB rationale>"}
-   EOF
-   tomlctl set <ledger> last_updated <YYYY-MM-DD>
-   ```
-
-   See `SHARED-BLOCK:ledger-schema` → `Vet event log` for the full field set.
-7. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
-8. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
-<!-- SHARED-BLOCK:vet-flow-research END -->
+Invoke the `flow-contract-vet-research` skill to load the universal research-vet procedure (the eight-step triage/spot-check/drop/log sequence, the `[[vet_events]]` heredoc form, the mandatory per-agent console line, and the >30% systemic-failure re-dispatch rule).
 
 This vet pass is what makes the Opus dispatch worth the cost — the orchestrator turns a probabilistically-correct sample into a verified one. Skipping the vet pass squanders the model upgrade.
 

@@ -3,37 +3,19 @@ description: Update plan documents — track progress, deviations, deferrals, an
 argument-hint: [plan path] [operation: status|complete (gated)|deviation|defer|reconcile|reformat|catchup|snapshot|migrate]
 ---
 
-<!-- SHARED-BLOCK:flow-context START -->
+# Plan Update
+
+> Skim-readable orchestrator. Full contract bodies load on demand via skill invocations.
+
+## Overview
+
+Update plan documents as living records — track progress, document deviations with rationale, register deferrals with re-evaluation triggers, and reconcile plan expectations against actual code state. The nine sub-operations (`status` / `complete` / `deviation` / `defer` / `reconcile` / `reformat` / `catchup` / `snapshot` / `migrate`) are defined under `## Step 2: Determine Operation` below.
+
 ## Flow Context
 
-Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent
-(`claude/agents/flow-bootstrap.md`). Each carrier's Step-0 builds a JSON input envelope,
-dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.{slug,
-context_path, artifacts.*, status, plan_path, scope, stale}` plus `envelope.doctor.ok` for
-downstream phases. Canonical input/output envelope shapes: see `flow-bootstrap.md` Contract
-section (mirrored at `scripts/templates/flow-context.md` Section 3).
+Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent: Step 0 builds a JSON input envelope, dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.{slug, context_path, artifacts.*, status, plan_path, scope, stale}` plus `envelope.doctor.ok` for downstream phases. The contract also covers project-local `.claude/` path resolution, the status vocabulary (`draft` / `in-progress` / `review` / `complete`) and the no-auto-complete rule, slug derivation, canonical artifact paths, completed-flow handling, the legacy `.claude/active-flow` ignore, and the mandatory bootstrap-summary console line.
 
-All `.claude/...` paths resolve to the project-local `.claude/` at the git top-level. No
-fallback to `~/.claude/`. **Status vocabulary**: `status ∈ {draft, in-progress, review,
-complete}`; auto-transitions to `complete` from non-`plan-update-complete` ops are
-forbidden (route through `review`); unknown values fail-soft to `in-progress` on read.
-**Slug derivation**: filename minus `.md` (multi-file plan: parent directory name); no
-further slugification. **Canonical artifacts**:
-`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings}.toml`
-— read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
-`context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
-flows are filtered out of scope-glob + branch-match resolution but remain targetable via
-explicit `--flow <slug>`. **Bootstrap-summary line**: after `flow-bootstrap` returns the
-envelope, the carrier MUST emit one console line before any other action —
-`flow resolved: <slug> (status=<s>, stale=<b>); doctor: <pass | fail: <N> issues | not-run: <reason>>`.
-Substitute `no flow resolved (<source>);` for the flow clause when
-`envelope.resolved.resolved == false`. Use the `not-run: <reason>` form when
-`envelope.doctor == null` (tomlctl invocation failure, skipped on no-flow, etc.) — the
-carrier proceeds without the doctor gate but the user sees the omission explicitly rather
-than silently. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
-single-line slug file is no longer consulted; the registry lives at
-`.claude/active-flow.toml` (multi-entry, gitignored per-clone state).
-<!-- SHARED-BLOCK:flow-context END -->
+Invoke the `flow-contract-flow-context` skill to load the full flow-bootstrap envelope contract (input/output shapes, `envelope.ok` gating, `envelope.resolved.*` and `envelope.doctor.*` binding rules, no-flow fallback, doctor-fail handling, staleness reconciliation, and the mandatory bootstrap-summary console line).
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
@@ -78,214 +60,17 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
    `/optimise`, invoke the `plan-update` skill with literal arg `reconcile` before
    continuing.
 
-<!-- SHARED-BLOCK:plansdirectory-prompt START -->
 ## Step 0.5: First-use `plansDirectory` prompt (per-carrier)
 
-Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent normalises both the unset case AND the literal `"__DONT_ASK__"` sentinel to `null` — see `flow-bootstrap.md` Contract). When non-null, skip this step entirely; the resolved value is already bound for downstream phases. The wording below is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` (per Task 17 of `docs/plans/flow-tracking-overhaul.md`); do not edit one carrier's copy without mirroring the other two — drift will surface at the next `diff` audit.
+Gate this step ONLY when `envelope.plans_directory == null` (the bootstrap agent normalises both the unset case AND the literal `"__DONT_ASK__"` sentinel to `null`); when non-null, skip entirely and use the already-bound value. The prompt builds a single-select option list (`docs/plans/` recommended → `.claude/plans/` when the directory exists → `other → free-text` → `Don't ask again`), handles the headless empty-answer case by binding `docs/plans/` in-memory without persisting, arbitrates the `Don't ask again` sentinel, runs the free-text follow-up, persists the chosen string to `.claude/settings.json`, and binds `plans_directory` for downstream phases. The wording is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan`.
 
-1. Build the option list. Always include `docs/plans/` (recommended), `other → free-text`, and `Don't ask again`. Conditionally include `.claude/plans/` ONLY when `[ -d .claude/plans/ ]` returns true at carrier dispatch time (the option must not appear when the directory is absent — listing a non-existent target risks the user picking it).
-2. Dispatch `AskUserQuestion` as a single-select (`multiSelect: false`) with the option list from step 1, in the order: `docs/plans/` (recommended) → `.claude/plans/` (when included) → `other → free-text` → `Don't ask again`. Recommended-first ordering follows CLAUDE.md guidance. The upstream `plansDirectory` schema (https://json.schemastore.org/claude-code-settings.json) is string-only, so the persisted value is always a single string — multi-directory configurations require manually adding a `tomlctl.plansDirectories` array to `.claude/settings.json` (see `tomlctl/src/flow/find_plans.rs` for the namespaced key's read precedence) and are out of scope for this prompt.
-3. **Headless / `acceptEdits` empty-answer detection**: if the AUQ response is an empty-string answer (per Claude Code issues [#29618](https://github.com/anthropics/claude-code/issues/29618), [#29547](https://github.com/anthropics/claude-code/issues/29547)), bind `plans_directory = "docs/plans/"` IN-MEMORY for the remainder of this carrier invocation and DO NOT persist anything — neither the string nor the sentinel. The next interactive session will re-fire this prompt because `settings.json` still lacks the key. Then proceed to step 7 (skip steps 4–6).
-4. **Arbitration rule**: if the user selected `Don't ask again`, the persisted value is the literal string `"__DONT_ASK__"`. Otherwise, the persisted value is the chosen path string.
-5. **Free-text follow-up**: if the user selected `other → free-text`, dispatch a follow-up `AskUserQuestion` with a single option labelled `Enter directory path` plus the AUQ "Other" affordance to capture the user's typed value. The persisted value is that typed string. If the follow-up returns empty (no path supplied), treat as "skip — use default" (step 7's fallback covers this case — bind in-memory only, do NOT persist); do NOT substitute `docs/plans/` here.
-6. **Persist**: write the result to `.claude/settings.json` via:
+Invoke the `flow-contract-plansdirectory-prompt` skill to load the first-use prompt contract (gate on `envelope.plans_directory == null`, option-list construction, single-select AUQ ordering, headless empty-answer in-memory binding, `Don't ask again` sentinel arbitration, free-text follow-up, persist-via-`tomlctl json set`, and downstream binding).
 
-   ```bash
-   cat <<'EOF' | tomlctl json set .claude/settings.json plansDirectory --json -
-   <JSON value: a single string — either "__DONT_ASK__" sentinel OR a directory path like "docs/plans/">
-   EOF
-   ```
-
-   `tomlctl json` skips sidecar maintenance on `settings.json` per P16, so the harness's out-of-band writes (e.g. `/config`) remain compatible.
-7. Bind `plans_directory` for downstream phases: if the user selected `Don't ask again` (sentinel persisted) OR the free-text follow-up returned empty (nothing persisted), treat as `"docs/plans/"` in-memory (the default-of-defaults). Otherwise bind the chosen path string as written. Any downstream code that consumed `envelope.plans_directory == null` should now consume this in-memory value.
-<!-- SHARED-BLOCK:plansdirectory-prompt END -->
-
-<!-- SHARED-BLOCK:execution-record-schema START -->
 ## Execution Record Schema
 
-Per-flow append-only log at `.claude/flows/<slug>/execution-record.toml`. Records every task-completion, verification, deviation, deferral, reconcile, status-transition, and checkpoint emitted by `/plan-new`, `/implement`, and `/plan-update` against the flow. `PROGRESS-LOG.md` is a rendered view of this log, and `[tasks].completed` is derived from it. This section is the single source of truth for the file's shape and contract.
+The per-flow append-only log at `.claude/flows/<slug>/execution-record.toml` records every task-completion, verification, deviation, deferral, reconcile, status-transition, and checkpoint emitted by `/plan-new`, `/implement`, and `/plan-update`. `PROGRESS-LOG.md` is a deterministic render of this log, and `[tasks].completed` is derived from it. The contract is the single source of truth for the file's shape: the canonical schema and per-type required fields, the `id` minting / monotonic-`E{n}` rule, the two-call heredoc write idiom (fully-qualified path required — never the bare filename), append-only + supersession semantics, the **render-from-log routine** that regenerates `PROGRESS-LOG.md` (Completed Items / Deviations / Deferrals / Session Log tables, with the cross-reorder-idempotency guarantees), the `[tasks].completed` derivation pipeline, the `--verify-integrity` read-path contract, field-length caps, and read rules.
 
-### Canonical schema
-
-```toml
-schema_version = 1
-last_updated = 2026-04-18
-
-[[items]]
-id = "E1"
-type = "task-completion"
-date = 2026-04-18
-agent = "implement"
-task_ref = "add-retry-logic"
-dispatch_tier = "lite"
-dispatch_agent = "flow-implement-lite"
-summary = "Added retry logic in src/retry.rs"
-files = ["src/retry.rs", "tests/retry_test.rs"]
-commits = ["abc1234"]
-status = "done"
-
-[[items]]
-id = "E2"
-type = "verification"
-date = 2026-04-18
-agent = "implement"
-summary = "cargo test passed"
-command = "cargo test --manifest-path tomlctl/Cargo.toml"
-outcome = "pass"
-
-[[items]]
-id = "E3"
-type = "deviation"
-date = 2026-04-18
-agent = "plan-update"
-task_ref = "add-redis-cache"
-summary = "Used existing LruCache util rather than introducing Redis"
-original_intent = "Add Redis dependency for caching"
-rationale = "src/util/cache.rs already covers the use case"
-commits = ["def5678"]
-legacy_id = "D3"
-```
-
-**Required fields per entry (all types):** `id` (E{n}, monotonic via `tomlctl items next-id <record> --prefix E`), `type`, `date` (YYYY-MM-DD TOML date — NOT `timestamp`), `agent`, `summary`.
-
-### Type vocabulary + type-specific required fields
-
-| Type | Required fields (in addition to the always-required five) |
-|------|-----------------------------------------------------------|
-| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `dispatch_tier` ∈ {`lite`, `deep`}, `dispatch_agent` ∈ {`flow-implement-lite`, `flow-implement-deep`}; `commits[]` OPTIONAL (see note below) |
-| `verification` | `command`, `outcome` ∈ {`pass`, `fail`} |
-| `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
-| `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
-| `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |
-| `status-transition` | `from_status`, `to_status` |
-| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured; optional `kind` ∈ {`reformat`, `catchup`, `migrate-boundary`} and optional `scope_delta` (freeform) for provenance tagging |
-
-**`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). Slugs are derived from the plan document's task heading, lowercased, hyphenated.
-
-**`commits` field** (task-completion, deviation): previously required; now optional. Populated by /implement Phase 2 step 5b after the git checkpoint (R21) — post-R21 entries should always carry it. Older bootstrap-phase entries and entries written before R21 may omit it; render-from-log treats absent `commits[]` as empty.
-
-**`dispatch_tier` / `dispatch_agent` fields** (task-completion): records the lite-vs-deep dispatch decision for post-hoc audit. `dispatch_tier` ∈ {`lite`, `deep`} is the abstract decision signal — what the lite-eligibility gate decided. `dispatch_agent` ∈ {`flow-implement-lite`, `flow-implement-deep`} is the concrete subagent_type that ran. The two are tightly correlated today (lite ↔ flow-implement-lite, deep ↔ flow-implement-deep) but the split future-proofs the schema for additional dispatch types (e.g. a future `flow-research-deep` task-completion writer). Both fields are required on new task-completion entries written by `/implement` Phase 2 step 5b. Fail-soft on unknown values: readers MUST treat unknown `dispatch_tier` as `deep` and preserve unknown `dispatch_agent` verbatim. Fields are forward-only — historical entries written before this schema addition lack both fields and render as `dispatch_tier = "(unknown)"` in derived views; no auto-backfill.
-
-### Write contract — two-call pattern (canonical heredoc form)
-
-Every writer appends an entry using this exact idiom. Never tempfile-stage payloads; heredoc stdin is the blessed path.
-
-```
-cat <<'EOF' | tomlctl items add <fully-qualified-execution-record-path> --json -
-{"id":"<E{n}>","type":"<type>","date":"<YYYY-MM-DD>","agent":"<implement|plan-update|plan-new>","summary":"<one-line>", …type-specific fields…}
-EOF
-tomlctl set <fully-qualified-execution-record-path> last_updated <YYYY-MM-DD>
-```
-
-`<fully-qualified-execution-record-path>` MUST be the resolved value of `[artifacts].execution_record` in the flow's `context.toml` — NEVER the bare filename `execution-record.toml` (which resolves relative to CWD and would create a stray file at repo root during `/implement` / `/plan-update` runs). Writers that need the path without reading `context.toml` first can compute it as `.claude/flows/<slug>/execution-record.toml` per the slug derivation rule.
-
-Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfile + rename.
-
-### `[[items]]` naming rationale + restricted subcommands
-
-The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Two `tomlctl items` subcommands, `orphans` and `find-duplicates`, hardcode the review/optimise ledger schema (they expect `file`, `symbol`, `summary`, `severity`, `category`) and must not be invoked against `execution-record.toml` — they will emit garbage. All other `tomlctl items` subcommands work correctly against this schema.
-
-### Append-only + supersession
-
-Entries are never mutated after write. Corrections append a new entry carrying `supersedes_entry = "E<n>"` (pointing at the superseded entry's `id`). The render routine renders the latest entry per supersession chain; older entries remain in the log for audit.
-
-### Render-to-markdown contract
-
-Every op that mutates the log (i.e. appends an entry) regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` as its last step via the render-from-log routine. `PROGRESS-LOG.md` is a pure function of `execution-record.toml` — no timestamp substitution, no date-of-run leakage. The top of the rendered file carries the literal marker `<!-- Generated from execution-record.toml. Do not edit by hand. -->`.
-
-The render emits four tables: **Completed Items** (from `type=task-completion` + `status=done`), **Deviations** (from `type=deviation`), **Deferrals** (from `type=deferral`), and **Session Log** (grouped by `date`). The full routine is defined at `### Render-from-log routine` within this block.
-
-**Session Log columns** — `| Date | Changes | Commits |`:
-- Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc --verify-integrity`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
-- **Date** = `YYYY-MM-DD` bucket key.
-- **Changes** = `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the bucket entry count. The word is `entry` when N == 1 (singular), `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in first-appearance order within the bucket. Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN). Example: a bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`. A singleton deviation renders `1 entry: deviation × 1`.
-- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). Alphabetical first-appearance (sort the resulting SHA set lexicographically) — this preserves cross-reorder idempotency across same-date entries. Empty when the bucket has no commits.
-
-Render-then-render MUST be byte-identical (idempotency). Reordering two same-date entries in the source MUST NOT change the output: the pre-sort by `(date asc, id asc)` fixes bucket order, the count-based Changes column is order-insensitive within a bucket, and the lexicographic Commits sort is order-insensitive within a bucket.
-
-### Render-from-log routine
-
-Every op that mutates `<record>` (`status`, `complete`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) calls this routine as its **last step**. `snapshot` also calls it (read-only refresh). `/implement` Phase 3 also calls it at end-of-phase. The routine is a **pure function of the log** — no `<today>` / `<now>` substitution, no date-of-run leakage. Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency, achieved by the pre-sort and the count-based Changes column).
-
-The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwriting the previous content) with the following structure:
-
-1. **Top-of-file marker** — the literal first line is:
-   ```
-   <!-- Generated from execution-record.toml. Do not edit by hand. -->
-   ```
-   No timestamps, no slug substitution — the marker is a fixed string.
-
-2. **Completed Items table** — sourced from
-   ```
-   tomlctl items list <record> --where type=task-completion --where status=done --sort-by date:asc,id:asc --verify-integrity
-   ```
-   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by `(date asc, id asc)` — deterministic across migrate back-fills that insert out of chronological order.
-
-3. **Deviations table** — sourced from
-   ```
-   tomlctl items list <record> --where type=deviation --sort-by date:asc,id:asc --verify-integrity
-   ```
-   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Rows ordered by `(date asc, id asc)`. Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
-
-4. **Deferrals table** — sourced from
-   ```
-   tomlctl items list <record> --where type=deferral --sort-by date:asc,id:asc --verify-integrity
-   ```
-   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`. Rows ordered by `(date asc, id asc)`.
-
-5. **Session Log table** with the literal column header `| Date | Changes | Commits |`:
-
-   - **Pre-sort step (mandatory).** Run
-     ```
-     tomlctl items list <record> --sort-by date:asc --verify-integrity
-     ```
-     **before** the group operation. Without this pre-sort, `--group-by date` buckets the log in *insertion order* — empirically confirmed: `--group-by` does not re-order; it just collapses adjacent matches by the bucket key. Documenting the pre-sort here so future maintainers don't drop it as "redundant".
-   - **Group step.** Apply `--group-by date` to the sorted result. `date` is in `DATE_KEYS`, so each YYYY-MM-DD calendar day produces one bucket. No `@date:` projection is needed.
-   - For each bucket, render one row:
-     - **Date** = the YYYY-MM-DD bucket key.
-     - **Changes** = the literal format `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the integer entry count in the bucket; the word is `entry` when N == 1 (singular) and `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in **first-appearance order** within the bucket (not alphabetical, not count-sorted). Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN, NOT ASCII `x`). EXAMPLES (both verbatim, both required):
-       - A bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`.
-       - A singleton deviation renders `1 entry: deviation × 1`.
-     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **alphabetical first-appearance** — collect the SHA set from the bucket, then sort lexicographically before join. This preserves cross-reorder idempotency across same-date entries (chronological-appearance order would change if two same-date entries were swapped in the source). Empty when no entry in the bucket has a `commits` array.
-
-Cross-reorder idempotency comes from three order-insensitive operations: the count-based Changes column (swapping two same-date entries in the source log doesn't change the per-type counts in the bucket), the lexicographic Commits sort (SHA order is independent of entry order), and the pre-sort fixing bucket order. Combined, the routine is a true pure function of the log's *contents* — not its insertion sequence within a date.
-
-**Empty-state convention**: when a source query returns zero rows, render a single row with `| (none) | | ... | |` matching the column count of that table. Applies to Completed Items, Deviations, Deferrals, and Session Log uniformly. The literal text `(none)` in the first cell signals "no matching entries" to readers.
-
-### `[tasks].completed` derivation
-
-`[tasks].completed` in `context.toml` is derived from the log on every write that touches `[tasks]`:
-
-```
-completed = tomlctl items list <record> --where type=task-completion --where status=done --count-distinct task_ref --raw --verify-integrity
-```
-
-Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `total` remains plan-document-driven; `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
-
-`--count-distinct task_ref --raw` emits the bare integer directly (tomlctl 0.2.0+) — no jq post-processing, no pipe composition. The single-flag form subsumes both the earlier `--pluck | jq -r '.[]' | sort -u | wc -l` chain and the interim `--count-by | jq 'keys | length'` bridge.
-
-#### Read-path integrity contract
-
-Every read of `execution-record.toml` or `context.toml` by `/plan-new`, `/plan-update`, or `/implement` MUST pass `--verify-integrity`. `/plan-new`'s bootstrap materialises the sidecar via `tomlctl integrity refresh` immediately after the initial `Write` (see step 7 of the bootstrap), so every downstream reader lands on a file whose sidecar exists — there is no bootstrap-grace branch for a "sidecar known-absent" state. On sidecar digest mismatch, tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. If a read legitimately hits a missing-sidecar state (the bootstrap refresh failed and was never rerun, or the sidecar was deleted out-of-band), recover with `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`.
-
-Invocation form: the flag is a per-subcommand option (not a global one), appended to the read subcommand: `tomlctl items list <record> --where ... --verify-integrity` or `tomlctl get <file> <path> --verify-integrity`.
-
-#### Field length caps
-
-Writer commands (`/plan-new`, `/plan-update`, `/implement`) MUST cap agent-supplied string fields before passing to `tomlctl items add` / `items apply`:
-
-- `summary` ≤ 1 KiB (1024 bytes)
-- `description`, `rationale`, `original_intent`, `reason`, `reevaluate_when` ≤ 8 KiB (8192 bytes)
-
-Truncate overlong strings with a trailing ` (truncated)` marker; do NOT refuse the write. Rationale: the append-only log grows indefinitely, and a 5 MiB rationale permanently inflates every downstream read and renders into `PROGRESS-LOG.md` verbatim.
-
-#### Read rules
-
-- Missing `schema_version` → treat as `1` and write it back on the next write (silent default).
-- `schema_version > 1` → halt and ask the user.
-- Missing required item field → flag the item as malformed, skip it for filtering / reconciliation, do NOT auto-repair.
-- TOML parse error → report the error location, ask the user to fix; do NOT attempt auto-repair.
-<!-- SHARED-BLOCK:execution-record-schema END -->
+Invoke the `flow-contract-execution-record-schema` skill to load the canonical execution-record schema (field set, type vocabulary, the two-call heredoc write contract, append-only + supersession, the render-from-log routine, `[tasks].completed` derivation, read-path integrity contract, field-length caps, and read rules). Every per-operation body below that references "the canonical two-call heredoc pattern", "the render-from-log routine", or "Task 6's recipe" is pointing at this contract.
 
 # Plan Maintenance
 
@@ -660,27 +445,9 @@ Same as the `reformat` Agent 1 — read every plan document and extract the full
 
 **Lens-specific verification rules:** Verify every "deprecated" / "removed" / "superseded" claim before sampling: re-query Context7 for the API in question; check the library's official changelog (WebFetch on the changelog URL); confirm the version pin in the project manifest matches Agent 2's claimed version. These are the highest-impact assertions because they drive plan rewrites.
 
-<!-- SHARED-BLOCK:vet-flow-research START -->
-**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+The vet pass follows the universal procedure: triage by source agent + evidence-grade, honour any `ESCALATE-TO-DEEP` flags, drop unverified low-confidence findings, spot-check sampled findings against their cited `file:line` / URLs / version pins (sample size per the **Sample size** rule above), drop-or-downgrade-with-rationale, append a durable `[[vet_events]]` ledger entry per vetted agent, emit the mandatory per-agent console line, and re-dispatch (escalating Sonnet `flow-research` lenses to `flow-research-deep`) on >30% systemic failure.
 
-1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
-2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
-3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
-4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
-5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
-6. **Append a durable `[[vet_events]]` entry to the ledger** via the canonical heredoc form — one entry per vetted agent, the `agent_index` field discriminates:
-
-   ```bash
-   cat <<'EOF' | tomlctl array-append <ledger> vet_events --json -
-   {"timestamp":"<ISO 8601>","command":"<review|optimise|review-plan|plan-new|plan-update|test-bootstrap>","agent_index":<n>,"lens":"<lens>","sampled_count":<N>,"dropped_count":<M>,"downgraded_count":<K>,"dropped_ids":["<R{n}>",...],"rationale":"<≤8 KiB rationale>"}
-   EOF
-   tomlctl set <ledger> last_updated <YYYY-MM-DD>
-   ```
-
-   See `SHARED-BLOCK:ledger-schema` → `Vet event log` for the full field set.
-7. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
-8. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
-<!-- SHARED-BLOCK:vet-flow-research END -->
+Invoke the `flow-contract-vet-research` skill to load the universal vet-pass procedure (triage by source+evidence-grade, `ESCALATE-TO-DEEP` honouring, drop-low-confidence rule, spot-check sampling, drop/downgrade-with-rationale, the canonical `[[vet_events]]` append heredoc, the mandatory `vet: Agent-{n} (<lens>) — N sampled, M dropped, K downgraded` console line, and the >30% systemic-failure re-dispatch rule).
 
 Carry only post-vet Agent 2 findings into Phase 2 synthesis.
 
@@ -769,7 +536,7 @@ Apply each authorised append using the canonical two-call heredoc pattern from t
 
 ### Render-from-log routine
 
-See `## Execution Record Schema` → `### Render-from-log routine` (above, within the `execution-record-schema` shared block) for the canonical definition of this routine. Every in-file reference to "the render-from-log routine" points at that section.
+The canonical definition of this routine lives in the `flow-contract-execution-record-schema` skill (invoked under `## Execution Record Schema` above). Every in-file reference to "the render-from-log routine" — including the per-operation bodies' mentions of "the canonical two-call heredoc pattern from the `## Execution Record Schema` shared block" — points at that contract.
 
 ## Step 3: Apply Updates
 

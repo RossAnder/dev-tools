@@ -3,37 +3,15 @@ description: Apply review findings from /review — transition open review-ledge
 argument-hint: [R1,R3 | all | critical | critical,warnings | empty for default]
 ---
 
-<!-- SHARED-BLOCK:flow-context START -->
+# Apply Review Findings
+
+> Skim-readable orchestrator. Full contract bodies load on demand via skill invocations.
+
 ## Flow Context
 
-Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent
-(`claude/agents/flow-bootstrap.md`). Each carrier's Step-0 builds a JSON input envelope,
-dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.{slug,
-context_path, artifacts.*, status, plan_path, scope, stale}` plus `envelope.doctor.ok` for
-downstream phases. Canonical input/output envelope shapes: see `flow-bootstrap.md` Contract
-section (mirrored at `scripts/templates/flow-context.md` Section 3).
+Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent; Step 0 below builds a JSON input envelope, dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.*` plus `envelope.doctor.ok` for downstream phases.
 
-All `.claude/...` paths resolve to the project-local `.claude/` at the git top-level. No
-fallback to `~/.claude/`. **Status vocabulary**: `status ∈ {draft, in-progress, review,
-complete}`; auto-transitions to `complete` from non-`plan-update-complete` ops are
-forbidden (route through `review`); unknown values fail-soft to `in-progress` on read.
-**Slug derivation**: filename minus `.md` (multi-file plan: parent directory name); no
-further slugification. **Canonical artifacts**:
-`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings}.toml`
-— read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
-`context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
-flows are filtered out of scope-glob + branch-match resolution but remain targetable via
-explicit `--flow <slug>`. **Bootstrap-summary line**: after `flow-bootstrap` returns the
-envelope, the carrier MUST emit one console line before any other action —
-`flow resolved: <slug> (status=<s>, stale=<b>); doctor: <pass | fail: <N> issues | not-run: <reason>>`.
-Substitute `no flow resolved (<source>);` for the flow clause when
-`envelope.resolved.resolved == false`. Use the `not-run: <reason>` form when
-`envelope.doctor == null` (tomlctl invocation failure, skipped on no-flow, etc.) — the
-carrier proceeds without the doctor gate but the user sees the omission explicitly rather
-than silently. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
-single-line slug file is no longer consulted; the registry lives at
-`.claude/active-flow.toml` (multi-entry, gitignored per-clone state).
-<!-- SHARED-BLOCK:flow-context END -->
+Invoke the `flow-contract-flow-context` skill to load the flow-context contract (envelope dispatch/gating, `envelope.resolved.*` and `envelope.doctor.*` binding rules, project-local `.claude/` resolution, status vocabulary + completed-flow handling, slug derivation, canonical artifact paths, the mandatory bootstrap-summary console line, and the legacy `.claude/active-flow` ignore rule).
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
@@ -78,223 +56,13 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
    `/optimise`, invoke the `plan-update` skill with literal arg `reconcile` before
    continuing.
 
-<!-- SHARED-BLOCK:ledger-schema START -->
 ## Ledger Schema
 
-All `.claude/...` ledger paths below — whether flow-local (`review-ledger.toml`, `optimise-findings.toml`) or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share the single canonical schema defined in this section. This section is embedded verbatim into `review.md`, `review-apply.md`, `optimise.md`, and `optimise-apply.md` so every command that reads or writes a ledger sees the same rules. Read this section before touching any ledger read/write logic.
+All `.claude/...` ledger paths consumed by `/review-apply` — whether flow-local (`review-ledger.toml`) or flow-less (`.claude/reviews/<scope>.toml`) — share a single canonical schema. Read the contract before touching any ledger read/write logic; every command that reads or writes a ledger sees the same rules.
 
-### Canonical Ledger Schema (single source of truth)
+Invoke the `flow-contract-ledger-schema` skill to load the canonical ledger contract (the `[[items]]` schema with required/optional/disposition-specific fields, severity/effort/category/disposition vocabularies including `verified-clean`, the unknown-value fail-soft rules, the `[[rollback_events]]` and `[[vet_events]]` append-only logs, the parse-rewrite TOML read/write contract with the `tomlctl items` query surface, key-order convention, and the item-ID-assignment + dedup/regression rules).
 
-Both `review-ledger.toml` and `optimise-findings.toml` share this schema. Required fields marked — others optional. No inline comments in emitted TOML.
-
-```toml
-schema_version = 1
-last_updated = 2026-04-16
-
-[[items]]
-id = "R1"
-file = "src/accounting/postings.rs"
-line = 66
-severity = "critical"
-effort = "small"
-category = "quality"
-summary = "Trade sell wrong journal entries"
-first_flagged = 2026-04-08
-rounds = 1
-status = "fixed"
-resolved = 2026-04-08
-resolution = "Gated with BooksError in ca44570"
-flow = "warm-meandering-zebra"
-
-[[items]]
-id = "R22"
-file = "src/events/listeners.rs"
-line = 84
-symbol = "listeners::trigger"
-severity = "suggestion"
-effort = "small"
-category = "architecture"
-summary = "Listeners bypass pipeline API, call deriver directly"
-description = "Re-entrancy risk: pipeline mutex could deadlock if listeners call pipeline service."
-first_flagged = 2026-04-08
-rounds = 1
-status = "deferred"
-defer_reason = "Architectural change with re-entrancy risk"
-defer_trigger = "When pipeline mutex is replaced with a channel-based design"
-related = []
-```
-
-#### Required fields (every item)
-
-- `id` — `R{n}` for review items, `O{n}` for optimise items. Stable; never renumbered; monotonic per-ledger.
-- `file` — repo-relative file path.
-- `line` — integer. Use `0` if no specific line applies.
-- `severity` — `critical` | `warning` | `suggestion`.
-- `effort` — `trivial` | `small` | `medium`.
-- `category` — see vocabulary below.
-- `summary` — one-line description.
-- `first_flagged` — TOML date, ISO 8601.
-- `rounds` — integer, incremented each time the same issue is re-flagged in a later run.
-- `status` — see disposition vocabulary below.
-
-#### Optional fields
-
-- `symbol` — function / struct / trait method name. **Strongly recommended** for line-drift resilience; omit if no natural anchor applies.
-- `description` — longer explanation when `summary` is insufficient.
-- `evidence` — array of strings: doc URLs, Context7 query citations, benchmark links.
-- `related` — array of peer IDs (e.g. `["R5", "R8"]`).
-- `flow` — slug of the flow that contains or resolved this item. Empty/omitted for flow-less ledgers.
-- `depends_on` — array of ledger IDs (e.g. `["O7", "R12"]`) this item must apply AFTER. Consumed by the topological sort in `/review-apply` and `/optimise-apply` Step 3. Forward references to non-existent IDs are harmless — the topo sort restricts the DAG to the selected set — but `tomlctl items orphans <ledger>` surfaces dangling refs for hygiene (emits `{"id":...,"class":"dangling-dep","dangling_deps":[...]}` records alongside `missing-file` and `symbol-missing` classes).
-- `fingerprint` — opaque string computed by `tomlctl` (not hand-authored). Produced by `tomlctl items find-duplicates --tier B` as a 16-char SHA-256 truncation over `file|summary|severity|category|symbol`; current ledgers leave this field absent. Consumers treat absence as "fingerprint not yet computed".
-- `rollback_rationale` — string; present on items whose transition was reverted by a Step 5.5 rollback in `/review-apply` or `/optimise-apply`. Set when a rollback flips an item from `fixed`/`applied` back to `open`. Preserved across subsequent rounds so the rollback history surfaces in future reports.
-- `reopen_rationale` — string; present on items whose status was transitioned from `deferred` back to `open` via the deferred-trigger reopen sweep (`/review` and `/optimise` Step 1). Captures the trigger event that fired.
-
-#### Disposition-specific fields (required only when status matches)
-
-- `status = "fixed"` / `status = "applied"`:
-  - `resolved` (date, required)
-  - `resolution` (string, required) — commit SHA + short description.
-- `status = "deferred"`:
-  - `defer_reason` (string, required)
-  - `defer_trigger` (string, required) — concrete re-evaluation condition.
-- `status = "wontfix"` / `status = "wontapply"`:
-  - `wontfix_rationale` (string, required).
-- `status = "verified-clean"`:
-  - `verified_note` (string, required) — the audit note (e.g. "Round 2 (2026-04-14) — migrations.rs idioms already match").
-
-#### Category vocabularies
-
-- **Review** (`review-ledger.toml`): `quality` | `security` | `architecture` | `completeness` | `db` | `testability` | `package-quality` | `verified-clean` (reserved for items with `status = "verified-clean"`).
-- **Optimise** (`optimise-findings.toml`): `memory` | `serialization` | `query` | `algorithm` | `concurrency`.
-
-**Unknown-value fail-soft rules** (mandatory):
-- Unknown `status` → treat as `open`.
-- Unknown `category` → treat as `quality` (review) or `memory` (optimise); write a one-line warning to the command's console output but do not error.
-
-#### Disposition vocabulary
-
-- `open` — active, needs resolution.
-- `deferred` — not acting now, with a concrete re-eval trigger.
-- `fixed` (review) / `applied` (optimise) — resolved with commit evidence.
-- `wontfix` (review) / `wontapply` (optimise) — intentional non-action with rationale.
-- `verified-clean` (review only) — explicitly audited and confirmed clean; kept to avoid re-flagging via dedup. `/optimise` has no `verified-clean` counterpart — bytes-written findings land in `applied`, already-correct cases land in `wontapply` with rationale.
-
-#### Render-to-markdown contract
-
-Commands emit TOML as the authoritative artifact. For human-readable console output, commands render items as grouped markdown tables (severity-grouped for new-finding reports; disposition-grouped for full ledger views) inline in their response. The rendered markdown is not persisted.
-
-#### Rollback event log
-
-When `/review-apply` or `/optimise-apply` Step 5.5 reverts a batch of transitions, the protocol appends one `[[rollback_events]]` table to the ledger root:
-
-```toml
-[[rollback_events]]
-timestamp = 2026-04-17T14:32:00Z
-command = "review-apply"
-cause = "build failure on src/accounting/postings.rs:122"
-items = ["R3", "R7"]
-stash_ref = "stash@{0}"
-```
-
-Fields:
-- `timestamp` — ISO 8601 date-time (seconds precision).
-- `command` — `"review-apply"` or `"optimise-apply"`.
-- `cause` — short description (build fail, test regression, or claimed-applied-without-diff).
-- `items` — array of ledger IDs that were reverted back to `status = "open"`.
-- `stash_ref` — `git stash` reference for the rolled-back working-tree state so the user can recover the changes if desired.
-
-`[[rollback_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.rollback-history.toml`; no command automates this yet.
-
-#### Vet event log
-
-When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-flow-research procedure (see `SHARED-BLOCK:vet-flow-research` in those carriers' vet sections), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root:
-
-```toml
-[[vet_events]]
-timestamp = 2026-05-08T14:32:00Z
-command = "review"
-agent_index = 2
-lens = "security"
-sampled_count = 5
-dropped_count = 1
-downgraded_count = 0
-dropped_ids = ["R47"]
-rationale = "R47 cited file:line that does not exist on disk"
-```
-
-Fields:
-- `timestamp` — ISO 8601 date-time (seconds precision).
-- `command` — one of `"review"`, `"optimise"`, `"review-plan"`, `"plan-new"`, `"plan-update"`, `"test-bootstrap"`.
-- `agent_index` — integer 1..N matching the `Agent-{n}` index in the mandatory console line emitted by step 6 of the `vet-flow-research` block.
-- `lens` — string. The lens name as printed in the console line (e.g. `"security"`, `"test-runner"`, `"coverage"`).
-- `sampled_count`, `dropped_count`, `downgraded_count` — integers matching the N / M / K values in the console line.
-- `dropped_ids` — array of `R{n}` / `O{n}` ledger IDs that were vetted-out (dropped or downgraded). Empty array when nothing was dropped.
-- `rationale` — string capped at 8 KiB per the field-length-cap convention. Multi-line allowed (TOML multi-line strings).
-
-`[[vet_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.vet-history.toml`; no command automates this yet. Distinguish from `[[rollback_events]]` (which captures Step 5.5 working-tree reverts, not Step 2.5 / Phase 1.5 / Phase 2.5 / Phase 3 vet-pass actions).
-
-### Ledger TOML read/write contract
-
-Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`. This contract is DIFFERENT from the `context.toml` contract (single-object file, line-edit-safe) because ledgers use arrays-of-tables which are fragile under line-based editing (two items with identical `status = "open"` / `rounds = 1` lines defeat the Edit tool uniqueness).
-
-#### Read rules
-
-- **Missing `schema_version`**: treat as `1` and write it back on the next write. This is the only silent-default allowed.
-- **`schema_version > 1`**: halt and ask the user — we don't know this format.
-- **Missing required item field**: flag the item in the console output as malformed, skip it for resolution / dedup; do NOT attempt auto-repair.
-- **TOML parse error**: report the error location; do NOT attempt auto-repair; ask the user to fix or restore from backup.
-
-#### Write strategy (MANDATORY)
-
-**Ledger writes MUST use parse-rewrite, not line-edit.** Preferred path — `tomlctl` (see skill `tomlctl`):
-
-- `tomlctl items add <ledger> --json '{...}'` — append a new item.
-- `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
-- `tomlctl items remove <ledger> <id>` — delete by id.
-- `tomlctl items apply <ledger> --ops -` (stdin heredoc — preferred) or `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` (argv; small fixed-string batches only) — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N. Feed the ops array via heredoc — the same `<<'EOF' … EOF` pattern as the `add-many` example below, except the payload is a JSON array of op objects piped into `--ops -` instead of NDJSON. Never stage the ops payload via a tempfile; the `-` sentinel is the agent-native replacement for that round-trip.
-- `tomlctl items add-many <ledger> --ndjson - [--defaults-json '{...}']` — batch-append **homogeneous** new items via newline-delimited JSON on stdin; shared fields go in `--defaults-json` and per-row keys win. Prefer this over a hand-rolled `--ops` array when every op is `"add"`. Example:
-  ```bash
-  tomlctl items add-many <ledger> \
-    --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
-    --ndjson - <<'EOF'
-  {"id":"R40","file":"src/a.rs","line":10,"severity":"warning","effort":"small","category":"quality","summary":"..."}
-  {"id":"R41","file":"src/b.rs","line":22,"severity":"suggestion","effort":"trivial","category":"quality","summary":"..."}
-  EOF
-  ```
-- `tomlctl array-append <ledger> <array-name> --json '{...}'` (or `--ndjson -` for many) — append to an append-only array-of-tables (e.g. `rollback_events`) without op-type JSON framing. Thin shim over `items apply --array <name>`; use this for readable single-entry appends.
-- `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated`.
-- `tomlctl items next-id <ledger> --prefix R|O` — compute the next monotonic id.
-- **Reads / queries** — `tomlctl items list <ledger>` carries a full query surface; reach for it instead of piping `tomlctl parse` through another language:
-  - `--status open --count` — gate count (emits `{"count": N}`).
-  - `--group-by file --select id,symbol` — regression-style grouping (emits `{"<file>":[{id, symbol}, ...], ...}`).
-  - `--count-by status` — disposition histogram.
-  - `--pluck id` — flat `["R1","R2",...]` list.
-  - `--where KEY=VAL`, `--where-in KEY=V1,V2`, `--where-has KEY`, `--where-gte KEY=@date:YYYY-MM-DD`, `--where-regex KEY=PAT` — filter composition. Typed RHS via `@date:` / `@int:` / `@float:` / `@bool:` prefixes; bare strings otherwise.
-- **Stdin for `--ops` / `--json` / `--ndjson`**: every JSON-accepting flag above treats `-` as a sentinel meaning "read JSON from stdin" — e.g. `printf '%s' "$OPS" | tomlctl items apply <ledger> --ops -`. Prefer this for large batches or payloads containing shell metacharacters (embedded quotes, `$`, backticks, or newlines in agent-produced `resolution` / `wontfix_rationale` / `verified_note` strings); avoids the tempfile round-trip and eliminates the argv-level quoting surface entirely. Empty stdin errors clearly.
-
-`tomlctl` writes go through `tempfile::NamedTempFile::persist` (atomic rename) and hold an exclusive advisory lock on a sidecar `.lock` file, so concurrent invocations are safe and an interrupted write cannot corrupt the ledger.
-
-If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`.
-
-#### Key-order convention (for serialisers that don't preserve order)
-
-When re-serialising an item, emit keys in this order:
-`id, file, line, symbol, severity, effort, category, summary, description, evidence, first_flagged, rounds, related, status, <disposition-specific fields>, flow`
-
-The file-level keys come first: `schema_version`, `last_updated`, then `[[items]]` entries. `schema_version` MUST be preserved on every write.
-
-### Item-ID assignment and dedup
-
-- **ID assignment**: R-numbers for review items, O-numbers for optimise items. New items get `max(existing) + 1`. Never renumber. IDs retired by deletion are never reused.
-- **Dedup rule (same for new-item merge AND regression detection)**: two findings match iff they have the **same `file`** AND (**same non-empty `symbol`** OR **exact `summary` string match**). No fuzzy matching, no keyword clustering. When in doubt, new ID.
-- **Merge behaviour**:
-  - New finding matches an `open` item → reuse the existing ID; increment `rounds`; update `last_updated` of the ledger.
-  - New finding matches a `fixed` / `applied` item → **regression**; assign a new ID; write `related = ["<old id>"]`; flag prominently in the console report.
-  - New finding matches a `deferred` / `wontfix` / `wontapply` / `verified-clean` item → treat as existing (no change); do not emit a new item; do not increment `rounds`. Note in console: "this matches an existing <status> item, not re-reporting."
-- **Chronic-item escalation**: `rounds >= 3` on `open` items escalates in the summary output.
-<!-- SHARED-BLOCK:ledger-schema END -->
-
-# Apply Review Findings
+## Overview
 
 Implement the review findings produced by `/review`. This command expects a TOML review ledger either summarised in conversation context or saved to the resolved flow's ledger file at `.claude/flows/<slug>/review-ledger.toml` (read from `context.toml.artifacts.review_ledger`), with a flow-less fallback at `.claude/reviews/<scope>.toml`. Check the locations in order — prefer the conversation context if present, then the flow-dir ledger, then the fallback path. Parse the ledger per the Ledger TOML read rules in `## Ledger Schema`. If none are found, ask the user to run `/review` first.
 
@@ -428,35 +196,11 @@ The hard rule from Step 2 holds: no bytes written → always `verified-clean`, n
 
 ## Step 3: Group by File Cluster
 
-<!-- SHARED-BLOCK:apply-dependency-sort START -->
 ### Dependency sort (topological)
 
-If any item in the selected set has a populated `depends_on` array, run Kahn's algorithm over the subset of items in `depends_on` that are also in the selected set (forward references to items NOT in the selected set are dropped from the DAG — they're out of scope for this run).
+When any selected item carries a populated `depends_on` array, topologically sort the selected set before clustering so dependent items run in later sequential batches; absent `depends_on` everywhere, this degrades to the pre-existing flat clustering (fully backward compatible).
 
-Kahn's algorithm (pseudocode):
-
-```
-selected = { all items targeted by this run }
-deps[i] = { id ∈ i.depends_on : id ∈ selected }
-queue = { i ∈ selected : deps[i] is empty }
-L = []
-
-while queue not empty:
-  n = queue.pop()
-  L.append(n)
-  for each m where n ∈ deps[m]:
-    deps[m].remove(n)
-    if deps[m] is empty: queue.add(m)
-
-if any i has nonempty deps[i]:
-  print "cycle detected: i1 → i2 → ... → i1"
-  abort; report the cycle path; do not proceed to clustering
-```
-
-The topological order `L` feeds into the file-clustering step below — items at the same topo level (no remaining dependencies between them) may cluster together if they also share a file. Items at different topo levels run in **sequential batches** even when they share a file: apply batch-k fully (including the post-batch commit if further batches remain), then launch batch-(k+1).
-
-Absent `depends_on` everywhere, `deps[i]` is empty for every item, `queue` starts with all items, and `L` matches the pre-existing flat clustering — fully backward compatible.
-<!-- SHARED-BLOCK:apply-dependency-sort END -->
+Invoke the `flow-contract-apply-dependency-sort` skill to load the dependency-sort contract (Kahn's-algorithm pseudocode over the in-selection `depends_on` subset, the cycle-detection abort, and how the topological order `L` feeds the file-clustering step — same-topo-level items may co-cluster, different-level items run in sequential batches with a commit between batches).
 
 Group the selected findings by file or closely related file cluster. This determines how many implementation agents to launch — one per cluster. Files that share findings or have interdependent changes belong in the same cluster.
 
@@ -530,29 +274,11 @@ Every agent MUST:
 - Add a brief inline comment only when the fix would be non-obvious to a reader
 - If a finding cannot be safely applied (would break behaviour, has unclear semantics, or the research doesn't hold up on closer inspection), **skip it** and report why
 
-<!-- SHARED-BLOCK:apply-vet-flow-implement-lite START -->
 ## Step 4.5: Vet `flow-implement-lite` apply tags (orchestrator)
 
-After cluster agents return but BEFORE the interim checkpoint, the orchestrator (Opus) MUST vet `applied` tags from `flow-implement-lite` clusters. The Step 5a build/test verification catches bytes-don't-compile bugs and existing-test regressions, but it does NOT catch:
+After cluster agents return but BEFORE the interim checkpoint, the orchestrator (Opus) MUST vet `applied` tags from `flow-implement-lite` clusters — the Step 5a build/test verification catches compile/regression failures but not the subtle correctness, anti-pattern, style, or `[vet-recommended]`-flagged residual-uncertainty cases this pass exists to catch.
 
-- Subtle correctness issues that compile and pass existing tests (e.g. an off-by-one that the tests don't exercise).
-- Anti-pattern introductions (e.g. the agent picked an idiom that compiles but fights the surrounding code's style).
-- Inconsistent style with surroundings (the lite agent's spec was met but the result reads jarringly).
-- The lite agent flagged an apply with `[vet-recommended]` (per `flow-implement-lite`'s output contract) — the agent itself surfaced residual uncertainty.
-
-**Vetting procedure (per cluster):**
-
-1. **Inspect every `applied <id> [vet-recommended]: ...` tag.** This is the agent's explicit ask; the orchestrator MUST read the touched files at the named line ranges and confirm the change is sound. If wrong, re-dispatch the failed item to `flow-implement-deep` for a corrected fix.
-2. **Spot-sample bare `applied` tags.** Sample at least **1 applied per cluster** (or all if the cluster has fewer than 3 applies). For each sampled apply:
-   - Read the touched lines and confirm the change matches the finding's recommended action.
-   - Confirm the surrounding code's style (naming, error handling, idioms) is preserved or improved, not regressed.
-   - Confirm the change makes structural sense and addresses the finding's root cause — not just satisfying the spec by adding a duplicating helper or silencing the symptom without fixing the underlying issue.
-3. **Sample-failure → expand-and-fix.** If a sampled apply fails vetting, **expand the sample to 100% of that cluster's applies** — the failure pattern likely affects others. For each failed apply, mark it for re-dispatch to `flow-implement-deep` (do NOT revert silently — let `flow-implement-deep` produce the correct fix and then verify).
-4. **Skip sampling for `flow-implement-deep` cluster output.** Deep clusters carry their own escalation discipline; the orchestrator's review focus is `flow-implement-lite` output specifically. A spot-check of deep output remains advisable but is not gated.
-5. **Record the vet outcome** as a console line per cluster: `vet: cluster <id> — N applies sampled, M failed, K re-dispatched to deep`.
-
-The vet pass is what separates "the change succeeded" from "the right thing happened." Skipping it means a regression — bytes that compile and pass existing tests but break correctness, style, or root-cause coverage — can ship unnoticed.
-<!-- SHARED-BLOCK:apply-vet-flow-implement-lite END -->
+Invoke the `flow-contract-apply-vet-flow-implement-lite` skill to load the lite-vet contract (the per-cluster procedure: inspect every `[vet-recommended]` tag, spot-sample ≥ 1 bare `applied` per cluster, expand-to-100%-and-re-dispatch-to-deep on sample failure, skip deep-cluster output, and the mandatory per-cluster `vet:` console line).
 
 ## Interim checkpoint
 
@@ -689,60 +415,11 @@ Present the final summary. **Omit any sub-section that has no entries** — e.g.
 - [R{m}] [file:line] Regression of [R{n}] — dedup-rule match details
 ```
 
-<!-- SHARED-BLOCK:apply-rollback-protocol START -->
 ## Step 5.5: Rollback protocol
 
-### Triggers
+When Step 5 verification fails AND the failure is a build break on a touched file, an out-of-scope test regression, or an applied-claim-without-matching-diff, the orchestrator rolls back ONLY this run's transitions (prior-run resolutions are never touched), stashing the working tree before reverting so no work is lost and recording a `[[rollback_events]]` entry.
 
-Rollback fires when Step 5 verification fails AND any of:
-
-1. **Build failure on a file this run touched** — compile error, type error, linker error on a path in the union of `git diff --name-only HEAD`, `--cached`, and `git ls-files --others --exclude-standard`.
-2. **Test regression outside the finding-ledger scope** — a test file that isn't in any selected item's `file` field now fails (tests that weren't supposed to change but were).
-3. **Applied claim without matching diff** — an agent emitted an `applied <id>` tag but the diff-reconciliation in Step 5 found no matching entry; the agent forged the tag.
-
-Only transitions from THIS run are eligible for rollback. Items resolved in previous runs are never touched.
-
-### Sequence
-
-1. **Collect touched paths**: union of `git diff --name-only HEAD`, `git diff --name-only --cached`, `git ls-files --others --exclude-standard`. Call this set `PATHS`.
-2. **Stash working-tree state**: `git stash push -u -m "<apply-command>-rollback-<ISO timestamp>" -- <PATHS>`. Note the stash ref for the `[[rollback_events]]` entry.
-3. **Restore tracked files**: `git checkout -- <PATHS-that-were-already-tracked>`.
-4. **Remove untracked agent-created files**: for each path in PATHS that is untracked AND was declared in its cluster agent's output as a new file, run `git clean -fd -- <path>` scoped to that single path. NEVER run bare `git clean`. Reject any path not declared by the cluster agent to guard against subverted agent output. **Scope-glob clamp** (additional defense): before invoking `git clean -fd -- <path>`, verify each declared path falls under at least one of the resolved flow's `context.toml.scope` glob patterns (or the flow-less run's selector-file list). Reject any path that falls outside scope — the rollback's blast radius is bounded by scope, not by agent-declared filenames.
-5. **Reverse ledger transitions**: construct a single `tomlctl items apply --ops -` payload that transitions each affected item back to `status = "open"` with `rollback_rationale = "<concise cause>"`. Do NOT clear `resolved` or `resolution` — leave the prior transition evidence so the audit trail remains intact across reopens.
-6. **Append rollback event**: add one `[[rollback_events]]` entry at the ledger root per the Rollback event log sub-section in `## Ledger Schema`. Include `timestamp` (ISO 8601 date-time), `command = "<apply-command>"`, `cause`, `items` (array of reverted IDs), and the `stash_ref`. Use `tomlctl array-append` to append without op-type JSON framing:
-
-   ```bash
-   tomlctl array-append <ledger> rollback_events --json - <<'EOF'
-   {"timestamp":"2026-04-18T14:32:00Z","command":"<apply-command>","cause":"build failure on <file>:<line>","items":["<id1>","<id2>"],"stash_ref":"stash@{0}"}
-   EOF
-   ```
-
-   Stdin-heredoc is the primary form because `cause` is constructed from live verification output and will routinely contain shell metacharacters (backticks, `$`, embedded quotes, newlines from multi-line error text) that break argv-quoting. The argv form `tomlctl array-append <ledger> rollback_events --json '{...}'` is acceptable only when `cause` is a literal fixed string with no shell metacharacters. The `items apply --array <name> --ops -` form remains the power-tool for batched or mixed-op writes to non-default arrays.
-7. **Surface a prominent `### Rollback` callout** in the final summary: list the reopened items, the cause, and the stash ref so the user can invoke `git stash show stash@{N}` or `git stash pop` to recover.
-
-### Confirmation prompts
-
-**Interactive mode**: after diagnosing the trigger, prompt:
-
-```
-Rollback protocol armed — <N> transitions reopen, <M> files revert.
-  cause: <build fail | test regression | applied-without-diff>
-  stash: will save <M> files to stash@{0}
-Proceed?
-  [p] proceed with rollback
-  [s] skip (leave state as-is; failure surfaces to user)
-  [a] abort this /<apply-command> run
-```
-
-**Non-interactive**: default to `[s] skip` and surface the failure without rolling back. The user reviews the failure and can invoke rollback manually.
-
-### Safety constraints
-
-- Never roll back items that reached their successful status (`fixed` for /review-apply, `applied` for /optimise-apply) in prior runs — only items this run transitioned.
-- Never accept a path list from agent output directly; always re-derive from git diff evidence.
-- Never bypass the stash — unstashed rollbacks lose user-in-progress work.
-- Never follow a rollback with automatic retry — the user decides what to do next after reopening.
-<!-- SHARED-BLOCK:apply-rollback-protocol END -->
+Invoke the `flow-contract-apply-rollback-protocol` skill to load the rollback contract (the three triggers, the touched-path collection + stash + tracked-file restore + scope-clamped `git clean` sequence, the `tomlctl items apply` reversal to `status = "open"` with `rollback_rationale`, the `[[rollback_events]]` append via `tomlctl array-append`, the `### Rollback` summary callout, the interactive/non-interactive confirmation prompts, and the safety constraints). For `/review-apply` the successful prior status is `fixed` and the event log's `command` is `"review-apply"`.
 
 
 ## Step 6: Plan Deviation Follow-up
@@ -765,17 +442,9 @@ Because `plan-update` itself performs the 5-step flow resolution, no arguments p
 
 ## Important Constraints
 
-<!-- SHARED-BLOCK:apply-constraints START -->
-- **Front-load complex analysis in the orchestrator** — it has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Give agents pre-digested instructions, not open-ended problems.
-- **Do not apply suggestions unless `$ARGUMENTS` explicitly includes them** (via `"all"` or by item ID).
-- **Do not introduce new dependencies or packages** without flagging to the user first.
-- **Do not change public API contracts** (method signatures, endpoint shapes, response types) unless the finding explicitly calls for it and the user has confirmed.
-- **Preserve behaviour** — every applied change must leave the application's observable contract intact unless the finding explicitly calls for a behaviour change. If you're unsure, emit `skipped <item id>: <reason>` and let the orchestrator surface the decision.
-- **One concern per edit** — don't combine an applied finding with a refactor or style change. Keep every change attributable to a specific finding's ledger id.
-- **Apply the minimum change that resolves the cited finding.** If a broader refactor is warranted, emit `skipped <item id>: requires deliberate refactor` and let the orchestrator surface the decision rather than widening the edit.
-- **Hard cap: no more than 3 files touched per ledger item** by default. The cap is lifted when EITHER (a) the finding's `description` explicitly lists more files, OR (b) the orchestrator passes a `FILE-BUDGET: <N | unlimited> for <ids>` header in the agent prompt (set by the carrier's `--file-budget <N>` / `--allow-cross-file` invocation flags — see each carrier's Step 1.3 selector semantics). When the cap applies and an item would exceed it, emit `skipped <item id>: cross-file refactor exceeds 3-file cap (re-run with --file-budget <N> or --allow-cross-file <id> to authorise)` with a refactor note. The override is per-invocation and per-id; it lifts only the numeric file-count cap, not the "Apply the minimum change" or "One concern per edit" rules above.
-- **No auto-commit**. The orchestrator does not invoke `git commit`. `resolution` captures the change description; commit SHA is optional and backfillable by a later `/plan-update status` or manual edit.
-<!-- SHARED-BLOCK:apply-constraints END -->
+The shared apply-time constraints — orchestrator front-loading, suggestion-gating, minimum-change / one-concern-per-edit discipline, the 3-file-per-item hard cap with its `--file-budget` / `--allow-cross-file` override, public-API / dependency guards, and the no-auto-commit rule — bound how `/review-apply`'s cluster agents edit.
+
+Invoke the `flow-contract-apply-constraints` skill to load the apply-constraints contract (the full list of agent-edit constraints, the `FILE-BUDGET: <N | unlimited> for <ids>` header semantics tied to Step 1's selector flags, and the `skipped <item id>: ...` skip-tag forms for cap-exceeded / refactor-required / behaviour-risk cases).
 
 - **Do not broaden the fix** — `architecture` and `quality` findings frequently tempt refactors; stay inside the finding's scope. The shared-block "minimum change" rule above applies; the agent-level skip tag is `skipped R{n}: requires deliberate refactor, not a point-fix`.
 - **Public API or schema changes** flagged by `architecture` or `db` findings require explicit user confirmation. Agents must emit `skipped R{n}: requires user confirmation on public API / schema change` and let the orchestrator surface the decision rather than applying unilaterally.

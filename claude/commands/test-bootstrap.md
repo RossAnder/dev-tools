@@ -5,6 +5,8 @@ argument-hint: [language] [--with-mutation] [--no-showcase]
 
 # Test-Stack Bootstrap
 
+> Skim-readable orchestrator. Full contract bodies load on demand via skill invocations.
+
 Stand up a modern, opinionated test framework in the current project. This command is a **one-shot setup**, not a flow-aware loop — it runs Project Profile detection, fans out 4 parallel research agents to surface current best-practice tooling, synthesises 2-3 cohesive stack candidates, and scaffolds the chosen stack (config, smoke test, showcase tests demonstrating good practice, CI workflow) with idempotent marker blocks in `CLAUDE.md` and `.gitignore`.
 
 > **Effort**: Requires `max` — Phase 2 dispatches 4 concurrent research agents (Context7 + WebSearch). Lower effort may collapse the dispatch and degrade recommendation quality.
@@ -289,27 +291,9 @@ After all 4 research agents return but BEFORE the Phase 2 cache write — and be
 
 **Lens-specific verification rules:** Verify package version pin matches registry (npm / PyPI / crates.io / Go module proxy); confirm install command syntax parses for the chosen package manager; confirm config-file template syntax matches the version's documented schema (Sonnet often conflates major-version schemas). For Agent D specifically, confirm the CI-config snippet parses as YAML / `.gitlab-ci.yml` / Jenkinsfile. Lens names: Agent-A (test-runner), Agent-B (coverage), Agent-C (mutation+property), Agent-D (ci-integration).
 
-<!-- SHARED-BLOCK:vet-flow-research START -->
-**Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
+The vet pass here runs on the four returned `flow-research` agents: triage findings by source agent and evidence-grade, honour any `ESCALATE-TO-DEEP` flags (re-dispatching that lens to `flow-research-deep`), drop unverified `low`-confidence findings, spot-check sampled findings against the cited `file:line` and any library / version / Context7 pins, drop or downgrade what fails (with rationale), append one durable `[[vet_events]]` entry per vetted agent via the canonical heredoc (with `command:"test-bootstrap"` and the discriminating `agent_index`), emit the mandatory `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded` console line per agent, and re-dispatch any lens that exceeds the >30% systemic-failure threshold. The build/test verification agent catches code-shape failures but does NOT catch fabricated references or made-up version pins — this gate is what distinguishes "research returned" from "research findings are trustworthy." The sample size (≥5 per agent) and lens names (Agent-A test-runner / Agent-B coverage / Agent-C mutation+property / Agent-D ci-integration) are the test-bootstrap-specific values fixed just above.
 
-1. **Triage by source agent + evidence-grade.** Group findings by `(agent_index, evidence-grade)`; emit a one-line summary per group to console.
-2. **Honour `ESCALATE-TO-DEEP` flags.** If any agent prefixed its return with `ESCALATE-TO-DEEP: <reason>`, re-dispatch that lens to `flow-research-deep` with the escalation reason in the prompt before further vetting that lens's output.
-3. **Drop unverified `low` / `low-confidence` findings** unless explicitly framed as a hypothesis with a concrete verification step.
-4. **Spot-check sampled findings.** Sample size per carrier — see carrier prose around this block. For each sampled finding: read the cited `file:line`, confirm the code matches the description, verify any cited URLs / library version pins / Context7 IDs.
-5. **Drop or downgrade findings that fail vetting**, with rationale. Downgrade by appending `_orchestrator-downgrade: <reason>` to the evidence-grade line.
-6. **Append a durable `[[vet_events]]` entry to the ledger** via the canonical heredoc form — one entry per vetted agent, the `agent_index` field discriminates:
-
-   ```bash
-   cat <<'EOF' | tomlctl array-append <ledger> vet_events --json -
-   {"timestamp":"<ISO 8601>","command":"<review|optimise|review-plan|plan-new|plan-update|test-bootstrap>","agent_index":<n>,"lens":"<lens>","sampled_count":<N>,"dropped_count":<M>,"downgraded_count":<K>,"dropped_ids":["<R{n}>",...],"rationale":"<≤8 KiB rationale>"}
-   EOF
-   tomlctl set <ledger> last_updated <YYYY-MM-DD>
-   ```
-
-   See `SHARED-BLOCK:ledger-schema` → `Vet event log` for the full field set.
-7. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
-8. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For Sonnet (`flow-research`) agents, the re-dispatch SHOULD escalate to `flow-research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for Sonnet on this profile).
-<!-- SHARED-BLOCK:vet-flow-research END -->
+Invoke the `flow-contract-vet-research` skill to load the universal research-vet procedure (the eight-step triage/spot-check/drop/log sequence, the `[[vet_events]]` heredoc form, the mandatory per-agent console line, and the >30% systemic-failure re-dispatch rule).
 
 **Vet pass is NOT optional.** Skipping it ships fabricated package names, broken install commands, or stale config templates straight into the user's project — costs the user trust on first run and is hard to unwind once the marker block has been written.
 
