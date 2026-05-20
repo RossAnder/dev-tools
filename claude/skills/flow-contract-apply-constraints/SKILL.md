@@ -1,0 +1,16 @@
+---
+name: flow-contract-apply-constraints
+description: Canonical apply-constraints contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the "Important Constraints" that bound every implementer agent's edits: orchestrator front-loading, the suggestion/dependency/public-API guardrails, behaviour preservation, one-concern-per-edit, minimum-change discipline, the 3-file-per-item hard cap (and its `--file-budget` / `--allow-cross-file` overrides), and the no-auto-commit rule. Consult before applying any ledger item or dispatching an implementer agent.
+---
+
+## Important Constraints
+
+- **Front-load complex analysis in the orchestrator** — it has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Give agents pre-digested instructions, not open-ended problems.
+- **Do not apply suggestions unless `$ARGUMENTS` explicitly includes them** (via `"all"` or by item ID).
+- **Do not introduce new dependencies or packages** without flagging to the user first.
+- **Do not change public API contracts** (method signatures, endpoint shapes, response types) unless the finding explicitly calls for it and the user has confirmed.
+- **Preserve behaviour** — every applied change must leave the application's observable contract intact unless the finding explicitly calls for a behaviour change. If you're unsure, emit `skipped <item id>: <reason>` and let the orchestrator surface the decision.
+- **One concern per edit** — don't combine an applied finding with a refactor or style change. Keep every change attributable to a specific finding's ledger id.
+- **Apply the minimum change that resolves the cited finding.** If a broader refactor is warranted, emit `skipped <item id>: requires deliberate refactor` and let the orchestrator surface the decision rather than widening the edit.
+- **Hard cap: no more than 3 files touched per ledger item** by default. The cap is lifted when EITHER (a) the finding's `description` explicitly lists more files, OR (b) the orchestrator passes a `FILE-BUDGET: <N | unlimited> for <ids>` header in the agent prompt (set by the carrier's `--file-budget <N>` / `--allow-cross-file` invocation flags — see each carrier's Step 1.3 selector semantics). When the cap applies and an item would exceed it, emit `skipped <item id>: cross-file refactor exceeds 3-file cap (re-run with --file-budget <N> or --allow-cross-file <id> to authorise)` with a refactor note. The override is per-invocation and per-id; it lifts only the numeric file-count cap, not the "Apply the minimum change" or "One concern per edit" rules above.
+- **No auto-commit**. The orchestrator does not invoke `git commit`. `resolution` captures the change description; commit SHA is optional and backfillable by a later `/plan-update status` or manual edit.
