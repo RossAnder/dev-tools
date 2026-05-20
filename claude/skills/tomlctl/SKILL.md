@@ -803,3 +803,11 @@ tomlctl blocks verify claude/commands/*.md
 ```
 
 Output is JSON (`{"ok":true|false,"blocks":[...]}`); exit code 0 on success, non-zero on drift or missing markers. Does NOT accept `--verify-integrity` / `--allow-outside` / `--no-write-integrity` / `--strict-integrity` (markdown has no sidecar pair; `blocks verify` never writes).
+
+### Drift checks — `blocks verify-skills`
+
+`tomlctl blocks verify-skills` verifies that each externalised flow-contract skill body still matches the block copies embedded in non-migrated carriers, reading the `skill = "..."` field from `scripts/shared-blocks.toml` and exiting 1 on drift.
+
+```bash
+tomlctl blocks verify-skills
+```

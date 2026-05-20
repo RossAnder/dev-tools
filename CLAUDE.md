@@ -22,7 +22,7 @@ Do not bypass the hook with `--no-verify` on these files — shared-block drift 
 
 - `cargo build --manifest-path tomlctl/Cargo.toml` — build tomlctl
 - `cargo install --path tomlctl` — install the `tomlctl` binary onto your PATH (run once per clone; rerun when the tomlctl binary version bumps)
-- `cargo test --manifest-path tomlctl/Cargo.toml` — run tomlctl tests
+- `cargo test --manifest-path tomlctl/Cargo.toml` — run tomlctl tests; this also gates two drift classes: skill-body↔carrier drift (the `blocks verify-skills` engine / `verify_skills_clean` test) and carrier↔CLI flag drift (the `command_lint` test). Both run via `cargo test` in CI, not via the pre-commit hook.
 - `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` — lint
 - `cargo audit --file tomlctl/Cargo.lock` — RUSTSEC advisory check (install once via `cargo install cargo-audit`; run before releases and when updating dependencies). Run `cargo audit` weekly or before each release; the snapshot in CI/per-task acceptance is not a substitute for cadence.
 - `bash scripts/verify-shared-blocks.sh` — verify shared-block parity across flow-command files (run before committing changes to any of the carriers; the pre-commit hook also runs this automatically when `core.hooksPath` is set per `## Developer setup`)
