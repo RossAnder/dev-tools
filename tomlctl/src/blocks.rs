@@ -259,13 +259,9 @@ fn path_to_string(p: &Path) -> String {
 /// Return shape for `verify_skills`, mirroring [`BlocksReport`].
 ///
 /// The `verify-skills` engine (this struct, `verify_skills`, and the private
-/// `strip_frontmatter` / `normalise_block` / `first_difference` helpers) is the
-/// implementation half of a two-task split: the CLI subcommand + dispatch route
-/// that calls `verify_skills` lands in a separate task (T4). Until that wiring
-/// exists the engine is reachable only from the in-crate unit tests, so the
-/// `#[allow(dead_code)]` annotations below match the reserved-for-future-wiring
-/// pattern in `items.rs` (`DispositionError`) and `errors.rs` (`ErrorKind`).
-#[allow(dead_code)]
+/// `strip_frontmatter` / `normalise_block` / `first_difference` helpers) is
+/// reached from the `tomlctl blocks verify-skills` dispatch route (T4) as well
+/// as the in-crate unit tests.
 #[derive(Debug)]
 pub(crate) struct SkillDriftReport {
     pub(crate) ok: bool,
@@ -283,7 +279,6 @@ pub(crate) struct SkillDriftReport {
 ///
 /// Operates on the raw text (CRLF tolerated: a `\r`-terminated `---` line is
 /// recognised because the check trims a trailing `\r`).
-#[allow(dead_code)] // reserved for T4 dispatch wiring; used by unit tests.
 fn strip_frontmatter(body: &str) -> &str {
     // Peek the first line without consuming the iterator's byte offsets.
     let mut rest = body;
@@ -330,13 +325,16 @@ fn strip_frontmatter(body: &str) -> &str {
 ///   ref); (b) contains the substring `` `flow-contract- `` (a backtick
 ///   immediately followed by `flow-contract-` — skill-style sibling ref);
 ///   (c) is an embedder-list sentence: lowercased line contains all of
-///   `embedded`, `into`, and `carrier`.
+///   `embedded`, `into`, and `carrier`; (d) is an embedder claim whose
+///   lowercased line contains the substring `embedded verbatim` — this
+///   covers both the carrier form ("...embedded verbatim into `review.md`...")
+///   and the skill form ("...copies remain embedded verbatim in `optimise.md`...")
+///   which legitimately diverge between standalone-skill and in-carrier context.
 ///   Note: lines mentioning `flow-research` / `flow-research-deep` are
 ///   substantive procedure references, NOT contract cross-refs, and are kept
 ///   (pattern (b) requires the literal `` `flow-contract- ``).
 /// - Trims TRAILING whitespace from every surviving line.
 /// - Drops trailing blank lines from the result.
-#[allow(dead_code)] // reserved for T4 dispatch wiring; used by unit tests.
 fn normalise_block(body: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for line in body.lines() {
@@ -348,6 +346,14 @@ fn normalise_block(body: &str) -> Vec<String> {
         }
         let lower = line.to_ascii_lowercase();
         if lower.contains("embedded") && lower.contains("into") && lower.contains("carrier") {
+            continue;
+        }
+        // (d) Embedder claim — the §12 ledger-schema sentence asserts where the
+        // block is "embedded verbatim", which differs by design between the
+        // standalone skill ("...remain embedded verbatim in `optimise.md`...")
+        // and the in-carrier copy ("...embedded verbatim into `review.md`...").
+        // Both forms carry the literal phrase "embedded verbatim".
+        if lower.contains("embedded verbatim") {
             continue;
         }
         out.push(line.trim_end().to_string());
@@ -375,7 +381,6 @@ fn normalise_block(body: &str) -> Vec<String> {
 /// into the normalised line vectors.
 ///
 /// `ok` is `true` iff no drift (and no missing skill/block) was recorded.
-#[allow(dead_code)] // reserved for T4 dispatch wiring; used by unit tests.
 pub(crate) fn verify_skills(manifest_path: &Path) -> Result<SkillDriftReport> {
     let manifest_text = fs::read_to_string(manifest_path)
         .with_context(|| format!("reading manifest {}", manifest_path.display()))?;
@@ -512,7 +517,6 @@ pub(crate) fn verify_skills(manifest_path: &Path) -> Result<SkillDriftReport> {
 /// Return the 1-based index of the first differing normalised line between two
 /// line vectors, or `None` if they are equal. A length mismatch is reported at
 /// the index of the first absent/extra line (1-based).
-#[allow(dead_code)] // reserved for T4 dispatch wiring; used by unit tests.
 fn first_difference(a: &[String], b: &[String]) -> Option<u64> {
     let max = a.len().max(b.len());
     for i in 0..max {
@@ -616,6 +620,29 @@ body
         );
         assert_eq!(
             normalise_block(skill),
+            vec!["intro line".to_string(), "trailing line".to_string()]
+        );
+    }
+
+    /// Bodies that differ ONLY on an embedder-list sentence — the carrier form
+    /// ("...embedded verbatim into `review.md`...") vs the skill form
+    /// ("...remain embedded verbatim in `optimise.md`...") — must normalise
+    /// equal, because the "embedded verbatim" line is dropped on both sides.
+    #[test]
+    fn normalise_block_drops_embedder_verbatim_sentence() {
+        let carrier = "intro line\n\
+                       This section is embedded verbatim into `review.md`, `optimise.md` so every command agrees.\n\
+                       trailing line\n";
+        let skill = "intro line\n\
+                     This skill is canonical; copies remain embedded verbatim in `optimise.md`, `optimise-apply.md`.\n\
+                     trailing line\n";
+        assert_eq!(
+            normalise_block(carrier),
+            normalise_block(skill),
+            "embedder 'embedded verbatim' lines must be dropped, leaving equal vectors"
+        );
+        assert_eq!(
+            normalise_block(carrier),
             vec!["intro line".to_string(), "trailing line".to_string()]
         );
     }

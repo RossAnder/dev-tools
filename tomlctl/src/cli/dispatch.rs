@@ -1213,8 +1213,15 @@ fn blocks_dispatch(op: BlocksOp) -> Result<()> {
                 std::process::exit(1);
             }
         }
-        // STUB (T3): keeps `cargo build` exhaustive until T4 wires the handler.
-        BlocksOp::VerifySkills { .. } => unimplemented!("wired in T4"),
+        BlocksOp::VerifySkills { manifest } => {
+            let manifest_path =
+                manifest.unwrap_or_else(|| std::path::PathBuf::from("scripts/shared-blocks.toml"));
+            let report = crate::blocks::verify_skills(&manifest_path)?;
+            print_json(&report.report)?;
+            if !report.ok {
+                std::process::exit(1);
+            }
+        }
     }
     Ok(())
 }
@@ -1396,34 +1403,50 @@ body
         // list.
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
-        let cmd_dir = repo_root.join("claude").join("commands");
-        // review.md migrated to claude/skills/flow-contract-* (2026-05-19) —
-        // removed from flow_context and ledger_schema carrier lists.
-        let flow_context_eight = [
-            cmd_dir.join("optimise.md"),
-            cmd_dir.join("optimise-apply.md"),
-            cmd_dir.join("review-apply.md"),
-            cmd_dir.join("plan-new.md"),
-            cmd_dir.join("plan-update.md"),
-            cmd_dir.join("implement.md"),
-            cmd_dir.join("review-plan.md"),
-            cmd_dir.join("tdd.md"),
-        ];
-        let ledger_schema_three = [
-            cmd_dir.join("optimise.md"),
-            cmd_dir.join("optimise-apply.md"),
-            cmd_dir.join("review-apply.md"),
-        ];
-        let execution_record_four = [
-            cmd_dir.join("plan-new.md"),
-            cmd_dir.join("plan-update.md"),
-            cmd_dir.join("implement.md"),
-            cmd_dir.join("tdd.md"),
-        ];
-        let apply_pair = [
-            cmd_dir.join("optimise-apply.md"),
-            cmd_dir.join("review-apply.md"),
-        ];
+
+        // R87: derive each block's carrier file list from the single source of
+        // truth — `scripts/shared-blocks.toml` — rather than duplicating the
+        // lists here. The manifest's `files` entries are repo-relative; join
+        // each onto `repo_root` to recover the absolute paths the verifier
+        // (and the graceful-skip guard) expect.
+        let manifest_path = repo_root.join("scripts").join("shared-blocks.toml");
+        let manifest_text = match fs::read_to_string(&manifest_path) {
+            Ok(t) => t,
+            Err(_) => {
+                eprintln!(
+                    "blocks_verify_reproduces_shell_hashes: manifest not found, skipping"
+                );
+                return;
+            }
+        };
+        let manifest: toml::Table =
+            toml::from_str(&manifest_text).expect("parse shared-blocks.toml");
+        let carriers_for = |name: &str| -> Vec<std::path::PathBuf> {
+            manifest
+                .get("block")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|b| b.as_table())
+                .find(|t| t.get("name").and_then(|v| v.as_str()) == Some(name))
+                .map(|t| {
+                    t.get("files")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str())
+                                .map(|f| repo_root.join(f))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default()
+        };
+
+        let flow_context_eight = carriers_for("flow-context");
+        let ledger_schema_three = carriers_for("ledger-schema");
+        let execution_record_four = carriers_for("execution-record-schema");
+        let apply_pair = carriers_for("apply-dependency-sort");
 
         // Only run when every file is present. The test crate is consumable
         // in isolation; degrade gracefully if someone packages it without
@@ -1431,6 +1454,7 @@ body
         if !flow_context_eight.iter().all(|p| p.exists())
             || !ledger_schema_three.iter().all(|p| p.exists())
             || !execution_record_four.iter().all(|p| p.exists())
+            || !apply_pair.iter().all(|p| p.exists())
         {
             eprintln!(
                 "blocks_verify_reproduces_shell_hashes: command files not found, skipping"
@@ -1603,6 +1627,30 @@ body
             &report,
             "apply-constraints",
             "398ea2a01f6a87b0b207ed85abfd41cae4c18ddfede0057925cc0a642b50767e",
+        );
+    }
+
+    /// T4: the four externalised shared blocks (those carrying a `skill` field
+    /// in `scripts/shared-blocks.toml`) must be semantically in-sync with each
+    /// embedded carrier copy — i.e. `verify_skills` reports `ok == true`. The
+    /// engine normalises away the expected mechanical differences (frontmatter,
+    /// contract cross-references), so any drift here is a genuine finding. Uses
+    /// the same repo-root resolution + graceful-skip-on-absent-files pattern as
+    /// `blocks_verify_reproduces_shell_hashes`.
+    #[test]
+    fn verify_skills_clean() {
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+        let manifest_path = repo_root.join("scripts").join("shared-blocks.toml");
+        if !manifest_path.exists() {
+            eprintln!("verify_skills_clean: manifest not found, skipping");
+            return;
+        }
+        let report = blocks::verify_skills(&manifest_path).unwrap();
+        assert!(
+            report.ok,
+            "externalised skills must be in semantic sync with their carriers: {:?}",
+            report.report
         );
     }
 
