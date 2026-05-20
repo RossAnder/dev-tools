@@ -200,8 +200,8 @@ Pass `--strict-read` when an agent needs to distinguish "no matches in an existi
 ```bash
 # Errors with kind=not_found if the ledger hasn't been bootstrapped yet,
 # even for next-id (which otherwise silently returns "R1").
-tomlctl --strict-read items next-id .claude/flows/foo/review-ledger.toml --prefix R
-tomlctl --strict-read items list .claude/flows/foo/review-ledger.toml --status open
+tomlctl items next-id .claude/flows/foo/review-ledger.toml --prefix R --strict-read
+tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-read
 ```
 
 `--strict-read` fires **before** `--verify-integrity`: a missing file under both flags yields `kind=not_found`, not `kind=integrity`. Zero-byte files are treated as a minimal valid doc in both modes; malformed TOML errors `kind=parse` in both modes.

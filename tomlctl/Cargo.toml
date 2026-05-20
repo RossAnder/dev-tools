@@ -48,6 +48,12 @@ regex = { version = "^1", default-features = false, features = ["std", "perf"] }
 # stdout/stderr matchers used inside `.assert()`.
 assert_cmd = "^2"
 predicates = "^3"
+# T5 (command_lint): quote-aware tokeniser for the carrier↔CLI flag-drift
+# test. Splits each `tomlctl …` invocation mined from the project markdown
+# into argv tokens the real clap `Cli` parser can consume, keeping
+# `"$(git rev-parse --show-toplevel)"` as one token rather than splitting on
+# its inner spaces.
+shell-words = "^1"
 
 [profile.release]
 opt-level = 3

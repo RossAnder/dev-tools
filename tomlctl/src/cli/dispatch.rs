@@ -1654,6 +1654,217 @@ body
         );
     }
 
+    /// T5: carrier↔CLI flag-drift guard. Every `tomlctl …` invocation written
+    /// in the project's command/skill markdown is fed to the REAL clap `Cli`
+    /// parser; an `UnknownArgument` / `InvalidSubcommand` error is a lint
+    /// failure. This catches the class of bug that shipped in the pilot — a
+    /// `--flow` vs `--flow-override` mismatch that no review lens caught because
+    /// lenses read prose, they don't execute the parser.
+    ///
+    /// What is NOT a failure: missing-required-argument / value-validation
+    /// errors. Doc snippets use placeholders (`<ledger>`, `<slug>`) for required
+    /// positionals, so a parse that fails only because a required value is
+    /// absent or bogus is expected and ignored.
+    ///
+    /// Opt-out: a ```bash fence whose info-string carries the token
+    /// `ignore-command-lint` skips the whole block (for deliberately partial /
+    /// illustrative snippets). Same repo-root resolution + graceful-skip pattern
+    /// as `blocks_verify_reproduces_shell_hashes`.
+    #[test]
+    fn command_lint() {
+        use clap::Parser as _;
+        use clap::error::ErrorKind;
+
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+        let claude_dir = repo_root.join("claude");
+        if !claude_dir.exists() {
+            eprintln!("command_lint: claude/ dir not found, skipping");
+            return;
+        }
+
+        // Build the scan set: the tomlctl skill, every flow-contract skill, and
+        // every command file. Use std directory reads for the two globs — no
+        // `glob` crate is in the dependency tree and std is sufficient here.
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        files.push(claude_dir.join("skills").join("tomlctl").join("SKILL.md"));
+        let skills_dir = claude_dir.join("skills");
+        if let Ok(entries) = fs::read_dir(&skills_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with("flow-contract-") {
+                    let skill = entry.path().join("SKILL.md");
+                    if skill.exists() {
+                        files.push(skill);
+                    }
+                }
+            }
+        }
+        let commands_dir = claude_dir.join("commands");
+        if let Ok(entries) = fs::read_dir(&commands_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) == Some("md") {
+                    files.push(p);
+                }
+            }
+        }
+        files.sort();
+
+        // Collected lint failures: (file, logical-line, clap error rendering).
+        let mut failures: Vec<(String, String, String)> = Vec::new();
+        // Lines we skipped because the quote tokeniser choked — surfaced in the
+        // report so an unparseable snippet doesn't silently vanish.
+        let mut unbalanced: Vec<(String, String)> = Vec::new();
+
+        for file in &files {
+            let text = match fs::read_to_string(file) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            let rel = file
+                .strip_prefix(&repo_root)
+                .unwrap_or(file)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            // Walk the file line-by-line tracking fence state. A bash block is
+            // opened by a trimmed line starting with "```bash"; its info-string
+            // is the remainder after that prefix. The block closes at the next
+            // line whose trimmed form starts with "```".
+            let mut in_bash = false;
+            let mut skip_block = false;
+            // Buffer for stitching shell line-continuations (trailing `\`).
+            let mut cont = String::new();
+
+            let lint_logical = |rel: &str,
+                                logical: &str,
+                                    failures: &mut Vec<(String, String, String)>,
+                                    unbalanced: &mut Vec<(String, String)>| {
+                let trimmed = logical.trim_start();
+                // A pipe into tomlctl (`… | tomlctl items add …`) — take the
+                // substring from that `tomlctl` so the heredoc/cat prefix and
+                // its body don't masquerade as argv.
+                let candidate = if let Some(idx) = trimmed.find("| tomlctl ") {
+                    &trimmed[idx + 2..]
+                } else {
+                    trimmed
+                };
+                if !candidate.starts_with("tomlctl") {
+                    return;
+                }
+                let raw_tokens = match shell_words::split(candidate) {
+                    Ok(t) => t,
+                    Err(_) => {
+                        unbalanced.push((rel.to_string(), candidate.to_string()));
+                        return;
+                    }
+                };
+                // Strip shell plumbing that is NOT part of tomlctl's argv:
+                // redirections (`2>/dev/null`, `>/dev/null`, `2>&1`) and the
+                // heredoc opener (`<<'EOF'`). Everything from the first such
+                // operator onward is shell syntax the shell consumes before
+                // exec, so it must not be fed to clap. A bare `-` (the stdin
+                // sentinel for `--ndjson -` / `--ops -`) is a real argv token
+                // and is preserved.
+                let is_shell_op = |t: &str| -> bool {
+                    t.starts_with("<<")
+                        || t.starts_with("2>")
+                        || t.starts_with("1>")
+                        || t.starts_with('>')
+                        || (t.starts_with('<') && t != "<")
+                };
+                let tokens: Vec<String> = raw_tokens
+                    .into_iter()
+                    .take_while(|t| !is_shell_op(t))
+                    .collect();
+                if tokens.is_empty() {
+                    return;
+                }
+                // shell_words yields "tomlctl" as the first token, which is
+                // exactly the program name clap's `try_parse_from` expects.
+                if let Err(e) = Cli::try_parse_from(&tokens) {
+                    match e.kind() {
+                        ErrorKind::UnknownArgument | ErrorKind::InvalidSubcommand => {
+                            failures.push((
+                                rel.to_string(),
+                                candidate.to_string(),
+                                e.to_string().lines().next().unwrap_or("").to_string(),
+                            ));
+                        }
+                        // Missing-required / value-validation / help / version
+                        // are all acceptable: placeholders mean required values
+                        // are legitimately absent in docs.
+                        _ => {}
+                    }
+                }
+            };
+
+            for line in text.lines() {
+                let trimmed = line.trim_start();
+                if !in_bash {
+                    if let Some(info) = trimmed.strip_prefix("```bash") {
+                        in_bash = true;
+                        skip_block = info.contains("ignore-command-lint");
+                        cont.clear();
+                    }
+                    continue;
+                }
+                // Inside a bash block.
+                if trimmed.starts_with("```") {
+                    in_bash = false;
+                    skip_block = false;
+                    cont.clear();
+                    continue;
+                }
+                if skip_block {
+                    continue;
+                }
+                // Stitch shell line-continuations: a line ending in `\` joins
+                // with the next.
+                let body = line;
+                if let Some(stripped) = body.strip_suffix('\\') {
+                    cont.push_str(stripped);
+                    cont.push(' ');
+                    continue;
+                }
+                let logical = if cont.is_empty() {
+                    body.to_string()
+                } else {
+                    let mut full = std::mem::take(&mut cont);
+                    full.push_str(body);
+                    full
+                };
+                lint_logical(&rel, &logical, &mut failures, &mut unbalanced);
+            }
+        }
+
+        if !unbalanced.is_empty() {
+            eprintln!("command_lint: {} line(s) skipped (unbalanced quotes in snippet):", unbalanced.len());
+            for (f, l) in &unbalanced {
+                eprintln!("  {f}: {l}");
+            }
+        }
+
+        if !failures.is_empty() {
+            let mut msg = String::new();
+            msg.push_str(&format!(
+                "command_lint: {} carrier↔CLI flag/subcommand drift(s) found.\n",
+                failures.len()
+            ));
+            msg.push_str(
+                "Each line below is a `tomlctl …` invocation in the project \
+                 markdown that the real clap parser rejected as an unknown \
+                 argument or subcommand:\n",
+            );
+            for (f, l, e) in &failures {
+                msg.push_str(&format!("  {f}\n    line:  {l}\n    error: {e}\n"));
+            }
+            panic!("{msg}");
+        }
+    }
+
     // ----- R54: stdin sentinel ------
 
     #[test]
