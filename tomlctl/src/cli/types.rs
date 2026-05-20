@@ -1174,6 +1174,15 @@ pub(crate) enum BlocksOp {
         #[arg(long = "block")]
         block: Vec<String>,
     },
+    /// Verify each externalised flow-contract skill body matches the copies
+    /// still embedded in non-migrated carriers (drift check). Reads the
+    /// `skill = "..."` field from the shared-blocks manifest; skips blocks
+    /// without a skill or with an empty file list. Exits 1 on drift.
+    VerifySkills {
+        /// Manifest path (defaults to scripts/shared-blocks.toml when omitted; resolved in dispatch).
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+    },
 }
 
 /// Legacy shortcut flags that predate the `--where-*` family on `items list`.

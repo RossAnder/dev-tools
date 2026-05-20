@@ -1213,6 +1213,8 @@ fn blocks_dispatch(op: BlocksOp) -> Result<()> {
                 std::process::exit(1);
             }
         }
+        // STUB (T3): keeps `cargo build` exhaustive until T4 wires the handler.
+        BlocksOp::VerifySkills { .. } => unimplemented!("wired in T4"),
     }
     Ok(())
 }

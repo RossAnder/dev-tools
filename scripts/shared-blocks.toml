@@ -10,6 +10,11 @@
 #   is deleted — the verifier becomes vacuous for that contract.
 #   Pilot carrier: claude/commands/review.md (removed from 4 blocks).
 #
+#   The optional `skill = "..."` field records the externalised skill path
+#   for a block once it is moved to a flow-contract skill. It is consumed by
+#   the `tomlctl blocks verify-skills` drift check and is ignored by
+#   scripts/verify-shared-blocks.sh (it sits outside the `files` array).
+#
 # Carrier-list scope rule (re asymmetry between flow-context and
 # vet-flow-research below):
 #   - flow-context covers ONLY flow-resolving carriers — commands that
@@ -28,6 +33,7 @@
 
 [[block]]
 name = "flow-context"
+skill = "claude/skills/flow-contract-flow-context/SKILL.md"
 # Flow-resolving carriers only — see carrier-list scope rule at top of file.
 # review.md migrated to claude/skills/flow-contract-flow-context/SKILL.md (2026-05-19).
 files = [
@@ -43,6 +49,7 @@ files = [
 
 [[block]]
 name = "ledger-schema"
+skill = "claude/skills/flow-contract-ledger-schema/SKILL.md"
 # review.md migrated to claude/skills/flow-contract-ledger-schema/SKILL.md (2026-05-19).
 files = [
   "claude/commands/optimise.md",
@@ -82,6 +89,7 @@ files = [
 
 [[block]]
 name = "ledger-disposition-sweep"
+skill = "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md"
 # review.md migrated to claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md (2026-05-19).
 files = [
   "claude/commands/optimise.md",
@@ -103,6 +111,7 @@ files = [
 
 [[block]]
 name = "vet-flow-research"
+skill = "claude/skills/flow-contract-vet-research/SKILL.md"
 # Includes test-bootstrap.md (a non-flow-aware carrier) — see carrier-list
 # scope rule at top of file. Asymmetry vs flow-context is intentional.
 # review.md migrated to claude/skills/flow-contract-vet-research/SKILL.md (2026-05-19).
