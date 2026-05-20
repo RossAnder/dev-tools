@@ -1,0 +1,22 @@
+slug = "harness-progressive-disclosure-wave-1"
+plan_path = "docs/plans/harness-progressive-disclosure-wave-1.md"
+status = "review"
+created = 2026-05-20
+updated = 2026-05-20
+branch = "main"
+scope = [
+    "claude/commands/**",
+    "claude/skills/**",
+    "scripts/shared-blocks.toml",
+]
+
+[tasks]
+total = 9
+completed = 8
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/harness-progressive-disclosure-wave-1/review-ledger.toml"
+optimise_findings = ".claude/flows/harness-progressive-disclosure-wave-1/optimise-findings.toml"
+execution_record = ".claude/flows/harness-progressive-disclosure-wave-1/execution-record.toml"
+plan_review_findings = ".claude/flows/harness-progressive-disclosure-wave-1/plan-review-findings.toml"

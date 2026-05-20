@@ -1,0 +1,199 @@
+schema_version = 1
+last_updated = 2026-05-20
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-20
+agent = "implement"
+summary = "status draft → in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "2fb725502d5439ab"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "create-flow-contract-execution-record-schema-skill"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Created flow-contract-execution-record-schema skill (verbatim extraction, diff-verified byte-identical to plan-update copy)"
+files = ["claude/skills/flow-contract-execution-record-schema/SKILL.md"]
+commits = ["ca79b22"]
+status = "done"
+dedup_id = "e67437614210a9de"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "create-flow-contract-plansdirectory-prompt-skill"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Created flow-contract-plansdirectory-prompt skill (verbatim extraction, diff-verified byte-identical to plan-update copy)"
+files = ["claude/skills/flow-contract-plansdirectory-prompt/SKILL.md"]
+commits = ["ca79b22"]
+status = "done"
+dedup_id = "8e99d01a2edc1b43"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "create-flow-contract-plan-output-format-skill"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Created flow-contract-plan-output-format skill (carrier-prose extraction, outer fence stripped, nested fence preserved, fences balanced)"
+files = ["claude/skills/flow-contract-plan-output-format/SKILL.md"]
+commits = ["ca79b22"]
+status = "done"
+dedup_id = "0f691eaa15bb01f7"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "rewrite-plan-new-skeleton"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Rewrote plan-new.md 672->172 LOC; 5 skill invocations; Phase-4 autonomy gate + Phase-9 flow-init preserved verbatim"
+files = ["claude/commands/plan-new.md"]
+commits = ["5bdf81f"]
+status = "done"
+dedup_id = "ddc84bafe7ebf182"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "rewrite-review-plan-skeleton"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Rewrote review-plan.md 355->95 LOC; 3 skill invocations; Step-4 empty-answer rule preserved"
+files = ["claude/commands/review-plan.md"]
+commits = ["5bdf81f"]
+status = "done"
+dedup_id = "c3b3139b37525add"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "rewrite-implement-skeleton"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Rewrote implement.md 610->100 LOC; 2 skill invocations; git-checkpoint + stash-pop halt gates preserved"
+files = ["claude/commands/implement.md"]
+commits = ["5bdf81f"]
+status = "done"
+dedup_id = "0b9d83108d0f69b6"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "rewrite-tdd-skeleton"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Rewrote tdd.md 478->96 LOC; 2 skill invocations; resume protocol, anti-cheat fingerprint, .tdd.lock preserved"
+files = ["claude/commands/tdd.md"]
+commits = ["5bdf81f"]
+status = "done"
+dedup_id = "c49323943cb9a986"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-05-20
+agent = "implement"
+task_ref = "carrier-skeleton-header-treatment"
+summary = "Dropped block-body section headings (## Flow Context, ## Execution Record Schema) in all four carriers rather than retaining them"
+original_intent = "Plan Approach C / per-task acceptance: preserve every top-level ## header verbatim and in order"
+rationale = "Those headings are externalised block-body content (the block starts with them), not carrier-distinctive grep anchors; pilot review.md drops them. Carrier-distinctive headers (Phase/Step/Cycle FSM/Anti-cheat/etc.) all preserved; normalised T5/T7 to match T4/T6 and the pilot for uniform skeletons"
+commits = ["5bdf81f"]
+dedup_id = "b119df8ca8ad7789"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "shrink-manifest-add-skill-fields-refresh-claude-md"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Shrank manifest (flow-context/vet-flow-research drop migrated carriers; execution-record-schema + plansdirectory-prompt -> [plan-update] with skill=); refreshed CLAUDE.md carrier enumeration + parity sentence"
+files = [
+    "scripts/shared-blocks.toml",
+    "CLAUDE.md",
+]
+commits = ["5bdf81f"]
+status = "done"
+dedup_id = "f4b5be9631ce579b"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "cargo build clean"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "834e94d62539809f"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "cargo test all pass (incl verify_skills_clean, command_lint, blocks_verify_reproduces_shell_hashes)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "9953e763262be821"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "cargo clippy no errors (pre-existing map_or suggestion only; zero Rust changed this wave)"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "3fc7c489375c20f5"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "shared-block parity OK"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "9b3abd1b915e7afe"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "blocks verify-skills ok:true, zero drift across six skill-bearing blocks"
+command = "tomlctl blocks verify-skills"
+outcome = "pass"
+dedup_id = "af6ccc029ca0b7fd"
+
+[[items]]
+id = "E16"
+type = "status-transition"
+date = 2026-05-20
+agent = "plan-update"
+summary = "status in-progress → review (all 8 implementation tasks done; automated gate green)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "9dba337588dbe8fd"

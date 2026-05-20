@@ -1,0 +1,132 @@
+schema_version = 1
+last_updated = 2026-05-20
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "warning"
+category = "executability"
+plan_section = "#### 1. Create `flow-contract-execution-record-schema` skill [S]"
+summary = "T1 acceptance uses approximate byte length and the wrong comparison source (implement.md, not the verify_skills target plan-update)"
+description = "verify_skills_clean compares the new skill against plan-update's embedded copy; byte-equality vs implement.md is necessary but not sufficient. Make acceptance a diff against plan-update's block body."
+anchor_old = "body byte length equals the source block body (markers excluded, ≈16,774 bytes)"
+anchor_new = "the skill body (frontmatter-excluded) is byte-identical to plan-update's embedded execution-record-schema block (the verify_skills_clean comparison target) with the START/END marker lines removed — verify with a `diff`, not an approximate byte count"
+dedup_id = "768ffdb00ed9571c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "warning"
+category = "executability"
+plan_section = "#### 2. Create `flow-contract-plansdirectory-prompt` skill [S]"
+summary = "T2 acceptance uses approximate byte length; make it a diff against plan-update's copy"
+anchor_old = "body byte length equals source block body (≈3,691 bytes)"
+anchor_new = "the skill body (frontmatter-excluded) is byte-identical (via `diff`) to plan-update's embedded plansdirectory-prompt block with the marker lines removed"
+dedup_id = "8bde03398c963650"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "executability"
+plan_section = "#### 3. Create `flow-contract-plan-output-format` skill [S]"
+summary = "T3 extraction boundary under-specified; template sits inside a ``` fence with a nested build/test/lint fence — verbatim copy yields broken markdown"
+description = "plan-new.md outer fence at :502/:580, nested fence at :539/:543; Format rules at :582-589."
+anchor_old = """Extract `plan-new`'s Phase-7 plan-document template (the `# Plan: {Descriptive Title}` structure through `## Risks`, plus the "Format rules" list) into the skill body with 2-field frontmatter."""
+anchor_new = """Extract `plan-new`'s Phase-7 plan-document template from plan-new.md lines 502–589 (the `# Plan: {Descriptive Title}` structure through `## Risks`, plus the "Format rules" list) into the skill body with 2-field frontmatter. Strip the OUTER ``` fence (plan-new.md:502 and :580) but PRESERVE the nested build/test/lint fence (:539/:543) — extracting the outer fence verbatim would render a broken code block in the SKILL.md."""
+dedup_id = "c08f59fae3ee9208"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "completeness"
+plan_section = "### C. Carrier skeletons"
+summary = "In-prose pointers to now-externalised sections (implement.md's repeated 'see the ## Execution Record Schema shared block' at :301/:436/:448/:466) go dangling — in-scope carrier hygiene, not the §E deferral"
+anchor_old = "Skill invocations bind at the phase where the contract actually fires (PILOT-LESSONS §4): flow-context at Step 0; execution-record-schema before the first execution-record write; plansdirectory-prompt at Step 0.5; vet-research after research agents return; plan-output-format at Phase 7."
+anchor_new = "Skill invocations bind at the phase where the contract actually fires (PILOT-LESSONS §4): flow-context at Step 0; execution-record-schema before the first execution-record write; plansdirectory-prompt at Step 0.5; vet-research after research agents return; plan-output-format at Phase 7. **In-prose pointers to now-externalised sections** — e.g. implement.md's repeated `see the ## Execution Record Schema shared block` (:301,:436,:448,:466) and the `## Flow Context section` refs — MUST be rewritten into skill-invocation directives during each carrier rewrite. This is in-scope carrier hygiene, distinct from the §E-deferred skill-body cross-refs."
+dedup_id = "7debe0f089562a36"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "command_lint validates flag/subcommand structure only — NOT the --command VALUE against the runtime whitelist, so a typo'd command name passes lint and fails at runtime"
+anchor_old = "this is exactly the §10 failure class the gate tooling was built to catch."
+anchor_new = "this catches structural flag/subcommand drift. **Caveat**: `--command` is a clap `String` checked against `VALID_COMMANDS` only at runtime (envelope.rs:57), so command_lint will NOT catch a typo'd command value (e.g. `--command plannew`) — eyeball each carrier's `--command <name>` against the whitelist, or add a small test asserting membership."
+dedup_id = "f595ac8cce236d75"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 8. Shrink manifest + add `skill =` fields [S]"
+summary = "No task updates CLAUDE.md — its 'execution-record-schema parity across plan-new/plan-update/implement' prose and the manifest carrier-file list go stale after Task 8"
+description = "Post-wave only plan-update embeds execution-record-schema. Add a CLAUDE.md edit (extend Task 8's files or a new task) so the Developer-setup prose naming plan-new/implement is corrected."
+dedup_id = "2c98242e70701503"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "executability"
+plan_section = "### Batch 2 (parallel — independent carrier rewrites; each touches one file)"
+summary = "Tasks 4–8 must land in ONE commit — the pre-commit hook (verify-shared-blocks.sh) rejects any intermediate commit where a carrier dropped markers while the manifest still lists it"
+anchor_old = "the manifest edit (Task 8) is deliberately deferred to Batch 3 so a single commit flips carriers + manifest together and parity never goes red mid-batch."
+anchor_new = "the manifest edit (Task 8) is deliberately deferred to Batch 3 so a single commit flips carriers + manifest together and parity never goes red mid-batch. **Commit discipline**: stage Tasks 4–8 into ONE commit — the pre-commit hook runs verify-shared-blocks.sh, which rejects any intermediate commit where a carrier has dropped its block markers while the manifest still lists it."
+dedup_id = "18ca8c3f36e7884c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Approach"
+summary = "Add a 'Canonical skill names' list to Constraints — the 3 new skill names are hand-typed in ~6 places across T1-T7 with no single source, a spelling-drift surface"
+dedup_id = "ef3ece8aeb06967c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 7. Rewrite `claude/commands/tdd.md` [M]"
+summary = "Add tdd.md:342 failure_reason discriminator (drives the resume FSM) to T7's must-survive list"
+anchor_old = "preserve the resume-protocol `tomlctl` calls and anti-cheat/lockfile logic inline."
+anchor_new = "preserve the resume-protocol `tomlctl` calls, the `failure_reason` discriminator reasoning (tdd.md:342) that drives the resume FSM, and anti-cheat/lockfile logic inline."
+dedup_id = "bc3dcdf80282c986"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Verification"
+summary = "Q3 post-conversion pass should exercise each carrier's UNIQUE logic (Phase-9 init, git/stash halts, tdd resume), not just confirm skills load; run plan-new first as canary"
+anchor_old = "once all four carriers are converted, run `/plan-new`, `/review-plan`, `/implement`, and `/tdd` live"
+anchor_new = "once all four carriers are converted, run `/plan-new` first as a canary, then `/review-plan`, `/implement`, and `/tdd` live — exercising each carrier's UNIQUE logic (Phase-9 flow-init, the git-checkpoint/stash halts, the tdd resume protocol), not merely confirming skills load"
+dedup_id = "b9841817d07838e9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 4. Rewrite `claude/commands/plan-new.md` [M]"
+summary = "State explicitly that Phase-9 bootstrap (slug sanitiser regex, collision, idempotency, path-traversal guard) is preserved VERBATIM and the ≤150 ceiling yields to it — never trim Phase 9 for line count"
+dedup_id = "1f3e6515a1b89c27"
