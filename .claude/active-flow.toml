@@ -56,3 +56,17 @@ scope = [
     "claude/skills/**",
     "scripts/shared-blocks.toml",
 ]
+
+[[active]]
+slug = "harness-progressive-disclosure-wave-2"
+last_used = "2026-05-20T13:55:08.775543Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "claude/commands/**",
+    "claude/skills/**",
+    "scripts/shared-blocks.toml",
+    "CLAUDE.md",
+]

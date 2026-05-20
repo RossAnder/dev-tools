@@ -1,6 +1,6 @@
 ---
 name: flow-contract-apply-constraints
-description: Canonical apply-constraints contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the "Important Constraints" that bound every implementer agent's edits: orchestrator front-loading, the suggestion/dependency/public-API guardrails, behaviour preservation, one-concern-per-edit, minimum-change discipline, the 3-file-per-item hard cap (and its `--file-budget` / `--allow-cross-file` overrides), and the no-auto-commit rule. Consult before applying any ledger item or dispatching an implementer agent.
+description: Canonical apply-constraints contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the "Important Constraints" that bound every implementer agent's edits: orchestrator front-loading, the suggestion/dependency/public-API guardrails, behaviour preservation, one-concern-per-edit, minimum-change discipline, the 3-file-per-item hard cap (and its `--file-budget` / `--allow-cross-file` overrides), the `skipped <id>: cross-file refactor exceeds 3-file cap` and `skipped <id>: requires deliberate refactor` skip-tag forms emitted when the cap applies, and the no-auto-commit rule. Consult before applying any ledger item or dispatching an implementer agent.
 ---
 
 ## Important Constraints

@@ -1572,12 +1572,24 @@ body
         );
     }
 
-    /// T4: the four externalised shared blocks (those carrying a `skill` field
-    /// in `scripts/shared-blocks.toml`) must be semantically in-sync with each
-    /// embedded carrier copy — i.e. `verify_skills` reports `ok == true`. The
-    /// engine normalises away the expected mechanical differences (frontmatter,
-    /// contract cross-references), so any drift here is a genuine finding. Uses
-    /// the same repo-root resolution + graceful-skip-on-absent-files pattern as
+    /// T4: skill-body↔carrier drift guard for any *hybrid* shared block — one
+    /// that both carries a `skill` field in `scripts/shared-blocks.toml` AND
+    /// still has a non-empty `files` list of embedded carrier copies. For every
+    /// such block `verify_skills` must report `ok == true`; the engine
+    /// normalises away the expected mechanical differences (frontmatter,
+    /// contract cross-references), so any drift there is a genuine finding.
+    ///
+    /// POST-WAVE-2 STATE: this guard is currently DORMANT. After the
+    /// progressive-disclosure migration the manifest's sole surviving block
+    /// (`forbidden-working-tree-ops`) has no `skill` field, and every
+    /// externalised block was deleted from the manifest — so no block satisfies
+    /// the `skill && files` predicate and `verify_skills` iterates ZERO blocks,
+    /// returning `ok == true` unconditionally. The test therefore passes
+    /// vacuously today and exists as a regression latch: it reactivates the
+    /// moment a future wave reintroduces a hybrid block (a skill body whose
+    /// contract is still embedded in some agent/carrier that lacks the Skill
+    /// tool). The assertion logic is deliberately unchanged. Uses the same
+    /// repo-root resolution + graceful-skip-on-absent-files pattern as
     /// `blocks_verify_reproduces_shell_hashes`.
     #[test]
     fn verify_skills_clean() {
@@ -1645,6 +1657,15 @@ body
         }
         let commands_dir = claude_dir.join("commands");
         if let Ok(entries) = fs::read_dir(&commands_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|e| e.to_str()) == Some("md") {
+                    files.push(p);
+                }
+            }
+        }
+        let agents_dir = claude_dir.join("agents");
+        if let Ok(entries) = fs::read_dir(&agents_dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.extension().and_then(|e| e.to_str()) == Some("md") {
@@ -1802,6 +1823,101 @@ body
             );
             for (f, l, e) in &failures {
                 msg.push_str(&format!("  {f}\n    line:  {l}\n    error: {e}\n"));
+            }
+            panic!("{msg}");
+        }
+    }
+
+    /// T6: progressive-disclosure invocation guard. A skeletonised carrier must
+    /// still INVOKE each `flow-contract-*` skill it delegates to — `command_lint`
+    /// only catches CLI-flag drift, and `verify_skills_clean` is dormant
+    /// post-wave-2, so without this test a carrier could silently drop an
+    /// "Invoke the `flow-contract-X` skill" line and no check would fail. For
+    /// each migrated carrier we assert the file text mentions every expected
+    /// skill name. Same repo-root resolution + graceful-skip-on-absent-files
+    /// pattern as `command_lint`.
+    #[test]
+    fn carrier_invokes_required_skills() {
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+        let commands_dir = repo_root.join("claude").join("commands");
+        if !commands_dir.exists() {
+            eprintln!("carrier_invokes_required_skills: claude/commands/ not found, skipping");
+            return;
+        }
+
+        // Expected carrier → required flow-contract skills mapping (verified
+        // during the wave-2 review). A miss means a skeletonised carrier dropped
+        // its delegation to a skill it must still invoke.
+        let expected: &[(&str, &[&str])] = &[
+            (
+                "optimise.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-ledger-schema",
+                    "flow-contract-ledger-disposition-sweep",
+                    "flow-contract-vet-research",
+                ],
+            ),
+            (
+                "optimise-apply.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-ledger-schema",
+                    "flow-contract-apply-dependency-sort",
+                    "flow-contract-apply-vet-flow-implement-lite",
+                    "flow-contract-apply-rollback-protocol",
+                    "flow-contract-apply-constraints",
+                ],
+            ),
+            (
+                "review-apply.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-ledger-schema",
+                    "flow-contract-apply-dependency-sort",
+                    "flow-contract-apply-vet-flow-implement-lite",
+                    "flow-contract-apply-rollback-protocol",
+                    "flow-contract-apply-constraints",
+                ],
+            ),
+            (
+                "plan-update.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-plansdirectory-prompt",
+                    "flow-contract-execution-record-schema",
+                    "flow-contract-vet-research",
+                ],
+            ),
+            ("test-bootstrap.md", &["flow-contract-vet-research"]),
+        ];
+
+        let mut missing: Vec<String> = Vec::new();
+        for (carrier, skills) in expected {
+            let path = commands_dir.join(carrier);
+            let text = match fs::read_to_string(&path) {
+                Ok(t) => t,
+                Err(_) => {
+                    // A carrier we expect but cannot read is itself a miss.
+                    missing.push(format!("{carrier}: file not readable"));
+                    continue;
+                }
+            };
+            for skill in *skills {
+                if !text.contains(skill) {
+                    missing.push(format!("{carrier}: missing invocation of `{skill}`"));
+                }
+            }
+        }
+
+        if !missing.is_empty() {
+            let mut msg = String::from(
+                "carrier_invokes_required_skills: skeletonised carrier(s) dropped a \
+                 required flow-contract skill invocation:\n",
+            );
+            for m in &missing {
+                msg.push_str(&format!("  {m}\n"));
             }
             panic!("{msg}");
         }

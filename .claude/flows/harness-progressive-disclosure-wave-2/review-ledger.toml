@@ -1,0 +1,254 @@
+schema_version = 1
+last_updated = 2026-05-20
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R1"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 1583
+symbol = "verify_skills_clean"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "verify_skills_clean now passes vacuously; CLAUDE.md still claims it gates skill-carrier drift"
+description = "blocks.rs:421 skips any block where skill.is_empty() || files.is_empty(). After wave-2 the only manifest block (forbidden-working-tree-ops) has no skill field and no externalised block retains both skill= and a carrier copy, so verify_skills iterates zero blocks and returns ok=true unconditionally. Yet CLAUDE.md:25 states cargo test 'gates skill-body-carrier drift (the blocks verify-skills engine / verify_skills_clean test)' and the Developer-setup prose says skill-carrier drift 'is caught separately by tomlctl blocks verify-skills' - both now false. Converged across Security, Architecture, and Testability lenses; confirmed by reading blocks.rs:421, the manifest, and running the green-but-vacuous test."
+evidence = [
+    "tomlctl/src/blocks.rs:421",
+    "CLAUDE.md:25",
+    "scripts/shared-blocks.toml",
+]
+dedup_id = "c3cf8dcf287e607a"
+resolved = 2026-05-20
+resolution = "Corrected verify_skills_clean doc-comment to describe the post-wave-2 dormant state (zero blocks checked; reactivation latch) and fixed both CLAUDE.md drift-guard claims (Build & test bullet + Developer setup prose) to state verify-skills is currently dormant and externalised skills are single-source. Files: tomlctl/src/cli/dispatch.rs, CLAUDE.md."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R2"
+file = "claude/commands/optimise.md"
+line = 284
+symbol = "Ledger location / flow-less fallback"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Stale internal cross-reference: 'the Flow Context block above (line 87)' points to a line that no longer holds the slug rule"
+description = "optimise.md:284 says 'Derive <scope> per the flow-less slug rule in the Flow Context block above (line 87).' After skeletonisation the Flow Context section is at lines 10-14 (a summary + skill invocation) and the slug-derivation rule now lives in the flow-contract-flow-context skill; line 87 is mid-example. This is a PILOT-12-class dead reference that slipped the skill-focused sweep because it sits in a carrier. Found independently by Quality and Completeness lenses; verified by reading the line."
+evidence = ["claude/commands/optimise.md:284"]
+dedup_id = "cacaa4113dd28d40"
+resolved = 2026-05-20
+resolution = "Replaced the dead '(line 87)' cross-reference at optimise.md:284 with a pointer to the flow-contract-flow-context skill where the flow-less slug rule now lives."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R3"
+file = "claude/commands/optimise-apply.md"
+line = 387
+symbol = "Step 5.5: Rollback protocol"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "optimise-apply rollback invocation omits the prior-status disambiguation that review-apply provides"
+description = "review-apply.md:422 appends to its rollback-skill invocation: 'For /review-apply the successful prior status is fixed and the event log command is review-apply.' optimise-apply.md:387 has no equivalent line, even though /optimise-apply uses applied (not fixed) as the prior-success status and command optimise-apply. The shared flow-contract-apply-rollback-protocol skill lists both fixed/applied, so without the carrier-side disambiguation the model could pick the wrong status string when loading the skill in the optimise-apply context. Verified by reading both invocations."
+evidence = [
+    "claude/commands/optimise-apply.md:387",
+    "claude/commands/review-apply.md:422",
+]
+dedup_id = "eccd0da0cf491793"
+resolved = 2026-05-20
+resolution = "Appended the /optimise-apply prior-status disambiguation sentence (status applied, command optimise-apply) to the Step 5.5 rollback invocation, mirroring review-apply.md."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "wontfix"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R4"
+file = "claude/agents/verification.md"
+line = 30
+symbol = "forbidden-working-tree-ops enumeration"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "verification.md carries a third, un-parity-checked copy of the forbidden-working-tree-ops list"
+description = "The manifest's forbidden-working-tree-ops block spans only the two flow-implement agents; verification.md:30 restates the same forbidden-ops set inline with no SHARED-BLOCK marker, so the byte-parity hook and blocks_verify cannot detect it drifting from the canonical agents. CLAUDE.md acknowledges this honestly and verification.md points at the canonical files, which partly mitigates. Pre-existing, not introduced by wave-2. Fix: truncate verification.md to a one-line cross-reference, or add it as a third file to the manifest block if the Haiku agent needs the list self-contained."
+evidence = [
+    "claude/agents/verification.md:30",
+    "scripts/shared-blocks.toml:33",
+]
+dedup_id = "a36fa39cbdf9e5c5"
+wontfix_rationale = "Inline forbidden-ops list at verification.md:30 is load-bearing for the Haiku verification agent's self-contained forbidden-command refusal (consumed by the example at L32-39, not merely illustrative); truncating would degrade a safety-relevant behaviour. The drift gap is already acknowledged in CLAUDE.md and mitigated by the existing canonical-file cross-reference. Safe closure is adding verification.md to the parity manifest - a separate parity-machinery change out of this run's scope."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R5"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 1634
+symbol = "command_lint"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "command_lint does not scan claude/agents/, so flow-implement agents' tomlctl invocations are unchecked for CLI flag drift"
+description = "command_lint's scan set is skills/tomlctl/SKILL.md + skills/flow-contract-*/SKILL.md + commands/*.md; claude/agents/ is never read. The flow-implement-{deep,lite} agents embed forbidden-working-tree-ops and may contain tomlctl invocations; a stale flag (the PILOT-10 --flow vs --flow-override class) there would not be caught. Pre-existing gap, but worth closing given PILOT-10's motivation. Fix: add claude/agents/ to the scan set or document the exclusion."
+evidence = ["tomlctl/src/cli/dispatch.rs:1634"]
+dedup_id = "3e299176f26f0282"
+resolved = 2026-05-20
+resolution = "Added a claude/agents/*.md reader to command_lint's scan set (mirrors the commands_dir block); re-ran command_lint - no flag drift surfaced in any agent file."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R6"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 0
+symbol = "(no carrier-invokes-skill test)"
+severity = "suggestion"
+effort = "medium"
+category = "testability"
+summary = "No test asserts that a skeletonised carrier still invokes its required skills"
+description = "After wave-2 the carriers invoke skills by prose name rather than embedding SHARED-BLOCK markers. verify_skills only compares embedded copies (and is now vacuous), and command_lint only parses tomlctl bash tokens. Nothing detects a carrier silently dropping an 'Invoke the flow-contract-X skill' line, which would break the progressive-disclosure contract at runtime with no failing test. This is the plan's acknowledged R4. Fix: a grep-based cargo test asserting each carrier contains its expected flow-contract-* skill-name strings."
+evidence = [
+    "tomlctl/src/blocks.rs:384",
+    "docs/plans/harness-progressive-disclosure-wave-2.md:330",
+]
+dedup_id = "719692498f00d91e"
+resolved = 2026-05-20
+resolution = "Added #[test] carrier_invokes_required_skills asserting each migrated carrier (optimise, optimise-apply, review-apply, plan-update, test-bootstrap) contains its expected flow-contract-* skill invocations; passes against current files. tomlctl/src/cli/dispatch.rs."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R7"
+file = "claude/commands/optimise.md"
+line = 10
+symbol = "Flow Context / Ledger Schema summaries"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "optimise.md skeletonised less aggressively than its four sibling carriers - summaries restate contract surface"
+description = "optimise.md's Flow Context (L10-14), Ledger Schema (L59-63), and disposition-sweep (L108-112) summaries are markedly longer than the one-sentence previews used by optimise-apply / review-apply / plan-update / test-bootstrap, duplicating contract surface the skills now own (the drift vector the overhaul removes). Trim to the sibling-carrier preview length. Quality lens, evidence A (cross-file comparison)."
+evidence = ["claude/commands/optimise.md:10"]
+dedup_id = "fffb8902bb23e388"
+resolved = 2026-05-20
+resolution = "Trimmed three over-long summaries (Flow Context, Ledger Schema, disposition-sweep) in optimise.md to sibling-carrier brevity; all skill-invocation directive lines preserved verbatim."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R8"
+file = "claude/commands/optimise.md"
+line = 16
+symbol = "Step 0 envelope + gating prose"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "Step-0 envelope JSON and 5-point gating prose is duplicated verbatim across four carriers with no parity check"
+description = "optimise.md L16-58 (input envelope + gate-on-envelope.ok + bind/no-flow/doctor/staleness steps) is byte-identical to optimise-apply, review-apply, and plan-update. After wave-2 nothing parity-checks these ~40 lines, so they can drift independently. Partly inherent (each carrier must execute Step 0), so this is a design-tension note rather than a defect: decide whether the literal Step-0 recipe should move into flow-contract-flow-context as an invocable recipe, or add a one-line note explaining why it stays inline. Quality lens, confidence ~0.55."
+evidence = ["claude/commands/optimise.md:16"]
+dedup_id = "a367ff2186a581dd"
+resolved = 2026-05-20
+resolution = "Added a one-line note at Step 0 of optimise.md documenting why the envelope+gating recipe stays inline (carrier executes it directly; intentionally not externalised; not a parity-check target), preempting repeat review flags."
+
+[[items]]
+first_flagged = 2026-05-20
+rounds = 1
+status = "fixed"
+flow = "harness-progressive-disclosure-wave-2"
+id = "R9"
+file = "claude/skills/flow-contract-apply-constraints/SKILL.md"
+line = 3
+symbol = "description frontmatter"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "apply-constraints (~432 chars) and apply-vet-flow-implement-lite (~476) descriptions sit just below the ~500-char discoverability band"
+description = "Both new skill descriptions are 2-field compliant with concrete 'Consult before...' triggers but fall under the ~500-1500 char band that the reference skills (flow-contract-ledger-schema ~600) occupy. apply-constraints omits the --file-budget / --allow-cross-file override surface and the 'skipped <id>: ...' tag forms named in the carrier invocations. Extend each by ~25-70 chars to name that surface and lift auto-load discoverability. Package-quality lens, evidence A."
+evidence = [
+    "claude/skills/flow-contract-apply-constraints/SKILL.md:3",
+    "claude/skills/flow-contract-apply-vet-flow-implement-lite/SKILL.md:3",
+]
+dedup_id = "579945f624bc796d"
+resolved = 2026-05-20
+resolution = "Extended the apply-constraints and apply-vet-flow-implement-lite skill descriptions into the ~500-650 char discoverability band - naming the skip-tag forms and the lite-cluster vet trigger respectively; frontmatter remains 2-field."
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 3
+dropped_count = 3
+downgraded_count = 0
+rationale = "Opus quality lens; spot-checked 3 of 6 findings against exact file:line (optimise.md:284 dead-ref, optimise.md cross-carrier summary lengths, Step-0 duplication) - all verified true, no fabrications. Persisted 3 (R2,R7,R8). Three findings not persisted as non-actionable: retired-block comment naming asymmetry, rollback-description density (polish, conf 0.4), and a conf-0.3 cosmetic double-blank-line nit."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 5
+dropped_count = 4
+downgraded_count = 0
+rationale = "Sonnet security lens; cap-5 honoured. Sampled all 5; verified the vacuous-verify_skills finding against blocks.rs:421 and CLAUDE.md:25 (true, folded into R1). The other 4 were explicit no-regression confirmations (stdin-piping injection guidance intact, blocks_verify repoint correct, sidecar non-tamper claim accurate, hook supply-chain posture unchanged) - legitimate but not actionable findings, not persisted. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 3
+downgraded_count = 0
+rationale = "Opus architecture lens; spot-checked 3 of 6 against source - vacuous verify_skills (blocks.rs:421), verification.md:30 third copy, and the apply-* coverage gap, all verified. Persisted R1 (converged) and R4; the apply-* coverage observation folded into R6. Dropped the byte-parity-machinery-cost finding (judgement design-note, conf 0.65) and two no-defect confirmations (phase-ordering preserved, summaries non-misleading). No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 12
+downgraded_count = 0
+rationale = "Sonnet completeness lens; 13 findings, most were AC PASS-confirmations. Sampled 5 including the two B-grade header-ORDER anomalies (F2/F3) - I ran comm against git show 5bdf81f and confirmed ZERO headers dropped across all 5 carriers, so the order-only anomalies are non-defects and were NOT persisted. Kept the optimise.md:284 dead-ref (F13, verified) which dedups with quality R2. No fabrications; the header B-grade items were correctly downgraded to non-issues by orchestrator verification."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 2
+downgraded_count = 1
+rationale = "Sonnet testability lens; could not run tests itself. Orchestrator ran the full tomlctl suite: blocks_verify_reproduces_shell_hashes, verify_skills_clean, command_lint all green (236+ tests, 0 failed), so the pinned-hash concern (F5) is downgraded - hash is reproducible. Persisted R5 (command_lint skips agents/, verified) and R6 (no carrier-invokes-skill test). vacuous-verify_skills folded into R1. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-20T00:00:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 5
+dropped_count = 6
+downgraded_count = 0
+rationale = "Sonnet package-quality lens (conditional 6th - fired on claude/commands + claude/skills paths). Sampled 5; verified frontmatter conformance and the rollback-invocation asymmetry (R3, confirmed by reading both carriers at :387/:422) and the sub-band descriptions (R9). Dropped the commit-conventions framing finding (different flow, out of scope) and several conformance confirmations. No fabrications."
+dedup_id = "45ca31c3315a5978"

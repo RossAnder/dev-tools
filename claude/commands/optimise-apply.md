@@ -384,7 +384,7 @@ Present the final summary. **Omit any sub-section that has no entries** — e.g.
 
 When Step 5 verification fails on a touched-file build error, an out-of-scope test regression, or an applied-without-diff forged tag, the rollback protocol reverts ONLY this run's transitions (prior-run resolutions are never touched). The contract defines the trigger conditions, the seven-step sequence (collect touched paths via git diff union → stash → `git checkout --` tracked files → scope-clamped `git clean -fd` of agent-declared untracked files → reverse ledger transitions to `open` with `rollback_rationale` → append the `[[rollback_events]]` entry → surface the `### Rollback` callout), the interactive/non-interactive confirmation prompts, and the safety constraints (never bypass the stash, never trust agent path lists, never auto-retry).
 
-Invoke the `flow-contract-apply-rollback-protocol` skill to load the full rollback contract.
+Invoke the `flow-contract-apply-rollback-protocol` skill to load the full rollback contract. For `/optimise-apply` the successful prior status is `applied` and the event log's `command` is `"optimise-apply"`.
 
 
 ## Step 6: Plan Deviation Follow-up

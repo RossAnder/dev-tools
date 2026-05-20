@@ -1,0 +1,123 @@
+schema_version = 1
+last_updated = 2026-05-20
+round = 1
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Research Notes"
+summary = "FALSE PREMISE: apply-* blocks are NOT embedded in flow-implement agents — they span only optimise-apply + review-apply"
+description = "All four lenses + direct verification (shared-blocks.toml:66-107, grep claude/agents/ = no apply-* markers; agents embed only forbidden-working-tree-ops at flow-implement-deep.md:75/114). After Phase 2 delists both apply carriers, all four apply-* blocks reach EMPTY files[] like the other six — NOT 'list only the two agents'. Consequence: verify_skills skips empty files[] (blocks.rs:421), so the four new skills get ZERO parity enforcement. Rationale in Research Notes bullet 3, Approach Step 2, Task 5 Detail, User Decision #2, Scope out-of-scope, and Risk 2 is all built on this false claim. The end state still works mechanically, but for the wrong stated reason and with no automated check on the new skills."
+dedup_id = "613d205a04f13d12"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "critical"
+category = "completeness"
+plan_section = "## Scope"
+summary = "FALSE: 'no Rust changes' — blocks_verify_reproduces_shell_hashes pins hashes for the emptied blocks and will panic when files[] go empty"
+description = "PILOT-LESSONS §5/§14 + verified at dispatch.rs:1394-1631. carriers_for() reads file lists from the manifest (wave-1 single-sourced that), BUT expect_hash() asserts pinned constants for flow-context (1572), ledger-schema (1585), execution-record-schema (1598), apply-dependency-sort (1619), apply-rollback-protocol (1624), apply-constraints (1629). When wave 2 empties those files[], blocks_verify over an empty list produces no block entry, expect_hash panics 'block X missing from report', and cargo test FAILS. A Rust task to delete these assertions MUST land in the SAME commit as the manifest change (Task 5). The plan needs a new task + updated Verification Commands."
+dedup_id = "53c6a8c61464a870"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope"
+summary = "§6 conflict: PILOT-LESSONS mandates deleting [[block]] entries when files[] empties; plan defers — but deferral saves nothing since Rust must change anyway"
+description = "PILOT-LESSONS §6: 'When a block's files array becomes empty, delete the entire [[block]] entry.' Plan's User Decision #3 defers this. But given P2 (Rust assertions must be removed regardless), deferral provides no real saving and leaves zombie entries. Recommend following §6 — delete the emptied entries (flow-context, ledger-schema, ledger-disposition-sweep, execution-record-schema, plansdirectory-prompt, vet-flow-research, and the apply-* trio) — and align the Rust test in the same commit. Re-confirm User Decision #3 with this new information."
+dedup_id = "ac24ea4671816b83"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "§12 mandatory reference-rewrite contradicts plan's 'extract verbatim, do not polish' (Risk 2)"
+description = "PILOT-LESSONS §12 makes post-extraction reference-rewrite a MANDATORY extraction step: rewrite in-block 'SHARED-BLOCK:X' cross-refs to 'the flow-contract-X skill', and fix 'embedded into <carriers>' prose. Tasks 1-4 + Risk 2 say copy verbatim and do not polish. Since apply-* skills have empty files[] (no embedder), there is no byte-parity constraint at all — agents SHOULD do the §12 rewrite for skill-internal correctness. Update Tasks 1-4 to require the §12 reference-rewrite."
+dedup_id = "fcb5354e2fcac80d"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "apply-* skills have no embedder so verify_skills can't check them — T1-T4 need a concrete in-task extraction-diff acceptance"
+description = "Because the apply-* blocks reach empty files[], nothing downstream verifies the extracted skill body matches the donor. T1-T4 acceptance 'matches line-for-line modulo markers/frontmatter' is not mechanically checkable as written. Give each task a concrete command: extract donor via sed -n '/apply-X START/,/END/p' claude/commands/optimise-apply.md, strip markers, diff against SKILL.md body sans frontmatter; fail on any non-frontmatter/non-reference difference. Also verify optimise-apply's copy == review-apply's copy before extraction (currently enforced by the pre-commit hook, but the hook is not installed here — see separate finding)."
+dedup_id = "75309ba9614dadda"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "risk"
+plan_section = "## Verification Commands"
+summary = "bash scripts/verify-shared-blocks.sh likely cannot run on this Windows machine (needs GNU awk; mawk default; Bash tool broken)"
+description = "verify-shared-blocks.sh hard-exits 2 unless awk is GNU awk; Git-Bash-for-Windows ships mawk and memory notes the Bash harness tool is broken on Windows. Two of three Verification commands are bash invocations. Make 'cargo test --manifest-path tomlctl/Cargo.toml' the load-bearing gate (it reads the same manifest cross-platform) and demote bash verify-shared-blocks.sh to optional / gawk-gated. Adjust Task 5 acceptance accordingly."
+dedup_id = "16b218fdf4fc0a8b"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Pre-commit hook not installed in this clone (core.hooksPath unset) — the commit-ordering safety net is absent locally"
+description = "Agent 4 read .git/config: no [core] hooksPath, .git/hooks has only pre-commit.sample. The plan's Risk-1 mitigation leans on 'the byte hook would reject mis-ordered skeletons' — but the hook does not run here, so cargo test is the only gate. Add a pre-flight 'git config core.hooksPath' check and an explicit instruction to commit the manifest+Rust change as its own checkpoint and run cargo test before the Phase-3 carrier batches."
+dedup_id = "e8d49eee4a6ebd8d"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "T6-T10 blocks are non-contiguous (interleaved with carrier logic); 'no markers remain' won't catch deletion of inter-block prose"
+description = "optimise-apply.md markers at 6/36,81/295,428/456,528/550,657/710,733/743 — procedural prose lives between blocks. An agent could delete a block plus adjacent logic and still pass every stated acceptance. Add a content-preservation acceptance per carrier: enumerate top-level headers up front (grep -n '^## ' claude/commands/<carrier>.md) and require every one preserved (PILOT §3); optionally assert non-block line ranges survive verbatim."
+dedup_id = "ee27d1d053429e83"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Give T1-T4 the exact description: frontmatter string/template so 4 parallel agents don't diverge"
+description = "Four parallel agents will invent inconsistent description: strings. Provide a template, e.g.: 'Canonical <block> contract for the apply-flow carriers (/optimise-apply, /review-apply) — <one clause on what it defines>. Consult before <action>.' Match the ~500-1500 char convention of flow-contract-ledger-schema."
+dedup_id = "ea86e41ed86eaca7"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Tasks"
+summary = "Task 11 must explicitly fix CLAUDE.md's forbidden-working-tree-ops + agent-only residency + the 'currently {5 commands+2 agents}' prose; Context claim 'every contract in one skill' is false"
+description = "CLAUDE.md:~11 enumerates the manifest-covered files as the 5 commands + 2 agents; after wave 2 only forbidden-working-tree-ops (+ deleted/empty entries) remain, listing only the 2 agents. Task 11 says 'make it accurate' but never names forbidden-working-tree-ops — relies on author diligence. Also the plan's Context line 'every shared contract lives in exactly one skill' is false: forbidden-working-tree-ops has no skill (agents can't invoke skills) and also appears un-parity-checked in claude/agents/verification.md:30."
+dedup_id = "c4b14dc8fff82abe"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Tasks"
+summary = "T9 (plan-update) is over-tagged L→M and should explicitly state it does NOT touch CLAUDE.md"
+description = "T9 replaces 4 blocks in a longer file but the 9 sub-operations are untouched prose — mechanically same class as T6/T7. Downgrade L→M. The note 'confirm the prose update in Task 11 matches' creates soft cross-task coupling; make explicit that T9 edits only plan-update.md and T11 owns CLAUDE.md."
+dedup_id = "19cce12996acdfad"
+
+[[items]]
+review_round = 1
+status = "open"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Approach"
+summary = "Bind each skill invocation to the phase where the contract actually fires (PILOT §4), not a template position"
+description = "PILOT §4: in /review the disposition-sweep skill binds at Step 1, not where a template suggested. Each carrier task should instruct the executor to read the current carrier and place each 'Invoke flow-contract-X skill' line at the phase the contract is actually consulted, preserving existing header names/numbering verbatim (PILOT §3)."
+dedup_id = "46184122c5f0677f"

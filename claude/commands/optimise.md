@@ -9,11 +9,13 @@ argument-hint: [file paths, directories, feature name, branch1..branch2, or empt
 
 ## Flow Context
 
-Flow resolution and doctor checks are delegated to the `flow-bootstrap` sub-agent: Step 0 builds a JSON input envelope, dispatches the agent, gates on `envelope.ok`, and binds the resolved `slug` / `context_path` / `artifacts.*` / `status` / `stale` plus `doctor.ok` for downstream phases. The contract covers envelope input/output shapes, the project-local `.claude/` path rule (no `~/.claude/` fallback), the status vocabulary and forbidden auto-`complete` transitions, slug derivation, canonical artifact paths, completed-flow filtering, the mandatory bootstrap-summary console line, and the legacy `.claude/active-flow` ignore rule.
+Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent: Step 0 builds a JSON input envelope, dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.*` / `envelope.doctor.*` for downstream phases.
 
 Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelope contract (input/output shapes, `envelope.ok` gating, `envelope.resolved.*` / `envelope.doctor.*` binding rules, no-flow fallback, doctor-fail handling, staleness reconciliation, and the bootstrap-summary line).
 
 ## Step 0: Pre-flight (flow resolution + doctor)
+
+> The literal envelope template + 5-point gating recipe below stay inline (and are duplicated across the optimise / optimise-apply / review-apply / plan-update carriers) by design: each carrier executes Step 0 directly, so the recipe is intentionally not externalised to the `flow-contract-flow-context` skill, which holds only the interpretation contract. Not a parity-check target — do not re-flag the duplication.
 
 Dispatch the `flow-bootstrap` sub-agent with a single JSON-encoded input envelope. The
 agent emits one JSON object on stdout; parse it as `envelope`. All downstream phases consume
@@ -58,7 +60,7 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
 
 ## Ledger Schema
 
-Both `review-ledger.toml` and `optimise-findings.toml` — whether flow-local or flow-less (`.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml`) — share one canonical schema. The contract defines required and optional `[[items]]` fields, the disposition-specific field requirements, category vocabularies (optimise: `memory` | `serialization` | `query` | `algorithm` | `concurrency`), unknown-value fail-soft rules, the disposition vocabulary (`open` / `deferred` / `applied` / `wontapply` for optimise — no `verified-clean` counterpart), the render-to-markdown contract, the append-only `[[rollback_events]]` and `[[vet_events]]` logs, the mandatory parse-rewrite (tomlctl) read/write contract, the key-order convention, and the item-ID assignment + dedup/regression rules. Read these rules before touching any ledger read/write logic in this carrier.
+Both `review-ledger.toml` and `optimise-findings.toml` (flow-local or flow-less) share one canonical schema. For `/optimise` the category vocabulary is `memory` | `serialization` | `query` | `algorithm` | `concurrency` and the disposition vocabulary is `open` / `deferred` / `applied` / `wontapply` (no `verified-clean` counterpart). Read the contract before touching any ledger read/write logic in this carrier.
 
 Invoke the `flow-contract-ledger-schema` skill to load the canonical ledger schema (item fields, disposition vocabulary, category vocabularies, fail-soft rules, the `[[rollback_events]]` / `[[vet_events]]` event logs, the tomlctl parse-rewrite read/write contract, and the ID-assignment + dedup/regression rules).
 
@@ -105,7 +107,7 @@ Identify the files to analyse:
 
 **Small scope note**: When 3 or fewer files are in scope, still launch all five research agents — their value comes from specialized, parallel research (independent Context7 lookups, WebSearches, and deep lens-specific analysis), not from dividing file reads. Tell each agent the scope is small so it can skip broad exploration and focus its research depth on the specific code paths in those files.
 
-After the ledger loads and before the dispatch section, run the ledger disposition sweep: a read-only orphan surfacing pass (open items whose `file` no longer exists or whose `symbol` is absent from the tree — surfaced as console one-liners, never auto-transitioned, IDs preserved across renames; prefer `tomlctl items orphans <ledger>`) followed by the deferred-item reopen sweep (test each `deferred` item's `defer_trigger` against the known trigger forms, prompt `[y]/[n]/[a]` per fired trigger, and queue confirmed reopens into one atomic `tomlctl items apply --ops -` that sets `status = "open"` and records `reopen_rationale`). Non-interactive invocations surface candidates only and do not mutate the ledger.
+After the ledger loads and before the dispatch section, run the ledger disposition sweep: a read-only orphan-surfacing pass (prefer `tomlctl items orphans <ledger>`) followed by the deferred-item reopen sweep, which is a user-engagement gate — every reopen passes through a per-item prompt and non-interactive invocations surface candidates only without mutating the ledger.
 
 Invoke the `flow-contract-ledger-disposition-sweep` skill to load the disposition-sweep contract (orphan-surfacing detection rules and console format, the deferred-trigger forms and reopen-prompt protocol, and the atomic queued-transition write).
 
@@ -281,7 +283,7 @@ Skip the checkpoint entirely if no transitions are pending (agents returned no n
 The TOML ledger path for this run is determined by the flow resolution performed in Step 1:
 
 - **Flow resolved** → `artifacts.optimise_findings` from the flow's `context.toml` (typically `.claude/flows/<slug>/optimise-findings.toml`). Create the directory if it does not exist.
-- **Flow-less fallback** (user picked "no flow" or no candidates matched) → `.claude/optimise-findings/<scope>.toml` under the subdir convention. Derive `<scope>` per the flow-less slug rule in the Flow Context block above (line 87). Examples:
+- **Flow-less fallback** (user picked "no flow" or no candidates matched) → `.claude/optimise-findings/<scope>.toml` under the subdir convention. Derive `<scope>` per the flow-less slug rule in the `flow-contract-flow-context` skill. Examples:
   - Directory scope → `.claude/optimise-findings/src-prime-api-endpoints.toml`
   - Feature/area scope → `.claude/optimise-findings/auth.toml`
   - Git-derived scope (no args) → `.claude/optimise-findings/{branch-name}.toml`, or `.claude/optimise-findings/recent.toml` on the main branch
