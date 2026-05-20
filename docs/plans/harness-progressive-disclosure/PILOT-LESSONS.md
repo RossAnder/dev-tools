@@ -81,6 +81,12 @@ What we DON'T know yet — and propagation MUST NOT proceed until validated:
 
 If (1)-(5) all hold: propagation proceeds. If any step fails, the fallback documented in plan Risk 1 applies — replace the natural-language skill-invocation directive with an explicit `Skill` tool dispatch line in the carrier (an extra ~5 LOC per invocation, still well under the 100-LOC ceiling).
 
+### Update — VALIDATED LIVE (2026-05-20)
+
+The above caveat was written from the `/implement` session, which structurally could not fire `/review`. The mechanism has since been validated by a real human-initiated run: on **2026-05-20** a live `/review harness-progressive-disclosure` invocation (followed by `/review-apply`) executed end-to-end. The orchestrator successfully loaded the `flow-contract-flow-context`, `flow-contract-ledger-schema`, `flow-contract-ledger-disposition-sweep`, and `flow-contract-vet-research` skill bodies at their correct phase boundaries (Step 0, Step 1, Step 2.5). The natural-language "Invoke skill `<name>`" directive does cause the model to load the skill body into the carrier session's working context at the right phase — the #1 risk this pilot was meant to test is now answered: **the mechanism works.**
+
+Caveat narrows but does not vanish: the mechanism is **validated-once**, not **continuously testable**. The CLI toolchain (cargo, `verify-shared-blocks.sh`) cannot exercise skill loading — only a human-driven `/review` run can. Before broad propagation, still add an automated fixture-based smoke check (or at minimum a documented manual re-validation step per propagation PR) so a future skill-loading regression is caught mechanically rather than discovered in production. The original §"Skill-invocation mechanism" caveat above is retained as the historical record of what was unknown at pilot time.
+
 ## Recommended changes for propagation
 
 Based on observations during this pilot, the propagation plans for the remaining 9 carriers should adopt the following refinements:
@@ -139,6 +145,52 @@ During this pilot, commit `561e4ca` (T6+T7) bundled in some pre-existing uncommi
 
 Per §"Skill-invocation mechanism" above: do not start propagating the pattern until a human-driven `/review` run confirms skill bodies load when invoked via natural-language directive. This is the cheapest single validation; the entire propagation plan is contingent on it. If natural-language directives don't reliably load skills, the workaround (explicit `Skill` tool dispatch in carrier prose) is straightforward and adds ~5 LOC per carrier — still well under the 100-LOC ceiling.
 
+## Lessons from the live pilot run (2026-05-20)
+
+These emerged from the first end-to-end human-driven `/review harness-progressive-disclosure` + `/review-apply` run (the validation recorded in §"Skill-invocation mechanism — VALIDATED LIVE"). They are distinct from the build-time lessons above because most were **invisible until the carrier actually executed** — the review lenses cannot catch them because they read code, they don't run commands. They sharpen §1, §5, §7, and §9.
+
+### 10. Carrier↔CLI flag drift is its own failure class — lint it at compile time
+
+The thin carrier said `tomlctl … --flow <slug>` but the actual flag is `--flow-override` (review-ledger R1). This is a *guaranteed* runtime failure on a supported input path, and it broke on the very first live invocation — yet no review lens flagged it, because lenses don't execute the command. Hand-written `tomlctl …` invocations in carrier/skill prose are unverified against the real CLI.
+
+**Resolution — compile-time command-lint beats `--help` advice.** Advising authors to run `tomlctl <subcmd> --help` is a manual, per-author, runtime check that depends on diligence — exactly what failed here. Instead add a `cargo test` that:
+1. Globs the markdown carrying `tomlctl …` invocations — the `tomlctl/SKILL.md` (the authoritative guidance), the `flow-contract-*` skills, and the carriers.
+2. Extracts each command line (fenced ` ```bash ` blocks; split on `|` for piped stdin).
+3. Feeds the tokens to the **real `Cli` clap parser** via `try_parse_from` / `try_get_matches_from` (which validates structure without executing) and asserts no unknown-subcommand / unknown-flag error.
+
+Because it validates against the *same clap surface the binary uses*, flag-name drift becomes **impossible to commit** — the pre-commit/CI test fails. This is what makes `tomlctl/SKILL.md` authoritative in the strong sense: not "we declare it authoritative" but "it is mechanically guaranteed to match the binary." Precedent already exists — `dispatch.rs:1395` reads `claude/commands/*.md` from the test crate for the parity fixtures, so the machinery is in place.
+
+- **Boundary**: this validates *structure* (the flag/subcommand exists — the R1 class), NOT *semantics* (that the flag does what the prose claims). Semantic drift still needs the per-carrier smoke-run (§11). The two are complementary.
+- **Convention needed**: validate only fenced `bash` blocks with lines beginning `tomlctl`, and provide an opt-out marker for deliberately illustrative/partial snippets (else false positives). Placeholder *values* (`<ledger>`, `R{n}`, `$ARGUMENTS`) are fine — clap doesn't validate arg values at parse time, only flag/subcommand structure.
+- Demote `--help` to an *authoring aid* (look up a flag while writing), never the enforcement mechanism.
+- This test could share its markdown-extraction harness with the §7 verify-against-skill check — both are "Rust tests that read the markdown and assert it matches the source of truth."
+
+### 11. "Skills load" ≠ "carrier is correct" — smoke-run each migrated carrier
+
+The skill-invocation mechanism worked perfectly (§VALIDATED LIVE), yet the same carrier still shipped two runtime bugs: R1 (flag drift) and R3 (flow mis-resolution — `active-latest` silently resolved the wrong flow when given a bare arg matching a flow slug). Confirming that skill bodies *load* is necessary but not sufficient for carrier correctness.
+
+**Sharpens §9**: the propagation gate must be a live, end-to-end run *of each migrated carrier*, not a one-time mechanism check. §9's single `/review` run validated the *mechanism* (does natural-language skill invocation work?) — it does not transfer correctness to the other 9 carriers. Each breakout PR needs its own smoke-run, and §10's command-lint should run in CI for all of them continuously.
+
+### 12. Post-extraction reference-rewrite is a mandatory extraction step
+
+Verbatim block extraction reliably leaves two classes of stale prose inside the new standalone skill (review-ledger R9/R10/R11): (a) in-block cross-references in the old `SHARED-BLOCK:<name>` marker notation, which resolve to nothing once the block is loaded standalone; and (b) "embedded verbatim into review.md, …" embedder-list prose that is wrong the moment the block leaves a carrier. Every future breakout produces these.
+
+**Bake into the extraction procedure** (don't discover them via a later review round): after stripping the markers, (a) rewrite each in-block cross-ref from `SHARED-BLOCK:X` to "the `flow-contract-X` skill"; (b) correct any "embedded into <carriers>" sentence to name the skill as the canonical source and list only the carriers *still* embedding the block pending their own migration.
+
+**Interaction with §7**: this divergence between the skill body and the still-embedded carrier copies is *legitimate and expected* on these specific reference lines (the standalone and in-carrier contexts genuinely differ). That is precisely why the §7 verify-against-skill check must **normalise these reference lines before comparison**, or it will false-positive on exactly the lines this step is supposed to fix.
+
+### 13. verify-against-skill (§7) should gate propagation, not trail it
+
+The drift window between a skill body and the still-embedded carrier copies opens *precisely during* the multi-PR propagation (one carrier migrated, others still embed the same block). Discovering drift after the fact is too late. §7 was written as a "recommended addition" to land "before the next propagation PR"; this run reinforces that it should be a **hard prerequisite landed before the bulk breakouts begin** (review-ledger R5, skipped as needing a dedicated plan).
+
+R5's analysis sharpens the §7 design: skill bodies use YAML frontmatter (not `SHARED-BLOCK` markers), only 4 of 11 blocks are externalised, and the block→skill name mapping is **non-derivable** (e.g. block `vet-flow-research` → skill `flow-contract-vet-research`). So the check needs (a) an explicit `skill = "claude/skills/flow-contract-<X>/SKILL.md"` field per `[[block]]` in the manifest, and (b) a defined frontmatter-strip + whitespace-normalisation rule (which must also normalise the §12 reference lines). Implement it as a **tested `tomlctl blocks verify` Rust pass**, not an extension of the unsandboxed awk hook — the supply-chain sensitivity of the pre-commit hook (per CLAUDE.md) argues against adding fragile new logic there. Bodies were confirmed byte-identical at pilot time, so the check passes cleanly at introduction.
+
+### 14. Scope the next breakouts: ledger-schema already serves R+O; execution-record is a separate breakout
+
+The `flow-contract-ledger-schema` skill already defines **both** `R{n}` (review) and `O{n}` (optimise) IDs and both category vocabularies, and its read/write contract names `review-ledger.toml` *and* `optimise-findings.toml`. So `/optimise`, `/review-apply`, and `/optimise-apply` can reference it the moment they migrate — **no new ledger skill is needed** for them.
+
+The `E`-prefixed **execution-record** contract is a *different* schema — `execution-record-schema`, still an embedded block carried by `/implement`, `/plan-new`, `/plan-update`, `/tdd`, not externalised in this pilot. It needs its own `flow-contract-execution-record` breakout. And R4 showed `execution-record-schema`'s parity is enforced by **two hand-maintained copies** — the manifest *and* the Rust fixtures in `dispatch.rs` — which had **already drifted** (the fixtures omitted `tdd.md` while the manifest included it). When externalising it, fix the root cause: make the Rust fixtures **read the manifest** rather than re-encoding the carrier list (the same single-source principle as §10 and §13). Until then, every carrier add/remove must touch both copies in lockstep (§5).
+
 ## Quick-glance verification snapshot
 
 ```
@@ -149,3 +201,9 @@ parity       — pass (shared-block parity OK across 8 remaining carriers + 2 ag
 review.md    — 62 LOC, 7 headers preserved, 0 SHARED-BLOCK markers, 4 skill references, envelope-build present
 skill files  — 4 created, frontmatter parses, body byte-lengths verified
 ```
+
+## Cache-behaviour observations — NOT MEASURED
+
+Plan Task 9's acceptance called for a "cache-behaviour observations (token counts before/after)" section, and Risk 3 proposed validating cache behaviour during Task 8 by inspecting the API response's `cache_*` fields. **No token-count data was captured during this pilot.** The before/after cache-read / cache-write figures were not recorded, so the cache-thrash hypothesis (Risk 3) remains untested empirically — it rests only on the architectural argument that skill bodies load into conversation context after the final cache breakpoint, not into the cached system prompt.
+
+This gap is stated explicitly rather than left silently missing. Before broad propagation, a future run should capture `cache_creation_input_tokens` / `cache_read_input_tokens` from the API response across a `/review` invocation (and ideally a back-to-back `/plan-new` to observe command-swap behaviour) so the caching claim is backed by measurement rather than reasoning alone.

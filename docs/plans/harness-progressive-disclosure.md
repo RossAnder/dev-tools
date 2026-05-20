@@ -169,7 +169,37 @@ All Phase 4 answer key-terms grep-match Research Notes content; no library/API w
 - **Affected areas**: `claude/commands/review.md` (rewrite), `claude/skills/flow-contract-*` (new — 4 contract skills), `tomlctl/src/flow/` (new envelope module + clap variant + dispatch route + tests), `scripts/shared-blocks.toml` (remove `/review` from 4 carrier lists), `docs/plans/harness-progressive-disclosure/PILOT-LESSONS.md` (new).
 - **Estimated file count**: 13 unique files (under the 15-file scope guard).
 
+### Propagation follow-up (deferred carriers + gate)
+
+The 9 deferred carriers below are tracked here as the propagation backlog. **Propagation gate**: each follow-up carrier may proceed only once the prerequisites below are satisfied. A documented checklist is the tracking artefact — no new flow directories are created until a follow-up plan is opened.
+
+Deferred carriers (one propagation unit each):
+
+- [ ] `/optimise`
+- [ ] `/review-apply`
+- [ ] `/optimise-apply`
+- [ ] `/plan-new`
+- [ ] `/plan-update`
+- [ ] `/implement`
+- [ ] `/review-plan`
+- [ ] `/tdd`
+- [ ] `/test-bootstrap`
+
+Gate prerequisites (must all hold before the first follow-up carrier migrates):
+
+- [x] **Skill-invocation mechanism validated live** — satisfied 2026-05-20 by a real `/review harness-progressive-disclosure` + `/review-apply` run (see PILOT-LESSONS.md §"Skill-invocation mechanism" → "Update — VALIDATED LIVE"). The natural-language "Invoke skill `<name>`" directive loads skill bodies at the correct phase boundaries.
+- [ ] **Doctor-of-skills drift check landed** — add the `verify-against-skill` check (PILOT-LESSONS recommendation 7 / Risk 4) that diffs each externalised skill body against carriers still embedding the same block, before the first propagation PR merges.
+- [ ] **Automated skill-loading smoke check (or documented manual re-validation step)** — the live validation is once-only; the CLI toolchain cannot exercise skill loading. Add a fixture-based smoke check or a mandatory per-PR manual re-validation step so a future skill-loading regression is caught mechanically (see PILOT-LESSONS §"Update — VALIDATED LIVE").
+
 ## Approach
+
+> ### Spec corrections (post-pilot, 2026-05-20)
+>
+> The pilot shipped conventions that diverge from the original spec sketches below. **Propagation authors reading this plan as the spec MUST follow the shipped conventions, not the pre-pilot sketches.** Full rationale and deviation IDs are in `docs/plans/harness-progressive-disclosure/PILOT-LESSONS.md` §"Recommended changes for propagation".
+>
+> 1. **Skill frontmatter is 2-field, not 5-field.** Use `name` + `description` only. The `when_to_use`, `user-invocable: false`, and `disable-model-invocation: false` fields in the YAML block below were a research-derived hypothesis that does not match the on-disk convention (precedents: `tomlctl/SKILL.md`, `test-author/SKILL.md`). Logged as deviation E2.
+> 2. **Description budget is ~500–1500 chars, not ≤150 chars.** The ≤150-char target below is wrong; shipped contract-skill descriptions run ~500–1500 chars (single long line combining what the contract defines and when to consult it). The combined-budget arithmetic in the YAML rationale paragraph and Risk 2 should be re-derived against this larger per-skill size before propagation.
+> 3. **Carriers use `## Step N` headers, not `## Phase N`.** The skeleton sketch below (and the "preserve every existing Phase header" task language) assumes `## Phase` headers; `/review` actually uses `## Step N` exclusively. Preserve each carrier's *actual* existing header names/numbering verbatim — do not impose a generic phase template.
 
 ### Architectural model: skills as primary contract host
 
