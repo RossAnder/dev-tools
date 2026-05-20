@@ -3,556 +3,70 @@ description: Implement a plan or task using parallel sub-agents with research, p
 argument-hint: [--flow <slug>] [plan path or task description]
 ---
 
-<!-- SHARED-BLOCK:flow-context START -->
-## Flow Context
-
-Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent
-(`claude/agents/flow-bootstrap.md`). Each carrier's Step-0 builds a JSON input envelope,
-dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.{slug,
-context_path, artifacts.*, status, plan_path, scope, stale}` plus `envelope.doctor.ok` for
-downstream phases. Canonical input/output envelope shapes: see `flow-bootstrap.md` Contract
-section (mirrored at `scripts/templates/flow-context.md` Section 3).
-
-All `.claude/...` paths resolve to the project-local `.claude/` at the git top-level. No
-fallback to `~/.claude/`. **Status vocabulary**: `status ∈ {draft, in-progress, review,
-complete}`; auto-transitions to `complete` from non-`plan-update-complete` ops are
-forbidden (route through `review`); unknown values fail-soft to `in-progress` on read.
-**Slug derivation**: filename minus `.md` (multi-file plan: parent directory name); no
-further slugification. **Canonical artifacts**:
-`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings}.toml`
-— read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
-`context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
-flows are filtered out of scope-glob + branch-match resolution but remain targetable via
-explicit `--flow <slug>`. **Bootstrap-summary line**: after `flow-bootstrap` returns the
-envelope, the carrier MUST emit one console line before any other action —
-`flow resolved: <slug> (status=<s>, stale=<b>); doctor: <pass | fail: <N> issues | not-run: <reason>>`.
-Substitute `no flow resolved (<source>);` for the flow clause when
-`envelope.resolved.resolved == false`. Use the `not-run: <reason>` form when
-`envelope.doctor == null` (tomlctl invocation failure, skipped on no-flow, etc.) — the
-carrier proceeds without the doctor gate but the user sees the omission explicitly rather
-than silently. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
-single-line slug file is no longer consulted; the registry lives at
-`.claude/active-flow.toml` (multi-entry, gitignored per-clone state).
-<!-- SHARED-BLOCK:flow-context END -->
-
-## Step 0: Pre-flight (flow resolution + doctor)
-
-Dispatch the `flow-bootstrap` sub-agent with a single JSON-encoded input envelope. The
-agent emits one JSON object on stdout; parse it as `envelope`. All downstream phases consume
-fields from `envelope.resolved` and `envelope.doctor`.
-
-Input envelope (build at dispatch time):
-
-```json
-{
-  "command": "implement",
-  "flow_override": <--flow value or null>,
-  "path_args": <$ARGUMENTS-derived path list — array of strings, [] if no path args>,
-  "branch": <git branch --show-current or null>,
-  "worktree": <git rev-parse --show-toplevel or null>,
-  "cwd": <pwd or null>,
-  "require_artifacts": ["execution_record"],
-  "staleness_threshold": "7d"
-}
-```
-
-Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse:
-
-1. **Gate on `envelope.ok`**. If `false`, surface `envelope.errors` to the user verbatim
-   and halt. Do not proceed to scope analysis or any downstream phase.
-2. **Bind for downstream**: `slug = envelope.resolved.slug`, `context_path =
-   envelope.resolved.context_path`, `artifacts = envelope.resolved.artifacts` (object with
-   `review_ledger` / `optimise_findings` / `execution_record` / `plan_review_findings`),
-   `doctor_ok = envelope.doctor.ok` when `envelope.doctor` is non-null.
-3. **No-flow fallback**: when `envelope.resolved.resolved == false`, the carrier follows
-   its flow-less convention (`/review` → `.claude/reviews/<scope>.toml`; `/optimise` →
-   `.claude/optimise-findings/<scope>.toml`; plan/implement/tdd carriers prompt the user
-   per `envelope.warnings`). `envelope.resolved.tie_candidates` (when non-empty) lists the
-   slugs surfaced for the user prompt.
-4. **Doctor-fail handling**: when `envelope.doctor.ok == false`, surface
-   `envelope.doctor.checks` (filtering for `ok == false`) and ask the user before the
-   carrier mutates any artifact. Auto-repair (`tomlctl flow doctor --fix`) is the
-   orchestrator's call — bootstrap is read-only.
-5. **Staleness**: read `envelope.resolved.stale.stale` (boolean) plus
-   `envelope.resolved.stale.reason`. When `true` AND the carrier is `/review` or
-   `/optimise`, invoke the `plan-update` skill with literal arg `reconcile` before
-   continuing.
-
-<!-- SHARED-BLOCK:execution-record-schema START -->
-## Execution Record Schema
-
-Per-flow append-only log at `.claude/flows/<slug>/execution-record.toml`. Records every task-completion, verification, deviation, deferral, reconcile, status-transition, and checkpoint emitted by `/plan-new`, `/implement`, and `/plan-update` against the flow. `PROGRESS-LOG.md` is a rendered view of this log, and `[tasks].completed` is derived from it. This section is the single source of truth for the file's shape and contract.
-
-### Canonical schema
-
-```toml
-schema_version = 1
-last_updated = 2026-04-18
-
-[[items]]
-id = "E1"
-type = "task-completion"
-date = 2026-04-18
-agent = "implement"
-task_ref = "add-retry-logic"
-dispatch_tier = "lite"
-dispatch_agent = "flow-implement-lite"
-summary = "Added retry logic in src/retry.rs"
-files = ["src/retry.rs", "tests/retry_test.rs"]
-commits = ["abc1234"]
-status = "done"
-
-[[items]]
-id = "E2"
-type = "verification"
-date = 2026-04-18
-agent = "implement"
-summary = "cargo test passed"
-command = "cargo test --manifest-path tomlctl/Cargo.toml"
-outcome = "pass"
-
-[[items]]
-id = "E3"
-type = "deviation"
-date = 2026-04-18
-agent = "plan-update"
-task_ref = "add-redis-cache"
-summary = "Used existing LruCache util rather than introducing Redis"
-original_intent = "Add Redis dependency for caching"
-rationale = "src/util/cache.rs already covers the use case"
-commits = ["def5678"]
-legacy_id = "D3"
-```
-
-**Required fields per entry (all types):** `id` (E{n}, monotonic via `tomlctl items next-id <record> --prefix E`), `type`, `date` (YYYY-MM-DD TOML date — NOT `timestamp`), `agent`, `summary`.
-
-### Type vocabulary + type-specific required fields
-
-| Type | Required fields (in addition to the always-required five) |
-|------|-----------------------------------------------------------|
-| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `dispatch_tier` ∈ {`lite`, `deep`}, `dispatch_agent` ∈ {`flow-implement-lite`, `flow-implement-deep`}; `commits[]` OPTIONAL (see note below) |
-| `verification` | `command`, `outcome` ∈ {`pass`, `fail`} |
-| `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
-| `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
-| `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |
-| `status-transition` | `from_status`, `to_status` |
-| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured; optional `kind` ∈ {`reformat`, `catchup`, `migrate-boundary`} and optional `scope_delta` (freeform) for provenance tagging |
-
-**`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). Slugs are derived from the plan document's task heading, lowercased, hyphenated.
-
-**`commits` field** (task-completion, deviation): previously required; now optional. Populated by /implement Phase 2 step 5b after the git checkpoint (R21) — post-R21 entries should always carry it. Older bootstrap-phase entries and entries written before R21 may omit it; render-from-log treats absent `commits[]` as empty.
-
-**`dispatch_tier` / `dispatch_agent` fields** (task-completion): records the lite-vs-deep dispatch decision for post-hoc audit. `dispatch_tier` ∈ {`lite`, `deep`} is the abstract decision signal — what the lite-eligibility gate decided. `dispatch_agent` ∈ {`flow-implement-lite`, `flow-implement-deep`} is the concrete subagent_type that ran. The two are tightly correlated today (lite ↔ flow-implement-lite, deep ↔ flow-implement-deep) but the split future-proofs the schema for additional dispatch types (e.g. a future `flow-research-deep` task-completion writer). Both fields are required on new task-completion entries written by `/implement` Phase 2 step 5b. Fail-soft on unknown values: readers MUST treat unknown `dispatch_tier` as `deep` and preserve unknown `dispatch_agent` verbatim. Fields are forward-only — historical entries written before this schema addition lack both fields and render as `dispatch_tier = "(unknown)"` in derived views; no auto-backfill.
-
-### Write contract — two-call pattern (canonical heredoc form)
-
-Every writer appends an entry using this exact idiom. Never tempfile-stage payloads; heredoc stdin is the blessed path.
-
-```
-cat <<'EOF' | tomlctl items add <fully-qualified-execution-record-path> --json -
-{"id":"<E{n}>","type":"<type>","date":"<YYYY-MM-DD>","agent":"<implement|plan-update|plan-new>","summary":"<one-line>", …type-specific fields…}
-EOF
-tomlctl set <fully-qualified-execution-record-path> last_updated <YYYY-MM-DD>
-```
-
-`<fully-qualified-execution-record-path>` MUST be the resolved value of `[artifacts].execution_record` in the flow's `context.toml` — NEVER the bare filename `execution-record.toml` (which resolves relative to CWD and would create a stray file at repo root during `/implement` / `/plan-update` runs). Writers that need the path without reading `context.toml` first can compute it as `.claude/flows/<slug>/execution-record.toml` per the slug derivation rule.
-
-Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfile + rename.
-
-### `[[items]]` naming rationale + restricted subcommands
-
-The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Two `tomlctl items` subcommands, `orphans` and `find-duplicates`, hardcode the review/optimise ledger schema (they expect `file`, `symbol`, `summary`, `severity`, `category`) and must not be invoked against `execution-record.toml` — they will emit garbage. All other `tomlctl items` subcommands work correctly against this schema.
-
-### Append-only + supersession
-
-Entries are never mutated after write. Corrections append a new entry carrying `supersedes_entry = "E<n>"` (pointing at the superseded entry's `id`). The render routine renders the latest entry per supersession chain; older entries remain in the log for audit.
-
-### Render-to-markdown contract
-
-Every op that mutates the log (i.e. appends an entry) regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` as its last step via the render-from-log routine. `PROGRESS-LOG.md` is a pure function of `execution-record.toml` — no timestamp substitution, no date-of-run leakage. The top of the rendered file carries the literal marker `<!-- Generated from execution-record.toml. Do not edit by hand. -->`.
-
-The render emits four tables: **Completed Items** (from `type=task-completion` + `status=done`), **Deviations** (from `type=deviation`), **Deferrals** (from `type=deferral`), and **Session Log** (grouped by `date`). The full routine is defined at `### Render-from-log routine` within this block.
-
-**Session Log columns** — `| Date | Changes | Commits |`:
-- Pre-sort the log chronologically (`tomlctl items list <record> --sort-by date:asc --verify-integrity`) before grouping, so `--group-by date` buckets in chronological order rather than insertion order.
-- **Date** = `YYYY-MM-DD` bucket key.
-- **Changes** = `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the bucket entry count. The word is `entry` when N == 1 (singular), `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in first-appearance order within the bucket. Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN). Example: a bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`. A singleton deviation renders `1 entry: deviation × 1`.
-- **Commits** = deduplicated union of `commits` arrays across the bucket, joined with `, ` (comma + single space). Alphabetical first-appearance (sort the resulting SHA set lexicographically) — this preserves cross-reorder idempotency across same-date entries. Empty when the bucket has no commits.
-
-Render-then-render MUST be byte-identical (idempotency). Reordering two same-date entries in the source MUST NOT change the output: the pre-sort by `(date asc, id asc)` fixes bucket order, the count-based Changes column is order-insensitive within a bucket, and the lexicographic Commits sort is order-insensitive within a bucket.
-
-### Render-from-log routine
-
-Every op that mutates `<record>` (`status`, `complete`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) calls this routine as its **last step**. `snapshot` also calls it (read-only refresh). `/implement` Phase 3 also calls it at end-of-phase. The routine is a **pure function of the log** — no `<today>` / `<now>` substitution, no date-of-run leakage. Render-then-render MUST be byte-identical (idempotency); reordering two same-date entries in the source MUST NOT change the output (cross-reorder idempotency, achieved by the pre-sort and the count-based Changes column).
-
-The routine fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwriting the previous content) with the following structure:
-
-1. **Top-of-file marker** — the literal first line is:
-   ```
-   <!-- Generated from execution-record.toml. Do not edit by hand. -->
-   ```
-   No timestamps, no slug substitution — the marker is a fixed string.
-
-2. **Completed Items table** — sourced from
-   ```
-   tomlctl items list <record> --where type=task-completion --where status=done --sort-by date:asc,id:asc --verify-integrity
-   ```
-   Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by `(date asc, id asc)` — deterministic across migrate back-fills that insert out of chronological order.
-
-3. **Deviations table** — sourced from
-   ```
-   tomlctl items list <record> --where type=deviation --sort-by date:asc,id:asc --verify-integrity
-   ```
-   Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Rows ordered by `(date asc, id asc)`. Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
-
-4. **Deferrals table** — sourced from
-   ```
-   tomlctl items list <record> --where type=deferral --sort-by date:asc,id:asc --verify-integrity
-   ```
-   Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`. Rows ordered by `(date asc, id asc)`.
-
-5. **Session Log table** with the literal column header `| Date | Changes | Commits |`:
-
-   - **Pre-sort step (mandatory).** Run
-     ```
-     tomlctl items list <record> --sort-by date:asc --verify-integrity
-     ```
-     **before** the group operation. Without this pre-sort, `--group-by date` buckets the log in *insertion order* — empirically confirmed: `--group-by` does not re-order; it just collapses adjacent matches by the bucket key. Documenting the pre-sort here so future maintainers don't drop it as "redundant".
-   - **Group step.** Apply `--group-by date` to the sorted result. `date` is in `DATE_KEYS`, so each YYYY-MM-DD calendar day produces one bucket. No `@date:` projection is needed.
-   - For each bucket, render one row:
-     - **Date** = the YYYY-MM-DD bucket key.
-     - **Changes** = the literal format `"<N> entries: <type> × <k>, <type> × <k>, ..."`. `<N>` is the integer entry count in the bucket; the word is `entry` when N == 1 (singular) and `entries` otherwise. Each `<type> × <k>` lists an entry type and its count within the bucket. Types appear in **first-appearance order** within the bucket (not alphabetical, not count-sorted). Exactly one space on each side of `×` (U+00D7 MULTIPLICATION SIGN, NOT ASCII `x`). EXAMPLES (both verbatim, both required):
-       - A bucket of 3 task-completion + 1 verification renders `4 entries: task-completion × 3, verification × 1`.
-       - A singleton deviation renders `1 entry: deviation × 1`.
-     - **Commits** = the **deduplicated union of `commits` arrays across all entries in the bucket**, joined with `, ` (comma + single space). Order is **alphabetical first-appearance** — collect the SHA set from the bucket, then sort lexicographically before join. This preserves cross-reorder idempotency across same-date entries (chronological-appearance order would change if two same-date entries were swapped in the source). Empty when no entry in the bucket has a `commits` array.
-
-Cross-reorder idempotency comes from three order-insensitive operations: the count-based Changes column (swapping two same-date entries in the source log doesn't change the per-type counts in the bucket), the lexicographic Commits sort (SHA order is independent of entry order), and the pre-sort fixing bucket order. Combined, the routine is a true pure function of the log's *contents* — not its insertion sequence within a date.
-
-**Empty-state convention**: when a source query returns zero rows, render a single row with `| (none) | | ... | |` matching the column count of that table. Applies to Completed Items, Deviations, Deferrals, and Session Log uniformly. The literal text `(none)` in the first cell signals "no matching entries" to readers.
-
-### `[tasks].completed` derivation
-
-`[tasks].completed` in `context.toml` is derived from the log on every write that touches `[tasks]`:
-
-```
-completed = tomlctl items list <record> --where type=task-completion --where status=done --count-distinct task_ref --raw --verify-integrity
-```
-
-Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `total` remains plan-document-driven; `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
-
-`--count-distinct task_ref --raw` emits the bare integer directly (tomlctl 0.2.0+) — no jq post-processing, no pipe composition. The single-flag form subsumes both the earlier `--pluck | jq -r '.[]' | sort -u | wc -l` chain and the interim `--count-by | jq 'keys | length'` bridge.
-
-#### Read-path integrity contract
-
-Every read of `execution-record.toml` or `context.toml` by `/plan-new`, `/plan-update`, or `/implement` MUST pass `--verify-integrity`. `/plan-new`'s bootstrap materialises the sidecar via `tomlctl integrity refresh` immediately after the initial `Write` (see step 7 of the bootstrap), so every downstream reader lands on a file whose sidecar exists — there is no bootstrap-grace branch for a "sidecar known-absent" state. On sidecar digest mismatch, tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. If a read legitimately hits a missing-sidecar state (the bootstrap refresh failed and was never rerun, or the sidecar was deleted out-of-band), recover with `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`.
-
-Invocation form: the flag is a per-subcommand option (not a global one), appended to the read subcommand: `tomlctl items list <record> --where ... --verify-integrity` or `tomlctl get <file> <path> --verify-integrity`.
-
-#### Field length caps
-
-Writer commands (`/plan-new`, `/plan-update`, `/implement`) MUST cap agent-supplied string fields before passing to `tomlctl items add` / `items apply`:
-
-- `summary` ≤ 1 KiB (1024 bytes)
-- `description`, `rationale`, `original_intent`, `reason`, `reevaluate_when` ≤ 8 KiB (8192 bytes)
-
-Truncate overlong strings with a trailing ` (truncated)` marker; do NOT refuse the write. Rationale: the append-only log grows indefinitely, and a 5 MiB rationale permanently inflates every downstream read and renders into `PROGRESS-LOG.md` verbatim.
-
-#### Read rules
-
-- Missing `schema_version` → treat as `1` and write it back on the next write (silent default).
-- `schema_version > 1` → halt and ask the user.
-- Missing required item field → flag the item as malformed, skip it for filtering / reconciliation, do NOT auto-repair.
-- TOML parse error → report the error location, ask the user to fix; do NOT attempt auto-repair.
-<!-- SHARED-BLOCK:execution-record-schema END -->
-
 # Implementation
 
-Implement a plan, feature, or task by delegating work to parallel sub-agents. Handles work decomposition, research for novel steps, efficient parallelisation, progress reporting via Task tools, and verification.
+> Skim-readable orchestrator. Full contract bodies load on demand via skill invocations.
 
-Works with:
-- **Plan files** — `/implement docs/plans/todo/prod_preparation/01-security-hardening.md`
-- **Plan directories** — `/implement docs/plans/todo/prod_preparation/`
-- **Specific items** — `/implement items 3,4,5 from docs/plans/todo/prod_preparation/00-outline.md`
-- **Inline tasks** — `/implement add account lockout with progressive delays`
-- **No arguments** — `/implement` auto-resolves the active flow via the `flow-bootstrap` agent's pre-flight envelope (see `## Step 0: Pre-flight` above): explicit `--flow <slug>`, scope glob match, git branch match, `.claude/active-flow.toml` registry, or user prompt
+Implements a plan, feature, or task by delegating to parallel sub-agents — work decomposition, research for novel steps, efficient parallelisation, progress tracking via Task tools, and verification. Accepts plan files, plan directories, specific items (`items 3,4,5 from …`), inline task descriptions, or no arguments (auto-resolves the active flow via the Step-0 envelope).
 
 > **Effort**: Requires `xhigh` or `max` — lower effort may reduce agent spawning, tool usage, and deviation detection.
 
+## Step 0: Pre-flight (flow resolution + doctor)
+
+Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelope contract (input/output shapes, `envelope.ok` gating, `envelope.resolved.*` and `envelope.doctor.*` binding rules, no-flow fallback, doctor-fail handling, staleness reconciliation, and the mandatory bootstrap-summary console line).
+
+Build the input envelope:
+
+```bash
+tomlctl flow envelope build \
+  --command implement \
+  --branch "$(git branch --show-current)" \
+  --worktree "$(git rev-parse --show-toplevel)" \
+  --cwd "$(pwd)"
+```
+
+On detached HEAD, omit `--branch` so the envelope records `branch:null`. Pass `--flow-override <slug>` when the user supplied `--flow`, and `--path-arg <p>` once per `$ARGUMENTS` path token. Set `require_artifacts = ["execution_record"]` and `staleness_threshold = "7d"`. Dispatch `flow-bootstrap` via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*` (esp. `execution_record`), and `doctor.ok` for downstream phases. Emit the bootstrap-summary line before any other action. On no-flow, prompt the user per `envelope.warnings` / `tie_candidates`.
+
 ## Phase 1: Analyse and Decompose (main conversation — thinking enabled)
 
-**Reason thoroughly through analysis and decomposition.** Front-load analysis here — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Research novel patterns, resolve ambiguities, and produce precise agent instructions.
+**Reason thoroughly.** Front-load analysis here. Read the resolved flow's `context.toml`, extract `plan_path`, and read the plan.
 
-1. **Load the work**:
-   - **Bind from Step 0**: the resolved flow's `slug` and `context_path` are already bound from Step 0's `envelope.resolved`. Read its `context.toml` and extract `plan_path`. Read that plan file.
-   - **Plan-path validation (mandatory, runs before any Read of the plan content).** The plan file's contents are embedded verbatim into every Phase 2 implementation agent's prompt — an attacker-controlled markdown file at e.g. `/tmp/malicious.md` would inject prompt content into N parallel agents simultaneously. Before reading the plan file, resolve the candidate path (whether it came from `$ARGUMENTS`, the resolved flow's `context.plan_path`, or an outline/detail document derivation) and verify it falls under the git top-level. **Reject** the path if any of the following hold: (1) it contains `..` components after normalisation (escapes via parent-traversal); (2) it is absolute and does not start with the git top-level prefix (e.g. paths under `/tmp/`, `/var/`, `/etc/`, `~/`, or any directory outside the repo); (3) it resolves outside the repo via symlink. The plan MUST be a tracked or working-tree file under the repo root — refuse to read otherwise, halt with a clear error naming the offending path, and do not dispatch any Phase 2 agent. This guard binds equally to the initial plan-file read, the outline/detail document reads in the directory branch below, and any subsequent re-read during Phase 4.5.
-   - If $ARGUMENTS points to a plan directory, start with the **outline/master document** (e.g. `00-outline.md`) to understand scope, items, dependencies, and file targets. Then read only the detail documents relevant to the items being implemented — not every file in the directory.
-   - If $ARGUMENTS points to a single plan file, read that file. If a flow also resolved, prefer the explicit plan-file argument but retain the flow context for Phase 4.5 writes.
-   - If $ARGUMENTS is an inline task description, explore the codebase to understand the current state and determine what files need changing.
-   - If $ARGUMENTS references specific items (e.g. "items 3,4,5"), extract only those from the plan.
-   - **Track the flow context**: Note the resolved plan file path and flow `slug` — you'll need them for the Phase 4 report, Phase 4.5 sync, and `/plan-update` suggestions. If a flow resolved, update its `context.toml` now: **first, read the pre-update `status` value** via `tomlctl get .claude/flows/<slug>/context.toml status --verify-integrity` and retain it as `<old_status>` — you'll need it for the status-transition log entry below. Then set `status = "in-progress"`, set `updated` to today's ISO 8601 date, and increment `[tasks].in_progress`. **Preserve `created` verbatim** and preserve key order per the TOML read/write contract.
+**Plan-path validation (mandatory, before any plan Read).** The plan is embedded verbatim into every Phase-2 agent prompt. Resolve the candidate path and verify it falls under the git top-level. **Reject** if: (1) it contains `..` after normalisation; (2) it is absolute and not under the git top-level prefix (`/tmp`, `/etc`, `~/`, etc.); (3) it resolves outside the repo via symlink. Halt naming the offending path; dispatch no agent. This binds to the initial read, outline/detail reads, and any Phase-4.5 re-read.
 
-     **`[tasks].in_progress` is derived from live TaskCreate state during `/implement` execution only**; writers outside an `/implement` session MUST leave `[tasks].in_progress` untouched. The counter reflects live TaskCreate state only — `/plan-update` and `/plan-new` never write it. Increment on TaskCreate (Phase 1, step 4); decrement on task completion / failure / skip in Phase 2; reconcile to zero in Phase 4.5 once all tasks have terminated.
-   - **Resolve `<record>` (the per-flow execution-record path)** once, immediately after the flow context update above. Read `[artifacts].execution_record` from the resolved `context.toml`:
-     ```
-     tomlctl get .claude/flows/<slug>/context.toml artifacts.execution_record --verify-integrity
-     ```
-     If the key is absent (legacy flow), fall back to the computed path `.claude/flows/<slug>/execution-record.toml` per the absent-block contract in the `## Flow Context` section above, and write the computed path back into `[artifacts].execution_record` on the next `context.toml` write. If the resolved file does not yet exist on disk, perform the **atomic single-step bootstrap** before any subsequent `tomlctl items add` / `list` / `get` against it: a single `Write` tool call to `<record>` with the literal content `schema_version = 1\nlast_updated = <today>\n` (two lines, trailing newline). This materialises a valid-TOML file in one filesystem operation. Do NOT use the legacy 3-step (zero-byte `Write` + two `tomlctl set`) form — it is non-atomic and a concurrent reader could observe a zero-byte file between steps.
+Handle plan-directory (start at outline/master, then only relevant detail docs), single-file, inline-task, and item-subset (`items 3,4,5`) inputs. Update the resolved `context.toml`: read pre-update `status` as `<old_status>`, set `status = "in-progress"`, set `updated` to today, increment `[tasks].in_progress`, preserve `created` and key order. `[tasks].in_progress` is live-TaskCreate state — `/plan-new` / `/plan-update` never touch it.
 
-     Use `<record>` as shorthand throughout the rest of the command for this fully-qualified path. Every `tomlctl items …` / `tomlctl set …` call against the execution record below MUST use `<record>` — never the bare filename `execution-record.toml` (which would resolve relative to CWD and silently create a stray file at repo root). See the `## Execution Record Schema` shared block for the full schema, type vocabulary, write contract, and `[[items]]` subcommand restrictions.
-   - **Log the status transition** (if the pre-update `<old_status>` captured above differs from `"in-progress"`). Mint the id with `tomlctl items next-id <record> --prefix E` and append a `type=status-transition` entry using the canonical heredoc form:
+Invoke the `flow-contract-execution-record-schema` skill to load the canonical execution-record contract (schema, type vocabulary + per-type required fields, the two-call heredoc write contract, `<record>` path-resolution rule, `[[items]]` subcommand restrictions, append-only/supersession, render-from-log routine, `[tasks].completed` derivation, read-path `--verify-integrity` integrity contract, field-length caps, and read rules). Resolve `<record>` as `[artifacts].execution_record` (fallback `.claude/flows/<slug>/execution-record.toml`); if absent on disk, bootstrap atomically with one `Write` of `schema_version = 1\nlast_updated = <today>\n`. Use `<record>` (fully-qualified) for every later `tomlctl` call — never the bare filename. If `<old_status> != "in-progress"`, append a `type=status-transition` entry per the skill's heredoc form (skip the no-op case). Build the idempotency skip-list (`tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref --verify-integrity`); skip any plan task whose slug matches. Extract `## Verification Commands` for Phase 3.
 
-     ```
-     cat <<'EOF' | tomlctl items add <record> --json -
-     {"id":"<E{n}>","type":"status-transition","date":"<today>","agent":"implement","summary":"status <old_status> → in-progress","from_status":"<old_status>","to_status":"in-progress"}
-     EOF
-     tomlctl set <record> last_updated <today>
-     ```
-
-     If `<old_status>` already equals `"in-progress"` (e.g. a resumed run after a prior `/implement` crash), skip the append — a no-op transition generates no log entry.
-   - **Build the idempotency skip-list** before agent dispatch. Query the log for already-completed tasks:
-     ```
-     tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref --verify-integrity
-     ```
-     The result is the **idempotency skip-list**: any plan task whose slug (its task-heading slug — lowercased, hyphenated, opaque, the same `task_ref` shape documented in the `## Execution Record Schema` shared block) matches an entry MUST be skipped — do not dispatch an implementation agent for it, do not include it in any batch, and do not create a TaskCreate entry for it. Re-running `/implement` on a partially-completed plan therefore only executes the remaining tasks; completed tasks are picked up from the log rather than re-implemented.
-   - **Extract verification commands**: If the plan contains a `## Verification Commands` section, extract the build, test, and lint commands. These will be passed directly to the verification agent in Phase 3 — do not rely on the verification agent to re-discover them.
-   - **Read source files selectively** — once scope is determined, read only files needed to resolve ambiguities or make decomposition decisions. Agents will read their own target files in full, so do not pre-read every file that will be modified.
-
-2. **Research novel or complex steps**:
-   - For any step involving unfamiliar APIs, recent framework features, or technically complex patterns, research NOW in the main conversation using Context7 and WebSearch. Resolving research here once is cheaper than having every agent re-investigate and lets you verify conclusions before delegating.
-   - Resolve ambiguities in the plan — if a task could be implemented multiple ways, decide the approach here and document it in the agent instructions.
-
-3. **Decompose into agent tasks**:
-   - Break the work into discrete tasks, each owning specific files with no overlap.
-   - Classify each task's complexity:
-     - **Straightforward** — direct edits, well-understood patterns, clear examples in codebase
-     - **Complex** — requires careful reasoning, multiple interacting changes, or novel API usage
-   - For complex tasks, include the research findings and reasoning from this phase directly in the agent's prompt.
-   - Identify dependencies between tasks. Tasks with no dependencies on each other can run in parallel.
-   - **Target 3-4 parallel agents maximum** for implementation. More creates diminishing returns.
-
-4. **Create Task tracking**:
-   - Use TaskCreate for each task with a clear `subject` and `description`.
-   - Set `addBlockedBy` for tasks that depend on others.
-   - This provides visual progress in the UI and makes the work resumable if interrupted.
+Research novel/complex steps now (Context7 + WebSearch), resolve ambiguities, decompose into discrete non-overlapping-file tasks (classify Straightforward vs Complex), identify dependencies, target 3-4 parallel agents max, and create TaskCreate entries with `addBlockedBy`.
 
 ## Phase 2: Execute (parallel sub-agents)
 
-Launch implementation agents grouped into batches by dependency order. Each batch runs in parallel; batches run sequentially.
+Launch implementation agents in dependency-ordered batches; each batch runs in parallel, batches run sequentially. **Every agent in a batch MUST be emitted in the same assistant response** — N tasks ⇒ N `Agent` blocks before the turn ends, no fewer. A second `Agent` call on a later turn serialises the batch. Do NOT reduce the agent count. Place shared context as a byte-identical literal preamble atop each agent prompt (prompt-cache reuse), with per-agent divergence below a divider.
 
-**IMPORTANT: Every agent in a batch MUST be emitted in the same assistant response.** If the batch has N agents (A1, A2, …, AN), the response that dispatches the batch contains exactly N `Agent` tool-use blocks — no fewer — before the turn ends. The harness fans out parallel tool calls only when they arrive in the same response; a second `Agent` call emitted on a later turn runs *after* the first returns, which serialises the batch and doubles (or worse) the wall-clock cost while the UI still claims "parallel". **Do NOT reduce the agent count** — launch the full complement for each batch, each owning a distinct file cluster with no overlap.
+**Agent dispatch rules.** Each prompt MUST include: exact files (absolute paths); "read every listed file in full plus any file you import/export"; what the code should do and why; research findings for complex tasks; specific API signatures; success criteria; mandatory Context7/WebSearch verification; step-by-step reasoning; and the plan-deviation protocol ("if the plan's assumptions are wrong, do NOT silently improvise — complete unaffected changes, report what was assumed vs found vs left undone"). Include Context7/WebSearch/codebase-exploration/diagnostics tool guidance tailored per task.
 
-**Prompt-cache tip**: When launching the batch's agents, place shared context — file list, plan excerpts, verification commands, cross-cutting constraints — as a literal-equal preamble at the top of each agent prompt, with per-agent divergence (specific files, task details) below a clear divider. The 5-minute TTL prompt cache reuses the shared prefix across agents, reducing latency and cost. Keep the shared text byte-identical — whitespace differences defeat the cache.
+**Lite-eligibility gate (per-task dispatch).** Pick `flow-implement-deep` (default) or `flow-implement-lite`; dispatch `-lite` ONLY when ALL four criteria hold for EVERY task in the batch. Effort tag is primary: `S` is lite-eligible subject to the criteria; `M`/`L` ALWAYS go deep (do not evaluate the rest); no/unknown tag ⇒ treat as `M`. The four criteria (S only): (1) ≤ 2 files; (2) action fully specified, no design decisions left; (3) no cross-file refactor; (4) not security-sensitive (auth/crypto/input-validation/sandbox/token-storage). Coupling-isolation: if ANY task is `M`/`L` or fails any criterion, the WHOLE batch goes deep — do not peel tasks out. Record the choice as a one-line `DISPATCH:` header atop each agent prompt.
 
-**Parallel dispatch rule.** Emit one `Agent` tool-use block per task in this batch, all within the same response. Do not launch them across turns. Do NOT reduce the agent count — launch the full complement for each batch. The harness fans out concurrently only when blocks arrive in one response; a second `Agent` call on a later turn runs *after* the first returns. (Pattern: same as `/review-apply` and `/optimise-apply`, which fan out reliably with this rule.)
+For each batch: TaskUpdate all to `in_progress`; dispatch the whole batch in one response (re-check the N-blocks-emitted invariant before ending the turn). On return:
 
-### Agent dispatch rules
+- **3a. Vet `flow-implement-lite` output before promoting completion.** Inspect every `applied <id> [vet-recommended]` tag (read touched files, confirm soundness); spot-sample ≥ 1 bare `applied` per lite cluster (confirm match to `Action`+`Detail`, style preserved). Sample-failure ⇒ expand to 100% of that cluster and re-dispatch failed items to `flow-implement-deep` (counts as a failed retry). Skip vetting for deep clusters. Do NOT append a `task-completion` for a task whose vet failed.
+- **3b. Plan deviations.** Per detected deviation, append a `type=deviation` entry to `<record>` (skill heredoc form; required `original_intent`, `rationale`, `commits`). **Pre-append dedupe guard (mid-batch-crash safety):** query for an existing match on the `(task_ref, original_intent, rationale)` triple via `tomlctl items list <record> --where type=deviation … --count`; append only when count is 0 (or dedupe on a `deviation_fingerprint` hash). Significant deviations pause and surface to the user. Do NOT advise a second `/plan-update deviation` for an already-recorded deviation.
+- **4.** TaskUpdate completed tasks; failed/deviation tasks get a comment and execution continues (dependents stay blocked). Before `git commit`, apply the `commit-conventions` skill if installed and emit the sentinel `IMPLEMENT-AUTOCOMMIT: phase-2-step-5`.
+- **5. Git checkpoint.** If subsequent batches depend on this one, stage+commit before the step-5b append so the entry carries the real SHA (`git rev-parse HEAD`). **If `git commit` fails (e.g. a pre-commit hook rejects the change): do NOT proceed to step 5b — the task is not complete. Surface the hook failure to the user and halt; the task-completion entry must not be appended for an uncommitted terminal state.** If no dependent batch follows, skip the commit (entry carries empty `commits[]`).
+- **5b.** Per terminal-state task, append a `type=task-completion` entry (skill heredoc form). Required: `task_ref`, `status ∈ {done,failed,skipped}`, `files` (verbatim from agent, after the filter below), `commits`, `dispatch_tier ∈ {lite,deep}`, `dispatch_agent ∈ {flow-implement-lite,flow-implement-deep}` (tier↔agent invariant). **Path validation for `files[]` (before the add):** reject entries beginning with `/`, `\\`, or `~` and any with `..` components — drop them with a console warning; if the array empties, halt with `"Phase 2 step 5b refused to persist task-completion for <task_ref> because all reported files[] failed validation"` and append nothing (rerun picks it up via the skip-list). Out-of-`scope` paths get a soft warning + `scope_warning = true`, not a reject. **Free-text JSON sanitisation:** RFC-8259-encode every agent-supplied free-text field (`task_ref`, `summary`, `rationale`, `original_intent`, `reason`, `reevaluate_when`) — escape `\\`, `"`, U+0000–U+001F, U+2028, U+2029 — for every JSON-payload heredoc in `/implement`. Conclude every two-call write with `tomlctl set <record> last_updated <today>`.
+- **6. Rollback on batch failure.** If a batch can't be fixed within the retry budget, `git revert` to the last successful batch commit and report. **Mixed-success / partial-write batches:** attempt step-3a per-failed-item re-dispatch to `flow-implement-deep` FIRST — do NOT `git revert` the whole batch (that undoes successful agents). Only after re-dispatch also exhausts the budget does `git revert` fire, scoped to the failing items' files; successful items retain changes.
 
-Every implementation agent prompt MUST include:
-- The exact files to read and modify (absolute paths)
-- **File read instructions**: "Read every file listed in your Files section in full before making changes. Also read any file you import from or export to, so you understand the integration surface."
-- What the code should do after the change and why it's changing
-- For complex tasks: the research findings and reasoning from Phase 1
-- Specific API signatures or patterns to use (from Context7 research done in Phase 1)
-- Clear success criteria — what "done" looks like
-- Instruction: "You MUST use Context7 MCP tools to verify any new API usage before writing code — do not rely on training data alone"
-- Instruction: "You MUST use WebSearch if uncertain about implementation details"
-- Instruction: "Reason through each change step by step before editing"
-- **Plan deviation protocol**: "If you discover that the plan's assumptions are wrong — a file doesn't exist, an API has changed, an interface differs from what the plan describes — do NOT silently improvise. Complete whatever changes you can that are unaffected, then report the deviation clearly in your output: what the plan assumed, what you found, and what was left undone. The orchestrator will decide whether to adapt or abort."
+**Retry budget:** max 2 fix attempts per failure; after that mark failed, revert if it breaks the build, continue. **Cross-cutting changes:** give a 15-file rename to one agent (never split); if too large, sequence (definition+direct consumers, then indirect).
 
-### Agent tool guidance
-
-Include this tool guidance in each agent's prompt, tailored to its task:
-
-- **Context7**: "You MUST use mcp__context7__resolve-library-id then mcp__context7__query-docs to verify API signatures, method parameters, and correct usage patterns before writing any code that uses framework or library APIs."
-- **WebSearch**: "You MUST use WebSearch if you encounter an unfamiliar pattern, need to check for deprecations, or are unsure about the correct approach for the framework version in use."
-- **Codebase exploration**: "Read related files to understand existing patterns before writing new code. Match the style, naming, and structure of surrounding code."
-- **Diagnostics**: "LSP diagnostics are reliable when you first open a file and useful for understanding existing issues. However, after making edits, new diagnostics may be stale — do not automatically act on post-edit diagnostics. If new diagnostics appear after your edits, re-read the flagged lines to verify the issue is real before attempting a fix. For definitive verification, run a targeted build command (e.g. `cargo check -p crate_name`, `dotnet build path/to/Project.csproj`, `tsc --noEmit`) rather than relying on LSP. Leave full build and test runs to the verification agent."
-
-### Lite-eligibility gate (per-task dispatch)
-
-Before dispatching each task (or batch of parallel tasks), evaluate the **lite-eligibility gate** to select the correct sub-agent type. The orchestrator picks `flow-implement-deep` (default) or `flow-implement-lite` per task/batch; dispatch to `-lite` ONLY when ALL four criteria hold for EVERY task in the batch.
-
-**Primary input — plan task effort tag:**
-
-- **`S` (small)** — lite-eligible SUBJECT to all four criteria below (AND-combined). Evaluate all four; if any fails, dispatch to `-deep`.
-- **`M` or `L`** — ALWAYS dispatch to `flow-implement-deep`. Do NOT evaluate the other criteria; the effort tag alone is sufficient to escalate.
-- **No tag / unknown** — treat as `M` and dispatch to `-deep`.
-
-**The four criteria (for `S`-tagged tasks only):**
-
-1. **File scope** ≤ 2 files for the task as a whole.
-2. **Action fully specified** — the task's `Action` + `Detail` fields (or equivalent) describe the exact change. No design decisions are left to the implementer.
-3. **No cross-file refactor** — the task does not require coordinated edits to call sites, type definitions, or interfaces in files outside its stated file set.
-4. **Not security-sensitive** — the task does not touch auth, crypto, input-validation, sandbox-boundary, or token-storage code.
-
-**Coupling-isolation rule (for parallel batches):** if ANY task in the batch is `M`/`L` OR fails any of the four criteria, the **entire batch** goes to `flow-implement-deep`. Lite is reserved for batches whose every task is independently lite-eligible. Do NOT peel individual tasks out of a coupled batch to send them to `-lite`.
-
-**DISPATCH header (mandatory):** record the lite-vs-deep choice as a one-line `DISPATCH:` header at the top of each agent prompt. Examples:
-
-- `DISPATCH: flow-implement-lite — task is S, passes all 4 criteria (1 file, fully-specified action, no cross-cutting impact, non-security path)`
-- `DISPATCH: flow-implement-deep — effort=M; criterion #1 (effort tag) fails`
-- `DISPATCH: flow-implement-deep — coupling-isolation: batch contains task <name> (effort=L)`
-- `DISPATCH: flow-implement-deep — criterion #4 fails: task touches auth middleware`
-
-### Batch execution
-
-**Reminder**: `<record>` below refers to the path resolved in Phase 1 (`.claude/flows/<slug>/execution-record.toml`), NOT the bare filename.
-
-For each batch:
-1. Update all batch tasks to `in_progress` via TaskUpdate. (TaskUpdate firing is NOT evidence of parallel dispatch — the UI can show all N tasks "in progress" while only one `Agent` block was actually emitted.)
-2. **Dispatch the whole batch in one assistant response.** Emit one `Agent` tool-use block per task in this batch, all within the same response. Before ending the turn, re-read this checklist:
-   - Batch size = N (state it numerically in narration: "N=4", not "four agents").
-   - `Agent` blocks emitted in this response = ? If `< N`, keep emitting. If `= N`, end the turn. If `> N`, you over-dispatched — review the batch definition.
-   - No free-form prose paragraphs between consecutive `Agent` blocks. Thinking tokens between them are fine.
-   - If you emit block 1, you are on the hook for block N in this same response. Draft all N prompts mentally before starting to emit, not as you go.
-
-   Do NOT end the turn after a single `Agent` block if more batch tasks remain; the harness cannot fan out calls emitted on later turns.
-3. When agents return:
-
-   **3a. Vet `flow-implement-lite` output before promoting completion.** Before checking deviations or appending any `task-completion` entry to `<record>`, the orchestrator (Opus) MUST vet `applied` / completion claims from any cluster that was dispatched to `flow-implement-lite`. The Phase 3 verification agent catches build / test failures, but it does NOT catch correctness issues that pass existing tests or anti-pattern introductions. Procedure:
-
-   - **Inspect every `applied <id> [vet-recommended]: ...` tag.** The lite agent's explicit ask; read the touched files and confirm the change is sound. If wrong, re-dispatch the affected task to `flow-implement-deep` and treat the lite attempt as a failed retry against the retry budget below.
-   - **Spot-sample bare `applied` tags from `flow-implement-lite` clusters.** Sample at least **1 task per cluster** (or all if the cluster has fewer than 3 tasks). For each sampled task: read the touched lines, confirm the change matches the plan task's `Action` + `Detail` fields, confirm surrounding code style is preserved.
-   - **Sample-failure → expand-and-fix.** If a sampled apply fails vetting, expand to 100% of that cluster; re-dispatch failed items to `flow-implement-deep`.
-   - **Skip vetting for `flow-implement-deep` clusters.** Deep clusters carry their own escalation discipline (cross-cut surfaces, Alternatives sections); a spot-check remains advisable but is not gated here.
-
-   Do NOT append `task-completion` entries to `<record>` for tasks whose vet failed — wait for the re-dispatched fix to land.
-
-   **3b. Plan deviations.** Check the agent return for the deviation protocol above. If an agent reports a deviation:
-   - Reason through the impact.
-   - If the deviation is minor and the fix is clear, launch a targeted fix agent.
-   - If the deviation is significant (wrong interface, missing file, architectural mismatch), pause execution and surface the deviation to the user as an informational reminder before continuing. Do NOT advise a second `/plan-update deviation` invocation for the same deviation — the entry is already persisted to `<record>` by the append later in this step (below), so a follow-up writer command would create a duplicate entry. `/plan-update deviation` remains the op-level entry point for user-initiated or later-observed deviations; it's only redundant when `/implement` has already recorded the same deviation during its own Phase 2.
-
-   **Per detected deviation, append a `type=deviation` entry to `<record>`** (one entry per distinct deviation, regardless of severity) using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields: `original_intent` (one line summarising what the plan called for), `rationale` (one line explaining the chosen alternative), `commits` (SHAs from this batch's git checkpoint, or `[]` if no checkpoint was made yet).
-
-   **Pre-append dedupe guard (mandatory, mid-batch-crash safety).** Unlike `task-completion` (which the reconciler contract dedupes by `task_ref`), `deviation` has no reconciler-level dedupe — a mid-batch crash followed by a rerun would double-write every surviving deviation. Before appending, query the log for an existing match on the `(task_ref, original_intent, rationale)` triple:
-
-   ```
-   tomlctl items list <record> --where type=deviation --where task_ref=<slug> --where original_intent=<intent> --where rationale=<rationale> --count --verify-integrity
-   ```
-
-   If the returned count is ≥ 1, skip the append and log a console note: `deviation already recorded — skipping duplicate`. Only append when the count is 0. (Fallback if the multi-`--where` form is unwieldy for the shell-escaping of long strings: compute a `deviation_fingerprint = sha256(task_ref || original_intent || rationale)` and dedupe on that single field instead. The prose describes the triple-match approach; the fingerprint variant is semantically equivalent.)
-
-   Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
-
-   ```json
-   {"id":"E12","type":"deviation","date":"2026-04-18","agent":"implement","task_ref":"add-redis-cache","summary":"Used existing LruCache util rather than introducing Redis","original_intent":"Add Redis dependency for caching","rationale":"src/util/cache.rs already covers the use case","commits":["def5678"]}
-   ```
-
-   Always conclude the two-call pattern with `tomlctl set <record> last_updated <today>`.
-4. Update completed tasks to `completed` via TaskUpdate. If a task failed or reported a deviation, mark it with a comment describing the issue and continue with the next batch (dependent tasks will remain blocked).
-> _Before invoking `git commit`, apply the `commit-conventions` skill if installed (`~/.claude/skills/commit-conventions/` or `<repo>/.claude/skills/commit-conventions/`) — the skill drafts a Conventional-Commits-compliant message from the staged diff. Emit the sentinel `IMPLEMENT-AUTOCOMMIT: phase-2-step-5` in the dispatch prose so the skill matches on it and downgrades the atomicity gate to informational only; the batch boundary is fixed by the dependency graph._
-
-5. **Git checkpoint**: If there are subsequent batches that depend on this one, stage and commit the current batch's changes before proceeding (this must run BEFORE the step 5b task-completion append so the entry can carry the real commit SHA). This makes failures in later batches revertible without losing earlier work. Capture the resulting SHA with `git rev-parse HEAD` immediately after the commit lands. If no subsequent batch depends on this one, skip the commit — the task-completion entry in step 5b will carry an empty `commits[]` and the next batch's commit will cover this batch's work. **If `git commit` fails** (e.g. a pre-commit hook rejects the change): do NOT proceed to step 5b — the task is not complete. Surface the hook failure to the user and halt; the task-completion entry must not be appended for an uncommitted terminal state.
-
-   **5b. Per task that reached a terminal state in this batch, append a `type=task-completion` entry to `<record>`** using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields:
-   - `task_ref` — the task-heading slug (opaque, lowercased, hyphenated; the same shape used in the Phase 1 skip-list query).
-   - `status` ∈ {`done`, `failed`, `skipped`} — `done` for clean completion, `failed` for tasks that exhausted the retry budget, `skipped` for tasks the orchestrator chose not to dispatch (e.g. blocked-by-failure cascade).
-   - `files` — array of file paths the agent reported touching, taken verbatim from the agent's return summary, **after the path-validation filter below**.
-   - `commits` — array containing the SHA captured from `git rev-parse HEAD` after step 5's commit landed. If step 5 skipped the commit (no dependent batch follows), pass `[]`.
-   - `dispatch_tier` — the lite-vs-deep dispatch decision recorded in the DISPATCH header for this task (`lite` if the lite-eligibility gate accepted the task, `deep` otherwise). Both `dispatch_tier` and `dispatch_agent` MUST be populated; the orchestrator has these values when assembling the agent prompt's DISPATCH header (Phase 2 step 2's lite-eligibility gate evaluation).
-   - `dispatch_agent` — the concrete subagent_type used: `flow-implement-lite` or `flow-implement-deep`. Tier↔agent invariant per the schema (lite↔flow-implement-lite, deep↔flow-implement-deep).
-
-   **Path validation for `files[]` (mandatory, runs before the `tomlctl items add` call).** A buggy agent that touched `~/.aws/credentials`, `/etc/passwd`, or any absolute path during its run would otherwise leak that path into the committed execution-record log (and from there into rendered `PROGRESS-LOG.md`). For each candidate entry in `files[]`:
-   1. **MUST be a repo-relative path** — reject if it begins with `/`, `\\`, or `~` (including `~/` and `~user/` forms).
-   2. **MUST NOT contain `..` components** — reject any path whose components, after normalisation, include `..` (guards against escapes like `foo/../../etc/passwd`).
-   3. **SHOULD fall under one of the flow's `scope` globs** — if the path does not match any pattern in the resolved flow's `context.scope`, do **not** reject; instead, emit a soft warning to the console naming the out-of-scope path and set `scope_warning = true` on the outgoing entry as a standalone field so downstream readers can audit. This is advisory because legitimate cross-cutting edits (e.g. test fixtures in a sibling directory) can fall outside `scope` without indicating a bug.
-   4. **On (1) or (2) violation** — drop the offending path from the array, emit a console warning of the form `"task-completion files[] filter dropped <path> for task <task_ref>: <reason>"`, and continue with the remaining valid entries. **If the array becomes empty after filtering**, halt with the error `"Phase 2 step 5b refused to persist task-completion for <task_ref> because all reported files[] failed validation — inspect agent output."` and do NOT append the entry (the task will be picked up on rerun via the skip-list query, which only counts entries actually persisted to `<record>`).
-
-   The check is intentionally cheap — a regex for rules (1) and a component split + equality test for rule (2). Rule (3) reuses the same `Glob` patterns the Phase 1 flow resolver already evaluates against `scope`.
-
-   **Free-text JSON sanitisation (rule 4, mandatory, applies to every JSON-payload heredoc in `/implement`).** Before assembling the heredoc JSON payload, every free-text field interpolated from agent output (`task_ref`, `summary`, `rationale`, `original_intent`, `reason`, `reevaluate_when`, and any other agent-supplied prose) MUST be JSON-encoded per RFC 8259 — escape `\\`, `"`, control characters (U+0000 through U+001F), and the Unicode line separators U+2028 (` `) and U+2029 (` `). The single-quoted heredoc delimiter `<<'EOF'` prevents shell expansion / injection, but a literal `}`, an unescaped `"`, a raw newline, or a U+2028/U+2029 in agent prose would still break the JSON payload's structure (or, worse, a paragraph-separator character would parse as a JS line terminator in a JS-runtime-based downstream renderer). Most JSON serialisers (jq, Python `json.dumps`, Rust `serde_json::to_string`) handle this automatically; if the payload is being assembled by string concatenation in shell, every interpolated free-text field MUST be passed through an explicit escaper first. **This rule applies uniformly to every JSON-payload heredoc in `/implement`** — task-completion (this step), deviation (Phase 2 step 3b), verification (Phase 3), status-transition (Phase 1) — wherever the spec emits `cat <<'EOF' | tomlctl items add <record> --json -` with agent-supplied free-text in the JSON body.
-
-   Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
-
-   ```json
-   {"id":"E7","type":"task-completion","date":"2026-04-18","agent":"implement","task_ref":"add-retry-logic","dispatch_tier":"lite","dispatch_agent":"flow-implement-lite","summary":"Added retry logic in src/retry.rs","files":["src/retry.rs","tests/retry_test.rs"],"commits":["abc1234"],"status":"done"}
-   ```
-
-   Always conclude the two-call pattern with `tomlctl set <record> last_updated <today>`. Every call MUST use `<record>` (the fully-qualified `.claude/flows/<slug>/execution-record.toml` path resolved in Phase 1) — never the bare filename.
-6. **Rollback on batch failure**: If a batch fails and cannot be fixed within the retry budget (see below), `git revert` to the last successful batch commit. Report the revert and the failure reason so the user can update the plan.
-
-   **Mixed-success / partial-write batches**: when a parallel batch returns mixed `applied` / `skipped` / `failed` results AND any failed agent partially wrote files before failing, the orchestrator MUST attempt step 3a re-dispatch FIRST (per-failed-item to `flow-implement-deep`) for the failed items only — DO NOT `git revert` the whole batch, as that would undo the successful agents' work. Only after re-dispatch ALSO fails (retry budget exhausted on the same items) does step 6's `git revert` fire, and only over the failing items' files (paths declared by the failed agents). Successful items in the batch retain their changes.
-
-### Retry budget
-
-When a task fails (build error, test failure, agent-reported issue):
-- **Maximum 2 fix attempts per failure.** Each attempt gets a targeted fix agent with the specific error and file context.
-- After 2 failed attempts, mark the task as failed, revert its changes if they break the build, and continue with unaffected tasks.
-- Report all failures and attempted fixes in the Phase 4 summary.
-
-### Handling cross-cutting changes
-
-If a change spans many files (e.g. renaming an interface used in 15 places):
-- Do NOT split across multiple agents — give it to a single agent with the full file list.
-- If the file list is too large for one agent, split into sequential batches (batch 1: change the definition + direct consumers, batch 2: change indirect consumers).
-
-### Stash escalation handler (delegate-emitted `stash-required`)
-
-The `flow-implement-{deep,lite}` agent contracts forbid delegates from running `git stash`, `git reset`, or `git checkout --` on their own — concurrent batches share the working tree, and a delegate-initiated stash would silently swallow a sibling's in-flight edits. Instead, when a delegate encounters a dirty working-tree state that blocks its own work (e.g. an untracked file collides with a path it must create, or it needs to read a file's on-disk state but the working copy reflects an unsaved sibling edit), the delegate returns the escalation tag `escalate <id>: stash-required — <reason>` and exits without writing.
-
-When the orchestrator (this command) receives that escalation tag, follow this protocol — the analogue of `/review-apply` Step 5.5 and `/optimise-apply` Step 5.5, adapted to `/implement`'s batch model. **Do not extend the `apply-rollback-protocol` shared block**; this is a `/implement`-specific handler with different triggers and a different recovery path (the apply-side rollback reverts a failed transition, whereas this handler unblocks a delegate that hit a working-tree precondition).
-
-1. **Halt the batch.** Pause dispatch of any sibling delegates in the same batch that have not yet started, and wait for any sibling that is already running to complete its return — sibling delegates may still be writing to the working tree, and stashing under them would lose their work. Concurrent stash is unsafe; this handler is strictly serial within a batch.
-2. **Stash with a tracked ref.** Once siblings have terminated, run:
-
-   ```bash
-   git stash push -u -m "implement-escalation-stash-<ISO timestamp>"
-   ```
-
-   Use the full ISO 8601 timestamp (e.g. `implement-escalation-stash-2026-04-18T14:32:00Z`) so multiple stashes within one run remain distinguishable. Capture the resulting stash ref (e.g. `stash@{0}`) — you will need it for the pop step and the report. If `git stash push` reports `No local changes to save`, the precondition the delegate hit has cleared on its own (likely a sibling completed its commit between the delegate's escalation and the orchestrator's stash) — skip directly to step 4 (re-dispatch) without popping.
-3. **Perform the operation that the delegate's escalation requested**, typically a `Read` of the now-clean on-disk state of the file the delegate's edits had collided with. Do NOT make new edits during this step — the orchestrator's role here is observational (collect the context the delegate needs to succeed on retry), not corrective.
-4. **Pop the stash.** Run:
-
-   ```bash
-   git stash pop <stash-ref>
-   ```
-
-   If `git stash pop` reports a merge conflict (a sibling's earlier write now conflicts with the stashed user-in-progress state), do NOT auto-resolve — surface the conflict to the user with the literal stash ref so they can resolve manually via `git checkout --theirs/--ours <path>` and continue. Halt the run; do not proceed to step 5. The stash remains on the stack for user recovery.
-5. **Re-dispatch the delegate** with updated context: the original task instructions plus a "Stash escalation context" preamble that includes (a) the on-disk state the orchestrator observed in step 3 and (b) a one-line note `"Working tree was stashed and restored to unblock your earlier escalate <id>: stash-required tag — proceed with the original task using the on-disk state below."`. The re-dispatch counts against the task's normal retry budget (max 2 fix attempts per failure), but a stash-required escalation that succeeds on the first re-dispatch consumes one attempt, not zero — the delegate's first run produced no bytes and is recorded as a failure for retry-counting purposes.
-6. **Surface the stash event in the Phase 4 report.** Add a one-line entry under `### Failed / Skipped` (or a dedicated `### Stash Events` sub-block when there are 2+ events in one run) of the form `stash-required handled for <id>: <reason> (stash <ref>, popped cleanly)`. This makes the working-tree disturbance auditable from the rendered summary.
-
-**Safety constraints:**
-
-- Never run `git stash` while sibling delegates from the same batch are still writing — always serialise as in step 1.
-- Never accept the delegate's own description of "what the working tree contains" as ground truth — re-derive via `git status --porcelain` before deciding whether to stash.
-- Never bypass the stash by `git checkout -- <path>` or `git restore <path>` — those forms discard user-in-progress work without recovery, whereas the stash leaves a recoverable ref.
-- Never auto-resolve a `git stash pop` merge conflict — surface to the user.
-- A stash-required escalation that the orchestrator cannot satisfy (e.g. step 4 conflict, or the delegate immediately re-escalates after re-dispatch) terminates the task as `failed` for `<record>` purposes; the orchestrator must NOT loop indefinitely.
+**Stash escalation handler (delegate-emitted `stash-required`).** Delegates may NOT run `git stash`/`reset`/`checkout --`; they return `escalate <id>: stash-required — <reason>` and exit. As orchestrator: (1) halt the batch and wait for running siblings to terminate (concurrent stash is unsafe — strictly serial); (2) `git stash push -u -m "implement-escalation-stash-<ISO timestamp>"`, capture the stash ref (skip to step 4 if `No local changes to save`); (3) perform the requested observation (typically a `Read` of the now-clean on-disk state — no new edits); (4) `git stash pop <stash-ref>` — **if `git stash pop` reports a merge conflict, do NOT auto-resolve — surface the conflict to the user with the literal stash ref and halt the run (do not proceed to step 5); the stash remains on the stack for user recovery**; (5) re-dispatch the delegate with a "Stash escalation context" preamble (counts one retry attempt); (6) surface the event in the Phase-4 report. Never `git checkout --`/`restore` (discards work without recovery); re-derive working-tree state via `git status --porcelain`; a handler that cannot satisfy the escalation terminates the task `failed` — do not loop.
 
 ## Phase 3: Verify
 
-After all batches complete, determine the verification commands (if not already extracted in Phase 1): check (a) CLAUDE.md for documented commands, (b) project root files (e.g. Cargo.toml, package.json, *.sln, Makefile, pyproject.toml). If ambiguous, ask the user.
-
-Launch the `verification` agent **once** (`subagent_type: "verification"`, pinned to Haiku) with the full ordered command list in a `commands:` field — build first, then tests, then lint. The agent runs them sequentially and short-circuits on the first `fail`, returning one `command:` + `outcome:` block per attempted command (with `tail:` on failure and a `not_run:` line listing the unrun remainder). Do not restate the agent's reporting contract in the prompt — it lives in the agent's system prompt.
-
-**Per verification command actually executed, append one `type=verification` entry to `<record>`** using the canonical heredoc form documented in the `## Execution Record Schema` shared block. Mint the id with `tomlctl items next-id <record> --prefix E`. Required fields: `command` (the exact command string the verification agent ran, byte-for-byte) and `outcome` ∈ {`pass`, `fail`}. One entry per command — a verification phase that ran build + test + lint produces three entries. Example payload (see the canonical heredoc form in the `## Execution Record Schema` shared block):
-
-```json
-{"id":"E15","type":"verification","date":"2026-04-18","agent":"implement","summary":"cargo test passed","command":"cargo test --manifest-path tomlctl/Cargo.toml","outcome":"pass"}
-```
-
-Conclude the two-call pattern with `tomlctl set <record> last_updated <today>` after the final verification entry lands (a single `last_updated` write covers the whole batch — no need to bump it after every individual `items add`, since the entries are appended back-to-back without any reader interleaving).
-
-If verification fails:
-1. **Reason thoroughly to diagnose** in the main conversation. Thoroughly analyse the failure and determine root cause.
-2. Fix the issue directly or launch a targeted fix agent. **This counts against the retry budget** — maximum 2 fix-and-reverify cycles for the entire verification phase.
-3. Re-run verification. Each re-run appends fresh `type=verification` entries — the log is append-only, so a failed-then-passed sequence yields two entries with the same `command` and different `outcome` values. **On a second (or subsequent) verification entry for the same `(command, task_ref)` pair after a fix-and-reverify cycle, the new entry MUST set `supersedes_entry = "<old verification entry id>"` on itself.** Query for the existing entry first:
-
-   ```
-   tomlctl items list <record> --where type=verification --where command=<cmd> --pluck id --verify-integrity | jq -r '.[-1]'
-   ```
-
-   The last element of that array is the most recent prior verification id for the same command; include it as `supersedes_entry` in the new entry's JSON payload. This populates the supersession chain so the render routine's "latest per supersession chain" claim is actually satisfied — without the back-link, the chain is empty and the render would pick an arbitrary raw entry instead of the fix-and-reverify winner. Raw entries remain for audit.
-4. If verification still fails after 2 attempts, report the specific failures and suggest the user investigate manually or update the plan.
-
-**End of Phase 3 — render `PROGRESS-LOG.md` from `<record>`.** Once all verification entries have been appended (and any fix-and-reverify cycles have completed), invoke the render-from-log routine documented in `## Execution Record Schema` above (within the `execution-record-schema` shared block) to regenerate `.claude/flows/<slug>/PROGRESS-LOG.md` from the fresh log state. This guards against PROGRESS-LOG drifting stale between `/implement` completion and the next `/plan-update` invocation. Even though Phase 4.5 below auto-invokes `/plan-update status` (which itself runs the render-from-log routine), `/implement` performs the render here too — the render is cheap and idempotent (render-then-render is byte-identical per the `## Execution Record Schema` shared block), and this guards against the Phase 4.5 no-op gate skipping the render entirely on runs where `[tasks].in_progress == 0` and no scoped files were touched.
+Determine verification commands (Phase-1 extraction, else CLAUDE.md / project-root manifests; ask if ambiguous). Launch the `verification` agent once (`subagent_type: "verification"`, Haiku) with the full ordered `commands:` list (build → tests → lint); it short-circuits on first `fail`. Per command actually executed, append one `type=verification` entry to `<record>` (skill heredoc form; required `command`, `outcome ∈ {pass,fail}`); conclude with one `tomlctl set <record> last_updated <today>`. On failure: diagnose in main conversation, fix directly or via targeted agent (counts against budget — max 2 fix-and-reverify cycles), re-run. A re-run for the same `(command, task_ref)` MUST set `supersedes_entry` to the prior verification id (query last id first). **End of Phase 3:** invoke the skill's render-from-log routine to regenerate `PROGRESS-LOG.md` from `<record>` (cheap, idempotent — guards against the Phase-4.5 no-op gate skipping the render).
 
 ## Phase 4: Report
 
-**Reason thoroughly through the final report.** Cross-reference all agent results, verify completeness against the original plan/task, and ensure the summary accurately reflects what was done.
-
-After successful verification, output:
+**Reason thoroughly.** After successful verification, output the Implementation Summary:
 
 ```
 ## Implementation Summary
@@ -564,47 +78,23 @@ After successful verification, output:
 - [task] — reason, what needs manual attention
 
 ### Plan Deviations
-- [task] — what the plan assumed vs. what was found, and how it was handled (adapted / deferred / reverted)
+- [task] — plan assumption vs. what was found, how handled (adapted / deferred / reverted)
 
 ### Verification
-- Build: pass/fail
-- Tests: pass/fail (N passed, M failed)
-- Fix attempts used: N/M
-
-### Plan Updates Needed
-- [items completed and deviations are already persisted to `<record>` by Phase 2/3 — Phase 4.5 auto-invokes `/plan-update status` to refresh `context.toml` counters and re-render `PROGRESS-LOG.md`. Manual `/plan-update` invocations are only needed for `defer` / `reformat` / `catchup` ops outside the implement flow.]
-
+- Build / Tests / Lint: pass/fail; fix attempts used: N/M
 ### Next Steps
-- [review the revised plan and `PROGRESS-LOG.md` to confirm recorded outcomes match expectations]
-- [trigger `/review` and `/optimise` on the scope just modified to validate the implementation, then `/plan-update <slug> complete` to drop the flow from auto-resolution; OR address any `Failed / Skipped` items that need manual attention]
+- review the revised plan + PROGRESS-LOG.md; then /review + /optimise on the scope, then /plan-update <slug> complete
 ```
 
 ### Phase 4.5: Sync plan context
 
-After the Implementation Summary has been emitted, synchronise the resolved flow's `context.toml` with the work just completed.
-
-1. **No-op gate**: if `[tasks].in_progress == 0` in the resolved flow's `context.toml` AND no files under its `scope` were edited during this run, skip the invocation entirely and note the skip in the orchestrator's output. The skip message MUST be interpolated to surface both gate-condition contributions so a user can distinguish an intentional skip from a bug: literal format `Phase 4.5 skipped: no-op gate (in_progress=<N>, scoped-edits=<count>)` where `<N>` is the value of `[tasks].in_progress` read from the resolved `context.toml` and `<count>` is the number of files in this run that touched any pattern in the flow's `scope` glob list (compute by intersecting the run's set of edited files with the flow's `scope` patterns via the `Glob` tool). This prevents spurious `plan-update` calls on trivial or inline runs that never touched tracked scope.
-2. **Otherwise, auto-invoke `plan-update`**:
-
-   Use the `Skill` tool to call the `plan-update` skill with the literal string argument `status`. Unnamespaced skill names resolve to project-local `.claude/commands/<name>.md` first, then user-level commands — plugin skills are namespaced (`plugin:name:skill`) and cannot silently shadow the unnamespaced call. The skill will read the resolved flow's `context.toml`, update `[tasks]` counters to reflect what the Implementation Summary reported, set `updated` to today, and preserve `created` verbatim. **The `status` op MAY transition `status` to `review` (when all items are now done or all remaining items are deferred) but it MUST NOT transition to `complete`** — auto-completion would strand the freshly-implemented plan beyond auto-resolution before the user has had a chance to /review or /optimise it. The user transitions `review → complete` explicitly via `/plan-update <plan> complete` once they're satisfied.
-
-   Because `plan-update` itself performs the 5-step flow resolution, no flow arguments need to be passed through — the invocation is literally `Skill("plan-update", "status")`.
-
-3. **Surface the next-step prompt.** After Phase 4.5 returns, append a one-line console hint when `status` is now `review`: `flow <slug>: implementation complete — status is now "review". Run /review and /optimise against the scope, then /plan-update <slug> complete to drop the flow from auto-resolution.`
-
-   (Replace `<slug>` with the resolved flow's slug before printing — the orchestrator has the resolved slug at this point and MUST interpolate it into the literal hint string. The placeholder is for spec readability only; it must not appear verbatim in the user-facing console output.)
-
-   This makes the new manual-completion gesture discoverable without breaking existing automation.
+1. **No-op gate:** if `[tasks].in_progress == 0` AND no scoped files were edited, skip and emit `Phase 4.5 skipped: no-op gate (in_progress=<N>, scoped-edits=<count>)`.
+2. **Otherwise** call the `plan-update` skill with literal arg `status` (`Skill("plan-update", "status")`); it refreshes `[tasks]` counters, sets `updated`, preserves `created`, re-renders `PROGRESS-LOG.md`, and MAY transition to `review` but MUST NOT transition to `complete`.
+3. When `status` is now `review`, append the one-line hint `flow <slug>: implementation complete — status is now "review". Run /review and /optimise against the scope, then /plan-update <slug> complete to drop the flow from auto-resolution.` (interpolate `<slug>`).
 
 ## Important Constraints
 
-- **Context budget** — Be selective about what you read in Phase 1. Agents have full tool access and will read their own target files, so the orchestrator doesn't need to pre-read every file. This is especially important when commands are chained (e.g. `/implement ... then /review then /implement fixes`) — reserve context for later phases.
-- **Front-load complex analysis in Phase 1** — the orchestrator has the broadest view, pre-digested instructions let agents execute rather than re-deliberate, and complex reasoning is verified once rather than N times. Give agents pre-digested instructions, not open-ended problems.
-- **3-4 parallel implementation agents max** — more creates coordination overhead. Research-only agents can scale higher.
-- **File ownership is absolute** — no two parallel agents touch the same file. Sequence if necessary.
-- **Commit between dependent batches** — so later failures don't require reverting earlier successes.
-- **Preserve existing patterns** — agents must read surrounding code and match style, naming, structure.
-- **Do not over-implement** — make the minimum changes to satisfy each task. No bonus refactoring.
-- **Verification is mandatory** — never report success without running build + tests.
-- **Retry budget is strict** — maximum 2 fix attempts per task failure, maximum 2 fix-and-reverify cycles for verification. After that, report and move on.
-- **Plan deviations surface immediately** — agents report mismatches between plan and reality rather than silently adapting. The orchestrator decides whether to proceed, fix, or abort.
+- **Context budget** — be selective in Phase 1; agents read their own targets. **Front-load complex analysis** — give agents pre-digested instructions, not open-ended problems.
+- **3-4 parallel implementation agents max**; file ownership is absolute (no two parallel agents touch one file — sequence if needed). **Commit between dependent batches**; preserve existing patterns; do not over-implement.
+- **Verification is mandatory** — never report success without build + tests. **Retry budget is strict** — max 2 fix attempts per task failure, max 2 fix-and-reverify cycles for verification.
+- **Plan deviations surface immediately** — agents report mismatches; the orchestrator decides proceed/fix/abort.

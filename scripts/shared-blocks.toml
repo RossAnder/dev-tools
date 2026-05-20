@@ -36,15 +36,12 @@ name = "flow-context"
 skill = "claude/skills/flow-contract-flow-context/SKILL.md"
 # Flow-resolving carriers only — see carrier-list scope rule at top of file.
 # review.md migrated to claude/skills/flow-contract-flow-context/SKILL.md (2026-05-19).
+# plan-new.md, review-plan.md, implement.md, tdd.md migrated to flow-contract-flow-context (2026-05-20, wave 1).
 files = [
   "claude/commands/optimise.md",
   "claude/commands/optimise-apply.md",
   "claude/commands/review-apply.md",
-  "claude/commands/plan-new.md",
   "claude/commands/plan-update.md",
-  "claude/commands/implement.md",
-  "claude/commands/review-plan.md",
-  "claude/commands/tdd.md",
 ]
 
 [[block]]
@@ -59,11 +56,11 @@ files = [
 
 [[block]]
 name = "execution-record-schema"
+skill = "claude/skills/flow-contract-execution-record-schema/SKILL.md"
+# plan-new.md, implement.md, tdd.md migrated to flow-contract-execution-record-schema (2026-05-20, wave 1).
+# plan-update.md retained pending its separate overhaul.
 files = [
-  "claude/commands/plan-new.md",
   "claude/commands/plan-update.md",
-  "claude/commands/implement.md",
-  "claude/commands/tdd.md",
 ]
 
 [[block]]
@@ -115,18 +112,18 @@ skill = "claude/skills/flow-contract-vet-research/SKILL.md"
 # Includes test-bootstrap.md (a non-flow-aware carrier) — see carrier-list
 # scope rule at top of file. Asymmetry vs flow-context is intentional.
 # review.md migrated to claude/skills/flow-contract-vet-research/SKILL.md (2026-05-19).
+# plan-new.md, review-plan.md migrated to flow-contract-vet-research (2026-05-20, wave 1).
 files = [
   "claude/commands/optimise.md",
-  "claude/commands/plan-new.md",
   "claude/commands/plan-update.md",
-  "claude/commands/review-plan.md",
   "claude/commands/test-bootstrap.md",
 ]
 
 [[block]]
 name = "plansdirectory-prompt"
+skill = "claude/skills/flow-contract-plansdirectory-prompt/SKILL.md"
+# plan-new.md, review-plan.md migrated to flow-contract-plansdirectory-prompt (2026-05-20, wave 1).
+# plan-update.md retained pending its separate overhaul.
 files = [
-  "claude/commands/plan-new.md",
   "claude/commands/plan-update.md",
-  "claude/commands/review-plan.md",
 ]
