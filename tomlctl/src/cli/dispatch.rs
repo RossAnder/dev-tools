@@ -1392,15 +1392,15 @@ body
 
     #[test]
     fn blocks_verify_reproduces_shell_hashes() {
-        // R87: pin hashes for every block enumerated in
-        // `scripts/shared-blocks.toml`. The blocks have divergent file
-        // coverage — `flow-context` spans 8 command files (all flow-aware
-        // commands); `ledger-schema` spans 4 (the review/optimise pair); the
-        // three apply-only blocks span 2 (optimise-apply + review-apply).
-        // Splitting the assertions this way lets a drift in any one block
-        // surface independently with a named hash, instead of a confusing
-        // "missing" report from running a narrower block over a wider file
-        // list.
+        // R87: pin the hash for every block enumerated in
+        // `scripts/shared-blocks.toml`. After the progressive-disclosure
+        // wave-2 migration (2026-05-20) every command-carried block was
+        // externalised to a flow-contract / apply-* skill and deleted from
+        // the manifest, leaving exactly one block: `forbidden-working-tree-ops`,
+        // which spans the two flow-implement agent files. Pinning its hash
+        // here keeps the test guarding a real surviving block; a drift surfaces
+        // independently with a named hash rather than a confusing "missing"
+        // report.
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
 
@@ -1443,19 +1443,12 @@ body
                 .unwrap_or_default()
         };
 
-        let flow_context_eight = carriers_for("flow-context");
-        let ledger_schema_three = carriers_for("ledger-schema");
-        let execution_record_four = carriers_for("execution-record-schema");
-        let apply_pair = carriers_for("apply-dependency-sort");
+        let forbidden_pair = carriers_for("forbidden-working-tree-ops");
 
         // Only run when every file is present. The test crate is consumable
         // in isolation; degrade gracefully if someone packages it without
         // the command tree.
-        if !flow_context_eight.iter().all(|p| p.exists())
-            || !ledger_schema_three.iter().all(|p| p.exists())
-            || !execution_record_four.iter().all(|p| p.exists())
-            || !apply_pair.iter().all(|p| p.exists())
-        {
+        if !forbidden_pair.iter().all(|p| p.exists()) {
             eprintln!(
                 "blocks_verify_reproduces_shell_hashes: command files not found, skipping"
             );
@@ -1559,74 +1552,23 @@ body
             panic!("{msg}");
         };
 
-        // --- 8-file flow-context block (post review.md migration, incl. tdd.md) ---
+        // --- 2-file forbidden-working-tree-ops block (the sole surviving
+        //     block after the wave-2 migration; spans the two flow-implement
+        //     agent files) ---
         let report = blocks_verify(
-            &flow_context_eight,
-            &["flow-context".to_string()],
-        )
-        .unwrap();
-        assert!(report.ok, "flow-context block must be parity: {:?}", report.report);
-        expect_hash(
-            &report,
-            "flow-context",
-            "d837b01f92067bccd9c0b75531902b4bfe8669265304d73b3e4760fa2020bf82",
-        );
-
-        // --- 3-file ledger-schema block (post review.md migration) ---
-        let report = blocks_verify(
-            &ledger_schema_three,
-            &["ledger-schema".to_string()],
-        )
-        .unwrap();
-        assert!(report.ok, "ledger-schema block must be parity: {:?}", report.report);
-        expect_hash(
-            &report,
-            "ledger-schema",
-            "cedae069af297e08e925b393b53a0cc664c8be6d86df9a3fd2a38a902a17ad08",
-        );
-
-        // --- 4-file execution-record-schema block (incl. tdd.md) ---
-        let report = blocks_verify(
-            &execution_record_four,
-            &["execution-record-schema".to_string()],
-        )
-        .unwrap();
-        assert!(report.ok, "execution-record-schema block must be parity: {:?}", report.report);
-        expect_hash(
-            &report,
-            "execution-record-schema",
-            "1935f8dd41e561e1681f55ae0850260ef2885d4a404cbf7adea1ab94e3d209ea",
-        );
-
-        // --- 2-file apply-only blocks ---
-        let report = blocks_verify(
-            &apply_pair,
-            &[
-                "apply-dependency-sort".to_string(),
-                "apply-rollback-protocol".to_string(),
-                "apply-constraints".to_string(),
-            ],
+            &forbidden_pair,
+            &["forbidden-working-tree-ops".to_string()],
         )
         .unwrap();
         assert!(
             report.ok,
-            "apply-only blocks must be parity across the 2-file subset: {:?}",
+            "forbidden-working-tree-ops block must be parity: {:?}",
             report.report
         );
         expect_hash(
             &report,
-            "apply-dependency-sort",
-            "482172a20b6f88eef4abf4af93464e8b80825d7719672e390d1d785230be846a",
-        );
-        expect_hash(
-            &report,
-            "apply-rollback-protocol",
-            "9e465d6b26bbb72bbd59c037c72657c172543c10555fdbc80ebaf9e097fc7db8",
-        );
-        expect_hash(
-            &report,
-            "apply-constraints",
-            "398ea2a01f6a87b0b207ed85abfd41cae4c18ddfede0057925cc0a642b50767e",
+            "forbidden-working-tree-ops",
+            "8a5099689d67892f60c516479acf7269b8d08e0fe2f6e0e5737df4d29060f631",
         );
     }
 

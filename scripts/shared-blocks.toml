@@ -3,127 +3,35 @@
 # Consumed by scripts/verify-shared-blocks.sh.
 #
 # Migration policy (progressive-disclosure overhaul, started 2026-05-19):
-#   Carriers are progressively externalising shared blocks into
-#   claude/skills/flow-contract-*/SKILL.md. As each carrier migrates,
-#   its entry is removed from the affected block's `files` list. When
-#   a block's `files` list becomes empty, the entire `[[block]]` entry
-#   is deleted — the verifier becomes vacuous for that contract.
-#   Pilot carrier: claude/commands/review.md (removed from 4 blocks).
+#   Carriers progressively externalised their shared blocks into
+#   claude/skills/flow-contract-*/SKILL.md (and the apply-* skills). As each
+#   carrier migrated, its entry was removed from the affected block's `files`
+#   list; when a block's `files` list became empty, the entire `[[block]]`
+#   entry was deleted — the verifier becomes vacuous for that contract.
 #
-#   The optional `skill = "..."` field records the externalised skill path
-#   for a block once it is moved to a flow-contract skill. It is consumed by
-#   the `tomlctl blocks verify-skills` drift check and is ignored by
+#   Wave 2 (2026-05-20) migrated the final command carriers
+#   (optimise, optimise-apply, review-apply, plan-update, test-bootstrap),
+#   which emptied and removed every remaining command-block:
+#   flow-context, ledger-schema, execution-record-schema,
+#   apply-dependency-sort, apply-rollback-protocol, apply-constraints,
+#   ledger-disposition-sweep, apply-vet-flow-implement-lite,
+#   vet-flow-research, and plansdirectory-prompt.
+#
+#   After wave 2 the manifest carries exactly ONE block:
+#   forbidden-working-tree-ops, which spans the two flow-implement agent
+#   files (neither is a command carrier, so it was untouched by the
+#   migration). The agent files do not externalise this block to a skill,
+#   so it carries no `skill = "..."` field.
+#
+#   The optional `skill = "..."` field (now unused, since no surviving block
+#   is externalised) records the externalised skill path for a block once it
+#   is moved to a flow-contract skill. It is consumed by the
+#   `tomlctl blocks verify-skills` drift check and is ignored by
 #   scripts/verify-shared-blocks.sh (it sits outside the `files` array).
-#
-# Carrier-list scope rule (re asymmetry between flow-context and
-# vet-flow-research below):
-#   - flow-context covers ONLY flow-resolving carriers — commands that
-#     read .claude/active-flow.toml and operate inside a flow lifecycle
-#     (plan-new, plan-update, implement, review, optimise, review-plan,
-#     review-apply, optimise-apply, tdd).
-#   - vet-flow-research covers carriers that fan out research agents and
-#     vet their output. test-bootstrap is intentionally a vet-flow-research
-#     carrier (Phase 2.5 vets agent output) but is intentionally NOT a
-#     flow-context carrier: /test-bootstrap is not flow-aware (see the
-#     opening note in claude/commands/test-bootstrap.md — it does not read
-#     .claude/active-flow.toml and does not participate in the plan/
-#     implement/review lifecycle). The two lists are therefore not subsets
-#     of each other by design; do not "rationalise" them by aligning
-#     coverage.
-
-[[block]]
-name = "flow-context"
-skill = "claude/skills/flow-contract-flow-context/SKILL.md"
-# Flow-resolving carriers only — see carrier-list scope rule at top of file.
-# review.md migrated to claude/skills/flow-contract-flow-context/SKILL.md (2026-05-19).
-# plan-new.md, review-plan.md, implement.md, tdd.md migrated to flow-contract-flow-context (2026-05-20, wave 1).
-files = [
-  "claude/commands/optimise.md",
-  "claude/commands/optimise-apply.md",
-  "claude/commands/review-apply.md",
-  "claude/commands/plan-update.md",
-]
-
-[[block]]
-name = "ledger-schema"
-skill = "claude/skills/flow-contract-ledger-schema/SKILL.md"
-# review.md migrated to claude/skills/flow-contract-ledger-schema/SKILL.md (2026-05-19).
-files = [
-  "claude/commands/optimise.md",
-  "claude/commands/optimise-apply.md",
-  "claude/commands/review-apply.md",
-]
-
-[[block]]
-name = "execution-record-schema"
-skill = "claude/skills/flow-contract-execution-record-schema/SKILL.md"
-# plan-new.md, implement.md, tdd.md migrated to flow-contract-execution-record-schema (2026-05-20, wave 1).
-# plan-update.md retained pending its separate overhaul.
-files = [
-  "claude/commands/plan-update.md",
-]
-
-[[block]]
-name = "apply-dependency-sort"
-files = [
-  "claude/commands/optimise-apply.md",
-  "claude/commands/review-apply.md",
-]
-
-[[block]]
-name = "apply-rollback-protocol"
-files = [
-  "claude/commands/optimise-apply.md",
-  "claude/commands/review-apply.md",
-]
-
-[[block]]
-name = "apply-constraints"
-files = [
-  "claude/commands/optimise-apply.md",
-  "claude/commands/review-apply.md",
-]
-
-[[block]]
-name = "ledger-disposition-sweep"
-skill = "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md"
-# review.md migrated to claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md (2026-05-19).
-files = [
-  "claude/commands/optimise.md",
-]
 
 [[block]]
 name = "forbidden-working-tree-ops"
 files = [
   "claude/agents/flow-implement-deep.md",
   "claude/agents/flow-implement-lite.md",
-]
-
-[[block]]
-name = "apply-vet-flow-implement-lite"
-files = [
-  "claude/commands/optimise-apply.md",
-  "claude/commands/review-apply.md",
-]
-
-[[block]]
-name = "vet-flow-research"
-skill = "claude/skills/flow-contract-vet-research/SKILL.md"
-# Includes test-bootstrap.md (a non-flow-aware carrier) — see carrier-list
-# scope rule at top of file. Asymmetry vs flow-context is intentional.
-# review.md migrated to claude/skills/flow-contract-vet-research/SKILL.md (2026-05-19).
-# plan-new.md, review-plan.md migrated to flow-contract-vet-research (2026-05-20, wave 1).
-files = [
-  "claude/commands/optimise.md",
-  "claude/commands/plan-update.md",
-  "claude/commands/test-bootstrap.md",
-]
-
-[[block]]
-name = "plansdirectory-prompt"
-skill = "claude/skills/flow-contract-plansdirectory-prompt/SKILL.md"
-# plan-new.md, review-plan.md migrated to flow-contract-plansdirectory-prompt (2026-05-20, wave 1).
-# plan-update.md retained pending its separate overhaul.
-files = [
-  "claude/commands/plan-update.md",
 ]
