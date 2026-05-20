@@ -1,6 +1,6 @@
 slug = "harness-progressive-disclosure-gate-tooling"
 plan_path = "docs/plans/harness-progressive-disclosure-gate-tooling.md"
-status = "in-progress"
+status = "complete"
 created = 2026-05-20
 updated = 2026-05-20
 branch = "main"
@@ -13,8 +13,8 @@ scope = [
 
 [tasks]
 total = 6
-completed = 0
-in_progress = 1
+completed = 6
+in_progress = 0
 
 [artifacts]
 review_ledger = ".claude/flows/harness-progressive-disclosure-gate-tooling/review-ledger.toml"

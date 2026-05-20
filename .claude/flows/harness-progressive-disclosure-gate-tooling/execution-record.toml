@@ -85,3 +85,98 @@ commits = ["abfb72b"]
 status = "done"
 scope_warning = true
 dedup_id = "c9e6d29d29040e78"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "command-lint-test"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added command_lint unit test feeding markdown tomlctl invocations to real clap parser; fixed --strict-read placement drift in tomlctl SKILL.md"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/cli/dispatch.rs",
+    "claude/skills/tomlctl/SKILL.md",
+]
+commits = ["5f7215a"]
+status = "done"
+dedup_id = "c713c36cfecdb84e"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "document-subcommand-and-gate"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Documented blocks verify-skills in tomlctl SKILL.md and the cargo-test drift gate in CLAUDE.md Build & test"
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "CLAUDE.md",
+]
+commits = ["2d5c4fe"]
+status = "done"
+dedup_id = "b8bbbb3b43cdbf25"
+
+[[items]]
+id = "E9"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "cargo build clean"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "834e94d62539809f"
+
+[[items]]
+id = "E10"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "cargo test passed (247 tests)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "75125e4dfb8d0dee"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "cargo clippy clean (only pre-existing capabilities.rs:65 warning)"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "d2d07f4fb52b9e88"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+summary = "shared-block parity OK"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "9b3abd1b915e7afe"
+
+[[items]]
+id = "E13"
+type = "status-transition"
+date = 2026-05-20
+agent = "plan-update"
+summary = "status in-progress → review (all 6 tasks done)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "1570ac438234934e"
+
+[[items]]
+id = "E14"
+type = "status-transition"
+date = 2026-05-20
+agent = "plan-update"
+summary = "User explicitly marked flow complete via /plan-update harness-progressive-disclosure-gate-tooling complete"
+from_status = "review"
+to_status = "complete"
+dedup_id = "231a81860e46b074"
