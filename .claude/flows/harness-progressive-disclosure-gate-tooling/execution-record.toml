@@ -1,0 +1,87 @@
+schema_version = 1
+last_updated = 2026-05-20
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-20
+agent = "implement"
+summary = "status draft → in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "2fb725502d5439ab"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "manifest-skill-field"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added skill= field to four externalised blocks in scripts/shared-blocks.toml"
+files = ["scripts/shared-blocks.toml"]
+commits = ["1eaa778"]
+status = "done"
+dedup_id = "36510ea77d3de25a"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "verify-skills-engine"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Implemented verify_skills engine + strip_frontmatter/normalise_block helpers + unit tests in blocks.rs"
+files = ["tomlctl/src/blocks.rs"]
+commits = ["1eaa778"]
+status = "done"
+dedup_id = "ba3774cc4331dfe1"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "blocksop-verifyskills-variant"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added BlocksOp::VerifySkills clap variant in types.rs with stub dispatch arm in dispatch.rs"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+commits = ["1eaa778"]
+status = "done"
+dedup_id = "176bac5bf2f9de8c"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-05-20
+agent = "implement"
+task_ref = "dispatch-route-and-fixture-refactor"
+summary = "verify_skills normalisation surface larger than plan assumed; calibrated per Risk-1 loop"
+original_intent = "Plan premise: the sole skill/carrier divergence is one cross-reference line, so verify_skills_clean passes clean at introduction with no engine change."
+rationale = "Introduction check surfaced two more legitimate divergence classes. (1) ledger-schema embedder sentences ('embedded verbatim ...') differ by design between standalone-skill and in-carrier context -> widened normalise_block to drop 'embedded verbatim' lines. (2) disposition-sweep skill concretised the carrier's neutral '<id>' placeholder to 'R7' during pilot extraction -> real drift, fixed the skill back to '<id>' to match the canonical block. Did NOT weaken the comparison."
+dedup_id = "e09c7823df701476"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+task_ref = "dispatch-route-and-fixture-refactor"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Wired blocks verify-skills dispatch route, refactored parity fixture to read manifest, added verify_skills_clean test, calibrated normalise_block; verify-skills clean at introduction"
+files = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/blocks.rs",
+    "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md",
+]
+commits = ["abfb72b"]
+status = "done"
+scope_warning = true
+dedup_id = "c9e6d29d29040e78"

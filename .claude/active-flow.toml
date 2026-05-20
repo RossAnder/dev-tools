@@ -29,3 +29,17 @@ scope = [
     "claude/commands/implement.md",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "harness-progressive-disclosure-gate-tooling"
+last_used = "2026-05-20T08:00:08.5830962Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/**",
+    "scripts/shared-blocks.toml",
+    "claude/skills/tomlctl/SKILL.md",
+    "CLAUDE.md",
+]
