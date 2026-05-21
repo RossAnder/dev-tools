@@ -1,0 +1,5 @@
+# Builds use the committed `.sqlx/` offline query cache rather than a live DB
+# connection. Inert in Task 1 (no `query!` macros yet); Tasks 2+ rely on it so
+# `cargo build` never needs DATABASE_URL to be reachable at compile time.
+[env]
+SQLX_OFFLINE = "true"

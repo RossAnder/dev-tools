@@ -1,0 +1,131 @@
+//! Composition root — the SOLE owner of router and `AppState` assembly.
+//!
+//! `serve` reads config from the environment, builds the shared pool, wires the
+//! three builder seams (`http::router`, `mcp::service`, `assets::spa_fallback`)
+//! and the background export task (`export::spawn`), then runs the server.
+//! Later waves fill in the seam bodies in their own module files and never edit
+//! this file, so Wave B/C parallelism is conflict-free.
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use std::str::FromStr as _;
+
+use anyhow::Context as _;
+use axum::Extension;
+use axum::Router;
+use sqlx::SqlitePool;
+use sqlx::sqlite::SqliteConnectOptions;
+
+/// Shared application state. Cheap to clone — the pool is `Arc`-wrapped and
+/// sqlx pools are themselves ref-counted, so handlers and the MCP layer all
+/// share one connection pool.
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: Arc<SqlitePool>,
+}
+
+/// Default loopback port when `PORT` is unset. Loopback-only for the slice:
+/// no auth, single local user (mirrors the MCP `allowed_hosts` loopback default).
+const DEFAULT_PORT: u16 = 8080;
+
+/// Build the pool, assemble the router, spawn the export task, and serve.
+///
+/// Migrations are NOT run here — Task 2 owns `db.rs` and the migration wiring.
+/// For the slice only `/api/health` is live and it issues no query, so a
+/// tableless database is fine.
+pub async fn serve() -> anyhow::Result<()> {
+    // `.env` is read by the operator's shell / dotenv tooling in dev; we read
+    // straight from the process environment with a sensible local default so
+    // `cargo run` works out of the box without external dotenv loading.
+    let database_url =
+        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://lumina.db".to_string());
+
+    // Create the database file if it does not yet exist. Task 2 owns the
+    // migration wiring (running `sqlx migrate`); here we only ensure `connect`
+    // succeeds against a fresh file so `cargo run` works standalone. A tableless
+    // DB is fine for the slice — `/api/health` issues no query.
+    let connect_opts = SqliteConnectOptions::from_str(&database_url)
+        .with_context(|| format!("parsing DATABASE_URL {database_url}"))?
+        .create_if_missing(true);
+    let pool = SqlitePool::connect_with(connect_opts)
+        .await
+        .with_context(|| format!("connecting to database at {database_url}"))?;
+    let pool = Arc::new(pool);
+
+    let state = AppState { pool: pool.clone() };
+
+    // Kick off the background git-export materialiser before serving so no
+    // mutation's outbox row goes undrained while the server is up.
+    crate::export::spawn(pool.clone());
+
+    let app = build_router(state);
+
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(DEFAULT_PORT);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("binding listener on {addr}"))?;
+    println!("lumina listening on http://{addr}");
+
+    axum::serve(listener, app)
+        .await
+        .context("axum server error")?;
+    Ok(())
+}
+
+/// Assemble the full router from the three builder seams. Pulled out of `serve`
+/// so the e2e test (Task 10) can build the same router over a temp-DB state
+/// without binding a listener.
+pub fn build_router(state: AppState) -> Router {
+    let pool = state.pool.clone();
+
+    Router::new()
+        // `/api/*` JSON routes (Task 4 extends `http::router`, keeping /health).
+        .nest("/api", crate::http::router())
+        // `/mcp` MCP service (Task 5 returns the real StreamableHttpService;
+        // app.rs only `.nest_service`s it, so the concrete type may change).
+        .nest_service("/mcp", crate::mcp::service(pool.clone()))
+        // SPA fallback last (Task 4 wires rust-embed / ServeDir).
+        .fallback_service(crate::assets::spa_fallback())
+        // The MCP tools (Task 5) read the pool via an `Extension` layer through
+        // their `RequestContext`; set the layer up now so Task 5 needn't edit
+        // this file.
+        .layer(Extension(pool))
+        // Provide `AppState` to the typed `/api` handlers.
+        .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt as _; // for `oneshot`
+
+    /// Task 1 acceptance: `GET /api/health` answers 200 against a tableless DB.
+    /// Driven in-process via `oneshot` (no socket bind) so it runs anywhere.
+    #[tokio::test]
+    async fn health_returns_200() {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite pool");
+        let state = AppState {
+            pool: Arc::new(pool),
+        };
+        let response = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+}

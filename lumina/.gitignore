@@ -1,0 +1,16 @@
+# Build output
+/target/
+
+# Local SQLite databases (the schema lives in migrations/; the .db is disposable)
+*.db
+*.db-shm
+*.db-wal
+
+# Vue toolchain artifacts
+web/node_modules/
+web/dist/
+
+# NOTE: the following are intentionally TRACKED (do not add them here):
+#   .sqlx/            — committed offline query cache (cargo sqlx prepare)
+#   .env              — holds only a local sqlite path, safe to commit
+#   .lumina/export/   — git-export snapshots are the audit trail; must be tracked
