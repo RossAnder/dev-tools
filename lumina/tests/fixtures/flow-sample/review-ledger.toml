@@ -1,0 +1,39 @@
+# Fixture review-ledger. Two findings: one `fixed` (carrying resolution +
+# resolved_at) and one `deferred` (carrying defer_reason + defer_trigger), so the
+# field-level disposition mapping (P7) is exercised — deferred/wontfix imports
+# must NOT be lossy.
+schema_version = 1
+last_updated = 2026-05-22
+
+[[items]]
+id = "R1"
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "flow-sample"
+file = "sample/src/repo.rs"
+line = 42
+symbol = "create_thing"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "create_thing duplicates the insert idiom from update_thing; extract a shared helper"
+dedup_id = "1111111111111111"
+resolved_at = 2026-05-22
+resolution = "Extracted a shared insert helper and routed both call sites through it"
+
+[[items]]
+id = "R2"
+first_flagged = 2026-05-22
+rounds = 2
+status = "deferred"
+flow = "flow-sample"
+file = "sample/src/db.rs"
+line = 0
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "The pool is reconstructed per request; consider sharing one pool across handlers"
+dedup_id = "2222222222222222"
+defer_reason = "The per-request pool is cheap at current scale and refactoring touches every handler"
+defer_trigger = "Revisit when request volume exceeds the single-pool comfort threshold"

@@ -320,6 +320,110 @@ pub async fn update_work_item_status(
     Ok(())
 }
 
+/// Input for [`create_finding`]. Carries the full findings shape the importer
+/// (Task 7) maps from a review-ledger / optimise-findings `[[items]]` entry,
+/// INCLUDING the disposition fields (`resolved_at`/`resolution`/`defer_reason`/
+/// `defer_trigger`/`wontfix_rationale`) so `deferred`/`wontfix` imports are not
+/// lossy (P7). Lives in `repo.rs` (not `domain.rs`, which is out of this task's
+/// cluster); every field except the source `id`-derived `dedup_id` is optional,
+/// mirroring the heterogeneous review/optimise finding shapes.
+#[derive(Debug, Clone, Default)]
+pub struct NewFinding<'a> {
+    pub kind: Option<&'a str>,
+    pub severity: Option<&'a str>,
+    pub effort: Option<&'a str>,
+    pub category: Option<&'a str>,
+    pub status: Option<&'a str>,
+    pub file: Option<&'a str>,
+    pub line: Option<i64>,
+    pub symbol: Option<&'a str>,
+    pub summary: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub first_flagged: Option<&'a str>,
+    pub rounds: Option<i64>,
+    pub fingerprint: Option<&'a str>,
+    pub flow: Option<&'a str>,
+    pub dedup_id: Option<&'a str>,
+    pub resolved_at: Option<&'a str>,
+    pub resolution: Option<&'a str>,
+    pub defer_reason: Option<&'a str>,
+    pub defer_trigger: Option<&'a str>,
+    pub wontfix_rationale: Option<&'a str>,
+}
+
+/// Create a finding attached to a work item under the single-mutation-path
+/// discipline: insert ONE `findings` row (id = freshly-minted UUIDv7 as TEXT)
+/// AND append ONE `events` row via [`record_event`] in ONE transaction, so the
+/// outbox fires and `export` materialises the finding's snapshot. Mirrors
+/// [`create_work_item`]'s structure.
+///
+/// ALL findings columns are mapped, including the disposition fields, so a
+/// `deferred`/`wontfix` import round-trips without loss (P7). Returns the new
+/// finding id.
+pub async fn create_finding(
+    pool: &SqlitePool,
+    work_item_id: &str,
+    finding: &NewFinding<'_>,
+) -> Result<Uuid, AppError> {
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO findings (
+            id, work_item_id, kind, severity, effort, category, status,
+            file, line, symbol, summary, description, first_flagged, rounds,
+            fingerprint, flow, dedup_id, resolved_at, resolution,
+            defer_reason, defer_trigger, wontfix_rationale
+        )
+        VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+            ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+            ?15, ?16, ?17, ?18, ?19,
+            ?20, ?21, ?22
+        )
+        "#,
+        id_str,
+        work_item_id,
+        finding.kind,
+        finding.severity,
+        finding.effort,
+        finding.category,
+        finding.status,
+        finding.file,
+        finding.line,
+        finding.symbol,
+        finding.summary,
+        finding.description,
+        finding.first_flagged,
+        finding.rounds,
+        finding.fingerprint,
+        finding.flow,
+        finding.dedup_id,
+        finding.resolved_at,
+        finding.resolution,
+        finding.defer_reason,
+        finding.defer_trigger,
+        finding.wontfix_rationale,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({
+        "work_item_id": work_item_id,
+        "severity": finding.severity,
+        "category": finding.category,
+        "status": finding.status,
+    });
+    record_event(&mut tx, "finding", &id_str, "finding.created", payload).await?;
+
+    tx.commit().await?;
+
+    Ok(id)
+}
+
 /// Append ONE `events` row inside an in-flight transaction. Called by every
 /// mutation; no domain write may bypass it. `id` is a fresh UUIDv7 (TEXT);
 /// `payload` is serialised to a JSON string; `exported_at` is left NULL so the

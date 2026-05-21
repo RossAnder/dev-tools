@@ -1,0 +1,69 @@
+# Fixture execution-record. The importer maps ONLY `type = "task-completion"`
+# items to `task` work-items; the `deviation`, `verification`,
+# `status-transition`, `reconcile`, `deferral`, and `checkpoint` types are
+# intentionally DROPPED by the slice. This fixture carries 2 task-completion
+# items plus one deviation and one verification item so the drop is provable
+# (total task count must equal 2, not 4).
+schema_version = 1
+last_updated = 2026-05-22
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-22
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "scaffold-the-sample-crate"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Scaffolded the sample crate with a binary entrypoint and a health route."
+files = [
+    "sample/Cargo.toml",
+    "sample/src/main.rs",
+]
+commits = ["aaaaaaa"]
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "scaffold-the-sample-crate"
+summary = "Pinned a dependency one minor ahead of the plan"
+original_intent = "Pin the dependency to the plan's version"
+rationale = "The installed toolchain required the newer minor."
+commits = ["aaaaaaa"]
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "add-the-storage-layer"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added the storage layer with a single mutation path."
+files = [
+    "sample/src/repo.rs",
+    "sample/src/db.rs",
+]
+commits = ["bbbbbbb"]
+
+[[items]]
+id = "E5"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "Ran the test suite after the storage layer landed"
+command = "cargo test"
+outcome = "pass"

@@ -1,0 +1,27 @@
+# Committed fixture flow for the deterministic importer acceptance (Task 7, P11).
+# Mirrors the live `.claude/flows/<slug>/context.toml` envelope shape but with
+# artifact paths RELATIVE to this fixture directory, so the test does not depend
+# on mutable live `.claude/flows/` state.
+slug = "flow-sample"
+plan_path = "docs/plans/flow-sample.md"
+status = "in-progress"
+created = 2026-05-22
+updated = 2026-05-22
+branch = "main"
+scope = [
+    "sample/**",
+]
+
+[tasks]
+total = 3
+completed = 2
+in_progress = 1
+
+[artifacts]
+# Relative to this fixture dir; the importer resolves them against flow_dir.
+execution_record = "execution-record.toml"
+review_ledger = "review-ledger.toml"
+# optimise_findings intentionally points at a non-existent file to exercise the
+# skip-if-absent (P7) branch — not every flow has an optimise pass.
+optimise_findings = "optimise-findings.toml"
+plan_review_findings = "plan-review-findings.toml"
