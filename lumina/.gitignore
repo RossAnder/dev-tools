@@ -8,7 +8,11 @@
 
 # Vue toolchain artifacts
 web/node_modules/
-web/dist/
+# web/dist/ is build output (npm run build) and stays ignored — EXCEPT the
+# committed placeholder index.html, which lets a release `rust-embed` build
+# compile on a clean checkout before `npm run build` has produced the real bundle.
+web/dist/*
+!web/dist/index.html
 
 # NOTE: the following are intentionally TRACKED (do not add them here):
 #   .sqlx/            — committed offline query cache (cargo sqlx prepare)
