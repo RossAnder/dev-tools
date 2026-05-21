@@ -9,13 +9,10 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use std::str::FromStr as _;
-
 use anyhow::Context as _;
 use axum::Extension;
 use axum::Router;
 use sqlx::SqlitePool;
-use sqlx::sqlite::SqliteConnectOptions;
 
 /// Shared application state. Cheap to clone — the pool is `Arc`-wrapped and
 /// sqlx pools are themselves ref-counted, so handlers and the MCP layer all
@@ -31,9 +28,9 @@ const DEFAULT_PORT: u16 = 8080;
 
 /// Build the pool, assemble the router, spawn the export task, and serve.
 ///
-/// Migrations are NOT run here — Task 2 owns `db.rs` and the migration wiring.
-/// For the slice only `/api/health` is live and it issues no query, so a
-/// tableless database is fine.
+/// `db::init` opens the pool (creating the file if absent) and runs the
+/// embedded migrations, so the runtime server always starts on a migrated
+/// schema.
 pub async fn serve() -> anyhow::Result<()> {
     // `.env` is read by the operator's shell / dotenv tooling in dev; we read
     // straight from the process environment with a sensible local default so
@@ -41,16 +38,13 @@ pub async fn serve() -> anyhow::Result<()> {
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://lumina.db".to_string());
 
-    // Create the database file if it does not yet exist. Task 2 owns the
-    // migration wiring (running `sqlx migrate`); here we only ensure `connect`
-    // succeeds against a fresh file so `cargo run` works standalone. A tableless
-    // DB is fine for the slice — `/api/health` issues no query.
-    let connect_opts = SqliteConnectOptions::from_str(&database_url)
-        .with_context(|| format!("parsing DATABASE_URL {database_url}"))?
-        .create_if_missing(true);
-    let pool = SqlitePool::connect_with(connect_opts)
+    // Open the pool (creating the file if absent, foreign keys on) and run the
+    // embedded migrations on startup — `db::init` (Task 2) is the single entry
+    // point that owns both. The runtime server therefore starts on a migrated
+    // schema.
+    let pool = crate::db::init(&database_url)
         .await
-        .with_context(|| format!("connecting to database at {database_url}"))?;
+        .with_context(|| format!("initialising database at {database_url}"))?;
     let pool = Arc::new(pool);
 
     let state = AppState { pool: pool.clone() };
