@@ -1,0 +1,122 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            id            AS \"id!\",\n            kind          AS \"kind!\",\n            parent_id     AS \"parent_id?\",\n            title         AS \"title!\",\n            body          AS \"body?\",\n            status        AS \"status!\",\n            position      AS \"position?\",\n            created_at    AS \"created_at!\",\n            updated_at    AS \"updated_at!\"\n        FROM work_items\n        WHERE (?1 IS NULL OR parent_id = ?1)\n          AND (?2 IS NULL OR kind = ?2)\n        ORDER BY COALESCE(position, 0), created_at, id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "kind!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "parent_id?",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "parent_id"
+          }
+        }
+      },
+      {
+        "name": "title!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "name": "body?",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "name": "status!",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "position?",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "name": "updated_at!",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "8e06993152813fb17aa1879000baac641e8f9165d21c13905dd21d0fc79339cd"
+}

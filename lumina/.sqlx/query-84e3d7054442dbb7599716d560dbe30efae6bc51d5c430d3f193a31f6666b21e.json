@@ -1,0 +1,278 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            id                AS \"id!\",\n            work_item_id      AS \"work_item_id?\",\n            kind              AS \"kind?\",\n            severity          AS \"severity?\",\n            effort            AS \"effort?\",\n            category          AS \"category?\",\n            status            AS \"status?\",\n            file              AS \"file?\",\n            line              AS \"line?\",\n            symbol            AS \"symbol?\",\n            summary           AS \"summary?\",\n            description       AS \"description?\",\n            first_flagged     AS \"first_flagged?\",\n            rounds            AS \"rounds?\",\n            fingerprint       AS \"fingerprint?\",\n            flow              AS \"flow?\",\n            dedup_id          AS \"dedup_id?\",\n            resolved_at       AS \"resolved_at?\",\n            resolution        AS \"resolution?\",\n            defer_reason      AS \"defer_reason?\",\n            defer_trigger     AS \"defer_trigger?\",\n            wontfix_rationale AS \"wontfix_rationale?\"\n        FROM findings\n        WHERE work_item_id = ?1\n        ORDER BY first_flagged DESC, id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "work_item_id?",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "work_item_id"
+          }
+        }
+      },
+      {
+        "name": "kind?",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "severity?",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "severity"
+          }
+        }
+      },
+      {
+        "name": "effort?",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "effort"
+          }
+        }
+      },
+      {
+        "name": "category?",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "name": "status?",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "file?",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "file"
+          }
+        }
+      },
+      {
+        "name": "line?",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "line"
+          }
+        }
+      },
+      {
+        "name": "symbol?",
+        "ordinal": 9,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "symbol"
+          }
+        }
+      },
+      {
+        "name": "summary?",
+        "ordinal": 10,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "name": "description?",
+        "ordinal": 11,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "name": "first_flagged?",
+        "ordinal": 12,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "first_flagged"
+          }
+        }
+      },
+      {
+        "name": "rounds?",
+        "ordinal": 13,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "rounds"
+          }
+        }
+      },
+      {
+        "name": "fingerprint?",
+        "ordinal": 14,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "fingerprint"
+          }
+        }
+      },
+      {
+        "name": "flow?",
+        "ordinal": 15,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "flow"
+          }
+        }
+      },
+      {
+        "name": "dedup_id?",
+        "ordinal": 16,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "dedup_id"
+          }
+        }
+      },
+      {
+        "name": "resolved_at?",
+        "ordinal": 17,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "resolved_at"
+          }
+        }
+      },
+      {
+        "name": "resolution?",
+        "ordinal": 18,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "resolution"
+          }
+        }
+      },
+      {
+        "name": "defer_reason?",
+        "ordinal": 19,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "defer_reason"
+          }
+        }
+      },
+      {
+        "name": "defer_trigger?",
+        "ordinal": 20,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "defer_trigger"
+          }
+        }
+      },
+      {
+        "name": "wontfix_rationale?",
+        "ordinal": 21,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "wontfix_rationale"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "84e3d7054442dbb7599716d560dbe30efae6bc51d5c430d3f193a31f6666b21e"
+}
