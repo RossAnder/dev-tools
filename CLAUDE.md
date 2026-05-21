@@ -27,6 +27,19 @@ Do not bypass the hook with `--no-verify` on these files — drift in the `forbi
 - `cargo audit --file tomlctl/Cargo.lock` — RUSTSEC advisory check (install once via `cargo install cargo-audit`; run before releases and when updating dependencies). Run `cargo audit` weekly or before each release; the snapshot in CI/per-task acceptance is not a substitute for cadence.
 - `bash scripts/verify-shared-blocks.sh` — verify shared-block parity for the manifest's sole remaining block, `forbidden-working-tree-ops`, across the two flow-implement agents (run before committing changes to either agent; the pre-commit hook also runs this automatically when `core.hooksPath` is set per `## Developer setup`)
 
+## lumina
+
+`lumina/` is a standalone sibling crate (the successor to `tomlctl`): a SQLite-canonical flow-tracking store fronted by an MCP server + axum JSON API + Vue SPA, with a git-export audit trail. It is built and tested independently of `tomlctl` (no workspace; always pass `--manifest-path lumina/Cargo.toml`).
+
+- `cargo build --manifest-path lumina/Cargo.toml` — build lumina
+- `cargo test --manifest-path lumina/Cargo.toml` — run lumina tests, including the in-process end-to-end thread test (`lumina/tests/e2e.rs`: MCP write → DB rows → git-export snapshot → HTTP read, driven via `tower::ServiceExt::oneshot` and a direct export drain — no socket bind, no `sleep`)
+- `cargo clippy --manifest-path lumina/Cargo.toml --all-targets` — lint
+- `cd lumina/web && npm ci && npm run build` — build the Vue SPA bundle into `lumina/web/dist/`; release builds bake this dir into the binary via `rust-embed` (debug builds serve it from the filesystem)
+- `cd lumina && cargo sqlx prepare --check` — offline query-cache gate; fails if the committed `lumina/.sqlx/` cache is stale against the `query!`/`query_as!` macros. The cache is committed and was generated with `cargo sqlx prepare -- --all-targets`, so it is a superset that includes test-only queries; the bare `--check` therefore emits a benign `warning: potentially unused queries found in .sqlx` and still exits 0 (clean). That warning is EXPECTED — do NOT regenerate to silence it, as a non-`--all-targets` prepare would drop the test-only query entries and break the offline test build.
+- `cargo audit --file lumina/Cargo.lock` — RUSTSEC advisory check (mirrors the tomlctl cadence: run weekly / before releases)
+
+The dev DB `lumina/lumina.db` is gitignored and recreated on demand by `db::init` (the startup path, which also runs the embedded migrations) or `sqlx migrate run`; `lumina import-flow <slug>` ingests one existing `.claude/flows/<slug>/` flow into the store.
+
 ## Testing discipline
 
 This repository ships three composable packages for standing up test infrastructure, enforcing test-first discipline, and authoring well-structured tests on demand. Use `/test-bootstrap` once per project, `/tdd` once per feature, and let the model invoke `test-author` automatically when test-writing is needed.

@@ -66,10 +66,10 @@ rust-embed = "8"
 axum-embed = "0.1"
 
 [dev-dependencies]
-# Task 10 e2e drives the running server over HTTP.
-reqwest = { version = "0.13", features = ["json"] }
 # `ServiceExt::oneshot` drives the router in-process (no socket bind) for the
-# health smoke test and downstream handler tests.
+# health smoke test, the downstream handler tests, and the Task 10 e2e thread.
+# (The e2e drives every layer IN-PROCESS — MCP tool call + router oneshot +
+# direct export drain — so no HTTP client / bound socket is needed.)
 tower = { version = "0.5", features = ["util"] }
 
 [profile.release]

@@ -172,7 +172,7 @@ impl LuminaTools {
     /// Create a new work item under the single-mutation-path discipline (the
     /// repo opens one transaction and records exactly one events-outbox row).
     #[tool(description = "Create a work item (kind, optional parent_id, title, optional body). Records one event in the same transaction.")]
-    async fn create_work_item(
+    pub async fn create_work_item(
         &self,
         Parameters(req): Parameters<CreateWorkItemRequest>,
     ) -> Result<CallToolResult, ErrorData> {
