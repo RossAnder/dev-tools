@@ -70,3 +70,15 @@ scope = [
     "scripts/shared-blocks.toml",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "lumina-vertical-slice"
+last_used = "2026-05-21T21:47:39.460346557Z"
+
+[active.binding]
+branch = "main"
+worktree = "/home/ross/Dev/dev-tools"
+scope = [
+    "lumina/**",
+    "CLAUDE.md",
+]

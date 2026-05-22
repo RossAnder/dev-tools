@@ -1,0 +1,284 @@
+schema_version = 1
+last_updated = 2026-05-22
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-22
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "a20818a758714f2f"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "scaffold-the-lumina-crate"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Scaffolded standalone lumina crate: lib+bin, frozen composition root (lib.rs/main.rs/app.rs), 11 module stubs, axum GET /api/health (200, in-process oneshot test), sqlx 0.9 pin. build/clippy/test clean."
+files = [
+    "lumina/Cargo.toml",
+    "lumina/Cargo.lock",
+    "lumina/rust-toolchain.toml",
+    "lumina/.env",
+    "lumina/.cargo/config.toml",
+    "lumina/.gitignore",
+    "lumina/src/lib.rs",
+    "lumina/src/main.rs",
+    "lumina/src/app.rs",
+    "lumina/src/cli.rs",
+    "lumina/src/http.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/export.rs",
+    "lumina/src/assets.rs",
+    "lumina/src/db.rs",
+    "lumina/src/domain.rs",
+    "lumina/src/error.rs",
+    "lumina/src/repo.rs",
+    "lumina/src/import.rs",
+]
+commits = ["a796219"]
+dedup_id = "2715cd58bc05ad30"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "scaffold-the-lumina-crate"
+summary = "Pinned sqlx to 0.9 instead of the plan's 0.8.x"
+original_intent = "Pin sqlx to 0.8.x per the plan's Task 1 dependency list"
+rationale = "Installed sqlx-cli is 0.9.0 and the .sqlx offline-cache format must match between the prepare CLI and the macro crate; the plan's own research note licenses 'confirm latest at pin time'. axum/tokio/rmcp/axum-embed 0.1 confirmed compatible with sqlx 0.9."
+commits = ["a796219"]
+dedup_id = "76e348978569b3cc"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "sqlite-schema-migrations-db-module"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "SQLite schema + BEFORE INSERT/UPDATE hierarchy triggers + events outbox + db::init (connect+migrate). Dev DB bootstrapped; 2 trigger tests + health pass; build/clippy clean."
+files = [
+    "lumina/migrations/0001_init.sql",
+    "lumina/src/db.rs",
+    "lumina/src/app.rs",
+]
+commits = ["3191c46"]
+dedup_id = "572dfc0777cea3cc"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "sqlite-schema-migrations-db-module"
+summary = "Hierarchy trigger uses static RAISE messages, not interpolated kind names"
+original_intent = "Plan specified RAISE(ABORT, 'illegal work_item hierarchy: <kind> under <parentkind>') with the kinds interpolated"
+rationale = "SQLite RAISE(ABORT, ...) accepts only a static string literal, not a concatenated expression. Two distinct static messages (NULL-parent branch vs mismatched-pair branch) preserve diagnostic intent; per-pair detail, if needed, can be mapped in the Task 3 repo error layer."
+commits = ["3191c46"]
+dedup_id = "3c932c96ef172c36"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "repository-layer-event-write-discipline"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "repo.rs sole mutation path (tx + record_event), AppError taxonomy with IntoResponse envelope, domain structs/request bodies, committed 12-file .sqlx offline cache. 8 tests pass; offline build + prepare --check clean."
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/error.rs",
+    "lumina/src/repo.rs",
+    "lumina/.sqlx/",
+]
+commits = ["c01b34f"]
+dedup_id = "fa9d0afca1dafcbb"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "axum-json-api-spa-host"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "http::router work-items CRUD + in-handler nested-tree assembly (kept /health); assets::spa_fallback debug ServeDir.fallback / release axum-embed FallbackBehavior::Ok (200 not 404); committed placeholder dist via gitignore negation. Debug+release build clean; 6 http tests pass."
+files = [
+    "lumina/src/http.rs",
+    "lumina/src/assets.rs",
+    "lumina/.gitignore",
+    "lumina/web/dist/index.html",
+]
+commits = ["40a9e1e"]
+dedup_id = "2d32277b040513c3"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "mcp-server-rmcp-streamable-http"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "mcp::service returns StreamableHttpService<LuminaTools, LocalSessionManager>; per-request service_factory captures Arc<SqlitePool>; four #[tool] methods delegate to repo; AppError->ErrorData mapping; loopback allowed_hosts default. Tool test asserts 1 work_item + 1 event and 4 advertised tools."
+files = ["lumina/src/mcp.rs"]
+commits = ["a447274"]
+dedup_id = "04871c515d0f0a70"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "git-export-materialiser-transactional-outbox"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "export_pending drains unexported events -> atomic per-item TOML under .lumina/export/<kind>/<id>.toml -> stamps exported_at; spawn loop on CancellationToken; render-before-stamp idempotent + crash-safe. .sqlx 12->16 superset. 20 tests pass; prepare --check clean."
+files = [
+    "lumina/src/export.rs",
+    "lumina/.sqlx/",
+]
+commits = ["d91b0f7"]
+dedup_id = "518dd682fccb052c"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "vue-app-scaffold-api-store-layer"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "create-vue scaffold (Vue 3.5/Vite 8/router 5/Pinia 3/TS) under lumina/web; api.ts typed fetch wrapper, hierarchy.ts Pinia setup store, vite proxy /api->8080 (no CORS layer). npm ci && npm run build clean; package-lock.json committed."
+files = [
+    "lumina/web/package.json",
+    "lumina/web/package-lock.json",
+    "lumina/web/vite.config.ts",
+    "lumina/web/src/api.ts",
+    "lumina/web/src/stores/hierarchy.ts",
+    "lumina/web/src/main.ts",
+    "lumina/web/src/App.vue",
+    "lumina/web/src/router/index.ts",
+    "lumina/web/index.html",
+    "lumina/web/tsconfig.json",
+]
+commits = ["868d3bd"]
+dedup_id = "0a713a5ca5b989a5"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "minimal-flow-importer-one-flow"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "import_flow: context.toml parse, idempotent project/epic/feature scaffold, flow->story, task-completion->task (drops 6 other types), optional ledgers->findings via new repo::create_finding (disposition fields). clap import-flow subcommand; committed flow-sample fixture; 22 tests pass; .sqlx 16->17. clap dep added."
+files = [
+    "lumina/src/import.rs",
+    "lumina/src/cli.rs",
+    "lumina/src/repo.rs",
+    "lumina/Cargo.toml",
+    "lumina/Cargo.lock",
+    "lumina/.sqlx/",
+    "lumina/tests/fixtures/flow-sample/",
+]
+commits = ["cf915e5"]
+dedup_id = "db73535ef2c14681"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "hierarchy-tree-view-detail-panel"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Recursive TreeItem.vue + HierarchyView.vue (tree + detail panel: status/findings/context, status PATCH dropdown); router serves HierarchyView at /; demo views/components/counter removed; main.css #app grid rule dropped. npm run build clean."
+files = [
+    "lumina/web/src/components/TreeItem.vue",
+    "lumina/web/src/views/HierarchyView.vue",
+    "lumina/web/src/router/index.ts",
+    "lumina/web/src/App.vue",
+    "lumina/web/src/assets/main.css",
+]
+commits = ["6aa141f"]
+dedup_id = "5e2c88d3f8704f7e"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "end-to-end-test-sqlx-offline-prep-docs"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "tests/e2e.rs proves full thread in-process (MCP create_work_item -> rows -> export_pending TOML snapshot -> oneshot GET /api/work-items/{id}); made tool method pub for the integration test; CLAUDE.md lumina section added (tomlctl untouched); reqwest dev-dep removed; sqlx prepare --check verified clean."
+files = [
+    "lumina/tests/e2e.rs",
+    "CLAUDE.md",
+    "lumina/Cargo.toml",
+    "lumina/Cargo.lock",
+    "lumina/src/mcp.rs",
+]
+commits = ["14037ac"]
+dedup_id = "4311b82800f425ce"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo build clean"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "834e94d62539809f"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo test: 22 unit + 1 e2e pass"
+command = "cargo test --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "7c4fd49f37a8ccce"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo clippy --all-targets clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "1c850c0b8eb7a191"
+
+[[items]]
+id = "E17"
+type = "status-transition"
+date = 2026-05-22
+agent = "plan-update"
+summary = "All 10 tasks complete and verified; flow status in-progress -> review awaiting /review + /optimise sign-off"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "1720c13c601074fd"

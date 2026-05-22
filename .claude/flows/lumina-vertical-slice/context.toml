@@ -1,0 +1,21 @@
+slug = "lumina-vertical-slice"
+plan_path = "docs/plans/lumina-vertical-slice.md"
+status = "review"
+created = 2026-05-21
+updated = 2026-05-22
+branch = "main"
+scope = [
+    "lumina/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 10
+completed = 10
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-vertical-slice/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-vertical-slice/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-vertical-slice/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-vertical-slice/plan-review-findings.toml"

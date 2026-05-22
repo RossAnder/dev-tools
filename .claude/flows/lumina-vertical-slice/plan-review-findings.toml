@@ -1,0 +1,172 @@
+schema_version = 1
+last_updated = 2026-05-22
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 2. SQLite schema + migrations + db module [M]"
+summary = "sqlx .sqlx offline cache generated last (Task 10) but query! macros used from Task 3 — Wave B cannot compile; no task creates/migrates a dev DB or sets DATABASE_URL"
+description = "Flagged independently by feasibility AND completeness agents. sqlx query!/query_as! are compile-time-checked: they need either DATABASE_URL pointing at a migrated DB at compile time, or a committed .sqlx/ cache. The plan generates .sqlx/ only in Task 10, yet Tasks 3,4,5,6,7 use the macros and must build to meet their own acceptance. Fix: add a .env/DATABASE_URL + `sqlx database create && sqlx migrate run` step to Task 2 (before Task 3); generate+commit lumina/.sqlx/ in Task 3 and have every macro-using task regenerate; Task 10 then only runs `cargo sqlx prepare --check`."
+dedup_id = "f8c342c0a2b65986"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "executability"
+plan_section = "#### 5. MCP server (rmcp, Streamable-HTTP) [M]"
+summary = "Tasks 4,5,6 each must register into the shared axum router / main.rs but no task owns the composition root — hidden write-conflict that violates the disjoint-files claim"
+description = "Approach states one Router/AppState/runtime carries the /api routes (Task 4), the /mcp nest_service (Task 5), and the spawned export task (Task 6). That wiring lives in main.rs, which Task 1 created. As scheduled (4,5,6 parallel after Task 3) three agents would concurrently edit main.rs. Fix: make main.rs the property of exactly ONE task — either expand Task 1 to define stub mount points that 4/5/6 fill only via their own modules (http::router(), mcp::service(), export::spawn()), or add a small wiring task after 4/5/6 that owns main.rs. Add lumina/src/main.rs to that task's Files."
+dedup_id = "c62aee1d7a57d22f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 2. SQLite schema + migrations + db module [M]"
+summary = "A SQLite CHECK constraint cannot subquery the parent's kind; 'via a parent-kind lookup or trigger' is both impossible (as a pure CHECK) and an unsettled architectural fork"
+description = "SQLite CHECK can only reference columns of the row being inserted, so it cannot read work_items.parent.kind. Enforcing legal parent/child kinds requires a BEFORE INSERT/UPDATE trigger, OR a denormalised parent_kind column the repo layer populates so a pure-column CHECK works — two materially different designs. Pin the mechanism in Task 2 and state whether Task 3's hierarchy validation is the sole guard or belt-and-braces (allocate enforcement to one layer to avoid the dual-enforcement drift this project exists to eliminate)."
+dedup_id = "e87de05a0339d3d3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "executability"
+plan_section = "#### 2. SQLite schema + migrations + db module [M]"
+summary = "Primary-key type is never specified (UUID? autoincrement? text?) — load-bearing for the export filename <id>.toml, FKs, and route parsing across Tasks 3/4/6/9"
+description = "The export path ./.lumina/export/<kind>/<id>.toml needs stable IDs (an autoincrement integer is non-portable across DB rebuilds and undercuts the DB-canonical-with-git-export thesis); create_work_item 'returns id', the route is /api/work-items/{id}, and events.aggregate_id must match work_items.id's type. Recommend `id TEXT PRIMARY KEY` holding a UUIDv7 generated app-side in repo. State this once in Task 2 to de-risk Tasks 3/4/6/10."
+dedup_id = "990cb856a66f0de4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 3. Repository layer + event-write discipline [M]"
+summary = "No error-type / Result-to-Response task; axum handlers and MCP tools have no defined error story, so the hierarchy-CHECK rejection surfaces as opaque 500s"
+description = """axum handlers must return an IntoResponse type; a repo fn returning sqlx::Error/anyhow::Error won't compile as a handler without an AppError wrapper. No task defines the HTTP status mapping (404 not-found, 422 illegal-hierarchy, 500 otherwise) or the JSON error body, despite the plan praising tomlctl's {"error":{"kind":...}} envelope. Add an error.rs to Task 3/4 defining AppError + IntoResponse (mirror tomlctl's kind taxonomy) and an acceptance that an illegal-hierarchy POST returns 4xx not 500."""
+dedup_id = "64cddfabc03d8d37"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 4. axum JSON API + SPA host [M]"
+summary = "Task 4 embeds web/dist via rust-embed before Task 8 builds it; release builds fail on a fresh clone (web/dist is gitignored)"
+description = 'rust-embed resolves #[folder="web/dist"] at compile time and errors if absent in release; the plan gitignores web/dist and builds it only in Task 8 (which depends on Task 4). Debug builds use ServeDir and are fine, so this is release-only. Fix: commit a placeholder web/dist/index.html, or add a build step that runs `npm run build` before embed, and state the e2e/release path (Task 10) runs after npm run build.'
+dedup_id = "f8631ef466eb47a2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 7. Minimal flow importer (one flow) [M]"
+summary = "Importer is lossy by construction: only task-completion execution-record items map to tasks (deviation/verification/status-transition/etc dropped), and findings disposition fields (defer_reason/wontfix_rationale) aren't in the schema — the named candidate already has deferred/wontfix items"
+description = "Merged from feasibility+completeness. harness-progressive-disclosure's execution-record contains deviation/status-transition/verification items with no destination, and its review-ledger has deferred (defer_reason/defer_trigger) and wontfix (wontfix_rationale) findings — fields Task 2's findings table (resolved_at, resolution only) drops. Task 7's count-only acceptance passes while losing data, undercutting the faithful-git-export thesis. Also: review-ledger/optimise-findings are OPTIONAL inputs (precious-frolicking-steele has neither) — read artifact paths from context.toml [artifacts] and skip-if-absent; filter execution-record [[items]] by type. Either add disposition fields (or a disposition_detail JSON) to findings, or explicitly enumerate the dropped item-types in Task 7 and Out-of-scope and tighten the acceptance to assert which fields survive."
+dedup_id = "eb3674b5eb1c7f72"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "risk"
+plan_section = "## Verification Commands"
+summary = "`cargo sqlx prepare --check --workspace` contradicts Decision 8 (standalone crate, no workspace) — --workspace will mis-target/no-op"
+description = "sqlx .sqlx/ lives at the workspace root; for a non-workspace single crate it lives at lumina/.sqlx/ (which Task 10 correctly generates). Run the gate from inside lumina/ without --workspace."
+anchor_old = "`cargo sqlx prepare --check --workspace` (or per-crate) — fails if committed `.sqlx/` query cache is stale."
+anchor_new = "`cd lumina && cargo sqlx prepare --check` — fails if committed `lumina/.sqlx/` query cache is stale (standalone crate, no workspace per Decision 8; do NOT use `--workspace`)."
+dedup_id = "6f2763101e4ee5e3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 4. axum JSON API + SPA host [M]"
+summary = "Pin the SPA-fallback method: .fallback(ServeFile) not .not_found_service — acceptance needs status 200, not 404"
+description = "tower-http ServeDir::fallback preserves the inner service status (200 for index.html); not_found_service forces 200->404. createWebHistory client routing needs 200, and Task 4's acceptance ('unknown non-/api path returns index.html (200), not 404') is only satisfiable with .fallback. Spell the method + path out so an implementer doesn't reach for not_found_service."
+anchor_old = '`ServeDir::new("web/dist").fallback(ServeFile)` in debug.'
+anchor_new = '`ServeDir::new("web/dist").fallback(ServeFile::new("web/dist/index.html"))` in debug — use `.fallback` (NOT `.not_found_service`) so unknown paths return index.html with status 200, which the acceptance requires.'
+dedup_id = "4fef16ee0cd957bc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 5. MCP server (rmcp, Streamable-HTTP) [M]"
+summary = "StreamableHttpService::new takes a per-request service_factory closure, not one shared instance — the closure must capture an Arc-shared pool, not move it"
+description = "Verified against docs.rs: constructor is new(service_factory: impl Fn() -> Result<S, io::Error>, session_manager, config). Task 5 should note the handler factory re-creates the handler per request cheaply over an Arc<SqlitePool>, rather than assuming one long-lived handler owns the pool."
+dedup_id = "77a2eb3039cb1ae0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 7. Minimal flow importer (one flow) [M]"
+summary = "Task 7 acceptance depends on live .claude/flows/<slug>/ (mutable, deletable) — prefer a committed fixture flow for a deterministic, CI-safe test"
+description = "Downgraded from a (false) 'directory does not exist' claim — .claude/flows/ DOES exist with harness-progressive-disclosure intact. But a real-data acceptance against live, mutable flow state is fragile (the named slug can change or be deleted). Recommend committing a fixture under lumina/tests/fixtures/flow-sample/ and importing that, OR stating the precondition explicitly ('requires a populated .claude/flows/<slug>/; xfail-with-log if absent')."
+dedup_id = "ca5ec4192ece5c51"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 6. git-export materialiser (transactional outbox) [M]"
+summary = "Background materialiser has no graceful-shutdown / recovery statement — assert the exported_at IS NULL re-drain invariant or a cancellation token"
+description = "The task is spawned at startup and polls forever with no CancellationToken/tokio::select! on shutdown and no with_graceful_shutdown wiring. An ungraceful kill mid-render is recoverable (event stays unexported, re-rendered next start) thanks to the outbox keying — but the plan never states this safety invariant. Add a one-line shutdown statement + an acceptance covering kill-mid-export -> restart -> event still exported."
+dedup_id = "b5d65737bd62adba"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 10. End-to-end test + sqlx offline prep + docs [M]"
+summary = "e2e 'wait one export cycle' is a timing-dependent (flaky) acceptance — expose a synchronous export_pending(&pool) the test calls directly instead of sleeping"
+description = "Task 6 leaves the trigger as 'interval or notify-driven' and Task 10 asserts the export file after 'one export cycle' without saying how it waits — an agent will likely use tokio::time::sleep (flaky in CI). Specify that the materialiser's drain is a callable export_pending(&pool) -> Result<usize> the background loop calls on a tick, and have the e2e call it directly and assert synchronously."
+dedup_id = "d432b5bbb1353d6d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 2. SQLite schema + migrations + db module [M]"
+summary = "status value domain unspecified for work_items/findings; update_work_item_status takes an unconstrained status — decide free-text vs enum+CHECK"
+description = "Exploration Agent 2 already enumerated concrete vocabularies (flow draft|in-progress|review|complete; finding open|deferred|fixed|wontfix|verified-clean; task done|failed|skipped) but Task 2 lists status as a bare column and Task 3's update_work_item_status is untyped. Either state 'status is free text in slice 1 (validation deferred)' or pin the enum+CHECK referencing the Exploration vocabulary; silence forces an executor-time choice that the importer (Task 7) must then map onto."
+dedup_id = "d22777111b3121a9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 8. Vue app scaffold + API/store layer [M]"
+summary = "CORS for the Vue dev server is unaddressed; affirm the Vite dev-proxy handles it so no tower-http cors feature/layer is added"
+description = "Task 8 mentions a dev proxy for /api in passing. A Vite proxy makes requests same-origin (no CORS), which is the right call — but Task 1's tower-http features are ['fs'] only (no 'cors'), so an implementer reaching for CorsLayer hits a compile error. Add one line to Task 8: 'dev cross-origin handled by the Vite proxy; no tower-http cors feature/layer in the slice.'"
+dedup_id = "3cffcea03d3eacd9"
