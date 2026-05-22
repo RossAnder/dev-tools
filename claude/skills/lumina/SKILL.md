@@ -79,9 +79,32 @@ store only).
 |------|-------------|
 | `record_task_activity` | Append one activity entry onto a work item — `entry_type` of `execution` / `vet` / `comment`, plus a `summary` and optional `body` / `outcome`. This is how execution history folds onto the task record. |
 | `transition_status` | Idempotently transition an item's status (`todo` / `in_progress` / `blocked` / `done` / `cancelled`). |
-| `add_finding` | Attach a finding to a work item (kind / severity / effort / category / file / line / symbol / summary / description). |
-| `update_finding` | Partial set-or-leave update of a finding. |
+| `add_finding` | Attach a finding to a work item (kind / severity / effort / category / file / line / symbol / summary / description, plus optional `confidence` evidence grade and `origin` provenance). |
+| `update_finding` | Partial set-or-leave update of a finding (now including `confidence`). |
 | `resolve_finding` | Resolve a finding to a terminal disposition (`fixed` / `wontfix` / `verified_clean` / `deferred` / `duplicate`), with optional resolution/rationale. |
+| `supersede_finding` | Mark an old finding superseded by a new one (sets the old finding's `superseded_by`); superseded findings drop from the live detail fold. |
+
+### Planning & decision tools (migration 0003)
+
+These set the composer-facing grading axes and drive the decision lifecycle. `record_task_activity`, `add_finding`, and `create_work_item` additionally accept an `origin` provenance stamp (`plan` / `implement` / `review` / `optimise` / `tdd` / `human` / `none`).
+
+| Tool | When to use |
+|------|-------------|
+| `set_relevance` | Set an epic/feature/story's `relevance` (`active` / `backlog` / `deferred` / `rejected`). Rejected on task/project. |
+| `set_effort` | Set a task's `effort` grade (`s` / `m` / `l` — drives batch sizing). |
+| `set_complexity` | Set a task's `complexity` grade (`low` / `medium` / `high` — drives model-tier assignment). |
+| `set_closure_gate` | Set a story's `closure_gate` (`hard` / `soft`): `hard` rejects a task→done transition while any of the task's acceptance criteria are unchecked; `soft` allows but flags it. |
+| `add_acceptance_criterion` | Add a checkable acceptance criterion (text) to a work item. |
+| `check_acceptance_criterion` | Mark a criterion checked (optional `by`); also appends a `verification` activity entry. |
+| `uncheck_acceptance_criterion` | Mark a criterion unchecked. |
+| `add_research_note` | Add a first-class research note (summary / body / confidence / lens / origin) to a work item. |
+| `update_research_note` | Partial set-or-leave update of a research note's `confidence` / `state` (`proposed` / `accepted` / `rejected`) / `rationale` / `lens`. |
+| `supersede_research_note` | Mark an old research note superseded by a new one; superseded notes drop from the live detail fold. |
+| `add_open_question` | Add a story-scoped open question (rejected on non-story targets). |
+| `add_question_option` | Add an answer option (label + optional detail) to an open question. |
+| `block_task_on_question` | Block a task on an open question (sets `blocked_by_question_id` and `status=blocked`). |
+| `set_enabling_option` | Tie a task to one question option, marking it exclusive to that branch. |
+| `resolve_open_question` | Resolve a question by picking an option: unblock the chosen branch's tasks (`blocked→todo`) and cancel the other branches' exclusive tasks (`→cancelled`), emitting exactly one event for the whole resolution. |
 
 ### Read tools
 

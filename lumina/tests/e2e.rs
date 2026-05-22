@@ -46,7 +46,9 @@ use tower::ServiceExt as _; // for `oneshot`
 
 use lumina::app::{AppState, build_router};
 use lumina::db::connect_in_memory;
-use lumina::domain::CreateWorkItemRequest;
+use lumina::domain::{
+    ClosureGate, CreateWorkItemRequest, Relevance, ResearchState, UpdateResearchNoteRequest,
+};
 use lumina::mcp::{
     LuminaTools, RecordTaskActivityParams, SetStoryPlanParams, TaskActivityType,
 };
@@ -459,5 +461,326 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     assert_eq!(
         http_activity[0]["payload"]["outcome"].as_str(),
         Some("succeeded")
+    );
+}
+
+/// The full thread for the migration-0003 planning/decision surface: relevance,
+/// the per-story `hard` closure gate over acceptance criteria, research notes
+/// (accept + supersede), and an open question whose resolution unblocks one
+/// branch task and cancels the other branch's exclusive task — then prove the
+/// new columns + child collections flow DB → git-export snapshot → HTTP read.
+///
+/// Drive helpers: `create_work_item`/`set_story_plan`/`record_task_activity` are
+/// the crate's only `pub` tool-handler methods, so the planning/decision surface
+/// (whose `#[tool]` methods are private to the crate) is exercised through the
+/// PUBLIC `repo::*` single-mutation-path fns the MCP tools wrap 1:1 (each `#[tool]`
+/// = exactly one `repo::*` call + one event; that 1:1 mapping + the tool
+/// advertisement/branch behaviour are already asserted by `src/mcp.rs`'s own
+/// `#[cfg(test)]` suite). This e2e's unique contribution is threading ALL layers —
+/// DB → export → HTTP — through ONE shared pool, sleep-free and socket-free,
+/// exactly mirroring the two threads above.
+#[tokio::test]
+async fn full_thread_planning_and_decisions_db_export_http() {
+    // One shared pool across the MCP handler, the export drain, and the router.
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Build a legal chain to a `story`, then add two branch tasks under it.
+    let project = mcp_create(&tools, "project", None, "Plan Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "Plan Epic").await;
+    let feature = mcp_create(&tools, "feature", Some(&epic), "Plan Feature").await;
+    let story = mcp_create(&tools, "story", Some(&feature), "Plan Story").await;
+    // A non-branch task that carries the acceptance criteria + closure gate.
+    let task = mcp_create(&tools, "task", Some(&story), "Plan Task").await;
+    // Two branch tasks, one exclusive to each option.
+    let task_a = mcp_create(&tools, "task", Some(&story), "Branch A Task").await;
+    let task_b = mcp_create(&tools, "task", Some(&story), "Branch B Task").await;
+
+    // 2. Relevance + closure gate on the story (relevance settable only on
+    //    epic/feature/story; gate is story-scoped).
+    lumina::repo::set_relevance(&pool, &story, Relevance::Active)
+        .await
+        .expect("set story relevance=active");
+    // Relevance is REJECTED on a task (typed Validation).
+    let task_relevance_err = lumina::repo::set_relevance(&pool, &task, Relevance::Active).await;
+    assert!(
+        matches!(task_relevance_err, Err(lumina::error::AppError::Validation(_))),
+        "relevance on a task is rejected with Validation, got {task_relevance_err:?}"
+    );
+    lumina::repo::set_closure_gate(&pool, &story, ClosureGate::Hard)
+        .await
+        .expect("set story closure_gate=hard");
+
+    // 3. Two acceptance criteria on the task; check the gate behaviour.
+    let crit1 = lumina::repo::add_acceptance_criterion(&pool, &task, "compiles")
+        .await
+        .expect("add criterion 1")
+        .to_string();
+    let crit2 = lumina::repo::add_acceptance_criterion(&pool, &task, "tests pass")
+        .await
+        .expect("add criterion 2")
+        .to_string();
+
+    // task→done is GATED (rejected) while a criterion is unchecked under `hard`.
+    let gated = lumina::repo::update_work_item_status(&pool, &task, "done").await;
+    assert!(
+        matches!(gated, Err(lumina::error::AppError::Validation(_))),
+        "task→done is gated by the hard story while a criterion is unchecked, got {gated:?}"
+    );
+
+    // Check both criteria (each check also appends a `verification` activity).
+    lumina::repo::check_acceptance_criterion(&pool, &crit1, Some("e2e"))
+        .await
+        .expect("check criterion 1");
+    lumina::repo::check_acceptance_criterion(&pool, &crit2, Some("e2e"))
+        .await
+        .expect("check criterion 2");
+
+    // Now task→done is ALLOWED (all criteria checked).
+    lumina::repo::update_work_item_status(&pool, &task, "done")
+        .await
+        .expect("task→done allowed once all criteria are checked");
+    let task_status: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
+        .bind(&task)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("read task status");
+    assert_eq!(task_status, "done", "the gated transition committed once unblocked");
+
+    // 4. Research notes on the story: add two, accept one, supersede the other.
+    let note_live = lumina::repo::add_research_note(
+        &pool,
+        &story,
+        "use the LruCache",
+        Some("reuse the existing util"),
+        Some("high"),
+        Some("performance"),
+        Some("plan"),
+    )
+    .await
+    .expect("add live research note")
+    .to_string();
+    let note_old = lumina::repo::add_research_note(
+        &pool,
+        &story,
+        "build a dedicated cache",
+        None,
+        Some("low"),
+        None,
+        None,
+    )
+    .await
+    .expect("add note to be superseded")
+    .to_string();
+
+    // Accept the live note (proposed→accepted) via the partial-update path.
+    lumina::repo::update_research_note(
+        &pool,
+        &note_live,
+        &UpdateResearchNoteRequest {
+            confidence: None,
+            state: Some(ResearchState::Accepted),
+            rationale: Some("matches existing idioms".to_owned()),
+            lens: None,
+        },
+    )
+    .await
+    .expect("accept the live note");
+
+    // Supersede the old note with the live one — it should drop from the live fold.
+    lumina::repo::supersede_research_note(&pool, &note_old, &note_live)
+        .await
+        .expect("supersede the old note");
+
+    // 5. Open question with two options + a branch task per option, then resolve.
+    let question = lumina::repo::add_open_question(&pool, &story, "Which cache approach?")
+        .await
+        .expect("add open question")
+        .to_string();
+    // add_open_question on a non-story → Validation.
+    let q_on_task = lumina::repo::add_open_question(&pool, &task, "illegal?").await;
+    assert!(
+        matches!(q_on_task, Err(lumina::error::AppError::Validation(_))),
+        "open question on a task is rejected with Validation, got {q_on_task:?}"
+    );
+
+    let opt_a = lumina::repo::add_question_option(&pool, &question, "Option A", Some("reuse"))
+        .await
+        .expect("add option A")
+        .to_string();
+    let opt_b = lumina::repo::add_question_option(&pool, &question, "Option B", None)
+        .await
+        .expect("add option B")
+        .to_string();
+
+    // Block both branch tasks on the question; tie each to its exclusive option.
+    for (t, o) in [(&task_a, &opt_a), (&task_b, &opt_b)] {
+        lumina::repo::block_task_on_question(&pool, t, &question)
+            .await
+            .expect("block task on question");
+        lumina::repo::set_enabling_option(&pool, t, o)
+            .await
+            .expect("set enabling option");
+    }
+
+    // Resolve choosing option A: chosen-branch task → todo, other-branch → cancelled.
+    lumina::repo::resolve_open_question(&pool, &question, &opt_a, Some("decider"))
+        .await
+        .expect("resolve the open question");
+    let status_a: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
+        .bind(&task_a)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("status A");
+    let status_b: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
+        .bind(&task_b)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("status B");
+    assert_eq!(status_a, "todo", "chosen branch's task unblocked to todo");
+    assert_eq!(status_b, "cancelled", "other branch's exclusive task cancelled");
+
+    // 6. The live research-notes fold excludes the superseded note (DB check).
+    let live_notes_detail = lumina::repo::get_work_item_detail(&pool, &story)
+        .await
+        .expect("story detail");
+    assert!(
+        live_notes_detail
+            .research_notes
+            .iter()
+            .any(|n| n.id == note_live),
+        "the accepted live note is in the story's live research-notes fold"
+    );
+    assert!(
+        live_notes_detail
+            .research_notes
+            .iter()
+            .all(|n| n.id != note_old),
+        "the superseded note is excluded from the live research-notes fold"
+    );
+
+    // 7. Drain the outbox DIRECTLY (no sleep / no background loop).
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("export drain");
+    assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
+
+    // 7a. The STORY snapshot carries the new `relevance` column + closure_gate,
+    //     the live research note, and the resolved open question (+ options).
+    let story_snapshot = export_dir.path().join("story").join(format!("{story}.toml"));
+    assert!(story_snapshot.exists(), "story snapshot exists");
+    let story_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&story_snapshot).expect("read story snapshot"))
+            .expect("parse story snapshot TOML");
+    assert_eq!(
+        story_toml["item"]["relevance"].as_str(),
+        Some("active"),
+        "the story snapshot carries the relevance column"
+    );
+    assert_eq!(
+        story_toml["item"]["closure_gate"].as_str(),
+        Some("hard"),
+        "the story snapshot carries the closure_gate column"
+    );
+    // research_notes folds as a top-level array-of-tables (live only).
+    let snap_notes = story_toml["research_notes"]
+        .as_array()
+        .expect("research_notes array in story snapshot");
+    assert_eq!(snap_notes.len(), 1, "only the live (non-superseded) note is folded");
+    assert_eq!(snap_notes[0]["summary"].as_str(), Some("use the LruCache"));
+    assert_eq!(snap_notes[0]["state"].as_str(), Some("accepted"));
+    assert_eq!(
+        snap_notes[0]["origin"].as_str(),
+        Some("plan"),
+        "the research note's stamped origin round-trips in the snapshot"
+    );
+    // open_questions folds as a top-level array-of-tables (with nested options).
+    let snap_questions = story_toml["open_questions"]
+        .as_array()
+        .expect("open_questions array in story snapshot");
+    assert_eq!(snap_questions.len(), 1, "one open question in the snapshot");
+    assert_eq!(snap_questions[0]["status"].as_str(), Some("answered"));
+    assert_eq!(
+        snap_questions[0]["chosen_option_id"].as_str(),
+        Some(opt_a.as_str()),
+        "the resolved question records the chosen option"
+    );
+    let snap_options = snap_questions[0]["options"]
+        .as_array()
+        .expect("nested options array");
+    assert_eq!(snap_options.len(), 2, "both options round-trip in the snapshot");
+
+    // 7b. The TASK snapshot carries the acceptance criteria (both checked).
+    let task_snapshot = export_dir.path().join("task").join(format!("{task}.toml"));
+    assert!(task_snapshot.exists(), "task snapshot exists");
+    let task_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&task_snapshot).expect("read task snapshot"))
+            .expect("parse task snapshot TOML");
+    let snap_criteria = task_toml["acceptance_criteria"]
+        .as_array()
+        .expect("acceptance_criteria array in task snapshot");
+    assert_eq!(snap_criteria.len(), 2, "both acceptance criteria are folded");
+    assert!(
+        snap_criteria.iter().all(|c| c["checked"].as_integer() == Some(1)),
+        "both criteria are checked in the snapshot"
+    );
+
+    // 8. Read both items back over HTTP against the SAME router (no socket bind).
+    let state = AppState { pool: pool.clone() };
+
+    // 8a. The story detail surfaces the new column + the live child collections.
+    let story_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET story detail");
+    assert_eq!(story_resp.status(), StatusCode::OK, "story detail returns 200");
+    let story_body = json_body(story_resp).await;
+    assert_eq!(
+        story_body["item"]["relevance"].as_str(),
+        Some("active"),
+        "HTTP story detail surfaces the relevance column"
+    );
+    assert_eq!(story_body["item"]["closure_gate"].as_str(), Some("hard"));
+    let http_notes = story_body["research_notes"]
+        .as_array()
+        .expect("research_notes array in HTTP story detail");
+    assert_eq!(http_notes.len(), 1, "the HTTP detail's live research-notes fold has one note");
+    assert_eq!(http_notes[0]["state"].as_str(), Some("accepted"));
+    let http_questions = story_body["open_questions"]
+        .as_array()
+        .expect("open_questions array in HTTP story detail");
+    assert_eq!(http_questions.len(), 1, "the HTTP detail surfaces the open question");
+    assert_eq!(http_questions[0]["status"].as_str(), Some("answered"));
+    assert_eq!(
+        http_questions[0]["options"].as_array().map(Vec::len),
+        Some(2),
+        "the HTTP detail surfaces both nested options — full thread closed"
+    );
+
+    // 8b. The task detail surfaces the acceptance_criteria collection.
+    let task_resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{task}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET task detail");
+    assert_eq!(task_resp.status(), StatusCode::OK, "task detail returns 200");
+    let task_body = json_body(task_resp).await;
+    let http_criteria = task_body["acceptance_criteria"]
+        .as_array()
+        .expect("acceptance_criteria array in HTTP task detail");
+    assert_eq!(http_criteria.len(), 2, "the HTTP task detail surfaces both criteria");
+    assert!(
+        http_criteria.iter().all(|c| c["checked"].as_i64() == Some(1)),
+        "both criteria are checked in the HTTP detail — full thread closed"
     );
 }
