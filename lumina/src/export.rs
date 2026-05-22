@@ -114,7 +114,9 @@ pub async fn export_pending(pool: &SqlitePool, export_root: &Path) -> anyhow::Re
         SELECT
             id             AS "id!",
             aggregate_type AS "aggregate_type!",
-            aggregate_id   AS "aggregate_id!"
+            aggregate_id   AS "aggregate_id!",
+            event_type     AS "event_type!",
+            payload        AS "payload?"
         FROM events
         WHERE exported_at IS NULL
         ORDER BY created_at, id
@@ -139,6 +141,41 @@ pub async fn export_pending(pool: &SqlitePool, export_root: &Path) -> anyhow::Re
                 .await
                 .with_context(|| format!("rendering work_item '{}'", ev.aggregate_id))?;
             rendered.insert(ev.aggregate_id.clone());
+        }
+
+        // R2: an open-question resolution transitions its affected tasks
+        // (→todo / →cancelled) WITHOUT emitting a per-task event (the
+        // one-event-per-resolution invariant). So those tasks' snapshots would go
+        // stale. Here, after the story aggregate render above, ALSO re-render each
+        // task the resolution touched. The affected tasks are those blocked on the
+        // resolved question; `question_id` rides in the event payload (added in
+        // repo::resolve_open_question). Each render respects the per-drain
+        // `rendered` dedup so a task touched twice in one batch is written once.
+        let resolved_question_id = (ev.event_type == "open_question.resolved")
+            .then_some(ev.payload.as_deref())
+            .flatten()
+            .and_then(|p| serde_json::from_str::<serde_json::Value>(p).ok())
+            .and_then(|v| v.get("question_id").and_then(|q| q.as_str()).map(str::to_owned));
+        if let Some(question_id) = resolved_question_id {
+            let affected: Vec<String> =
+                sqlx::query_scalar("SELECT id FROM work_items WHERE blocked_by_question_id = ?")
+                    .bind(&question_id)
+                    .fetch_all(pool)
+                    .await
+                    .with_context(|| {
+                        format!("selecting tasks affected by resolved question '{question_id}'")
+                    })?;
+
+            for task_id in affected {
+                if !rendered.contains(&task_id) {
+                    render_work_item(pool, &task_id, export_root)
+                        .await
+                        .with_context(|| {
+                            format!("rendering resolution-affected task '{task_id}'")
+                        })?;
+                    rendered.insert(task_id);
+                }
+            }
         }
 
         // Stamp AFTER the render succeeds — an error above leaves this event

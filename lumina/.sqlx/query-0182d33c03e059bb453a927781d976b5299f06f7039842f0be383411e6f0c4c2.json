@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT 1 AS \"one!\" FROM open_questions WHERE id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "one!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0182d33c03e059bb453a927781d976b5299f06f7039842f0be383411e6f0c4c2"
+}

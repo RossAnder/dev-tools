@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 use crate::domain::{
     AcceptanceCriterion, ActivityType, ClosureGate, Complexity, ContextBlock, Disposition, Effort,
-    Finding, OpenQuestion, QuestionOption, Relevance, ResearchNote, ResearchState, Status,
+    Finding, OpenQuestion, QuestionOption, Relevance, ResearchNote, ResearchState,
     UpdateFindingRequest, UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem,
     WorkItemActivity, WorkItemDetail,
 };
@@ -51,78 +51,18 @@ fn decode_attributes(raw: Option<String>) -> Result<Option<Value>, AppError> {
     }
 }
 
-/// Render the snake_case wire form of a [`Status`] for storage in
-/// `work_items.status` (TEXT). Goes through serde so it stays the single source
-/// of the wire spelling (`in_progress`, etc.).
-fn status_to_str(status: Status) -> String {
-    // A unit enum always serialises to a JSON string; the unwrap is infallible.
-    match serde_json::to_value(status) {
+/// Render the snake_case wire form of a unit domain enum
+/// ([`Status`]/[`Severity`]/[`Disposition`]/[`ActivityType`]/[`Relevance`]/
+/// [`Effort`]/[`Complexity`]/[`ClosureGate`]/[`ResearchState`]) for storage.
+/// Goes through serde so it stays the single source of the wire spelling
+/// (`in_progress`, etc.). A unit enum always serialises to a JSON string, so the
+/// fallthrough is `unreachable!` — mapped, not `unwrap()`-ed. (Mirrors
+/// `mcp::enum_to_str`, which is the param-edge twin we cannot share across the
+/// module boundary.)
+fn enum_to_str<T: serde::Serialize>(value: T) -> String {
+    match serde_json::to_value(value) {
         Ok(Value::String(s)) => s,
-        _ => unreachable!("Status serialises to a JSON string"),
-    }
-}
-
-/// Render the snake_case wire form of a [`Severity`] for storage.
-fn severity_to_str(severity: crate::domain::Severity) -> String {
-    match serde_json::to_value(severity) {
-        Ok(Value::String(s)) => s,
-        _ => unreachable!("Severity serialises to a JSON string"),
-    }
-}
-
-/// Render the snake_case wire form of a [`Disposition`] for storage.
-fn disposition_to_str(disposition: Disposition) -> String {
-    match serde_json::to_value(disposition) {
-        Ok(Value::String(s)) => s,
-        _ => unreachable!("Disposition serialises to a JSON string"),
-    }
-}
-
-/// Render the snake_case wire form of an [`ActivityType`] for storage.
-fn activity_type_to_str(kind: ActivityType) -> String {
-    match serde_json::to_value(kind) {
-        Ok(Value::String(s)) => s,
-        _ => unreachable!("ActivityType serialises to a JSON string"),
-    }
-}
-
-/// Render the snake_case wire form of a [`Relevance`] for storage.
-fn relevance_to_str(relevance: Relevance) -> String {
-    match serde_json::to_value(relevance) {
-        Ok(Value::String(s)) => s,
-        _ => unreachable!("Relevance serialises to a JSON string"),
-    }
-}
-
-/// Render the snake_case wire form of an [`Effort`] for storage.
-fn effort_to_str(effort: Effort) -> String {
-    match serde_json::to_value(effort) {
-        Ok(Value::String(s)) => s,
-        _ => unreachable!("Effort serialises to a JSON string"),
-    }
-}
-
-/// Render the snake_case wire form of a [`Complexity`] for storage.
-fn complexity_to_str(complexity: Complexity) -> String {
-    match serde_json::to_value(complexity) {
-        Ok(Value::String(s)) => s,
-        _ => unreachable!("Complexity serialises to a JSON string"),
-    }
-}
-
-/// Render the snake_case wire form of a [`ClosureGate`] for storage.
-fn closure_gate_to_str(gate: ClosureGate) -> String {
-    match serde_json::to_value(gate) {
-        Ok(Value::String(s)) => s,
-        _ => unreachable!("ClosureGate serialises to a JSON string"),
-    }
-}
-
-/// Render the snake_case wire form of a [`ResearchState`] for storage.
-fn research_state_to_str(state: ResearchState) -> String {
-    match serde_json::to_value(state) {
-        Ok(Value::String(s)) => s,
-        _ => unreachable!("ResearchState serialises to a JSON string"),
+        _ => unreachable!("unit domain enum serialises to a JSON string"),
     }
 }
 
@@ -130,7 +70,7 @@ fn research_state_to_str(state: ResearchState) -> String {
 /// the canonical spelling. Typed `Validation` (NOT a panic) on an illegal value.
 fn validate_entry_kind(entry_kind: &str) -> Result<String, AppError> {
     serde_json::from_value::<ActivityType>(Value::String(entry_kind.to_owned()))
-        .map(activity_type_to_str)
+        .map(enum_to_str)
         .map_err(|_| {
             AppError::Validation(format!(
                 "unknown activity entry_kind '{entry_kind}' (expected one of execution, \
@@ -789,6 +729,19 @@ pub async fn create_work_item_with_origin(
 /// `soft` (the default), a non-story parent, or no parent ⇒ allow. Items that
 /// are not tasks, or transitions to a status other than `done`, are unaffected.
 ///
+/// # Two distinct scopes (R8 — precise, pinning a plan-ambiguous semantic)
+///
+/// The `closure_gate` FLAG and the acceptance CRITERIA counted live on different
+/// rows, deliberately:
+///   * the `closure_gate` flag is read from the parent STORY
+///     (`work_items.closure_gate` on the parent row), and
+///   * the acceptance criteria counted are the TASK's OWN
+///     (`acceptance_criteria WHERE work_item_id = <task id>`).
+///
+/// The criteria are NOT story-scoped: a story's gate decides WHETHER each of its
+/// child tasks must clear ITS OWN criteria before `→done`. The flag is the
+/// story's policy; the criteria are the task's checklist.
+///
 /// The `id`'s existence is NOT asserted here — the caller's UPDATE
 /// `rows_affected()==0 ⇒ NotFound` check is the authority; if the row is absent
 /// the kind read below simply returns `None` and the gate is inert.
@@ -911,7 +864,7 @@ pub async fn set_relevance(
             "relevance is settable only on epic/feature/story, not on '{kind}'"
         )));
     }
-    let value = relevance_to_str(relevance);
+    let value = enum_to_str(relevance);
 
     let mut tx = pool.begin().await?;
 
@@ -946,7 +899,7 @@ pub async fn set_effort(pool: &SqlitePool, id: &str, effort: Effort) -> Result<(
             "effort is settable only on a task, not on '{kind}'"
         )));
     }
-    let value = effort_to_str(effort);
+    let value = enum_to_str(effort);
 
     let mut tx = pool.begin().await?;
 
@@ -985,7 +938,7 @@ pub async fn set_complexity(
             "complexity is settable only on a task, not on '{kind}'"
         )));
     }
-    let value = complexity_to_str(complexity);
+    let value = enum_to_str(complexity);
 
     let mut tx = pool.begin().await?;
 
@@ -1025,7 +978,7 @@ pub async fn set_closure_gate(
             "closure_gate is settable only on a story, not on '{kind}'"
         )));
     }
-    let value = closure_gate_to_str(gate);
+    let value = enum_to_str(gate);
 
     let mut tx = pool.begin().await?;
 
@@ -1292,7 +1245,7 @@ pub async fn update_work_item(
         None => None,
     };
 
-    let status_str: Option<String> = req.status.map(status_to_str);
+    let status_str: Option<String> = req.status.map(enum_to_str);
 
     let mut tx = pool.begin().await?;
 
@@ -1444,10 +1397,19 @@ pub async fn set_work_item_attributes(
     .ok_or_else(|| AppError::NotFound(format!("work_item '{id}' not found")))?;
 
     // Merge: start from the existing object (or empty), overwrite present keys.
+    // A stored blob that is non-JSON or a non-object root is data corruption (the
+    // write side normalises every stored value to an object root) — fail loudly
+    // as `Other` (→ 500) rather than silently discarding it (R13), mirroring
+    // `decode_attributes`.
     let mut merged: serde_json::Map<String, Value> = match current.attributes {
         Some(s) => match serde_json::from_str::<Value>(&s) {
             Ok(Value::Object(m)) => m,
-            Ok(_) | Err(_) => serde_json::Map::new(),
+            Ok(_) => {
+                return Err(AppError::Other(anyhow::anyhow!(
+                    "stored attributes for work_item '{id}' is not a JSON object (corrupt blob)"
+                )));
+            }
+            Err(e) => return Err(AppError::Other(e.into())),
         },
         None => serde_json::Map::new(),
     };
@@ -1601,7 +1563,7 @@ pub async fn update_finding(
     id: &str,
     req: &UpdateFindingRequest,
 ) -> Result<(), AppError> {
-    let severity_str: Option<String> = req.severity.map(severity_to_str);
+    let severity_str: Option<String> = req.severity.map(enum_to_str);
 
     let mut tx = pool.begin().await?;
 
@@ -1640,7 +1602,17 @@ pub async fn update_finding(
         return Err(AppError::NotFound(format!("finding '{id}' not found")));
     }
 
-    let payload = serde_json::json!({ "severity": severity_str, "status": req.status });
+    // R16: record only the fields the caller actually set, so a description-only
+    // update does not log a misleading null severity/status (null read as
+    // "unchanged"). Absent fields are omitted from the payload entirely.
+    let mut payload_map = serde_json::Map::new();
+    if let Some(s) = &severity_str {
+        payload_map.insert("severity".to_owned(), Value::String(s.clone()));
+    }
+    if let Some(s) = &req.status {
+        payload_map.insert("status".to_owned(), Value::String(s.clone()));
+    }
+    let payload = Value::Object(payload_map);
     record_event(&mut tx, "finding", id, "finding.updated", payload).await?;
 
     tx.commit().await?;
@@ -1651,14 +1623,30 @@ pub async fn update_finding(
 /// the OLD finding so it drops out of the live `get_work_item_detail` fold
 /// (`superseded_by IS NULL`). Single-mutation-path + one event
 /// `finding.superseded`; `NotFound` (via `rows_affected()==0`) if the old finding
-/// is absent. Mirrors [`supersede_research_note`]. The `new_id` is stored as-is
-/// (a soft self-FK — the new finding is expected to exist but is not asserted
-/// here, matching the migration's soft-FK comment on the supersession columns).
+/// is absent. Mirrors [`supersede_research_note`]. The `new_id` is a soft
+/// self-FK; it is VALIDATED here (R7) — an absent `new_id` is a typed
+/// [`AppError::Validation`] (a clean 422) rather than an FK-violation 500. The
+/// DB column itself remains `ON DELETE NO ACTION` (see the supersession-semantics
+/// note above [`supersede_research_note`]).
 pub async fn supersede_finding(
     pool: &SqlitePool,
     old_id: &str,
     new_id: &str,
 ) -> Result<(), AppError> {
+    // Validate the superseding finding exists (R7): clean 422 over a dangling-FK 500.
+    let new_exists = sqlx::query!(
+        r#"SELECT 1 AS "one!" FROM findings WHERE id = ?1"#,
+        new_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !new_exists {
+        return Err(AppError::Validation(format!(
+            "superseding finding '{new_id}' does not exist"
+        )));
+    }
+
     let mut tx = pool.begin().await?;
 
     let affected = sqlx::query!(
@@ -1692,7 +1680,7 @@ pub async fn resolve_finding(
     resolution: Option<&str>,
     rationale: Option<&str>,
 ) -> Result<(), AppError> {
-    let disposition_str = disposition_to_str(disposition);
+    let disposition_str = enum_to_str(disposition);
 
     let mut tx = pool.begin().await?;
 
@@ -1890,7 +1878,7 @@ pub async fn add_research_note(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
     // State defaults to `proposed` on create.
-    let state = research_state_to_str(ResearchState::Proposed);
+    let state = enum_to_str(ResearchState::Proposed);
 
     let mut tx = pool.begin().await?;
 
@@ -1954,7 +1942,7 @@ pub async fn update_research_note(
     req: &UpdateResearchNoteRequest,
 ) -> Result<(), AppError> {
     let work_item_id = research_note_work_item(pool, id).await?;
-    let state_str: Option<String> = req.state.map(research_state_to_str);
+    let state_str: Option<String> = req.state.map(enum_to_str);
 
     let mut tx = pool.begin().await?;
 
@@ -1992,13 +1980,41 @@ pub async fn update_research_note(
 /// Supersede a research note (migration 0003): set `superseded_by = new_id` on
 /// the OLD note so it drops out of the live fold (`superseded_by IS NULL`). One
 /// event `work_item.research_note_superseded`; `NotFound` via
-/// `rows_affected()==0`. Mirrors [`supersede_finding`].
+/// `rows_affected()==0`. Mirrors [`supersede_finding`]. The `new_id` is
+/// VALIDATED here (R7) — an absent `new_id` is a typed [`AppError::Validation`].
+///
+/// # Supersession / ON DELETE semantics (R14)
+///
+/// The supersession pointers — `findings.superseded_by`,
+/// `research_notes.superseded_by` — and the open-question provenance pointers
+/// `open_questions.prompting_finding_id` / `open_questions.prompting_note_id`
+/// are currently declared `ON DELETE NO ACTION` in migration `0003`.
+/// Supersession is a SOFT pointer (the superseded row is kept for the export
+/// audit trail, never hard-deleted), so today nothing exercises the delete path.
+/// A future hard-delete path SHOULD migrate these columns to `ON DELETE SET NULL`
+/// to avoid a delete being blocked by — or leaving — a dangling pointer. Do NOT
+/// edit the committed `0003_*.sql` to change this: that would alter its sqlx
+/// migration checksum and break already-applied DBs (a new migration is the path).
 pub async fn supersede_research_note(
     pool: &SqlitePool,
     old_id: &str,
     new_id: &str,
 ) -> Result<(), AppError> {
     let work_item_id = research_note_work_item(pool, old_id).await?;
+
+    // Validate the superseding note exists (R7): clean 422 over a dangling-FK 500.
+    let new_exists = sqlx::query!(
+        r#"SELECT 1 AS "one!" FROM research_notes WHERE id = ?1"#,
+        new_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !new_exists {
+        return Err(AppError::Validation(format!(
+            "superseding research_note '{new_id}' does not exist"
+        )));
+    }
 
     let mut tx = pool.begin().await?;
 
@@ -2076,8 +2092,12 @@ pub async fn add_open_question(
     .execute(&mut *tx)
     .await?;
 
+    // Route the event to the owning STORY's work_item aggregate (R1): export only
+    // renders work_item aggregates, so an `open_question`-typed event would never
+    // reach the git-export snapshot. event_type/payload are otherwise unchanged,
+    // so the "exactly one event" invariant holds.
     let payload = serde_json::json!({ "question_id": id_str, "seq": seq });
-    record_event(&mut tx, "open_question", &id_str, "open_question.added", payload).await?;
+    record_event(&mut tx, "work_item", story_id, "open_question.added", payload).await?;
 
     tx.commit().await?;
     Ok(id)
@@ -2103,8 +2123,9 @@ pub async fn add_question_option(
     label: &str,
     detail: Option<&str>,
 ) -> Result<Uuid, AppError> {
-    // Verify the question exists first (NotFound, not a dangling-FK 500).
-    let _ = open_question_story(pool, question_id).await?;
+    // Verify the question exists first (NotFound, not a dangling-FK 500) AND
+    // capture its owning story for the event aggregate (R1).
+    let story_id = open_question_story(pool, question_id).await?;
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
@@ -2130,8 +2151,9 @@ pub async fn add_question_option(
     .execute(&mut *tx)
     .await?;
 
+    // Route to the owning STORY's work_item aggregate (R1) so export renders it.
     let payload = serde_json::json!({ "option_id": id_str, "seq": seq });
-    record_event(&mut tx, "open_question", question_id, "open_question.option_added", payload)
+    record_event(&mut tx, "work_item", &story_id, "open_question.option_added", payload)
         .await?;
 
     tx.commit().await?;
@@ -2141,11 +2163,57 @@ pub async fn add_question_option(
 /// Block a task on an open question (migration 0003): set
 /// `blocked_by_question_id = question_id` AND `status = 'blocked'` in one write.
 /// One event `work_item.blocked_on_question`; `NotFound` via `rows_affected()==0`.
+///
+/// Task-scoped (R3): a non-`task` kind is rejected with a typed
+/// [`AppError::Validation`] (mirrors [`set_effort`]), and the referenced
+/// `question_id` must exist (else `Validation`, not a dangling-FK 500). The
+/// task's current status must be `todo`/`open` (R12): the branch-resolution
+/// model restores blocked tasks to `todo` on unblock, so blocking an
+/// `in_progress`/`done` task would silently lose its state — that is rejected
+/// with `Validation` rather than clobbered.
 pub async fn block_task_on_question(
     pool: &SqlitePool,
     task_id: &str,
     question_id: &str,
 ) -> Result<(), AppError> {
+    // Task-scoped guard (R3); also yields NotFound if the id is absent.
+    let kind = work_item_kind(pool, task_id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "block_task_on_question is settable only on a task, not on '{kind}'"
+        )));
+    }
+
+    // The referenced question must exist (R3): clean 422 over a dangling-FK 500.
+    let q_exists = sqlx::query!(
+        r#"SELECT 1 AS "one!" FROM open_questions WHERE id = ?1"#,
+        question_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !q_exists {
+        return Err(AppError::Validation(format!(
+            "open_question '{question_id}' does not exist"
+        )));
+    }
+
+    // R12: only block a pre-todo task. Blocking an in_progress/done task would be
+    // silently downgraded to `todo` on unblock, losing state — reject instead.
+    let current = sqlx::query!(
+        r#"SELECT status AS "status!" FROM work_items WHERE id = ?1"#,
+        task_id,
+    )
+    .fetch_one(pool)
+    .await?
+    .status;
+    if !matches!(current.as_str(), "todo" | "open") {
+        return Err(AppError::Validation(format!(
+            "task '{task_id}' cannot be blocked from status '{current}': only a 'todo'/'open' \
+             task may be blocked (the branch-resolution model restores blocked tasks to 'todo')"
+        )));
+    }
+
     let mut tx = pool.begin().await?;
 
     let affected = sqlx::query!(
@@ -2176,11 +2244,37 @@ pub async fn block_task_on_question(
 /// `enabling_option_id = option_id` (the exclusive-branch marker — a task with
 /// this set is cancelled if a DIFFERENT option is chosen on resolution). One
 /// event `work_item.enabling_option_set`; `NotFound` via `rows_affected()==0`.
+///
+/// Task-scoped (R3): a non-`task` kind is rejected with a typed
+/// [`AppError::Validation`] (mirrors [`set_effort`]), and the referenced
+/// `option_id` must exist (else `Validation`, not a dangling-FK 500).
 pub async fn set_enabling_option(
     pool: &SqlitePool,
     task_id: &str,
     option_id: &str,
 ) -> Result<(), AppError> {
+    // Task-scoped guard (R3); also yields NotFound if the id is absent.
+    let kind = work_item_kind(pool, task_id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "set_enabling_option is settable only on a task, not on '{kind}'"
+        )));
+    }
+
+    // The referenced option must exist (R3): clean 422 over a dangling-FK 500.
+    let opt_exists = sqlx::query!(
+        r#"SELECT 1 AS "one!" FROM question_options WHERE id = ?1"#,
+        option_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !opt_exists {
+        return Err(AppError::Validation(format!(
+            "question_option '{option_id}' does not exist"
+        )));
+    }
+
     let mut tx = pool.begin().await?;
 
     let affected = sqlx::query!(
@@ -2229,8 +2323,26 @@ pub async fn resolve_open_question(
     chosen_option_id: &str,
     by: Option<&str>,
 ) -> Result<(), AppError> {
-    // NotFound if the question is absent (before any write).
-    let _ = open_question_story(pool, question_id).await?;
+    // NotFound if the question is absent (before any write); capture the owning
+    // story for the event aggregate (R1).
+    let story_id = open_question_story(pool, question_id).await?;
+
+    // Reject re-resolving an already-answered/cancelled question (R4) so the
+    // advertised idempotency is real rather than silently re-running the branch
+    // transitions on a second call.
+    let status = sqlx::query!(
+        r#"SELECT status AS "status?" FROM open_questions WHERE id = ?1"#,
+        question_id,
+    )
+    .fetch_one(pool)
+    .await?
+    .status;
+    if status.as_deref() != Some("open") {
+        return Err(AppError::Validation(format!(
+            "open_question '{question_id}' already resolved/cancelled (status {})",
+            status.as_deref().unwrap_or("unknown")
+        )));
+    }
 
     // Validate the chosen option belongs to THIS question.
     let owns = sqlx::query!(
@@ -2299,9 +2411,13 @@ pub async fn resolve_open_question(
     .execute(&mut *tx)
     .await?;
 
-    // EXACTLY ONE event for the whole resolution (NOT per task).
-    let payload = serde_json::json!({ "chosen_option_id": chosen_option_id });
-    record_event(&mut tx, "open_question", question_id, "open_question.resolved", payload).await?;
+    // EXACTLY ONE event for the whole resolution (NOT per task). Routed to the
+    // owning STORY's work_item aggregate (R1) so export renders it; `question_id`
+    // is carried so the export drain can re-render this question's affected tasks
+    // (R2) without a per-task event.
+    let payload =
+        serde_json::json!({ "chosen_option_id": chosen_option_id, "question_id": question_id });
+    record_event(&mut tx, "work_item", &story_id, "open_question.resolved", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -2346,6 +2462,7 @@ async fn record_event(
 mod tests {
     use super::*;
     use crate::db::connect_in_memory;
+    use crate::domain::Status;
 
     /// Row count of `work_items` (compile-checked literal — sqlx 0.9's
     /// `SqlSafeStr` bound rejects a dynamically-built table name on the runtime
@@ -2878,6 +2995,54 @@ mod tests {
         // Check the criterion → done now allowed.
         check_acceptance_criterion(&pool, &crit, None).await.expect("check");
         update_work_item_status(&pool, &task, "done").await.expect("done allowed once checked");
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.item.status, "done");
+    }
+
+    /// (R18) Multi-criterion hard gate: with TWO acceptance criteria, checking
+    /// only ONE still blocks task→done; checking BOTH allows it. This catches a
+    /// count-total-vs-count-unchecked bug that a single-criterion test misses
+    /// (a "count == total" gate would wrongly allow done after the first check).
+    #[tokio::test]
+    async fn hard_gate_multi_criterion_partial_check_still_blocks() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        set_closure_gate(&pool, &story, ClosureGate::Hard).await.expect("hard gate");
+
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        let crit_a = add_acceptance_criterion(&pool, &task, "must build")
+            .await
+            .expect("ac1")
+            .to_string();
+        let crit_b = add_acceptance_criterion(&pool, &task, "must test")
+            .await
+            .expect("ac2")
+            .to_string();
+
+        // Zero checked → blocked.
+        let err = update_work_item_status(&pool, &task, "done")
+            .await
+            .expect_err("blocked with both unchecked");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // Check only ONE of the two → STILL blocked (the partial-check case).
+        check_acceptance_criterion(&pool, &crit_a, None).await.expect("check first");
+        let err = update_work_item_status(&pool, &task, "done")
+            .await
+            .expect_err("one-of-two checked must still block");
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "partial check must still block done, got {err:?}"
+        );
+
+        // Check the SECOND → now allowed.
+        check_acceptance_criterion(&pool, &crit_b, None).await.expect("check second");
+        update_work_item_status(&pool, &task, "done")
+            .await
+            .expect("done allowed once BOTH criteria checked");
         let detail = get_work_item_detail(&pool, &task).await.expect("detail");
         assert_eq!(detail.item.status, "done");
     }

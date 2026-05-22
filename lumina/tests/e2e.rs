@@ -664,7 +664,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
         .await
         .expect("export drain");
-    assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
+    assert_eq!(drained, 26, "every event drained in one pass: 7 creates + 2 relevance/gate + 2 criteria + 2 checks + 1 status + 2 notes + 1 update_note + 1 supersede + 1 question + 2 options + 4 block/enable + 1 resolve");
 
     // 7a. The STORY snapshot carries the new `relevance` column + closure_gate,
     //     the live research note, and the resolved open question (+ options).

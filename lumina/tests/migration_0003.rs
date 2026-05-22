@@ -146,6 +146,56 @@ async fn migration_0003_applies_and_cascades_hold() {
         "expected UNIQUE(work_item_id, seq) to reject a duplicate seq, got Ok"
     );
 
+    // (c) UNIQUE(work_item_id, seq) is enforced on research_notes.
+    let dup_rn = sqlx::query(
+        "INSERT INTO research_notes (id, work_item_id, seq, summary, state) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind("rn1-dup")
+    .bind(&story)
+    .bind(1_i64) // same seq as rn1 under the same work_item
+    .bind("duplicate seq research note")
+    .bind("proposed")
+    .execute(&pool)
+    .await;
+    assert!(
+        dup_rn.is_err(),
+        "expected UNIQUE(work_item_id, seq) on research_notes to reject a duplicate seq, got Ok"
+    );
+
+    // (c) UNIQUE(story_id, seq) is enforced on open_questions.
+    let dup_oq = sqlx::query(
+        "INSERT INTO open_questions (id, story_id, seq, question, status) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind("oq1-dup")
+    .bind(&story)
+    .bind(1_i64) // same seq as oq1 under the same story
+    .bind("duplicate seq question")
+    .bind("open")
+    .execute(&pool)
+    .await;
+    assert!(
+        dup_oq.is_err(),
+        "expected UNIQUE(story_id, seq) on open_questions to reject a duplicate seq, got Ok"
+    );
+
+    // (c) UNIQUE(question_id, seq) is enforced on question_options.
+    let dup_qo = sqlx::query(
+        "INSERT INTO question_options (id, question_id, seq, label) \
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind("qo1-dup")
+    .bind("oq1")
+    .bind(1_i64) // same seq as qo1 under the same question
+    .bind("duplicate seq option")
+    .execute(&pool)
+    .await;
+    assert!(
+        dup_qo.is_err(),
+        "expected UNIQUE(question_id, seq) on question_options to reject a duplicate seq, got Ok"
+    );
+
     // (b) Deleting the open_question cascade-deletes its question_options. Do
     // this BEFORE deleting the story so it is unambiguously the question delete
     // (not the story cascade) driving the option removal.

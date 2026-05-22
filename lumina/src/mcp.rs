@@ -520,6 +520,15 @@ pub struct UncheckAcceptanceCriterionParams {
     pub id: String,
 }
 
+/// Arguments for the (DESTRUCTIVE) `remove_acceptance_criterion` write tool →
+/// `repo::remove_acceptance_criterion` (a hard delete — criteria have no
+/// independent export identity).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RemoveAcceptanceCriterionParams {
+    /// The acceptance-criterion id to hard-delete.
+    pub id: String,
+}
+
 /// Arguments for the `add_research_note` write tool → `repo::add_research_note`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct AddResearchNoteParams {
@@ -536,9 +545,10 @@ pub struct AddResearchNoteParams {
     /// Optional analytical lens.
     #[serde(default)]
     pub lens: Option<String>,
-    /// Optional provenance (`plan|implement|review|optimise|tdd|human|none`).
+    /// Optional provenance stamp (which command produced this note); one of
+    /// `plan`/`implement`/`review`/`optimise`/`tdd`/`human`/`none` (migration 0003).
     #[serde(default)]
-    pub origin: Option<String>,
+    pub origin: Option<Origin>,
 }
 
 /// Arguments for the `update_research_note` write tool: a partial set-or-leave
@@ -1222,6 +1232,25 @@ impl LuminaTools {
         structured_result(serde_json::json!({ "id": id }))
     }
 
+    /// HARD-delete an acceptance criterion (single repo call →
+    /// `remove_acceptance_criterion`; criteria have no independent export
+    /// identity). Annotated `destructive_hint` so MCP clients can confirm.
+    #[tool(
+        description = "Remove (hard-delete) an acceptance criterion by id. Records one event.",
+        annotations(destructive_hint = true, open_world_hint = false)
+    )]
+    async fn remove_acceptance_criterion(
+        &self,
+        Parameters(RemoveAcceptanceCriterionParams { id }): Parameters<
+            RemoveAcceptanceCriterionParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::remove_acceptance_criterion(&self.pool, &id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id, "removed": true }))
+    }
+
     /// Add a research note to a work item (single repo call →
     /// `add_research_note`).
     #[tool(
@@ -1232,6 +1261,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<AddResearchNoteParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let origin_str = p.origin.map(enum_to_str);
         let id = repo::add_research_note(
             &self.pool,
             &p.work_item_id,
@@ -1239,7 +1269,7 @@ impl LuminaTools {
             p.body.as_deref(),
             p.confidence.as_deref(),
             p.lens.as_deref(),
-            p.origin.as_deref(),
+            origin_str.as_deref(),
         )
         .await
         .map_err(app_error_to_mcp)?;
@@ -1529,6 +1559,7 @@ mod tests {
             "add_acceptance_criterion",
             "check_acceptance_criterion",
             "uncheck_acceptance_criterion",
+            "remove_acceptance_criterion",
             "add_research_note",
             "update_research_note",
             "supersede_research_note",
@@ -1549,6 +1580,15 @@ mod tests {
                 "advertised tools {names:?} must contain {expected}"
             );
         }
+
+        // Exact total: catches a stray (or silently-dropped) tool that the
+        // membership loop above would not. 34 = 33 baseline + remove_acceptance_criterion.
+        assert_eq!(
+            names.len(),
+            34,
+            "advertised tool count must be exactly 34, got {}: {names:?}",
+            names.len()
+        );
 
         // The renamed tool replaces the old name (no stale `update_work_item_status`).
         assert!(
@@ -1841,9 +1881,13 @@ mod tests {
         let tools = LuminaTools::new(pool.clone());
         let story = seed_chain_to_story(&tools).await;
 
-        // Two branch tasks under the story.
+        // Two exclusive branch tasks under the story, plus a third
+        // non-exclusive task that is blocked on the question but tied to NO
+        // option (it must unblock on ANY resolution — guards the
+        // `OR enabling_option_id IS NULL` clause).
         let task_a = create_item(&tools, "task", Some(&story)).await;
         let task_b = create_item(&tools, "task", Some(&story)).await;
+        let task_c = create_item(&tools, "task", Some(&story)).await;
 
         // An open question with two options.
         let q = id_of(
@@ -1894,6 +1938,16 @@ mod tests {
                 .expect("set_enabling_option");
         }
 
+        // Block the non-exclusive task on the question WITHOUT tying it to an
+        // option (no set_enabling_option call): it has enabling_option_id = NULL.
+        tools
+            .block_task_on_question(Parameters(BlockTaskOnQuestionParams {
+                task_id: task_c.clone(),
+                question_id: q.clone(),
+            }))
+            .await
+            .expect("block_task_on_question (non-exclusive)");
+
         // Count events before the resolve so we can assert the +1 invariant.
         let events_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
             .fetch_one(pool.as_ref())
@@ -1936,6 +1990,35 @@ mod tests {
                 .expect("status B");
         assert_eq!(status_a, "todo", "chosen branch's task is unblocked to todo");
         assert_eq!(status_b, "cancelled", "other branch's exclusive task is cancelled");
+
+        // The non-exclusive task (enabling_option_id IS NULL) unblocks on ANY
+        // resolution → todo, NOT cancelled.
+        let status_c: String =
+            sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+                .bind(&task_c)
+                .fetch_one(pool.as_ref())
+                .await
+                .expect("status C");
+        assert_eq!(
+            status_c, "todo",
+            "non-exclusive task (no enabling option) is unblocked to todo on any resolution"
+        );
+
+        // The open question itself is now answered, with the chosen option recorded.
+        let oq_status: String =
+            sqlx::query_scalar("SELECT status FROM open_questions WHERE id = ?1")
+                .bind(&q)
+                .fetch_one(pool.as_ref())
+                .await
+                .expect("open_question status");
+        let oq_chosen: String =
+            sqlx::query_scalar("SELECT chosen_option_id FROM open_questions WHERE id = ?1")
+                .bind(&q)
+                .fetch_one(pool.as_ref())
+                .await
+                .expect("open_question chosen_option_id");
+        assert_eq!(oq_status, "answered", "resolved question's status is 'answered'");
+        assert_eq!(oq_chosen, opt_a, "resolved question records the chosen option id");
     }
 
     /// An illegal `relevance` enum value on the `set_relevance` param surface is

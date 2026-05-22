@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            id             AS \"id!\",\n            aggregate_type AS \"aggregate_type!\",\n            aggregate_id   AS \"aggregate_id!\",\n            event_type     AS \"event_type!\",\n            payload        AS \"payload?\"\n        FROM events\n        WHERE exported_at IS NULL\n        ORDER BY created_at, id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "aggregate_type!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "aggregate_type"
+          }
+        }
+      },
+      {
+        "name": "aggregate_id!",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "aggregate_id"
+          }
+        }
+      },
+      {
+        "name": "event_type!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "event_type"
+          }
+        }
+      },
+      {
+        "name": "payload?",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "payload"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "189b92b566fbe097b3b0617ef1dd18480e774aa45de64edcae392561ac53d50b"
+}

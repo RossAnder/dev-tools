@@ -1,6 +1,6 @@
 ---
 name: lumina
-description: Use the lumina MCP tools to manage a flow-tracking work-item hierarchy (project → epic → feature → story → task) in lumina's SQLite-canonical store. Reach for these when defining or enriching the hierarchy, attaching a story's "plan" (problem statement / research notes / execution strategy), specifying tasks, recording execution/vet/comment activity onto a task record, raising and resolving findings, or querying a tree / sprint view. Tools surface as `mcp__lumina__<tool>` once the running lumina server is added as an HTTP MCP server. NOTE: lumina is the data layer of a phased harness reshape — it does NOT yet replace the tomlctl flow-state skill or any flow command.
+description: Use the lumina MCP tools to manage a flow-tracking work-item hierarchy (project → epic → feature → story → task) in lumina's SQLite-canonical store. Reach for these when defining or enriching the hierarchy, attaching a story's "plan" (problem statement / research notes / execution strategy), specifying tasks, recording execution/vet/comment activity onto a task record, raising and resolving findings, or querying a tree / sprint view. Also reach for them to plan and decide: grading tasks by effort (s/m/l) and complexity (low/medium/high), setting an item's relevance (active/backlog/deferred/rejected), managing acceptance criteria under a story's closure gate, recording research notes with a confidence grade and proposed→accepted/rejected lifecycle, and resolving open questions via option→branch resolution. Tools surface as `mcp__lumina__<tool>` once the running lumina server is added as an HTTP MCP server. NOTE: lumina is the data layer of a phased harness reshape — it does NOT yet replace the tomlctl flow-state skill or any flow command.
 ---
 
 # Lumina
@@ -77,12 +77,11 @@ store only).
 
 | Tool | When to use |
 |------|-------------|
-| `record_task_activity` | Append one activity entry onto a work item — `entry_type` of `execution` / `vet` / `comment`, plus a `summary` and optional `body` / `outcome`. This is how execution history folds onto the task record. |
+| `record_task_activity` | Append one activity entry onto a work item — `entry_type` of `execution` / `vet` / `comment`, plus a `summary` and optional `author` / `body` / `outcome` / `origin`. This is how execution history folds onto the task record. |
 | `transition_status` | Idempotently transition an item's status (`todo` / `in_progress` / `blocked` / `done` / `cancelled`). |
 | `add_finding` | Attach a finding to a work item (kind / severity / effort / category / file / line / symbol / summary / description, plus optional `confidence` evidence grade and `origin` provenance). |
 | `update_finding` | Partial set-or-leave update of a finding (now including `confidence`). |
 | `resolve_finding` | Resolve a finding to a terminal disposition (`fixed` / `wontfix` / `verified_clean` / `deferred` / `duplicate`), with optional resolution/rationale. |
-| `supersede_finding` | Mark an old finding superseded by a new one (sets the old finding's `superseded_by`); superseded findings drop from the live detail fold. |
 
 ### Planning & decision tools (migration 0003)
 
@@ -93,18 +92,20 @@ These set the composer-facing grading axes and drive the decision lifecycle. `re
 | `set_relevance` | Set an epic/feature/story's `relevance` (`active` / `backlog` / `deferred` / `rejected`). Rejected on task/project. |
 | `set_effort` | Set a task's `effort` grade (`s` / `m` / `l` — drives batch sizing). |
 | `set_complexity` | Set a task's `complexity` grade (`low` / `medium` / `high` — drives model-tier assignment). |
-| `set_closure_gate` | Set a story's `closure_gate` (`hard` / `soft`): `hard` rejects a task→done transition while any of the task's acceptance criteria are unchecked; `soft` allows but flags it. |
+| `set_closure_gate` | Set a story's `closure_gate` (`hard` / `soft`). When `hard`, each child task's →done transition is rejected while THAT task still has any unchecked acceptance criterion (the gate is the parent story's, applied per-task); `soft` allows the transition but flags the unchecked count. |
 | `add_acceptance_criterion` | Add a checkable acceptance criterion (text) to a work item. |
 | `check_acceptance_criterion` | Mark a criterion checked (optional `by`); also appends a `verification` activity entry. |
 | `uncheck_acceptance_criterion` | Mark a criterion unchecked. |
+| `remove_acceptance_criterion` | DESTRUCTIVE: hard-delete a criterion by `id` (criteria have no independent export identity). |
 | `add_research_note` | Add a first-class research note (summary / body / confidence / lens / origin) to a work item. |
 | `update_research_note` | Partial set-or-leave update of a research note's `confidence` / `state` (`proposed` / `accepted` / `rejected`) / `rationale` / `lens`. |
 | `supersede_research_note` | Mark an old research note superseded by a new one; superseded notes drop from the live detail fold. |
-| `add_open_question` | Add a story-scoped open question (rejected on non-story targets). |
+| `supersede_finding` | Mark an old finding superseded by a new one (sets the old finding's `superseded_by`); superseded findings drop from the live detail fold. |
+| `add_open_question` | Add a story-scoped open question (rejected on non-story targets). Takes `story_id` (NOT `work_item_id` like its table neighbours) plus `question`. |
 | `add_question_option` | Add an answer option (label + optional detail) to an open question. |
 | `block_task_on_question` | Block a task on an open question (sets `blocked_by_question_id` and `status=blocked`). |
 | `set_enabling_option` | Tie a task to one question option, marking it exclusive to that branch. |
-| `resolve_open_question` | Resolve a question by picking an option: unblock the chosen branch's tasks (`blocked→todo`) and cancel the other branches' exclusive tasks (`→cancelled`), emitting exactly one event for the whole resolution. |
+| `resolve_open_question` | Resolve a question by picking an option (params: `question_id` + `chosen_option_id` + optional `by`): unblock the chosen branch's tasks (`blocked→todo`) and cancel the other branches' exclusive tasks (`→cancelled`), emitting exactly one event for the whole resolution. |
 
 ### Read tools
 
@@ -146,7 +147,7 @@ The top-down build flow:
 3. **Record progress** as work proceeds — append activity onto the task record and move
    its status:
    ```
-   record_task_activity { work_item_id: <task>, entry_type: "execution", summary: "…", body: "…", outcome: "…" }
+   record_task_activity { work_item_id: <task>, entry_type: "execution", summary: "…", body: "…", outcome: "…", author: "…", origin: "implement" }
    transition_status     { id: <task>, status: "in_progress" }
    …
    transition_status     { id: <task>, status: "done" }
@@ -155,6 +156,30 @@ The top-down build flow:
 
 4. **Review** with `get_sprint_view` (the story + its task subtree + per-task activity),
    or `get_work_item` / `get_tree` for narrower / broader reads.
+
+The open-question decision lifecycle (story-scoped — the highest-complexity workflow):
+
+```
+add_open_question    { story_id: <story>, question: "…" }        → { id: <question> }
+add_question_option  { question_id: <question>, label: "A", … }  → { id: <option_a> }
+add_question_option  { question_id: <question>, label: "B", … }  → { id: <option_b> }
+# block the branch tasks on the question, and tie the exclusive ones to an option:
+block_task_on_question { task_id: <task_a>, question_id: <question> }
+set_enabling_option    { task_id: <task_a>, option_id: <option_a> }   # exclusive to A
+block_task_on_question { task_id: <task_b>, question_id: <question> }
+set_enabling_option    { task_id: <task_b>, option_id: <option_b> }   # exclusive to B
+block_task_on_question { task_id: <task_shared>, question_id: <question> }  # non-exclusive
+# decide:
+resolve_open_question  { question_id: <question>, chosen_option_id: <option_a> }
+```
+
+Constraints:
+- Options must exist BEFORE resolving — `chosen_option_id` must be a valid option of that
+  question.
+- Resolving unblocks the chosen branch's exclusive tasks AND every non-exclusive blocked
+  task (`blocked→todo`), and cancels the OTHER branches' exclusive tasks — those whose
+  `enabling_option` does not match the chosen option (`→cancelled`). The whole resolution
+  emits exactly one event.
 
 ## Notes
 
@@ -165,5 +190,9 @@ The top-down build flow:
   siblings.
 - Soft-delete (`delete_work_item`) preserves history; `get_work_item` still returns a
   deleted item (with `deleted_at` populated), but `list_work_items` / `get_tree` hide it.
+- `record_task_activity`'s `entry_type` accepts ONLY `execution` / `vet` / `comment` —
+  the `verification` activity is appended internally by `check_acceptance_criterion`, not
+  via this tool. (So the enum-rejection note below is not an invitation to pass any
+  `ActivityType` value through `record_task_activity`.)
 - Illegal enum values (an out-of-set `kind` / `status` / `severity` / `entry_type` /
   `disposition`) are rejected as `invalid_params` before the write runs.

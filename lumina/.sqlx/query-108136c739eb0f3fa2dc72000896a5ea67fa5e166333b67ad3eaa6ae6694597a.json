@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT 1 AS \"one!\" FROM findings WHERE id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "one!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "108136c739eb0f3fa2dc72000896a5ea67fa5e166333b67ad3eaa6ae6694597a"
+}

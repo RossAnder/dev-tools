@@ -145,12 +145,13 @@ async fn create_work_item(
     State(state): State<AppState>,
     Json(req): Json<CreateWorkItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let id = repo::create_work_item(
+    let id = repo::create_work_item_with_origin(
         state.pool.as_ref(),
         &req.kind,
         req.parent_id.as_deref(),
         &req.title,
         req.body.as_deref(),
+        req.origin.as_deref(),
     )
     .await?;
 
