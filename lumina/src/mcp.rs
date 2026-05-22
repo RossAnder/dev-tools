@@ -653,7 +653,7 @@ impl LuminaTools {
         description = "Set a story's plan attributes (problem_statement/research_notes/execution_strategy) in one merge call. Records one event.",
         annotations(idempotent_hint = true, open_world_hint = false)
     )]
-    async fn set_story_plan(
+    pub async fn set_story_plan(
         &self,
         Parameters(p): Parameters<SetStoryPlanParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -760,7 +760,7 @@ impl LuminaTools {
         description = "Record one activity-log entry (execution/vet/comment) on a work item, with optional body/outcome. Records one event.",
         annotations(open_world_hint = false)
     )]
-    async fn record_task_activity(
+    pub async fn record_task_activity(
         &self,
         Parameters(p): Parameters<RecordTaskActivityParams>,
     ) -> Result<CallToolResult, ErrorData> {

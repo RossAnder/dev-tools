@@ -40,6 +40,16 @@ Do not bypass the hook with `--no-verify` on these files — drift in the `forbi
 
 The dev DB `lumina/lumina.db` is gitignored and recreated on demand by `db::init` (the startup path, which also runs the embedded migrations) or `sqlx migrate run`; `lumina import-flow <slug>` ingests one existing `.claude/flows/<slug>/` flow into the store.
 
+### MCP tool surface & the agent skill
+
+The MCP server (`lumina/src/mcp.rs`, rmcp 1.7 Streamable-HTTP, mounted at `/mcp`) exposes a domain-shaped surface of ~17 tools that an agent drives to define and execute work: read tools (`list_work_items`, `get_work_item`, `get_tree`, `get_sprint_view`), definition tools (`create_work_item`, `update_work_item`, `move_work_item`, `delete_work_item`, `set_story_plan`, `set_task_spec`, `create_context_block`, `link_context_block`), and execution tools (`record_task_activity`, `transition_status`, `add_finding`, `update_finding`, `resolve_finding`). Each tool maps to exactly one `repo::*` mutation (preserving the +1 work_items / +1 events single-mutation-path invariant) or composes existing reads; every write records one `events` outbox row in the same transaction, which the git-export drain later materialises. The `attributes` (kind-specific JSON, e.g. a story's `problem_statement`/`research_notes`/`execution_strategy` via `set_story_plan`) and per-item `activity` log (via `record_task_activity`, migration 0002) flow end-to-end DB → git-export snapshot → HTTP detail (`GET /api/work-items/{id}`), as exercised by the deterministic in-process threads in `lumina/tests/e2e.rs`.
+
+The companion agent-facing usage guide for this tool surface lives in the model-discoverable skill at `claude/skills/lumina/SKILL.md`.
+
+### Offline query-cache gate
+
+Always run `cd lumina && cargo sqlx prepare --check` after touching any `query!`/`query_as!` macro: it fails (non-zero) if the committed `lumina/.sqlx/` offline cache is stale against the macros in the source. The cache was generated with `--all-targets` (a superset including test-only queries), so a bare `--check` emits a benign `warning: potentially unused queries found in .sqlx` and still exits 0 — that warning is EXPECTED and must NOT be silenced by regenerating without `--all-targets` (doing so would drop the test-only entries and break the offline test build). Tests assert DB state via the RUNTIME `sqlx::query_scalar(...)` string API rather than the compile-checked macros, so adding a test introduces no new `.sqlx` cache entry.
+
 ## Testing discipline
 
 This repository ships three composable packages for standing up test infrastructure, enforcing test-first discipline, and authoring well-structured tests on demand. Use `/test-bootstrap` once per project, `/tdd` once per feature, and let the model invoke `test-author` automatically when test-writing is needed.
