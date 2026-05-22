@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM work_item_context WHERE work_item_id = ?1 AND context_block_id = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "dfc21f2279580b3fb516be3cc13eee2ff3402ffd5f8f0272169842a2e62387b7"
+}

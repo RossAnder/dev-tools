@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(seq), 0) + 1 AS \"next!\" FROM work_item_activity WHERE work_item_id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "next!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "684b89d3ab0ba3e2092f3c8ec986b1e2708493d4a3b17d6b6f00a3e9590da653"
+}

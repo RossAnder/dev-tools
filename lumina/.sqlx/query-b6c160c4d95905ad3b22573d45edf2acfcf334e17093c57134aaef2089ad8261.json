@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT kind AS \"kind!\", attributes AS \"attributes?\" FROM work_items WHERE id = ?1 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "kind!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "attributes?",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "attributes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "b6c160c4d95905ad3b22573d45edf2acfcf334e17093c57134aaef2089ad8261"
+}

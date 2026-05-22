@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE findings\n        SET status            = ?2,\n            resolved_at       = CURRENT_TIMESTAMP,\n            resolution        = COALESCE(?3, resolution),\n            wontfix_rationale = COALESCE(?4, wontfix_rationale)\n        WHERE id = ?1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "6cd2d844fe956ffa30671e10057c6fe358a8e29333986037175b3c687cb89cfe"
+}
