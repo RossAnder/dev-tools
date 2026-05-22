@@ -1,0 +1,205 @@
+schema_version = 1
+last_updated = 2026-05-22
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-22
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "a20818a758714f2f"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "additive-migration-0002"
+status = "done"
+files = ["lumina/migrations/0002_attributes_and_activity.sql"]
+commits = ["a51784d"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Migration 0002: attributes + deleted_at columns, work_item_activity table (FK cascade, UNIQUE(seq), json_valid CHECK), attributes-validity trigger pair"
+dedup_id = "06139566be1b7c3d"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "domain-structs-typed-enums"
+status = "done"
+files = ["lumina/src/domain.rs"]
+commits = ["ed9ad6b"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Domain: WorkItemActivity, Update{WorkItem,Finding}Request, five snake_case enums (Kind/Status/Severity/ActivityType/Disposition); WorkItem.attributes + WorkItemDetail.activity. schemars-schema test fixed to accept oneOf/const variant shape."
+dedup_id = "067e7c9057d9c31b"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "repository-write-paths-read-fold-sqlx-regen"
+status = "done"
+files = [
+    "lumina/src/repo.rs",
+    "lumina/.sqlx/",
+]
+commits = ["ed9ad6b"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Repo: 9 write fns under single-mutation-path (update_work_item, append_activity, set_work_item_attributes merge, reorder, context-block link/unlink, finding update/resolve, soft delete); activity+attributes read-fold; soft-delete reader policy; .sqlx regen with --all-targets."
+dedup_id = "b41633af6bbe807b"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "http-read-fold-generic-patch"
+status = "done"
+files = ["lumina/src/http.rs"]
+commits = ["79cc128"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "HTTP: detail+tree responses fold attributes+activity (free, structs serialize directly); status-only PATCH replaced with generic update_work_item handler returning 200 + Json(WorkItem). No new query! macro."
+dedup_id = "5b55ccf9e3a9c3a2"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "mcp-domain-tool-surface"
+status = "done"
+files = ["lumina/src/mcp.rs"]
+commits = ["79cc128"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "MCP: LuminaTools expanded 4->17 domain-shaped tools, 14 param structs, rmcp annotations (read_only/destructive/idempotent hints, open_world=false); set_story_plan/set_task_spec/get_sprint_view compose existing repo fns. No new compile-checked query! macro."
+dedup_id = "8a8ea81805d8e399"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "git-export-fold"
+status = "done"
+files = ["lumina/src/export.rs"]
+commits = ["79cc128"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Export: snapshot folds attributes (nested object round-trips) + ordered activity via Table::try_from; soft-deleted item rewritten in-place with top-level deleted_at tombstone, never file-deleted. query! reused a byte-identical cached query string so no .sqlx regen."
+dedup_id = "42e30e23e6d07078"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "git-export-fold"
+summary = "Export read deleted_at via a separate cache-safe query! rather than relying on get_work_item_detail to carry it"
+original_intent = "Per the task LANDED-CONTEXT, get_work_item_detail returns soft-deleted rows with deleted_at populated so the whole-struct serialize would carry the tombstone for free."
+rationale = "deleted_at is NOT a serialized field on WorkItem/WorkItemDetail, so the struct serialize cannot surface it. Reconciled in-cluster by reading deleted_at via a query! whose SQL string is byte-identical to an existing committed cache entry (hash 0915d3c2), injecting it at the TOML table top level. No .sqlx regen (verified cache byte-identical), no out-of-cluster domain.rs/repo.rs field addition needed."
+commits = ["79cc128"]
+dedup_id = "0e6dca45440d8e43"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "lumina-skill-doc"
+status = "done"
+files = ["claude/skills/lumina/SKILL.md"]
+commits = ["a183812"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Skill doc: claude/skills/lumina/SKILL.md with frontmatter trigger, all 17 tools grouped definition/execution/read, Streamable-HTTP connection idiom, top-down call patterns, and the lumina-is-data-layer-not-tomlctl-replacement framing."
+dedup_id = "4da0dbbc98f4855d"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "end-to-end-test-claudemd-note-offline-cache-gate"
+status = "done"
+files = [
+    "lumina/tests/e2e.rs",
+    "CLAUDE.md",
+    "lumina/src/mcp.rs",
+]
+commits = ["a183812"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "E2E thread extended (create->set_story_plan->task->record_task_activity; assert attributes+activity flow DB->export->HTTP), deterministic/sleep-free. CLAUDE.md documents new tool surface + skill + sqlx prepare --check gate. Orchestrator fixed event-count assertions (5-create chain => 7 events)."
+dedup_id = "1dea7b3c1b49f126"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "end-to-end-test-claudemd-note-offline-cache-gate"
+summary = "Made set_story_plan and record_task_activity pub in mcp.rs (outside Task 8's declared file set) so the external e2e crate can drive them"
+original_intent = "Task 8 owned only lumina/tests/e2e.rs + CLAUDE.md and would drive the new MCP tools via Parameters<T> helpers mirroring the existing mcp_create."
+rationale = "Those two tool methods were private async fn; only create_work_item was pub. The external integration test crate cannot call private methods (E0624). Orchestrator applied the minimal codebase-consistent fix: pub on both methods, mirroring the already-pub create_work_item."
+commits = ["a183812"]
+dedup_id = "644c00dd12f79946"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo build passed"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo test passed (40 tests: 38 lib + 2 e2e)"
+command = "cargo test --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "b3b9ad6e5fdf1d95"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo clippy clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "4860156a6c648e1f"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "offline cache gate clean (benign unused-queries warning expected)"
+command = "cd lumina && cargo sqlx prepare --check"
+outcome = "pass"
+dedup_id = "ea809fccbd153e73"
+
+[[items]]
+id = "E16"
+type = "status-transition"
+date = 2026-05-22
+agent = "plan-update"
+summary = "All 8 tasks complete and verified; flow status in-progress -> review pending /review and /optimise"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "775c81d4e3ef8b0a"

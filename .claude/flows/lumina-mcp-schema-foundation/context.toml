@@ -1,0 +1,22 @@
+slug = "lumina-mcp-schema-foundation"
+plan_path = "docs/plans/lumina-mcp-schema-foundation.md"
+status = "review"
+created = 2026-05-22
+updated = 2026-05-22
+branch = "main"
+scope = [
+    "lumina/**",
+    "claude/skills/lumina/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 8
+completed = 8
+in_progress = 8
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-mcp-schema-foundation/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-mcp-schema-foundation/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-mcp-schema-foundation/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-mcp-schema-foundation/plan-review-findings.toml"

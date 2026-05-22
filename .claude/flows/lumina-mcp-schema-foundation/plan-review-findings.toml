@@ -1,0 +1,162 @@
+schema_version = 1
+last_updated = 2026-05-22
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "warning"
+category = "executability"
+plan_section = "## Approach"
+summary = "Per-kind attributes + per-entry_kind payload validation contract under-specified; Task 3 'illegal attributes shape' acceptance is unwriteable"
+description = "Approach sketches attributes/payload with ?-suffixed keys and an unspecified dispatch?:{...}. Task 3 promises a typed Validation for an illegal attributes shape but never defines 'illegal'. Pin a per-kind key table (key set, type per key, reject-unknown-vs-allow-extra rule) and expand the dispatch sub-shape so the acceptance test is writeable."
+dedup_id = "18708f5d9776a9ab"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "set_story_plan/set_task_spec have no dedicated repo fn and merge-vs-replace is undecided (partial call can clobber sibling attributes keys)"
+description = "Task 5 lists set_story_plan/set_task_spec but Task 3's repo fns expose only set_work_item_attributes(id,&Value). A partial set_story_plan that omits research_notes would clobber it under a full-object write. Specify read-modify-merge inside set_work_item_attributes (present key overwrites, absent leaves) so partial setters compose; state which repo fn each tool calls."
+dedup_id = "c97f30207b9ec29a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Tasks"
+summary = "Soft-delete export: render_work_item skips only on NotFound and export_pending only ever writes; filtering get_work_item_detail leaves a stale live snapshot"
+description = "export.rs:174-178 render_work_item calls get_work_item_detail and returns early only on NotFound; export_pending never unlinks. If Task 3 adds deleted_at filtering to get_work_item_detail, a soft-deleted item's <id>.toml is never removed. Task 6 'removed/tombstoned' is two behaviours; the audit-trail decision argues against file removal. Decide tombstone-in-place (rewrite with a top-level deleted_at marker, never file-delete), add the write-branch, and test it."
+anchor_old = """
+so a soft-deleted item is
+  removed/tombstoned rather than re-rendered as live."""
+anchor_new = """
+so a soft-deleted item's snapshot is rewritten in-place with a
+  top-level `deleted_at` marker (tombstone; never file-deleted, preserving the
+  audit trail per the soft-delete decision)."""
+dedup_id = "ed1c1d8c964f6d73"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Approach"
+summary = "COALESCE(?, col) cannot clear body to NULL, contradicting body: Option<Option<String>> 'present+null clears'"
+description = "Approach prescribes COALESCE(?, col) as the single-statement partial update; COALESCE returns col whenever the bind is NULL, so a present-null can never write NULL. This is mutually exclusive with Task 2's 'present+null clears'. Either drop clear-to-NULL (use plain Option<String>) or use a CASE/dynamic clause and retract the 'one COALESCE statement covers any combination' claim."
+dedup_id = "b56992b7c3a4ba29"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope"
+summary = "import.rs DROPPED_ITEM_TYPES is exactly the new entry_kind set; importer discards the history the new model wants folded onto tasks, and import.rs is absent from Affected areas"
+description = "import.rs:171-178 drops deviation/verification/status-transition/reconcile/deferral/checkpoint, the same set as the plan's new entry_kind enum. The importer is the one path with execution history and it throws it away, contradicting the fold-onto-task principle. Add an explicit Out-of-scope bullet (importer activity-mapping deferred) or a task; either way name import.rs."
+dedup_id = "0cc54ee8b15531e4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Tasks"
+summary = "Generic PATCH return body unspecified; current handler returns 204 and api.ts handle<T> calls res.json() unconditionally (empty-body parse throws)"
+description = "http.rs:167 returns 204 No Content; api.ts:93 handle<T> does return (await res.json()) as T, so parsing an empty 204 body throws. Task 4's 'keep status semantics working' + 'no web change' is unverified. Specify the PATCH return shape and note the api.ts interaction (or confirm changeStatus discards the result)."
+dedup_id = "08b4c64bef1abbb9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "risk"
+plan_section = "## Tasks"
+summary = "Task 3 must run cargo sqlx prepare -- --all-targets, not bare prepare (CLAUDE.md: bare prepare drops test-only queries and breaks the offline test build)"
+description = "CLAUDE.md lumina section: the committed .sqlx cache was generated with cargo sqlx prepare -- --all-targets; a non-all-targets regen drops test-only query entries and breaks the offline test build. Correct Task 3's regen command."
+anchor_old = "(`cargo sqlx prepare`)"
+anchor_new = "(`cargo sqlx prepare -- --all-targets`, per the CLAUDE.md lumina cadence)"
+dedup_id = "b531bf4c4778042f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Tasks"
+summary = "Export serializes the whole WorkItemDetail to TOML; serde_json::Value attributes/payload with nulls or a scalar root can fail toml serialization and wedge the drain"
+description = "export.rs:188 toml::to_string_pretty(&detail). A serde_json::Value attributes/payload containing null values or a non-object root is a known toml serializer failure, turning every drain for that item into a logged failure. Normalize Value->TOML (strip nulls, objects-only) in the repo setter and assert a nested-object attributes snapshot serializes in the e2e (Task 8)."
+dedup_id = "a4a3681c23b9db3e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Task 3 [L] is oversized (~10 repo fns + read-fold + soft-delete + .sqlx regen); add a no-second-regen constraint to keep Wave-C parallel-safe"
+description = "Consider sequencing Task 3. Add an explicit constraint that Tasks 5/6 issue NO new query! macros touching new columns (route reads through Task-3 repo fns) so the .sqlx regen stays in Task 3 only; otherwise 4/5/6 contend on .sqlx/ and are no longer parallel-safe."
+dedup_id = "64bf812d958e4396"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Task 1 acceptance 'applies cleanly to the existing lumina/lumina.db' is not runnable while the port-8080 server holds the lock; the DB is gitignored/recreatable"
+description = "An executor running the acceptance verbatim with the server up gets a database-is-locked error. Make fresh/in-memory the authoritative gate and the live-DB a manual smoke-check requiring the server stopped."
+anchor_old = """
+`sqlx migrate run` applies cleanly to BOTH a fresh DB and the existing
+  `lumina/lumina.db`"""
+anchor_new = """
+`sqlx migrate run` applies cleanly to a fresh DB (authoritative gate;
+  in-memory/temp). Applying to the existing `lumina/lumina.db` is a manual
+  smoke-check that requires stopping the port-8080 server first (see Risks)"""
+dedup_id = "638d3924c6a164db"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Tasks"
+summary = "Task 5 must author per-tool Parameters<T> wrapper structs (precedent mcp.rs:96-125), not reuse domain request structs; add 2->4/2->5 doc edges"
+description = "Existing tools define local param structs (e.g. UpdateStatusParams at mcp.rs:119) because #[tool] needs id+fields in one struct; domain request structs lack id. Task 5's '~13 tools each need a wrapper struct' is unmentioned work. Dependency graph: add 2->4 and 2->5 documentation edges (ordering already safe via 3)."
+dedup_id = "a100bb8e73422207"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Tasks"
+summary = "Task 8 e2e needs new per-tool drive helpers; existing mcp_create is bound to CreateWorkItemRequest"
+description = "e2e.rs mcp_create constructs CreateWorkItemRequest literally; set_story_plan/record_task_activity take different Parameters<T> structs and need their own helpers mirroring the Parameters(...)->structured-content pattern. Note this in Task 8 so its size is not underestimated."
+dedup_id = "9a36e470d3ea8fc6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Scope"
+summary = "api.ts types position: number (non-null) but it is Option<i64> server-side; new move/reorder will emit null"
+description = "api.ts:18 position: number. New move_work_item/reorder will surface null position, violating the TS interface (type-soundness, not a runtime break since TS types are erased). Flag for Plan 2; add a one-sentence Scope note that the frontend ignores unknown keys so the new attributes/activity fields are safe-by-omission."
+dedup_id = "28e0188f846c9645"
