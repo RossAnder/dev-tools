@@ -549,7 +549,7 @@ mod tests {
         .expect("set nested attribute");
 
         // An activity entry.
-        repo::append_activity(&pool, &task, "execution", Some("bob"), "ran the task", None)
+        repo::append_activity(&pool, &task, "execution", Some("bob"), "ran the task", None, None)
             .await
             .expect("append activity");
 

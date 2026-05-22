@@ -119,6 +119,7 @@ async fn mcp_record_task_activity(
             summary: summary.to_owned(),
             body: None,
             outcome: Some(outcome.to_owned()),
+            origin: None,
         }))
         .await
         .expect("record_task_activity tool succeeds");

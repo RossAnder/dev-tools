@@ -367,7 +367,7 @@ mod tests {
         )
         .await
         .expect("set attributes");
-        repo::append_activity(&pool, &story_id, "comment", Some("alice"), "noted", None)
+        repo::append_activity(&pool, &story_id, "comment", Some("alice"), "noted", None, None)
             .await
             .expect("append activity");
         let state = AppState { pool: Arc::new(pool) };

@@ -595,6 +595,7 @@ async fn list_activity(
             author        AS "author?",
             summary       AS "summary!",
             payload       AS "payload?",
+            origin        AS "origin?",
             created_at    AS "created_at!"
         FROM work_item_activity
         WHERE work_item_id = ?1
@@ -615,6 +616,7 @@ async fn list_activity(
                 author: r.author,
                 summary: r.summary,
                 payload: decode_attributes(r.payload)?,
+                origin: r.origin,
                 created_at: r.created_at,
             })
         })
@@ -1356,6 +1358,7 @@ pub async fn append_activity(
     author: Option<&str>,
     summary: &str,
     payload: Option<&Value>,
+    origin: Option<&str>,
 ) -> Result<Uuid, AppError> {
     let entry_kind = validate_entry_kind(entry_kind)?;
 
@@ -1389,8 +1392,8 @@ pub async fn append_activity(
 
     sqlx::query!(
         r#"
-        INSERT INTO work_item_activity (id, work_item_id, seq, entry_kind, author, summary, payload)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        INSERT INTO work_item_activity (id, work_item_id, seq, entry_kind, author, summary, payload, origin)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         "#,
         id_str,
         work_item_id,
@@ -1399,6 +1402,7 @@ pub async fn append_activity(
         author,
         summary,
         payload_str,
+        origin,
     )
     .execute(&mut *tx)
     .await?;
@@ -1772,6 +1776,9 @@ pub struct NewFinding<'a> {
     pub fingerprint: Option<&'a str>,
     pub flow: Option<&'a str>,
     pub dedup_id: Option<&'a str>,
+    /// Provenance (migration 0003): which command produced this finding; free
+    /// TEXT in the DB (validated against the `Origin` enum at the MCP edge).
+    pub origin: Option<&'a str>,
     /// `high|medium|low` evidence grade (migration 0003); free TEXT in the DB.
     pub confidence: Option<&'a str>,
     pub resolved_at: Option<&'a str>,
@@ -1805,14 +1812,14 @@ pub async fn create_finding(
         INSERT INTO findings (
             id, work_item_id, kind, severity, effort, category, status,
             file, line, symbol, summary, description, first_flagged, rounds,
-            fingerprint, flow, dedup_id, confidence, resolved_at, resolution,
+            fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution,
             defer_reason, defer_trigger, wontfix_rationale
         )
         VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7,
             ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-            ?15, ?16, ?17, ?18, ?19, ?20,
-            ?21, ?22, ?23
+            ?15, ?16, ?17, ?18, ?19, ?20, ?21,
+            ?22, ?23, ?24
         )
         "#,
         id_str,
@@ -1832,6 +1839,7 @@ pub async fn create_finding(
         finding.fingerprint,
         finding.flow,
         finding.dedup_id,
+        finding.origin,
         finding.confidence,
         finding.resolved_at,
         finding.resolution,
@@ -2604,7 +2612,7 @@ mod tests {
         let story = seed_chain_to_story(&pool).await;
         let ev_before = count_events(&pool).await;
 
-        append_activity(&pool, &story, "execution", Some("alice"), "did a thing", None)
+        append_activity(&pool, &story, "execution", Some("alice"), "did a thing", None, None)
             .await
             .expect("first activity");
         append_activity(
@@ -2614,6 +2622,7 @@ mod tests {
             None,
             "second",
             Some(&serde_json::json!({ "k": "v", "drop_me": null })),
+            Some("implement"),
         )
         .await
         .expect("second activity");
@@ -2625,13 +2634,20 @@ mod tests {
         assert_eq!(detail.activity.len(), 2);
         assert_eq!(detail.activity[0].seq, 1);
         assert_eq!(detail.activity[1].seq, 2, "seq is monotonic per item");
+        // origin stamps round-trip: first entry omitted it (NULL), second set it.
+        assert_eq!(detail.activity[0].origin, None, "no origin ⇒ NULL");
+        assert_eq!(
+            detail.activity[1].origin.as_deref(),
+            Some("implement"),
+            "origin stamp persisted and round-tripped"
+        );
         // null-valued payload key was dropped on normalise.
         let payload = detail.activity[1].payload.as_ref().expect("payload");
         assert!(payload.get("k").is_some());
         assert!(payload.get("drop_me").is_none(), "null key dropped");
 
         // Unknown entry_kind ⇒ Validation.
-        let err = append_activity(&pool, &story, "nonsense", None, "x", None)
+        let err = append_activity(&pool, &story, "nonsense", None, "x", None, None)
             .await
             .expect_err("unknown entry_kind must error");
         assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
@@ -3110,7 +3126,12 @@ mod tests {
         let old = create_finding(
             &pool,
             &story,
-            &NewFinding { summary: Some("old"), confidence: Some("low"), ..NewFinding::default() },
+            &NewFinding {
+                summary: Some("old"),
+                confidence: Some("low"),
+                origin: Some("review"),
+                ..NewFinding::default()
+            },
         )
         .await
         .expect("old finding")
@@ -3129,6 +3150,8 @@ mod tests {
         assert_eq!(detail.findings.len(), 2, "both findings live");
         let old_f = detail.findings.iter().find(|f| f.id == old).expect("old in fold");
         assert_eq!(old_f.confidence.as_deref(), Some("low"));
+        // origin stamp round-trips from create through the findings fold.
+        assert_eq!(old_f.origin.as_deref(), Some("review"), "origin persisted from create");
 
         // update_finding honours confidence (set-or-leave).
         let req = UpdateFindingRequest {

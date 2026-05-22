@@ -73,8 +73,8 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::domain::{
-    ClosureGate, Complexity, CreateWorkItemRequest, Disposition, Effort, Kind, Relevance, Severity,
-    Status, UpdateResearchNoteRequest,
+    ClosureGate, Complexity, CreateWorkItemRequest, Disposition, Effort, Kind, Origin, Relevance,
+    Severity, Status, UpdateResearchNoteRequest,
 };
 use crate::error::AppError;
 use crate::repo;
@@ -313,6 +313,11 @@ pub struct RecordTaskActivityParams {
     /// Optional outcome, folded into the activity payload under `outcome`.
     #[serde(default)]
     pub outcome: Option<String>,
+    /// Optional provenance stamp (which command produced this activity);
+    /// one of `plan`/`implement`/`review`/`optimise`/`tdd`/`human`/`none`
+    /// (migration 0003).
+    #[serde(default)]
+    pub origin: Option<Origin>,
 }
 
 /// The execution-facing subset of [`crate::domain::ActivityType`] that
@@ -380,6 +385,10 @@ pub struct AddFindingParams {
     /// (migration 0003).
     #[serde(default)]
     pub confidence: Option<String>,
+    /// Optional provenance stamp (which command produced this finding); one of
+    /// `plan`/`implement`/`review`/`optimise`/`tdd`/`human`/`none` (migration 0003).
+    #[serde(default)]
+    pub origin: Option<Origin>,
 }
 
 /// Arguments for the `update_finding` write tool: a partial set-or-leave update.
@@ -981,6 +990,7 @@ impl LuminaTools {
             Some(serde_json::Value::Object(payload))
         };
 
+        let origin_str = p.origin.map(enum_to_str);
         let id = repo::append_activity(
             &self.pool,
             &p.work_item_id,
@@ -988,6 +998,7 @@ impl LuminaTools {
             p.author.as_deref(),
             &p.summary,
             payload_value.as_ref(),
+            origin_str.as_deref(),
         )
         .await
         .map_err(app_error_to_mcp)?;
@@ -1021,6 +1032,7 @@ impl LuminaTools {
         Parameters(p): Parameters<AddFindingParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let severity_str = p.severity.map(enum_to_str);
+        let origin_str = p.origin.map(enum_to_str);
         let finding = NewFinding {
             kind: p.kind.as_deref(),
             severity: severity_str.as_deref(),
@@ -1032,6 +1044,7 @@ impl LuminaTools {
             symbol: p.symbol.as_deref(),
             summary: p.summary.as_deref(),
             description: p.description.as_deref(),
+            origin: origin_str.as_deref(),
             confidence: p.confidence.as_deref(),
             ..NewFinding::default()
         };
@@ -1699,6 +1712,7 @@ mod tests {
                 summary: "did the thing".to_owned(),
                 body: Some("longer body".to_owned()),
                 outcome: Some("ok".to_owned()),
+                origin: None,
             }))
             .await
             .expect("record_task_activity succeeds");

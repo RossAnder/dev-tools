@@ -60,6 +60,8 @@ pub struct WorkItemActivity {
     pub author: Option<String>,
     pub summary: String,
     pub payload: Option<serde_json::Value>,
+    /// Provenance (migration 0003): which command produced this activity entry.
+    pub origin: Option<String>,
     pub created_at: String,
 }
 
