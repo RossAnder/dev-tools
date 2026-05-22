@@ -78,6 +78,88 @@ pub struct Finding {
     pub wontfix_rationale: Option<String>,
 }
 
+/// A row of `acceptance_criteria` (migration 0003): a per-task checkable
+/// criterion. Read aggregate only — `Serialize` but not `JsonSchema` (mirrors
+/// `WorkItem`/`Finding`/`WorkItemActivity`). All scalars (no nested table), so
+/// the export tables-last rule is trivially satisfied.
+#[derive(Debug, Clone, Serialize)]
+pub struct AcceptanceCriterion {
+    pub id: String,
+    pub work_item_id: String,
+    pub seq: i64,
+    pub text: String,
+    /// `0`/`1` flag mirrored from the INTEGER column; the repo flips it.
+    pub checked: i64,
+    pub checked_at: Option<String>,
+    pub checked_by: Option<String>,
+    pub created_at: String,
+}
+
+/// A row of `research_notes` (migration 0003): a first-class research record
+/// carrying confidence, accept/reject `state`, and a `superseded_by`
+/// supersession chain. Read aggregate only — `Serialize`, no `JsonSchema`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResearchNote {
+    pub id: String,
+    pub work_item_id: String,
+    pub seq: i64,
+    pub summary: String,
+    pub body: Option<String>,
+    /// `high|medium|low` evidence grade (free TEXT; validated in the repo).
+    pub confidence: Option<String>,
+    /// `proposed|accepted|rejected` lifecycle (free TEXT; validated in the repo).
+    pub state: Option<String>,
+    pub rationale: Option<String>,
+    pub lens: Option<String>,
+    pub origin: Option<String>,
+    /// Self-FK to the note that supersedes this one; live notes are
+    /// `superseded_by IS NULL`.
+    pub superseded_by: Option<String>,
+    pub created_at: String,
+}
+
+/// A row of `question_options` (migration 0003): one answer-option branch of an
+/// `open_questions` row. Read aggregate only — `Serialize`, no `JsonSchema`.
+#[derive(Debug, Clone, Serialize)]
+pub struct QuestionOption {
+    pub id: String,
+    pub question_id: String,
+    pub seq: i64,
+    pub label: String,
+    pub detail: Option<String>,
+    pub created_at: String,
+}
+
+/// A row of `open_questions` (migration 0003): a story-scoped decision with a
+/// lifecycle and a nested set of answer options. Read aggregate only —
+/// `Serialize`, no `JsonSchema`.
+///
+/// Declaration order honours the export tables-last rule: every scalar field is
+/// declared BEFORE the nested `options` array-of-tables, so
+/// `toml::to_string_pretty` (export, Task 7) does not hit `ValueAfterTable`.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenQuestion {
+    pub id: String,
+    pub story_id: String,
+    pub seq: i64,
+    pub question: String,
+    /// `open|answered|cancelled` lifecycle (free TEXT; validated in the repo).
+    pub status: Option<String>,
+    pub answer: Option<String>,
+    /// The `question_options` id picked on resolution (NULL while open).
+    pub chosen_option_id: Option<String>,
+    pub decided_at: Option<String>,
+    pub decided_by: Option<String>,
+    /// Back-link to the finding that surfaced this question.
+    pub prompting_finding_id: Option<String>,
+    /// Back-link to the research note that surfaced this question.
+    pub prompting_note_id: Option<String>,
+    pub created_at: String,
+    /// The answer-option branches (folded by the detail/export path). MUST stay
+    /// last — it is an array-of-tables and TOML rejects scalars after a table.
+    pub options: Vec<QuestionOption>,
+}
+
 /// A row of `context_blocks` — the drift-killer. Shared context is one row
 /// referenced by many work-items through `work_item_context`.
 #[derive(Debug, Clone, Serialize)]
@@ -293,6 +375,136 @@ pub enum Disposition {
     Duplicate,
 }
 
+/// The relevance axis (migration 0003) — structural guidance on what work is in
+/// play, replacing the dropped `active-flow` concept. Settable only on
+/// epic/feature/story (the repo rejects task/project); `create_work_item`
+/// defaults a new epic/feature/story to `backlog`. Serialises snake_case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Relevance {
+    /// In play now — the composer selects work under `active` ancestors.
+    Active,
+    /// Parked but not rejected; eligible to be promoted to `active`.
+    Backlog,
+    /// Set aside for now (a softer parking than `rejected`).
+    Deferred,
+    /// Decided against; kept for audit, not selected.
+    Rejected,
+}
+
+/// The effort grade (migration 0003) — drives batch sizing in the eventual
+/// composer. Distinct from `Complexity` (which drives model tier). NOTE the wire
+/// divergence: the serde/JSON wire form is lowercase `s|m|l` (snake_case); the
+/// plan-doc `S/M/L` is a display-only convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Effort {
+    /// Small (wire form `s`).
+    S,
+    /// Medium (wire form `m`).
+    M,
+    /// Large (wire form `l`).
+    L,
+}
+
+/// The complexity grade (migration 0003) — drives model-tier assignment in the
+/// eventual composer. A separate axis from `Effort` (batch sizing). Serialises
+/// snake_case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Complexity {
+    /// Low complexity.
+    Low,
+    /// Medium complexity.
+    Medium,
+    /// High complexity.
+    High,
+}
+
+/// Provenance (migration 0003) — which command produced this work item /
+/// finding / activity / research note. The load-bearing distinction is
+/// `plan` (created up front) vs `implement` (surfaced during implementation);
+/// `none` is the long-tail sentinel. Serialises snake_case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Origin {
+    /// Created up front during planning.
+    Plan,
+    /// Surfaced during implementation.
+    Implement,
+    /// Surfaced during a review pass.
+    Review,
+    /// Surfaced during an optimise pass.
+    Optimise,
+    /// Surfaced during a TDD cycle.
+    Tdd,
+    /// Authored directly by a human.
+    Human,
+    /// No specific provenance (the long-tail sentinel).
+    None,
+}
+
+/// The lifecycle `state` of a `research_notes` row (migration 0003):
+/// `proposed → accepted | rejected`, the accept/reject carrying a `rationale`.
+/// Serialises snake_case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchState {
+    /// Newly recorded; not yet curated.
+    Proposed,
+    /// Accepted into the design (carries a rationale).
+    Accepted,
+    /// Rejected (carries a rationale); kept for audit.
+    Rejected,
+}
+
+/// The lifecycle `status` of an `open_questions` row (migration 0003):
+/// `open → answered | cancelled`. Serialises snake_case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionStatus {
+    /// Awaiting a decision; blocks dependent tasks.
+    Open,
+    /// Resolved by picking an option.
+    Answered,
+    /// Abandoned without a decision.
+    Cancelled,
+}
+
+/// The per-story closure gate (migration 0003) — decides whether a task→done
+/// transition is rejected (`hard`) or merely flagged (`soft`, the default) while
+/// the story's acceptance criteria remain unchecked. Serialises snake_case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClosureGate {
+    /// Reject task→done while any acceptance criterion is unchecked.
+    Hard,
+    /// Allow task→done but surface the unchecked-criterion count (default).
+    Soft,
+}
+
+/// Partial-update body for a research note's curatable fields (migration 0003),
+/// consumed by the repo's `update_research_note` path (Task 4) and the matching
+/// MCP tool (Task 5). Every field is optional with SET-OR-LEAVE semantics
+/// (absent ⇒ column untouched, NOT cleared to NULL). `JsonSchema` is derived for
+/// the rmcp `Parameters<T>` contract.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct UpdateResearchNoteRequest {
+    /// New evidence grade (`high|medium|low`); absent leaves it unchanged.
+    #[serde(default)]
+    pub confidence: Option<String>,
+    /// New lifecycle state (`proposed|accepted|rejected`); absent leaves it
+    /// unchanged.
+    #[serde(default)]
+    pub state: Option<ResearchState>,
+    /// New accept/reject rationale; absent leaves it unchanged.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// New analytical lens; absent leaves it unchanged.
+    #[serde(default)]
+    pub lens: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +534,45 @@ mod tests {
         assert_snake(ActivityType::Vet, "vet");
         assert_snake(Disposition::VerifiedClean, "verified_clean");
         assert_snake(Disposition::Wontfix, "wontfix");
+    }
+
+    #[test]
+    fn planning_enums_round_trip_snake_case() {
+        assert_snake(Relevance::Active, "active");
+        assert_snake(Relevance::Backlog, "backlog");
+        assert_snake(Relevance::Deferred, "deferred");
+        assert_snake(Relevance::Rejected, "rejected");
+        // Effort wire form is lowercase s|m|l — divergent from the display S/M/L.
+        assert_snake(Effort::S, "s");
+        assert_snake(Effort::M, "m");
+        assert_snake(Effort::L, "l");
+        assert_snake(Complexity::Low, "low");
+        assert_snake(Complexity::Medium, "medium");
+        assert_snake(Complexity::High, "high");
+        assert_snake(Origin::Plan, "plan");
+        assert_snake(Origin::Implement, "implement");
+        assert_snake(Origin::Optimise, "optimise");
+        assert_snake(Origin::Tdd, "tdd");
+        assert_snake(Origin::None, "none");
+        assert_snake(ResearchState::Proposed, "proposed");
+        assert_snake(ResearchState::Accepted, "accepted");
+        assert_snake(QuestionStatus::Open, "open");
+        assert_snake(QuestionStatus::Cancelled, "cancelled");
+        assert_snake(ClosureGate::Hard, "hard");
+        assert_snake(ClosureGate::Soft, "soft");
+    }
+
+    #[test]
+    fn relevance_schema_lists_all_variants() {
+        let schema = schemars::schema_for!(Relevance);
+        let value = serde_json::to_value(&schema).expect("schema to value");
+        let mut got = Vec::new();
+        collect_schema_variants(&value, &mut got);
+        got.sort_unstable();
+        got.dedup();
+        let mut expected = ["active", "backlog", "deferred", "rejected"];
+        expected.sort_unstable();
+        assert_eq!(got, expected, "Relevance schema advertises all four variants");
     }
 
     /// Recursively collect every advertised string variant from a JSON schema
