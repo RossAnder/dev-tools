@@ -491,6 +491,119 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
+    /// `GET /api/work-items/{id}` folds the migration-0003 surface into the
+    /// detail response: the new scalar `WorkItem` columns (`relevance` on the
+    /// story, `effort`/`complexity` on the task) AND the three new child
+    /// collections (`acceptance_criteria`, `research_notes`, `open_questions`
+    /// with nested `options`). This is free via whole-struct serialization —
+    /// `get_work_item` returns `Json(detail)` straight from
+    /// `repo::get_work_item_detail` with no reshaping — so this test is the
+    /// regression lock that the handler never starts stripping the fields.
+    #[tokio::test]
+    async fn get_detail_includes_planning_surface() {
+        use crate::domain::{Complexity, Effort, Relevance};
+
+        let pool = connect_in_memory().await.expect("pool");
+        let (story_id, task_id) = seed_chain(&pool).await;
+
+        // New scalar columns on the story (relevance) and task (effort/complexity).
+        repo::set_relevance(&pool, &story_id, Relevance::Active)
+            .await
+            .expect("set relevance");
+        repo::set_effort(&pool, &task_id, Effort::S)
+            .await
+            .expect("set effort");
+        repo::set_complexity(&pool, &task_id, Complexity::Low)
+            .await
+            .expect("set complexity");
+
+        // The three new child collections, all hung off the story.
+        repo::add_acceptance_criterion(&pool, &story_id, "ships green")
+            .await
+            .expect("add acceptance criterion");
+        repo::add_research_note(
+            &pool,
+            &story_id,
+            "child table beats attributes array",
+            Some("per-item state needs its own row"),
+            Some("medium"),
+            Some("storage"),
+            Some("plan"),
+        )
+        .await
+        .expect("add research note");
+        let question_id = repo::add_open_question(&pool, &story_id, "hard or soft gate?")
+            .await
+            .expect("add open question");
+        repo::add_question_option(&pool, &question_id.to_string(), "hard", None)
+            .await
+            .expect("add question option");
+
+        let state = AppState { pool: Arc::new(pool) };
+
+        // Detail of the STORY: carries relevance + all three child collections.
+        let resp = build_router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{story_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+
+        // New scalar column on the story.
+        assert_eq!(
+            body["item"]["relevance"], "active",
+            "relevance scalar surfaces on the detail item"
+        );
+
+        // acceptance_criteria collection.
+        let acs = body["acceptance_criteria"]
+            .as_array()
+            .expect("acceptance_criteria array");
+        assert_eq!(acs.len(), 1, "one acceptance criterion folded in");
+        assert_eq!(acs[0]["text"], "ships green");
+        assert_eq!(acs[0]["checked"], 0, "newly added criterion is unchecked");
+
+        // research_notes collection.
+        let notes = body["research_notes"]
+            .as_array()
+            .expect("research_notes array");
+        assert_eq!(notes.len(), 1, "one research note folded in");
+        assert_eq!(notes[0]["summary"], "child table beats attributes array");
+        assert_eq!(notes[0]["confidence"], "medium");
+
+        // open_questions collection, with the nested options branch.
+        let questions = body["open_questions"]
+            .as_array()
+            .expect("open_questions array");
+        assert_eq!(questions.len(), 1, "one open question folded in");
+        assert_eq!(questions[0]["question"], "hard or soft gate?");
+        let options = questions[0]["options"]
+            .as_array()
+            .expect("nested options array");
+        assert_eq!(options.len(), 1, "one option branch folded in");
+        assert_eq!(options[0]["label"], "hard");
+
+        // Detail of the TASK: carries the effort/complexity scalars.
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{task_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["item"]["effort"], "s", "effort scalar surfaces (wire form s|m|l)");
+        assert_eq!(body["item"]["complexity"], "low", "complexity scalar surfaces");
+    }
+
     /// SPA fallback contract: an unknown non-`/api` path returns `index.html`
     /// with HTTP **200** (debug `ServeDir` fallback over the placeholder dist).
     /// This is the [resolves P9] acceptance — 200, not 404.

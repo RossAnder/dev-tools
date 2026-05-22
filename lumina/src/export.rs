@@ -656,4 +656,227 @@ mod tests {
         let path = dir.path().join("project").join(format!("{id}.toml"));
         assert!(path.exists(), "loop drained the outbox at {}", path.display());
     }
+
+    /// (Task 7, part 1) After adding a research note + an acceptance criterion +
+    /// an open question (with options) to real items via `repo::*`, the drained
+    /// snapshot round-trips all three new child collections, and a STORY snapshot
+    /// carries the `relevance` column. This proves the new `WorkItem` columns +
+    /// child collections ride along for FREE via the whole-struct
+    /// `toml::Table::try_from(&detail)` — no export-side reshape needed.
+    #[tokio::test]
+    async fn export_folds_new_columns_and_child_collections() {
+        use crate::domain::{ClosureGate, Relevance};
+
+        let pool = connect_in_memory().await.expect("pool");
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // Legal chain down to a story (relevance + open-question scope) and a task
+        // (acceptance-criteria scope).
+        let project = repo::create_work_item(&pool, "project", None, "P", None)
+            .await
+            .unwrap()
+            .to_string();
+        let epic = repo::create_work_item(&pool, "epic", Some(&project), "E", None)
+            .await
+            .unwrap()
+            .to_string();
+        let feature = repo::create_work_item(&pool, "feature", Some(&epic), "F", None)
+            .await
+            .unwrap()
+            .to_string();
+        let story = repo::create_work_item(&pool, "story", Some(&feature), "S", None)
+            .await
+            .unwrap()
+            .to_string();
+        let task = repo::create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .unwrap()
+            .to_string();
+
+        // Story-scoped: an explicit relevance (overriding the create default) and a
+        // closure gate (a story-only column) — both ride the WorkItem scalars.
+        repo::set_relevance(&pool, &story, Relevance::Active)
+            .await
+            .expect("set relevance");
+        repo::set_closure_gate(&pool, &story, ClosureGate::Hard)
+            .await
+            .expect("set closure gate");
+
+        // Story-scoped open question + two answer-option branches (the nested
+        // array-of-tables — the highest-risk export path).
+        let question = repo::add_open_question(&pool, &story, "DB engine?")
+            .await
+            .expect("add open question")
+            .to_string();
+        repo::add_question_option(&pool, &question, "sqlite", Some("embedded"))
+            .await
+            .expect("add option A");
+        repo::add_question_option(&pool, &question, "postgres", None)
+            .await
+            .expect("add option B");
+
+        // Task-scoped: an acceptance criterion + a research note.
+        repo::add_acceptance_criterion(&pool, &task, "It compiles offline")
+            .await
+            .expect("add criterion");
+        repo::add_research_note(
+            &pool,
+            &task,
+            "Hybrid storage holds",
+            Some("columns for queryable axes"),
+            Some("high"),
+            Some("storage"),
+            Some("plan"),
+        )
+        .await
+        .expect("add research note");
+
+        let drained = export_pending(&pool, dir.path()).await.expect("drain");
+        assert!(drained > 0, "events drained");
+
+        // --- Story snapshot: carries the new `relevance` (and `closure_gate`) column.
+        let story_path = dir.path().join("story").join(format!("{story}.toml"));
+        let story_raw = std::fs::read_to_string(&story_path).expect("read story snapshot");
+        let story_parsed: toml::Value = toml::from_str(&story_raw).expect("parse story TOML");
+        assert_eq!(
+            story_parsed["item"]["relevance"].as_str(),
+            Some("active"),
+            "story snapshot carries relevance"
+        );
+        assert_eq!(
+            story_parsed["item"]["closure_gate"].as_str(),
+            Some("hard"),
+            "story snapshot carries closure_gate"
+        );
+
+        // The story's open_questions(+options) round-trip as array-of-tables.
+        let questions = story_parsed["open_questions"]
+            .as_array()
+            .expect("open_questions array");
+        assert_eq!(questions.len(), 1, "one open question folded");
+        assert_eq!(questions[0]["question"].as_str(), Some("DB engine?"));
+        let options = questions[0]["options"].as_array().expect("options array");
+        assert_eq!(options.len(), 2, "two option branches folded");
+        assert_eq!(options[0]["label"].as_str(), Some("sqlite"));
+        assert_eq!(options[1]["label"].as_str(), Some("postgres"));
+
+        // --- Task snapshot: carries acceptance_criteria + research_notes.
+        let task_path = dir.path().join("task").join(format!("{task}.toml"));
+        let task_raw = std::fs::read_to_string(&task_path).expect("read task snapshot");
+        let task_parsed: toml::Value = toml::from_str(&task_raw).expect("parse task TOML");
+
+        let criteria = task_parsed["acceptance_criteria"]
+            .as_array()
+            .expect("acceptance_criteria array");
+        assert_eq!(criteria.len(), 1, "one acceptance criterion folded");
+        assert_eq!(criteria[0]["text"].as_str(), Some("It compiles offline"));
+
+        let notes = task_parsed["research_notes"]
+            .as_array()
+            .expect("research_notes array");
+        assert_eq!(notes.len(), 1, "one research note folded");
+        assert_eq!(notes[0]["summary"].as_str(), Some("Hybrid storage holds"));
+        assert_eq!(notes[0]["confidence"].as_str(), Some("high"));
+    }
+
+    /// (Task 7, part 2 — the tables-last RUNTIME gate) A round-trip
+    /// `toml::to_string_pretty` over a hand-built `WorkItemDetail` carrying a
+    /// POPULATED `open_questions` (each with a nested `options` array-of-tables).
+    /// This is the highest-risk path: a scalar declared AFTER a `Vec` on
+    /// `WorkItem`/`OpenQuestion`/`WorkItemDetail` would make the serializer fail
+    /// at runtime with `ValueAfterTable`. This drives the SAME `toml` call
+    /// `render_work_item` uses, so it gates the declaration order in `domain.rs`
+    /// without touching the DB. If this fails with `ValueAfterTable`, the fix
+    /// belongs in `domain.rs` declaration order (NOT this file) — escalate.
+    #[test]
+    fn open_questions_round_trip_gates_tables_last_ordering() {
+        use crate::domain::{OpenQuestion, QuestionOption, WorkItem, WorkItemDetail};
+
+        let item = WorkItem {
+            id: "wi-1".to_owned(),
+            kind: "story".to_owned(),
+            parent_id: Some("wi-0".to_owned()),
+            title: "S".to_owned(),
+            body: Some("a body".to_owned()),
+            status: "open".to_owned(),
+            position: Some(1),
+            attributes: Some(serde_json::json!({ "k": "v" })),
+            relevance: Some("active".to_owned()),
+            effort: Some("m".to_owned()),
+            complexity: Some("high".to_owned()),
+            origin: Some("plan".to_owned()),
+            closure_gate: Some("hard".to_owned()),
+            blocked_by_question_id: None,
+            enabling_option_id: None,
+            created_at: "2026-05-22T00:00:00Z".to_owned(),
+            updated_at: "2026-05-22T00:00:00Z".to_owned(),
+        };
+
+        let question = OpenQuestion {
+            id: "q-1".to_owned(),
+            story_id: "wi-1".to_owned(),
+            seq: 1,
+            question: "DB engine?".to_owned(),
+            status: Some("open".to_owned()),
+            answer: None,
+            chosen_option_id: None,
+            decided_at: None,
+            decided_by: None,
+            prompting_finding_id: None,
+            prompting_note_id: None,
+            created_at: "2026-05-22T00:00:00Z".to_owned(),
+            options: vec![
+                QuestionOption {
+                    id: "opt-1".to_owned(),
+                    question_id: "q-1".to_owned(),
+                    seq: 1,
+                    label: "sqlite".to_owned(),
+                    detail: Some("embedded".to_owned()),
+                    created_at: "2026-05-22T00:00:00Z".to_owned(),
+                },
+                QuestionOption {
+                    id: "opt-2".to_owned(),
+                    question_id: "q-1".to_owned(),
+                    seq: 2,
+                    label: "postgres".to_owned(),
+                    detail: None,
+                    created_at: "2026-05-22T00:00:00Z".to_owned(),
+                },
+            ],
+        };
+
+        let detail = WorkItemDetail {
+            item,
+            children: vec![],
+            findings: vec![],
+            context_blocks: vec![],
+            activity: vec![],
+            acceptance_criteria: vec![],
+            research_notes: vec![],
+            open_questions: vec![question],
+        };
+
+        // The SAME conversion render_work_item performs: whole-struct → table →
+        // to_string_pretty. A tables-last violation surfaces HERE as an Err.
+        let table = toml::Table::try_from(&detail)
+            .expect("WorkItemDetail serialises to a TOML table (no scalar/null root)");
+        let body = toml::to_string_pretty(&table).unwrap_or_else(|e| {
+            panic!(
+                "tables-last gate FAILED — toml::to_string_pretty errored ({e}); \
+                 a scalar is declared after a Vec on WorkItem/OpenQuestion/WorkItemDetail. \
+                 The fix belongs in domain.rs declaration order (cross-file — escalate)."
+            )
+        });
+
+        // Round-trips back and the nested options array survived.
+        let parsed: toml::Value = toml::from_str(&body).expect("re-parse rendered TOML");
+        let opts = parsed["open_questions"][0]["options"]
+            .as_array()
+            .expect("nested options array round-trips");
+        assert_eq!(opts.len(), 2);
+        assert_eq!(opts[0]["label"].as_str(), Some("sqlite"));
+        // A scalar that follows the nested options in WorkItemDetail's render order
+        // is still present (proves no truncation at the tables boundary).
+        assert_eq!(parsed["item"]["relevance"].as_str(), Some("active"));
+    }
 }
