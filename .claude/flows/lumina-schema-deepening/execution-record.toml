@@ -1,0 +1,320 @@
+schema_version = 1
+last_updated = 2026-05-22
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-22
+agent = "implement"
+summary = "Plan moved from draft to in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "309285fe23c2866b"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "additive-migration-0003"
+status = "done"
+files = [
+    "lumina/migrations/0003_planning_and_decisions.sql",
+    "lumina/tests/migration_0003.rs",
+]
+commits = ["bb4e3fd"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Migration 0003: 7 work_items cols, findings origin/confidence/superseded_by, activity origin, 4 FK child tables with CASCADE + UNIQUE(parent,seq); cascade/uniqueness test passes"
+dedup_id = "07c7079be1d478d4"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "additive-migration-0003"
+summary = "open_questions.chosen_option_id modelled as soft non-FK TEXT column"
+original_intent = "Plan enumerated hard FKs for story_id/prompting_finding_id/prompting_note_id but was silent on chosen_option_id"
+rationale = "A hard FK to question_options(id) creates a circular insert-ordering bind (question created before its options exist, then resolution sets chosen_option_id); left as plain TEXT with inline rationale comment"
+commits = ["bb4e3fd"]
+dedup_id = "30feea86390ff822"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "domain-structs-typed-enums"
+status = "done"
+files = ["lumina/src/domain.rs"]
+commits = ["302899e"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added 4 read structs, 7 typed enums, UpdateResearchNoteRequest + serde/schema tests (additive substrate). Field extensions to WorkItem/Finding/WorkItemDetail re-sequenced into Tasks 3/4 per deviation E5."
+dedup_id = "872ee37d70cab693"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "domain-structs-typed-enums"
+summary = "Field extensions to WorkItem/Finding/WorkItemDetail + request structs moved out of the isolated domain.rs task into the repo/MCP tasks"
+original_intent = "Plan Task 2 added all new fields to WorkItem/Finding/WorkItemDetail/CreateWorkItemRequest/UpdateFindingRequest in domain.rs as a standalone, build-green change"
+rationale = "Rust exhaustive struct literals (repo.rs read-site literals, mcp.rs update_finding + test literals, import.rs) and query_as!(Finding)/query! column lists couple every field addition to its construction sites in repo.rs (Task 3/4) and mcp.rs (Task 5); an isolated domain.rs commit cannot build. Re-sequenced: Task 3 absorbs WorkItem/WorkItemDetail/CreateWorkItemRequest.origin + read sites + mechanical mcp.rs/import.rs literal completion (built online vs migrated dev DB); Task 4 absorbs Finding/UpdateFindingRequest.confidence + mcp.rs:849 literal + the single .sqlx regen. End-state and design unchanged."
+commits = ["302899e"]
+dedup_id = "fbe26c8303ded937"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "repo-part-1-columns-acceptance-criteria-closure-gate"
+status = "done"
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/repo.rs",
+    "lumina/src/mcp.rs",
+    "lumina/tests/e2e.rs",
+]
+commits = ["19b0732"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "WorkItem +7 cols, WorkItemDetail acceptance_criteria fold, relevance/effort/complexity/closure_gate setters, acceptance-criteria CRUD (+verification activity), shared enforce_closure_gate on both task->done paths. Online build/test/clippy clean (46 lib + 2 e2e + 1 migration)."
+dedup_id = "8f083f1820d24d11"
+
+[[items]]
+id = "E7"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "repo-part-1-columns-acceptance-criteria-closure-gate"
+summary = "create_work_item origin threaded via an additive create_work_item_with_origin wrapper instead of a signature change"
+original_intent = "Plan Task 3 said create_work_item accepts origin"
+rationale = "Adding a positional origin param would break 38 call sites across 5 files including the fenced-off export.rs (15) and http.rs (9). An additive 6-arg create_work_item_with_origin wrapper keeps the 5-arg signature; the default relevance=backlog lands in the shared inner path so all callers (incl. importer) get it. A single-signature cleanup is deferred to a later refactor."
+commits = ["19b0732"]
+dedup_id = "d1a9efa677437dc0"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "repo-part-2-research-notes-open-questions-branch-resolution"
+status = "done"
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/repo.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/import.rs",
+    "lumina/.sqlx/",
+]
+commits = ["79ba72e"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Research-note CRUD/supersede, findings confidence+supersede with live-only fold, open-questions/options + branch resolution (one tx, one open_question.resolved event), real research_notes+open_questions folds, Finding/UpdateFindingRequest extensions, single .sqlx regen. Online build + 53 tests + clippy clean; sqlx prepare --check exit 0."
+dedup_id = "0ec8e7dc2cddbb5b"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "repo-part-2-research-notes-open-questions-branch-resolution"
+summary = "Finding confidence threaded via a NewFinding builder field instead of a separate create_finding param"
+original_intent = "Plan Task 4 said create_finding accepts confidence: Option<&str>"
+rationale = "create_finding takes a &NewFinding builder, the established idiom for every finding column; adding confidence as a NewFinding field keeps mcp.rs green (it uses ..NewFinding::default()) and required only a one-line confidence: None in import.rs exhaustive literal. A separate positional param would have broken both call sites more invasively."
+commits = ["79ba72e"]
+dedup_id = "76660f0f45270f56"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "mcp-domain-tools-new-surface"
+status = "done"
+files = ["lumina/src/mcp.rs"]
+commits = ["c100ee4"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "16 new MCP tools + Parameters structs, confidence threaded into add_finding/update_finding, advertisement+idempotent membership tests extended, resolve_open_question + invalid-enum tests. Offline build/test(58)/clippy clean."
+dedup_id = "459fe08de6392482"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "http-read-fold-new-collections"
+status = "done"
+files = ["lumina/src/http.rs"]
+commits = ["c100ee4"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Confirmed GET /api/work-items/{id} surfaces new columns + child collections free via serialization; added get_detail_includes_planning_surface regression test. No handler change needed."
+dedup_id = "49930f1d6d75676e"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "git-export-fold-new-collections"
+status = "done"
+files = ["lumina/src/export.rs"]
+commits = ["c100ee4"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Confirmed export carries new columns + collections free via toml::Table::try_from(&detail); added DB-driven fold test + a tables-last runtime gate over populated open_questions. No export-side change needed."
+dedup_id = "16bc34761a728ea2"
+
+[[items]]
+id = "E13"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "mcp-domain-tools-new-surface"
+summary = "origin not yet threaded into add_finding/record_task_activity — completing in a follow-up repo+mcp batch"
+original_intent = "Plan Origin approach: add_finding and record_task_activity accept origin and stamp findings.origin / work_item_activity.origin"
+rationale = "Migration 0003 added both columns but Tasks 3/4 did not thread origin through repo create_finding/NewFinding or append_activity; wiring it needs a repo.rs edit + new query! macro + .sqlx regen, which is forbidden mid Wave-C (parallel-safety). Task 5 correctly deferred rather than improvise. Being closed by a follow-up Wave-B-style batch before Task 8."
+commits = ["c100ee4"]
+dedup_id = "f783f248e3e1d482"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "thread-origin-finding-activity-write-paths"
+status = "done"
+files = [
+    "lumina/src/repo.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/domain.rs",
+    "lumina/src/import.rs",
+    "lumina/src/export.rs",
+    "lumina/src/http.rs",
+    "lumina/tests/e2e.rs",
+    "lumina/.sqlx/",
+]
+commits = ["475a3ee"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Closed E13: origin threaded through create_finding/NewFinding + append_activity; add_finding/record_task_activity MCP tools take typed Origin; WorkItemActivity+list_activity round-trip origin; .sqlx regen. Online build + 55 lib + 2 e2e + 1 migration tests + clippy clean; sqlx --check exit 0."
+dedup_id = "86545a96ff0646ae"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-22
+agent = "implement"
+task_ref = "end-to-end-test-claudemd-skillmd"
+status = "done"
+files = [
+    "lumina/tests/e2e.rs",
+    "CLAUDE.md",
+    "claude/skills/lumina/SKILL.md",
+]
+commits = ["ba264c1"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "e2e thread covers relevance/closure-gate/research-notes/open-question branch resolution + export + HTTP; CLAUDE.md tool count ~17->33; SKILL.md catalogue updated. cargo test (55 lib + 3 e2e + 1 migration) + clippy clean; sqlx --check exit 0."
+dedup_id = "f3dc570e64e34d3e"
+
+[[items]]
+id = "E16"
+type = "deviation"
+date = 2026-05-22
+agent = "implement"
+task_ref = "end-to-end-test-claudemd-skillmd"
+summary = "e2e drives the planning surface via public repo::* fns rather than the new MCP tool handlers"
+original_intent = "Plan Task 8 said to add in-process Parameters<T> drive helpers for the new tools"
+rationale = "Only 3 of the 33 #[tool] methods are pub; the migration-0003 tool handlers are private and unreachable from the external e2e integration crate, and mcp.rs was out of Task 8 scope. The e2e drives the public repo::* fns the tools wrap 1:1 (faithful DB->export->HTTP thread); tool advertisement/annotations/resolve_open_question behaviour are already asserted by mcp.rs own #[cfg(test)] suite."
+commits = ["ba264c1"]
+dedup_id = "75235e1328fbd8fb"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo build passed"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo test passed (55 lib + 3 e2e + 1 migration)"
+command = "cargo test --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "f79aebe50c96ccd2"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "cargo clippy --all-targets clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "1c850c0b8eb7a191"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-05-22
+agent = "implement"
+summary = "sqlx prepare --check exit 0 (benign unused-queries warning expected)"
+command = "cargo sqlx prepare --check"
+outcome = "pass"
+dedup_id = "95bf9a4af6fa56ec"
+
+[[items]]
+id = "E21"
+type = "status-transition"
+date = 2026-05-22
+agent = "plan-update"
+summary = "All plan tasks implemented and verified; moving to review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "367ad6b1f1ae9fd9"
+
+[[items]]
+id = "E22"
+type = "deviation"
+date = 2026-05-22
+agent = "plan-update"
+task_ref = "repo-part-2-research-notes-open-questions-branch-resolution"
+summary = "open_question add/option_added/resolved events re-routed to the owning story work_item aggregate so the open-question surface reaches git-export (R1)"
+original_intent = "open_question lifecycle events recorded with aggregate_type=open_question"
+rationale = "export drain only renders work_item aggregates, so open_question-typed events never materialised the story snapshot; re-routing to the story work_item aggregate keeps event count unchanged while restoring export coverage"
+dedup_id = "7b18736cd9ba5af1"
+
+[[items]]
+id = "E23"
+type = "deviation"
+date = 2026-05-22
+agent = "plan-update"
+task_ref = "git-export-fold-new-collections"
+summary = "export_pending re-renders a resolved question blocked tasks on open_question.resolved, preserving the one-event invariant (R2)"
+original_intent = "git-export fold materialises the new collections via whole-struct serialize"
+rationale = "resolve_open_question transitions task rows without per-task events, leaving their snapshots stale; rather than emit per-task events (which would break the plan exactly-one-open_question.resolved-event invariant), export re-renders affected tasks via a runtime query keyed on a question_id added to the resolve payload (user-confirmed)"
+dedup_id = "7d789fd1431079c8"
+
+[[items]]
+id = "E24"
+type = "deviation"
+date = 2026-05-22
+agent = "plan-update"
+task_ref = "repo-part-1-columns-acceptance-criteria-closure-gate"
+summary = "enforce_closure_gate doc comment pins the closure-gate semantic: story-level flag, task-scoped criteria (R8)"
+original_intent = "per-story closure_gate blocks task done while acceptance criteria are unchecked"
+rationale = "the plan left ambiguous whose criteria gate the task; the implemented and tested behaviour counts the task own criteria under the parent story hard flag - documented precisely, no code-path change"
+dedup_id = "311a7efc35c6b8fc"

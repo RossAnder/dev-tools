@@ -1,0 +1,673 @@
+schema_version = 1
+last_updated = 2026-05-22
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R1"
+file = "lumina/src/repo.rs"
+line = 2080
+symbol = "add_open_question/add_question_option/resolve_open_question"
+severity = "critical"
+effort = "small"
+category = "db"
+summary = 'open_question.* events use aggregate_type "open_question" which the export drain never renders — story snapshots silently miss questions/options/resolutions'
+description = """record_event is called with aggregate_type="open_question" at repo.rs:2080 (added), :2134 (option_added) and :2304 (resolved), but export.rs:137 only re-renders aggregates where aggregate_type=="work_item"; any other type is stamped exported_at and writes no file. Open questions fold into the owning STORY's WorkItemDetail, so a story whose only change is a question add/resolve is never re-exported and its TOML snapshot omits the decision. Sibling child writes (add_acceptance_criterion repo.rs:1093, add_research_note) correctly use "work_item" + the owning id. The e2e passes only because the test independently emits work_item events on the same story. Fix: emit these events with aggregate_type="work_item" + aggregate_id=story_id."""
+evidence = [
+    "repo.rs:2080",
+    "repo.rs:2134",
+    "repo.rs:2304",
+    "export.rs:137",
+    "repo.rs:1093",
+]
+dedup_id = "9242fc1ab267478e"
+resolved = 2026-05-22
+resolution = "Re-routed open_question added/option_added/resolved events to the owning story's work_item aggregate so they reach git-export; event count unchanged (uncommitted)"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R2"
+file = "lumina/src/repo.rs"
+line = 2271
+symbol = "resolve_open_question"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "resolve_open_question transitions task rows (blocked→todo/cancelled) but emits no work_item event for them, so their export snapshots never re-render"
+description = "Steps 2 and 3 (repo.rs:2271, :2287) UPDATE potentially many work_items.status rows, but the only event is the single open_question.resolved (repo.rs:2304). The affected tasks get no outbox event, so the export drain never re-renders their <id>.toml — a task flipped to cancelled keeps a stale 'blocked' snapshot. The 'exactly one event' rule collides with the per-aggregate render model (export keys off aggregate_id). Fix: emit one work_item.status_changed event per transitioned task in the same tx, or have export re-render the resolution's affected tasks."
+evidence = [
+    "repo.rs:2271",
+    "repo.rs:2287",
+    "repo.rs:2304",
+    "export.rs:137",
+]
+related = ["R1"]
+dedup_id = "efd221ce7700cea1"
+resolved = 2026-05-22
+resolution = "export_pending re-renders a resolved question's blocked tasks on open_question.resolved (runtime query keyed on payload question_id); one-event invariant preserved (uncommitted)"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R3"
+file = "lumina/src/repo.rs"
+line = 2144
+symbol = "block_task_on_question/set_enabling_option"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "block_task_on_question and set_enabling_option never validate the target is a task nor that the question/option exists"
+description = "Every other scoped setter reads work_item_kind first and rejects the wrong kind (set_effort repo.rs:943, add_open_question repo.rs:2049). block_task_on_question (repo.rs:2144) and set_enabling_option (repo.rs:2179) UPDATE work_items by id with no kind check, so a story/epic can be set status='blocked'. They also never verify question_id/option_id exist (plain TEXT columns, no FK per migration 0003), so a typo sets a dangling pointer and pins the row to status='blocked' with no way for resolve to ever unblock it. Fix: add the kind!=task Validation guard and a SELECT-1 existence check, mirroring set_effort."
+evidence = [
+    "repo.rs:2144",
+    "repo.rs:2179",
+    "repo.rs:943",
+]
+dedup_id = "013b3c811b8200b1"
+resolved = 2026-05-22
+resolution = "Added kind!=task Validation + question/option existence guards to block_task_on_question & set_enabling_option"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R4"
+file = "lumina/src/repo.rs"
+line = 2226
+symbol = "resolve_open_question"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "resolve_open_question does not reject an already-answered question — re-resolving overwrites chosen_option_id and emits a duplicate event"
+description = "open_question_story (repo.rs:2233) only checks existence, not status. Calling resolve twice re-runs the UPDATEs and emits a second open_question.resolved event, overwriting chosen_option_id/decided_at. Because steps 2/3 filter on status='blocked', a task blocked on the question AFTER the first resolve would be swept by the wrong (second) decision. The MCP idempotent_hint=true (mcp.rs:1679) advertises idempotency the code does not enforce. Fix: read the question status and reject if not 'open' with a typed Validation."
+evidence = [
+    "repo.rs:2232",
+    "repo.rs:2253",
+    "mcp.rs:1679",
+]
+dedup_id = "506a321ae0193620"
+resolved = 2026-05-22
+resolution = "resolve_open_question now rejects a non-open question with Validation (real idempotency)"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R5"
+file = "lumina/src/http.rs"
+line = 148
+symbol = "create_work_item (HTTP POST)"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "HTTP POST /api/work-items silently drops the origin field — calls the 5-arg create_work_item, not create_work_item_with_origin"
+description = "CreateWorkItemRequest.origin was added (domain.rs:232) and the MCP tool routes it to create_work_item_with_origin (mcp.rs:792). The HTTP handler (http.rs:148) calls the 5-arg repo::create_work_item, so any origin sent over HTTP deserializes then is silently ignored (no deny_unknown_fields). Fix: route the HTTP handler through create_work_item_with_origin passing req.origin.as_deref()."
+evidence = [
+    "http.rs:148",
+    "mcp.rs:792",
+    "domain.rs:232",
+]
+dedup_id = "d49bee01595b5ac3"
+resolved = 2026-05-22
+resolution = "HTTP POST /work-items now calls create_work_item_with_origin with req.origin.as_deref()"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R6"
+file = "lumina/src/repo.rs"
+line = 1232
+symbol = "remove_acceptance_criterion"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "repo::remove_acceptance_criterion is implemented and pub but has no MCP tool — the AC lifecycle is add/check/uncheck only from the agent surface"
+description = "Plan Task 3 lists remove_acceptance_criterion in the AC CRUD set and the repo fn is fully implemented (repo.rs:1232: hard-delete + NotFound + event), but no #[tool] wrapper exists in mcp.rs (grep confirms absence) and SKILL.md does not list it. Agents cannot delete a criterion via MCP. Either add the tool or drop the pub and document AC deletion as repo-only."
+evidence = [
+    "repo.rs:1232",
+    "mcp.rs (no remove_acceptance_criterion tool)",
+]
+dedup_id = "fc1e36e98a53b39c"
+resolved = 2026-05-22
+resolution = "Added remove_acceptance_criterion MCP tool (+ advertisement membership + exact-count) and SKILL.md/CLAUDE.md catalogue; tool total 33->34"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R7"
+file = "lumina/src/repo.rs"
+line = 1665
+symbol = "supersede_finding/supersede_research_note"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "supersede_* don't assert the new id exists; doc comment claims a soft self-FK but the schema column is a hard FK, so a typo 500s instead of a clean 422"
+description = "supersede_finding (repo.rs:1665) and supersede_research_note (repo.rs:2006) write superseded_by=new_id without verifying new_id resolves. The doc comment (repo.rs:1655) says it is 'a soft self-FK ... not asserted here', but migration 0003 declares superseded_by as a REFERENCES column and foreign_keys is ON per-connection — so a non-existent new_id aborts with an FK Db error surfaced as 500, not the intended soft behaviour. Fix: pre-check new_id for a typed Validation (mirror resolve_open_question's option-ownership check), or drop the FK to make it genuinely soft."
+evidence = [
+    "repo.rs:1665",
+    "repo.rs:2006",
+    "repo.rs:1655",
+]
+dedup_id = "9293dfe3e467c5be"
+resolved = 2026-05-22
+resolution = "supersede_finding/supersede_research_note validate new_id exists (clean 422 not FK 500); corrected the misleading doc comment"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R8"
+file = "lumina/src/repo.rs"
+line = 839
+symbol = "enforce_closure_gate"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Closure gate reads the closure_gate flag from the parent STORY but counts unchecked criteria on the TASK itself — story-level acceptance criteria do not gate"
+description = "enforce_closure_gate reads the immediate parent story's closure_gate (repo.rs:833) but the unchecked-criteria count queries acceptance_criteria WHERE work_item_id = task_id (repo.rs:840). So criteria attached to the story (which add_acceptance_criterion permits for any work_item_id) never gate; only criteria attached to the task do. The plan/SKILL describe a 'per-story' gate without specifying whose criteria. This is a real semantic ambiguity, not necessarily a bug — decide and document whether criteria are expected on the task or the story, and align the query."
+evidence = [
+    "repo.rs:833",
+    "repo.rs:840",
+    "repo.rs:1058",
+]
+dedup_id = "687af243db3ebc09"
+resolved = 2026-05-22
+resolution = "Clarified enforce_closure_gate doc: story-level closure_gate flag, task-scoped criteria; no code-path change"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R9"
+file = "lumina/src/mcp.rs"
+line = 535
+symbol = "AddResearchNoteParams"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "add_research_note origin/confidence are raw Option<String> at the MCP edge while create_work_item/add_finding take the typed Origin enum — same field, two validation contracts"
+description = "create_work_item and add_finding take origin: Option<Origin> (mcp.rs:320/391) so an illegal origin is a schema-level reject, but AddResearchNoteParams.origin/.confidence are plain Option<String> (mcp.rs:535/541) passed straight through as free TEXT, even though the wire docs advertise the closed enum set. Type origin as Origin on AddResearchNoteParams for parity, and decide whether confidence should be a typed enum everywhere (it is free TEXT in all three today)."
+evidence = [
+    "mcp.rs:535",
+    "mcp.rs:541",
+    "mcp.rs:320",
+]
+dedup_id = "d16c94248eb6cb5a"
+resolved = 2026-05-22
+resolution = "AddResearchNoteParams.origin retyped to Option<Origin> (enum_to_str at call site); confidence left free-text for cross-tool consistency"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R10"
+file = "lumina/src/repo.rs"
+line = 57
+symbol = "*_to_str helpers"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Nine byte-identical *_to_str helpers differ only in the enum type; a generic enum_to_str<T: Serialize> already exists in mcp.rs:122"
+description = "repo.rs:57-127 defines nine functions with identical bodies (match serde_json::to_value(x) { Ok(String(s)) => s, _ => unreachable! }). mcp.rs:122 already has the generic enum_to_str<T: Serialize>. Sharing one generic removes ~70 lines and a class of copy-paste drift (e.g. an unreachable! message naming the wrong enum). Pure DRY, no behaviour change."
+evidence = [
+    "repo.rs:57",
+    "mcp.rs:122",
+]
+dedup_id = "dbb6abf500aba71e"
+resolved = 2026-05-22
+resolution = "Collapsed nine identical *_to_str helpers into one generic enum_to_str<T: Serialize>; all repo.rs call sites updated"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "wontfix"
+flow = "lumina-schema-deepening"
+id = "R11"
+file = "lumina/src/repo.rs"
+line = 1599
+symbol = "update_finding"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "update_finding writes a free-text status with no enum validation, unlike every other status-bearing path"
+description = "update_finding writes req.status into findings.status via COALESCE with no validation (repo.rs:1614), and UpdateFindingParams.status (mcp.rs:411) is a plain Option<String>, so an arbitrary string is persisted. resolve_finding by contrast renders a typed Disposition. Type the param or validate against the known set in the repo."
+evidence = [
+    "repo.rs:1614",
+    "mcp.rs:411",
+]
+dedup_id = "6f8315082467e4c1"
+wontfix_rationale = "Legal finding-status set is genuinely ambiguous: update_finding.status is free TEXT seeded by heterogeneous review/optimise importers (arbitrary strings); only the separate resolve_finding path constrains to a Disposition. Validating risks rejecting valid imported statuses. Skipped per the finding's own guidance; revisit if a finding-status enum is introduced."
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R12"
+file = "lumina/src/repo.rs"
+line = 2154
+symbol = "block_task_on_question"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "block_task_on_question clobbers status to 'blocked' unconditionally; an in_progress task returns as 'todo' on unblock, losing progress state"
+description = "The UPDATE sets status='blocked' regardless of current status (repo.rs:2154). On resolve the chosen branch goes to 'todo' (repo.rs:2274), so a task that was in_progress when blocked comes back as todo with no record of the prior status. Either guard block to only-from todo/open, or capture prior status (e.g. in the activity log) so resolve can restore it."
+evidence = [
+    "repo.rs:2154",
+    "repo.rs:2274",
+]
+dedup_id = "3251a63bebc84521"
+resolved = 2026-05-22
+resolution = "block_task_on_question rejects unless current status is todo/open, preventing silent in_progress->todo downgrade on unblock"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R13"
+file = "lumina/src/repo.rs"
+line = 1450
+symbol = "set_work_item_attributes"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "set_work_item_attributes silently discards a corrupt stored attributes blob (Ok(_) | Err(_) => Map::new()) instead of surfacing the corruption"
+description = "At repo.rs:1450 a non-object or unparseable existing attributes column makes the merge start from an empty map, dropping whatever was stored then writing the patch over a blank base. decode_attributes (repo.rs:45) treats the same corruption as a 500 on the read path, so the two paths disagree (read 500s, merge-write data-loses). Return AppError::Other on the Err/non-object arm to fail loudly, matching decode_attributes. (Pre-existing pattern; flagged as in-scope.)"
+evidence = [
+    "repo.rs:1450",
+    "repo.rs:45",
+]
+dedup_id = "588d3c943d7ad8ee"
+resolved = 2026-05-22
+resolution = "set_work_item_attributes returns AppError::Other on a corrupt attributes blob instead of silently discarding it"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R14"
+file = "lumina/migrations/0003_planning_and_decisions.sql"
+line = 67
+symbol = "superseded_by / prompting_finding_id / prompting_note_id"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "Self-FKs (findings/research_notes.superseded_by) and back-links (prompting_finding_id/prompting_note_id) default to ON DELETE NO ACTION; intended deletion semantics undocumented"
+description = "superseded_by (lines 67, 121) and the open_questions back-links (lines 151-152) default to NO ACTION. No hard-delete path exists today so nothing dangles, but a future finding/note delete would either be blocked by NO ACTION (opaque 500) or, if CASCADE were added carelessly, delete the superseded predecessor too. Document the intended semantics now (likely ON DELETE SET NULL — supersession is a soft pointer) so a later delete path doesn't inherit NO ACTION by accident."
+evidence = [
+    "0003_planning_and_decisions.sql:67",
+    "0003_planning_and_decisions.sql:121",
+    "0003_planning_and_decisions.sql:151",
+]
+dedup_id = "9a6847fd6a0d0067"
+resolved = 2026-05-22
+resolution = "Documented intended ON DELETE semantics (NO ACTION today; future SET NULL) in a repo.rs comment; migration untouched to preserve sqlx checksum"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "wontfix"
+flow = "lumina-schema-deepening"
+id = "R15"
+file = "lumina/src/import.rs"
+line = 223
+symbol = "create_work_item calls"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Plan scope said import.rs would be 'touched to thread origin' but it was not modified — imported items get origin NULL"
+description = "The plan scope (lines 68-70) states import.rs is touched to thread origin through its create_work_item calls. All three calls (import.rs:223/259/296) use the 5-arg wrapper, which delegates to create_work_item_with_origin(..., None) — so default relevance='backlog' IS applied (not a functional gap) but origin is always NULL. Either thread an origin value (e.g. 'human'/'plan') or correct the plan-scope statement; the discrepancy creates a false expectation."
+evidence = [
+    "import.rs:223",
+    "repo.rs:697",
+]
+dedup_id = "daa9f68478f710ea"
+wontfix_rationale = "import.rs is functionally correct: imported epic/feature/story rows already default relevance=backlog, and origin=none (NULL) is correct since no 'import' Origin variant exists. The discrepancy is in the plan-scope prose ('touched to thread origin'), not the code; correcting prose is out of scope for /review-apply code edits - flag for /plan-update."
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R16"
+file = "lumina/src/repo.rs"
+line = 1604
+symbol = "update_finding"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "update_finding event payload records severity/status as null when the caller left them unset, indistinguishable from 'set to null'"
+description = "The event payload at repo.rs:1643 always carries { severity, status } even when both are None (description-only update), recording null where 'unchanged' was meant. update_work_item (repo.rs:1338) handles this more honestly with an attributes_set flag. Omit absent fields or record which fields actually changed for audit clarity."
+evidence = [
+    "repo.rs:1643",
+    "repo.rs:1338",
+]
+dedup_id = "09a4a5e3684af5e2"
+resolved = 2026-05-22
+resolution = "update_finding event payload now omits absent severity/status fields (no misleading nulls)"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R17"
+file = "lumina/tests/e2e.rs"
+line = 667
+symbol = "full_thread_planning_and_decisions_db_export_http"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "e2e export drain asserts drained >= 1 instead of an exact count, unlike the 0002 thread which asserts == 7"
+description = "At e2e.rs:667 the assertion is assert!(drained >= 1). The 0002 thread (e2e.rs:366) asserts assert_eq!(drained, 7). The 0003 thread performs ~22 event-emitting writes, so a loose lower bound cannot catch a drain that short-circuits early — and combined with R1/R2 (open_question events that produce no file) an exact count here would have surfaced the export gap. Assert the exact expected event count."
+evidence = [
+    "e2e.rs:667",
+    "e2e.rs:366",
+]
+related = [
+    "R1",
+    "R2",
+]
+dedup_id = "5dcb223862b80f47"
+resolved = 2026-05-22
+resolution = "e2e export-drain assertion tightened to assert_eq!(drained, 26); confirmed by passing e2e"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R18"
+file = "lumina/src/repo.rs"
+line = 2845
+symbol = "hard_gate_blocks_then_allows_task_done"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Hard-gate test uses a single criterion; the multi-criterion partial-check path (one checked, one unchecked → still blocked) is not exercised"
+description = "The plan requires 'allows once ALL checked'. The test (repo.rs:2845) adds one criterion, checks it, asserts done allowed. A bug counting total rows instead of unchecked rows would pass this single-criterion test. Add a two-criterion case asserting that checking only one still blocks the transition."
+evidence = [
+    "repo.rs:2845",
+    "repo.rs:840",
+]
+dedup_id = "8cb123ca7f3378e7"
+resolved = 2026-05-22
+resolution = "Added hard_gate_multi_criterion_partial_check_still_blocks test (one-of-two checked still blocks task->done)"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R19"
+file = "lumina/src/mcp.rs"
+line = 1508
+symbol = "tool advertisement test"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Tool-advertisement test asserts membership of 33 names but not that the total count is exactly 33"
+description = "The test (mcp.rs:1508) iterates a hard-coded list and asserts each name is present, with no assert_eq!(names.len(), 33). A future stray #[tool] (or, conversely, the missing remove_acceptance_criterion of R6) would not be caught — the test only checks listed names are present, not that the set is exactly the expected set. Add an exact-count or set-equality assertion."
+evidence = ["mcp.rs:1508"]
+related = ["R6"]
+dedup_id = "41b33041fd277575"
+resolved = 2026-05-22
+resolution = "Added assert_eq!(tool count, 34) exact-count assertion to the tool-advertisement test"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R20"
+file = "lumina/tests/migration_0003.rs"
+line = 132
+symbol = "migration_0003_applies_and_cascades_hold"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "UNIQUE(parent,seq) is tested only for acceptance_criteria; research_notes/open_questions/question_options are untested"
+description = "The migration test checks one UNIQUE violation (migration_0003.rs:132-147). The plan AC says 'UNIQUE(parent,seq) holds' across all four child tables. A schema mistake dropping the constraint from question_options or research_notes would not be caught. Add a duplicate-insert assertion per child table."
+evidence = ["migration_0003.rs:132"]
+dedup_id = "8a6b9de8d7fb9aa3"
+resolved = 2026-05-22
+resolution = "Extended UNIQUE(parent,seq) test coverage to research_notes, open_questions, question_options"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R21"
+file = "lumina/src/mcp.rs"
+line = 1839
+symbol = "resolve_open_question_tool_unblocks_and_cancels_branches"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "MCP/e2e resolve tests omit the non-exclusive (NULL enabling_option) unblock path and do not assert the question's own status='answered'/chosen_option_id persisted"
+description = "The repo test covers a non-exclusive blocked task (repo.rs:3006) but the MCP test (mcp.rs:1839) and e2e wire only two exclusive tasks, so removing the 'OR enabling_option_id IS NULL' clause (repo.rs:2277) would still pass at those layers. The MCP test also asserts only task statuses + event count, never reading back the open_questions row to confirm status='answered' and chosen_option_id. Add a non-exclusive task and a question-state assertion."
+evidence = [
+    "mcp.rs:1924",
+    "repo.rs:3006",
+    "repo.rs:2277",
+]
+dedup_id = "90db4184adbe0320"
+resolved = 2026-05-22
+resolution = "resolve_open_question tool test adds a non-exclusive blocked task (->todo) and asserts question status=answered + chosen_option_id"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R22"
+file = "claude/skills/lumina/SKILL.md"
+line = 96
+symbol = "set_closure_gate"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "SKILL.md says set_closure_gate hard rejects task→done while 'the task's acceptance criteria' are unchecked — the flag is set on the story"
+description = "SKILL.md:96 wording implies tasks carry and self-gate criteria. The ClosureGate enum (domain.rs) and the mcp.rs tool description say the gate is the story's. Clarify: closure_gate is set on the story and blocks its child tasks from →done while criteria remain unchecked. (Note this interacts with R8 — the implementation actually counts the task's own criteria, so resolve the semantic in code and docs together.)"
+evidence = [
+    "SKILL.md:96",
+    "domain.rs ClosureGate",
+]
+related = ["R8"]
+dedup_id = "ed846cfae583b65b"
+resolved = 2026-05-22
+resolution = "Reworded set_closure_gate in SKILL.md: story-level flag gating each task on that task's own unchecked criteria"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R23"
+file = "claude/skills/lumina/SKILL.md"
+line = 3
+symbol = "frontmatter description"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Skill frontmatter description omits the 15 planning/decision tools, hurting discoverability for grading/AC/research/open-question tasks"
+description = "The frontmatter description covers hierarchy/plan/spec/activity/findings/tree-sprint but not relevance/effort/complexity grading, acceptance criteria + closure gate, research notes, or open-question branch resolution — 15 of 33 tools. An LLM discovery pass on the frontmatter alone will not surface this skill for composer-facing grading or decision-management tasks. Extend the description."
+evidence = ["SKILL.md:3"]
+dedup_id = "091b6abac65d965d"
+resolved = 2026-05-22
+resolution = "Extended SKILL.md frontmatter description to cover grading/relevance/AC+gate/research notes/open-question resolution"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R24"
+file = "claude/skills/lumina/SKILL.md"
+line = 107
+symbol = "open-question call patterns"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "SKILL.md has no call-pattern for the open-question lifecycle and never states the add-option-before-resolve ordering constraint"
+description = "The open-question family is the highest-complexity workflow on the surface (add_open_question → add_question_option per option → block_task_on_question/set_enabling_option per branch task → resolve_open_question) and the most likely to be misused. SKILL.md's call-patterns section never mentions it, and never states that resolve requires options to exist first (chosen_option_id must be a valid FK) or that resolution cancels other branches' exclusive tasks. Add a worked call-pattern."
+evidence = [
+    "SKILL.md:107",
+    "SKILL.md:118-157",
+]
+dedup_id = "0afeaa166c199aa1"
+resolved = 2026-05-22
+resolution = "Added open-question lifecycle call-pattern + options-before-resolve and branch-cancellation constraints to SKILL.md"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R25"
+file = "claude/skills/lumina/SKILL.md"
+line = 85
+symbol = "supersede_finding"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "SKILL.md categorises supersede_finding under 'Execution tools' but the source and CLAUDE.md place it under planning/decision"
+description = "SKILL.md:85 lists supersede_finding in the Execution table, but mcp.rs places it in the '// ---- Planning / decision tools' block alongside supersede_research_note, and CLAUDE.md's prose lists it under the planning/decision family. Move it in SKILL.md for consistency."
+evidence = [
+    "SKILL.md:85",
+    "mcp.rs supersede_finding section",
+    "CLAUDE.md:45",
+]
+dedup_id = "58a2ea6e213081db"
+resolved = 2026-05-22
+resolution = "Moved supersede_finding to the Planning & decision tools group in SKILL.md"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R26"
+file = "claude/skills/lumina/SKILL.md"
+line = 80
+symbol = "record_task_activity"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "SKILL.md record_task_activity omits the author and origin params and does not state entry_type is limited to execution/vet/comment"
+description = "RecordTaskActivityParams (mcp.rs:306) includes optional author and origin, but SKILL.md:80 and the call-pattern (line 149) list only entry_type/summary/body/outcome. Also the Notes section lists entry_type among rejectable enums without saying record_task_activity accepts only execution/vet/comment (verification entries are appended internally by check_acceptance_criterion), so an agent may try entry_type:'verification' and get invalid_params. Add the missing params and the entry_type subset note."
+evidence = [
+    "mcp.rs:306",
+    "SKILL.md:80",
+    "SKILL.md:149",
+]
+dedup_id = "f9827103f952405e"
+resolved = 2026-05-22
+resolution = "Added author/origin to record_task_activity docs + entry_type execution/vet/comment note"
+
+[[items]]
+first_flagged = 2026-05-22
+rounds = 1
+status = "fixed"
+flow = "lumina-schema-deepening"
+id = "R27"
+file = "claude/skills/lumina/SKILL.md"
+line = 103
+symbol = "add_open_question"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "SKILL.md does not call out that add_open_question's param is story_id (not work_item_id like its table neighbours)"
+description = "add_open_question takes story_id (mcp.rs:1313) while sibling tools in the same table group use work_item_id. SKILL.md never flags the difference, so an agent using work_item_id gets a deserialization error. Note the actual param names for add_open_question (story_id) and resolve_open_question (question_id + chosen_option_id + optional by)."
+evidence = [
+    "SKILL.md:103",
+    "mcp.rs:1313",
+]
+dedup_id = "b10ccf19ba62a2a9"
+resolved = 2026-05-22
+resolution = "Documented add_open_question's story_id and resolve_open_question's question_id/chosen_option_id/by params in SKILL.md"
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked R1(export aggregate),R3(missing guards),R4(double-resolve),R6(missing tool) against repo.rs/export.rs/mcp.rs — all verified true. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 4
+dropped_count = 1
+downgraded_count = 1
+rationale = "Dropped the pub update_work_item_status untyped-status finding (hypothetical future caller, no current defect; MCP validates). Downgraded the closure-gate finding from a security bypass to a design-clarity item (R8) — verified the flag is story-scoped but criteria count is task-scoped (repo.rs:833/840); the per-task individual-transition bypass framing was overstated. TOCTOU and missing-existence-check claims verified true (folded into R3/R4)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 4
+dropped_count = 2
+downgraded_count = 0
+rationale = "Verified export gap (R1/R2), block-task guards (R3), supersede existence (R7), research-note untyped origin (R9). Dropped two positive-confirmation non-findings (PATCH-does-not-bypass-gate; child-vs-column-split-consistent) — correct observations but not actionable findings; the PATCH-gate confirmation was also imprecise re: criteria scope (see R8). Postgres seq-comment nuance dropped as comment-only."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Coverage-gap findings consistent with the test files read; consolidated the three resolve-test observations into R21 and kept the strongest gaps (R17 loose drain count, R18 single-criterion gate, R19 count assert, R20 UNIQUE coverage, R21 non-exclusive/question-state). No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 6
+dropped_count = 2
+downgraded_count = 0
+rationale = "Verified the 33-tool count (matches grep), supersede_finding miscategorisation (R25), closure_gate wording (R22), frontmatter omission (R23), missing open-question call-pattern (R24), record_task_activity param gaps (R26), story_id param (R27). Dropped the count-is-correct non-finding and the create_context_block two-event note (create_context_block is unchanged by this flow, out of changeset scope)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified HTTP origin drop (R5, http.rs:148 uses 5-arg create), missing remove_acceptance_criterion tool (R6), import.rs origin not threaded (R15), closure-gate ambiguity (R8), tool-count not exact-asserted (R19). Merged the two duplicate origin-drop symptoms into R5. All true."
+dedup_id = "45ca31c3315a5978"

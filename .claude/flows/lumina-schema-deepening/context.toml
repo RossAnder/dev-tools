@@ -1,0 +1,22 @@
+slug = "lumina-schema-deepening"
+plan_path = "docs/plans/lumina-schema-deepening.md"
+status = "review"
+created = 2026-05-22
+updated = 2026-05-22
+branch = "main"
+scope = [
+    "lumina/**",
+    "claude/skills/lumina/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 9
+completed = 9
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-schema-deepening/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-schema-deepening/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-schema-deepening/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-schema-deepening/plan-review-findings.toml"

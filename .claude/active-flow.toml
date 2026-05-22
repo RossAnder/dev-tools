@@ -82,3 +82,29 @@ scope = [
     "lumina/**",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "lumina-mcp-schema-foundation"
+last_used = "2026-05-22T08:25:55.2714046Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/**",
+    "claude/skills/lumina/**",
+    "CLAUDE.md",
+]
+
+[[active]]
+slug = "lumina-schema-deepening"
+last_used = "2026-05-22T11:38:31.7424745Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/**",
+    "claude/skills/lumina/**",
+    "CLAUDE.md",
+]

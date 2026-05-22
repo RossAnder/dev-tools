@@ -1,0 +1,168 @@
+schema_version = 1
+last_updated = 2026-05-22
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Approach"
+summary = "Closure-gate wiring names the MCP tool transition_status, not the repo fn update_work_item_status (repo.rs:525)"
+description = "No repo fn is named transition_status; it is the MCP tool. The repo fn is update_work_item_status (repo.rs:525), today a blind 3-statement UPDATE with no kind/parent read. The gate must add the first read-before-write to that fn (detect kind=='task', read parent story's closure_gate, count unchecked criteria). An agent grepping repo.rs for transition_status finds nothing. Consolidates Agents 1/3/4."
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Tasks"
+summary = "Closure gate is HTTP-PATCH-bypassable: update_work_item (repo.rs:600) sets status=done outside the gate"
+description = "HTTP PATCH routes through repo::update_work_item (http.rs:176 -> repo.rs:600 SET status = COALESCE(?4,status)), verified able to set status=done directly, bypassing the gate the plan wires only into update_work_item_status. A hard story does not actually block closure via the existing generic PATCH. Plan must guard both paths or explicitly mark PATCH gate-exempt. Re-derived from Agent 4's dropped finding kernel; verified by orchestrator."
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope"
+summary = "'importer unchanged' is inaccurate: create_work_item is positional; origin + relevance default touch import.rs"
+description = "create_work_item is positional (repo.rs:458/496); adding origin forces edits to import.rs:223/259/296 to compile, and the relevance=backlog default reaches importer-created epic/feature/story rows. Scope line 64 contradicts this. Name the signature strategy and correct the scope claim."
+anchor_old = "the importer (`import.rs` unchanged)"
+anchor_new = 'the importer (`import.rs` is touched only to thread the new `origin` param through its `create_work_item` calls, and imported epic/feature/story rows acquire the default `relevance="backlog"`)'
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Wave B — repository write-paths (sequential; both own repo.rs)"
+summary = "Task 4 is overloaded and leaves resolve_open_question's event shape to the executor, stretching the +1-event invariant"
+description = "Task 4 bundles research-note CRUD+supersede, finding confidence+supersede, open-question/option CRUD, block/enable, multi-write resolve_open_question, three detail folds, and the .sqlx regen. The event shape ('one event OR per-task events') is punted to the executor, stretching the +1-event-per-mutation invariant tested at repo.rs:1271. Pin to one open_question.resolved event with a count_events assertion; consider splitting 4a (notes/findings) / 4b (questions+branch+regen) with the single .sqlx regen in 4b."
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope"
+summary = "Frontend api.ts hand-maintained TS interfaces drift; new fields not free there and plan does no web work"
+description = "The SPA hand-maintains TS interfaces mirroring the Rust structs (api.ts:10/30/62/70); new columns/collections are not free there, and it already lacks 'activity' from Plan 1. Fine if intentional, but the plan should explicitly defer api.ts to Plan 2 rather than leave it implicit."
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Tasks"
+summary = "Self-FK ADD COLUMN ... REFERENCES is legal only with an implicit NULL default (Task 1)"
+description = "The plan's DDL is correct as written. Pin a note so a future tidy-up does not add a non-NULL default and break migration 0003 (SQLite restriction: a column added with a REFERENCES clause under foreign_keys=ON must default NULL). https://www.sqlite.org/lang_altertable.html"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Tasks"
+summary = "Migration-top PRAGMA foreign_keys=ON is cosmetic; FKs enforced per-connection via db.rs:30"
+description = "FKs are enabled by SqliteConnectOptions::foreign_keys(true) at db.rs:30; the migration-level PRAGMA is consistency-only and the CASCADE acceptance test depends on the pool option, not the PRAGMA. Reword Task 1 Detail; create test rows parent-first so the insert-time FK check is actually exercised."
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "## User Decisions"
+summary = "Effort wire form s/m/l vs display S/M/L is contradicted by User Decision 4 and Research Notes"
+description = "The lowercase-snake wire form is flagged only in Task 2 Detail but contradicted by User Decision 4 and the Research Notes (uppercase S/M/L). Harden Decision 4 so the canonical text matches the implementation."
+anchor_old = "(drives batch sizing)"
+anchor_new = "(drives batch sizing; wire form is lowercase `s/m/l` — `S/M/L` is display-only)"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Tasks"
+summary = "Export 'free serialization' holds but new scalar fields must precede Vec/nested fields (TOML tables-last)"
+description = "toml::to_string_pretty (export.rs:212) requires scalar keys before any table/array-of-tables key. New scalar fields on WorkItem/Finding/OpenQuestion must precede any Vec/nested field or it fails at runtime with ValueAfterTable. Add a round-trip export test over a WorkItemDetail carrying a populated open_questions(+options)."
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Approach"
+summary = "Closure gate assumes a task's parent is a story (one hop); hierarchy may nest task under feature/epic"
+description = "closure_gate is story-only; the plan reads 'the parent story's closure_gate' as one hop, but the hierarchy may nest a task under a feature/epic. Pin behaviour when the immediate parent kind != story (inert/soft, or walk to nearest story ancestor)."
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Composer-facing filter columns (relevance/effort/complexity/origin) are unindexed"
+description = "The rationale for choosing columns over attributes JSON is that the composer filters on them, yet Task 1 indexes only child (parent_id,seq). Negligible at current scale; acknowledge as deferred to the composer plan so the 'columns earn their place' rationale is explicitly not-yet-realised."
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Wave C — entry points (parallel after Wave B; disjoint files, NO new query! macros)"
+summary = "~16 new tools require updating the mcp.rs tool-advertisement test and the CLAUDE.md '~17 tools' count/catalogue"
+description = "The new tools roughly double the '~17 tools' count in CLAUDE.md and the SKILL.md catalogue, and the mcp.rs tool-advertisement membership test (non-exhaustive, won't fail) should grow. Name these explicitly in Task 5 acceptance and Task 8."
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified update_work_item_status repo.rs:525, create_work_item positional repo.rs:458, get_work_item_detail shared aggregate, export.rs:212 idiom. All grounded; none dropped."
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified api.ts hand-maintained interfaces, Status enum has Blocked/Cancelled (domain.rs:218-226), create_work_item positional fan-out. All hold."
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified update_work_item_status naming, Task 4 overload, Effort s/m/l divergence against plan lines. Sound."
+
+[[vet_events]]
+timestamp = "2026-05-22T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 4
+dropped_count = 1
+downgraded_count = 0
+dropped_ids = ["A4F6"]
+rationale = "Dropped Finding 6 (no transition_status fn exists): false — update_work_item_status exists at repo.rs:525, trivially locatable (agent grepped wrong names). Valid kernel re-derived as P2 (HTTP PATCH bypass), verified via repo.rs:600 SET status=COALESCE. Verified db.rs:30 foreign_keys(true) and SQLite ADD COLUMN REFERENCES NULL-default rule. 1/6=17%, under 30% — no re-dispatch."
