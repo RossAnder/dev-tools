@@ -166,6 +166,29 @@ pub async fn export_pending(pool: &SqlitePool, export_root: &Path) -> anyhow::Re
 ///
 /// If the work-item no longer exists (e.g. a future delete path), this is a
 /// no-op — the event is still stamped by the caller so it leaves the outbox.
+///
+/// # Whole-struct serialization (Task 6, part 1)
+///
+/// The snapshot serialises the ENTIRE [`WorkItemDetail`] — `item` (now carrying
+/// `attributes`), `children`, `findings`, `context_blocks`, AND the ordered
+/// `activity` — via [`toml::Table::try_from`]. Because the Task-3 attribute /
+/// payload setters normalise every stored JSON value to a null-free object root,
+/// the `serde_json::Value` fields can never present a `null`/scalar root to the
+/// `toml` serializer, so the conversion cannot hit the toml crate's
+/// non-table-root failure mode. Serialising the whole struct (rather than a
+/// hand-built subset) means `attributes` + `activity` ride along for free.
+///
+/// # Tombstone (Task 6, part 2)
+///
+/// `repo::get_work_item_detail` deliberately does NOT filter `deleted_at`, so a
+/// soft-deleted item still resolves here (it does not 404). The `deleted_at`
+/// instant is NOT a field on `WorkItem`/`WorkItemDetail`, so the whole-struct
+/// serialize alone does not surface it; we read it separately and, when present,
+/// insert a TOP-LEVEL `deleted_at` key into the rendered table — a TOMBSTONE.
+/// The snapshot file is REWRITTEN IN PLACE (same atomic path); it is NEVER
+/// file-deleted, preserving the git-export audit trail per the soft-delete
+/// decision. The drain treats a `work_item.deleted` event like any other
+/// work-item event: it renders (writing the tombstone) and stamps `exported_at`.
 async fn render_work_item(
     pool: &SqlitePool,
     aggregate_id: &str,
@@ -184,14 +207,51 @@ async fn render_work_item(
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("creating export dir {}", dir.display()))?;
 
-    let path = dir.join(format!("{aggregate_id}.toml"));
-    let body = toml::to_string_pretty(&detail)
+    // Whole-struct serialize → a TOML table root (never a scalar/null root, so
+    // the toml serializer cannot fail on the normalised JSON `Value` fields).
+    let mut table = toml::Table::try_from(&detail)
         .with_context(|| format!("serialising work_item '{aggregate_id}' to TOML"))?;
+
+    // Tombstone fold: if the row is soft-deleted, stamp a top-level `deleted_at`.
+    // The `deleted_at` column is not carried on the detail struct, so it is read
+    // here. This re-uses a query string already present in the committed `.sqlx`
+    // offline cache (identical to the repo test helper), so it adds NO new cache
+    // entry and forces NO `cargo sqlx prepare` regen — the parallel-safety
+    // invariant for this task.
+    if let Some(deleted_at) = soft_delete_marker(pool, aggregate_id).await? {
+        table.insert("deleted_at".to_owned(), toml::Value::String(deleted_at));
+    }
+
+    let path = dir.join(format!("{aggregate_id}.toml"));
+    let body = toml::to_string_pretty(&table)
+        .with_context(|| format!("rendering work_item '{aggregate_id}' TOML"))?;
 
     atomic_write(&path, body.as_bytes())
         .with_context(|| format!("atomically writing {}", path.display()))?;
 
     Ok(())
+}
+
+/// Read a work item's `deleted_at` (the soft-delete tombstone instant), `None`
+/// if the row is live. Returns `Ok(None)` for a missing row too (the caller has
+/// already resolved the detail; this is purely the deletion marker).
+///
+/// The query string is BYTE-IDENTICAL to the `repo` module's test-helper read,
+/// whose hash is already in the committed `.sqlx/` cache, so this `query!`
+/// resolves offline against the existing entry and triggers NO cache regen.
+async fn soft_delete_marker(
+    pool: &SqlitePool,
+    aggregate_id: &str,
+) -> anyhow::Result<Option<String>> {
+    let row = sqlx::query!(
+        r#"SELECT deleted_at AS "deleted_at?" FROM work_items WHERE id = ?1"#,
+        aggregate_id,
+    )
+    .fetch_optional(pool)
+    .await
+    .with_context(|| format!("reading deleted_at for work_item '{aggregate_id}'"))?;
+
+    Ok(row.and_then(|r| r.deleted_at))
 }
 
 /// Atomic tempfile → fsync → rename write, porting the proven `tomlctl/io.rs`
@@ -445,6 +505,123 @@ mod tests {
         let parsed: toml::Value = toml::from_str(&raw).expect("parse");
         assert_eq!(parsed["item"]["id"].as_str(), Some(task.as_str()));
         assert_eq!(parsed["item"]["kind"].as_str(), Some("task"));
+    }
+
+    /// (Task 6, part 1) After setting NESTED-object attributes + appending an
+    /// activity entry, the drained snapshot round-trips the nested `attributes`
+    /// object (proving TOML-serialization safety over a `serde_json::Value`
+    /// object root) and contains the activity entry.
+    #[tokio::test]
+    async fn export_folds_attributes_and_activity() {
+        let pool = connect_in_memory().await.expect("pool");
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // Build a legal chain to a `task` — the `task` kind accepts a NESTED
+        // object attribute (`dispatch`), which exercises the nested-object path.
+        let project = repo::create_work_item(&pool, "project", None, "P", None)
+            .await
+            .unwrap()
+            .to_string();
+        let epic = repo::create_work_item(&pool, "epic", Some(&project), "E", None)
+            .await
+            .unwrap()
+            .to_string();
+        let feature = repo::create_work_item(&pool, "feature", Some(&epic), "F", None)
+            .await
+            .unwrap()
+            .to_string();
+        let story = repo::create_work_item(&pool, "story", Some(&feature), "S", None)
+            .await
+            .unwrap()
+            .to_string();
+        let task = repo::create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .unwrap()
+            .to_string();
+
+        // Nested-object attribute set (the `set_story_plan`-equivalent path).
+        repo::set_work_item_attributes(
+            &pool,
+            &task,
+            &serde_json::json!({ "dispatch": { "agent": "deep", "level": "L3" } }),
+        )
+        .await
+        .expect("set nested attribute");
+
+        // An activity entry.
+        repo::append_activity(&pool, &task, "execution", Some("bob"), "ran the task", None)
+            .await
+            .expect("append activity");
+
+        let drained = export_pending(&pool, dir.path()).await.expect("drain");
+        assert_eq!(drained, 7, "5 creates + 1 attr-update + 1 activity event");
+
+        let path = dir.path().join("task").join(format!("{task}.toml"));
+        let raw = std::fs::read_to_string(&path).expect("read snapshot");
+        let parsed: toml::Value = toml::from_str(&raw).expect("parse snapshot TOML");
+
+        // The NESTED attributes object round-trips intact.
+        let dispatch = &parsed["item"]["attributes"]["dispatch"];
+        assert_eq!(dispatch["agent"].as_str(), Some("deep"), "nested attr round-trips");
+        assert_eq!(dispatch["level"].as_str(), Some("L3"));
+
+        // The ordered activity entry is present.
+        let activity = parsed["activity"].as_array().expect("activity array");
+        assert_eq!(activity.len(), 1, "one activity entry serialised");
+        assert_eq!(activity[0]["summary"].as_str(), Some("ran the task"));
+        assert_eq!(activity[0]["entry_kind"].as_str(), Some("execution"));
+        assert_eq!(activity[0]["seq"].as_integer(), Some(1));
+
+        // A live item carries NO tombstone marker.
+        assert!(
+            parsed.get("deleted_at").is_none(),
+            "a live item snapshot has no deleted_at tombstone"
+        );
+    }
+
+    /// (Task 6, part 2) After a soft-`delete_work_item` + drain, the snapshot
+    /// STILL EXISTS (never file-deleted — audit trail) and carries a TOP-LEVEL
+    /// `deleted_at` tombstone. A second drain is a no-op leaving it byte-identical.
+    #[tokio::test]
+    async fn export_writes_tombstone_on_soft_delete_and_second_drain_is_noop() {
+        let pool = connect_in_memory().await.expect("pool");
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let id = repo::create_work_item(&pool, "project", None, "Doomed", None)
+            .await
+            .expect("create")
+            .to_string();
+
+        // First drain: the live snapshot (no tombstone).
+        let drained = export_pending(&pool, dir.path()).await.expect("drain create");
+        assert_eq!(drained, 1);
+        let path = dir.path().join("project").join(format!("{id}.toml"));
+        let live = toml::from_str::<toml::Value>(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(live.get("deleted_at").is_none(), "live snapshot has no tombstone");
+
+        // Soft-delete, then drain the `work_item.deleted` event.
+        repo::delete_work_item(&pool, &id).await.expect("soft delete");
+        let drained = export_pending(&pool, dir.path()).await.expect("drain delete");
+        assert_eq!(drained, 1, "the work_item.deleted event drains (not skipped)");
+
+        // The file STILL EXISTS — never file-deleted — and carries the tombstone.
+        assert!(path.exists(), "tombstoned snapshot still on disk (audit trail)");
+        let raw = std::fs::read_to_string(&path).expect("read tombstone");
+        let parsed: toml::Value = toml::from_str(&raw).expect("parse tombstone TOML");
+        let tombstone = parsed
+            .get("deleted_at")
+            .and_then(|v| v.as_str())
+            .expect("top-level deleted_at tombstone present");
+        assert!(!tombstone.is_empty(), "deleted_at carries a timestamp");
+        // The item body is still rendered alongside the tombstone (preserved).
+        assert_eq!(parsed["item"]["id"].as_str(), Some(id.as_str()));
+
+        // A SECOND drain is a no-op: nothing left in the outbox, file untouched.
+        let bytes_before = std::fs::read(&path).expect("read before second drain");
+        let second = export_pending(&pool, dir.path()).await.expect("second drain");
+        assert_eq!(second, 0, "no events left to drain after the delete");
+        let bytes_after = std::fs::read(&path).expect("read after second drain");
+        assert_eq!(bytes_before, bytes_after, "tombstone byte-identical after no-op drain");
     }
 
     /// `spawn` returns a handle whose `shutdown` stops the loop cleanly. We

@@ -12,7 +12,8 @@
 //!     root nodes. `?parent_id=`/`?kind=`: a flat filtered `Vec<WorkItem>`.
 //!   * `GET    /work-items/{id}`   — `WorkItemDetail` (404 when absent).
 //!   * `POST   /work-items`        — create; 201 with `{ "id": <uuid> }`.
-//!   * `PATCH  /work-items/{id}`   — status update; 204 No Content.
+//!   * `PATCH  /work-items/{id}`   — generic partial update (title/body/status/
+//!     position/attributes, set-or-leave); 200 with the updated `WorkItem`.
 //!   * `GET    /health`            — liveness (kept from the Task-1 stub).
 
 use axum::Json;
@@ -24,7 +25,7 @@ use axum::Router;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::domain::{CreateWorkItemRequest, UpdateStatusRequest, WorkItem, WorkItemDetail};
+use crate::domain::{CreateWorkItemRequest, UpdateWorkItemRequest, WorkItem, WorkItemDetail};
 use crate::error::AppError;
 use crate::repo;
 
@@ -58,7 +59,7 @@ pub fn router() -> Router<AppState> {
         .route("/work-items", get(list_work_items).post(create_work_item))
         .route(
             "/work-items/{id}",
-            get(get_work_item).patch(update_work_item_status),
+            get(get_work_item).patch(update_work_item),
         )
 }
 
@@ -156,15 +157,26 @@ async fn create_work_item(
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": id.to_string() }))))
 }
 
-/// `PATCH /work-items/{id}` — free-text status update. 404 when the id has no
-/// row (via `AppError::NotFound`); 204 No Content on success.
-async fn update_work_item_status(
+/// `PATCH /work-items/{id}` — generic partial update. Deserialises an
+/// `UpdateWorkItemRequest` (title/body/status/position/attributes, every field
+/// set-or-leave), applies it via `repo::update_work_item`, then RE-FETCHES the
+/// row and returns **200 OK + the updated `WorkItem`**. 404 when the id has no
+/// row (via `AppError::NotFound`).
+///
+/// Returns the body (not 204) because the frontend `web/src/api.ts handle<T>`
+/// calls `res.json()` unconditionally — a 204 empty body would throw, breaking
+/// the `Promise<WorkItem>` contract. Both HTTP and MCP call the SAME
+/// `repo::update_work_item` (single-source parity).
+async fn update_work_item(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<UpdateStatusRequest>,
-) -> Result<StatusCode, AppError> {
-    repo::update_work_item_status(state.pool.as_ref(), &id, &req.status).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Json(req): Json<UpdateWorkItemRequest>,
+) -> Result<Json<WorkItem>, AppError> {
+    let pool = state.pool.as_ref();
+    repo::update_work_item(pool, &id, &req).await?;
+    // Re-fetch via the detail getter (no new query) and return the updated item.
+    let detail = repo::get_work_item_detail(pool, &id).await?;
+    Ok(Json(detail.item))
 }
 
 #[cfg(test)]
@@ -339,9 +351,102 @@ mod tests {
         assert_eq!(body["error"]["kind"], "validation");
     }
 
-    /// `PATCH /api/work-items/{id}` updates status (204); a missing id → 404.
+    /// `GET /api/work-items/{id}` folds `activity` + `attributes` into the detail
+    /// response. We seed a story (a kind that accepts attributes), set an
+    /// attribute and append one activity row via the repo, then assert both
+    /// surface in the JSON detail body.
     #[tokio::test]
-    async fn patch_status_updates_and_404s() {
+    async fn get_detail_includes_activity_and_attributes() {
+        let pool = connect_in_memory().await.expect("pool");
+        let (story_id, _task_id) = seed_chain(&pool).await;
+        // Set a kind-specific attribute and append an activity row.
+        repo::set_work_item_attributes(
+            &pool,
+            &story_id,
+            &serde_json::json!({ "problem_statement": "ship it" }),
+        )
+        .await
+        .expect("set attributes");
+        repo::append_activity(&pool, &story_id, "comment", Some("alice"), "noted", None)
+            .await
+            .expect("append activity");
+        let state = AppState { pool: Arc::new(pool) };
+
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{story_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = json_body(resp).await;
+        // `attributes` is folded onto the flattened item.
+        assert_eq!(
+            body["item"]["attributes"]["problem_statement"], "ship it",
+            "detail folds in attributes"
+        );
+        // `activity` is its own array on the detail aggregate.
+        let activity = body["activity"].as_array().expect("activity array");
+        assert_eq!(activity.len(), 1, "one activity row folded in");
+        assert_eq!(activity[0]["entry_kind"], "comment");
+        assert_eq!(activity[0]["summary"], "noted");
+    }
+
+    /// `PATCH /api/work-items/{id}` with `{"body":"…"}` updates the body (set-or-
+    /// leave: the title is untouched) and the change is visible on the next GET.
+    #[tokio::test]
+    async fn patch_body_updates_and_persists() {
+        let pool = connect_in_memory().await.expect("pool");
+        let id = repo::create_work_item(&pool, "project", None, "P", Some("orig body"))
+            .await
+            .expect("project")
+            .to_string();
+        let state = AppState { pool: Arc::new(pool) };
+        let router = build_router(state);
+
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{id}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "body": "new body" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // 200 + the updated item in the body.
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["body"], "new body", "PATCH returns the updated item");
+        assert_eq!(body["title"], "P", "title left untouched (set-or-leave)");
+
+        // Visible on the next GET.
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let detail = json_body(resp).await;
+        assert_eq!(detail["item"]["body"], "new body", "body persisted");
+    }
+
+    /// `PATCH /api/work-items/{id}` with `{"status":"done"}` returns 200 plus the
+    /// updated item JSON (the typed status enum is stored as snake_case); a
+    /// missing id → 404.
+    #[tokio::test]
+    async fn patch_status_returns_200_with_item_and_404s() {
         let pool = connect_in_memory().await.expect("pool");
         let id = repo::create_work_item(&pool, "project", None, "P", None)
             .await
@@ -358,21 +463,27 @@ mod tests {
                     .uri(format!("/api/work-items/{id}"))
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        serde_json::json!({ "status": "in-progress" }).to_string(),
+                        serde_json::json!({ "status": "done" }).to_string(),
                     ))
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["id"], id, "updated item returned");
+        assert_eq!(body["status"], "done", "status updated to snake_case wire value");
 
+        // Missing id → 404.
         let resp = router
             .oneshot(
                 Request::builder()
                     .method("PATCH")
                     .uri("/api/work-items/nope")
                     .header("content-type", "application/json")
-                    .body(Body::from(serde_json::json!({ "status": "x" }).to_string()))
+                    .body(Body::from(
+                        serde_json::json!({ "status": "done" }).to_string(),
+                    ))
                     .unwrap(),
             )
             .await
