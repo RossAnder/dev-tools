@@ -31,8 +31,9 @@ use sqlx::{Sqlite, SqlitePool, Transaction};
 use uuid::Uuid;
 
 use crate::domain::{
-    ActivityType, ContextBlock, Disposition, Finding, Status, UpdateFindingRequest,
-    UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
+    AcceptanceCriterion, ActivityType, ClosureGate, Complexity, ContextBlock, Disposition, Effort,
+    Finding, Relevance, Status, UpdateFindingRequest, UpdateWorkItemRequest, WorkItem,
+    WorkItemActivity, WorkItemDetail,
 };
 use crate::error::AppError;
 
@@ -81,6 +82,38 @@ fn activity_type_to_str(kind: ActivityType) -> String {
     match serde_json::to_value(kind) {
         Ok(Value::String(s)) => s,
         _ => unreachable!("ActivityType serialises to a JSON string"),
+    }
+}
+
+/// Render the snake_case wire form of a [`Relevance`] for storage.
+fn relevance_to_str(relevance: Relevance) -> String {
+    match serde_json::to_value(relevance) {
+        Ok(Value::String(s)) => s,
+        _ => unreachable!("Relevance serialises to a JSON string"),
+    }
+}
+
+/// Render the snake_case wire form of an [`Effort`] for storage.
+fn effort_to_str(effort: Effort) -> String {
+    match serde_json::to_value(effort) {
+        Ok(Value::String(s)) => s,
+        _ => unreachable!("Effort serialises to a JSON string"),
+    }
+}
+
+/// Render the snake_case wire form of a [`Complexity`] for storage.
+fn complexity_to_str(complexity: Complexity) -> String {
+    match serde_json::to_value(complexity) {
+        Ok(Value::String(s)) => s,
+        _ => unreachable!("Complexity serialises to a JSON string"),
+    }
+}
+
+/// Render the snake_case wire form of a [`ClosureGate`] for storage.
+fn closure_gate_to_str(gate: ClosureGate) -> String {
+    match serde_json::to_value(gate) {
+        Ok(Value::String(s)) => s,
+        _ => unreachable!("ClosureGate serialises to a JSON string"),
     }
 }
 
@@ -247,6 +280,13 @@ pub async fn list_work_items(
             status        AS "status!",
             position      AS "position?",
             attributes    AS "attributes?",
+            relevance              AS "relevance?",
+            effort                 AS "effort?",
+            complexity             AS "complexity?",
+            origin                 AS "origin?",
+            closure_gate           AS "closure_gate?",
+            blocked_by_question_id AS "blocked_by_question_id?",
+            enabling_option_id     AS "enabling_option_id?",
             created_at    AS "created_at!",
             updated_at    AS "updated_at!"
         FROM work_items
@@ -273,6 +313,13 @@ pub async fn list_work_items(
                 status: r.status,
                 position: r.position,
                 attributes: decode_attributes(r.attributes)?,
+                relevance: r.relevance,
+                effort: r.effort,
+                complexity: r.complexity,
+                origin: r.origin,
+                closure_gate: r.closure_gate,
+                blocked_by_question_id: r.blocked_by_question_id,
+                enabling_option_id: r.enabling_option_id,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             })
@@ -303,6 +350,13 @@ pub async fn get_work_item_detail(
             status        AS "status!",
             position      AS "position?",
             attributes    AS "attributes?",
+            relevance              AS "relevance?",
+            effort                 AS "effort?",
+            complexity             AS "complexity?",
+            origin                 AS "origin?",
+            closure_gate           AS "closure_gate?",
+            blocked_by_question_id AS "blocked_by_question_id?",
+            enabling_option_id     AS "enabling_option_id?",
             created_at    AS "created_at!",
             updated_at    AS "updated_at!"
         FROM work_items
@@ -323,6 +377,13 @@ pub async fn get_work_item_detail(
         status: row.status,
         position: row.position,
         attributes: decode_attributes(row.attributes)?,
+        relevance: row.relevance,
+        effort: row.effort,
+        complexity: row.complexity,
+        origin: row.origin,
+        closure_gate: row.closure_gate,
+        blocked_by_question_id: row.blocked_by_question_id,
+        enabling_option_id: row.enabling_option_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
     };
@@ -330,6 +391,7 @@ pub async fn get_work_item_detail(
     let children = list_work_items(pool, Some(id), None).await?;
     let findings = list_findings(pool, id).await?;
     let activity = list_activity(pool, id).await?;
+    let acceptance_criteria = list_acceptance_criteria(pool, id).await?;
 
     let context_blocks = sqlx::query_as!(
         ContextBlock,
@@ -356,7 +418,44 @@ pub async fn get_work_item_detail(
         findings,
         context_blocks,
         activity,
+        acceptance_criteria,
+        // TODO(Task 4): real fold of live research_notes (superseded_by IS NULL).
+        research_notes: Vec::new(),
+        // TODO(Task 4): real fold of open_questions (+ nested options).
+        open_questions: Vec::new(),
     })
+}
+
+/// List the acceptance-criteria rows for a work item, ordered by the per-item
+/// monotonic `seq` (migration 0003). `query_as!` straight onto the
+/// [`AcceptanceCriterion`] read struct (all columns map 1:1; `checked` is the
+/// `0/1` INTEGER mirrored as `i64`).
+async fn list_acceptance_criteria(
+    pool: &SqlitePool,
+    work_item_id: &str,
+) -> Result<Vec<AcceptanceCriterion>, AppError> {
+    let rows = sqlx::query_as!(
+        AcceptanceCriterion,
+        r#"
+        SELECT
+            id           AS "id!",
+            work_item_id AS "work_item_id!",
+            seq          AS "seq!",
+            text         AS "text!",
+            checked      AS "checked!",
+            checked_at   AS "checked_at?",
+            checked_by   AS "checked_by?",
+            created_at   AS "created_at!"
+        FROM acceptance_criteria
+        WHERE work_item_id = ?1
+        ORDER BY seq
+        "#,
+        work_item_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
 }
 
 /// List the activity-log rows for a work item, ordered by the per-item
@@ -455,12 +554,32 @@ pub async fn list_findings(
 /// 5. Commit. Any error before commit rolls back BOTH writes.
 ///
 /// Returns the new id as a `Uuid`.
+///
+/// This is the back-compatible 5-arg entry point (no `origin`, default
+/// provenance NULL). It delegates to [`create_work_item_with_origin`]; the
+/// default `relevance="backlog"` for a new epic/feature/story is applied there.
 pub async fn create_work_item(
     pool: &SqlitePool,
     kind: &str,
     parent_id: Option<&str>,
     title: &str,
     body: Option<&str>,
+) -> Result<Uuid, AppError> {
+    create_work_item_with_origin(pool, kind, parent_id, title, body, None).await
+}
+
+/// Create a work item, stamping the optional `origin` provenance (migration
+/// 0003). Same single-mutation-path discipline as the 5-arg [`create_work_item`]
+/// wrapper. A newly-created `epic`/`feature`/`story` acquires the default
+/// `relevance="backlog"` (epic/feature/story carry the relevance axis;
+/// task/project are left NULL); the relevance default is applied in the INSERT.
+pub async fn create_work_item_with_origin(
+    pool: &SqlitePool,
+    kind: &str,
+    parent_id: Option<&str>,
+    title: &str,
+    body: Option<&str>,
+    origin: Option<&str>,
 ) -> Result<Uuid, AppError> {
     // Resolve the parent's kind (if any) for the pre-check. A non-NULL
     // parent_id that does not exist is a Validation error, not a 500.
@@ -489,12 +608,19 @@ pub async fn create_work_item(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
+    // epic/feature/story carry the relevance axis and default to "backlog" on
+    // create; task/project are left NULL.
+    let default_relevance: Option<&str> = match kind {
+        "epic" | "feature" | "story" => Some("backlog"),
+        _ => None,
+    };
+
     let mut tx = pool.begin().await?;
 
     sqlx::query!(
         r#"
-        INSERT INTO work_items (id, kind, parent_id, title, body, status)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        INSERT INTO work_items (id, kind, parent_id, title, body, status, origin, relevance)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         "#,
         id_str,
         kind,
@@ -502,6 +628,8 @@ pub async fn create_work_item(
         title,
         body,
         "open",
+        origin,
+        default_relevance,
     )
     .execute(&mut *tx)
     .await?;
@@ -510,6 +638,7 @@ pub async fn create_work_item(
         "kind": kind,
         "parent_id": parent_id,
         "title": title,
+        "origin": origin,
     });
     record_event(&mut tx, "work_item", &id_str, "work_item.created", payload).await?;
 
@@ -518,16 +647,99 @@ pub async fn create_work_item(
     Ok(id)
 }
 
+/// Shared closure-gate check for a `→done` transition (migration 0003,
+/// User Decision 3). Runs INSIDE the caller's transaction (so the read and the
+/// subsequent write are atomic). Both `update_work_item_status` (the
+/// `transition_status` MCP path) and the generic `update_work_item` PATCH path
+/// call this so neither can bypass the gate.
+///
+/// Logic: the gate fires ONLY when the target status is `done` AND the item is a
+/// `task`. It reads the task's immediate parent; if that parent is a `story`
+/// with `closure_gate = 'hard'` and the task has ANY unchecked acceptance
+/// criterion, the transition is rejected with [`AppError::Validation`].
+/// `soft` (the default), a non-story parent, or no parent ⇒ allow. Items that
+/// are not tasks, or transitions to a status other than `done`, are unaffected.
+///
+/// The `id`'s existence is NOT asserted here — the caller's UPDATE
+/// `rows_affected()==0 ⇒ NotFound` check is the authority; if the row is absent
+/// the kind read below simply returns `None` and the gate is inert.
+async fn enforce_closure_gate(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: &str,
+    target_status: &str,
+) -> Result<(), AppError> {
+    if target_status != "done" {
+        return Ok(());
+    }
+
+    // Read the item's kind + parent. Absent row ⇒ inert (caller handles NotFound).
+    let Some(row) = sqlx::query!(
+        r#"SELECT kind AS "kind!", parent_id AS "parent_id?" FROM work_items WHERE id = ?1"#,
+        id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?
+    else {
+        return Ok(());
+    };
+
+    if row.kind != "task" {
+        return Ok(());
+    }
+
+    // The gate is the immediate parent story's `closure_gate` (no ancestor walk).
+    let Some(parent_id) = row.parent_id else {
+        return Ok(());
+    };
+    let Some(parent) = sqlx::query!(
+        r#"SELECT kind AS "kind!", closure_gate AS "closure_gate?" FROM work_items WHERE id = ?1"#,
+        parent_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?
+    else {
+        return Ok(());
+    };
+
+    if parent.kind != "story" || parent.closure_gate.as_deref() != Some("hard") {
+        // soft (default) / non-story parent ⇒ allow.
+        return Ok(());
+    }
+
+    // Hard gate: reject if any acceptance criterion of the TASK is unchecked.
+    let unchecked = sqlx::query!(
+        r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1 AND checked = 0"#,
+        id,
+    )
+    .fetch_one(&mut **tx)
+    .await?
+    .n;
+
+    if unchecked > 0 {
+        return Err(AppError::Validation(format!(
+            "task '{id}' cannot transition to 'done': its story's closure_gate is 'hard' \
+             and {unchecked} acceptance criterion(s) remain unchecked"
+        )));
+    }
+
+    Ok(())
+}
+
 /// Update a work item's free-text status under the single-mutation-path
 /// discipline (status update + one event in one transaction). `NotFound` if the
 /// id has no row — checked via `rows_affected()` so the missing-row case never
-/// emits a spurious event.
+/// emits a spurious event. A `→done` transition on a task is gated by
+/// [`enforce_closure_gate`] (the read runs inside the same tx, before the write).
 pub async fn update_work_item_status(
     pool: &SqlitePool,
     id: &str,
     status: &str,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
+
+    // Closure gate (migration 0003): reject task→done under a `hard` story while
+    // any acceptance criterion is unchecked. Runs before the UPDATE in this tx.
+    enforce_closure_gate(&mut tx, id, status).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -552,6 +764,369 @@ pub async fn update_work_item_status(
 
     tx.commit().await?;
 
+    Ok(())
+}
+
+/// Set a work item's `relevance` (migration 0003, User Decision 2). The
+/// relevance axis is structural and carried ONLY by epic/feature/story; a
+/// `task`/`project` is rejected with a typed [`AppError::Validation`]. The
+/// kind is read first; `NotFound` if the id has no row; one event on success.
+pub async fn set_relevance(
+    pool: &SqlitePool,
+    id: &str,
+    relevance: Relevance,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, id).await?;
+    if !matches!(kind.as_str(), "epic" | "feature" | "story") {
+        return Err(AppError::Validation(format!(
+            "relevance is settable only on epic/feature/story, not on '{kind}'"
+        )));
+    }
+    let value = relevance_to_str(relevance);
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE work_items SET relevance = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
+        id,
+        value,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "relevance": value });
+    record_event(&mut tx, "work_item", id, "work_item.relevance_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Set a work item's `effort` grade (migration 0003). Task-scoped: the effort
+/// axis drives batch sizing for a leaf task, so a non-`task` kind is rejected
+/// with a typed [`AppError::Validation`]. Kind read first; `NotFound` via
+/// `rows_affected()==0`; one event.
+pub async fn set_effort(pool: &SqlitePool, id: &str, effort: Effort) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "effort is settable only on a task, not on '{kind}'"
+        )));
+    }
+    let value = effort_to_str(effort);
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE work_items SET effort = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
+        id,
+        value,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "effort": value });
+    record_event(&mut tx, "work_item", id, "work_item.effort_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Set a work item's `complexity` grade (migration 0003). Task-scoped (drives
+/// model-tier assignment for a leaf task); a non-`task` kind is rejected with a
+/// typed [`AppError::Validation`]. Kind read first; `NotFound` via
+/// `rows_affected()==0`; one event.
+pub async fn set_complexity(
+    pool: &SqlitePool,
+    id: &str,
+    complexity: Complexity,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "complexity is settable only on a task, not on '{kind}'"
+        )));
+    }
+    let value = complexity_to_str(complexity);
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE work_items SET complexity = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
+        id,
+        value,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "complexity": value });
+    record_event(&mut tx, "work_item", id, "work_item.complexity_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Set a story's `closure_gate` (migration 0003, User Decision 3). Story-scoped:
+/// the gate decides whether tasks under the story reject a `→done` transition
+/// while their acceptance criteria are unchecked (`hard`) or merely flag it
+/// (`soft`). A non-`story` kind is rejected with a typed [`AppError::Validation`].
+/// Kind read first; `NotFound` via `rows_affected()==0`; one event.
+pub async fn set_closure_gate(
+    pool: &SqlitePool,
+    story_id: &str,
+    gate: ClosureGate,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, story_id).await?;
+    if kind != "story" {
+        return Err(AppError::Validation(format!(
+            "closure_gate is settable only on a story, not on '{kind}'"
+        )));
+    }
+    let value = closure_gate_to_str(gate);
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE work_items SET closure_gate = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
+        story_id,
+        value,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{story_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "closure_gate": value });
+    record_event(&mut tx, "work_item", story_id, "work_item.closure_gate_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Append ONE `acceptance_criteria` row under the single-mutation-path
+/// discipline (migration 0003, mirroring [`append_activity`]). `seq` is
+/// allocated `MAX(seq)+1` per work item WITHIN the transaction; the
+/// `UNIQUE(work_item_id, seq)` constraint surfaces a race as a constraint
+/// violation. The work item must exist (`NotFound` otherwise). Event
+/// `work_item.acceptance_criterion_added`. Returns the new criterion id.
+pub async fn add_acceptance_criterion(
+    pool: &SqlitePool,
+    work_item_id: &str,
+    text: &str,
+) -> Result<Uuid, AppError> {
+    // Verify the work item exists first (NotFound, not a dangling-FK 500).
+    let _ = work_item_kind(pool, work_item_id).await?;
+
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+
+    let mut tx = pool.begin().await?;
+
+    let seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
+        work_item_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    sqlx::query!(
+        r#"INSERT INTO acceptance_criteria (id, work_item_id, seq, text) VALUES (?1, ?2, ?3, ?4)"#,
+        id_str,
+        work_item_id,
+        seq,
+        text,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({ "criterion_id": id_str, "seq": seq });
+    record_event(
+        &mut tx,
+        "work_item",
+        work_item_id,
+        "work_item.acceptance_criterion_added",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Read an acceptance criterion's owning `work_item_id`, erroring `NotFound` if
+/// the criterion id has no row. Used by the check/uncheck paths to attribute the
+/// owning item (for the audit-activity append and the event aggregate).
+async fn acceptance_criterion_work_item(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<String, AppError> {
+    sqlx::query!(
+        r#"SELECT work_item_id AS "work_item_id!" FROM acceptance_criteria WHERE id = ?1"#,
+        id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .map(|r| r.work_item_id)
+    .ok_or_else(|| AppError::NotFound(format!("acceptance_criterion '{id}' not found")))
+}
+
+/// Check an acceptance criterion (migration 0003): set `checked=1`,
+/// `checked_at=CURRENT_TIMESTAMP`, `checked_by`, AND append a `verification`
+/// `work_item_activity` row for the owning work item (state-vs-immutable-audit,
+/// per the plan's acceptance-criteria research note) — all in ONE transaction
+/// with ONE event. The owning work_item_id is read first (`NotFound` if the
+/// criterion is absent). Event `work_item.acceptance_criterion_checked`.
+pub async fn check_acceptance_criterion(
+    pool: &SqlitePool,
+    id: &str,
+    by: Option<&str>,
+) -> Result<(), AppError> {
+    let work_item_id = acceptance_criterion_work_item(pool, id).await?;
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"
+        UPDATE acceptance_criteria
+        SET checked = 1, checked_at = CURRENT_TIMESTAMP, checked_by = ?2
+        WHERE id = ?1
+        "#,
+        id,
+        by,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("acceptance_criterion '{id}' not found")));
+    }
+
+    // Append the immutable verification-audit activity row for the owning item.
+    // seq is allocated MAX(seq)+1 within this same tx.
+    let activity_id = Uuid::now_v7().to_string();
+    let act_seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM work_item_activity WHERE work_item_id = ?1"#,
+        work_item_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+    let summary = format!("acceptance criterion {id} checked");
+    sqlx::query!(
+        r#"
+        INSERT INTO work_item_activity (id, work_item_id, seq, entry_kind, author, summary)
+        VALUES (?1, ?2, ?3, 'verification', ?4, ?5)
+        "#,
+        activity_id,
+        work_item_id,
+        act_seq,
+        by,
+        summary,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({ "criterion_id": id, "checked": true });
+    record_event(
+        &mut tx,
+        "work_item",
+        &work_item_id,
+        "work_item.acceptance_criterion_checked",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Uncheck an acceptance criterion (migration 0003): clear `checked`,
+/// `checked_at`, `checked_by`. One event. `NotFound` via `rows_affected()==0`.
+/// (No audit-activity row — un-checking is a correction, not a verification.)
+pub async fn uncheck_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+    let work_item_id = acceptance_criterion_work_item(pool, id).await?;
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"
+        UPDATE acceptance_criteria
+        SET checked = 0, checked_at = NULL, checked_by = NULL
+        WHERE id = ?1
+        "#,
+        id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("acceptance_criterion '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "criterion_id": id, "checked": false });
+    record_event(
+        &mut tx,
+        "work_item",
+        &work_item_id,
+        "work_item.acceptance_criterion_unchecked",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Hard-delete an acceptance criterion (migration 0003): criteria have no
+/// independent export identity, so a removal is a hard DELETE. One event.
+/// `NotFound` via `rows_affected()==0`.
+pub async fn remove_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+    // Resolve the owning item first so the event aggregate is the work_item
+    // (and so an absent criterion is NotFound before any write).
+    let work_item_id = acceptance_criterion_work_item(pool, id).await?;
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(r#"DELETE FROM acceptance_criteria WHERE id = ?1"#, id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("acceptance_criterion '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "criterion_id": id, "removed": true });
+    record_event(
+        &mut tx,
+        "work_item",
+        &work_item_id,
+        "work_item.acceptance_criterion_removed",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -591,6 +1166,14 @@ pub async fn update_work_item(
     let status_str: Option<String> = req.status.map(status_to_str);
 
     let mut tx = pool.begin().await?;
+
+    // Closure gate (migration 0003): this generic PATCH can set status="done"
+    // directly, so it routes through the SAME gate as update_work_item_status
+    // (User Decision 3) — a task→done under a `hard` story with unchecked
+    // criteria is rejected here too. No-op when status is absent / not "done".
+    if let Some(s) = status_str.as_deref() {
+        enforce_closure_gate(&mut tx, id, s).await?;
+    }
 
     let affected = sqlx::query!(
         r#"
@@ -1519,5 +2102,210 @@ mod tests {
         // Re-deleting is NotFound (already tombstoned).
         let err = delete_work_item(&pool, &id).await.expect_err("re-delete");
         assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
+    }
+
+    /// `set_relevance` is rejected on a task (typed Validation) and accepted on a
+    /// story. Also asserts a freshly-created story defaults to `relevance="backlog"`.
+    #[tokio::test]
+    async fn set_relevance_scope_and_default_backlog() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        // Default relevance on a created story is "backlog".
+        let detail = get_work_item_detail(&pool, &story).await.expect("detail");
+        assert_eq!(detail.item.relevance.as_deref(), Some("backlog"), "story defaults backlog");
+
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        // task has NULL relevance on create.
+        let tdetail = get_work_item_detail(&pool, &task).await.expect("task detail");
+        assert!(tdetail.item.relevance.is_none(), "task relevance NULL on create");
+
+        // set_relevance on a task → Validation.
+        let err = set_relevance(&pool, &task, Relevance::Active)
+            .await
+            .expect_err("relevance on task must reject");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // set_relevance on a story → ok.
+        set_relevance(&pool, &story, Relevance::Active).await.expect("story relevance ok");
+        let detail = get_work_item_detail(&pool, &story).await.expect("detail");
+        assert_eq!(detail.item.relevance.as_deref(), Some("active"));
+    }
+
+    /// Row count of `acceptance_criteria`.
+    async fn count_criteria(pool: &SqlitePool) -> i64 {
+        sqlx::query!(r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria"#)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+            .n
+    }
+
+    /// `get_work_item_detail` folds the acceptance_criteria; an add emits +1
+    /// event and the criterion starts unchecked.
+    #[tokio::test]
+    async fn acceptance_criteria_fold_and_add_event() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        let ev_before = count_events(&pool).await;
+
+        add_acceptance_criterion(&pool, &task, "must build").await.expect("ac1");
+        add_acceptance_criterion(&pool, &task, "must test").await.expect("ac2");
+
+        assert_eq!(count_criteria(&pool).await, 2);
+        assert_eq!(count_events(&pool).await, ev_before + 2, "+1 event per add");
+
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.acceptance_criteria.len(), 2, "detail folds criteria");
+        assert_eq!(detail.acceptance_criteria[0].seq, 1);
+        assert_eq!(detail.acceptance_criteria[1].seq, 2, "monotonic seq");
+        assert_eq!(detail.acceptance_criteria[0].checked, 0, "starts unchecked");
+    }
+
+    /// Checking a criterion flips its state, appends exactly one `verification`
+    /// activity row, and records exactly one event.
+    #[tokio::test]
+    async fn check_criterion_writes_activity_and_one_event() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        let crit = add_acceptance_criterion(&pool, &task, "must build")
+            .await
+            .expect("ac")
+            .to_string();
+
+        let ev_before = count_events(&pool).await;
+        let act_before = count_activity(&pool).await;
+
+        check_acceptance_criterion(&pool, &crit, Some("alice"))
+            .await
+            .expect("check");
+
+        assert_eq!(count_events(&pool).await, ev_before + 1, "exactly one event");
+        assert_eq!(count_activity(&pool).await, act_before + 1, "+1 activity");
+
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.acceptance_criteria[0].checked, 1, "criterion flipped");
+        assert_eq!(detail.acceptance_criteria[0].checked_by.as_deref(), Some("alice"));
+        // The appended activity is a verification entry.
+        let verif = detail.activity.iter().find(|a| a.entry_kind == "verification");
+        assert!(verif.is_some(), "a verification activity row was appended");
+
+        // Uncheck clears state (no extra activity row, one event).
+        let ev2 = count_events(&pool).await;
+        let act2 = count_activity(&pool).await;
+        uncheck_acceptance_criterion(&pool, &crit).await.expect("uncheck");
+        assert_eq!(count_events(&pool).await, ev2 + 1, "uncheck: one event");
+        assert_eq!(count_activity(&pool).await, act2, "uncheck: no new activity");
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.acceptance_criteria[0].checked, 0, "unchecked");
+        assert!(detail.acceptance_criteria[0].checked_by.is_none(), "checked_by cleared");
+    }
+
+    /// A `hard` story blocks task→done while a criterion is unchecked, and allows
+    /// it once all are checked — across BOTH gated paths (update_work_item_status
+    /// and the generic update_work_item PATCH).
+    #[tokio::test]
+    async fn hard_gate_blocks_then_allows_task_done() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        set_closure_gate(&pool, &story, ClosureGate::Hard).await.expect("hard gate");
+
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        let crit = add_acceptance_criterion(&pool, &task, "must build")
+            .await
+            .expect("ac")
+            .to_string();
+
+        // Blocked while unchecked (status path).
+        let err = update_work_item_status(&pool, &task, "done")
+            .await
+            .expect_err("hard gate blocks done");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // Blocked while unchecked (generic PATCH path).
+        let patch_done = UpdateWorkItemRequest {
+            title: None,
+            body: None,
+            status: Some(Status::Done),
+            position: None,
+            attributes: None,
+        };
+        let err = update_work_item(&pool, &task, &patch_done)
+            .await
+            .expect_err("PATCH→done also gated");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // Check the criterion → done now allowed.
+        check_acceptance_criterion(&pool, &crit, None).await.expect("check");
+        update_work_item_status(&pool, &task, "done").await.expect("done allowed once checked");
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.item.status, "done");
+    }
+
+    /// A `soft` story (the default — no closure_gate set) allows task→done even
+    /// with an unchecked criterion.
+    #[tokio::test]
+    async fn soft_gate_allows_task_done_with_unchecked() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        // No set_closure_gate call ⇒ closure_gate is NULL (treated as soft).
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        add_acceptance_criterion(&pool, &task, "unchecked criterion")
+            .await
+            .expect("ac");
+
+        update_work_item_status(&pool, &task, "done")
+            .await
+            .expect("soft gate allows done with unchecked criteria");
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.item.status, "done");
+    }
+
+    /// `set_effort`/`set_complexity` are task-scoped (reject a story);
+    /// `set_closure_gate` is story-scoped (reject a task).
+    #[tokio::test]
+    async fn effort_complexity_closure_gate_scopes() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        set_effort(&pool, &task, Effort::M).await.expect("effort on task ok");
+        set_complexity(&pool, &task, Complexity::High).await.expect("complexity on task ok");
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.item.effort.as_deref(), Some("m"));
+        assert_eq!(detail.item.complexity.as_deref(), Some("high"));
+
+        let err = set_effort(&pool, &story, Effort::S).await.expect_err("effort on story rejects");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+        let err = set_complexity(&pool, &story, Complexity::Low)
+            .await
+            .expect_err("complexity on story rejects");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        set_closure_gate(&pool, &story, ClosureGate::Soft).await.expect("gate on story ok");
+        let err = set_closure_gate(&pool, &task, ClosureGate::Hard)
+            .await
+            .expect_err("gate on task rejects");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
     }
 }

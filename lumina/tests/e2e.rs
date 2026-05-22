@@ -66,6 +66,7 @@ async fn mcp_create(
             parent_id: parent.map(str::to_owned),
             title: title.to_owned(),
             body: None,
+            origin: None,
         }))
         .await
         .expect("create_work_item tool succeeds");

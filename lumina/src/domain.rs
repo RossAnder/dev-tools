@@ -29,6 +29,21 @@ pub struct WorkItem {
     /// Nullable JSON object of kind-specific fields (migration 0002); `None`
     /// means "no kind-specific fields".
     pub attributes: Option<serde_json::Value>,
+    /// Relevance axis (migration 0003): `active|backlog|deferred|rejected`. Set
+    /// only on epic/feature/story; NULL on task/project.
+    pub relevance: Option<String>,
+    /// Effort grade (migration 0003): `s|m|l` (task scope); NULL otherwise.
+    pub effort: Option<String>,
+    /// Complexity grade (migration 0003): `low|medium|high` (task scope).
+    pub complexity: Option<String>,
+    /// Provenance (migration 0003): which command produced this item.
+    pub origin: Option<String>,
+    /// Per-story closure gate (migration 0003): `hard|soft` (story scope).
+    pub closure_gate: Option<String>,
+    /// Task is blocked while this `open_questions` row is open (migration 0003).
+    pub blocked_by_question_id: Option<String>,
+    /// Task is exclusive to this `question_options` branch (migration 0003).
+    pub enabling_option_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -183,6 +198,12 @@ pub struct WorkItemDetail {
     pub context_blocks: Vec<ContextBlock>,
     /// The item's activity-log rows (migration 0002), ordered by `seq`.
     pub activity: Vec<WorkItemActivity>,
+    /// The item's acceptance criteria (migration 0003), ordered by `seq`.
+    pub acceptance_criteria: Vec<AcceptanceCriterion>,
+    /// The item's research notes (migration 0003) — Task 4 implements the fold.
+    pub research_notes: Vec<ResearchNote>,
+    /// The item's open questions (migration 0003) — Task 4 implements the fold.
+    pub open_questions: Vec<OpenQuestion>,
 }
 
 /// Create-body for a new work item. Deserialised by the HTTP POST handler
@@ -198,6 +219,10 @@ pub struct CreateWorkItemRequest {
     pub title: String,
     #[serde(default)]
     pub body: Option<String>,
+    /// Provenance (migration 0003): which command produced this item
+    /// (`plan|implement|review|optimise|tdd|human|none`); absent ⇒ NULL.
+    #[serde(default)]
+    pub origin: Option<String>,
 }
 
 /// Update-body for a status transition. Deserialised by the HTTP PATCH handler

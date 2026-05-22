@@ -578,12 +578,13 @@ impl LuminaTools {
         &self,
         Parameters(req): Parameters<CreateWorkItemRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        let id = repo::create_work_item(
+        let id = repo::create_work_item_with_origin(
             &self.pool,
             &req.kind,
             req.parent_id.as_deref(),
             &req.title,
             req.body.as_deref(),
+            req.origin.as_deref(),
         )
         .await
         .map_err(app_error_to_mcp)?;
@@ -968,6 +969,7 @@ mod tests {
                     parent_id: parent.map(str::to_owned),
                     title: kind.to_uppercase(),
                     body: None,
+                    origin: None,
                 }))
                 .await
                 .expect("legal create");
@@ -1051,6 +1053,7 @@ mod tests {
                 parent_id: Some(story),
                 title: "MCP-created task".to_owned(),
                 body: Some("body".to_owned()),
+                origin: None,
             }))
             .await
             .expect("create_work_item tool succeeds");
