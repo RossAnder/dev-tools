@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT work_item_id AS \"work_item_id!\" FROM research_notes WHERE id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "work_item_id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "research_notes",
+            "name": "work_item_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b22165ab76a3f6b9f796fc2ce622b5ffa0c5505aa4dbbc0502f3e8798167f097"
+}

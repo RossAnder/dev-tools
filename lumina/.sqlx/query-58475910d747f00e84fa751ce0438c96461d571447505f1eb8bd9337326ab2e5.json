@@ -1,0 +1,158 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            id                   AS \"id!\",\n            story_id             AS \"story_id!\",\n            seq                  AS \"seq!\",\n            question             AS \"question!\",\n            status               AS \"status?\",\n            answer               AS \"answer?\",\n            chosen_option_id     AS \"chosen_option_id?\",\n            decided_at           AS \"decided_at?\",\n            decided_by           AS \"decided_by?\",\n            prompting_finding_id AS \"prompting_finding_id?\",\n            prompting_note_id    AS \"prompting_note_id?\",\n            created_at           AS \"created_at!\"\n        FROM open_questions\n        WHERE story_id = ?1\n        ORDER BY seq\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "story_id!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "story_id"
+          }
+        }
+      },
+      {
+        "name": "seq!",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "name": "question!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "question"
+          }
+        }
+      },
+      {
+        "name": "status?",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "answer?",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "answer"
+          }
+        }
+      },
+      {
+        "name": "chosen_option_id?",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "chosen_option_id"
+          }
+        }
+      },
+      {
+        "name": "decided_at?",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "decided_at"
+          }
+        }
+      },
+      {
+        "name": "decided_by?",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "decided_by"
+          }
+        }
+      },
+      {
+        "name": "prompting_finding_id?",
+        "ordinal": 9,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "prompting_finding_id"
+          }
+        }
+      },
+      {
+        "name": "prompting_note_id?",
+        "ordinal": 10,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "prompting_note_id"
+          }
+        }
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 11,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "open_questions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "58475910d747f00e84fa751ce0438c96461d571447505f1eb8bd9337326ab2e5"
+}

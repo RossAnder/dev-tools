@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE research_notes\n        SET confidence = COALESCE(?2, confidence),\n            state      = COALESCE(?3, state),\n            rationale  = COALESCE(?4, rationale),\n            lens       = COALESCE(?5, lens)\n        WHERE id = ?1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "ae5148dd2ae979360aca495dc14349b6f772c8900d49f90c3b7b38b3b66915c8"
+}

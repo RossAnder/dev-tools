@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE work_items\n        SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP\n        WHERE blocked_by_question_id = ?1\n          AND status = 'blocked'\n          AND enabling_option_id IS NOT NULL\n          AND enabling_option_id <> ?2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d02006504904854e0a27c3459eca7ede9c28baee874719a68b95877030ec3cca"
+}

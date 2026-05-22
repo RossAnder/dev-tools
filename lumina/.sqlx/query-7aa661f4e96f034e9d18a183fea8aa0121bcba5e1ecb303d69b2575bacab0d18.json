@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(seq), 0) + 1 AS \"next!\" FROM question_options WHERE question_id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "next!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7aa661f4e96f034e9d18a183fea8aa0121bcba5e1ecb303d69b2575bacab0d18"
+}

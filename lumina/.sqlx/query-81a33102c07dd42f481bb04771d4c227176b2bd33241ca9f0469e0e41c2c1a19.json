@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO open_questions (id, story_id, seq, question, status) VALUES (?1, ?2, ?3, ?4, 'open')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "81a33102c07dd42f481bb04771d4c227176b2bd33241ca9f0469e0e41c2c1a19"
+}

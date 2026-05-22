@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO acceptance_criteria (id, work_item_id, seq, text) VALUES (?1, ?2, ?3, ?4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "7e020eddd46b8d60464cf52cac3cfe825e448fa689bea37560a8022d6a00f4aa"
+}

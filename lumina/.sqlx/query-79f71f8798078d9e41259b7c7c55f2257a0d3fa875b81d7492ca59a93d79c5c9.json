@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO research_notes\n            (id, work_item_id, seq, summary, body, confidence, state, lens, origin)\n        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "79f71f8798078d9e41259b7c7c55f2257a0d3fa875b81d7492ca59a93d79c5c9"
+}

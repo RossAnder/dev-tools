@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO work_item_activity (id, work_item_id, seq, entry_kind, author, summary)\n        VALUES (?1, ?2, ?3, 'verification', ?4, ?5)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "cae55afaa6cdfdc6d5eb5a20c6b275aaca4d2a249fd4ca66057e3018cb5b8098"
+}

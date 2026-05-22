@@ -86,6 +86,13 @@ pub struct Finding {
     pub fingerprint: Option<String>,
     pub flow: Option<String>,
     pub dedup_id: Option<String>,
+    /// Provenance (migration 0003): which command produced this finding.
+    pub origin: Option<String>,
+    /// `high|medium|low` evidence grade (migration 0003; free TEXT, repo-validated).
+    pub confidence: Option<String>,
+    /// Self-FK to the finding that supersedes this one (migration 0003); live
+    /// findings are `superseded_by IS NULL`.
+    pub superseded_by: Option<String>,
     pub resolved_at: Option<String>,
     pub resolution: Option<String>,
     pub defer_reason: Option<String>,
@@ -293,6 +300,10 @@ pub struct UpdateFindingRequest {
     /// New long-form description; absent leaves the existing description unchanged.
     #[serde(default)]
     pub description: Option<String>,
+    /// New evidence grade (`high|medium|low`); absent leaves the existing
+    /// confidence unchanged (migration 0003).
+    #[serde(default)]
+    pub confidence: Option<String>,
 }
 
 /// The five legal work-item kinds, ordered parent→child (`project` is the root).

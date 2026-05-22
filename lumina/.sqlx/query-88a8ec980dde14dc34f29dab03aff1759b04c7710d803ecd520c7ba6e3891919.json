@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE work_items\n        SET enabling_option_id = ?2, updated_at = CURRENT_TIMESTAMP\n        WHERE id = ?1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "88a8ec980dde14dc34f29dab03aff1759b04c7710d803ecd520c7ba6e3891919"
+}

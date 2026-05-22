@@ -1,0 +1,218 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            id            AS \"id!\",\n            kind          AS \"kind!\",\n            parent_id     AS \"parent_id?\",\n            title         AS \"title!\",\n            body          AS \"body?\",\n            status        AS \"status!\",\n            position      AS \"position?\",\n            attributes    AS \"attributes?\",\n            relevance              AS \"relevance?\",\n            effort                 AS \"effort?\",\n            complexity             AS \"complexity?\",\n            origin                 AS \"origin?\",\n            closure_gate           AS \"closure_gate?\",\n            blocked_by_question_id AS \"blocked_by_question_id?\",\n            enabling_option_id     AS \"enabling_option_id?\",\n            created_at    AS \"created_at!\",\n            updated_at    AS \"updated_at!\"\n        FROM work_items\n        WHERE deleted_at IS NULL\n          AND (?1 IS NULL OR parent_id = ?1)\n          AND (?2 IS NULL OR kind = ?2)\n        ORDER BY COALESCE(position, 0), created_at, id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "kind!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "parent_id?",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "parent_id"
+          }
+        }
+      },
+      {
+        "name": "title!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "name": "body?",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "name": "status!",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "position?",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "name": "attributes?",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "attributes"
+          }
+        }
+      },
+      {
+        "name": "relevance?",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "relevance"
+          }
+        }
+      },
+      {
+        "name": "effort?",
+        "ordinal": 9,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "effort"
+          }
+        }
+      },
+      {
+        "name": "complexity?",
+        "ordinal": 10,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "complexity"
+          }
+        }
+      },
+      {
+        "name": "origin?",
+        "ordinal": 11,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "name": "closure_gate?",
+        "ordinal": 12,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "closure_gate"
+          }
+        }
+      },
+      {
+        "name": "blocked_by_question_id?",
+        "ordinal": 13,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "blocked_by_question_id"
+          }
+        }
+      },
+      {
+        "name": "enabling_option_id?",
+        "ordinal": 14,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "enabling_option_id"
+          }
+        }
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 15,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "name": "updated_at!",
+        "ordinal": 16,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "c9a995a8b70d6df2ae2e9e60eaaba59dd7125917f0c19458750b8c95a3a2b8c9"
+}

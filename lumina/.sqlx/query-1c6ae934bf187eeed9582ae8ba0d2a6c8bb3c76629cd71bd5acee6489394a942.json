@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO findings (\n            id, work_item_id, kind, severity, effort, category, status,\n            file, line, symbol, summary, description, first_flagged, rounds,\n            fingerprint, flow, dedup_id, confidence, resolved_at, resolution,\n            defer_reason, defer_trigger, wontfix_rationale\n        )\n        VALUES (\n            ?1, ?2, ?3, ?4, ?5, ?6, ?7,\n            ?8, ?9, ?10, ?11, ?12, ?13, ?14,\n            ?15, ?16, ?17, ?18, ?19, ?20,\n            ?21, ?22, ?23\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 23
+    },
+    "nullable": []
+  },
+  "hash": "1c6ae934bf187eeed9582ae8ba0d2a6c8bb3c76629cd71bd5acee6489394a942"
+}

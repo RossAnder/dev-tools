@@ -857,6 +857,8 @@ impl LuminaTools {
             symbol: p.symbol,
             summary: p.summary,
             description: p.description,
+            // Task 5 adds the MCP param; for now the field is absent (set-or-leave).
+            confidence: None,
         };
         repo::update_finding(&self.pool, &p.id, &req)
             .await

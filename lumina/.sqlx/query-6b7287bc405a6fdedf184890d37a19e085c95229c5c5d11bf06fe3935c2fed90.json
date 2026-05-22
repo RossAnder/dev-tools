@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            id                AS \"id!\",\n            work_item_id      AS \"work_item_id?\",\n            kind              AS \"kind?\",\n            severity          AS \"severity?\",\n            effort            AS \"effort?\",\n            category          AS \"category?\",\n            status            AS \"status?\",\n            file              AS \"file?\",\n            line              AS \"line?\",\n            symbol            AS \"symbol?\",\n            summary           AS \"summary?\",\n            description       AS \"description?\",\n            first_flagged     AS \"first_flagged?\",\n            rounds            AS \"rounds?\",\n            fingerprint       AS \"fingerprint?\",\n            flow              AS \"flow?\",\n            dedup_id          AS \"dedup_id?\",\n            resolved_at       AS \"resolved_at?\",\n            resolution        AS \"resolution?\",\n            defer_reason      AS \"defer_reason?\",\n            defer_trigger     AS \"defer_trigger?\",\n            wontfix_rationale AS \"wontfix_rationale?\"\n        FROM findings\n        WHERE work_item_id = ?1\n        ORDER BY first_flagged DESC, id\n        ",
+  "query": "\n        SELECT\n            id                AS \"id!\",\n            work_item_id      AS \"work_item_id?\",\n            kind              AS \"kind?\",\n            severity          AS \"severity?\",\n            effort            AS \"effort?\",\n            category          AS \"category?\",\n            status            AS \"status?\",\n            file              AS \"file?\",\n            line              AS \"line?\",\n            symbol            AS \"symbol?\",\n            summary           AS \"summary?\",\n            description       AS \"description?\",\n            first_flagged     AS \"first_flagged?\",\n            rounds            AS \"rounds?\",\n            fingerprint       AS \"fingerprint?\",\n            flow              AS \"flow?\",\n            dedup_id          AS \"dedup_id?\",\n            origin            AS \"origin?\",\n            confidence        AS \"confidence?\",\n            superseded_by     AS \"superseded_by?\",\n            resolved_at       AS \"resolved_at?\",\n            resolution        AS \"resolution?\",\n            defer_reason      AS \"defer_reason?\",\n            defer_trigger     AS \"defer_trigger?\",\n            wontfix_rationale AS \"wontfix_rationale?\"\n        FROM findings\n        WHERE work_item_id = ?1\n          AND superseded_by IS NULL\n        ORDER BY first_flagged DESC, id\n        ",
   "describe": {
     "columns": [
       {
@@ -191,8 +191,41 @@
         }
       },
       {
-        "name": "resolved_at?",
+        "name": "origin?",
         "ordinal": 17,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "name": "confidence?",
+        "ordinal": 18,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "confidence"
+          }
+        }
+      },
+      {
+        "name": "superseded_by?",
+        "ordinal": 19,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "superseded_by"
+          }
+        }
+      },
+      {
+        "name": "resolved_at?",
+        "ordinal": 20,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -203,7 +236,7 @@
       },
       {
         "name": "resolution?",
-        "ordinal": 18,
+        "ordinal": 21,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -214,7 +247,7 @@
       },
       {
         "name": "defer_reason?",
-        "ordinal": 19,
+        "ordinal": 22,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -225,7 +258,7 @@
       },
       {
         "name": "defer_trigger?",
-        "ordinal": 20,
+        "ordinal": 23,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -236,7 +269,7 @@
       },
       {
         "name": "wontfix_rationale?",
-        "ordinal": 21,
+        "ordinal": 24,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -271,8 +304,11 @@
       true,
       true,
       true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "84e3d7054442dbb7599716d560dbe30efae6bc51d5c430d3f193a31f6666b21e"
+  "hash": "6b7287bc405a6fdedf184890d37a19e085c95229c5c5d11bf06fe3935c2fed90"
 }

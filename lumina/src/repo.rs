@@ -32,7 +32,8 @@ use uuid::Uuid;
 
 use crate::domain::{
     AcceptanceCriterion, ActivityType, ClosureGate, Complexity, ContextBlock, Disposition, Effort,
-    Finding, Relevance, Status, UpdateFindingRequest, UpdateWorkItemRequest, WorkItem,
+    Finding, OpenQuestion, QuestionOption, Relevance, ResearchNote, ResearchState, Status,
+    UpdateFindingRequest, UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem,
     WorkItemActivity, WorkItemDetail,
 };
 use crate::error::AppError;
@@ -114,6 +115,14 @@ fn closure_gate_to_str(gate: ClosureGate) -> String {
     match serde_json::to_value(gate) {
         Ok(Value::String(s)) => s,
         _ => unreachable!("ClosureGate serialises to a JSON string"),
+    }
+}
+
+/// Render the snake_case wire form of a [`ResearchState`] for storage.
+fn research_state_to_str(state: ResearchState) -> String {
+    match serde_json::to_value(state) {
+        Ok(Value::String(s)) => s,
+        _ => unreachable!("ResearchState serialises to a JSON string"),
     }
 }
 
@@ -392,6 +401,8 @@ pub async fn get_work_item_detail(
     let findings = list_findings(pool, id).await?;
     let activity = list_activity(pool, id).await?;
     let acceptance_criteria = list_acceptance_criteria(pool, id).await?;
+    let research_notes = list_research_notes(pool, id).await?;
+    let open_questions = list_open_questions(pool, id).await?;
 
     let context_blocks = sqlx::query_as!(
         ContextBlock,
@@ -419,11 +430,120 @@ pub async fn get_work_item_detail(
         context_blocks,
         activity,
         acceptance_criteria,
-        // TODO(Task 4): real fold of live research_notes (superseded_by IS NULL).
-        research_notes: Vec::new(),
-        // TODO(Task 4): real fold of open_questions (+ nested options).
-        open_questions: Vec::new(),
+        research_notes,
+        open_questions,
     })
+}
+
+/// List the LIVE research-note rows for a work item (migration 0003), ordered by
+/// the per-item monotonic `seq`. "Live" = `superseded_by IS NULL`: a note
+/// superseded by a newer one drops out of this fold. `query_as!` straight onto
+/// the [`ResearchNote`] read struct (all columns map 1:1).
+async fn list_research_notes(
+    pool: &SqlitePool,
+    work_item_id: &str,
+) -> Result<Vec<ResearchNote>, AppError> {
+    let rows = sqlx::query_as!(
+        ResearchNote,
+        r#"
+        SELECT
+            id            AS "id!",
+            work_item_id  AS "work_item_id!",
+            seq           AS "seq!",
+            summary       AS "summary!",
+            body          AS "body?",
+            confidence    AS "confidence?",
+            state         AS "state?",
+            rationale     AS "rationale?",
+            lens          AS "lens?",
+            origin        AS "origin?",
+            superseded_by AS "superseded_by?",
+            created_at    AS "created_at!"
+        FROM research_notes
+        WHERE work_item_id = ?1
+          AND superseded_by IS NULL
+        ORDER BY seq
+        "#,
+        work_item_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+/// List the open-question rows for a story (migration 0003), ordered by the
+/// per-story monotonic `seq`, EACH with its `question_options` (also `seq`-
+/// ordered) folded into the nested `options` Vec. Two queries (questions, then
+/// per-question options) keep the `.sqlx` cache simple and the read shape exact.
+async fn list_open_questions(
+    pool: &SqlitePool,
+    story_id: &str,
+) -> Result<Vec<OpenQuestion>, AppError> {
+    let questions = sqlx::query!(
+        r#"
+        SELECT
+            id                   AS "id!",
+            story_id             AS "story_id!",
+            seq                  AS "seq!",
+            question             AS "question!",
+            status               AS "status?",
+            answer               AS "answer?",
+            chosen_option_id     AS "chosen_option_id?",
+            decided_at           AS "decided_at?",
+            decided_by           AS "decided_by?",
+            prompting_finding_id AS "prompting_finding_id?",
+            prompting_note_id    AS "prompting_note_id?",
+            created_at           AS "created_at!"
+        FROM open_questions
+        WHERE story_id = ?1
+        ORDER BY seq
+        "#,
+        story_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut out = Vec::with_capacity(questions.len());
+    for q in questions {
+        let options = sqlx::query_as!(
+            QuestionOption,
+            r#"
+            SELECT
+                id          AS "id!",
+                question_id AS "question_id!",
+                seq         AS "seq!",
+                label       AS "label!",
+                detail      AS "detail?",
+                created_at  AS "created_at!"
+            FROM question_options
+            WHERE question_id = ?1
+            ORDER BY seq
+            "#,
+            q.id,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        // Scalars first, the `options` array-of-tables last (tables-last rule).
+        out.push(OpenQuestion {
+            id: q.id,
+            story_id: q.story_id,
+            seq: q.seq,
+            question: q.question,
+            status: q.status,
+            answer: q.answer,
+            chosen_option_id: q.chosen_option_id,
+            decided_at: q.decided_at,
+            decided_by: q.decided_by,
+            prompting_finding_id: q.prompting_finding_id,
+            prompting_note_id: q.prompting_note_id,
+            created_at: q.created_at,
+            options,
+        });
+    }
+
+    Ok(out)
 }
 
 /// List the acceptance-criteria rows for a work item, ordered by the per-item
@@ -501,7 +621,10 @@ async fn list_activity(
         .collect()
 }
 
-/// List the findings attached to a work item, newest-flagged first.
+/// List the LIVE findings attached to a work item, newest-flagged first.
+/// "Live" = `superseded_by IS NULL` (migration 0003): a finding superseded by a
+/// newer one drops out of this fold, mirroring the research-note supersession
+/// chain. This is the fold `get_work_item_detail` returns.
 pub async fn list_findings(
     pool: &SqlitePool,
     work_item_id: &str,
@@ -527,6 +650,9 @@ pub async fn list_findings(
             fingerprint       AS "fingerprint?",
             flow              AS "flow?",
             dedup_id          AS "dedup_id?",
+            origin            AS "origin?",
+            confidence        AS "confidence?",
+            superseded_by     AS "superseded_by?",
             resolved_at       AS "resolved_at?",
             resolution        AS "resolution?",
             defer_reason      AS "defer_reason?",
@@ -534,6 +660,7 @@ pub async fn list_findings(
             wontfix_rationale AS "wontfix_rationale?"
         FROM findings
         WHERE work_item_id = ?1
+          AND superseded_by IS NULL
         ORDER BY first_flagged DESC, id
         "#,
         work_item_id,
@@ -1485,7 +1612,8 @@ pub async fn update_finding(
             line        = COALESCE(?7, line),
             symbol      = COALESCE(?8, symbol),
             summary     = COALESCE(?9, summary),
-            description = COALESCE(?10, description)
+            description = COALESCE(?10, description),
+            confidence  = COALESCE(?11, confidence)
         WHERE id = ?1
         "#,
         id,
@@ -1498,6 +1626,7 @@ pub async fn update_finding(
         req.symbol,
         req.summary,
         req.description,
+        req.confidence,
     )
     .execute(&mut *tx)
     .await?
@@ -1509,6 +1638,40 @@ pub async fn update_finding(
 
     let payload = serde_json::json!({ "severity": severity_str, "status": req.status });
     record_event(&mut tx, "finding", id, "finding.updated", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Supersede a finding (migration 0003): set `findings.superseded_by = new_id` on
+/// the OLD finding so it drops out of the live `get_work_item_detail` fold
+/// (`superseded_by IS NULL`). Single-mutation-path + one event
+/// `finding.superseded`; `NotFound` (via `rows_affected()==0`) if the old finding
+/// is absent. Mirrors [`supersede_research_note`]. The `new_id` is stored as-is
+/// (a soft self-FK — the new finding is expected to exist but is not asserted
+/// here, matching the migration's soft-FK comment on the supersession columns).
+pub async fn supersede_finding(
+    pool: &SqlitePool,
+    old_id: &str,
+    new_id: &str,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE findings SET superseded_by = ?2 WHERE id = ?1"#,
+        old_id,
+        new_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("finding '{old_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "superseded_by": new_id });
+    record_event(&mut tx, "finding", old_id, "finding.superseded", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -1609,6 +1772,8 @@ pub struct NewFinding<'a> {
     pub fingerprint: Option<&'a str>,
     pub flow: Option<&'a str>,
     pub dedup_id: Option<&'a str>,
+    /// `high|medium|low` evidence grade (migration 0003); free TEXT in the DB.
+    pub confidence: Option<&'a str>,
     pub resolved_at: Option<&'a str>,
     pub resolution: Option<&'a str>,
     pub defer_reason: Option<&'a str>,
@@ -1640,14 +1805,14 @@ pub async fn create_finding(
         INSERT INTO findings (
             id, work_item_id, kind, severity, effort, category, status,
             file, line, symbol, summary, description, first_flagged, rounds,
-            fingerprint, flow, dedup_id, resolved_at, resolution,
+            fingerprint, flow, dedup_id, confidence, resolved_at, resolution,
             defer_reason, defer_trigger, wontfix_rationale
         )
         VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7,
             ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-            ?15, ?16, ?17, ?18, ?19,
-            ?20, ?21, ?22
+            ?15, ?16, ?17, ?18, ?19, ?20,
+            ?21, ?22, ?23
         )
         "#,
         id_str,
@@ -1667,6 +1832,7 @@ pub async fn create_finding(
         finding.fingerprint,
         finding.flow,
         finding.dedup_id,
+        finding.confidence,
         finding.resolved_at,
         finding.resolution,
         finding.defer_reason,
@@ -1687,6 +1853,450 @@ pub async fn create_finding(
     tx.commit().await?;
 
     Ok(id)
+}
+
+// ---------------------------------------------------------------------------
+// Research notes (migration 0003) — first-class records with confidence,
+// accept/reject state, and a `superseded_by` supersession chain. Mirror the
+// acceptance-criteria/activity child-table idiom (seq = MAX+1 per work item,
+// one event per write).
+// ---------------------------------------------------------------------------
+
+/// Append ONE `research_notes` row under the single-mutation-path discipline
+/// (migration 0003). `seq` is `MAX(seq)+1` per work item WITHIN the transaction;
+/// `state` defaults to `proposed`. The work item must exist (`NotFound`
+/// otherwise). Event `work_item.research_note_added`. Returns the new note id.
+#[allow(clippy::too_many_arguments)]
+pub async fn add_research_note(
+    pool: &SqlitePool,
+    work_item_id: &str,
+    summary: &str,
+    body: Option<&str>,
+    confidence: Option<&str>,
+    lens: Option<&str>,
+    origin: Option<&str>,
+) -> Result<Uuid, AppError> {
+    // Verify the work item exists first (NotFound, not a dangling-FK 500).
+    let _ = work_item_kind(pool, work_item_id).await?;
+
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+    // State defaults to `proposed` on create.
+    let state = research_state_to_str(ResearchState::Proposed);
+
+    let mut tx = pool.begin().await?;
+
+    let seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM research_notes WHERE work_item_id = ?1"#,
+        work_item_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO research_notes
+            (id, work_item_id, seq, summary, body, confidence, state, lens, origin)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "#,
+        id_str,
+        work_item_id,
+        seq,
+        summary,
+        body,
+        confidence,
+        state,
+        lens,
+        origin,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({ "note_id": id_str, "seq": seq });
+    record_event(&mut tx, "work_item", work_item_id, "work_item.research_note_added", payload)
+        .await?;
+
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Read a research note's owning `work_item_id`, erroring `NotFound` if the note
+/// id has no row. Used by the update/supersede paths to attribute the owning item
+/// for the event aggregate.
+async fn research_note_work_item(pool: &SqlitePool, id: &str) -> Result<String, AppError> {
+    sqlx::query!(
+        r#"SELECT work_item_id AS "work_item_id!" FROM research_notes WHERE id = ?1"#,
+        id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .map(|r| r.work_item_id)
+    .ok_or_else(|| AppError::NotFound(format!("research_note '{id}' not found")))
+}
+
+/// Partial set-or-leave update of a research note's curatable fields (migration
+/// 0003): `confidence`/`state`/`rationale`/`lens` via `COALESCE(?, col)` (absent
+/// ⇒ untouched). The typed `state` enum is rendered to its wire form. The owning
+/// work_item_id is read first (`NotFound` if the note is absent). One event
+/// `work_item.research_note_updated`.
+pub async fn update_research_note(
+    pool: &SqlitePool,
+    id: &str,
+    req: &UpdateResearchNoteRequest,
+) -> Result<(), AppError> {
+    let work_item_id = research_note_work_item(pool, id).await?;
+    let state_str: Option<String> = req.state.map(research_state_to_str);
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"
+        UPDATE research_notes
+        SET confidence = COALESCE(?2, confidence),
+            state      = COALESCE(?3, state),
+            rationale  = COALESCE(?4, rationale),
+            lens       = COALESCE(?5, lens)
+        WHERE id = ?1
+        "#,
+        id,
+        req.confidence,
+        state_str,
+        req.rationale,
+        req.lens,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("research_note '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "note_id": id, "state": state_str });
+    record_event(&mut tx, "work_item", &work_item_id, "work_item.research_note_updated", payload)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Supersede a research note (migration 0003): set `superseded_by = new_id` on
+/// the OLD note so it drops out of the live fold (`superseded_by IS NULL`). One
+/// event `work_item.research_note_superseded`; `NotFound` via
+/// `rows_affected()==0`. Mirrors [`supersede_finding`].
+pub async fn supersede_research_note(
+    pool: &SqlitePool,
+    old_id: &str,
+    new_id: &str,
+) -> Result<(), AppError> {
+    let work_item_id = research_note_work_item(pool, old_id).await?;
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE research_notes SET superseded_by = ?2 WHERE id = ?1"#,
+        old_id,
+        new_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("research_note '{old_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "superseded_by": new_id });
+    record_event(
+        &mut tx,
+        "work_item",
+        &work_item_id,
+        "work_item.research_note_superseded",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Open questions + options + branch resolution (migration 0003). A story-scoped
+// decision lifecycle: add a question + N options, block tasks on the question,
+// tie a task to a branch (`enabling_option_id`), then resolve — picking an option
+// unblocks the chosen branch and cancels the other branches' exclusive tasks.
+// ---------------------------------------------------------------------------
+
+/// Append ONE `open_questions` row under the single-mutation-path discipline
+/// (migration 0003). Story-scoped: a non-`story` target is rejected with a typed
+/// [`AppError::Validation`] (kind read first; this also yields `NotFound` if the
+/// id is absent). `seq` = `MAX(seq)+1` per story; `status` defaults to `open`.
+/// Event `open_question.added`. Returns the new question id.
+pub async fn add_open_question(
+    pool: &SqlitePool,
+    story_id: &str,
+    question: &str,
+) -> Result<Uuid, AppError> {
+    let kind = work_item_kind(pool, story_id).await?;
+    if kind != "story" {
+        return Err(AppError::Validation(format!(
+            "open questions are settable only on a story, not on '{kind}'"
+        )));
+    }
+
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+
+    let mut tx = pool.begin().await?;
+
+    let seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM open_questions WHERE story_id = ?1"#,
+        story_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    sqlx::query!(
+        r#"INSERT INTO open_questions (id, story_id, seq, question, status) VALUES (?1, ?2, ?3, ?4, 'open')"#,
+        id_str,
+        story_id,
+        seq,
+        question,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({ "question_id": id_str, "seq": seq });
+    record_event(&mut tx, "open_question", &id_str, "open_question.added", payload).await?;
+
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Read an open question's owning `story_id`, erroring `NotFound` if the question
+/// id has no row. Used by the option-add and resolve paths.
+async fn open_question_story(pool: &SqlitePool, id: &str) -> Result<String, AppError> {
+    sqlx::query!(r#"SELECT story_id AS "story_id!" FROM open_questions WHERE id = ?1"#, id)
+        .fetch_optional(pool)
+        .await?
+        .map(|r| r.story_id)
+        .ok_or_else(|| AppError::NotFound(format!("open_question '{id}' not found")))
+}
+
+/// Append ONE `question_options` row under the single-mutation-path discipline
+/// (migration 0003). `seq` = `MAX(seq)+1` per question; the question must exist
+/// (`NotFound` otherwise). Event `open_question.option_added`. Returns the new
+/// option id.
+pub async fn add_question_option(
+    pool: &SqlitePool,
+    question_id: &str,
+    label: &str,
+    detail: Option<&str>,
+) -> Result<Uuid, AppError> {
+    // Verify the question exists first (NotFound, not a dangling-FK 500).
+    let _ = open_question_story(pool, question_id).await?;
+
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+
+    let mut tx = pool.begin().await?;
+
+    let seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM question_options WHERE question_id = ?1"#,
+        question_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    sqlx::query!(
+        r#"INSERT INTO question_options (id, question_id, seq, label, detail) VALUES (?1, ?2, ?3, ?4, ?5)"#,
+        id_str,
+        question_id,
+        seq,
+        label,
+        detail,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({ "option_id": id_str, "seq": seq });
+    record_event(&mut tx, "open_question", question_id, "open_question.option_added", payload)
+        .await?;
+
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Block a task on an open question (migration 0003): set
+/// `blocked_by_question_id = question_id` AND `status = 'blocked'` in one write.
+/// One event `work_item.blocked_on_question`; `NotFound` via `rows_affected()==0`.
+pub async fn block_task_on_question(
+    pool: &SqlitePool,
+    task_id: &str,
+    question_id: &str,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"
+        UPDATE work_items
+        SET blocked_by_question_id = ?2, status = 'blocked', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?1
+        "#,
+        task_id,
+        question_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "blocked_by_question_id": question_id });
+    record_event(&mut tx, "work_item", task_id, "work_item.blocked_on_question", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Tie a task to a specific answer-option branch (migration 0003): set
+/// `enabling_option_id = option_id` (the exclusive-branch marker — a task with
+/// this set is cancelled if a DIFFERENT option is chosen on resolution). One
+/// event `work_item.enabling_option_set`; `NotFound` via `rows_affected()==0`.
+pub async fn set_enabling_option(
+    pool: &SqlitePool,
+    task_id: &str,
+    option_id: &str,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"
+        UPDATE work_items
+        SET enabling_option_id = ?2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?1
+        "#,
+        task_id,
+        option_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "enabling_option_id": option_id });
+    record_event(&mut tx, "work_item", task_id, "work_item.enabling_option_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Resolve an open question by picking an answer option (migration 0003).
+///
+/// This is the one multi-write mutation in the module: in ONE transaction it
+///   1. marks the question `status='answered'`, stamps `chosen_option_id`,
+///      `decided_at`, `decided_by`;
+///   2. transitions the CHOSEN branch's blocked tasks `blocked → todo` — both the
+///      exclusive tasks tied to the chosen option AND any non-exclusive blocked
+///      task (NULL `enabling_option_id`) on this question;
+///   3. transitions the OTHER branches' EXCLUSIVE blocked tasks (a non-NULL
+///      `enabling_option_id` that is NOT the chosen one) to `status='cancelled'`.
+///
+/// It emits EXACTLY ONE `open_question.resolved` event for the whole resolution
+/// (NOT one per task), preserving the +1-event-per-logical-write invariant.
+///
+/// `chosen_option_id` must belong to the question (else `Validation`). `NotFound`
+/// if the question is absent (checked before any write).
+pub async fn resolve_open_question(
+    pool: &SqlitePool,
+    question_id: &str,
+    chosen_option_id: &str,
+    by: Option<&str>,
+) -> Result<(), AppError> {
+    // NotFound if the question is absent (before any write).
+    let _ = open_question_story(pool, question_id).await?;
+
+    // Validate the chosen option belongs to THIS question.
+    let owns = sqlx::query!(
+        r#"SELECT COUNT(*) AS "n!" FROM question_options WHERE id = ?1 AND question_id = ?2"#,
+        chosen_option_id,
+        question_id,
+    )
+    .fetch_one(pool)
+    .await?
+    .n;
+    if owns == 0 {
+        return Err(AppError::Validation(format!(
+            "option '{chosen_option_id}' does not belong to open_question '{question_id}'"
+        )));
+    }
+
+    let mut tx = pool.begin().await?;
+
+    // 1. Mark the question answered.
+    sqlx::query!(
+        r#"
+        UPDATE open_questions
+        SET status = 'answered',
+            chosen_option_id = ?2,
+            decided_at = CURRENT_TIMESTAMP,
+            decided_by = ?3
+        WHERE id = ?1
+        "#,
+        question_id,
+        chosen_option_id,
+        by,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // 2. Unblock the chosen branch: blocked tasks on this question whose
+    //    enabling_option is the chosen one OR is NULL (non-exclusive) → todo.
+    sqlx::query!(
+        r#"
+        UPDATE work_items
+        SET status = 'todo', updated_at = CURRENT_TIMESTAMP
+        WHERE blocked_by_question_id = ?1
+          AND status = 'blocked'
+          AND (enabling_option_id = ?2 OR enabling_option_id IS NULL)
+        "#,
+        question_id,
+        chosen_option_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // 3. Cancel the other branches' EXCLUSIVE tasks: blocked tasks on this
+    //    question with a non-NULL enabling_option that is NOT the chosen one.
+    sqlx::query!(
+        r#"
+        UPDATE work_items
+        SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+        WHERE blocked_by_question_id = ?1
+          AND status = 'blocked'
+          AND enabling_option_id IS NOT NULL
+          AND enabling_option_id <> ?2
+        "#,
+        question_id,
+        chosen_option_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // EXACTLY ONE event for the whole resolution (NOT per task).
+    let payload = serde_json::json!({ "chosen_option_id": chosen_option_id });
+    record_event(&mut tx, "open_question", question_id, "open_question.resolved", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Append ONE `events` row inside an in-flight transaction. Called by every
@@ -2307,5 +2917,245 @@ mod tests {
             .await
             .expect_err("gate on task rejects");
         assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    /// Read a single work item's status (test helper).
+    async fn item_status(pool: &SqlitePool, id: &str) -> String {
+        sqlx::query!(r#"SELECT status AS "status!" FROM work_items WHERE id = ?1"#, id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+            .status
+    }
+
+    /// Count events of a given `event_type` (test helper — proves the
+    /// exactly-one-event-per-logical-write invariant for the multi-write resolve).
+    async fn count_events_of_type(pool: &SqlitePool, event_type: &str) -> i64 {
+        sqlx::query!(
+            r#"SELECT COUNT(*) AS "n!" FROM events WHERE event_type = ?1"#,
+            event_type,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .n
+    }
+
+    /// `add_open_question` on a non-story (here: a task) returns a typed
+    /// `Validation`, and succeeds on a story.
+    #[tokio::test]
+    async fn add_open_question_rejects_non_story() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        let err = add_open_question(&pool, &task, "should we?")
+            .await
+            .expect_err("open question on a task must reject");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        add_open_question(&pool, &story, "should we?")
+            .await
+            .expect("open question on a story ok");
+    }
+
+    /// Resolving a two-option question unblocks the chosen branch's task (→todo)
+    /// and cancels the other branch's exclusive task (→cancelled); a non-exclusive
+    /// blocked task on the question is also unblocked; and the whole multi-write
+    /// resolution emits EXACTLY ONE `open_question.resolved` event.
+    #[tokio::test]
+    async fn resolve_open_question_branches_and_one_event() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let q = add_open_question(&pool, &story, "which approach?")
+            .await
+            .expect("question")
+            .to_string();
+        let opt_a = add_question_option(&pool, &q, "A", None).await.expect("opt A").to_string();
+        let opt_b = add_question_option(&pool, &q, "B", None).await.expect("opt B").to_string();
+
+        // Three branch tasks: exclusive-to-A, exclusive-to-B, and non-exclusive.
+        let task_a = create_work_item(&pool, "task", Some(&story), "TA", None)
+            .await
+            .expect("task A")
+            .to_string();
+        let task_b = create_work_item(&pool, "task", Some(&story), "TB", None)
+            .await
+            .expect("task B")
+            .to_string();
+        let task_shared = create_work_item(&pool, "task", Some(&story), "TS", None)
+            .await
+            .expect("task shared")
+            .to_string();
+
+        block_task_on_question(&pool, &task_a, &q).await.expect("block A");
+        set_enabling_option(&pool, &task_a, &opt_a).await.expect("tie A");
+        block_task_on_question(&pool, &task_b, &q).await.expect("block B");
+        set_enabling_option(&pool, &task_b, &opt_b).await.expect("tie B");
+        block_task_on_question(&pool, &task_shared, &q).await.expect("block shared");
+
+        assert_eq!(item_status(&pool, &task_a).await, "blocked");
+        assert_eq!(item_status(&pool, &task_b).await, "blocked");
+        assert_eq!(item_status(&pool, &task_shared).await, "blocked");
+
+        let resolved_before = count_events_of_type(&pool, "open_question.resolved").await;
+        let ev_before = count_events(&pool).await;
+
+        // Choose option A.
+        resolve_open_question(&pool, &q, &opt_a, Some("alice"))
+            .await
+            .expect("resolve");
+
+        // Chosen branch (A) and non-exclusive (shared) → todo; other branch (B)
+        // → cancelled.
+        assert_eq!(item_status(&pool, &task_a).await, "todo", "chosen-branch task unblocked");
+        assert_eq!(item_status(&pool, &task_shared).await, "todo", "non-exclusive task unblocked");
+        assert_eq!(item_status(&pool, &task_b).await, "cancelled", "other-branch task cancelled");
+
+        // Question is answered with the chosen option recorded.
+        let detail = get_work_item_detail(&pool, &story).await.expect("detail");
+        let folded = detail
+            .open_questions
+            .iter()
+            .find(|oq| oq.id == q)
+            .expect("question folded into detail");
+        assert_eq!(folded.status.as_deref(), Some("answered"));
+        assert_eq!(folded.chosen_option_id.as_deref(), Some(opt_a.as_str()));
+        assert_eq!(folded.options.len(), 2, "both options folded");
+
+        // EXACTLY ONE resolved event for the whole multi-write resolution.
+        assert_eq!(
+            count_events_of_type(&pool, "open_question.resolved").await,
+            resolved_before + 1,
+            "exactly one open_question.resolved event for the resolution"
+        );
+        assert_eq!(
+            count_events(&pool).await,
+            ev_before + 1,
+            "the multi-write resolution adds exactly one events row"
+        );
+
+        // Resolving with an option from a DIFFERENT question is Validation.
+        let q2 = add_open_question(&pool, &story, "another?").await.expect("q2").to_string();
+        let err = resolve_open_question(&pool, &q2, &opt_a, None)
+            .await
+            .expect_err("foreign option must reject");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // Resolving a missing question is NotFound.
+        let err = resolve_open_question(&pool, "missing", &opt_a, None)
+            .await
+            .expect_err("missing question");
+        assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
+    }
+
+    /// A superseded research note drops out of the live `get_work_item_detail`
+    /// fold; `add_research_note` defaults `state='proposed'` and emits one event.
+    #[tokio::test]
+    async fn superseded_research_note_excluded_from_live_fold() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let ev_before = count_events(&pool).await;
+
+        let old = add_research_note(&pool, &story, "old finding", None, Some("low"), None, None)
+            .await
+            .expect("old note")
+            .to_string();
+        let new = add_research_note(&pool, &story, "new finding", None, Some("high"), None, None)
+            .await
+            .expect("new note")
+            .to_string();
+        assert_eq!(count_events(&pool).await, ev_before + 2, "+1 event per add");
+
+        // Both live before supersession; default state is proposed.
+        let detail = get_work_item_detail(&pool, &story).await.expect("detail");
+        assert_eq!(detail.research_notes.len(), 2, "both notes live");
+        assert!(
+            detail.research_notes.iter().all(|n| n.state.as_deref() == Some("proposed")),
+            "default state proposed"
+        );
+
+        // Supersede the old note by the new one.
+        supersede_research_note(&pool, &old, &new).await.expect("supersede");
+
+        let detail = get_work_item_detail(&pool, &story).await.expect("detail");
+        assert_eq!(detail.research_notes.len(), 1, "superseded note excluded");
+        assert_eq!(detail.research_notes[0].id, new, "only the live note remains");
+
+        // update_research_note set-or-leave: accept the surviving note.
+        let req = UpdateResearchNoteRequest {
+            confidence: None,
+            state: Some(ResearchState::Accepted),
+            rationale: Some("chosen".into()),
+            lens: None,
+        };
+        update_research_note(&pool, &new, &req).await.expect("accept");
+        let detail = get_work_item_detail(&pool, &story).await.expect("detail");
+        assert_eq!(detail.research_notes[0].state.as_deref(), Some("accepted"));
+        assert_eq!(detail.research_notes[0].rationale.as_deref(), Some("chosen"));
+        assert_eq!(detail.research_notes[0].confidence.as_deref(), Some("high"), "confidence left");
+    }
+
+    /// A superseded finding drops out of the live findings fold; `confidence`
+    /// threads through create + the update set-or-leave path.
+    #[tokio::test]
+    async fn superseded_finding_excluded_and_confidence_threads() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let old = create_finding(
+            &pool,
+            &story,
+            &NewFinding { summary: Some("old"), confidence: Some("low"), ..NewFinding::default() },
+        )
+        .await
+        .expect("old finding")
+        .to_string();
+        let new = create_finding(
+            &pool,
+            &story,
+            &NewFinding { summary: Some("new"), confidence: Some("high"), ..NewFinding::default() },
+        )
+        .await
+        .expect("new finding")
+        .to_string();
+
+        // Both live; confidence stored from create.
+        let detail = get_work_item_detail(&pool, &story).await.expect("detail");
+        assert_eq!(detail.findings.len(), 2, "both findings live");
+        let old_f = detail.findings.iter().find(|f| f.id == old).expect("old in fold");
+        assert_eq!(old_f.confidence.as_deref(), Some("low"));
+
+        // update_finding honours confidence (set-or-leave).
+        let req = UpdateFindingRequest {
+            severity: None,
+            effort: None,
+            category: None,
+            status: None,
+            file: None,
+            line: None,
+            symbol: None,
+            summary: None,
+            description: None,
+            confidence: Some("medium".into()),
+        };
+        update_finding(&pool, &old, &req).await.expect("update confidence");
+
+        // Supersede the old finding.
+        supersede_finding(&pool, &old, &new).await.expect("supersede");
+        let detail = get_work_item_detail(&pool, &story).await.expect("detail");
+        assert_eq!(detail.findings.len(), 1, "superseded finding excluded");
+        assert_eq!(detail.findings[0].id, new);
+        assert_eq!(detail.findings[0].confidence.as_deref(), Some("high"));
+
+        // Superseding a missing finding is NotFound.
+        let err = supersede_finding(&pool, "missing", &new)
+            .await
+            .expect_err("missing finding");
+        assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
     }
 }

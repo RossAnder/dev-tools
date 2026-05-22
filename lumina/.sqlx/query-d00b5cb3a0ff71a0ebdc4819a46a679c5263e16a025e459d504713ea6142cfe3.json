@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO question_options (id, question_id, seq, label, detail) VALUES (?1, ?2, ?3, ?4, ?5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "d00b5cb3a0ff71a0ebdc4819a46a679c5263e16a025e459d504713ea6142cfe3"
+}
