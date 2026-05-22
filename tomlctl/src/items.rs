@@ -269,6 +269,25 @@ pub(crate) fn items_add_value_to(
             got_type
         );
     };
+    // Ledger rows in the `items` array are keyed by `id` (the `[[items]]`
+    // schema's primary key). Reject an id-less or empty-id row up front:
+    // without this guard a batch (`items add-many` / `apply` add-op) whose
+    // rows omit `id` lands unaddressable rows that silently break
+    // `items list --pluck id`, every `update`/`apply` by-id op, and the
+    // dedupe contract — the failure only surfaces downstream, far from the
+    // bad write. Event-log arrays (`vet_events`, `rollback_events`,
+    // `events`) carry no `id`, so the check is scoped to the ledger array.
+    if array_name == "items"
+        && !obj
+            .get("id")
+            .and_then(JsonValue::as_str)
+            .is_some_and(|s| !s.is_empty())
+    {
+        bail!(
+            "ledger row must carry a non-empty string `id` (e.g. {{\"id\":\"R1\", ...}}); \
+             mint one with `tomlctl items next-id <file> --prefix <P>` and stamp it onto each row"
+        );
+    }
     // T6b: auto-populate `dedup_id` from the payload BEFORE conversion to
     // TOML, unless the caller already set it or the env-var kill switch is
     // active. Hooking here covers every single-add path: direct `items add`,
@@ -2840,6 +2859,39 @@ summary = "design finding"
             msg.contains("row 2"),
             "expected error to mention row 2, got: {msg}"
         );
+    }
+
+    #[test]
+    fn items_add_many_rejects_id_less_ledger_row() {
+        // Regression: an `items` batch whose rows omit `id` (e.g. an agent
+        // that put non-id fields in --defaults-json but forgot to thread the
+        // minted ids into the NDJSON rows) must fail loudly at write time,
+        // not silently land unaddressable rows. The bad row is row 2; row 1
+        // carries an id and would otherwise have been appended.
+        let mut doc = led();
+        let rows: Vec<JsonValue> = vec![
+            serde_json::from_str(r#"{"id":"R10","summary":"has id"}"#).unwrap(),
+            serde_json::from_str(r#"{"summary":"no id","severity":"warning"}"#).unwrap(),
+        ];
+        let err = items_add_many(&mut doc, "items", &rows, None).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("non-empty string `id`"),
+            "expected id-required error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn items_add_value_to_allows_id_less_event_log_row() {
+        // The id guard is scoped to the `items` ledger array: event-log
+        // arrays (vet_events / rollback_events / events) legitimately carry
+        // no `id`, so array-append of an id-less row must still succeed.
+        let mut doc = led();
+        let row: JsonValue =
+            serde_json::from_str(r#"{"timestamp":"2026-05-22T00:00:00Z","agent_index":1}"#).unwrap();
+        items_add_value_to(&mut doc, row, "vet_events").unwrap();
+        let events = items_array(&doc, "vet_events");
+        assert_eq!(events.len(), 1);
     }
 
     #[test]
