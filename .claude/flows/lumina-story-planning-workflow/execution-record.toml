@@ -21,3 +21,189 @@ summary = "CONVENTIONS.md cites entry_type (not entry_kind) for record_task_acti
 original_intent = 'Plan Approach §3 (Provenance recording) instructed callers to pass entry_kind: "execution" to mcp__lumina__record_task_activity.'
 rationale = "The actual lumina MCP tool surface (claude/skills/lumina/SKILL.md tool catalogue) takes entry_type, not entry_kind. Plan prose uses stale terminology; the correct argument name is entry_type, with accepted enum {execution, vet, comment}. Task 2 agent followed the tool surface and used entry_type in CONVENTIONS.md §c, which is what all downstream skills will copy."
 dedup_id = "ee53315d4c2d21ba"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "1"
+status = "done"
+summary = "Created lumina-story-blocks plugin manifest + skills/.gitkeep marker"
+files = [
+    "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json",
+    "claude/plugins/lumina-story-blocks/skills/.gitkeep",
+]
+commits = ["be3aa4dd6a248df34914605f2831de39bd44a682"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "a3c786bed146b2ab"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "2"
+status = "done"
+summary = "Wrote CONVENTIONS.md with 7 sections (a-g) + verbatim Supersede? AskUserQuestion phrasing"
+files = ["claude/plugins/lumina-story-blocks/CONVENTIONS.md"]
+commits = ["be3aa4dd6a248df34914605f2831de39bd44a682"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "0b02248ccedfd50a"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "3"
+status = "done"
+summary = "Wrote plugin README with 6 sections (What/Load/Skills/Idempotency/Prerequisites/Verification)"
+files = ["claude/plugins/lumina-story-blocks/README.md"]
+commits = ["be3aa4dd6a248df34914605f2831de39bd44a682"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "05dd62d8ab12087d"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "4"
+status = "done"
+summary = "Authored 3 thin-wrapper skills (relevance, closure-gate, not-doing) with §b 5-step + §c provenance"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/relevance/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/closure-gate/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/not-doing/SKILL.md",
+]
+commits = ["6fb0cef2c56e9f3108699da64637f63e3d377b1c"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "02eb44c3cbda2278"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "5"
+status = "done"
+summary = "Authored 3 narrative skills (problem-statement, approach, edge-cases); approach pre-reads PS/notes/questions; edge-cases cites §g"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/problem-statement/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/approach/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/edge-cases/SKILL.md",
+]
+commits = ["6fb0cef2c56e9f3108699da64637f63e3d377b1c"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "2a09083ca56fcecd"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "6"
+status = "done"
+summary = "Authored user-interrogation (HumanLayer 4-axis + 5th-axis fallback; story_id arg gotcha) + acceptance-criteria (task-child iteration, 3 free-text hints)"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/user-interrogation/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/acceptance-criteria/SKILL.md",
+]
+commits = ["6fb0cef2c56e9f3108699da64637f63e3d377b1c"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "5a87e80366be4b41"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "7"
+status = "done"
+summary = "Authored forked research-notes skill (context: fork + agent: general-purpose); gap-identify -> research -> add_research_note state=proposed -> supersede_research_note path; reserves lens=edge-case for /lumina:edge-cases"
+files = ["claude/plugins/lumina-story-blocks/skills/research-notes/SKILL.md"]
+commits = ["6fb0cef2c56e9f3108699da64637f63e3d377b1c"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "9c155fa343dcfd32"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-lite"
+task_ref = "8"
+status = "done"
+summary = "Inserted Story-block skill family section in claude/skills/lumina/SKILL.md between When-to-use and Relationship-to-tomlctl"
+files = ["claude/skills/lumina/SKILL.md"]
+commits = ["fdfe732bac070974691e198e212371b996b79d7f"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+dedup_id = "21f4c3575469ac6b"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-lite"
+task_ref = "9"
+status = "done"
+summary = "Appended Story-block skills plugin section to lumina/CLAUDE.md (4-line pointer; TEST-BOOTSTRAP block untouched)"
+files = ["lumina/CLAUDE.md"]
+commits = ["a64ef17160e0ad37b0f784347d86d0a9355dcb64"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+dedup_id = "b3af3b27ae331034"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-05-25
+agent = "implement-orchestrator"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-05-25
+agent = "implement-orchestrator"
+command = "cargo test --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-05-25
+agent = "implement-orchestrator"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-05-25
+agent = "implement-orchestrator"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "E16"
+type = "status-transition"
+date = 2026-05-25
+agent = "plan-update"
+summary = "All 9 implementation tasks complete; T10 manual smoke test awaits user. Implementation phase done -> review phase."
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "32b4d0a47802bbbb"

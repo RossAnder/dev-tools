@@ -1,6 +1,6 @@
 slug = "lumina-story-planning-workflow"
 plan_path = "docs/plans/lumina-story-planning-workflow.md"
-status = "in-progress"
+status = "review"
 created = 2026-05-25
 updated = 2026-05-25
 branch = "main"
@@ -11,8 +11,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 10
+completed = 9
 in_progress = 0
 
 [artifacts]
