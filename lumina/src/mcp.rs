@@ -1084,6 +1084,9 @@ impl LuminaTools {
             summary: p.summary,
             description: p.description,
             confidence: p.confidence,
+            // T4 of the project↔repo-links plan adds the `repo_id` field to
+            // `UpdateFindingParams`; T1 only widens the domain struct.
+            repo_id: None,
         };
         repo::update_finding(&self.pool, &p.id, &req)
             .await

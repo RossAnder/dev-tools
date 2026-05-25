@@ -166,6 +166,112 @@ fn validate_attributes_for_kind(
     Ok(())
 }
 
+/// Parse and canonicalise a GitHub `<owner>/<name>` repo slug (migration 0004).
+/// Returns the fully-lowercased slug on success, `Validation` (→ 422) on any
+/// rule violation. Reused by every `repo_links` mutator and by the structured
+/// `files_touched` entry validator on `set_task_spec` (T4).
+///
+/// Rules (from Research Notes in the plan):
+///   * Exactly one `/` separator (split on first; reject zero or > 1).
+///   * Owner: 1-39 chars from `[A-Za-z0-9-]`; first char alphanumeric; no
+///     leading/trailing hyphen; no consecutive hyphens. (Mirrors the GitHub
+///     username regex `^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$` with i-flag.)
+///   * Name: 1-100 chars from `[A-Za-z0-9._-]`; must NOT end with `.git`; must
+///     NOT be exactly `.` or `..`. We additionally reject a leading `.`/`-`/`_`
+///     in the name segment — GitHub rejects those in practice, and the plan's
+///     `x/-y` acceptance case requires this guard (documented inline below).
+///   * Both segments are lowercased on the canonical return value (GitHub repo
+///     resolution is case-insensitive; storing `Foo/Bar` and `foo/bar` as
+///     distinct rows would defeat the per-project UNIQUE(slug) constraint).
+///
+/// Hand-rolled (no `regex` crate dep) — keep this in sync if the rules change.
+pub fn parse_github_slug(s: &str) -> Result<String, AppError> {
+    let err = |reason: &str| {
+        AppError::Validation(format!("invalid GitHub slug '{s}': {reason}"))
+    };
+
+    // Exactly one '/'.
+    let slash_count = s.bytes().filter(|b| *b == b'/').count();
+    if slash_count != 1 {
+        return Err(err("must contain exactly one '/' separator"));
+    }
+    let (owner, name) = s.split_once('/').expect("slash_count == 1 guarantees split");
+
+    // --- owner -----------------------------------------------------------
+    if owner.is_empty() {
+        return Err(err("owner segment is empty"));
+    }
+    if owner.len() > 39 {
+        return Err(err("owner segment exceeds 39 chars"));
+    }
+    let owner_bytes = owner.as_bytes();
+    // First / last char alphanumeric (rejects leading/trailing hyphen).
+    let is_alnum = |b: u8| b.is_ascii_alphanumeric();
+    let is_owner_char = |b: u8| is_alnum(b) || b == b'-';
+    if !is_alnum(owner_bytes[0]) {
+        return Err(err("owner must start with an alphanumeric character"));
+    }
+    if !is_alnum(owner_bytes[owner_bytes.len() - 1]) {
+        return Err(err("owner must end with an alphanumeric character"));
+    }
+    let mut prev_was_hyphen = false;
+    for &b in owner_bytes {
+        if !is_owner_char(b) {
+            return Err(err(
+                "owner may only contain alphanumeric characters and hyphens",
+            ));
+        }
+        if b == b'-' && prev_was_hyphen {
+            return Err(err("owner must not contain consecutive hyphens"));
+        }
+        prev_was_hyphen = b == b'-';
+    }
+
+    // --- name ------------------------------------------------------------
+    if name.is_empty() {
+        return Err(err("name segment is empty"));
+    }
+    if name.len() > 100 {
+        return Err(err("name segment exceeds 100 chars"));
+    }
+    if name == "." || name == ".." {
+        return Err(err("name segment must not be '.' or '..'"));
+    }
+    // Empirical: GitHub rejects a leading `.`, `-`, or `_` in repo names. The
+    // plan's `x/-y` test case requires this guard; without it the basic name
+    // regex `[A-Za-z0-9._-]{1,100}` would accept `-y`. Keep this rule in lock-
+    // step with the test expectations in `mod tests::parse_github_slug_*`.
+    let name_bytes = name.as_bytes();
+    match name_bytes[0] {
+        b'.' | b'-' | b'_' => {
+            return Err(err(
+                "name must not start with '.', '-', or '_'",
+            ));
+        }
+        _ => {}
+    }
+    for &b in name_bytes {
+        let ok = b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-');
+        if !ok {
+            return Err(err(
+                "name may only contain alphanumeric characters, '.', '_', and '-'",
+            ));
+        }
+    }
+    // The `.git` suffix is reserved (GitHub rejects).
+    if name.ends_with(".git") {
+        return Err(err("name must not end with '.git'"));
+    }
+
+    // Canonical form: both segments lowercased, joined by '/'.
+    let canonical = format!(
+        "{}/{}",
+        owner.to_ascii_lowercase(),
+        name.to_ascii_lowercase()
+    );
+    Ok(canonical)
+}
+
 /// The five legal work-item kinds, ordered parent→child. A kind's legal parent
 /// kind is the entry immediately before it; `project` (index 0) is the root and
 /// must have a NULL parent.
@@ -372,6 +478,9 @@ pub async fn get_work_item_detail(
         acceptance_criteria,
         research_notes,
         open_questions,
+        // T1 of the project↔repo-links plan ships the schema + types only;
+        // T2 wires `list_repo_links` into this fold (gated on kind=='project').
+        repo_links: vec![],
     })
 }
 
@@ -599,7 +708,8 @@ pub async fn list_findings(
             resolution        AS "resolution?",
             defer_reason      AS "defer_reason?",
             defer_trigger     AS "defer_trigger?",
-            wontfix_rationale AS "wontfix_rationale?"
+            wontfix_rationale AS "wontfix_rationale?",
+            repo_id           AS "repo_id?"
         FROM findings
         WHERE work_item_id = ?1
           AND superseded_by IS NULL
@@ -1774,6 +1884,9 @@ pub struct NewFinding<'a> {
     pub defer_reason: Option<&'a str>,
     pub defer_trigger: Option<&'a str>,
     pub wontfix_rationale: Option<&'a str>,
+    /// FK to `repo_links.id` (migration 0004); NULL ⇒ implicit-primary
+    /// resolution at read time.
+    pub repo_id: Option<&'a str>,
 }
 
 /// Create a finding attached to a work item under the single-mutation-path
@@ -1801,13 +1914,13 @@ pub async fn create_finding(
             id, work_item_id, kind, severity, effort, category, status,
             file, line, symbol, summary, description, first_flagged, rounds,
             fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution,
-            defer_reason, defer_trigger, wontfix_rationale
+            defer_reason, defer_trigger, wontfix_rationale, repo_id
         )
         VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7,
             ?8, ?9, ?10, ?11, ?12, ?13, ?14,
             ?15, ?16, ?17, ?18, ?19, ?20, ?21,
-            ?22, ?23, ?24
+            ?22, ?23, ?24, ?25
         )
         "#,
         id_str,
@@ -1834,6 +1947,7 @@ pub async fn create_finding(
         finding.defer_reason,
         finding.defer_trigger,
         finding.wontfix_rationale,
+        finding.repo_id,
     )
     .execute(&mut *tx)
     .await?;
@@ -3330,6 +3444,7 @@ mod tests {
             summary: None,
             description: None,
             confidence: Some("medium".into()),
+            repo_id: None,
         };
         update_finding(&pool, &old, &req).await.expect("update confidence");
 
@@ -3345,5 +3460,103 @@ mod tests {
             .await
             .expect_err("missing finding");
         assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
+    }
+
+    // ---------------------------------------------------------------------
+    // parse_github_slug (migration 0004 — project↔repo-links plan T1).
+    //
+    // Pure-function tests; no DB needed. Cover the validity matrix from the
+    // plan's T1 acceptance bullets PLUS the "no leading punctuation in name"
+    // guard documented inline on `parse_github_slug` (which is what makes
+    // `x/-y` reject — a defensible empirical-GitHub rule the plan calls out).
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn parse_github_slug_valid_lowercases_both_segments() {
+        assert_eq!(
+            parse_github_slug("octocat/Hello-World").unwrap(),
+            "octocat/hello-world",
+        );
+        assert_eq!(
+            parse_github_slug("Foo/bar.baz_2").unwrap(),
+            "foo/bar.baz_2",
+        );
+        // Already-lowercased input round-trips unchanged.
+        assert_eq!(
+            parse_github_slug("octocat/spoon-knife").unwrap(),
+            "octocat/spoon-knife",
+        );
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_empty_owner() {
+        let err = parse_github_slug("/x").expect_err("empty owner");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_empty_name() {
+        let err = parse_github_slug("x/").expect_err("empty name");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_git_suffix() {
+        let err = parse_github_slug("x/y.git").expect_err(".git suffix");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_leading_hyphen_in_owner() {
+        let err = parse_github_slug("-x/y").expect_err("leading hyphen owner");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_leading_punctuation_in_name() {
+        // The plan's acceptance lists `x/-y` as Err; this is enforced by the
+        // "no leading `.`/`-`/`_` in name" guard documented on the helper.
+        let err = parse_github_slug("x/-y").expect_err("leading hyphen name");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_dots_in_owner() {
+        // The owner alphabet is [A-Za-z0-9-] only, so `a..b` is rejected for
+        // having `.` chars in the owner (not for consecutive hyphens).
+        let err = parse_github_slug("a..b/y").expect_err("dot in owner");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_zero_or_many_slashes() {
+        assert!(parse_github_slug("noslash").is_err());
+        assert!(parse_github_slug("a/b/c").is_err());
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_consecutive_hyphens_in_owner() {
+        let err = parse_github_slug("a--b/y").expect_err("consecutive hyphens");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_owner_longer_than_39() {
+        let owner = "a".repeat(40);
+        let err = parse_github_slug(&format!("{owner}/y")).expect_err("owner >39");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_name_longer_than_100() {
+        let name = "a".repeat(101);
+        let err = parse_github_slug(&format!("x/{name}")).expect_err("name >100");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parse_github_slug_rejects_dot_and_dotdot_names() {
+        assert!(parse_github_slug("x/.").is_err());
+        assert!(parse_github_slug("x/..").is_err());
     }
 }

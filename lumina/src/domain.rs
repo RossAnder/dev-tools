@@ -100,6 +100,9 @@ pub struct Finding {
     pub defer_reason: Option<String>,
     pub defer_trigger: Option<String>,
     pub wontfix_rationale: Option<String>,
+    /// FK to `repo_links.id` (migration 0004); NULL ⇒ resolves to the project's
+    /// primary linked repo.
+    pub repo_id: Option<String>,
 }
 
 /// A row of `acceptance_criteria` (migration 0003): a per-task checkable
@@ -184,6 +187,22 @@ pub struct OpenQuestion {
     pub options: Vec<QuestionOption>,
 }
 
+/// A row of `repo_links` (migration 0004): one linked GitHub repository
+/// (`<owner>/<name>` slug) for a project work-item. Slug is stored
+/// fully-lowercased; `is_primary = 1` marks the implicit-fallback repo for
+/// unqualified file references (enforced single per project by a partial
+/// UNIQUE index on `(project_id) WHERE is_primary = 1`).
+#[derive(Debug, Clone, Serialize)]
+pub struct RepoLink {
+    pub id: String,
+    pub project_id: String,
+    pub slug: String,
+    pub position: i64,
+    /// `0`/`1` mirrored from the INTEGER column.
+    pub is_primary: i64,
+    pub created_at: String,
+}
+
 /// A row of `context_blocks` — the drift-killer. Shared context is one row
 /// referenced by many work-items through `work_item_context`.
 #[derive(Debug, Clone, Serialize)]
@@ -213,6 +232,10 @@ pub struct WorkItemDetail {
     pub research_notes: Vec<ResearchNote>,
     /// The item's open questions (migration 0003) — Task 4 implements the fold.
     pub open_questions: Vec<OpenQuestion>,
+    /// Linked GitHub repos (migration 0004) — populated only when
+    /// `item.kind == "project"`; empty otherwise.
+    #[serde(default)]
+    pub repo_links: Vec<RepoLink>,
 }
 
 /// Create-body for a new work item. Deserialised by the HTTP POST handler
@@ -306,6 +329,12 @@ pub struct UpdateFindingRequest {
     /// confidence unchanged (migration 0003).
     #[serde(default)]
     pub confidence: Option<String>,
+    /// New repo binding (migration 0004); absent leaves it unchanged.
+    /// (Wire `null` deserialises to `None` like every other field on this body
+    /// — clearing back to the primary uses the dedicated `set_finding_repo`
+    /// path, mirroring the SET-OR-LEAVE contract of the other fields.)
+    #[serde(default)]
+    pub repo_id: Option<String>,
 }
 
 /// The five legal work-item kinds, ordered parent→child (`project` is the root).

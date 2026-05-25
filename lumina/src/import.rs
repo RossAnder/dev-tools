@@ -361,6 +361,7 @@ pub async fn import_flow(pool: &SqlitePool, flow_dir: &Path) -> anyhow::Result<I
                 defer_reason: fi.defer_reason.as_deref(),
                 defer_trigger: fi.defer_trigger.as_deref(),
                 wontfix_rationale: fi.wontfix_rationale.as_deref(),
+                repo_id: None,
             };
             repo::create_finding(pool, &story_id, &new_finding)
                 .await

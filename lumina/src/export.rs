@@ -891,6 +891,7 @@ mod tests {
             acceptance_criteria: vec![],
             research_notes: vec![],
             open_questions: vec![question],
+            repo_links: vec![],
         };
 
         // The SAME conversion render_work_item performs: whole-struct → table →

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            id                AS \"id!\",\n            work_item_id      AS \"work_item_id?\",\n            kind              AS \"kind?\",\n            severity          AS \"severity?\",\n            effort            AS \"effort?\",\n            category          AS \"category?\",\n            status            AS \"status?\",\n            file              AS \"file?\",\n            line              AS \"line?\",\n            symbol            AS \"symbol?\",\n            summary           AS \"summary?\",\n            description       AS \"description?\",\n            first_flagged     AS \"first_flagged?\",\n            rounds            AS \"rounds?\",\n            fingerprint       AS \"fingerprint?\",\n            flow              AS \"flow?\",\n            dedup_id          AS \"dedup_id?\",\n            origin            AS \"origin?\",\n            confidence        AS \"confidence?\",\n            superseded_by     AS \"superseded_by?\",\n            resolved_at       AS \"resolved_at?\",\n            resolution        AS \"resolution?\",\n            defer_reason      AS \"defer_reason?\",\n            defer_trigger     AS \"defer_trigger?\",\n            wontfix_rationale AS \"wontfix_rationale?\"\n        FROM findings\n        WHERE work_item_id = ?1\n          AND superseded_by IS NULL\n        ORDER BY first_flagged DESC, id\n        ",
+  "query": "\n        SELECT\n            id                AS \"id!\",\n            work_item_id      AS \"work_item_id?\",\n            kind              AS \"kind?\",\n            severity          AS \"severity?\",\n            effort            AS \"effort?\",\n            category          AS \"category?\",\n            status            AS \"status?\",\n            file              AS \"file?\",\n            line              AS \"line?\",\n            symbol            AS \"symbol?\",\n            summary           AS \"summary?\",\n            description       AS \"description?\",\n            first_flagged     AS \"first_flagged?\",\n            rounds            AS \"rounds?\",\n            fingerprint       AS \"fingerprint?\",\n            flow              AS \"flow?\",\n            dedup_id          AS \"dedup_id?\",\n            origin            AS \"origin?\",\n            confidence        AS \"confidence?\",\n            superseded_by     AS \"superseded_by?\",\n            resolved_at       AS \"resolved_at?\",\n            resolution        AS \"resolution?\",\n            defer_reason      AS \"defer_reason?\",\n            defer_trigger     AS \"defer_trigger?\",\n            wontfix_rationale AS \"wontfix_rationale?\",\n            repo_id           AS \"repo_id?\"\n        FROM findings\n        WHERE work_item_id = ?1\n          AND superseded_by IS NULL\n        ORDER BY first_flagged DESC, id\n        ",
   "describe": {
     "columns": [
       {
@@ -277,6 +277,17 @@
             "name": "wontfix_rationale"
           }
         }
+      },
+      {
+        "name": "repo_id?",
+        "ordinal": 25,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "findings",
+            "name": "repo_id"
+          }
+        }
       }
     ],
     "parameters": {
@@ -307,8 +318,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "6b7287bc405a6fdedf184890d37a19e085c95229c5c5d11bf06fe3935c2fed90"
+  "hash": "f298deae274afbd4a9b221a3a6429fe132d3a9b0fcb0506407b7ae50fde46f95"
 }
