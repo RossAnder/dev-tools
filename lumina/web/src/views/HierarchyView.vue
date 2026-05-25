@@ -1,19 +1,17 @@
-<script setup lang="ts">
-// Hierarchy tree + detail panel. On mount it loads the work-item tree from the
-// Pinia store and renders the root nodes via the recursive <TreeItem>. The
-// store's `selectNode` action (invoked from inside TreeItem) sets `selectedId`
-// and loads the selected node's detail, which this view renders in a panel
-// beside the tree.
+<script setup vapor lang="ts">
+// Hierarchy tree + detail panel. On mount it loads the work-item tree from
+// the module-singleton composable and renders the root nodes via the
+// recursive <TreeItem>. The composable's `selectNode` action (invoked from
+// inside TreeItem) sets `selectedId` and loads the selected node's detail,
+// which this view renders in a panel beside the tree.
 import { onMounted, computed } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useHierarchyStore } from '@/stores/hierarchy'
+import { useHierarchy } from '@/composables/useHierarchy'
 import TreeItem from '@/components/TreeItem.vue'
 
-const store = useHierarchyStore()
-const { tree, detail, selectedId, loading, error } = storeToRefs(store)
+const { tree, detail, selectedId, loading, error, loadTree, changeStatus } = useHierarchy()
 
 onMounted(() => {
-  void store.loadTree()
+  void loadTree()
 })
 
 /** The selected node's detail, or null when nothing is selected yet. */
@@ -38,7 +36,7 @@ function onStatusChange(event: Event): void {
   if (!id) return
   const next = (event.target as HTMLSelectElement).value
   if (next && next !== selected.value?.item.status) {
-    void store.changeStatus(id, next)
+    void changeStatus(id, next)
   }
 }
 </script>

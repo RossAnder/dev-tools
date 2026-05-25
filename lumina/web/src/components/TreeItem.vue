@@ -1,11 +1,10 @@
-<script setup lang="ts">
+<script setup vapor lang="ts">
 // Recursive, zero-dependency tree node (per the plan's Research Note: a known
 // depth-5 hierarchy needs no PrimeVue <Tree>). A <TreeItem> renders one
 // WorkItemNode and recursively renders its children via <TreeItem> — in
 // <script setup> a component may reference itself by its filename.
 import { ref, computed } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useHierarchyStore } from '@/stores/hierarchy'
+import { useHierarchy } from '@/composables/useHierarchy'
 import type { WorkItemNode } from '@/api'
 
 const props = defineProps<{
@@ -14,8 +13,7 @@ const props = defineProps<{
   depth?: number
 }>()
 
-const store = useHierarchyStore()
-const { selectedId } = storeToRefs(store)
+const { selectedId, selectNode } = useHierarchy()
 
 /** Local expand/collapse state; nodes start expanded so the tree is visible. */
 const expanded = ref(true)
@@ -29,8 +27,7 @@ function toggle(): void {
 }
 
 function select(): void {
-  // Delegates to the store, which sets selectedId and loads the detail panel.
-  void store.selectNode(props.node.id)
+  void selectNode(props.node.id)
 }
 </script>
 

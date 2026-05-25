@@ -1,7 +1,7 @@
-<script setup lang="ts">
-import { RouterView } from 'vue-router'
+<script setup vapor lang="ts">
+import HierarchyView from '@/views/HierarchyView.vue'
 </script>
 
 <template>
-  <RouterView />
+  <HierarchyView />
 </template>

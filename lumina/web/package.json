@@ -11,20 +11,20 @@
     "type-check": "vue-tsc --build"
   },
   "dependencies": {
-    "pinia": "^3.0.4",
-    "vue": "^3.5.32",
-    "vue-router": "^5.0.4"
+    "vue": "3.6.0-beta.12"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
     "@tsconfig/node24": "^24.0.4",
     "@types/node": "^25.9.1",
-    "@vitejs/plugin-vue": "^6.0.6",
+    "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
-    "npm-run-all2": "^9.0.0",
-    "typescript": "~6.0.0",
+    "npm-run-all2": "^9.0.1",
+    "tailwindcss": "^4.3.0",
+    "typescript": "~6.0.3",
     "vite": "^8.0.14",
-    "vite-plugin-vue-devtools": "^8.1.1",
-    "vue-tsc": "^3.2.6"
+    "vite-plugin-vue-devtools": "^8.1.2",
+    "vue-tsc": "^3.3.1"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

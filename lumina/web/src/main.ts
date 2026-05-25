@@ -1,14 +1,9 @@
 import './assets/main.css'
 
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-
+import { createVaporApp } from 'vue'
 import App from './App.vue'
-import router from './router'
 
-const app = createApp(App)
-
-app.use(createPinia())
-app.use(router)
-
-app.mount('#app')
+// Pure Vapor mode — no Virtual DOM runtime in the bundle. Every SFC under
+// this root must be authored with `<script setup vapor>`; mixing in a
+// VDOM-compiled SFC would require `createApp` + `vaporInteropPlugin` instead.
+createVaporApp(App).mount('#app')
