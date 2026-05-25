@@ -120,3 +120,19 @@ scope = [
     "lumina/web/src/**",
     "docs/design_handoff_lumina_control/**",
 ]
+
+[[active]]
+slug = "lumina-project-repo-links"
+last_used = "2026-05-25T11:47:30.2816394Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/**",
+    "lumina/tests/e2e.rs",
+    "lumina/web/src/**",
+    "lumina/CLAUDE.md",
+    "claude/skills/lumina/SKILL.md",
+]

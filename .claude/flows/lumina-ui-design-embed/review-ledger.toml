@@ -1,0 +1,903 @@
+schema_version = 1
+last_updated = 2026-05-25
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R1"
+file = "lumina/web/src/composables/useDisplay.ts"
+line = 18
+symbol = "statusToken"
+severity = "critical"
+effort = "small"
+category = "quality"
+summary = "Tailwind status-colour utilities text-in-flight/text-queued/text-done are never generated"
+description = "statusToken returns `text-${entry.tokenName}` via template literal. Tailwind v4's source scanner only emits classes whose literal text appears in scanned files. Grep confirms text-blocked appears literally (HierarchySpine.vue:107, PortfolioEmpty.vue:44) but text-in-flight/text-queued/text-done appear nowhere as literals. Result: every StatusPill except blocked falls through to inherited colour, defeating the design's status colour-coding. Fix: replace function-mapped lookup with a literal class map, e.g. const TOKEN_CLASS = { todo:'text-queued', in_progress:'text-in-flight', blocked:'text-blocked', done:'text-done', cancelled:'text-[var(--muted)] line-through' } as const — or add a safelist comment in a scanned file."
+dedup_id = "f074a5564ff2fd07"
+resolved = 2026-05-25
+resolution = "Replaced template-literal `text-${tokenName}` with literal STATUS_CLASS map in useDisplay.ts:statusToken; verified `text-in-flight`/`text-queued`/`text-done`/`text-blocked` now present in dist CSS."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R2"
+file = "lumina/web/src/assets/theme.css"
+line = 6
+symbol = "--color-success"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "--color-success defined but never referenced; duplicates --color-in-flight value byte-for-byte"
+description = "Both declared as oklch(0.74 0.10 145). Grep across src/ shows zero references to text-success / bg-success / --color-success. Drop the dead token or single-source it (--color-in-flight: var(--color-success))."
+dedup_id = "1ffcfb017541e1e5"
+resolved = 2026-05-25
+resolution = "Deleted unused `--color-success` token from theme.css (duplicate of --color-in-flight)."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R3"
+file = "lumina/web/src/App.vue"
+line = 22
+symbol = "App.focusedChildren"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "App.vue duplicates a tree-walking find that already lives in useHierarchy.indexTree"
+description = "Three components ship the same algorithm with different return shapes: App.vue:25 (focusedChildren.find), ChildGrid.vue:35 (findInTree), HierarchySpine.vue:20 (findNodeWithSiblings). Lift a getNode(id) / focusedNode computed onto useHierarchy (backed by the existing indexTree Map) so App.vue can stay a true shell and the three consumers reuse one walker."
+dedup_id = "ade1902c0dd4ea16"
+resolved = 2026-05-25
+resolution = "Added `focusedNode` computed to useHierarchy (backed by memoised byId Map); App.vue's inline recursive `find` deleted, `focusedChildren` reduces to `focusedNode.value?.children ?? []`."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R4"
+file = "lumina/web/src/components/ChildGrid.vue"
+line = 35
+symbol = "childCountFor"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "ChildGrid runs O(N) tree walks per card per render — quadratic in tree size"
+description = "childCountFor invokes findInTree (full DFS) then countDescendants per ChildCard in the v-for loop. With M cards and N tree nodes the cost is O(M·N) per re-render; under Vapor mode every reactive read triggers direct function calls. Expose descendantCountFor(id) on useHierarchy (backed by indexTree) to collapse to O(N+M)."
+dedup_id = "139ca7b2d8351ebd"
+resolved = 2026-05-25
+resolution = "Added `descendantCountFor(id)` to useHierarchy (O(1) lookup + O(subtree) walk via byId); ChildGrid.vue's inline findInTree/countDescendants deleted; quadratic-per-render cost collapsed to linear."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R5"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 173
+symbol = "collectCounts"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Dead defensive cast (node as { effort?: string | null }).effort"
+description = "api.ts:21 already declares WorkItem.effort: string | null and WorkItemNode extends WorkItem. The inline comment 'T1's type extension may not have landed yet' is stale — T1 shipped. Replace with node.effort and drop the cast."
+dedup_id = "5d2417020f05615a"
+resolved = 2026-05-25
+resolution = "Removed dead `(node as { effort?: string | null }).effort ?? null` cast in collectCounts; replaced with direct `node.effort`. Stale T1-extension comment deleted."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R6"
+file = "lumina/web/src/components/HierarchySpine.vue"
+line = 20
+symbol = "findNodeWithSiblings"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "HierarchySpine ships a third independent tree walker (after App.vue and ChildGrid)"
+description = "findNodeWithSiblings returns { node, siblings } with non-obvious sibling-discovery logic. Belongs on useHierarchy as spineEntries / getSiblings(id) so the component only renders. Otherwise any change to spine semantics (collapsed ancestors, filtered rejected siblings) requires touching the component."
+dedup_id = "813d03dfd8b23db9"
+resolved = 2026-05-25
+resolution = "Added `getSiblings(id)` to useHierarchy; HierarchySpine's `findNodeWithSiblings` inline recursion deleted; spineList computed now sources siblings from the composable."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R7"
+file = "lumina/web/src/components/AppFooter.vue"
+line = 14
+symbol = "AppFooter breadcrumb"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "AppFooter and Breadcrumbs render the same focusPath chain with near-identical templates"
+description = "Both iterate focusPath as clickable kindLabel chips separated by '/', both call setFocus(node.id), both use font-mono text-[10.5px]. Only deltas are colour token and separator wrapper. Extract a shared <BreadcrumbTrail variant='...'> or have AppFooter import Breadcrumbs — any future breadcrumb behaviour change has to be applied in two places today."
+dedup_id = "828ce4456c7faaed"
+resolved = 2026-05-25
+resolution = "Extracted BreadcrumbTrail.vue with `tone: 'muted' | 'faint'` prop driving colour + casing + separator; Breadcrumbs.vue and AppFooter.vue rewired as thin consumers. Chose Option A (extraction) — see agent report for design-decision rationale."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R8"
+file = "lumina/web/src/composables/useDisplay.ts"
+line = 1
+symbol = "STATUSES"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "STATUSES typed `as const` but every helper takes/returns bare string; closed union not enforced"
+description = "STATUSES is `as const` (good) but statusLabel/statusToken accept status: string; ChildGrid.vue:15 declares filter = ref<string>('ALL'); setFilter('typoed') is silently accepted. Export `type StatusBackend = typeof STATUSES[number]['backend']` and `type StatusFilter = StatusBackend | 'ALL'`; add runtime narrowing helper asStatus(s: string): StatusBackend | null at the api.ts seam."
+dedup_id = "f23bf516ac39783f"
+resolved = 2026-05-25
+resolution = "Exported `StatusBackend` / `StatusFilter` types + `asStatus(s)` narrower from useDisplay.ts; narrowed statusLabel/statusToken signatures to accept the union (with string fallback for resilience)."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R9"
+file = "lumina/web/src/components/ChildGrid.vue"
+line = 15
+symbol = "ChildGrid.filter"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "filter typed `ref<string>` — should be narrow 'ALL' | StatusBackend union"
+description = "Combined with R8: declare ref<'ALL' | StatusBackend>('ALL') so a typo in setFilter is a compile error rather than silently filtering to zero results."
+dedup_id = "0cfa7c889b003720"
+resolved = 2026-05-25
+resolution = "ChildGrid.filter narrowed from `ref<string>` to `ref<StatusFilter>`; setFilter param tightened to StatusFilter."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R10"
+file = "lumina/web/src/api.ts"
+line = 84
+symbol = "AcceptanceCriterion.checked"
+severity = "warning"
+effort = "trivial"
+category = "db"
+summary = "checked: number leaks SQLite 0/1 encoding to every UI consumer"
+description = "FocusLens.vue:200/207 writes `ac.checked === 1` and the FocusLens:180-183 comment explains the defensive comparison. Normalise once in fetchDetail (e.g. map a.checked === 1 into boolean) so consumers use natural truthiness and a future server emitting `true` doesn't break callers."
+dedup_id = "0ef7013d4b51c83a"
+resolved = 2026-05-25
+resolution = "AcceptanceCriterion.checked changed from `number` to `boolean` at api.ts boundary; fetchDetail inline-normalises 0/1 to boolean via .map; FocusLens.vue:200/207 simplified from `=== 1` to truthy semantics; surrounding SQLite-encoding comment updated."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R11"
+file = "lumina/web/src/api.ts"
+line = 11
+symbol = "WorkItem.kind"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "Seven enum-shaped wire fields (kind/status/relevance/effort/complexity/origin/closure_gate) typed as bare string"
+description = "lumina/src/domain.rs:315-522 defines snake_case-serialised closed enums. api.ts declares all of them as `string | null`. Every consumer (useHierarchy.ts:165 `kind === 'feature'`, useDisplay.ts statusLabel, FocusLens.vue:11 `kind === 'task'`) silently accepts typos and falls through to default branches. Declare string-literal unions matching the Rust enums; ideally regenerate via ts-rs or a shared schema. ESCALATE-TO-DEEP: confirm the exact Rust variants before pinning."
+dedup_id = "bd782dc132380d15"
+resolved = 2026-05-25
+resolution = "Declared 12 string-literal-union types (Kind/Status/Relevance/Effort/Complexity/Origin/ClosureGate/Severity/Disposition/ActivityType/ResearchState/QuestionStatus/Confidence) mirroring lumina/src/domain.rs snake_case wire forms; tightened WorkItem + Finding + ResearchNote + OpenQuestion + WorkItemActivity + CreateWorkItemRequest enum fields. Cross-cut to useHierarchy.ts:137,152 (patchTreeStatus/changeStatus param narrowing) applied as a Step-5b followup."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R12"
+file = "lumina/web/src/composables/useDisplay.ts"
+line = 1
+symbol = "STATUSES backend parity"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "Frontend STATUSES is hand-rolled; no parity check against backend Status enum"
+description = "useDisplay.ts:1-7 mirrors lumina/src/domain.rs:336-347. If the backend adds/renames a variant the frontend silently degrades to muted text. Tie the STATUSES backend literals to a typed union regenerated from the Rust enum so a drift becomes a TS compile error."
+dedup_id = "ead1191688e399c0"
+resolved = 2026-05-25
+resolution = "Added top-of-file comment in useDisplay.ts naming lumina/src/domain.rs Status enum as the source of truth for STATUSES parity. Compile-time parity check deferred (would require codegen / build-pipeline change beyond cluster scope)."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R13"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 114
+symbol = "focusPath / descendantCounts"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "indexTree(tree.value) called inside two computeds — rebuilt on every dependent change"
+description = "focusPath:114 and descendantCounts:190 each call indexTree on every re-evaluation. Lift `const byId = computed(() => indexTree(tree.value))` so the Map rebuilds only when tree changes, not when focusId changes. Cheap fix, clearly correct."
+dedup_id = "afd8c4cbf0c1e39a"
+resolved = 2026-05-25
+resolution = "Lifted indexTree result to a memoised `byId` ComputedRef<Map>; focusPath, focusedNode, descendantCounts, getSiblings, descendantCountFor all share it. Map rebuilds only when tree changes."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R14"
+file = "lumina/web/src/components/PortfolioEmpty.vue"
+line = 14
+symbol = "countWhere"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "PortfolioEmpty re-implements rollup walkers that overlap with useHierarchy.collectCounts"
+description = "countWhere + rootsInFlight + blockedStories + executingTasks are status×kind rollups — exactly collectCounts' shape with a status predicate. A collectCountsBy({ kind, status }) helper on the composable (or a richer DescendantCounts with per-status sub-counts) lets PortfolioEmpty stop walking and stop knowing the tree's recursive shape."
+dedup_id = "9c40ba8603f77063"
+resolved = 2026-05-25
+resolution = "Added `countMatching(predicate)` helper to useHierarchy; PortfolioEmpty's `countWhere` deleted; rootsInFlight/blockedStories/executingTasks now predicate-driven."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R15"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 78
+symbol = "changeStatus"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "changeStatus refetches the entire tree on every status flip"
+description = "After apiUpdateStatus(id, status) the composable calls fetchDetail(id) then loadTree(). For an N-node portfolio every flip pulls the whole tree. Splice the updated item into tree.value (find by id, replace status, done) and fall back to refetch only on multi-field updates. Read-only port today so this is structural prep for when mutation lands."
+dedup_id = "3aa057bed63f29aa"
+resolved = 2026-05-25
+resolution = "Rewrote changeStatus to splice-in-place via patchTreeStatus; whole-tree fetchTree() refetch removed from the success path. Vue 3 reactive-proxy semantics confirmed via successful build + verified rendering behaviour."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R16"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 210
+symbol = "treeStatus"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "treeStatus returns 'ready' when tree has items but error is also set (silent failed re-load)"
+description = "All four branches gate on `tree.value.length === 0` so a failed background re-load (initial success → server goes down → loadTree() fails) leaves error set but treeStatus = 'ready'. The error ref is never surfaced. Add a fifth state 'stale-error' or render error alongside ready content."
+dedup_id = "45a1111da104eacb"
+resolved = 2026-05-25
+resolution = "Added 'stale-error' state to TreeStatus union (set when tree has items AND error is non-null); HierarchySpine.vue renders a minimal inline banner alongside the spine list in that state. Consumers gated on ready/stale-error keep rendering."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R17"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 31
+symbol = "loadTree"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "loadTree has no AbortController; dangling fetch can overwrite a fresher tree"
+description = "fetch() inside loadTree is fire-and-forget. A second invocation that resolves before the first will be overwritten when the first lands, leaving stale data. Hot-reload cycles also leak in-flight requests. Wire an AbortController per call (cancel previous on new invocation)."
+dedup_id = "cc274f79b1fe448c"
+resolved = 2026-05-25
+resolution = "Introduced request-id pattern (abortCounter) in loadTree — late-resolving stale calls no-op without overwriting fresher state. Code comment notes full AbortController plumbing requires api.ts cooperation (out of cluster scope; deferred)."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R18"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 78
+symbol = "changeStatus race"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "changeStatus has no in-flight guard against concurrent invocations"
+description = "Three sequential awaits with no loading flag at entry; a second click mid-flight starts a parallel sequence. The slower loadTree() can land after the faster one and overwrite it with pre-update state. Related to R15 and R17 — fixing those (and gating with `if (loading.value) return`) addresses the race."
+dedup_id = "ca28ee527766e304"
+resolved = 2026-05-25
+resolution = "Added per-id `inFlightStatus` Set guard around changeStatus; second concurrent call for same id is dropped (returns immediately) rather than racing."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R19"
+file = "lumina/web/src/App.vue"
+line = 55
+symbol = "centre column loading"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "No loading skeleton in centre column while setFocus is fetching detail"
+description = "setFocus sets loading.value = true and awaits fetchDetail. During the await, FocusLens renders the placeholder (detail still null). The user sees an unresponsive flash. Either render a skeleton when loading && focusId !== null or gate the placeholder on `!loading`."
+dedup_id = "50d92c81341ab9a7"
+resolved = 2026-05-25
+resolution = "Added LOADING placeholder branch in App.vue centre column when `focusId !== null && loading` — fills the gap between setFocus call and fetchDetail return."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R20"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 111
+symbol = "focusPath"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "focusPath silently returns [] when focusId points at a node no longer in the tree"
+description = "After a refetch deletes the focused node server-side, byId.get(id) returns undefined and the while-loop exits immediately. Breadcrumbs/CenterToolbar/AppFooter all revert to root/empty without clearing focusId. Either reconcile in loadTree (clear focusId if not found) or expose a `focusIsStale` flag for the UI to react to."
+dedup_id = "63e9b0e0e4851303"
+resolved = 2026-05-25
+resolution = "loadTree now reconciles stale focus — if focusId is non-null but not present in the refreshed tree, clears focusId and detail."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R21"
+file = "lumina/web/src/components/Breadcrumbs.vue"
+line = 13
+symbol = "breadcrumb buttons"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Breadcrumb buttons render only kindLabel ('EPIC' / 'FEATURE' / 'STORY') with no item-specific accessible name"
+description = "Each button shows kindLabel only; identical text for every sibling at the same level. Screen-reader users navigating a 'EPIC / FEATURE / STORY' trail can't distinguish which epic or feature. Same gap in AppFooter.vue:20. Minimal fix: `:aria-label=`${kindLabel(node.kind)}: ${node.title}``. Full ARIA audit is plan-deferred but this is a one-line completeness gap."
+dedup_id = "bf3d25423664685c"
+resolved = 2026-05-25
+resolution = "Added aria-label='${kindLabel}: ${title}' and aria-current='page' on the final crumb inside BreadcrumbTrail.vue; both consumers (Breadcrumbs, AppFooter) gain SR disambiguation in one place. Lifts R45 suggestion preemptively."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R22"
+file = "lumina/web/src/components/AppHeader.vue"
+line = 5
+symbol = "todayStr"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "todayStr computed via new Date() at script-setup time — non-deterministic and stale across midnight"
+description = "Bakes the current date into the component on module evaluation. Snapshot tests differ per day without artificial date mocking. SPA staying open across midnight shows yesterday's date. Either wire `setInterval(refresh, 60_000)` with onUnmounted cleanup, or inject a clock dependency for tests."
+dedup_id = "a5aee46d1cd610c3"
+resolved = 2026-05-25
+resolution = "AppHeader todayStr converted to reactive `today` ref with 60-second setInterval + onMounted/onUnmounted cleanup; preserves en-GB locale + format; stale-across-midnight + non-deterministic-snapshot risks both resolved."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R23"
+file = "lumina/web/src/components/PortfolioEmpty.vue"
+line = 79
+symbol = "tree.length label"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "PortfolioEmpty KPI labels tree.length as 'Epics' but tree contains all root items regardless of kind"
+description = "fetchTree returns all roots with no kind filter; a root-level project/feature/story orphan inflates the Epics counter. Filter to `tree.filter(n => n.kind === 'epic').length` or relabel to 'Roots'."
+dedup_id = "0aed025164639f15"
+resolved = 2026-05-25
+resolution = "Added `epicCount` computed (filters tree to kind === 'epic') in PortfolioEmpty.vue; Epics KPI tile now binds to the filtered count instead of bare tree.length."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R24"
+file = "lumina/web/src/components/FocusLens.vue"
+line = 219
+symbol = "context blocks section"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Context blocks section rendered only when kind === 'task'; non-task context_blocks silently discarded"
+description = "Lines 163-243 wrap action buttons + acceptance criteria + context blocks in a single `<template v-if='isTask'>`. WorkItemDetail.context_blocks is not kind-scoped server-side; an epic/feature/story with attached context blocks (via the MCP create_context_block tool) will never display them. Move the context blocks section outside the isTask guard."
+dedup_id = "81defaed4279e3ad"
+resolved = 2026-05-25
+resolution = "Moved context_blocks section out of FocusLens.vue's `<template v-if=isTask>` wrapper; non-task work items with attached context blocks now display them. Action buttons + acceptance criteria stay inside isTask."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R25"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 24
+symbol = "module-singleton refs"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Module-singleton state has no reset path — test isolation requires module re-import"
+description = "All six refs are module-scope consts; useHierarchy() returns references to them. Vitest tests that mutate tree.value leak into the next test with no beforeEach reset. Architecture is deliberate (per user memory: module-singleton composables preferred over Pinia) so the fix is to export a `__resetForTests()` (test-only) or expose a factory variant for tests rather than abandoning the singleton."
+dedup_id = "e5db2edfcb2610fd"
+resolved = 2026-05-25
+resolution = "Added test-only `__resetForTests()` export to useHierarchy — resets all module refs, abortCounter, inFlightStatus, and re-binds api adapter. Preserves module-singleton architecture per user-memory directive."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R26"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 1
+symbol = "api imports"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "No injection seam — async actions call top-level imported fetch helpers directly"
+description = "loadTree/setFocus/createNode/changeStatus call fetchTree/fetchDetail/apiCreateWorkItem/apiUpdateStatus as static ES imports. Tests must use `vi.mock('@/api', ...)` module-level mocking. A trivial factory variant (or an optional `api` param defaulting to the production import) enables pure in-memory test doubles without mock-framework machinery."
+dedup_id = "1fd03df172535653"
+resolved = 2026-05-25
+resolution = "Introduced `Api` adapter type and test-only `__setApiForTests(override)` seam in useHierarchy — all four api calls (fetchTree/fetchDetail/createWorkItem/updateStatus) now go through `api.*` indirection; production behaviour unchanged."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R27"
+file = "lumina/web/src/api.ts"
+line = 169
+symbol = "handle"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "No runtime contract guard (zod/valibot) at the wire-types boundary"
+description = "handle<T> casts JSON.parse result as T with no runtime validation. A server-side schema drift (e.g. checked emitted as boolean instead of 0/1, children missing on WorkItemNode) propagates silently into components and surfaces as opaque downstream errors. Adding zod schemas for the four response shapes (WorkItem, WorkItemNode, WorkItemDetail, error envelope) gives a single point of failure for contract drift and enables a contract test."
+dedup_id = "067e6ad6a9f6f34a"
+resolved = 2026-05-25
+resolution = "Added zod 4 runtime contract guards at api.ts::handle (optional schema param) with WorkItem/WorkItemNode/WorkItemDetail/error-envelope schemas; recursive WorkItemNode via zod 4 getter idiom; fetchDetail wire-then-transform preserves the checked:number→boolean normalisation; safeParse used so all .issues aggregate into one diagnostic; zod ^4.0.1 added to runtime dependencies."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R28"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 66
+symbol = "createNode"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "createNode swallows errors and returns null; callers can't distinguish failure from success-with-null"
+description = "Catch sets error.value and returns null. Tests must inspect singleton error ref to assert failure mode, coupling test assertions to internal state. Either re-throw, or return a discriminated result type ({ ok: true, id } | { ok: false, error })."
+dedup_id = "bc082e7d2ef15fb1"
+resolved = 2026-05-25
+resolution = "createNode rewritten to return Promise<Result<string>> with exported Result<T,E> discriminated union ({ok:true,value} | {ok:false,error}); singleton error.value side-effect preserved for existing UI banner subscriptions."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "verified-clean"
+flow = "lumina-ui-design-embed"
+id = "R29"
+file = "lumina/web/package.json"
+line = 0
+symbol = "test scripts"
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "No test framework installed (no Vitest, Vue Test Utils, happy-dom, Playwright) and no test script"
+description = "package.json has scripts dev/build/preview/build-only/type-check only. devDependencies has no test tooling. Plan explicitly defers the component test harness (Inventory item #9) — flagging as the trigger for /test-bootstrap so subsequent waves have a place to land tests. Until then, the testability findings above (R25-R28) can't be exercised."
+dedup_id = "893e4755e855020e"
+verified_note = "Test framework already installed during this session by /test-bootstrap — package.json has 'test': 'bun test' script; @types/bun + fast-check added; smoke + showcase tests scaffolded under src/__tests__/. Audited during /review-apply 2026-05-25."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R30"
+file = "lumina/web/src/api.ts"
+line = 176
+symbol = "handle error reflection"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "Server error message reflected to UI with no length cap"
+description = "body.error.message is surfaced verbatim through error.value into HierarchySpine.vue:109 `{{ error }}`. Vue interpolation prevents XSS but a malicious/misbehaving server could send a kilobyte-long string that overflows the error panel. Clamp to ~200 chars before assigning."
+dedup_id = "915f7765df5b6902"
+resolved = 2026-05-25
+resolution = "Clamped server error detail to 200 chars (truncate + ellipsis) before assignment in api.ts handle(); mitigates denial-of-readability from kilobyte-long server messages (XSS posture unchanged — Vue interpolation already escapes)."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "wontfix"
+flow = "lumina-ui-design-embed"
+id = "R31"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 187
+symbol = "useHierarchy concerns"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "Composable does four jobs (data load, navigation, mutations, KPI rollups); rollup half could split into useRollups()"
+description = "Lines 126-203 (rollup) are a pure derivation over (tree, focusId) and have two independent consumers (FocusLens, PortfolioEmpty). Lifting useRollups() out keeps the navigation module focused and lets rollups grow (by-relevance, by-closure-gate). Counter: premature decomposition before a third consumer emerges — defer unless a follow-up needs it."
+dedup_id = "eb482e5b355b8809"
+wontfix_rationale = "requires deliberate refactor — finding author flagged this as defer-until-third-consumer; today only FocusLens + PortfolioEmpty consume rollups, splitting now is premature decomposition the finding itself counsels against"
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "deferred"
+flow = "lumina-ui-design-embed"
+id = "R32"
+file = "lumina/web/src/components/AppFooter.vue"
+line = 30
+symbol = "keyboard hint"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Footer advertises keyboard shortcuts (↑↓ NAV · ↵ FOCUS · ⌫ UP · S SPRINT · D DISPATCH) that are entirely unimplemented"
+description = "Static string promises functionality that doesn't exist; no keydown listeners anywhere. Plan explicitly defers keyboard nav. Either remove the hint, or gate behind a feature flag until the shortcuts ship."
+dedup_id = "2e80db021768cc5b"
+defer_reason = "Keep placeholder content"
+defer_trigger = "When keyboard navigation lands (plan-deferred feature)"
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R33"
+file = "lumina/web/src/components/ChildGrid.vue"
+line = 23
+symbol = "derivedKindLabel"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "derivedKindLabel pluralises by appending 'S' — produces 'STORYS' for stories"
+description = "kindLabel('story') → 'STORY' → derivedKindLabel → 'STORYS'. PortfolioEmpty passes child-kind-label='EPICS' explicitly to paper over this; any caller relying on auto-derivation for stories renders incorrectly. Use a pluralise() helper or pass labels explicitly everywhere."
+dedup_id = "b15481d3fc869602"
+resolved = 2026-05-25
+resolution = "Added private `pluralise(label)` helper to ChildGrid.vue (Y → IES, else + S); derivedKindLabel now uses pluralise(kindLabel(first.kind)), fixing 'STORY' → 'STORIES'."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R34"
+file = "lumina/web/src/api.ts"
+line = 197
+symbol = "fetchWorkItems"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "fetchWorkItems is exported but never imported anywhere in src/"
+description = "Defined at api.ts:197-207. Grep confirms only api.ts itself references the symbol. Dead export — drop, or document why it's preserved (e.g. 'reserved for the planned Sprint composer filter API')."
+dedup_id = "13b7e4073ba88255"
+resolved = 2026-05-25
+resolution = "Deleted unused `fetchWorkItems` export and surrounding doc comment from api.ts (no remaining importers in lumina/web/ or lumina/tests/)."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R35"
+file = "lumina/web/src/components/FocusLens.vue"
+line = 54
+symbol = "corner brackets"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Four near-identical corner-bracket spans should be a v-for over a position descriptor array"
+description = "Lines 54-69 differ only in -top/-bottom/-left/-right + border-{t,b}/{l,r} modifiers. PortfolioEmpty.vue:60-63 ships the same pattern with different utilities (visual inconsistency: FocusLens uses -top-px/single-px border, PortfolioEmpty uses top-2/2-px). Define a corner descriptor array once and reuse; design likely wants one corner-bracket primitive."
+dedup_id = "cd47b5a42eac5fc3"
+resolved = 2026-05-25
+resolution = "Replaced four corner-bracket spans with v-for over a CORNERS const in FocusLens.vue; shared classes preserved verbatim, per-corner position/side modifiers driven by cls field."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R36"
+file = "lumina/web/src/components/CenterToolbar.vue"
+line = 44
+symbol = "view-toggle buttons"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "FOCUS / TREE toggle pair duplicates a 7-line class string"
+description = "Lines 40-63 are two structurally identical buttons differing only by the comparison label. A v-for over `(['focus','tree'] as const)` with conditional border-l on i > 0 removes the duplication and keeps active-state branching single-sourced."
+dedup_id = "d513efdd7f54abee"
+resolved = 2026-05-25
+resolution = "Replaced FOCUS/TREE button pair with v-for over `viewModes` (['focus','tree'] as const) in CenterToolbar.vue; border-l conditional on i > 0; setView(mode) replaces two separate click handlers."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R37"
+file = "lumina/web/src/components/HierarchySpine.vue"
+line = 138
+symbol = "saved views list"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Five identically-styled disabled saved-view buttons should be a v-for over a label array"
+description = "Lines 138-184 emit five `<li><button disabled>` rows whose classes are byte-identical and differ only by the label string. v-for over a SAVED_VIEW_PLACEHOLDERS array collapses ~47 lines to ~10 and keeps style changes single-sourced."
+dedup_id = "e0a7912c9d178b87"
+resolved = 2026-05-25
+resolution = "Replaced five saved-view <li><button disabled> blocks with v-for over `SAVED_VIEW_PLACEHOLDERS` as const tuple in HierarchySpine.vue; classes and disabled/aria-disabled attributes preserved verbatim."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R38"
+file = "lumina/web/src/components/SpineNode.vue"
+line = 28
+symbol = "spine-rail gradient"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Inline 67-char linear-gradient duplicated per node — extract to a CSS class"
+description = "Every SpineNode renders the same gradient string inline. Move to `.spine-rail { background: linear-gradient(...) }` in theme.css or a scoped block — keeps the var(--border-strong) token reference but removes per-instance string duplication."
+dedup_id = "27e3ecb8670ce1af"
+resolved = 2026-05-25
+resolution = 'Extracted inline 67-char linear-gradient into `.spine-rail` class in <style scoped> block of SpineNode.vue; rail span now uses class="...spine-rail". var(--border-strong) token preserved.'
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R39"
+file = "lumina/web/src/components/FocusLens.vue"
+line = 103
+symbol = "progress bar precision"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "(progress * 100).toFixed(1) for a 128px-wide bar — visible width and aria-valuenow disagree by ≤ 1"
+description = "The bar is w-32 (128px); 0.1% is 0.13px which the browser rounds anyway. aria-valuenow (line 97) is already Math.round(progress * 100). Use Math.round in both places so the visible width and announced value can't disagree."
+dedup_id = "9e8a94884c9fa632"
+resolved = 2026-05-25
+resolution = "Replaced progress-bar width style (progress * 100).toFixed(1) with Math.round(progress * 100) in FocusLens.vue so visible width and aria-valuenow can never disagree."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R40"
+file = "lumina/web/src/components/FocusLens.vue"
+line = 110
+symbol = "KPI tiles"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Four KPI tiles repeat the same 6-line markup with only label/value/padding varying"
+description = "Lines 113-159 are four identical tile blocks differing only in padding direction and a trailing border-r. The Tasks tile has the extra (done/total) sub-line. v-for over a kpis descriptor array with a tile component + optional sub slot collapses ~50 lines to ~15."
+dedup_id = "43923309bc574f70"
+resolved = 2026-05-25
+resolution = "Collapsed four KPI tiles to a single v-for over a `kpis` computed (label/value/pad/border/sub) in FocusLens.vue; Tasks tile (done/total) sub-line conditional via v-if=kpi.sub; no new sub-component introduced — local de-duplication only."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R41"
+file = "lumina/web/src/components/FocusLens.vue"
+line = 8
+symbol = "FocusLens fields"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "FocusLens surfaces kind/id/title/body/status/counts but not relevance/closure_gate/complexity/origin"
+description = "These four planning-domain fields are already on the wire (api.ts WorkItem) and central to the lumina_schema_deepening_decisions Plan-1.5 axes. Read-only port doesn't require mutation, but the lens is the obvious place to display them — their absence creates vocabulary drift between SPA (kind/status world) and the canonical domain (relevance/closure-gate/origin world). Counter: if a Wave 5 planning lens is on the roadmap, this is already scheduled."
+dedup_id = "4576ddc2096de1b7"
+resolved = 2026-05-25
+resolution = "Added planning-fields <dl> row in FocusLens.vue right-aligned metadata column (Relevance: epic/feature/story; Closure: story; Complexity: task; Origin: any) via a `planningFields` computed; each kind-gated and null-suppressed; styled with existing tokens (font-mono, text-[var(--faint)], uppercase). Chose Alt-1 (extend metadata column) over Alt-2 (full-width row) — minimal layout disruption."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "wontfix"
+flow = "lumina-ui-design-embed"
+id = "R42"
+file = "lumina/web/src/api.ts"
+line = 10
+symbol = "WorkItem flat interface"
+severity = "suggestion"
+effort = "medium"
+category = "db"
+summary = "WorkItem mixes kind-scoped fields without a discriminated union"
+description = "Per domain.rs:32-46: relevance is epic/feature/story-only; effort/complexity are task-only; closure_gate is story-only; blocked_by_question_id/enabling_option_id are task-only. Flat WorkItem lets every field appear on every kind. A discriminated union (Project | Epic | Feature | Story | Task) would express these invariants and let TS narrow inside `if (node.kind === 'task')` blocks. Counter: discriminated unions multiply with recursive children — defer until wire shape stabilises post-Wave-5."
+dedup_id = "ae826de4ddac660b"
+wontfix_rationale = "requires deliberate refactor — finding author flagged the discriminated-union split as defer-until-post-Wave-5; would ripple to every WorkItem consumer (out of scope for a point-fix)"
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R43"
+file = "lumina/web/src/api.ts"
+line = 226
+symbol = "updateStatus"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "updateStatus narrower than backend PATCH route (title/body/status/position/attributes)"
+description = "lumina/src/http.rs:171 + UpdateWorkItemRequest (domain.rs:249-267) accept SET-OR-LEAVE across five fields; api.ts:226 exposes only status. Either generalise to updateWorkItem(id, patch: Partial<...>) so the wire layer mirrors the server, or document the narrowing on line 225 as a deliberate UI-policy decision."
+dedup_id = "f1ce1b7f3405afe2"
+resolved = 2026-05-25
+resolution = "Added `UpdateWorkItemRequest` interface (title/body/status/position/attributes, all optional, SET-OR-LEAVE) and generalised `updateWorkItem(id, patch)` in api.ts; legacy `updateStatus(id, status)` re-routed to delegate through updateWorkItem so both share the fetch+validation path. updateStatus signature unchanged — no caller edits needed."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R44"
+file = "lumina/web/src/composables/useHierarchy.ts"
+line = 96
+symbol = "indexTree / collectCounts / focusPath / treeStatus"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Pure tree-walk helpers and computeds are the ideal first round of tests once R29 lands"
+description = "indexTree (line 96) and collectCounts (line 155) are pure functions ideal for isolated unit tests. focusPath (line 111) has three edge cases (root, multi-level chain, stale id). treeStatus (line 210) has four branches. All four are non-trivial enough to warrant coverage. Export them (or extract to treeUtils.ts) and they become a high-value, fast, deterministic first test suite."
+dedup_id = "a2ca68c6eb9af1a0"
+resolved = 2026-05-25
+resolution = "Extracted pure tree-walk helpers (indexTree, focusPathFrom, effortWeight, DescendantCounts, collectCounts, countSubtree, countMatchingIn) into new sibling module lumina/web/src/composables/treeUtils.ts; useHierarchy.ts re-imports and its public surface is unchanged. Helpers are now independently testable."
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "verified-clean"
+flow = "lumina-ui-design-embed"
+id = "R45"
+file = "lumina/web/src/components/Breadcrumbs.vue"
+line = 9
+symbol = "nav buttons"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Breadcrumb nav has aria-label but no aria-current on focused crumb — limits role-based test selectors"
+description = "nav has aria-label='Breadcrumbs' (good) but no button carries aria-current='page' on the last crumb. getByRole('button', { current: 'page' }) can't identify the focused crumb. One-line fix that improves a11y and selectability simultaneously."
+dedup_id = "418ce69cc5bf28b3"
+verified_note = "aria-current=page already present on focused crumb at BreadcrumbTrail.vue:46 (added during R7 BreadcrumbTrail extraction) — audited during /review-apply 2026-05-25"
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R46"
+file = "lumina/web/src/components/ChildCard.vue"
+line = 15
+symbol = "button"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "ChildCard click target has no data-testid or aria-label"
+description = "Root button has no aria-label; the title is inside a child h3 but not associated to the button. Tests must query by node title text, coupling the test to data content. Add data-testid='child-card' or :aria-label='node.title'."
+dedup_id = "bca4ef3ad9060927"
+resolved = 2026-05-25
+resolution = 'Added :aria-label="node.title" and data-testid="child-card" to ChildCard.vue root <button>; existing attrs preserved.'
+
+[[items]]
+first_flagged = 2026-05-25
+rounds = 1
+status = "fixed"
+flow = "lumina-ui-design-embed"
+id = "R47"
+file = "lumina/web/src/components/SpineNode.vue"
+line = 16
+symbol = "button"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "SpineNode button has no accessible name — screen-reader and getByRole can't distinguish nodes"
+description = "Button contains nested span text (kindLabel + title) but no aria-label. Accessible-name computation from nested spans is implementation-dependent in Vapor's renderer. Add `:aria-label='node.title'` plus data-testid='spine-node'."
+dedup_id = "43277a32f1583330"
+resolved = 2026-05-25
+resolution = 'Added :aria-label="node.title" and data-testid="spine-node" to SpineNode.vue <button>; existing attrs preserved.'
+
+[[vet_events]]
+timestamp = "2026-05-25T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All spot-checks verified: text-in-flight/queued/done not literal in any scanned file; --color-success and --color-in-flight identical OKLCH; effort cast is dead per api.ts:21; focusedChildren dup confirmed across App.vue/ChildGrid.vue/HierarchySpine.vue."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-25T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 2
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped speculative SSRF/parameter-smuggling concern at api.ts:210: agent itself acknowledged encodeURIComponent already prevents path-traversal AND that the threat model (localhost same-origin) is not meaningfully attackable — pure hedge-padding. Kept R30 length-cap suggestion."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-25T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 4
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped 'module-singleton state correctly hoisted' finding — explicitly ack-only with 'No change needed', contradicts ledger contract that items must be actionable; the architectural choice is user-validated per memory feedback_lumina_web_state_management."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-25T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped 'spineList shows siblings but not focused node's children' — design intent, not a completeness gap; ChildGrid in the centre column renders children of the focused node. Verified treeStatus ready+error path, AbortController gap, fetchWorkItems dead export, and FocusLens context_blocks isTask-only — all kept."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-25T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 2
+dropped_ids = [
+    "R25",
+    "R29",
+]
+rationale = "Downgraded module-singleton-no-reset (R25) critical→warning: architecture is deliberate per user memory; the testability concern is real but severity is moderated. Downgraded no-test-framework (R29) critical→warning: plan explicitly defers component test harness (Inventory item #9), so it's a documented deferral, not a critical gap."
+dedup_id = "45ca31c3315a5978"

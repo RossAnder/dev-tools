@@ -1,66 +1,52 @@
 <script setup vapor lang="ts">
 import { computed, type ComputedRef } from 'vue'
-import type { WorkItem, WorkItemNode } from '@/api'
 import { useHierarchy } from '@/composables/useHierarchy'
 import ChildGrid from '@/components/ChildGrid.vue'
 
-const { tree, descendantCounts, treeStatus, error } = useHierarchy()
+const { tree, descendantCounts, treeStatus, error, countMatching } = useHierarchy()
 
-/**
- * Walk every node in the tree (roots + all descendants) and count matches.
- * Used by the KPI sub-text lines that need portfolio-wide rollups not
- * exposed by `descendantCounts` (which only counts by kind).
- */
-function countWhere(predicate: (node: WorkItem) => boolean): number {
-  let n = 0
-  const visit = (node: WorkItemNode): void => {
-    if (predicate(node)) n += 1
-    for (const child of node.children) visit(child)
-  }
-  for (const root of tree.value) visit(root)
-  return n
-}
+const epicCount: ComputedRef<number> = computed(
+  () => tree.value.filter((n) => n.kind === 'epic').length,
+)
 
 const rootsInFlight: ComputedRef<number> = computed(
   () => tree.value.filter((n) => n.status === 'in_progress').length,
 )
 
 const blockedStories: ComputedRef<number> = computed(() =>
-  countWhere((n) => n.kind === 'story' && n.status === 'blocked'),
+  countMatching((n) => n.kind === 'story' && n.status === 'blocked'),
 )
 
 const executingTasks: ComputedRef<number> = computed(() =>
-  countWhere((n) => n.kind === 'task' && n.status === 'in_progress'),
+  countMatching((n) => n.kind === 'task' && n.status === 'in_progress'),
 )
 </script>
 
 <template>
   <div v-if="treeStatus === 'loading'" class="mx-4 my-3">
-    <div class="h-64 bg-[var(--surface-2)] rounded-xl animate-pulse-dot"></div>
+    <div class="h-64 bg-[var(--surface-2)] animate-pulse-dot"></div>
   </div>
 
   <div
     v-else-if="treeStatus === 'error'"
-    class="mx-4 my-3 p-4 border border-[var(--border)] rounded-xl text-blocked text-[13px] font-mono"
+    class="mx-4 my-3 p-4 border border-[var(--border)] text-blocked text-[13px] font-mono"
   >
     {{ error }}
   </div>
 
   <div
     v-else-if="treeStatus === 'empty'"
-    class="mx-4 my-3 p-8 border border-[var(--border)] rounded-xl text-[var(--faint)] text-[14px] font-mono italic"
+    class="mx-4 my-3 p-8 border border-[var(--border)] text-[var(--faint)] text-[14px] font-mono italic"
   >
     No work items yet — create your first epic via the MCP <code class="text-accent">create_work_item</code> tool.
   </div>
 
   <template v-else>
     <article
-      class="relative bg-[var(--surface)] border border-[var(--border)] rounded-xl p-8 mx-4 my-3"
+      class="relative bg-[var(--surface)] border border-[var(--border)] p-8 mx-4 my-3"
     >
-      <span aria-hidden="true" class="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-[var(--accent)]"></span>
-      <span aria-hidden="true" class="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-[var(--accent)]"></span>
-      <span aria-hidden="true" class="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-[var(--accent)]"></span>
-      <span aria-hidden="true" class="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-[var(--accent)]"></span>
+      <span aria-hidden="true" class="absolute -top-px -left-px w-4 h-4 border-t border-l border-[var(--accent)]"></span>
+      <span aria-hidden="true" class="absolute -bottom-px -right-px w-4 h-4 border-b border-r border-[var(--accent)]"></span>
 
       <header class="mb-6">
         <div class="font-mono text-[10.5px] tracking-[0.18em] text-[var(--faint)] uppercase mb-3">
@@ -76,8 +62,8 @@ const executingTasks: ComputedRef<number> = computed(() =>
 
       <div class="grid grid-cols-4 gap-6 py-5 border-y border-[var(--border)]">
         <div class="flex flex-col gap-1">
-          <div class="font-mono text-[16px] text-[var(--ink)]">{{ tree.length }}</div>
-          <div class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase">Epics</div>
+          <div class="font-mono text-[16px] text-[var(--ink)]">{{ epicCount }}</div>
+          <div class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase">Projects</div>
           <div class="font-mono text-[10px] text-[var(--muted)]">{{ rootsInFlight }} IN FLIGHT</div>
         </div>
         <div class="flex flex-col gap-1">
@@ -98,6 +84,6 @@ const executingTasks: ComputedRef<number> = computed(() =>
       </div>
     </article>
 
-    <ChildGrid :children="tree" child-kind-label="EPICS" />
+    <ChildGrid :children="tree" />
   </template>
 </template>

@@ -10,29 +10,19 @@ import FocusLens from '@/components/FocusLens.vue'
 import ChildGrid from '@/components/ChildGrid.vue'
 import PortfolioEmpty from '@/components/PortfolioEmpty.vue'
 
-const { focusId, view, tree, loadTree } = useHierarchy()
+const { focusId, view, loading, focusedNode, loadTree } = useHierarchy()
 
 onMounted(() => {
   loadTree()
 })
 
-// Children of the focused node, sourced from the loaded tree so we get the
-// recursive WorkItemNode form (childCountFor in ChildGrid needs to recurse).
-// When focusId is null, PortfolioEmpty owns the children rendering.
-const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(() => {
-  if (focusId.value === null) return []
-  // Walk tree to find focused node
-  const find = (nodes: import('@/api').WorkItemNode[]): import('@/api').WorkItemNode | null => {
-    for (const n of nodes) {
-      if (n.id === focusId.value) return n
-      const deeper = find(n.children)
-      if (deeper !== null) return deeper
-    }
-    return null
-  }
-  const focused = find(tree.value)
-  return focused ? focused.children : []
-})
+// Children of the focused node, sourced via the composable's memoised lookup
+// (focusedNode) so we share one id→node Map across the app rather than each
+// component walking the tree independently. When focusId is null,
+// PortfolioEmpty owns the children rendering.
+const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
+  () => focusedNode.value?.children ?? [],
+)
 </script>
 
 <template>
@@ -52,7 +42,14 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(() => 
       <!-- Centre column -->
       <div class="overflow-y-auto flex flex-col">
         <CenterToolbar />
-        <template v-if="focusId !== null">
+        <template v-if="focusId !== null && loading">
+          <div
+            class="flex items-center justify-center h-full text-[var(--faint)] font-mono text-[11px] tracking-[0.16em]"
+          >
+            LOADING…
+          </div>
+        </template>
+        <template v-else-if="focusId !== null">
           <Breadcrumbs />
           <!-- view toggle: focus shows lens + child grid; tree shows deferred placeholder -->
           <template v-if="view === 'focus'">

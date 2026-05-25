@@ -1,0 +1,17 @@
+# cargo-nextest configuration (scaffolded by /test-bootstrap, 2026-05-25).
+# See https://nexte.st/docs/configuration/ for full schema.
+
+[profile.default]
+# Retries off for local runs — flaky tests should fail visibly.
+retries = 0
+
+[profile.ci]
+# One automatic retry in CI to absorb transient infra flakes.
+retries = 1
+# Surface failure output immediately rather than buffering until the end.
+failure-output = "immediate-final"
+# Emit JUnit XML for CI dashboards / GitHub Actions test-summary action.
+# Path is relative to `target/nextest/<profile>/`.
+
+[profile.ci.junit]
+path = "junit.xml"

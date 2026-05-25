@@ -1,8 +1,8 @@
 <script setup vapor lang="ts">
 import { ref, computed, type ComputedRef } from 'vue'
-import type { WorkItem, WorkItemNode } from '@/api'
+import type { WorkItem } from '@/api'
 import { useHierarchy } from '@/composables/useHierarchy'
-import { STATUSES, kindLabel } from '@/composables/useDisplay'
+import { STATUSES, kindLabel, type StatusFilter } from '@/composables/useDisplay'
 import ChildCard from './ChildCard.vue'
 
 const props = defineProps<{
@@ -10,52 +10,32 @@ const props = defineProps<{
   childKindLabel?: string
 }>()
 
-const { tree } = useHierarchy()
+const { descendantCountFor } = useHierarchy()
 
-const filter = ref<string>('ALL')
+const filter = ref<StatusFilter>('ALL')
 
 const filtered: ComputedRef<WorkItem[]> = computed(() => {
   if (filter.value === 'ALL') return props.children
   return props.children.filter((c) => c.status === filter.value)
 })
 
+function pluralise(label: string): string {
+  if (label.endsWith('Y')) return label.slice(0, -1) + 'IES'
+  return label + 'S'
+}
+
 const derivedKindLabel: ComputedRef<string> = computed(() => {
   if (props.childKindLabel) return props.childKindLabel
   const first = props.children[0]
-  if (first) return kindLabel(first.kind) + 'S'
+  if (first) return pluralise(kindLabel(first.kind))
   return 'ITEMS'
 })
 
-/**
- * Recursively count descendants of `node` by walking the loaded tree. Sourced
- * from `useHierarchy().tree` (recursive WorkItemNode) rather than
- * `detail.children` (flat WorkItem[] one level deep) so non-task kinds reflect
- * their full subtree, not just immediate children.
- */
-function findInTree(nodes: WorkItemNode[], id: string): WorkItemNode | null {
-  for (const n of nodes) {
-    if (n.id === id) return n
-    const hit = findInTree(n.children, id)
-    if (hit !== null) return hit
-  }
-  return null
-}
-
-function countDescendants(node: WorkItemNode): number {
-  let total = 0
-  for (const child of node.children) {
-    total += 1 + countDescendants(child)
-  }
-  return total
-}
-
 function childCountFor(node: WorkItem): number {
-  const found = findInTree(tree.value, node.id)
-  if (found === null) return 0
-  return countDescendants(found)
+  return descendantCountFor(node.id)
 }
 
-function setFilter(next: string): void {
+function setFilter(next: StatusFilter): void {
   filter.value = next
 }
 </script>

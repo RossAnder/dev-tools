@@ -1,10 +1,18 @@
 <script setup vapor lang="ts">
 import { computed, type ComputedRef } from 'vue'
-import type { WorkItem, WorkItemNode } from '@/api'
+import type { WorkItem } from '@/api'
 import { useHierarchy } from '@/composables/useHierarchy'
 import SpineNode from './SpineNode.vue'
 
-const { tree, focusId, focusPath, treeStatus, error } = useHierarchy()
+const SAVED_VIEW_PLACEHOLDERS = [
+  '▸ in-flight only',
+  '▸ blocked items',
+  '▸ unassigned tasks',
+  '▸ this sprint',
+  '+ new view',
+] as const
+
+const { tree, focusId, focusPath, treeStatus, error, getSiblings } = useHierarchy()
 
 interface SpineEntry {
   node: WorkItem
@@ -12,36 +20,10 @@ interface SpineEntry {
   isAncestor: boolean
 }
 
-/**
- * Recursively locate `id` in the tree and return both the node and its parent's
- * children array (the sibling cohort). For root-level nodes the parent's
- * children is `tree.value` itself, so we seed the walk with a synthetic root.
- */
-function findNodeWithSiblings(
-  roots: WorkItemNode[],
-  id: string,
-): { node: WorkItemNode; siblings: WorkItemNode[] } | null {
-  // Check roots-as-siblings first.
-  for (const r of roots) {
-    if (r.id === id) return { node: r, siblings: roots }
-  }
-  // Recurse into each subtree, treating each node's `children` as the sibling
-  // pool for the level below.
-  const visit = (parentChildren: WorkItemNode[]): { node: WorkItemNode; siblings: WorkItemNode[] } | null => {
-    for (const candidate of parentChildren) {
-      for (const child of candidate.children) {
-        if (child.id === id) return { node: child, siblings: candidate.children }
-      }
-      const deeper = visit(candidate.children)
-      if (deeper !== null) return deeper
-    }
-    return null
-  }
-  return visit(roots)
-}
-
 const spineList: ComputedRef<SpineEntry[]> = computed(() => {
-  if (treeStatus.value !== 'ready') return []
+  // 'ready' or 'stale-error' both have a usable tree; only loading/error/empty
+  // suppress rendering.
+  if (treeStatus.value !== 'ready' && treeStatus.value !== 'stale-error') return []
 
   if (focusId.value === null) {
     return tree.value.map((node) => ({
@@ -61,16 +43,7 @@ const spineList: ComputedRef<SpineEntry[]> = computed(() => {
     isAncestor: true,
   }))
 
-  const found = findNodeWithSiblings(tree.value, focused.id)
-  if (found === null) {
-    // Fallback: focused node from focusPath only.
-    return [
-      ...ancestors,
-      { node: focused, isFocused: true, isAncestor: false },
-    ]
-  }
-
-  const siblings: SpineEntry[] = found.siblings
+  const siblings: SpineEntry[] = getSiblings(focused.id)
     .filter((s) => s.id !== focused.id)
     .map((s) => ({ node: s, isFocused: false, isAncestor: false }))
 
@@ -116,7 +89,17 @@ const spineList: ComputedRef<SpineEntry[]> = computed(() => {
         No work items yet
       </div>
 
-      <ul v-else class="flex flex-col gap-1 relative">
+      <div
+        v-if="treeStatus === 'stale-error'"
+        class="text-blocked text-[11px] font-mono px-2 py-1"
+      >
+        Stale data — last refresh failed: {{ error }}
+      </div>
+
+      <ul
+        v-if="treeStatus === 'ready' || treeStatus === 'stale-error'"
+        class="flex flex-col gap-1 relative"
+      >
         <li v-for="entry in spineList" :key="entry.node.id">
           <SpineNode
             :node="entry.node"
@@ -136,49 +119,13 @@ const spineList: ComputedRef<SpineEntry[]> = computed(() => {
       </h2>
       <!-- deferred: saved views backend -->
       <ul class="flex flex-col">
-        <li>
+        <li v-for="label in SAVED_VIEW_PLACEHOLDERS" :key="label">
           <button
             disabled
             aria-disabled="true"
             class="block w-full text-left font-mono text-[11px] text-[var(--ghost)] cursor-not-allowed py-1 bg-transparent border-none"
           >
-            ▸ in-flight only
-          </button>
-        </li>
-        <li>
-          <button
-            disabled
-            aria-disabled="true"
-            class="block w-full text-left font-mono text-[11px] text-[var(--ghost)] cursor-not-allowed py-1 bg-transparent border-none"
-          >
-            ▸ blocked items
-          </button>
-        </li>
-        <li>
-          <button
-            disabled
-            aria-disabled="true"
-            class="block w-full text-left font-mono text-[11px] text-[var(--ghost)] cursor-not-allowed py-1 bg-transparent border-none"
-          >
-            ▸ unassigned tasks
-          </button>
-        </li>
-        <li>
-          <button
-            disabled
-            aria-disabled="true"
-            class="block w-full text-left font-mono text-[11px] text-[var(--ghost)] cursor-not-allowed py-1 bg-transparent border-none"
-          >
-            ▸ this sprint
-          </button>
-        </li>
-        <li>
-          <button
-            disabled
-            aria-disabled="true"
-            class="block w-full text-left font-mono text-[11px] text-[var(--ghost)] cursor-not-allowed py-1 bg-transparent border-none"
-          >
-            + new view
+            {{ label }}
           </button>
         </li>
       </ul>

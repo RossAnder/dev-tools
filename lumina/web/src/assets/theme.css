@@ -3,7 +3,6 @@
   --color-accent: oklch(0.78 0.13 70);
   --color-accent-deep: oklch(0.62 0.13 65);
   --color-accent-glow: oklch(0.78 0.13 70 / 0.18);
-  --color-success: oklch(0.74 0.10 145);
   --color-in-flight: oklch(0.74 0.10 145);
   --color-queued: oklch(0.68 0.04 80);
   --color-blocked: oklch(0.65 0.16 28);

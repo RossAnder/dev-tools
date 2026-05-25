@@ -72,6 +72,17 @@ axum-embed = "0.1"
 # direct export drain — so no HTTP client / bound socket is needed.)
 tower = { version = "0.5", features = ["util"] }
 
+# Test-stack ergonomics (scaffolded by /test-bootstrap, 2026-05-25):
+# Runner: cargo nextest (binary; install via `cargo install cargo-nextest --locked`)
+#   rstest            — #[rstest] + #[case(...)] for table-driven tests
+#   pretty_assertions — readable colored diffs on assert_eq! failures
+#   proptest          — property-based testing
+#   insta             — snapshot testing (review with `cargo install cargo-insta`)
+rstest            = "0.26"
+pretty_assertions = "1.4"
+proptest          = "1.9"
+insta             = "1.47"
+
 [profile.release]
 opt-level = 3
 lto = "fat"

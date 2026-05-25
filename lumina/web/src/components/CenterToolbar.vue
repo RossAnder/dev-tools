@@ -9,15 +9,13 @@ const { view, focusPath } = useHierarchy()
 // context tag. Otherwise tag the focused node (the LAST item in focusPath,
 // since focusPath is returned root-first by useHierarchy).
 //
-// Note: this differs from the design handoff, which always renders a tag
-// (PORTFOLIO when unfocused in focus view, PLANNING GRAPH · FULL TREE in tree
-// view). The spec for T10 explicitly directs returning null on empty path, so
-// we follow the spec.
+// The uuid itself is hidden — copy-id affordance lives only on the focused
+// hero card (FocusLens). Here we surface just the kind label.
 const contextTag: ComputedRef<string | null> = computed(() => {
   const path = focusPath.value
   if (path.length === 0) return null
   const focused = path[path.length - 1]!
-  return `${kindLabel(focused.kind)} · ${focused.id}`
+  return kindLabel(focused.kind)
 })
 
 // We wrap the assignment in a helper rather than inlining `view = 'focus'` in
@@ -27,6 +25,8 @@ const contextTag: ComputedRef<string | null> = computed(() => {
 function setView(next: 'focus' | 'tree'): void {
   view.value = next
 }
+
+const viewModes = ['focus', 'tree'] as const
 </script>
 
 <template>
@@ -38,32 +38,23 @@ function setView(next: 'focus' | 'tree'): void {
       class="inline-flex border border-[var(--border-strong)] rounded-md overflow-hidden"
     >
       <button
+        v-for="(mode, i) in viewModes"
+        :key="mode"
         type="button"
         :class="[
           'font-mono text-[10.5px] tracking-wider px-3 py-1 cursor-pointer border-none uppercase',
-          view === 'focus'
+          i > 0 ? 'border-l border-[var(--border-strong)]' : '',
+          view === mode
             ? 'bg-accent text-[var(--bg)]'
             : 'bg-transparent text-[var(--muted)] hover:text-[var(--ink-2)] hover:bg-[var(--surface)]',
         ]"
-        @click="setView('focus')"
+        @click="setView(mode)"
       >
-        FOCUS
-      </button>
-      <button
-        type="button"
-        :class="[
-          'font-mono text-[10.5px] tracking-wider px-3 py-1 cursor-pointer border-none border-l border-[var(--border-strong)] uppercase',
-          view === 'tree'
-            ? 'bg-accent text-[var(--bg)]'
-            : 'bg-transparent text-[var(--muted)] hover:text-[var(--ink-2)] hover:bg-[var(--surface)]',
-        ]"
-        @click="setView('tree')"
-      >
-        TREE
+        {{ mode.toUpperCase() }}
       </button>
     </div>
 
-    <!-- Context tag (right) -->
+    <!-- Context tag (right) — kind label only; uuid hidden -->
     <span
       v-if="contextTag !== null"
       class="font-mono text-[11px] text-[var(--muted)] tracking-wider uppercase"

@@ -18,3 +18,12 @@ web/dist/*
 #   .sqlx/            — committed offline query cache (cargo sqlx prepare)
 #   .env              — holds only a local sqlite path, safe to commit
 #   .lumina/export/   — git-export snapshots are the audit trail; must be tracked
+
+# <!-- TEST-BOOTSTRAP:GITIGNORE START -->
+# Coverage artefacts (cargo-llvm-cov)
+target/coverage/
+lcov.info
+cobertura.xml
+# proptest persisted-regression cases (committed convention varies; default to ignore)
+proptest-regressions/
+# <!-- TEST-BOOTSTRAP:GITIGNORE END -->

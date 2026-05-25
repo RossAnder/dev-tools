@@ -1,0 +1,25 @@
+slug = "lumina-project-repo-links"
+plan_path = "docs/plans/lumina-project-repo-links.md"
+status = "review"
+created = 2026-05-25
+updated = 2026-05-25
+branch = "main"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/**",
+    "lumina/tests/e2e.rs",
+    "lumina/web/src/**",
+    "lumina/CLAUDE.md",
+    "claude/skills/lumina/SKILL.md",
+]
+
+[tasks]
+total = 11
+completed = 11
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-project-repo-links/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-project-repo-links/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-project-repo-links/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-project-repo-links/plan-review-findings.toml"

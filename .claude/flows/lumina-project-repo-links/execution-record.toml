@@ -1,0 +1,295 @@
+schema_version = 1
+last_updated = 2026-05-25
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-25
+agent = "implement"
+summary = "Flow transitioned from draft to in-progress at start of /implement"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "ac17f0fed365921d"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "add-migration-0004-and-domain-types"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "Migration 0004 + RepoLink struct + parse_github_slug helper + findings.repo_id FK; build/clippy/sqlx-prepare-check/migrate all green; 4 migration smoke tests + 11 parse_github_slug tests pass"
+files = [
+    "lumina/migrations/0004_repo_links.sql",
+    "lumina/src/domain.rs",
+    "lumina/src/repo.rs",
+    "lumina/src/import.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/export.rs",
+    "lumina/tests/migration_0004.rs",
+    "lumina/.sqlx/query-45cbcfc1959113fcd32b833f8292ad912750ac9026bd5db3d74d93b9a9e8b6d1.json",
+    "lumina/.sqlx/query-f298deae274afbd4a9b221a3a6429fe132d3a9b0fcb0506407b7ae50fde46f95.json",
+]
+commits = ["a0728d2cf053ddadd9e6a73ed27387f9b07c7995"]
+dedup_id = "73a097dbe57485f7"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "add-repo-crud-functions-find-project-ancestor-helper"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "Repo-link CRUD (add/list/remove + set_primary_repo + set_finding_repo) plus find_project_ancestor recursive CTE helper; get_work_item_detail populates repo_links only when kind=project; all events use aggregate_type=work_item; 13 new sqlx offline cache entries"
+files = [
+    "lumina/src/repo.rs",
+    "lumina/.sqlx/query-00c1e24fb530a138fa1b1288713b4d46d5c75cc58cb399ea3402e966f787be25.json",
+    "lumina/.sqlx/query-10b6093c732c1116f095d6651aa8022e7179d7b766c4eefdc23252f3d6065add.json",
+    "lumina/.sqlx/query-14cb1cae635b0057e0c3c14891b363c19707c3ca12777e62f9a1d6d778071cc9.json",
+    "lumina/.sqlx/query-43a4f645d59c390b186f5179879d64f33a8cfa28ce01f4e1693227b0681afc6a.json",
+    "lumina/.sqlx/query-459f5cade3b7b5fa4805b8bea46b50ff9488b04ad0143bdd122119b33a0760ff.json",
+    "lumina/.sqlx/query-530d8c9b3af09074eba36234e3ab0c99011788256ed16d8134ea36648d2a2f30.json",
+    "lumina/.sqlx/query-5741ee063b4a8f47d7951ba1cc5d11ae86441df9732468dc352eafb6dec83160.json",
+    "lumina/.sqlx/query-64ab81bd728332ceb2c8729a07a6763906b15fa8b22fee52f68ef9695d3b8313.json",
+    "lumina/.sqlx/query-7919be88d003ec6ea2d2c27950ec6d6c4849e171df89dfd28c1cd4f6fa2f8eb2.json",
+    "lumina/.sqlx/query-8241c2a6f7f6bfb3fdf96e7c3313f9c2069b1e3a7501a0be971a8deaffe6cc44.json",
+    "lumina/.sqlx/query-a0be13386fe7979b6edb5fa101edc7a0ab98a6e4f7d5f9335e4186f114b0c095.json",
+    "lumina/.sqlx/query-d2fabba398ca632d694307bae09f574891b806cb9ddc9cfea2b8a44c2f2a9e59.json",
+    "lumina/.sqlx/query-f9ad8393c19e491dfda4ed3c96e27c2725d604c4843f9284d5f3d6672f38d977.json",
+]
+commits = ["845357b305a1e11a86d65736bf7750d65f61b50a"]
+dedup_id = "c704fb1836e12c0d"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "extend-git-export-rendering"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "No code changes: serde derives on RepoLink + tables-last ordering on WorkItemDetail.repo_links + toml-crate Option::None elision + existing aggregate_type=work_item dispatch handle all three T3 surfaces automatically"
+commits = ["c2167a50339b5a8a5f8e395cf809ed0466037692"]
+dedup_id = "0afff71420172737"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "add-mcp-tools"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "Five new MCP tools (add/remove/set_primary/list_repo_link + set_finding_repo); FileRef untagged enum widens SetTaskSpecParams.files_touched; repo_id threaded through AddFindingParams/UpdateFindingParams; want_string_array → want_files_touched for task.files_touched; inline tool descriptions updated. 88/88 tests pass"
+files = [
+    "lumina/src/mcp.rs",
+    "lumina/src/repo.rs",
+]
+commits = ["c2167a50339b5a8a5f8e395cf809ed0466037692"]
+dedup_id = "61d9e8129a5eeeda"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "add-http-endpoints"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "Three new HTTP routes: POST /work-items/{project_id}/repo-links, DELETE/PATCH /work-items/{project_id}/repo-links/{id}; handlers delegate to T2 repo functions via the existing Result<Json<T>, AppError> pattern. Findings-PATCH portion of plan skipped (no such route exists; composing repo::update_finding + repo::set_finding_repo would break single-mutation-path) — see deviation E7"
+files = ["lumina/src/http.rs"]
+commits = ["c2167a50339b5a8a5f8e395cf809ed0466037692"]
+dedup_id = "5deb03e49ddfaf59"
+
+[[items]]
+id = "E7"
+type = "deviation"
+date = 2026-05-25
+agent = "implement"
+task_ref = "add-http-endpoints"
+summary = "Skipped the plan's PATCH /findings/{id} repo_id thread (option B)"
+original_intent = "Plan T5 said: extend the existing PATCH /findings/{id} body to read an optional repo_id and delegate to repo::set_finding_repo when present"
+rationale = "No PATCH /findings/{id} route exists in http.rs today (only /work-items routes); repo::update_finding's UPDATE statement does not cover repo_id either. Composing repo::update_finding + repo::set_finding_repo across two transactions would violate the single-mutation-path invariant documented at repo.rs:1-12 (one domain write ⇒ one event row, atomically). UpdateFindingRequest.repo_id (T1) is for the MCP update_finding tool (T4 wired it). Recommendation: follow-up plan-update to introduce a transactionally-coherent HTTP findings surface"
+commits = ["c2167a50339b5a8a5f8e395cf809ed0466037692"]
+dedup_id = "6d9907518453f26b"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "e2e-test-repo-links-thread"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "repo_links_flow #[tokio::test] in lumina/tests/e2e.rs covers: create project, add_repo_link x2 with mixed-case slugs, finding with repo_id, drain export, assert project+task TOML, HTTP GET /api/work-items/{id} JSON, POST/PATCH/DELETE round-trips. 89/89 tests pass. Used runtime sqlx::query_scalar string API throughout (no .sqlx cache pollution)"
+files = ["lumina/tests/e2e.rs"]
+commits = ["5dda2c4307d4f11ec1ce06f3e9819a4a2145b332"]
+dedup_id = "cd0a2e7d811b482e"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "update-api-client-zod-schemas"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "RepoLinkSchema added; WorkItemDetailSchema extends with optional repo_links (defaults []); FindingSchema gets nullable+optional repo_id; addRepoLink/removeRepoLink/setPrimaryRepo client fns. Commit also bundled pre-existing Zod wire-enum infrastructure that T7 builds on"
+files = ["lumina/web/src/api.ts"]
+commits = ["5dda2c4307d4f11ec1ce06f3e9819a4a2145b332"]
+dedup_id = "90b13f7140838433"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "docs-lumina-claude-md-agent-skill-md-inline-tool-descriptions"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "Updated root CLAUDE.md MCP tool surface paragraph (34->39 tools, repo-link family, files_touched widening, migration 0004 forward-compat caveat) and claude/skills/lumina/SKILL.md (5 new tools subsection + finding/task description updates). Plan named lumina/CLAUDE.md but that file is a stub; root CLAUDE.md is where the prose lives"
+files = [
+    "CLAUDE.md",
+    "claude/skills/lumina/SKILL.md",
+]
+commits = ["5dda2c4307d4f11ec1ce06f3e9819a4a2145b332"]
+dedup_id = "d534f65f1aee1a15"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-05-25
+agent = "implement"
+task_ref = "docs-lumina-claude-md-agent-skill-md-inline-tool-descriptions"
+summary = "T11 docs edits landed in root CLAUDE.md not lumina/CLAUDE.md"
+original_intent = "Plan T11 named lumina/CLAUDE.md as the docs target"
+rationale = "lumina/CLAUDE.md is a 32-line stub containing only the <!-- TEST-BOOTSTRAP:STACK --> marker block; the long MCP-tool-surface paragraph described in the T11 spec lives in the repo-root CLAUDE.md under ## lumina > ### MCP tool surface & the agent skill. Applied edits to the only location the content can live today"
+commits = ["5dda2c4307d4f11ec1ce06f3e9819a4a2145b332"]
+dedup_id = "372d48c01a195c64"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "add-userepolinks-composable-repolinkspanel-repotag-util"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "Module-singleton useRepoLinks composable (mirrors useHierarchy w/ __setApiForTests + __resetForTests + Result discriminated union); Vapor RepoLinksPanel SFC bound by projectId; pure formatFileRef helper covering explicit/primary/no-repo branches + :line; --repo-tag CSS token aliased to --accent. 4 bun tests cover all formatFileRef branches"
+files = [
+    "lumina/web/src/utils/repoTag.ts",
+    "lumina/web/src/__tests__/repoTag.test.ts",
+    "lumina/web/src/composables/useRepoLinks.ts",
+    "lumina/web/src/components/RepoLinksPanel.vue",
+    "lumina/web/src/assets/tokens.css",
+]
+commits = ["3f0af98b68df5a19b6f6c4018f5e552f972b2025"]
+dedup_id = "6c25b192ad345488"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "mount-repolinkspanel-in-focuslens-for-project-kind-items"
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+status = "done"
+summary = "Imported RepoLinksPanel and mounted under v-if=item.kind==='project' in FocusLens body; first piece of project-kind UI. Lite dispatch vetted (1/1 sampled, 0 failures)"
+files = ["lumina/web/src/components/FocusLens.vue"]
+commits = ["76608b4da6b9d56fdd8715dc27b4940da6098269"]
+dedup_id = "1add22505966fb39"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-05-25
+agent = "implement"
+summary = "cargo build clean"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "834e94d62539809f"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-05-25
+agent = "implement"
+summary = "cargo nextest run — 89/89 passed including repo_links_flow"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "a4632c9de96d0acd"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-05-25
+agent = "implement"
+summary = "clippy --all-targets -D warnings clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "90e9eb15b16cacc0"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-05-25
+agent = "implement"
+summary = "sqlx prepare --check exits 0 (expected unused-queries warning)"
+command = "cd lumina && cargo sqlx prepare --check"
+outcome = "pass"
+dedup_id = "1c28a9afa9e41c1f"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-05-25
+agent = "implement"
+summary = "web npm run build (vue-tsc + vite) succeeds"
+command = "cd lumina/web && npm run build"
+outcome = "pass"
+dedup_id = "4d8102d89270c676"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-05-25
+agent = "implement"
+summary = "bun test repoTag.test.ts (4 tests, all branches)"
+command = "cd lumina/web && bun test src/__tests__/repoTag.test.ts"
+outcome = "pass"
+dedup_id = "8ad7984668d50e68"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-05-25
+agent = "implement"
+task_ref = "full-verification-sweep"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+status = "done"
+summary = "T10 satisfied by Phase 3 verification sweep (E14-E19): all 6 commands from plan ## Verification Commands exited 0"
+commits = ["76608b4da6b9d56fdd8715dc27b4940da6098269"]
+dedup_id = "ab774761934feebd"
+
+[[items]]
+id = "E21"
+type = "status-transition"
+date = 2026-05-25
+agent = "plan-update"
+summary = "All 11 plan tasks complete and Phase 3 verification all green; flow transitions to review awaiting /review + /optimise"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "65e012e16729e40c"

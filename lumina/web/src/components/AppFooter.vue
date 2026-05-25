@@ -1,8 +1,8 @@
 <script setup vapor lang="ts">
 import { useHierarchy } from '@/composables/useHierarchy'
-import { kindLabel } from '@/composables/useDisplay'
+import BreadcrumbTrail from '@/components/BreadcrumbTrail.vue'
 
-const { focusPath, setFocus } = useHierarchy()
+const { focusPath } = useHierarchy()
 </script>
 
 <template>
@@ -11,18 +11,7 @@ const { focusPath, setFocus } = useHierarchy()
   >
     <!-- Left column: breadcrumbs -->
     <div class="font-mono text-[10.5px] text-[var(--faint)]">
-      <template v-if="focusPath.length > 0">
-        <template v-for="(node, idx) in focusPath" :key="node.id">
-          <button
-            type="button"
-            class="font-mono text-[10.5px] text-[var(--faint)] hover:text-[var(--ink-2)] cursor-pointer bg-transparent border-none p-0"
-            @click="setFocus(node.id)"
-          >
-            {{ kindLabel(node.kind) }}
-          </button>
-          <span v-if="idx < focusPath.length - 1"> / </span>
-        </template>
-      </template>
+      <BreadcrumbTrail v-if="focusPath.length > 0" tone="faint" />
       <span v-else>ROOT</span>
     </div>
 

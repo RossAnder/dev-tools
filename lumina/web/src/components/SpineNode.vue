@@ -22,13 +22,14 @@ const { setFocus } = useHierarchy()
       'text-[var(--ink-2)]': isAncestor && !isFocused,
       'text-[var(--muted)] opacity-60 hover:opacity-95': !isFocused && !isAncestor,
     }"
+    :aria-label="node.title"
+    data-testid="spine-node"
     @click="setFocus(node.id)"
   >
     <!-- vertical gradient spine line (mirrors styles.css .spine-rail) -->
     <span
       aria-hidden="true"
-      class="absolute left-3 top-0 bottom-0 w-px"
-      style="background: linear-gradient(to bottom, transparent 0%, var(--border-strong) 20%, var(--border-strong) 80%, transparent 100%);"
+      class="absolute left-3 top-0 bottom-0 w-px spine-rail"
     ></span>
     <!-- diamond marker -->
     <span
@@ -48,7 +49,7 @@ const { setFocus } = useHierarchy()
         class="font-mono text-[9.5px] tracking-[0.18em] uppercase"
         :class="isFocused ? 'text-accent' : 'text-[var(--faint)]'"
       >
-        {{ kindLabel(node.kind) }} · {{ node.id }}
+        {{ kindLabel(node.kind) }}
       </span>
       <span
         class="font-sans text-[13px] leading-[1.3] truncate"
@@ -63,3 +64,9 @@ const { setFocus } = useHierarchy()
     <StatusPill v-if="node.status" :status="node.status" />
   </button>
 </template>
+
+<style scoped>
+.spine-rail {
+  background: linear-gradient(to bottom, transparent 0%, var(--border-strong) 20%, var(--border-strong) 80%, transparent 100%);
+}
+</style>

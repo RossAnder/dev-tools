@@ -1,0 +1,261 @@
+schema_version = 1
+last_updated = 2026-05-25
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "completeness"
+plan_section = "### Data model (migration 0004)"
+summary = "validate_attributes_for_kind rejects structured files_touched entries; widening lives in repo.rs not mcp.rs"
+description = "repo.rs:124-128 want_string_array enforces all-strings; line 150 calls it for task files_touched; SetTaskSpecParams.files_touched is typed Option<Vec<String>> in mcp.rs:261. The schemars-derived JSON-Schema will reject object entries at deserialise time before the validator even runs. Both the MCP param type (widen to a #[serde(untagged)] enum of String | {repo, path}) and the repo-layer validator (branch want_string_array into want_file_ref_array) must change."
+anchor_old = "Validation of the structured form happens in `set_task_spec` (the existing MCP tool already manages `files_touched`); no schema change for `work_items.attributes` itself."
+anchor_new = "Validation of the structured form happens in `set_task_spec` (the existing MCP tool already manages `files_touched`); no schema change for `work_items.attributes` itself. **Two coordinated edits required**: (1) widen `SetTaskSpecParams.files_touched` (`mcp.rs:261`) from `Option<Vec<String>>` to `Option<Vec<FileRef>>` where `FileRef` is `#[serde(untagged)]` over `String` and `{repo: String, path: String}` so the rmcp/schemars schema accepts both shapes; (2) branch `repo.rs`'s `want_string_array` (`repo.rs:124-128`) into a `want_files_touched` validator that accepts string-or-`{repo,path}` for the `files_touched` key, leaving the other `task` keys unchanged. The kind=`project` rejection at `repo.rs:158` stays as-is — repo links live in the side table, not `attributes`."
+dedup_id = "344ca7caea20081e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "completeness"
+plan_section = "#### T1: Add migration 0004 and domain types"
+summary = "NewFinding struct, create_finding INSERT, and import.rs struct-literal need repo_id thread-through"
+description = "repo.rs:1751 pub struct NewFinding<'a>; create_finding INSERTs the columns explicitly; import.rs:341-364 builds a NewFinding struct-literal — adding repo_id to Finding without adding it to NewFinding+import literal will fail to compile."
+anchor_old = "Add `repo_id: Option<String>` to `Finding` and `UpdateFindingRequest`."
+anchor_new = "Add `repo_id: Option<String>` to `Finding`, `UpdateFindingRequest`, AND `repo::NewFinding<'a>` (`repo.rs:1751`). The `create_finding` INSERT must add the new column; the importer's struct-literal at `import.rs:341-364` must default `repo_id: None` — a forgotten field there breaks the build."
+dedup_id = "77af61d1e89a6669"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "executability"
+plan_section = "#### T4: Add MCP tools"
+summary = "No find_project_ancestor helper exists; T4 (and T2's set_finding_repo) silently require inventing one"
+description = "Grep confirms no find_project_ancestor / walk_parent / project_ancestor helper exists in lumina/src/. T4 says reject unknown slugs by checking against the project ancestor's linked repos; that walk does not exist today. T2's set_finding_repo also needs this walk to validate the repo_id belongs to the finding's project ancestor. The helper must land in T2 (since T4 depends on T2) and use a recursive CTE following the existing tree-read patterns."
+anchor_old = "Extend `SetTaskSpecParams.files_touched` validation to accept the structured `{repo, path}` form; reject unknown slugs by checking against the project ancestor's linked repos."
+anchor_new = "Extend `SetTaskSpecParams.files_touched` validation to accept the structured `{repo, path}` form; reject unknown slugs by checking against the project ancestor's linked repos. **Requires a new `repo::find_project_ancestor(pool, work_item_id) -> Result<String, AppError>` helper** that walks `parent_id` via a recursive CTE until it finds the row where `kind='project'` (mirror the recursive-CTE shape used in existing tree reads; return `Validation` if no project ancestor exists). Add this helper to **T2** (not T4) because `set_finding_repo` (T2) also needs it to validate that a finding's `repo_id` belongs to the finding's project ancestor."
+dedup_id = "9c0ca9a057e6e13f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "completeness"
+plan_section = "### Event payloads + git export (`lumina/src/export.rs`)"
+summary = "export.rs:139 dispatches only on aggregate_type=='work_item'; repo_link events under a new aggregate_type silently won't trigger render"
+description = 'export.rs:139 hard-codes if ev.aggregate_type == "work_item" && !rendered.contains(...) — events with any other aggregate_type are stamped/drained but produce no file. The plan implicitly assumes repo_link.* events trigger project re-render but does not pin the routing.'
+anchor_old = "New event types — all free-form JSON payloads under the existing `events` schema (no schema change required per `repo.rs` event-outbox pattern):"
+anchor_new = """New event types — all free-form JSON payloads under the existing `events` schema (no schema change required per `repo.rs` event-outbox pattern). **Aggregate routing decision**: `record_event` calls for repo-link mutations MUST use `aggregate_type = "work_item"` with `aggregate_id = <project_id>` (NOT a new `"repo_link"` aggregate_type), so the existing drain dispatch at `export.rs:139-144` re-renders the project automatically. The same applies to `finding.repo_changed` (use `aggregate_type = "work_item"` with the finding's parent work-item id). A new aggregate_type would silently skip the render — the dispatch is hard-coded to `"work_item"`."""
+dedup_id = "5b72cdc0288dcd17"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "completeness"
+plan_section = "### Repo layer (`lumina/src/repo.rs`)"
+summary = "Existing WorkItemDetail struct-literals (export.rs test fixture) will fail to compile when repo_links field is added"
+description = "export.rs:830-915 builds a hand-rolled WorkItemDetail literal in the toml-serializer test. Adding a non-Default field breaks that. Mark the new field #[serde(default)] on Rust side and explicitly update every in-tree struct-literal."
+anchor_old = "The `WorkItemDetail` aggregate gains a `repo_links: Vec<RepoLink>` field populated by `get_work_item_detail` only when the item kind is `project` (cheap one-shot query)."
+anchor_new = "The `WorkItemDetail` aggregate gains a `repo_links: Vec<RepoLink>` field (`#[serde(default)]`, defaults to empty Vec) populated by `get_work_item_detail` only when the item kind is `project` (cheap one-shot query, returns `vec![]` for non-projects). **Existing struct-literals must be updated**: `export.rs:830-915` (the toml-serializer test fixture) and any other in-tree literal — add `repo_links: vec![]`."
+dedup_id = "8232d86971d4a6d9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### T5: Add HTTP endpoints"
+summary = "http.rs:80-97 cited for AppError mapping is the wrong anchor — error mapping lives in error.rs:104"
+description = "http.rs:80-97 is the body of list_work_items (tree assembly). The 404/422/500 mapping lives at error.rs:104 (impl IntoResponse for AppError). An implementer following the cited line range will see only the tree handler."
+anchor_old = "Reuse `AppError` mapping (404/422/500) per `http.rs:80-97`."
+anchor_new = "Reuse `AppError` mapping (404/422/500) per the existing `impl IntoResponse for AppError` at `error.rs:104`; handler signatures stay `Result<Json<T>, AppError>` and `?` the `repo::*` calls (`http.rs:6-8` module docstring is the canonical reference for this pattern)."
+dedup_id = "d6817a2617d5e936"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Repo layer (`lumina/src/repo.rs`)"
+summary = "set_primary_repo statement order is correctness-critical (SQLite checks partial UNIQUE per statement); plan does not pin it"
+description = "SQLite enforces UNIQUE per statement (not at commit). Safe order: clear is_primary=0 for project FIRST, then set new is_primary=1. Inverted order fails with SQLITE_CONSTRAINT_UNIQUE on the first statement. Caller-facing errors should map to 409 Conflict for retry."
+anchor_old = "- `set_primary_repo(pool, project_id, repo_link_id) -> ()` — atomically clears + sets within one txn; emits `repo_link.primary_changed` event."
+anchor_new = "- `set_primary_repo(pool, project_id, repo_link_id) -> ()` — within one `pool.begin()` txn, FIRST `UPDATE repo_links SET is_primary=0 WHERE project_id=? AND is_primary=1` THEN `UPDATE repo_links SET is_primary=1 WHERE id=?` (order matters: SQLite checks the partial UNIQUE index per-statement, so the clear must precede the set or the second UPDATE fails with `SQLITE_CONSTRAINT_UNIQUE`). Concurrent calls are serialised by SQLite's single-writer lock; map any residual `SQLITE_CONSTRAINT_UNIQUE` to `AppError::Conflict(409)` so callers can retry. Emits `repo_link.primary_changed` event."
+dedup_id = "2bcd8045a52c7513"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "executability"
+plan_section = "## Verification Commands"
+summary = "sqlx prepare needs DATABASE_URL pointing at a migrated DB; plan should pin cargo nextest run per project convention"
+description = "lumina/.env defines DATABASE_URL=sqlite://lumina.db; sqlx prepare requires migrations 0001-0004 to be applied. Plus, lumina/CLAUDE.md (Testing Stack) standardises on cargo nextest run, not cargo test. Verification commands should use the nextest binary and include bun test for the SPA."
+dedup_id = "89201aa0eb57c778"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "executability"
+plan_section = "#### T7: Update API client + Zod schemas"
+summary = "Typecheck hedge wrong — npm run build already runs vue-tsc via parallel type-check script"
+description = "package.json:8 build = run-p type-check ... ; package.json:11 type-check = vue-tsc --build. Typecheck is not optional and not tsc --noEmit. Build fails on type errors."
+anchor_old = "**Acceptance**: `cd lumina/web && npm run build` succeeds; type-check (if `tsc --noEmit` is in scripts) passes."
+anchor_new = "**Acceptance**: `cd lumina/web && npm run build` succeeds. (`npm run build` runs `vue-tsc --build` in parallel via the `type-check` script per `package.json:8,11`, so type errors fail the build.) Plus `bun test src/__tests__/` passes (Vue SPA testing standard per `lumina/web/CLAUDE.md`)."
+dedup_id = "de17137cfc00a563"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "executability"
+plan_section = "## Dependency Graph"
+summary = "ASCII diagram contradicts task records — shows T2 unblocking T10 and T11 directly, but task records say T10 depends on T6+T9 and T11 on T4"
+description = "Diagram has stray branches T2 --> T10 and T2 --> T11. Trailing duplicate lines repeat edges. An agent parsing the graph for dispatch will incorrectly start T10/T11 after T2."
+dedup_id = "e1e1ba1bedc04768"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "executability"
+plan_section = "#### T2: Add repo CRUD functions"
+summary = "Sqlx prepare commit ownership unclear across T2/T4/T10 — risk of double-regen and merge churn"
+description = "T2 says run cargo sqlx prepare after coding; T4 adds more query!/query_as! macros; T10 says regenerate again. Plan does not say which task commits the .sqlx artefacts. Parallel-wave runs will produce merge churn."
+anchor_old = "Each function uses `query!`/`query_as!` macros — run `cargo sqlx prepare -- --all-targets` after coding to regenerate `.sqlx/`."
+anchor_new = "Each function uses `query!`/`query_as!` macros — run `cargo sqlx prepare -- --all-targets` after coding AND commit the new `.sqlx/query-*.json` entries in this task. T4 must do the same after adding its tools. T10 is a final sweep: re-run `--check` only and regenerate only if drift is detected (do not blindly re-prepare in T10 — that would re-touch files committed by T2/T4 and cause spurious diffs)."
+dedup_id = "2c3b0a6d9889c185"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "completeness"
+plan_section = "### Web SPA (`lumina/web/`)"
+summary = "FocusLens currently gates KPI grid on kind==epic; project-kind branch has no body content beyond header"
+description = "FocusLens.vue:183 v-if=item.kind==='epic'; comment at line 178 says rendered at project (epic) level but only epic actually fires. RepoLinksPanel will be the first project-kind UI; the lens may otherwise appear empty around it."
+anchor_old = """- `components/RepoLinksPanel.vue` (new) — `<script setup vapor>`; rendered by `FocusLens.vue` only when `detail.item.kind === 'project'`. Layout: vertical list of linked repos (slug, primary star, remove button), then a single text input + "add" button. Use existing Tailwind utilities + CSS-variable conventions (no `<style scoped>`)."""
+anchor_new = """- `components/RepoLinksPanel.vue` (new) — `<script setup vapor>`; rendered by `FocusLens.vue` only when `detail.item.kind === 'project'`. Layout: vertical list of linked repos (slug, primary star, remove button), then a single text input + "add" button. Use existing Tailwind utilities + CSS-variable conventions (no `<style scoped>`). **Note**: `FocusLens.vue:183` currently gates the KPI grid on `kind === 'epic'` only — the project-kind branch has no body content today. This panel is the first piece of project-kind UI; T9's acceptance must confirm the project lens renders coherently (header + RepoLinksPanel + descendant counts) rather than appearing empty around the new panel."""
+dedup_id = "a3a24dc7786e86ea"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "executability"
+plan_section = "#### T9: Integrate panel + file-ref repo display in FocusLens"
+summary = "File-ref-with-repo-tag display has no call sites today (no findings UI in FocusLens); acceptance is untestable"
+description = "FocusLens.vue has zero findings/file-path rendering. Plan's three-cases manual smoke cannot be exercised. Better: move helper to a pure util with bun test coverage; defer template wiring until findings UI exists."
+anchor_old = "Anywhere FocusLens renders a file path (initially: any future findings section — add the resolution helper as a tiny inline helper so the call sites are uniform once findings UI lands), display `[<owner>/<name>] path:line`. When `finding.repo_id` is null, resolve to the project's primary repo (look up via the loaded `repo_links`). When the project has no primary set, render `[no repo] path:line` in `var(--muted)`."
+anchor_new = "Add a pure helper `formatFileRef(path: string, repoId: string | null, repoLinks: RepoLink[]): string` to a new `lumina/web/src/utils/repoTag.ts` that returns `[<owner>/<name>] path:line` for explicit `repoId`, falls back to the primary repo when `repoId` is null, and returns `[no repo] path:line` when no primary is set. Export it so future findings-rendering work can adopt it uniformly. Do NOT modify the FocusLens template for file-path rendering in this task — there is no findings/file-path section in FocusLens.vue today (verified by grep). Acceptance becomes `bun test src/utils/repoTag.test.ts` covering the three branches."
+dedup_id = "63e1d9a0b0e9be01"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "risk"
+plan_section = "### Web SPA (`lumina/web/`)"
+summary = "FindingSchema repo_id needs .optional().nullable() to handle absent+null wire shapes safely"
+description = "Zod 4 default-strips unknown keys but a required z.string().nullable() fails parsing when the key is absent (stale endpoint cache mid-deploy). Use .nullable().optional() so both absent and null are accepted."
+anchor_old = "extend `FindingSchema` with `repo_id: string | null`"
+anchor_new = "extend `FindingSchema` with `repo_id: z.string().nullable().optional()` (optional handles absent fields from pre-deploy caches; nullable handles the live wire shape)"
+dedup_id = "146370f3e9ed7186"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Research Notes"
+summary = "Case-fold BOTH owner AND repo-name on store — GitHub repo names are case-insensitive for resolution"
+description = "Plan lowercases only the owner. octocat/Hello-World and octocat/hello-world would be stored as distinct rows but resolve to the same GitHub repo. UNIQUE constraint intent is violated."
+anchor_old = "Apply once in the parser; case-fold owner to lowercase on store."
+anchor_new = "Apply once in the parser; case-fold BOTH owner AND repo-name to lowercase on store (GitHub repo names are case-insensitive for resolution; storing `Foo/Bar` and `foo/bar` as distinct rows would violate the intent of the UNIQUE constraint). Reject `*.git` suffix as a separate post-regex step."
+dedup_id = "2963304a5412a433"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Add explicit forward-only declaration for migration 0004 and document rollback strategy"
+description = "Project convention is single-file migrations (no *_down.sql in migrations/). Reader assuming sqlx default reversibility may file a non-issue. SQLite >=3.35 supports DROP COLUMN if a hotfix migration is needed."
+anchor_old = "- **Files_touched schema widening is backwards-compatible but unenforced**:"
+anchor_new = """
+- **Migration 0004 is forward-only**: Project convention (per migrations/0001-0003) is single-file migrations with no `*_down.sql`. Rollback strategy if 0004 must be reverted: revert the binary (the new table + column become orphaned but inert), then in a follow-up hotfix migration `DROP TABLE repo_links; ALTER TABLE findings DROP COLUMN repo_id;` (SQLite ≥ 3.35 supports DROP COLUMN; libsqlite3-sys bundles a sufficiently recent SQLite).
+- **Files_touched schema widening is backwards-compatible but unenforced**:"""
+dedup_id = "b2ba97e12498d1ae"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T1: Add migration 0004 and domain types"
+summary = "parse_github_slug acceptance imprecise: doesn't specify canonicalised return shape; x.git/y is redundant"
+description = "Foo/bar.baz_2 listed as valid — does test assert canonical lowercased return foo/bar.baz_2 or just Ok? x.git/y can't pass owner regex anyway (no dots) — redundant test case."
+anchor_old = "passes for both valid (`octocat/Hello-World`, `Foo/bar.baz_2`) and invalid (`/x`, `x/`, `x.git/y`, `x/y.git`, `-x/y`, `x/-y`) inputs."
+anchor_new = 'passes: valid inputs `octocat/Hello-World` and `Foo/bar.baz_2` return `Ok("octocat/hello-world")` and `Ok("foo/bar.baz_2")` respectively (owner+name both lowercased per P15); invalid inputs `/x`, `x/`, `x/y.git`, `-x/y`, `x/-y`, `a..b/y` return `Err(Validation(_))`.'
+dedup_id = "7af77949f0c38420"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T3: Extend git-export rendering"
+summary = "T3 and T5 acceptances require manual ad-hoc setup; defer runtime verification to T6"
+description = "T3 asks for an ad-hoc smoke export; T5 asks for a manual curl. Both require live setup that T6 already does via tower::ServiceExt::oneshot. Make T3/T5 build-only and centralise runtime correctness in T6."
+anchor_old = "**Acceptance**: `cargo build --manifest-path lumina/Cargo.toml` succeeds. An ad-hoc smoke export of a project with two repo_links produces a TOML file containing both slugs."
+anchor_new = "**Acceptance**: `cargo build --manifest-path lumina/Cargo.toml` succeeds and `cargo clippy --manifest-path lumina/Cargo.toml --all-targets` is clean. Runtime correctness is asserted by T6 (`repo_links_flow` checks the exported TOML contains both slugs)."
+dedup_id = "e16ebdceb0eb1bf7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### T11: Docs — lumina CLAUDE.md + agent SKILL.md"
+summary = "Inline #[tool] description strings on set_task_spec/add_finding/update_finding need updating"
+description = "mcp.rs:902 description = ... strings are agent-discoverable surface and must mention optional repo_id / structured files_touched. T11 only lists CLAUDE.md and SKILL.md."
+anchor_old = 'Update `lumina/CLAUDE.md` "MCP tool surface" section to describe the new tool family (add_repo_link / remove_repo_link / set_primary_repo / list_repo_links / set_finding_repo) and the `findings.repo_id` + `files_touched` structured-entry semantics. Update the agent-facing skill at `claude/skills/lumina/SKILL.md` to document the same surface for agents.'
+anchor_new = 'Update `lumina/CLAUDE.md` "MCP tool surface" section to describe the new tool family (add_repo_link / remove_repo_link / set_primary_repo / list_repo_links / set_finding_repo) and the `findings.repo_id` + `files_touched` structured-entry semantics. Update the agent-facing skill at `claude/skills/lumina/SKILL.md` to document the same surface for agents. **Also update the inline `description = "..."` strings on `set_task_spec` (`mcp.rs:902`), `add_finding`, and `update_finding`** — these strings are surfaced as MCP tool docs to discovering agents and must mention the optional `repo_id` / structured `files_touched` entries.'
+dedup_id = "04a8e43f05acc185"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Vue 3.6 Vapor mode marked unstable upstream; tighten Risks bullet with concrete avoid-list"
+description = "Vue release notes describe Vapor as feature-complete in 3.6 beta but still considered unstable with known interop edge cases. Plan's Vapor risks bullet underweights upstream stance."
+anchor_old = "- **Vapor mode**: New SFC must use `<script setup vapor>` and avoid `<Transition>` / `<KeepAlive>`. Easy to forget when copying from older Vue 3 examples."
+anchor_new = '- **Vapor mode (upstream marked UNSTABLE)**: New SFC must use `<script setup vapor>` and avoid `<Transition>` / `<KeepAlive>`, `@vue:mounted` lifecycle hooks, `<Suspense>`, and the options API. Per Vue 3.6 beta release notes Vapor is "feature-complete but still considered unstable" with known interop edge cases (vapor slots in VDOM components). T8/T9 acceptance must include a manual smoke verifying the panel mounts AND unmounts cleanly under view changes.'
+dedup_id = "df1865cc11c2fe74"

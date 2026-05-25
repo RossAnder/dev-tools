@@ -15,12 +15,17 @@ const effortBadge = computed(() => effortLabel(props.node.effort))
 <template>
   <button
     type="button"
+    :aria-label="node.title"
+    data-testid="child-card"
     @click="setFocus(node.id)"
-    class="text-left bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 cursor-pointer flex flex-col gap-3 transition-all duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] hover:-translate-y-px"
+    class="group relative text-left bg-[var(--surface)] border border-[var(--border)] p-4 cursor-pointer flex flex-col gap-3"
   >
-    <!-- top row: kindLabel · id -->
+    <span aria-hidden="true" class="absolute -top-px -left-px w-3 h-3 border-t border-l border-[var(--faint)] transition-colors duration-150 group-hover:border-[var(--accent)] group-focus-visible:border-[var(--accent)]"></span>
+    <span aria-hidden="true" class="absolute -bottom-px -right-px w-3 h-3 border-b border-r border-[var(--faint)] transition-colors duration-150 group-hover:border-[var(--accent)] group-focus-visible:border-[var(--accent)]"></span>
+
+    <!-- top row: kindLabel (uuid hidden — only the focused hero card surfaces a copy-id affordance) -->
     <div class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase">
-      {{ kindLabel(node.kind) }} · {{ node.id }}
+      {{ kindLabel(node.kind) }}
     </div>
     <!-- title -->
     <h3 class="text-[15.5px] font-medium text-[var(--ink-2)] leading-[1.3]">

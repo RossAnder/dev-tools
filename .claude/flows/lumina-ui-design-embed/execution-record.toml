@@ -10,3 +10,340 @@ summary = "draft -> in-progress on /implement"
 from_status = "draft"
 to_status = "in-progress"
 dedup_id = "eb7787ff82f6c3d8"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T1"
+status = "done"
+summary = "Extended api.ts wire types to match Rust domain.rs ground truth"
+files = ["lumina/web/src/api.ts"]
+commits = ["4865d3c5d4a8dffbc3fdbd6edba35d0ce6f3229b"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "46f0a1555f978193"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T2"
+status = "done"
+summary = "Installed Fontsource trio, embedded @theme tokens + raw vars, wired main.css"
+files = [
+    "lumina/web/package.json",
+    "lumina/web/package-lock.json",
+    "lumina/web/src/assets/fonts.css",
+    "lumina/web/src/assets/theme.css",
+    "lumina/web/src/assets/tokens.css",
+    "lumina/web/src/assets/main.css",
+]
+commits = ["4865d3c5d4a8dffbc3fdbd6edba35d0ce6f3229b"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "8d47dfbb539fda61"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T3"
+status = "done"
+summary = "Reshaped useHierarchy into focus model (focusId/setFocus, view, focusPath, descendantCounts, treeStatus)"
+files = ["lumina/web/src/composables/useHierarchy.ts"]
+commits = ["4865d3c5d4a8dffbc3fdbd6edba35d0ce6f3229b"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "9d01bfeb08ff19e3"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-lite"
+task_ref = "T4"
+status = "done"
+summary = "Added useDisplay helpers with STATUSES single source of truth"
+files = ["lumina/web/src/composables/useDisplay.ts"]
+commits = ["4865d3c5d4a8dffbc3fdbd6edba35d0ce6f3229b"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+dedup_id = "4ebe57d52bc328e2"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-lite"
+task_ref = "T5"
+status = "done"
+summary = "Polished index.html (lang=en, title, amber-L favicon.svg replacing favicon.ico)"
+files = [
+    "lumina/web/index.html",
+    "lumina/web/public/favicon.svg",
+    "lumina/web/public/favicon.ico",
+]
+commits = ["4865d3c5d4a8dffbc3fdbd6edba35d0ce6f3229b"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+dedup_id = "18811d2e8d4f9aa9"
+
+[[items]]
+id = "E7"
+type = "deviation"
+date = 2026-05-25
+agent = "orchestrator"
+task_ref = "T1"
+summary = "Three Rust ground-truth divergences from plan TS shapes"
+original_intent = "Plan: AcceptanceCriterion.checked: boolean; OpenQuestion.status: string; ResearchNote.state: string"
+rationale = "Rust domain.rs serialises checked as i64 (SQLite INTEGER mirror) and status/state as Option<String>. Boolean would mistype every wire fetch. Followed Rust ground truth per plan-deviation protocol; downstream T11 AC checklist must use checked===1 not boolean truthiness"
+commits = ["4865d3c5d4a8dffbc3fdbd6edba35d0ce6f3229b"]
+dedup_id = "a2f2773c33ec5fc7"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-05-25
+agent = "orchestrator"
+task_ref = "T2"
+summary = "--color-accent-glow uses design alpha-channel form rather than plan-suggested lighter hue"
+original_intent = "Plan suggested oklch(0.85 0.10 75) as accent-glow if design didn't name it"
+rationale = "Design styles.css names --accent-glow: oklch(0.78 0.13 70 / 0.18) — a translucent overlay of the base accent. Plan-deviation protocol prefers design's actual value over plan's suggestion"
+commits = ["4865d3c5d4a8dffbc3fdbd6edba35d0ce6f3229b"]
+dedup_id = "9641273a804edbfe"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T6"
+status = "done"
+summary = "AppHeader with brand mark, disabled JUMP TO command bar, DRAFT/0 AGENTS/date pills (followed design styles.css over plan paraphrase for rounded-full pills, 22px diamond brand-mark, 11.5px input)"
+files = ["lumina/web/src/components/AppHeader.vue"]
+commits = ["e0470f694c52fe9a380ecd7d8211d2539bfeafa0"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "1ea0f58a245f2e8f"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T7"
+status = "done"
+summary = "AppFooter with reactive breadcrumb buttons from focusPath + verbatim keyboard hint string"
+files = ["lumina/web/src/components/AppFooter.vue"]
+commits = ["e0470f694c52fe9a380ecd7d8211d2539bfeafa0"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "2f24e95c0e31bacc"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T8"
+status = "done"
+summary = "StatusPill shared component consuming useDisplay statusLabel/statusToken"
+files = ["lumina/web/src/components/StatusPill.vue"]
+commits = ["e0470f694c52fe9a380ecd7d8211d2539bfeafa0"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "5e44533f30975372"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T9"
+status = "done"
+summary = "HierarchySpine + SpineNode left rail: treeStatus branching, ancestors+focused+siblings list via recursive findNodeWithSiblings, rotated-square diamond marker with multi-stop box-shadow halo (followed design CSS over plan unicode glyph)"
+files = [
+    "lumina/web/src/components/HierarchySpine.vue",
+    "lumina/web/src/components/SpineNode.vue",
+]
+commits = ["e0470f694c52fe9a380ecd7d8211d2539bfeafa0"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "a2f837a3a047e0fe"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T10"
+status = "done"
+summary = "CenterToolbar (FOCUS/TREE toggle bound via setView helper + focused-node context tag) + Breadcrumbs (focusPath nav reusing setFocus)"
+files = [
+    "lumina/web/src/components/CenterToolbar.vue",
+    "lumina/web/src/components/Breadcrumbs.vue",
+]
+commits = ["e0470f694c52fe9a380ecd7d8211d2539bfeafa0"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "97d40fa60d2027a3"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T11"
+status = "done"
+summary = "FocusLens hero card: corner brackets, Instrument Serif italic title for non-task / Geist for task, 4-KPI grid, null-safe progress bar, disabled task actions, read-only AC checklist (checked===1), context blocks grid"
+files = ["lumina/web/src/components/FocusLens.vue"]
+commits = ["b33aaa336afb729d2208f191d1ba8ac4964f40fb"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "a594e0851baf7485"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T13"
+status = "done"
+summary = "PortfolioEmpty: treeStatus-branched (loading/error/empty/ready); ready renders corner-bracketed portfolio lens with Plan/Dispatch/Observe headline + 4-KPI portfolio rollup (Epics with rootsInFlight, Features, Stories with blockedStories, Tasks with executingTasks via countWhere helper) + ChildGrid for root epics"
+files = ["lumina/web/src/components/PortfolioEmpty.vue"]
+commits = ["b33aaa336afb729d2208f191d1ba8ac4964f40fb"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "38647d0828c701af"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T14"
+status = "done"
+summary = "App.vue rewritten as 3-row x 3-column shell composing all Wave 2/3 components; deleted HierarchyView.vue, TreeItem.vue, assets/logo.svg; added two non-null narrowing fixes in CenterToolbar+HierarchySpine that were latent until App.vue mounted them"
+files = [
+    "lumina/web/src/App.vue",
+    "lumina/web/src/views/HierarchyView.vue",
+    "lumina/web/src/components/TreeItem.vue",
+    "lumina/web/src/assets/logo.svg",
+    "lumina/web/src/components/CenterToolbar.vue",
+    "lumina/web/src/components/HierarchySpine.vue",
+    "lumina/web/dist/index.html",
+]
+commits = ["23b624f71f767256da98b4a13e64fa5e3abb1d98"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "af44ed009edf3d4e"
+
+[[items]]
+id = "E18"
+type = "deviation"
+date = 2026-05-25
+agent = "orchestrator"
+task_ref = "T14"
+summary = "Latent strict-mode TS errors in Wave 2 components surfaced when App.vue first consumed them"
+original_intent = "Plan: T14 wires existing Wave 2 components into App.vue without modifying them"
+rationale = "vue-tsc with noUncheckedIndexedAccess flagged path[path.length-1] as possibly undefined in CenterToolbar.vue:19 and HierarchySpine.vue:57 despite the prior length-0 early-return guard. Wave 2 acceptance never caught this because per-task instructions said do NOT run type-check (would have failed on HierarchyView.vue anyway). T14 escalated; orchestrator applied two non-null assertions (semantically inert) to unblock the gate"
+commits = ["23b624f71f767256da98b4a13e64fa5e3abb1d98"]
+dedup_id = "e7931348b1cf4a27"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-05-25
+agent = "verification"
+task_ref = "T15"
+command = "cd lumina/web && npm run type-check"
+outcome = "pass"
+summary = "vue-tsc --build exited 0"
+dedup_id = "c814f6720b7dea11"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-05-25
+agent = "verification"
+task_ref = "T15"
+command = "cd lumina/web && npm run build"
+outcome = "pass"
+summary = "vite build exited 0; 17 woff2 assets produced"
+dedup_id = "a8b4dbb2df7232e4"
+
+[[items]]
+id = "E21"
+type = "verification"
+date = 2026-05-25
+agent = "verification"
+task_ref = "T15"
+command = "ls lumina/web/dist/assets/*.woff2 | wc -l"
+outcome = "pass"
+summary = "17 woff2 files (>= 7 required)"
+dedup_id = "40c0c4e99f5700df"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-05-25
+agent = "verification"
+task_ref = "T15"
+command = 'grep "Lumina Control" lumina/web/dist/index.html'
+outcome = "pass"
+summary = "title present in dist index.html"
+dedup_id = "292934af3a6efb65"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-05-25
+agent = "verification"
+task_ref = "T15"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "backend builds clean (smoke test, no source changes this plan)"
+dedup_id = "0fd81e7fc719a8ad"
+
+[[items]]
+id = "E24"
+type = "task-completion"
+date = 2026-05-25
+agent = "orchestrator"
+task_ref = "T15"
+status = "done"
+summary = "All 5 verification commands passed (type-check, build, woff2 count >= 7, title in dist/index.html, backend cargo build)"
+dispatch_tier = "deep"
+dispatch_agent = "verification"
+dedup_id = "c1f3ad6c03fd6cb6"
+
+[[items]]
+id = "E25"
+type = "task-completion"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "T12"
+status = "done"
+summary = "ChildGrid (STATUSES-derived filter tabs, auto-fill 280px grid, recursive childCountFor from useHierarchy tree) + ChildCard (kindLabel id top row, line-clamp-2 body, StatusPill plus task-only effort badge plus non-task child count pill, click setFocus); rewrite of lost E15 entry after a Windows atomic-rename glitch dropped the original write"
+files = [
+    "lumina/web/src/components/ChildGrid.vue",
+    "lumina/web/src/components/ChildCard.vue",
+]
+commits = ["b33aaa336afb729d2208f191d1ba8ac4964f40fb"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "c6326f55ab52f896"
+
+[[items]]
+id = "E26"
+type = "status-transition"
+date = 2026-05-25
+agent = "plan-update"
+summary = "All 15 tasks done, verification passed (type-check, build, woff2>=7, title, cargo build)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "be255a116817892b"
