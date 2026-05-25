@@ -80,12 +80,11 @@ mcp__lumina__add_research_note {
   body: "<2-5 sentences with citation>",
   lens: "<gap-category>",
   confidence: "<low|medium|high>",
-  state: "proposed",
   origin: "plan"
 }
 ```
 
-`state: "proposed"` is mandatory per the parent plan §Approach §The-9-skills `research-notes` row: this skill does NOT mark notes `accepted`. A separate manual acceptance step (raw `mcp__lumina__update_research_note` with `state: "accepted"`, or a future `/lumina:accept-research` skill) is required before the notes are considered authoritative. The skill body MUST NOT call `update_research_note` to flip `state` itself.
+New notes inherit the repo's default state at insert time (per the [`claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`](../mcp/SKILL.md) catalogue, that default is `proposed`). This skill MUST NOT call `update_research_note` to flip the state; manual acceptance happens later via a raw `mcp__lumina__update_research_note { id, state: "accepted" }` call or a future `/lumina:accept-research` skill.
 
 After each successful `add_research_note`, append the §c provenance entry (one per note):
 
@@ -106,15 +105,7 @@ For each gap that matches an existing note `<old_id>` (substring match on `summa
 - `<field-name>` → `research note "<existing summary>"`
 - `<current-value-summary>` → the first ~80 chars of the existing note's `body` (replace embedded newlines with spaces, then truncate + ellipsis).
 
-Use the §b-supersession verbatim phrasing:
-
-> **Question header**: `Supersede?`
->
-> **Question body**: `This story's <field-name> is already set to: <current-value-summary>. Replace it with the new value you provided? Choosing 'Keep current' aborts this skill invocation without writing.`
->
-> **Options** (exactly 2):
-> - `Replace` — `Write the new value, superseding the existing one`
-> - `Keep current` — `Abort this invocation, leave the existing value in place`
+Invoke the §b-supersession `AskUserQuestion` template verbatim, substituting `<field-name>` with the research-note's summary and `<current-value-summary>` with a short paraphrase of the existing note's body.
 
 On `Replace`: the supersession is a **two-call** sequence, NOT a delete-and-re-add:
 

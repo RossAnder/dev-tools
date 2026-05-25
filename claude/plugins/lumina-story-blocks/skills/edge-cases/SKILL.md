@@ -27,8 +27,7 @@ mcp__lumina__add_research_note {
   summary: "<one-line edge-case label>",
   body: "<1-2 sentence detail of the case and its implication>",
   lens: "edge-case",
-  confidence: "high" | "medium" | "low",
-  state: "proposed"
+  confidence: "high" | "medium" | "low"
 }
 ```
 
@@ -42,6 +41,8 @@ mcp__lumina__supersede_research_note {
 ```
 
 ## Body — 5-step check-before-act (per §b)
+
+> Note on §b-mapping: this skill iterates the §b sequence per edge-case rather than once per skill invocation, so the step numbers here map non-trivially to §b. Step 3 (Enumerate new cases) gathers the loop inputs; step 4 (Per-case supersession check) corresponds to §b step 5 (present-differs→confirm-supersede), and step 5 (Per-case write) corresponds to §b step 3 (absent→create). The inversion reflects the natural per-case control flow — for any single case the order is still check-then-act, and §b step 4 (present-matches→no-op) is the implicit fall-through when neither write nor supersede fires.
 
 1. **Read**: call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind `detail.research_notes` for the next steps.
 2. **Filter existing**: filter `detail.research_notes` to rows where `lens == "edge-case"` AND `superseded_by` is null (only live edge-case notes). Surface the count to the user as a one-line summary:
@@ -73,13 +74,15 @@ mcp__lumina__supersede_research_note {
    - `<current-value-summary>` → the existing note's body, truncated to ~80 chars + `…` (replace any embedded newlines with spaces before truncating).
    On `Replace`: first call `add_research_note` with the new case, then call `supersede_research_note({old_id: <existing>, new_id: <newly added>})` to mark the old note superseded. Record provenance per §c with the `superseded` summary form.
    On `Keep current`: skip this case (do NOT add the new note); proceed to the next case in the loop.
-5. **Per-case write (no collision)**: call `add_research_note` with `lens: "edge-case", state: "proposed", confidence: <picked>`, and the user-provided summary and body. Record provenance per §c with the `added` summary form. Loop back to step 3 for the next case.
+
+   > Note: this substring-match collision check is best-effort UX and runs in the skill body, not server-side. Parallel skill invocations on the same story can both pass the check and create duplicate edge cases — accept that and clean up after the fact via `mcp__lumina__supersede_research_note` if duplicates appear. A future `lumina` enhancement (a `dedupe_by_summary_on_lens` parameter on `add_research_note`) would move the check server-side; until then, treat the existing duplicate as the authoritative one and supersede the new write.
+5. **Per-case write (no collision)**: call `add_research_note` with `lens: "edge-case", confidence: <picked>`, and the user-provided summary and body. Record provenance per §c with the `added` summary form. Loop back to step 3 for the next case.
 
 When the user picks `Done` in step 3, the skill returns a one-line confirmation: `"edge-cases: added <X>, superseded <Y> on <work_item_id>."`
 
 ## State lifecycle
 
-Every new note is written with `state: "proposed"`. The plan §Approach §The 9 skills row for `edge-cases` (cross-referenced against the `research-notes` row immediately above it) confirms the proposed→accepted/rejected lifecycle is owned by a separate (deferred) `/lumina:accept-research` skill. This skill MUST NOT call `update_research_note` to set `state: "accepted"` — acceptance is a deliberate manual gate, not a side-effect of this skill.
+New notes inherit the repo's default state at insert time (`proposed`). This skill MUST NOT call `update_research_note` to set acceptance.
 
 ## Provenance recording (per §c)
 

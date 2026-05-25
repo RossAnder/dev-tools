@@ -2,11 +2,13 @@
 
 This document is the shared contract for every skill in the `lumina-story-blocks` plugin (manifest `name: "lumina"`, slash invocations `/lumina:<block>`). Every skill in this plugin MUST follow these conventions; the skill bodies cite the sections below by short reference (`§a`, `§b`, …) rather than re-stating the rules inline. If a rule here changes, the skill bodies are the consumers and must be re-read in lockstep.
 
-The plugin's purpose is to drive lumina's existing MCP tool surface (catalogued in `claude/skills/lumina/SKILL.md`) to fill the per-story planning blocks one block at a time, idempotently, with user-mediated supersession on re-run.
+The plugin's purpose is to drive lumina's existing MCP tool surface (catalogued in [`./skills/mcp/SKILL.md`](./skills/mcp/SKILL.md)) to fill the per-story planning blocks one block at a time, idempotently, with user-mediated supersession on re-run.
 
 ## §a Frontmatter shape
 
-Every skill in this plugin declares EXACTLY these four keys in its YAML frontmatter, in this order:
+Every DB-mutating skill in this plugin declares AT MINIMUM these four keys in its YAML frontmatter, in this order (or six keys if the skill runs in forked context — see §d). Read-only documentation skills (currently only the `mcp` catalogue) omit `disable-model-invocation: true` per the exception below; they MAY also omit `arguments` if they take none.
+
+> **Forward reference**: the four-key shape below is the minimum. Exactly one skill in this plugin (`research-notes`) runs in a forked subagent context and declares two ADDITIONAL keys (`context: fork`, `agent: general-purpose`) for a total of six — see §d for the rationale and the canonical six-key example.
 
 ```yaml
 ---
@@ -20,7 +22,9 @@ disable-model-invocation: true
 - `name` is the skill's invocation suffix; combined with the plugin manifest's `name: "lumina"`, the full slash form is `/lumina:<name>`.
 - `description` is a single sentence. It is what model-auto-invocation matches against — but see `disable-model-invocation` below: in this plugin the description is informational only (it does NOT enter the routing context).
 - `arguments: [work_item_id]` declares one named positional argument, substituted as `$work_item_id` in the body. Per R8, named arguments give the body a stable substitution rather than relying on `$ARGUMENTS` blob parsing.
-- `disable-model-invocation: true` is MANDATORY for every skill in this plugin. Per R1, Claude Code exposes three invocation paths — `/name` slash, model-auto-trigger via `description`, and explicit `Skill` tool dispatch — and `disable-model-invocation: true` removes the description from the routing context so ONLY explicit triggers (the user typing `/lumina:<name>`, or eventually a UI button dispatching the skill) fire it. This is non-negotiable: these skills write to the lumina database and would be unsafe to auto-fire mid-conversation off a description match.
+- `disable-model-invocation: true` is MANDATORY for every DB-mutating skill in this plugin. Per R1, Claude Code exposes three invocation paths — `/name` slash, model-auto-trigger via `description`, and explicit `Skill` tool dispatch — and `disable-model-invocation: true` removes the description from the routing context so ONLY explicit triggers (the user typing `/lumina:<name>`, or eventually a UI button dispatching the skill) fire it. This is non-negotiable: these skills write to the lumina database and would be unsafe to auto-fire mid-conversation off a description match.
+
+**Exception — read-only / documentation skills.** The `mcp` skill in this plugin is a read-only documentation surface (it documents the lumina MCP tool catalogue and does not call any write tool itself). Such skills MAY omit `disable-model-invocation: true` to remain model-discoverable — letting agents auto-find the catalogue when they need to drive the lumina MCP surface. The rule above applies only to skills that write to the lumina database via `mcp__lumina__*` write tools.
 
 Example (the `problem-statement` skill):
 
@@ -84,6 +88,32 @@ Every skill in this plugin invokes step 5 with the SAME wording so the user sees
 
 For skills whose target is a row-shaped sub-table (e.g. `research_notes`, `open_questions`, `acceptance_criteria`), substitute the field name with the row's identifying summary (e.g. `<field-name>` → `research note "auth-flow gap"`), and the supersession write is `supersede_research_note` rather than an in-place update.
 
+### §b-supersession-destructive (hard-delete variant)
+
+Some `lumina` tools have no `update_*` or `supersede_*` companion and require hard-delete + insert. The current example is `remove_acceptance_criterion`. For destructive supersession, the skill MUST present a second `AskUserQuestion` after the §b-supersession prompt to confirm the irreversible delete. Use exactly:
+
+> **Question header**: `Hard-delete the existing row?`
+>
+> **Question body**: `Replacing this <field-name> requires hard-deleting the existing row (no supersede tool exists for this field). The new value is: <new-value-summary>. Confirm hard-delete?`
+>
+> **Options**:
+> - `Hard-delete and replace` — irreversibly remove `<old_id>` and add `<new_id>`. The activity log retains the supersession entry but the old row is gone.
+> - `Cancel` — abort the supersession; both the old and new values are discarded.
+
+### §b-noop (canonical no-op confirmation string)
+
+When a §b step 4 fires (present-matches → no-op), the skill MUST return exactly this one-line confirmation (with `<field-name>` replaced):
+
+> `<field-name> already matches the value you provided — no change.`
+
+Examples per skill:
+
+- `problem-statement`: `problem_statement already matches the value you provided — no change.`
+- `closure-gate`: `closure_gate already matches the value you provided — no change.`
+- `not-doing`: `not_doing already matches the value you provided — no change.`
+
+Skill bodies that currently use a slightly different phrasing (e.g. `closure_gate already set to <value> — no change.`) are not yet aligned to this template; aligning them is a separate refactor task.
+
 ## §c Provenance recording
 
 After ANY successful write, the skill MUST append exactly one activity entry to the work item via `mcp__lumina__record_task_activity`. This is how the planning lifecycle is auditable in the lumina activity log. Use this template verbatim (substituting `<skill-name>` and `<what was done>`):
@@ -101,6 +131,7 @@ mcp__lumina__record_task_activity {
 Notes:
 
 - `entry_type` is `"execution"` for all writes from this plugin. Do NOT use `"verification"` — the lumina SKILL.md catalogue notes that `verification` activity entries are appended INTERNALLY by `check_acceptance_criterion` and the `record_task_activity` enum explicitly rejects `verification`. The other accepted values (`vet`, `comment`) are reserved for other roles.
+- **Note on entry_type / origin orthogonality**: `entry_type` (`execution` / `vet` / `comment`) is the activity-stream channel; `origin` (`plan` / `implement` / `review` / `optimise` / `tdd` / `human` / `none`) is the agent or lifecycle stamp. They are orthogonal — `entry_type: "execution"` here pairs with `origin: "plan"`. If `lumina` migration N+ adds a `planning` entry_type, this convention should re-map plan-time writes to `entry_type: "planning"` to distinguish them from `/implement`-driven activity. Until then, `execution` is the chosen channel for plan-time writes and the agent SHOULD read the `origin` stamp to tell which lifecycle phase produced any given row.
 - `origin` is `"plan"` because these skills run inside the planning workflow (R8 origin taxonomy: `plan` / `implement` / `review` / `optimise` / `tdd` / `human` / `none`).
 - `${CLAUDE_SESSION_ID}` is the Claude Code session substitution variable (R8). Threading it through the activity body lets a later audit join planning activity to the originating Claude session.
 - One activity entry per write — not per skill invocation. A skill that writes twice (e.g. supersedes one note AND adds a new one in the same invocation) records two activity entries.
@@ -158,21 +189,48 @@ We DO NOT split skills by verb. There is no `set-problem-statement` / `supersede
 
 This keeps the user's mental model 1:1 with the story schema: one block, one slash command, one decision-point. The verb-fork is an implementation detail of the skill body.
 
-## §g Lens conventions registry
+## §g Storage-convention registry
 
 Some story blocks have no first-class column on `work_items` (or on a dedicated sub-table) and instead ride on existing storage via a named-key or named-lens convention. This section is the SINGLE SOURCE OF TRUTH for those bindings — the skill bodies cite this registry by reference rather than re-stating where the data lives.
 
+Two architecturally distinct primitive types live here, each with its own promotion path:
+
+- **§g.1 — Attribute-key conventions**: a key NAME inside the `work_items.attributes` JSON blob. Promotion path: `ALTER TABLE ADD COLUMN` (or a widened `set_*` MCP tool that merges the key safely).
+- **§g.2 — Column-value lens conventions**: a string VALUE in a typed column (e.g. `research_notes.lens`). Promotion path: new first-class table + data migration to replace the lens-value enum.
+
+Do not conflate the two: an attribute-key convention is data hiding inside a JSON blob (no schema enforcement); a column-value lens convention is a typed-column value (schema-typed as text, but conventionally constrained by the registry below).
+
+## §g.1 Attribute-key conventions (JSON-merge keys in `work_items.attributes`)
+
 | Convention | Where stored | Storage primitive | Used by |
 |---|---|---|---|
-| `attributes.not_doing` | `work_items.attributes` JSON key | `mcp__lumina__update_work_item` with `{attributes: {not_doing: <text>}}` (lumina merges; absent keys untouched) | `lumina:not-doing` skill |
-| `lens="edge-case"` on `research_notes` | `research_notes.lens` column | `mcp__lumina__add_research_note` with `{lens: "edge-case", ...}`; supersede via `mcp__lumina__supersede_research_note` | `lumina:edge-cases` skill |
+| `attributes.not_doing` | `work_items.attributes` JSON key | **DISABLED — see R1**: `update_work_item` performs column-level COALESCE on `attributes`, clobbering sibling keys. The `lumina:not-doing` skill is disabled until lumina exposes a safe attributes-merge MCP tool. | `lumina:not-doing` skill (disabled) |
 
 Notes:
 
-- The `attributes.not_doing` convention rides the existing JSON-merge semantics of `update_work_item`. We do NOT introduce a `set_not_doing` MCP tool — that would force a lumina migration and is out of scope for this plan.
-- The `lens="edge-case"` convention rides the existing `research_notes.lens` column added in migration 0003. The `add_research_note` tool already accepts `lens` as a free-form string, so no schema change is needed.
+- The `attributes.not_doing` convention WAS intended to ride a non-existent JSON-merge semantics of `update_work_item` (column-level COALESCE clobbers sibling keys, verified in `lumina/src/repo.rs:1404-1421`). The skill is currently disabled — see R1 / R2 in the review ledger. Promotion options: add a dedicated `set_work_item_attributes` MCP tool, OR widen `SetStoryPlanParams` to accept `not_doing` so `set_story_plan` becomes the entry point.
+- **Lens-key drift warning**: consumers of `attributes.not_doing` (skill bodies, future UI code, exporter, smoke tests) MUST reference the literal key string `not_doing` (snake_case). Lumina has no schema-level protection against typos — writing `attributes.notDoing` or `attributes.not-doing` succeeds silently and produces drift. Consider adding a lumina-side test that scans `work_items.attributes` for unknown top-level keys as a drift smoke check.
 
-**Promotion policy**: when lumina later adds a first-class column or sub-table for one of these (e.g. a `not_doing` column on `work_items`, or a dedicated `edge_cases` table), the corresponding skill body in this plugin is updated in lockstep with the schema migration. The slash command name and user-facing prompt stay the same; the lens-binding line moves out of this registry; and the row in the table above is deleted with a one-line note in the migration PR. New lens conventions are added by appending a row here AND updating the consuming skill body in the same change.
+**Promotion policy for §g.1**: when lumina later adds a first-class column for one of these (e.g. a `not_doing` column on `work_items`), the corresponding skill body in this plugin is updated in lockstep with the schema migration via `ALTER TABLE ADD COLUMN` plus the per-key code paths. The slash command name and user-facing prompt stay the same; the key-binding row moves out of this registry; and the row in the table above is deleted with a one-line note in the migration PR. New attribute-key conventions are added by appending a row here AND updating the consuming skill body in the same change.
+
+## §g.2 Column-value lens conventions (typed-column values, e.g. `research_notes.lens`)
+
+These are string values written into a typed column, NOT JSON keys. Promotion path differs from §g.1: a new first-class table (and data migration) replaces the lens-value enum, rather than `ALTER TABLE ADD COLUMN`.
+
+| Convention | Where stored | Storage primitive | Used by |
+|---|---|---|---|
+| `lens="edge-case"` on `research_notes` | `research_notes.lens` column | `mcp__lumina__add_research_note` with `{lens: "edge-case", ...}`; supersede via `mcp__lumina__supersede_research_note` | `lumina:edge-cases` skill |
+| `lens="prior-art"` on `research_notes` | `research_notes.lens` column | `mcp__lumina__add_research_note` with `{lens: "prior-art", ...}`; supersede via `mcp__lumina__supersede_research_note` | `lumina:research-notes` skill |
+| `lens="tool-eval"` on `research_notes` | `research_notes.lens` column | `mcp__lumina__add_research_note` with `{lens: "tool-eval", ...}`; supersede via `mcp__lumina__supersede_research_note` | `lumina:research-notes` skill |
+| `lens="codebase-recon"` on `research_notes` | `research_notes.lens` column | `mcp__lumina__add_research_note` with `{lens: "codebase-recon", ...}`; supersede via `mcp__lumina__supersede_research_note` | `lumina:research-notes` skill |
+| `lens="constraint"` on `research_notes` | `research_notes.lens` column | `mcp__lumina__add_research_note` with `{lens: "constraint", ...}`; supersede via `mcp__lumina__supersede_research_note` | `lumina:research-notes` skill |
+| `lens="failure-mode"` on `research_notes` | `research_notes.lens` column | `mcp__lumina__add_research_note` with `{lens: "failure-mode", ...}`; supersede via `mcp__lumina__supersede_research_note` | `lumina:research-notes` skill |
+
+Notes:
+
+- The `lens="edge-case"` convention rides the existing `research_notes.lens` column added in migration 0003. The `add_research_note` tool already accepts `lens` as a free-form string, so no schema change is needed. `lens="edge-case"` remains reserved for `/lumina:edge-cases`; the five `lens` values consumed by `/lumina:research-notes` (`prior-art`, `tool-eval`, `codebase-recon`, `constraint`, `failure-mode`) are registered as their own rows above.
+
+**Promotion policy for §g.2**: when lumina later adds a dedicated table for one of these lens values (e.g. a dedicated `edge_cases` table with its own MCP tool surface), the corresponding skill body is updated in lockstep via a new typed table + data migration that copies existing `research_notes` rows of that lens into the new table. The slash command name and user-facing prompt stay the same; the lens-binding row moves out of this registry; and the row in the table above is deleted with a one-line note in the migration PR. New lens conventions are added by appending a row here AND updating the consuming skill body in the same change.
 
 ---
 

@@ -31,9 +31,23 @@ cargo install cargo-insta                  # snapshot review CLI (optional but r
 `lumina/.config/nextest.toml` defines two profiles: `default` (no retries) and `ci` (one retry, JUnit XML emit, immediate failure output).
 <!-- TEST-BOOTSTRAP:STACK END -->
 
+## MCP tool surface
+
+The lumina MCP server exposes a domain-shaped tool surface for managing the work-item hierarchy and the planning/decision lifecycle. The authoritative catalogue lives at `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md` — that doc enumerates every `mcp__lumina__*` tool, the parameter shapes, and the planning-tools section that the story-block plugin's skills reference. Skim it before invoking the plugin skills below; the plugin's skills compose those MCP tools and assume the reader has the catalogue's terminology in hand.
+
 ## Story-block skills plugin
 
 Lumina's MCP tool surface is driven by the nine `/lumina:<block>` skills in the plugin at
-`claude/plugins/lumina-story-blocks/`. Load with `claude --plugin-dir claude/plugins/lumina-story-blocks`;
-the prerequisites checklist (server running, MCP registered as `lumina`) and full skill catalogue
-live in `claude/plugins/lumina-story-blocks/README.md`.
+`claude/plugins/lumina-story-blocks/`. The prerequisites checklist (server running, MCP registered as `lumina`) and full skill catalogue live in `claude/plugins/lumina-story-blocks/README.md`.
+
+Permanent install (persists to `.claude/settings.json`, all clones inherit):
+
+```
+claude plugin install --scope project ./claude/plugins/lumina-story-blocks
+```
+
+One-off session load (no persistence — for ad-hoc trials):
+
+```
+claude --plugin-dir claude/plugins/lumina-story-blocks
+```

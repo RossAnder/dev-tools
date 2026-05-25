@@ -13,7 +13,7 @@ This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIO
 
 ## Target
 
-`set_story_plan` accepts only `kind = story`. The lumina tool catalogue (`claude/skills/lumina/SKILL.md` §Definition tools) describes it as a merge call across `problem_statement` / `research_notes` / `execution_strategy` — passing ONLY `problem_statement` leaves the other two fields untouched (per §e, do NOT read the whole plan and rewrite it; pass only the field this skill owns). This skill fails loud at step 2 below if the caller passes a non-story id.
+`set_story_plan` accepts only `kind = story`. The lumina tool catalogue (`../mcp/SKILL.md` §Definition tools) describes it as a merge call across `problem_statement` / `research_notes` / `execution_strategy` — passing ONLY `problem_statement` leaves the other two fields untouched (per §e, do NOT read the whole plan and rewrite it; pass only the field this skill owns). This skill fails loud at the Precondition check below if the caller passes a non-story id.
 
 ## MCP tool
 
@@ -46,8 +46,10 @@ The labelled-paragraph layout is deliberate — it makes the resulting prose sel
 
 ## Body — 5-step check-before-act (per §b)
 
-1. **Read**: call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind `detail.kind` and `detail.attributes.problem_statement` for the next steps.
-2. **Precondition**: if `detail.kind != "story"`, abort with a one-line error: `"problem-statement requires a story work item; got kind=<kind>."` Do NOT call the tool.
+**Precondition**: this skill applies only to `kind == "story"` work items. After step 1's `get_work_item` returns, verify `detail.kind == "story"`. If not, abort with a one-line error: `"problem-statement requires a story work item; got kind=<kind>."` Do NOT call any write tool. (This is a kind-guard, not a numbered §b step — the canonical sequence below preserves §b's 1-5 numbering exactly.)
+
+1. **Read**: call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind `detail.kind` (consumed by the Precondition above) and proceed once the Precondition passes.
+2. **Inspect field**: bind `detail.attributes.problem_statement` from the returned detail (may be null / absent / empty). This is the value against which the next three steps branch.
 3. **Absent → create**: if `detail.attributes.problem_statement` is null / absent / empty, run the 3-axis prompt above. Assemble the three answers into the layout shown. Call `set_story_plan({id: $work_item_id, problem_statement: <assembled>})`. Record provenance per §c with the `set` summary form. Return a one-line confirmation: `"problem_statement created on <work_item_id>."`
 4. **Present and matches**: run the 3-axis prompt, assemble the new value, and compare against `detail.attributes.problem_statement`. If they match byte-for-byte, return the §b step-4 one-line confirmation: `"problem_statement already matches the value you provided — no change."`
 5. **Present and differs**: invoke the §b-supersession `AskUserQuestion` template verbatim, substituting:

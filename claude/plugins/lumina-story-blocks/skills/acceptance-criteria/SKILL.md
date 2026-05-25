@@ -9,11 +9,11 @@ disable-model-invocation: true
 
 Add acceptance criteria to the task children of a story. The skill is invoked on a STORY id but writes ACs onto each TASK child individually (per `mcp__lumina__add_acceptance_criterion`'s `work_item_id` argument, which is the TASK's id, not the story's). For each task that has no AC yet, the skill prompts the user with three structural hints — concrete I/O example, trigger condition, verification step (per parent plan Q6) — and writes the user's free-text answer verbatim via `add_acceptance_criterion`. No EARS / Gherkin enforcement; the body is whatever the user types.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per task child), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §c (provenance recording via `record_task_activity`), §e (Sentry pattern — skill = instructions, MCP = execution).
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per task child), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §b-supersession-destructive (verbatim second-confirmation phrasing for hard-delete supersession, used because `remove_acceptance_criterion` has no `update_*`/`supersede_*` companion), §c (provenance recording via `record_task_activity`), §e (Sentry pattern — skill = instructions, MCP = execution).
 
 ## Target
 
-The skill is INVOKED on a `kind = story` work-item. Step 2 below verifies `detail.kind == "story"` and aborts loud on any other kind. Each `add_acceptance_criterion` call, however, targets a TASK child of the story — its `work_item_id` argument is the task's id. The argument name `work_item_id` matches `claude/skills/lumina/SKILL.md` §Planning & decision tools — DO NOT pass `task_id` or `story_id`.
+The skill is INVOKED on a `kind = story` work-item. Step 2 below verifies `detail.kind == "story"` and aborts loud on any other kind. Each `add_acceptance_criterion` call, however, targets a TASK child of the story — its `work_item_id` argument is the task's id. The argument name `work_item_id` matches `../mcp/SKILL.md` §Planning & decision tools — DO NOT pass `task_id` or `story_id`.
 
 ## MCP tool
 
@@ -24,7 +24,7 @@ mcp__lumina__add_acceptance_criterion {
 }
 ```
 
-For supersession of an existing AC, the lumina catalogue offers `remove_acceptance_criterion` (destructive: per `claude/skills/lumina/SKILL.md` it is hard-delete because acceptance criteria have no independent export identity) — there is no in-place update. The skill MUST confirm with the user before any `remove_acceptance_criterion` call.
+For supersession of an existing AC, the lumina catalogue offers `remove_acceptance_criterion` (destructive: per `../mcp/SKILL.md` it is hard-delete because acceptance criteria have no independent export identity) — there is no in-place update. The skill MUST confirm with the user before any `remove_acceptance_criterion` call.
 
 ```
 mcp__lumina__remove_acceptance_criterion {
@@ -37,7 +37,7 @@ mcp__lumina__remove_acceptance_criterion {
 This is the loop the user experiences. The skill walks the story's task children one at a time, deciding per-task whether to prompt for new ACs.
 
 1. **Verify kind**: from `get_work_item({id: "$work_item_id"})`, check `detail.kind == "story"`. Abort loud otherwise.
-2. **Extract task children**: `detail.children` (per `claude/skills/lumina/SKILL.md` — `get_work_item` returns direct children) filtered to `kind == "task"`. Surface the count to the user: `Story has N task child/children: <comma-separated list of titles>.`
+2. **Extract task children**: `detail.children` (per `../mcp/SKILL.md` — `get_work_item` returns direct children) filtered to `kind == "task"`. Surface the count to the user: `Story has N task child/children: <comma-separated list of titles>.`
 3. **Per-task AC read**: for EACH task child, call `mcp__lumina__get_work_item({id: <task_id>})` to read THAT task's own `detail.acceptance_criteria` array. The story's `get_work_item` does NOT pre-fold its children's AC lists — you must read each task individually.
 4. **Per-task decision branch**:
    - **Task has 0 AC**: proceed straight to the per-task AC prompt loop below.
@@ -99,20 +99,11 @@ The 5-step idempotency check (§b) applies per-task: the default for tasks with 
 
    On `Keep current`, abort the supersession sub-flow without writing.
 
-4. On `Replace`, ask one MORE confirmation specifically about the destructive `remove_acceptance_criterion`:
+4. On `Replace`, invoke the §b-supersession-destructive `AskUserQuestion` template verbatim (per `../../CONVENTIONS.md` §b-supersession-destructive), substituting `<field-name>` with `acceptance criterion`, `<new-value-summary>` with the new criterion text (truncated single-line to ~80 chars + ellipsis), and `<old_id>` / `<new_id>` with the corresponding criterion ids. This second confirmation is required because `remove_acceptance_criterion` is explicitly destructive (per `../mcp/SKILL.md`: "criteria have no independent export identity") — the §b-supersession single-prompt is insufficient for this destructive write.
 
-   > **Question header**: `Confirm destructive remove`
-   >
-   > **Question body**: `remove_acceptance_criterion is a HARD-DELETE — the existing AC row vanishes from lumina (no soft-delete, no recovery). Proceed?`
-   >
-   > **Options** (exactly 2):
-   > - `Yes, remove and replace` — `Hard-delete the old AC, then write the new one`
-   > - `Cancel` — `Abort; leave the old AC in place`
-
-   This second confirmation is required because `remove_acceptance_criterion` is explicitly destructive (per `claude/skills/lumina/SKILL.md`: "criteria have no independent export identity"). The §b-supersession single-prompt is insufficient for this destructive write — the user needs an explicit second beat to acknowledge the data loss.
-
-5. On `Yes, remove and replace`:
+5. On `Hard-delete and replace`:
    - Run the per-task AC prompt (3 structural hints) to collect the NEW AC text. Call `add_acceptance_criterion` first (so a transient failure leaves the old AC intact). Then call `remove_acceptance_criterion` on the old id. Record TWO provenance entries (one per write, per §c). Order matters: add-then-remove is safer than remove-then-add, because a failure between the two writes leaves duplicates the user can resolve later, rather than total data loss.
+   - **Failure-recovery branch**: if `add_acceptance_criterion` succeeds but `remove_acceptance_criterion` fails, do NOT swallow the error. Record a provenance entry tagging the duplicate state via `mcp__lumina__record_task_activity { work_item_id, entry_type: "comment", body: "AC supersession partial-failure: new AC <new_id> added; old AC <old_id> remove failed — manual hard-delete needed via raw mcp__lumina__remove_acceptance_criterion." }`. Then abort the skill with the one-line operator-facing message: `add succeeded but remove failed — manual cleanup needed: hard-delete criterion <old_id> via raw MCP call.` Two live ACs on one task is the expected post-failure state; the activity-log entry restores audit coherence.
    - On `Cancel`, abort the sub-flow without writing.
 
 ## Provenance recording (per §c)

@@ -13,7 +13,7 @@ This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIO
 
 ## Target
 
-`add_open_question` accepts ONLY `kind = story` rows (per `claude/skills/lumina/SKILL.md` line 104 — it is rejected on non-story targets). Step 2 below verifies `detail.kind == "story"` and aborts loud on any other kind; failing early gives a better error than waiting for lumina's `invalid_params` rejection.
+`add_open_question` accepts ONLY `kind = story` rows (per `../mcp/SKILL.md` §Planning & decision tools — it is rejected on non-story targets). Step 2 below verifies `detail.kind == "story"` and aborts loud on any other kind; failing early gives a better error than waiting for lumina's `invalid_params` rejection.
 
 ## What this skill explicitly DOES NOT do
 
@@ -36,7 +36,7 @@ mcp__lumina__add_question_option {
 }
 ```
 
-`add_open_question` is the ONLY tool in the lumina catalogue that takes `story_id` rather than `work_item_id` (per `claude/skills/lumina/SKILL.md` line 104). Do NOT pass `work_item_id` — lumina will reject the call as `invalid_params`. The id value is the same; only the parameter name differs.
+`add_open_question` is the ONLY tool in the lumina catalogue that takes `story_id` rather than `work_item_id` (per `../mcp/SKILL.md` §Planning & decision tools). Do NOT pass `work_item_id` — lumina will reject the call as `invalid_params`. The id value is the same; only the parameter name differs.
 
 ## The 4 axes (R16) and the 5th-axis fallback
 
@@ -114,7 +114,7 @@ mcp__lumina__add_question_option {
 }
 ```
 
-ENFORCE the minimum of 2 options per question. If the user supplies fewer than 2, loop back with the prompt `This question needs at least 2 options before it can be resolved. Please add another candidate answer.` Continue looping until the user has provided at least 2 options or explicitly aborts the axis (in which case roll forward — the lumina row will exist with <2 options, but record a one-line warning to the user: `Warning: question Q<id> has <N> option(s); resolve_open_question requires ≥1 to pick from, but ≥2 is conventional. You can add more later via add_question_option.`).
+SOFT-enforce the convention of 2 options per question. Prompt the user for at least 2 options; if the user supplies fewer than 2 and refuses to add another, accept the under-populated row and surface a one-line warning to the operator: `Warning: question Q<id> has <N> option(s); 'mcp__lumina__resolve_open_question' technically requires only ≥1 option, but the project convention is ≥2 for a meaningful axis. You can add more later via add_question_option.` Do NOT loop indefinitely or hard-abort the axis.
 
 ### Axis step 5 — provenance per §c (one entry per write)
 
@@ -127,7 +127,9 @@ The 5-step idempotency check applies per-axis: if axis step 1 finds an existing 
 - `<field-name>` → `open question "<axis>"` (e.g. `open question "scope"`)
 - `<current-value-summary>` → the existing `question` text truncated to ~80 chars + `…` (single-line; replace any embedded newlines with spaces before truncating).
 
-On `Replace`, you cannot in-place mutate an `open_questions` row — the lumina catalogue has no `update_open_question` tool. Instead, mark the old question superseded by writing a new one and recording the supersession in the activity log; for THIS plugin the practical path is to leave the old question in place and write a new one (the lumina UI surfaces both; the user resolves whichever is correct). On `Keep current`, abort the axis without writing.
+When invoking the §b-supersession template, override the `Replace` option label to `Add replacement question (old remains visible)` for this skill's flow — the lumina catalogue has no in-place supersession path, so the option's name should reflect what actually happens. On `Add replacement question (old remains visible)`, you cannot in-place mutate an `open_questions` row — the lumina catalogue has no `update_open_question` or `supersede_open_question` tool. Instead, write the new question (`mcp__lumina__add_open_question`) AND record an activity entry on the parent story (`mcp__lumina__record_task_activity` with `entry_type: "comment"`, body: `question Q<new_id> supersedes Q<old_id> per user (no in-place tool — both rows remain live)`). The activity log preserves the supersession intent that the schema cannot enforce. Leave the old question row in place — the lumina UI surfaces both; the user resolves whichever is correct. On `Keep current`, abort the axis without writing.
+
+Note for operators: after a Replace flow, the lumina row count for this story's `open_questions` will increase by one for the same axis. Confirm the supersession by calling `mcp__lumina__get_work_item({ id: "$work_item_id" })` and checking that the `activity` log contains two `user-interrogation:added <axis>-axis question` entries — the newer entry's `id` is the intended live question. An idempotency-check that flags "two open questions on the same axis" is the expected post-condition of a Replace, not a bug.
 
 For row-shaped `question_options`, the same "no in-place update" rule applies — superseding an option means adding a new one and letting the user pick the right one at resolve time.
 

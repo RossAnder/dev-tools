@@ -8,9 +8,15 @@ This plugin exposes nine skills that together fill out the multi-block lumina st
 
 ## Load mechanism
 
-The plugin is checked into the repo at `claude/plugins/lumina-story-blocks/` but is **NOT auto-discovered** — there is no documented `settings.json` convention for per-project plugin auto-load. Operators must opt in explicitly per session via one of the two supported load paths:
+The plugin is checked into the repo at `claude/plugins/lumina-story-blocks/`. The recommended path is a one-time project-scope install that persists to `.claude/settings.json` and is inherited by every team member who clones the repo:
 
-**CLI (interactive Claude Code session)**:
+**Permanent project install (recommended — persists to `.claude/settings.json`, all team members who clone the repo inherit it automatically)**:
+
+```bash
+claude plugin install --scope project ./claude/plugins/lumina-story-blocks
+```
+
+**One-off session load (no persistence — for ad-hoc trials)**:
 
 ```bash
 claude --plugin-dir claude/plugins/lumina-story-blocks
@@ -55,7 +61,7 @@ Every skill follows the check-before-act sequence documented in [CONVENTIONS.md 
 
 - [ ] **Lumina server running.** Lumina serves the MCP endpoint at `/mcp`. See the `## lumina` section of the repo `CLAUDE.md` for the build/run commands (`cargo build --manifest-path lumina/Cargo.toml`, then run the lumina binary — note the bound port, you'll need it for the next step).
 
-- [ ] **Lumina registered as an MCP server named `lumina` in Claude Code.** The canonical registration command (from [`claude/skills/lumina/SKILL.md`](../../skills/lumina/SKILL.md) §Connecting):
+- [ ] **Lumina registered as an MCP server named `lumina` in Claude Code.** The canonical registration command (from [`./skills/mcp/SKILL.md`](./skills/mcp/SKILL.md) §Connecting):
 
   ```
   claude mcp add --transport http lumina http://127.0.0.1:<port>/mcp
@@ -74,3 +80,9 @@ After loading the plugin, these quick checks confirm everything is wired up:
 - **MCP server active.** Run `/mcp` — the output should list `lumina` as an active MCP server. If it isn't listed, the skills will fail at their first tool call; revisit the [Prerequisites](#prerequisites) registration step.
 
 - **Smoke-test one skill.** Pick any story work-item id (use `mcp__lumina__list_work_items` with `kind: "story"` to find one), then run `/lumina:problem-statement <id>`. The skill should prompt with a 3-axis question (what's broken/missing, who's affected, success criteria). If you instead see a "tool not found" error, re-check that the MCP server is registered under the exact name `lumina`.
+
+- **Pre-flight MCP smoke-check**: confirm the lumina MCP server can actually respond, not just that it is registered. Run a no-side-effect raw MCP call from the session: `mcp__lumina__list_work_items({})`. A reply with an array (possibly empty) confirms the server is reachable. A `tool not found` reply means symbol resolution failed (see the diagnostic for tool-not-found below). A timeout / connection error means the server is registered but down — `claude mcp list` will show the URL, and `curl <url>/mcp` should respond.
+
+- **Diagnostic for `tool not found` errors after a successful `/mcp` listing**: if `/mcp` shows `lumina` as active but skill invocations fail with `tool not found`, run `claude mcp list` and confirm the entry is named exactly `lumina` (case-sensitive). If it is named differently (`Lumina`, `lumina-dev`, etc.), remove it and re-add it with the exact name `lumina`. Symbol resolution for `mcp__<server>__<tool>` is case-sensitive on the server prefix; a mismatch produces the same error surface as a down server, so check the name before restarting lumina.
+
+- **`add_open_question` gotcha**: `mcp__lumina__add_open_question` takes `story_id` (NOT `work_item_id` like its table neighbours). If the user-interrogation skill errors with `invalid_params` and the work-item id is otherwise correct, confirm the SKILL.md body uses the `story_id` parameter name — passing `work_item_id` to this tool is the most common cause of `invalid_params` here. The user-interrogation `SKILL.md` flags this in its own body, but the operator-facing reproduction is here.
