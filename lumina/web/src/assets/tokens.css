@@ -11,4 +11,17 @@
   --muted: #8f8775;
   --faint: #5c5547;
   --ghost: #3a352b;
+
+  /* Alias: components reach for `var(--accent)` directly (corner brackets,
+     focus glows, etc.). Tailwind v4 only exposes the @theme palette under the
+     `--color-*` prefix, which means a bare `var(--accent)` would otherwise
+     fall back to `currentColor`. Mirror the @theme value so both forms work. */
+  --accent: var(--color-accent);
+
+  /* Semantic colour for repo slugs in file-reference renders (e.g.
+     `[owner/repo] src/x.rs`). Aliased to --accent for now — a dedicated hue
+     can be introduced later if repo tags need to stand apart from other
+     accent-coloured UI. Used by RepoLinksPanel.vue and the formatFileRef
+     consumers wired in by future findings-UI work. */
+  --repo-tag: var(--accent);
 }
