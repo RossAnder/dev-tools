@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE repo_links SET is_primary = 0 WHERE project_id = ?1 AND is_primary = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "7919be88d003ec6ea2d2c27950ec6d6c4849e171df89dfd28c1cd4f6fa2f8eb2"
+}

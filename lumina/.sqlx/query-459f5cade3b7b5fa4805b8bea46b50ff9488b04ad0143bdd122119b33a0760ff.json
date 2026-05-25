@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE findings SET repo_id = ?2 WHERE id = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "459f5cade3b7b5fa4805b8bea46b50ff9488b04ad0143bdd122119b33a0760ff"
+}

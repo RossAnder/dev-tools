@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 use crate::domain::{
     AcceptanceCriterion, ActivityType, ClosureGate, Complexity, ContextBlock, Disposition, Effort,
-    Finding, OpenQuestion, QuestionOption, Relevance, ResearchNote, ResearchState,
+    Finding, OpenQuestion, QuestionOption, Relevance, RepoLink, ResearchNote, ResearchState,
     UpdateFindingRequest, UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem,
     WorkItemActivity, WorkItemDetail,
 };
@@ -449,6 +449,14 @@ pub async fn get_work_item_detail(
     let acceptance_criteria = list_acceptance_criteria(pool, id).await?;
     let research_notes = list_research_notes(pool, id).await?;
     let open_questions = list_open_questions(pool, id).await?;
+    // Migration 0004: repo links live only on `project` work-items (kind-check
+    // trigger pair). Skip the side-table query for any other kind — returns an
+    // empty Vec — to keep the per-detail read count low.
+    let repo_links = if item.kind == "project" {
+        list_repo_links(pool, &item.id).await?
+    } else {
+        Vec::new()
+    };
 
     let context_blocks = sqlx::query_as!(
         ContextBlock,
@@ -478,9 +486,7 @@ pub async fn get_work_item_detail(
         acceptance_criteria,
         research_notes,
         open_questions,
-        // T1 of the project↔repo-links plan ships the schema + types only;
-        // T2 wires `list_repo_links` into this fold (gated on kind=='project').
-        repo_links: vec![],
+        repo_links,
     })
 }
 
@@ -2532,6 +2538,434 @@ pub async fn resolve_open_question(
     let payload =
         serde_json::json!({ "chosen_option_id": chosen_option_id, "question_id": question_id });
     record_event(&mut tx, "work_item", &story_id, "open_question.resolved", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Repo links (migration 0004) — project↔GitHub-repo associations. Every mutator
+// in this section follows the single-mutation-path discipline (one tx, one
+// domain-table write, one `record_event`, one commit). Events are routed to the
+// owning PROJECT's `work_item` aggregate so `export.rs`'s drain dispatch
+// re-renders the project automatically (NOT a fresh `repo_link` aggregate_type
+// — the drain would silently skip it).
+// ---------------------------------------------------------------------------
+
+/// Walk `parent_id` from `work_item_id` until the row where `kind='project'`,
+/// returning the project's id. Used by `set_finding_repo` (project-scope check
+/// for the finding's repo binding) AND, in a later task, by `set_task_spec`'s
+/// `files_touched` validator (every structured entry must reference a slug
+/// linked to the task's project ancestor).
+///
+/// Errors:
+///   * `NotFound` — `work_item_id` does not exist.
+///   * `Validation` — the chain bottoms out before reaching a `project` row
+///     (defensive: under the 0001 hierarchy trigger pair this is unreachable
+///     for items created via `create_work_item`, but a partially-loaded test DB
+///     could expose it).
+pub async fn find_project_ancestor(
+    pool: &SqlitePool,
+    work_item_id: &str,
+) -> Result<String, AppError> {
+    // Recursive CTE: seed with the target row, then repeatedly join to the
+    // parent until we either hit the project (returned) or NULL parent on a
+    // non-project (caller maps to Validation). The CTE is bounded by the
+    // 5-level hierarchy so the walk is O(5) and termination is structural.
+    let row = sqlx::query!(
+        r#"
+        WITH RECURSIVE ancestors(id, kind, parent_id) AS (
+            SELECT id, kind, parent_id FROM work_items WHERE id = ?1
+            UNION ALL
+            SELECT w.id, w.kind, w.parent_id
+            FROM work_items w
+            JOIN ancestors a ON w.id = a.parent_id
+        )
+        SELECT id AS "id!", kind AS "kind!"
+        FROM ancestors
+        WHERE kind = 'project'
+        LIMIT 1
+        "#,
+        work_item_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(r) = row {
+        return Ok(r.id);
+    }
+
+    // Distinguish "id does not exist" from "id exists but has no project
+    // ancestor": probe the row directly.
+    let exists = sqlx::query!(
+        r#"SELECT 1 AS "one!" FROM work_items WHERE id = ?1"#,
+        work_item_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+
+    if !exists {
+        Err(AppError::NotFound(format!(
+            "work_item '{work_item_id}' not found"
+        )))
+    } else {
+        Err(AppError::Validation(format!(
+            "work_item '{work_item_id}' has no 'project' ancestor"
+        )))
+    }
+}
+
+/// `true` if a sqlx error is a SQLite UNIQUE-constraint violation (extended code
+/// `SQLITE_CONSTRAINT_UNIQUE` = 2067, primary code `SQLITE_CONSTRAINT` = 19).
+/// Used by `add_repo_link` / `set_primary_repo` to translate the partial-primary
+/// UNIQUE-index hit into a typed `Validation` rather than a raw 500.
+///
+/// We match by the SQLite extended-result-code string (which `sqlx` exposes via
+/// `DatabaseError::code()`); both `1555` (PRIMARY KEY) and `2067` (UNIQUE) are
+/// flavours of `SQLITE_CONSTRAINT_UNIQUE`-class violations callers should treat
+/// as conflicts. The conservative match-set is the two unique flavours; other
+/// constraint codes (FK, CHECK, NOT NULL) pass through as `Db` 500.
+fn is_unique_violation(e: &sqlx::Error) -> bool {
+    if let sqlx::Error::Database(db_err) = e
+        && let Some(code) = db_err.code()
+    {
+        return code == "2067" || code == "1555";
+    }
+    false
+}
+
+/// Add a new `repo_links` row attaching `slug` to `project_id` under the
+/// single-mutation-path discipline. `slug` is canonicalised via
+/// [`parse_github_slug`] (lowercased both segments); `is_primary` may be set on
+/// create, in which case the partial UNIQUE index enforces at most one primary
+/// per project (a second primary surfaces as `Validation` via
+/// [`is_unique_violation`]).
+///
+/// `project_id`'s kind is NOT pre-checked — the kind-check trigger pair on
+/// `repo_links` (migration 0004) is the authoritative guard; an attach to a
+/// non-project surfaces as `Db` 500 via `RAISE(ABORT, ...)`, which matches the
+/// repo's "trigger is authoritative" convention (per the file docstring).
+///
+/// Event `repo_link.created` on the owning project's `work_item` aggregate.
+/// Returns the new repo-link id.
+pub async fn add_repo_link(
+    pool: &SqlitePool,
+    project_id: &str,
+    slug: &str,
+    is_primary: bool,
+) -> Result<Uuid, AppError> {
+    let canonical = parse_github_slug(slug)?;
+
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+    let is_primary_int: i64 = if is_primary { 1 } else { 0 };
+
+    let mut tx = pool.begin().await?;
+
+    // Allocate position = MAX(position)+1 per project, inside the tx so a
+    // concurrent insert under SQLite's single-writer lock is serialised.
+    // COALESCE(MAX(.), -1) + 1 gives 0 for the first row.
+    let position = sqlx::query!(
+        r#"SELECT COALESCE(MAX(position), -1) + 1 AS "next!" FROM repo_links WHERE project_id = ?1"#,
+        project_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    let insert = sqlx::query!(
+        r#"
+        INSERT INTO repo_links (id, project_id, slug, position, is_primary, created_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP)
+        "#,
+        id_str,
+        project_id,
+        canonical,
+        position,
+        is_primary_int,
+    )
+    .execute(&mut *tx)
+    .await;
+
+    if let Err(e) = insert {
+        if is_unique_violation(&e) {
+            // Either the (project_id, slug) UNIQUE or the partial primary UNIQUE
+            // index fired. Both are caller-fixable; surface as Validation.
+            return Err(AppError::Validation(format!(
+                "repo_link conflict: slug '{canonical}' is already linked, or another \
+                 primary repo already exists for project '{project_id}' (primary repo conflict)"
+            )));
+        }
+        return Err(e.into());
+    }
+
+    let payload = serde_json::json!({
+        "id": id_str,
+        "project_id": project_id,
+        "slug": canonical,
+        "is_primary": is_primary,
+    });
+    record_event(&mut tx, "work_item", project_id, "repo_link.created", payload).await?;
+
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// List the `repo_links` rows for a project, ordered by `position` ASC. Returns
+/// an empty Vec for a project with no links (or for a non-project id — caller is
+/// expected to gate this query on `kind='project'`). Read-only; no transaction.
+pub async fn list_repo_links(
+    pool: &SqlitePool,
+    project_id: &str,
+) -> Result<Vec<RepoLink>, AppError> {
+    let rows = sqlx::query_as!(
+        RepoLink,
+        r#"
+        SELECT
+            id         AS "id!",
+            project_id AS "project_id!",
+            slug       AS "slug!",
+            position   AS "position!",
+            is_primary AS "is_primary!",
+            created_at AS "created_at!"
+        FROM repo_links
+        WHERE project_id = ?1
+        ORDER BY position ASC
+        "#,
+        project_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+/// Hard-delete a `repo_links` row. The owning project's id is read first so
+/// (a) an absent id is `NotFound` BEFORE any write, and (b) the event aggregate
+/// is the project's `work_item` (so the export drain re-renders the project).
+///
+/// `findings.repo_id`'s FK is `ON DELETE SET NULL` (migration 0004), so any
+/// finding pointing at this link drops back to implicit-primary resolution
+/// automatically — no separate UPDATE here.
+///
+/// Event `repo_link.removed` on the owning project's `work_item` aggregate.
+pub async fn remove_repo_link(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+    // Resolve the owning project + slug BEFORE the write so the event aggregate
+    // is correct and so an absent id is `NotFound` (not `rows_affected()==0`).
+    let row = sqlx::query!(
+        r#"SELECT project_id AS "project_id!", slug AS "slug!" FROM repo_links WHERE id = ?1"#,
+        id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("repo_link '{id}' not found")))?;
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(r#"DELETE FROM repo_links WHERE id = ?1"#, id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    if affected == 0 {
+        // Lost a race against a concurrent delete — caller sees NotFound.
+        return Err(AppError::NotFound(format!("repo_link '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({
+        "id": id,
+        "project_id": row.project_id,
+        "slug": row.slug,
+    });
+    record_event(
+        &mut tx,
+        "work_item",
+        &row.project_id,
+        "repo_link.removed",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Promote `repo_link_id` to the project's primary repo. Critical ordering:
+/// inside one `pool.begin()` tx, FIRST clear any existing primary on the same
+/// project, THEN set the target to primary. SQLite checks the partial UNIQUE
+/// index `idx_repo_links_one_primary` per-statement, so the clear MUST precede
+/// the set or the second UPDATE fails with `SQLITE_CONSTRAINT_UNIQUE`.
+///
+/// The `AND project_id = ?` guard on the set defends against a cross-project
+/// hijack where `repo_link_id` belongs to a different project (would otherwise
+/// silently no-op and still emit an event).
+///
+/// Concurrent calls are serialised by SQLite's single-writer lock (last write
+/// wins, both succeed); a residual unique-violation surfaces as `Validation` via
+/// [`is_unique_violation`]. `NotFound` if the target id doesn't exist under the
+/// given project. Event `repo_link.primary_changed` with the previous primary
+/// id (or null) and the new primary id.
+pub async fn set_primary_repo(
+    pool: &SqlitePool,
+    project_id: &str,
+    repo_link_id: &str,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    // Step 1: capture the previous primary's id (for the event payload) BEFORE
+    // we clear it. NULL if no current primary.
+    let previous: Option<String> = sqlx::query!(
+        r#"SELECT id AS "id!" FROM repo_links WHERE project_id = ?1 AND is_primary = 1"#,
+        project_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .map(|r| r.id);
+
+    // Step 2: clear the existing primary (idempotent if `previous` is None).
+    sqlx::query!(
+        r#"UPDATE repo_links SET is_primary = 0 WHERE project_id = ?1 AND is_primary = 1"#,
+        project_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Step 3: promote the target — AND project_id guards against cross-project
+    // ids. rows_affected()==0 ⇒ NotFound (id absent or wrong project).
+    let set_result = sqlx::query!(
+        r#"UPDATE repo_links SET is_primary = 1 WHERE id = ?1 AND project_id = ?2"#,
+        repo_link_id,
+        project_id,
+    )
+    .execute(&mut *tx)
+    .await;
+
+    let affected = match set_result {
+        Ok(r) => r.rows_affected(),
+        Err(e) => {
+            if is_unique_violation(&e) {
+                return Err(AppError::Validation(format!(
+                    "primary repo conflict on project '{project_id}': another row already \
+                     holds is_primary=1 (concurrent set_primary_repo)"
+                )));
+            }
+            return Err(e.into());
+        }
+    };
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!(
+            "repo_link '{repo_link_id}' not found under project '{project_id}'"
+        )));
+    }
+
+    let payload = serde_json::json!({
+        "project_id": project_id,
+        "new_primary_id": repo_link_id,
+        "previous_primary_id": previous,
+    });
+    record_event(
+        &mut tx,
+        "work_item",
+        project_id,
+        "repo_link.primary_changed",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Set or clear `findings.repo_id` under the single-mutation-path discipline.
+/// `repo_id=Some` binds the finding to a non-primary linked repo; `None` clears
+/// the binding (the finding falls back to the project's primary repo at read
+/// time).
+///
+/// Validation (soft, BEYOND the FK):
+///   * The finding must exist (`NotFound` otherwise).
+///   * When `repo_id` is `Some`, the target `repo_links` row must belong to
+///     the finding's project ancestor (`Validation` otherwise). The schema FK
+///     only ensures the id exists in `repo_links`; this guard rejects a
+///     cross-project hijack where a finding under project A is bound to a
+///     repo link of project B.
+///
+/// Event `finding.repo_changed` on the finding's work_item aggregate
+/// (`aggregate_type = "work_item"`, `aggregate_id = <finding.work_item_id>`).
+pub async fn set_finding_repo(
+    pool: &SqlitePool,
+    finding_id: &str,
+    repo_id: Option<&str>,
+) -> Result<(), AppError> {
+    // Resolve the finding's owning work_item_id BEFORE opening the tx. NotFound
+    // if the finding is absent.
+    let work_item_id: String = sqlx::query!(
+        r#"SELECT work_item_id AS "work_item_id?" FROM findings WHERE id = ?1"#,
+        finding_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("finding '{finding_id}' not found")))?
+    .work_item_id
+    .ok_or_else(|| {
+        // A finding with NULL work_item_id has no project to validate against.
+        // This is a Validation, not a 500 — the importer may produce such rows
+        // for orphaned findings and the caller is expected to repair them first.
+        AppError::Validation(format!(
+            "finding '{finding_id}' has no work_item_id; cannot bind to a repo"
+        ))
+    })?;
+
+    // Project-scope check on the repo_id (if set): the target repo_link must
+    // belong to the project ancestor of this finding's work-item.
+    if let Some(rid) = repo_id {
+        let project_id = find_project_ancestor(pool, &work_item_id).await?;
+        let owns = sqlx::query!(
+            r#"SELECT 1 AS "one!" FROM repo_links WHERE id = ?1 AND project_id = ?2"#,
+            rid,
+            project_id,
+        )
+        .fetch_optional(pool)
+        .await?
+        .is_some();
+        if !owns {
+            return Err(AppError::Validation(format!(
+                "repo_link '{rid}' does not belong to the project ancestor '{project_id}' \
+                 of finding '{finding_id}'"
+            )));
+        }
+    }
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE findings SET repo_id = ?2 WHERE id = ?1"#,
+        finding_id,
+        repo_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        // Lost a race against a concurrent delete — surface NotFound rather
+        // than emitting a spurious event.
+        return Err(AppError::NotFound(format!("finding '{finding_id}' not found")));
+    }
+
+    let payload = serde_json::json!({
+        "finding_id": finding_id,
+        "repo_id": repo_id,
+    });
+    record_event(
+        &mut tx,
+        "work_item",
+        &work_item_id,
+        "finding.repo_changed",
+        payload,
+    )
+    .await?;
 
     tx.commit().await?;
     Ok(())

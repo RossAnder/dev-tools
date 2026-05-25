@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO repo_links (id, project_id, slug, position, is_primary, created_at)\n        VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "00c1e24fb530a138fa1b1288713b4d46d5c75cc58cb399ea3402e966f787be25"
+}
