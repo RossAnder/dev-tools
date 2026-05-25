@@ -54,7 +54,7 @@ const spineList: ComputedRef<SpineEntry[]> = computed(() => {
   const path = focusPath.value
   if (path.length === 0) return []
 
-  const focused = path[path.length - 1]
+  const focused = path[path.length - 1]!
   const ancestors = path.slice(0, -1).map<SpineEntry>((node) => ({
     node,
     isFocused: false,

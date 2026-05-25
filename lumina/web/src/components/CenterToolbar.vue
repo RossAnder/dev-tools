@@ -16,7 +16,7 @@ const { view, focusPath } = useHierarchy()
 const contextTag: ComputedRef<string | null> = computed(() => {
   const path = focusPath.value
   if (path.length === 0) return null
-  const focused = path[path.length - 1]
+  const focused = path[path.length - 1]!
   return `${kindLabel(focused.kind)} · ${focused.id}`
 })
 
