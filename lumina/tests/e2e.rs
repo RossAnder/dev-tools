@@ -784,3 +784,319 @@ async fn full_thread_planning_and_decisions_db_export_http() {
         "both criteria are checked in the HTTP detail — full thread closed"
     );
 }
+
+/// The full thread for the migration-0004 project↔repo-links surface: link two
+/// GitHub repos to a project, bind a finding to the secondary repo, then prove
+/// the new `repo_links` table + `findings.repo_id` column flow DB → git-export
+/// snapshot → HTTP read. The HTTP write surface (POST/DELETE/PATCH
+/// `/work-items/{project_id}/repo-links[/{id}]`) is also exercised at the end.
+///
+/// Drive helpers: the repo-link MCP `#[tool]` methods (`add_repo_link` etc.)
+/// are private to the crate, so the writes go through the PUBLIC `repo::*`
+/// single-mutation-path fns the MCP tools wrap 1:1 — exactly mirroring the
+/// planning/decisions thread above. This e2e's unique contribution is
+/// threading ALL layers — DB → export → HTTP — through ONE shared pool,
+/// sleep-free and socket-free.
+#[tokio::test]
+async fn repo_links_flow() {
+    // One shared pool across the MCP handler, the export drain, and the router.
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Create a project (top of the hierarchy).
+    let project = mcp_create(&tools, "project", None, "Repo-Links Project").await;
+
+    // 2. Add two repo links via `repo::add_repo_link` (the 1:1 wrap-target of
+    //    the MCP `add_repo_link` tool). Slugs go in mixed-case to exercise the
+    //    `parse_github_slug` lowercasing on both segments.
+    let primary_id = lumina::repo::add_repo_link(&pool, &project, "octocat/Hello-World", true)
+        .await
+        .expect("add primary repo link")
+        .to_string();
+    let secondary_id =
+        lumina::repo::add_repo_link(&pool, &project, "octocat/Spoon-Knife", false)
+            .await
+            .expect("add secondary repo link")
+            .to_string();
+
+    // 3. DB assertions via the RUNTIME query API (no `.sqlx` cache pollution).
+    let total_links: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM repo_links WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("count repo links");
+    assert_eq!(total_links, 2, "the project has exactly two linked repos");
+
+    let primary_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM repo_links WHERE project_id = ? AND is_primary = 1",
+    )
+    .bind(&project)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("count primary repo links");
+    assert_eq!(primary_count, 1, "exactly one primary repo link per project");
+
+    let primary_slug: String = sqlx::query_scalar(
+        "SELECT slug FROM repo_links WHERE project_id = ? AND is_primary = 1",
+    )
+    .bind(&project)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("read primary slug");
+    assert_eq!(
+        primary_slug, "octocat/hello-world",
+        "parse_github_slug lowercases both segments before storage"
+    );
+
+    let secondary_slug: String =
+        sqlx::query_scalar("SELECT slug FROM repo_links WHERE id = ?")
+            .bind(&secondary_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read secondary slug");
+    assert_eq!(secondary_slug, "octocat/spoon-knife");
+
+    // 4. Build a legal chain under the project down to a task, then create a
+    //    finding on the task with `repo_id` referencing the SECONDARY repo.
+    let epic = mcp_create(&tools, "epic", Some(&project), "Repo-Links Epic").await;
+    let feature = mcp_create(&tools, "feature", Some(&epic), "Repo-Links Feature").await;
+    let story = mcp_create(&tools, "story", Some(&feature), "Repo-Links Story").await;
+    let task = mcp_create(&tools, "task", Some(&story), "Repo-Links Task").await;
+
+    let finding_id = lumina::repo::create_finding(
+        &pool,
+        &task,
+        &lumina::repo::NewFinding {
+            kind: Some("review"),
+            severity: Some("minor"),
+            summary: Some("uses a deprecated API"),
+            file: Some("src/lib.rs"),
+            line: Some(42),
+            repo_id: Some(&secondary_id),
+            ..lumina::repo::NewFinding::default()
+        },
+    )
+    .await
+    .expect("create finding bound to the secondary repo")
+    .to_string();
+
+    // DB assertion: the finding's repo_id is the secondary link id.
+    let finding_repo_id: Option<String> =
+        sqlx::query_scalar("SELECT repo_id FROM findings WHERE id = ?")
+            .bind(&finding_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read finding's repo_id");
+    assert_eq!(
+        finding_repo_id.as_deref(),
+        Some(secondary_id.as_str()),
+        "the finding's repo_id points at the secondary repo link"
+    );
+
+    // 5. Drain the export DIRECTLY (no sleep / no background loop). Every
+    //    repo-link mutation rides `aggregate_type=work_item` with the project
+    //    id, so the project snapshot is re-rendered for each one (T2/T3).
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("export drain");
+    assert!(
+        drained >= 1,
+        "the drain stamped at least one event, got {drained}"
+    );
+
+    // 5a. The PROJECT snapshot carries both repo_links.
+    let project_snapshot = export_dir
+        .path()
+        .join("project")
+        .join(format!("{project}.toml"));
+    assert!(
+        project_snapshot.exists(),
+        "git-export wrote the project snapshot at {}",
+        project_snapshot.display()
+    );
+    let project_toml: toml::Value = toml::from_str(
+        &std::fs::read_to_string(&project_snapshot).expect("read project snapshot"),
+    )
+    .expect("parse project snapshot TOML");
+    let snap_links = project_toml["repo_links"]
+        .as_array()
+        .expect("repo_links array in project snapshot");
+    assert_eq!(snap_links.len(), 2, "both repo_links are folded into the project snapshot");
+    let slugs: std::collections::HashSet<&str> = snap_links
+        .iter()
+        .map(|l| l["slug"].as_str().expect("slug is a string"))
+        .collect();
+    assert!(
+        slugs.contains("octocat/hello-world") && slugs.contains("octocat/spoon-knife"),
+        "both canonical slugs round-trip in the snapshot, got {slugs:?}"
+    );
+    // The primary flag round-trips too.
+    let primary_in_snap = snap_links
+        .iter()
+        .find(|l| l["slug"].as_str() == Some("octocat/hello-world"))
+        .expect("primary link present");
+    assert_eq!(
+        primary_in_snap["is_primary"].as_integer(),
+        Some(1),
+        "the primary repo link's is_primary flag round-trips in the snapshot"
+    );
+
+    // 5b. The TASK snapshot carries the finding with its `repo_id`.
+    let task_snapshot = export_dir.path().join("task").join(format!("{task}.toml"));
+    assert!(task_snapshot.exists(), "task snapshot exists");
+    let task_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&task_snapshot).expect("read task snapshot"))
+            .expect("parse task snapshot TOML");
+    let snap_findings = task_toml["findings"]
+        .as_array()
+        .expect("findings array in task snapshot");
+    assert_eq!(snap_findings.len(), 1, "one finding in the task snapshot");
+    assert_eq!(
+        snap_findings[0]["repo_id"].as_str(),
+        Some(secondary_id.as_str()),
+        "the exported finding carries the secondary repo's id"
+    );
+
+    // 6. HTTP GET /api/work-items/{project_id} — the detail surfaces the
+    //    `repo_links` array for project-kind items.
+    let state = AppState { pool: pool.clone() };
+    let project_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{project}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET project detail");
+    assert_eq!(
+        project_resp.status(),
+        StatusCode::OK,
+        "project detail returns 200"
+    );
+    let project_body = json_body(project_resp).await;
+    let http_links = project_body["repo_links"]
+        .as_array()
+        .expect("repo_links array in HTTP project detail");
+    assert_eq!(http_links.len(), 2, "HTTP detail surfaces both repo links");
+    for link in http_links {
+        assert!(link["id"].is_string(), "id is a string");
+        assert_eq!(
+            link["project_id"].as_str(),
+            Some(project.as_str()),
+            "project_id matches"
+        );
+        assert!(link["slug"].is_string(), "slug is a string");
+        assert!(link["position"].is_number(), "position is a number");
+        assert!(link["is_primary"].is_number(), "is_primary is 0/1");
+        assert!(link["created_at"].is_string(), "created_at is a string");
+    }
+
+    // 7. Bonus: exercise the HTTP write surface end-to-end.
+
+    // 7a. POST /work-items/{project}/repo-links — adds a third link, returns 201.
+    let post_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/work-items/{project}/repo-links"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "slug": "another/repo",
+                        "is_primary": false
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST repo-links");
+    assert_eq!(
+        post_resp.status(),
+        StatusCode::CREATED,
+        "POST repo-links returns 201"
+    );
+    let post_body = json_body(post_resp).await;
+    let third_id = post_body["id"]
+        .as_str()
+        .expect("POST returns { id }")
+        .to_owned();
+
+    let count_after_post: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM repo_links WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("count repo links after POST");
+    assert_eq!(count_after_post, 3, "POST inserted a third repo link");
+
+    // 7b. PATCH /work-items/{project}/repo-links/{id} — promote the new link
+    //     to primary; the old primary clears.
+    let patch_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/work-items/{project}/repo-links/{third_id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "is_primary": true }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot PATCH repo-links");
+    assert_eq!(
+        patch_resp.status(),
+        StatusCode::OK,
+        "PATCH repo-links returns 200"
+    );
+    let new_primary_id: String = sqlx::query_scalar(
+        "SELECT id FROM repo_links WHERE project_id = ? AND is_primary = 1",
+    )
+    .bind(&project)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("read new primary");
+    assert_eq!(
+        new_primary_id, third_id,
+        "PATCH promoted the third link to primary, clearing the previous primary"
+    );
+    // The old primary is no longer primary.
+    let old_primary_flag: i64 =
+        sqlx::query_scalar("SELECT is_primary FROM repo_links WHERE id = ?")
+            .bind(&primary_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read old primary flag");
+    assert_eq!(old_primary_flag, 0, "the previous primary is demoted");
+
+    // 7c. DELETE /work-items/{project}/repo-links/{id} — remove the third link.
+    let delete_resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/work-items/{project}/repo-links/{third_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot DELETE repo-links");
+    assert_eq!(
+        delete_resp.status(),
+        StatusCode::NO_CONTENT,
+        "DELETE repo-links returns 204"
+    );
+    let count_after_delete: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM repo_links WHERE project_id = ?")
+            .bind(&project)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("count repo links after DELETE");
+    assert_eq!(
+        count_after_delete, 2,
+        "DELETE removed the third link — full thread closed"
+    );
+}

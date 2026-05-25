@@ -69,7 +69,7 @@ store only).
 | `move_work_item` | Reposition an item among its siblings (new ordering `position`). |
 | `delete_work_item` | DESTRUCTIVE (soft): stamp `deleted_at`; the row and its history are preserved, but it drops out of lists. |
 | `set_story_plan` | Set a story's plan attributes — `problem_statement` / `research_notes` / `execution_strategy` — in one merge call (absent keys untouched). |
-| `set_task_spec` | Set a task's spec attributes — `execution_detail` / `files_touched` / `outcome` / `dispatch` — in one merge call. |
+| `set_task_spec` | Set a task's spec attributes — `execution_detail` / `files_touched` / `outcome` / `dispatch` — in one merge call. Each `files_touched` entry may be a bare path string (resolves to the project's primary linked repo) or a `{repo: "<owner>/<name>", path: "<repo-relative path>"}` object whose `repo` slug must reference a `repo_links` row on the task's project ancestor (migration 0004). |
 | `create_context_block` | Create a reusable context block (optional title/body); pass `link_to` to also link it to a work item immediately. |
 | `link_context_block` | Link an existing context block to a work item. |
 
@@ -79,8 +79,8 @@ store only).
 |------|-------------|
 | `record_task_activity` | Append one activity entry onto a work item — `entry_type` of `execution` / `vet` / `comment`, plus a `summary` and optional `author` / `body` / `outcome` / `origin`. This is how execution history folds onto the task record. |
 | `transition_status` | Idempotently transition an item's status (`todo` / `in_progress` / `blocked` / `done` / `cancelled`). |
-| `add_finding` | Attach a finding to a work item (kind / severity / effort / category / file / line / symbol / summary / description, plus optional `confidence` evidence grade and `origin` provenance). |
-| `update_finding` | Partial set-or-leave update of a finding (now including `confidence`). |
+| `add_finding` | Attach a finding to a work item (kind / severity / effort / category / file / line / symbol / summary / description, plus optional `confidence` evidence grade, `origin` provenance, and `repo_id` binding the file to a non-primary linked repo of the project ancestor — see migration-0004 tools below). |
+| `update_finding` | Partial set-or-leave update of a finding (including `confidence` and `repo_id`; pass `set_finding_repo` to clear the binding back to the primary). |
 | `resolve_finding` | Resolve a finding to a terminal disposition (`fixed` / `wontfix` / `verified_clean` / `deferred` / `duplicate`), with optional resolution/rationale. |
 
 ### Planning & decision tools (migration 0003)
@@ -106,6 +106,35 @@ These set the composer-facing grading axes and drive the decision lifecycle. `re
 | `block_task_on_question` | Block a task on an open question (sets `blocked_by_question_id` and `status=blocked`). |
 | `set_enabling_option` | Tie a task to one question option, marking it exclusive to that branch. |
 | `resolve_open_question` | Resolve a question by picking an option (params: `question_id` + `chosen_option_id` + optional `by`): unblock the chosen branch's tasks (`blocked→todo`) and cancel the other branches' exclusive tasks (`→cancelled`), emitting exactly one event for the whole resolution. |
+
+### Project↔repo-link tools (migration 0004)
+
+A project work-item may carry one or more linked GitHub repositories identified by a bare `<owner>/<name>` slug (case-folded to lowercase on store; `*.git` suffix rejected). At most one linked repo is the project's **primary** — enforced by a partial UNIQUE index, not a CHECK constraint. File references on findings (`findings.repo_id`) and on tasks (`attributes.files_touched` entries) may either be unqualified (resolve implicitly to the primary) or explicitly bound to a non-primary linked repo. Resolution is metadata-only: lumina records "this file lives in repo X", it does not open or walk a local clone.
+
+| Tool | When to use |
+|------|-------------|
+| `add_repo_link` | Add a `<owner>/<name>` repo to a project (`project_id` + `slug` + optional `is_primary`). The slug is validated and lowercased before storage. |
+| `remove_repo_link` | DESTRUCTIVE: hard-delete a repo link by `id`. Findings bound to it via `repo_id` drop back to NULL (FK is `ON DELETE SET NULL`) and resolve to the primary at read time. |
+| `set_primary_repo` | Promote a repo link to its project's primary (one transaction clears the existing primary then promotes the target). Cross-project ids are rejected. |
+| `list_repo_links` | Read-only: list a project's linked repos in `position` order. The same data is folded into `get_work_item` detail for project-kind items. |
+| `set_finding_repo` | Set a finding's `repo_id` to a non-primary linked repo, or omit `repo_id` to clear the binding (falls back to the primary at read time). The target row must belong to the finding's project ancestor. |
+
+Example — qualifying a `files_touched` entry by repo:
+
+```
+set_task_spec {
+  id: <task>,
+  files_touched: [
+    "src/foo.rs",                                                  // unqualified → primary
+    { repo: "octocat/spoon-knife", path: "web/src/App.vue" }       // explicit → non-primary
+  ]
+}
+```
+
+Constraints:
+- Repo links live exclusively on `kind='project'` rows; descendants inherit by walking up the parent chain. Adding a repo link to a non-project work-item is rejected.
+- A `{repo, path}` entry whose `repo` slug does not match any `repo_links` row on the task's project ancestor is rejected as `invalid_params`.
+- Slug shape is GitHub-only (`<owner>/<name>`, no host prefix); GitLab / self-hosted support would require a follow-up migration.
 
 ### Read tools
 
