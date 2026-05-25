@@ -30,6 +30,28 @@ Reach for the lumina MCP tools when you are:
 - Querying the hierarchy: list, get one item with its detail, walk a tree, or view a
   sprint (a story plus its task subtree and per-task activity).
 
+## Story-block skill family
+
+The plugin at `claude/plugins/lumina-story-blocks/` adds nine composable skills, one per
+story block, each independently triggerable via a `/lumina:<block> <id>` slash invocation,
+each driving the lumina MCP tools catalogued below.
+
+| Skill | Slash invocation | One-line summary |
+|---|---|---|
+| problem-statement | `/lumina:problem-statement <id>` | Sets `attributes.problem_statement` (3-axis prompt). |
+| research-notes | `/lumina:research-notes <id>` | Forked subagent: adds 3-7 `research_notes` rows. |
+| user-interrogation | `/lumina:user-interrogation <id>` | HumanLayer 4-axis open-questions enumeration. |
+| acceptance-criteria | `/lumina:acceptance-criteria <id>` | Adds free-text AC rows to task children. |
+| approach | `/lumina:approach <id>` | Sets `attributes.execution_strategy` (drafts from prerequisites). |
+| not-doing | `/lumina:not-doing <id>` | Sets `attributes.not_doing` (lens convention §g). |
+| edge-cases | `/lumina:edge-cases <id>` | Adds `research_notes` with `lens="edge-case"`. |
+| relevance | `/lumina:relevance <id>` | Thin wrapper over `set_relevance` (active/backlog/deferred/rejected). |
+| closure-gate | `/lumina:closure-gate <id>` | Thin wrapper over `set_closure_gate` (hard/soft). |
+
+Load via `claude --plugin-dir claude/plugins/lumina-story-blocks` — see
+[`claude/plugins/lumina-story-blocks/README.md`](../../plugins/lumina-story-blocks/README.md)
+for the full prerequisites checklist and SDK invocation form.
+
 ## Relationship to tomlctl (read this first)
 
 Lumina is the **data layer** of a phased effort to reshape the harness around it. As of
