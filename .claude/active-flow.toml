@@ -136,3 +136,16 @@ scope = [
     "lumina/CLAUDE.md",
     "claude/skills/lumina/SKILL.md",
 ]
+
+[[active]]
+slug = "lumina-story-planning-workflow"
+last_used = "2026-05-25T14:01:29.8534385Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "claude/plugins/lumina-story-blocks/**",
+    "claude/skills/lumina/SKILL.md",
+    "lumina/CLAUDE.md",
+]

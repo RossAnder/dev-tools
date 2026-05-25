@@ -1,0 +1,22 @@
+slug = "lumina-story-planning-workflow"
+plan_path = "docs/plans/lumina-story-planning-workflow.md"
+status = "draft"
+created = 2026-05-25
+updated = 2026-05-25
+branch = "main"
+scope = [
+    "claude/plugins/lumina-story-blocks/**",
+    "claude/skills/lumina/SKILL.md",
+    "lumina/CLAUDE.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-story-planning-workflow/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-story-planning-workflow/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-story-planning-workflow/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-story-planning-workflow/plan-review-findings.toml"
