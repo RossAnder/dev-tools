@@ -30,3 +30,10 @@ cargo install cargo-insta                  # snapshot review CLI (optional but r
 
 `lumina/.config/nextest.toml` defines two profiles: `default` (no retries) and `ci` (one retry, JUnit XML emit, immediate failure output).
 <!-- TEST-BOOTSTRAP:STACK END -->
+
+## Story-block skills plugin
+
+Lumina's MCP tool surface is driven by the nine `/lumina:<block>` skills in the plugin at
+`claude/plugins/lumina-story-blocks/`. Load with `claude --plugin-dir claude/plugins/lumina-story-blocks`;
+the prerequisites checklist (server running, MCP registered as `lumina`) and full skill catalogue
+live in `claude/plugins/lumina-story-blocks/README.md`.
