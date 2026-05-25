@@ -108,3 +108,15 @@ scope = [
     "claude/skills/lumina/**",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "lumina-ui-design-embed"
+last_used = "2026-05-25T05:24:49.6587024Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/web/src/**",
+    "docs/design_handoff_lumina_control/**",
+]

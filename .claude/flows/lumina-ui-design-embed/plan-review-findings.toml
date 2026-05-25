@@ -1,0 +1,246 @@
+schema_version = 1
+last_updated = "2026-05-25"
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "Affected areas / T3 / T9 / T10"
+summary = "api.ts wire types are a strict subset of backend response — 8 work-item columns + 4 detail arrays missing"
+status = "merged"
+
+[[items]]
+id = "P2"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "Wave 1 — T1 + T2"
+summary = "T1 and T2 both edit main.css under parallel-wave declaration — silent overwrite hazard"
+status = "merged"
+
+[[items]]
+id = "P3"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "Wave 3 — T9/T10/T7"
+summary = "StatusPill dependency inversion — created in T9 but consumed by T7 (Wave 2) and T10 (same wave)"
+status = "merged"
+
+[[items]]
+id = "P4"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "T11 PortfolioEmpty"
+summary = "Contradicts design — plan said 'single hero block' but app.jsx:522-599 specifies full portfolio lens + KPI grid + epics ChildGrid"
+status = "merged"
+
+[[items]]
+id = "P5"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "T3"
+summary = "focusId vs selectedId ambiguous — two parallel concepts with no sync rule"
+status = "merged"
+
+[[items]]
+id = "P6"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "T9"
+summary = "Progress bar denominator undefined — descendantCounts had no doneTasks/totalTasks fields"
+status = "merged"
+
+[[items]]
+id = "P7"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "After T12 / cross-cutting"
+summary = "Loading/error/empty-tree states silently vanish after T12 — old HierarchyView rendered all three"
+status = "merged"
+
+[[items]]
+id = "P8"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "T12 / inventory"
+summary = "Findings panel from old HierarchyView silently regressed — not in any inventory"
+status = "merged"
+
+[[items]]
+id = "P9"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "Verification Commands / T13"
+summary = "AC/effort/complexity not populated by import-flow — T13 visual QA exercised empty arrays only"
+status = "merged"
+
+[[items]]
+id = "P10"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "index.html"
+summary = "index.html shipped 'Vite App' title, empty lang, default favicon — baked into the production binary"
+status = "merged"
+
+[[items]]
+id = "P11"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "T12"
+summary = "Action said 'use Bash rm' but Windows Git Bash is broken per memory"
+status = "merged"
+
+[[items]]
+id = "P12"
+review_round = 1
+severity = "warning"
+category = "risk"
+plan_section = "T4 useDisplay.statusToken"
+summary = "text-[var(--color-X)] arbitrary-value indirection redundant — Tailwind v4 auto-generates text-X from --color-X"
+status = "merged"
+
+[[items]]
+id = "P13"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "T1 Research Note vs Action"
+summary = "Research note said WOFF2 to dist/fonts/ but T1 uses Fontsource which hashes to dist/assets/"
+status = "merged"
+
+[[items]]
+id = "P14"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "Exploration Notes"
+summary = "HTTP-route count said 5 but enumerated 6 method+path handlers / 4 route lines"
+status = "merged"
+
+[[items]]
+id = "P15"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "T2"
+summary = "@keyframes must be INSIDE @theme block for --animate-* binding tree-shaking"
+status = "merged"
+
+[[items]]
+id = "P16"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "Inventory"
+summary = "Accessibility unmentioned anywhere — added inventory item #8 for a11y deferral"
+status = "merged"
+
+[[items]]
+id = "P17"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "Out of scope / Tests"
+summary = "descendantCounts is highest-bug-risk new logic — Vitest spec needed (inventory item #9)"
+status = "merged"
+
+[[items]]
+id = "P18"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "T4"
+summary = "Status vocab translated in 4 places — consolidated to single STATUSES const"
+status = "merged"
+
+[[items]]
+id = "P19"
+review_round = 1
+severity = "suggestion"
+category = "feasibility"
+plan_section = "T10"
+summary = "WorkItemDetail.children non-recursive — child counts must come from useHierarchy().tree"
+status = "merged"
+
+[[items]]
+id = "P20"
+review_round = 1
+severity = "suggestion"
+category = "feasibility"
+plan_section = "Exploration Notes"
+summary = "8 files actually 7 — directory glob shows 7 entries"
+status = "merged"
+
+[[items]]
+id = "P21"
+review_round = 1
+severity = "suggestion"
+category = "feasibility"
+plan_section = "Out of scope"
+summary = "17 tools count unenumerated — dropped"
+status = "merged"
+
+[[items]]
+id = "P22"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "T2 body styling"
+summary = "body { font-family: var(--font-sans) } redundant with Preflight + @theme cascade"
+status = "merged"
+
+[[items]]
+id = "P23"
+review_round = 1
+severity = "suggestion"
+category = "executability"
+plan_section = "T7"
+summary = "Spine overflow + focusId===null behaviour unspecified — pinned sticky header, independent scroll, root-list rendering"
+status = "merged"
+
+[[items]]
+id = "P24"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "Exploration Notes"
+summary = "Deterministic build claim fragile per vitejs/vite#13071 — softened to informational"
+status = "merged"
+
+[[items]]
+id = "P25"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "Risks"
+summary = "Added tree-perf upper bound (~2k items → switch to lazy per-focus loads)"
+status = "merged"
+
+[[items]]
+id = "P26"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "T12"
+summary = "Added git-branch check before deleting HierarchyView.vue / TreeItem.vue"
+status = "merged"
+
+[[items]]
+id = "P27"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "T12"
+summary = "Added lumina/web/src/assets/logo.svg to T12 deletion list — zero src/ consumers"
+status = "merged"

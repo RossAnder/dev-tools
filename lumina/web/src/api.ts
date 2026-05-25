@@ -14,7 +14,15 @@ export interface WorkItem {
   title: string
   body: string | null
   status: string
-  position: number
+  position: number | null
+  attributes: Record<string, unknown> | null
+  relevance: string | null
+  effort: string | null
+  complexity: string | null
+  origin: string | null
+  closure_gate: string | null
+  blocked_by_question_id: string | null
+  enabling_option_id: string | null
   created_at: string
   updated_at: string
 }
@@ -29,7 +37,7 @@ export interface WorkItemNode extends WorkItem {
 
 export interface Finding {
   id: string
-  work_item_id: string
+  work_item_id: string | null
   kind: string
   severity: string
   effort: string
@@ -44,6 +52,11 @@ export interface Finding {
   rounds: number | null
   fingerprint: string | null
   flow: string | null
+  dedup_id: string | null
+  origin: string | null
+  confidence: string | null
+  superseded_by: string | null
+  resolved_at: string | null
   resolution: string | null
   defer_reason: string | null
   defer_trigger: string | null
@@ -58,12 +71,88 @@ export interface ContextBlock {
   updated_at: string
 }
 
+/**
+ * A row of `acceptance_criteria` (migration 0003). Note: `checked` is wire-
+ * encoded as a 0/1 integer (the Rust side mirrors the SQLite INTEGER column
+ * as `i64`), not a JSON boolean.
+ */
+export interface AcceptanceCriterion {
+  id: string
+  work_item_id: string
+  seq: number
+  text: string
+  checked: number
+  checked_at: string | null
+  checked_by: string | null
+  created_at: string
+}
+
+/** A row of `research_notes` (migration 0003). */
+export interface ResearchNote {
+  id: string
+  work_item_id: string
+  seq: number
+  summary: string
+  body: string | null
+  confidence: string | null
+  state: string | null
+  rationale: string | null
+  lens: string | null
+  origin: string | null
+  superseded_by: string | null
+  created_at: string
+}
+
+/** A row of `question_options` (migration 0003): one branch of an open question. */
+export interface QuestionOption {
+  id: string
+  question_id: string
+  seq: number
+  label: string
+  detail: string | null
+  created_at: string
+}
+
+/** A row of `open_questions` (migration 0003): a story-scoped decision. */
+export interface OpenQuestion {
+  id: string
+  story_id: string
+  seq: number
+  question: string
+  status: string | null
+  answer: string | null
+  chosen_option_id: string | null
+  decided_at: string | null
+  decided_by: string | null
+  prompting_finding_id: string | null
+  prompting_note_id: string | null
+  created_at: string
+  options: QuestionOption[]
+}
+
+/** A row of `work_item_activity` (migration 0002): the per-item activity log. */
+export interface WorkItemActivity {
+  id: string
+  work_item_id: string
+  seq: number
+  entry_kind: string
+  author: string | null
+  summary: string
+  payload: Record<string, unknown> | null
+  origin: string | null
+  created_at: string
+}
+
 /** Response shape of `GET /api/work-items/{id}` (WorkItemDetail). */
 export interface WorkItemDetail {
   item: WorkItem
   children: WorkItem[]
   findings: Finding[]
   context_blocks: ContextBlock[]
+  activity: WorkItemActivity[]
+  acceptance_criteria: AcceptanceCriterion[]
+  research_notes: ResearchNote[]
+  open_questions: OpenQuestion[]
 }
 
 /** Body accepted by `POST /api/work-items`. */

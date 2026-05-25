@@ -1,0 +1,21 @@
+slug = "lumina-ui-design-embed"
+plan_path = "docs/plans/lumina-ui-design-embed.md"
+status = "in-progress"
+created = 2026-05-25
+updated = 2026-05-25
+branch = "main"
+scope = [
+    "lumina/web/src/**",
+    "docs/design_handoff_lumina_control/**",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 5
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-ui-design-embed/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-ui-design-embed/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-ui-design-embed/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-ui-design-embed/plan-review-findings.toml"

@@ -11,6 +11,9 @@
     "type-check": "vue-tsc --build"
   },
   "dependencies": {
+    "@fontsource/geist-sans": "^5.2.5",
+    "@fontsource/instrument-serif": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "vue": "3.6.0-beta.12"
   },
   "devDependencies": {

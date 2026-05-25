@@ -1,0 +1,14 @@
+:root {
+  --bg: #0e0c08;
+  --surface: #15120d;
+  --surface-2: #1c1812;
+  --surface-3: #251f17;
+  --border: #2a2519;
+  --border-strong: #3a3220;
+  --border-faint: #1f1a13;
+  --ink: #f0eadc;
+  --ink-2: #cfc7b3;
+  --muted: #8f8775;
+  --faint: #5c5547;
+  --ghost: #3a352b;
+}
