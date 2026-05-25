@@ -1,0 +1,6 @@
+{
+  "name": "lumina",
+  "version": "0.1.0",
+  "description": "Composable story-block skills for lumina work-items",
+  "skills": "./skills/"
+}

@@ -1,2 +1,23 @@
 schema_version = 1
 last_updated = 2026-05-25
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-25
+agent = "implement-orchestrator"
+summary = "context.status draft -> in-progress at /implement Phase 1 entry"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "18dc31c300aa5f19"
+
+[[items]]
+id = "E2"
+type = "deviation"
+date = 2026-05-25
+agent = "flow-implement-deep"
+task_ref = "2"
+summary = "CONVENTIONS.md cites entry_type (not entry_kind) for record_task_activity"
+original_intent = 'Plan Approach §3 (Provenance recording) instructed callers to pass entry_kind: "execution" to mcp__lumina__record_task_activity.'
+rationale = "The actual lumina MCP tool surface (claude/skills/lumina/SKILL.md tool catalogue) takes entry_type, not entry_kind. Plan prose uses stale terminology; the correct argument name is entry_type, with accepted enum {execution, vet, comment}. Task 2 agent followed the tool surface and used entry_type in CONVENTIONS.md §c, which is what all downstream skills will copy."
+dedup_id = "ee53315d4c2d21ba"
