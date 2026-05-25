@@ -246,6 +246,37 @@ pub struct SetStoryPlanParams {
     pub execution_strategy: Option<String>,
 }
 
+/// A `files_touched` entry on `set_task_spec` (migration 0004 / T4).
+///
+/// `#[serde(untagged)]` lets a single `files_touched` array mix two shapes:
+///   * `"src/foo.rs"` — legacy bare-path form; resolves to the project's
+///     primary linked repo at read time.
+///   * `{"repo": "owner/name", "path": "src/foo.rs"}` — explicit form; the
+///     `repo` slug MUST reference a `repo_links` row on the task's project
+///     ancestor (the MCP tool validates this — see `set_task_spec`).
+///
+/// Variant order matters under `#[serde(untagged)]`: the strictly-simpler
+/// `Path(String)` is tried FIRST so bare strings hit it; otherwise serde would
+/// have to backtrack out of `Qualified` on a string input.
+///
+/// Each variant serialises back to the same JSON shape it deserialises from
+/// (string → string, object → object), so the wire is symmetric.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum FileRef {
+    /// Legacy bare-path form: resolves to the project's primary repo.
+    Path(String),
+    /// Explicit form: the file lives in the named linked repo.
+    Qualified {
+        /// The `<owner>/<name>` slug of a linked repo on the task's project
+        /// ancestor. Case-folded to lowercase by `parse_github_slug` before the
+        /// project-ancestor lookup, so `Foo/Bar` and `foo/bar` are accepted.
+        repo: String,
+        /// The path within the named repo, relative to the repo root.
+        path: String,
+    },
+}
+
 /// Arguments for the `set_task_spec` write tool: the task attributes keys set in
 /// one call. Each field is optional; the tool builds a sub-object of the present
 /// keys and makes ONE `set_work_item_attributes` call.
@@ -257,8 +288,12 @@ pub struct SetTaskSpecParams {
     #[serde(default)]
     pub execution_detail: Option<String>,
     /// The files the task touched; absent ⇒ leave any existing value untouched.
+    /// Each entry is either a bare path string (resolves to the project's
+    /// primary linked repo) or a `{repo, path}` object naming a non-primary
+    /// linked repo (the `repo` slug must reference a `repo_links` row on the
+    /// task's project ancestor — migration 0004 / T4).
     #[serde(default)]
-    pub files_touched: Option<Vec<String>>,
+    pub files_touched: Option<Vec<FileRef>>,
     /// The task's outcome; absent ⇒ leave any existing value untouched.
     #[serde(default)]
     pub outcome: Option<String>,
@@ -389,6 +424,12 @@ pub struct AddFindingParams {
     /// `plan`/`implement`/`review`/`optimise`/`tdd`/`human`/`none` (migration 0003).
     #[serde(default)]
     pub origin: Option<Origin>,
+    /// Optional FK to a `repo_links` row (migration 0004); when set, the
+    /// finding's `file` lives in the named non-primary linked repo. Omitting
+    /// this (the default) means the file lives in the project's primary
+    /// linked repo (implicit-primary resolution at read time).
+    #[serde(default)]
+    pub repo_id: Option<String>,
 }
 
 /// Arguments for the `update_finding` write tool: a partial set-or-leave update.
@@ -429,6 +470,11 @@ pub struct UpdateFindingParams {
     /// confidence unchanged (migration 0003).
     #[serde(default)]
     pub confidence: Option<String>,
+    /// New FK to a `repo_links` row (migration 0004); absent leaves the
+    /// existing binding unchanged (SET-OR-LEAVE — clearing back to the primary
+    /// uses the dedicated `set_finding_repo` tool).
+    #[serde(default)]
+    pub repo_id: Option<String>,
 }
 
 /// Arguments for the `resolve_finding` write tool → `repo::resolve_finding`. The
@@ -647,6 +693,68 @@ pub struct ResolveOpenQuestionParams {
     /// Optional author of the decision.
     #[serde(default)]
     pub by: Option<String>,
+}
+
+// ---- Repo-link params (migration 0004, T4) -------------------------------
+
+/// Arguments for the `add_repo_link` write tool → `repo::add_repo_link`. The
+/// `slug` is canonicalised (both segments lowercased) by `parse_github_slug`
+/// before storage; `is_primary` defaults to `false` and is enforced single-per-
+/// project by a partial UNIQUE index.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AddRepoLinkParams {
+    /// The project work-item id the repo link attaches to.
+    pub project_id: String,
+    /// The `<owner>/<name>` GitHub slug to link. Both segments are case-folded
+    /// to lowercase before storage so `Foo/Bar` and `foo/bar` are accepted.
+    pub slug: String,
+    /// Mark the link as the project's primary repo (default `false`). At most
+    /// one primary per project is enforced by a partial UNIQUE index.
+    #[serde(default)]
+    pub is_primary: Option<bool>,
+}
+
+/// Arguments for the `remove_repo_link` write tool → `repo::remove_repo_link`
+/// (hard-delete; any findings bound via FK drop back to NULL ⇒ primary-repo
+/// resolution at read time).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RemoveRepoLinkParams {
+    /// The repo-link id to hard-delete.
+    pub id: String,
+}
+
+/// Arguments for the `set_primary_repo` write tool → `repo::set_primary_repo`.
+/// In one transaction the repo clears any existing primary on the project and
+/// promotes the target row.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetPrimaryRepoParams {
+    /// The project work-item id whose primary repo to set.
+    pub project_id: String,
+    /// The repo-link id to promote to primary (must belong to `project_id`).
+    pub repo_link_id: String,
+}
+
+/// Arguments for the `list_repo_links` read tool → `repo::list_repo_links`. The
+/// same data is also folded into `get_work_item` detail for project-kind items;
+/// this tool is a convenience for clients that only need the link list.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListRepoLinksParams {
+    /// The project work-item id whose repo links to list.
+    pub project_id: String,
+}
+
+/// Arguments for the `set_finding_repo` write tool → `repo::set_finding_repo`.
+/// Omitting `repo_id` clears the binding (the finding falls back to the
+/// project's primary linked repo at read time).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetFindingRepoParams {
+    /// The finding id whose repo binding to set or clear.
+    pub finding_id: String,
+    /// The repo-link id to bind to; omit to clear back to implicit-primary
+    /// resolution. The target row must belong to the finding's project
+    /// ancestor (repo-level project-scope check).
+    #[serde(default)]
+    pub repo_id: Option<String>,
 }
 
 /// The MCP tool-handler. Holds the shared `Arc<SqlitePool>` and the generated
@@ -898,8 +1006,16 @@ impl LuminaTools {
     /// Set a task's spec attributes (execution_detail / files_touched / outcome /
     /// dispatch) in one call: build a sub-object of the present keys, then make
     /// ONE `set_work_item_attributes` call.
+    ///
+    /// `files_touched` accepts either a bare path string (resolves to the
+    /// project's primary linked repo) or a `{repo, path}` object naming a
+    /// linked repo. When any structured entry is present we (a) look up the
+    /// task's project ancestor, (b) fetch its `repo_links`, and (c) reject any
+    /// entry whose canonicalised `repo` slug is not linked to that project
+    /// (`Validation` → `invalid_params`). If no structured entries are present,
+    /// no repo-link lookup is issued (zero query cost for legacy callers).
     #[tool(
-        description = "Set a task's spec attributes (execution_detail/files_touched/outcome/dispatch) in one merge call. Records one event.",
+        description = "Set a task's spec attributes (execution_detail/files_touched/outcome/dispatch) in one merge call. `files_touched` accepts either bare path strings (resolve to the project's primary linked repo) or `{repo, path}` objects whose `repo` slug must reference a `repo_links` row on the task's project ancestor (migration 0004). Records one event.",
         annotations(idempotent_hint = true, open_world_hint = false)
     )]
     async fn set_task_spec(
@@ -910,11 +1026,48 @@ impl LuminaTools {
         if let Some(v) = p.execution_detail {
             obj.insert("execution_detail".into(), serde_json::Value::String(v));
         }
-        if let Some(v) = p.files_touched {
-            obj.insert(
-                "files_touched".into(),
-                serde_json::Value::Array(v.into_iter().map(serde_json::Value::String).collect()),
-            );
+        if let Some(entries) = p.files_touched {
+            // Fast path: when every entry is a bare path, no repo-link lookup
+            // is required (preserves legacy zero-query callers).
+            let has_qualified = entries
+                .iter()
+                .any(|e| matches!(e, FileRef::Qualified { .. }));
+
+            let linked_slugs: Vec<String> = if has_qualified {
+                let project_id = repo::find_project_ancestor(&self.pool, &p.id)
+                    .await
+                    .map_err(app_error_to_mcp)?;
+                let links = repo::list_repo_links(&self.pool, &project_id)
+                    .await
+                    .map_err(app_error_to_mcp)?;
+                links.into_iter().map(|l| l.slug).collect()
+            } else {
+                Vec::new()
+            };
+
+            // Convert each entry to its on-the-wire JSON form, validating
+            // `Qualified` entries against the project's linked slugs.
+            let mut arr: Vec<serde_json::Value> = Vec::with_capacity(entries.len());
+            for entry in entries {
+                match entry {
+                    FileRef::Path(path) => arr.push(serde_json::Value::String(path)),
+                    FileRef::Qualified { repo: slug, path } => {
+                        // Canonicalise the slug so callers may pass mixed-case
+                        // forms (parser lowercases both segments).
+                        let canonical = repo::parse_github_slug(&slug).map_err(app_error_to_mcp)?;
+                        if !linked_slugs.iter().any(|s| s == &canonical) {
+                            return Err(app_error_to_mcp(AppError::Validation(format!(
+                                "files_touched entry references repo slug '{canonical}' which is not \
+                                 a linked repo on the task's project ancestor (linked slugs: [{}])",
+                                linked_slugs.join(", ")
+                            ))));
+                        }
+                        arr.push(serde_json::json!({ "repo": canonical, "path": path }));
+                    }
+                }
+            }
+
+            obj.insert("files_touched".into(), serde_json::Value::Array(arr));
         }
         if let Some(v) = p.outcome {
             obj.insert("outcome".into(), serde_json::Value::String(v));
@@ -1034,7 +1187,7 @@ impl LuminaTools {
 
     /// Create a finding attached to a work item (single repo call → `create_finding`).
     #[tool(
-        description = "Add a finding to a work item (kind/severity/effort/category/file/line/symbol/summary/description). Records one event.",
+        description = "Add a finding to a work item (kind/severity/effort/category/file/line/symbol/summary/description). The optional `repo_id` is an FK to a `repo_links` row (migration 0004); omitting it (NULL) means the file lives in the project's primary linked repo. Records one event.",
         annotations(open_world_hint = false)
     )]
     async fn add_finding(
@@ -1056,6 +1209,7 @@ impl LuminaTools {
             description: p.description.as_deref(),
             origin: origin_str.as_deref(),
             confidence: p.confidence.as_deref(),
+            repo_id: p.repo_id.as_deref(),
             ..NewFinding::default()
         };
         let id = repo::create_finding(&self.pool, &p.work_item_id, &finding)
@@ -1066,7 +1220,7 @@ impl LuminaTools {
 
     /// Partial set-or-leave update of a finding (single repo call → `update_finding`).
     #[tool(
-        description = "Partially update a finding by id (severity/effort/category/status/file/line/symbol/summary/description; absent fields unchanged). Records one event.",
+        description = "Partially update a finding by id (severity/effort/category/status/file/line/symbol/summary/description/confidence/repo_id; absent fields unchanged). The optional `repo_id` is an FK to a `repo_links` row (migration 0004); omitting it leaves the existing binding unchanged (use `set_finding_repo` to clear it back to the primary). Records one event.",
         annotations(idempotent_hint = true, open_world_hint = false)
     )]
     async fn update_finding(
@@ -1084,9 +1238,7 @@ impl LuminaTools {
             summary: p.summary,
             description: p.description,
             confidence: p.confidence,
-            // T4 of the project↔repo-links plan adds the `repo_id` field to
-            // `UpdateFindingParams`; T1 only widens the domain struct.
-            repo_id: None,
+            repo_id: p.repo_id,
         };
         repo::update_finding(&self.pool, &p.id, &req)
             .await
@@ -1426,6 +1578,98 @@ impl LuminaTools {
             serde_json::json!({ "question_id": question_id, "chosen_option_id": chosen_option_id }),
         )
     }
+
+    // ---- Repo-link tools (migration 0004, T4) ---------------------------
+
+    /// Add a linked GitHub repo to a project (single repo call →
+    /// `repo::add_repo_link`).
+    #[tool(
+        description = "Add a linked GitHub `<owner>/<name>` repo to a project. The slug is case-folded to lowercase before storage (so `Foo/Bar` and `foo/bar` are accepted). `is_primary` defaults to false; at most one primary per project is enforced by a partial UNIQUE index (a second primary surfaces as invalid_params). Records one event.",
+        annotations(open_world_hint = false)
+    )]
+    async fn add_repo_link(
+        &self,
+        Parameters(AddRepoLinkParams { project_id, slug, is_primary }): Parameters<
+            AddRepoLinkParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        let id = repo::add_repo_link(&self.pool, &project_id, &slug, is_primary.unwrap_or(false))
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id.to_string() }))
+    }
+
+    /// Hard-delete a linked GitHub repo from its project (single repo call →
+    /// `repo::remove_repo_link`). Findings bound via FK drop back to NULL ⇒
+    /// implicit-primary resolution at read time.
+    #[tool(
+        description = "Hard-delete a linked GitHub repo (by repo-link id). Findings bound to this link via `repo_id` drop back to NULL (the FK is ON DELETE SET NULL), which makes them resolve to the project's primary repo at read time. Records one event.",
+        annotations(destructive_hint = true, open_world_hint = false)
+    )]
+    async fn remove_repo_link(
+        &self,
+        Parameters(RemoveRepoLinkParams { id }): Parameters<RemoveRepoLinkParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::remove_repo_link(&self.pool, &id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id, "removed": true }))
+    }
+
+    /// Promote a repo link to the project's primary (single repo call →
+    /// `repo::set_primary_repo`). In one transaction the repo clears any
+    /// existing primary on the project and promotes the target row.
+    #[tool(
+        description = "Promote a repo link to its project's primary repo. In one transaction the existing primary (if any) is cleared and the target is promoted, enforcing the single-primary-per-project invariant via a partial UNIQUE index. The `repo_link_id` must belong to `project_id` (cross-project ids are rejected as resource_not_found). Records one event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn set_primary_repo(
+        &self,
+        Parameters(SetPrimaryRepoParams { project_id, repo_link_id }): Parameters<
+            SetPrimaryRepoParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::set_primary_repo(&self.pool, &project_id, &repo_link_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(
+            serde_json::json!({ "project_id": project_id, "repo_link_id": repo_link_id }),
+        )
+    }
+
+    /// List a project's linked GitHub repos (single repo call →
+    /// `repo::list_repo_links`). Convenience read tool; the same data is also
+    /// folded into `get_work_item` detail for project-kind items.
+    #[tool(
+        description = "List a project's linked GitHub repos, ordered by position ascending. Read-only; returns the same data folded into `get_work_item` detail for project-kind items.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn list_repo_links(
+        &self,
+        Parameters(ListRepoLinksParams { project_id }): Parameters<ListRepoLinksParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let links = repo::list_repo_links(&self.pool, &project_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        json_result(&serde_json::json!({ "repo_links": links }))
+    }
+
+    /// Set or clear a finding's repo binding (single repo call →
+    /// `repo::set_finding_repo`). Omitting `repo_id` clears the binding back
+    /// to implicit-primary resolution.
+    #[tool(
+        description = "Set a finding's `repo_id` to a non-primary linked repo, or omit `repo_id` to clear the binding (the finding then falls back to the project's primary linked repo at read time). The target row must belong to the finding's project ancestor (cross-project ids surface as invalid_params). Records one event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn set_finding_repo(
+        &self,
+        Parameters(SetFindingRepoParams { finding_id, repo_id }): Parameters<SetFindingRepoParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::set_finding_repo(&self.pool, &finding_id, repo_id.as_deref())
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "finding_id": finding_id }))
+    }
 }
 
 impl LuminaTools {
@@ -1577,6 +1821,12 @@ mod tests {
             "get_work_item",
             "get_tree",
             "get_sprint_view",
+            // repo-link tools (migration 0004, T4)
+            "add_repo_link",
+            "remove_repo_link",
+            "set_primary_repo",
+            "list_repo_links",
+            "set_finding_repo",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -1585,11 +1835,11 @@ mod tests {
         }
 
         // Exact total: catches a stray (or silently-dropped) tool that the
-        // membership loop above would not. 34 = 33 baseline + remove_acceptance_criterion.
+        // membership loop above would not. 39 = 34 baseline + 5 repo-link tools (T4).
         assert_eq!(
             names.len(),
-            34,
-            "advertised tool count must be exactly 34, got {}: {names:?}",
+            39,
+            "advertised tool count must be exactly 39, got {}: {names:?}",
             names.len()
         );
 
@@ -1684,7 +1934,13 @@ mod tests {
         }
 
         // read_only_hint = true on every read tool.
-        for read in ["list_work_items", "get_work_item", "get_tree", "get_sprint_view"] {
+        for read in [
+            "list_work_items",
+            "get_work_item",
+            "get_tree",
+            "get_sprint_view",
+            "list_repo_links",
+        ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,
                 Some(true),
@@ -1692,12 +1948,14 @@ mod tests {
             );
         }
 
-        // destructive_hint = true on delete_work_item.
-        assert_eq!(
-            annotations_of(&tools, "delete_work_item").destructive_hint,
-            Some(true),
-            "delete_work_item must be destructive_hint=true"
-        );
+        // destructive_hint = true on delete_work_item + remove_repo_link.
+        for destructive in ["delete_work_item", "remove_repo_link"] {
+            assert_eq!(
+                annotations_of(&tools, destructive).destructive_hint,
+                Some(true),
+                "{destructive} must be destructive_hint=true"
+            );
+        }
 
         // idempotent_hint = true on the setters + transition_status.
         for idem in [
@@ -1721,6 +1979,9 @@ mod tests {
             "block_task_on_question",
             "set_enabling_option",
             "resolve_open_question",
+            // repo-link setters (migration 0004, T4)
+            "set_primary_repo",
+            "set_finding_repo",
         ] {
             assert_eq!(
                 annotations_of(&tools, idem).idempotent_hint,

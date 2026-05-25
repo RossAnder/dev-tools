@@ -121,11 +121,39 @@ fn validate_attributes_for_kind(
             )))
         }
     };
-    let want_string_array = |k: &str, v: &Value| match v.as_array() {
-        Some(arr) if arr.iter().all(Value::is_string) => Ok(()),
-        _ => Err(AppError::Validation(format!(
-            "attributes key '{k}' must be an array of strings for kind '{kind}'"
-        ))),
+    // Widened (migration 0004 / T4): `files_touched` accepts an array whose
+    // entries are either a string (legacy bare-path form) OR an object with
+    // EXACTLY the keys `repo` (string) and `path` (string). The MCP edge
+    // (`set_task_spec`) is responsible for canonicalising the `repo` slug and
+    // confirming it references a `repo_links` row on the task's project
+    // ancestor — this validator only enforces the JSON shape so that direct
+    // DB-attribute writes (importer, e2e fixtures) cannot store a malformed
+    // entry.
+    let want_files_touched = |k: &str, v: &Value| -> Result<(), AppError> {
+        let arr = v.as_array().ok_or_else(|| {
+            AppError::Validation(format!(
+                "attributes key '{k}' must be an array for kind '{kind}'"
+            ))
+        })?;
+        for entry in arr {
+            if entry.is_string() {
+                continue;
+            }
+            if let Some(obj) = entry.as_object() {
+                // Exactly the two keys `repo` and `path`, both strings.
+                if obj.len() == 2
+                    && obj.get("repo").and_then(Value::as_str).is_some()
+                    && obj.get("path").and_then(Value::as_str).is_some()
+                {
+                    continue;
+                }
+            }
+            return Err(AppError::Validation(format!(
+                "attributes key '{k}' entries must be a string or {{repo, path}} \
+                 object for kind '{kind}'"
+            )));
+        }
+        Ok(())
     };
     let want_object = |k: &str, v: &Value| {
         if v.is_object() {
@@ -147,7 +175,7 @@ fn validate_attributes_for_kind(
             },
             "task" => match k.as_str() {
                 "execution_detail" | "outcome" => want_string(k, v)?,
-                "files_touched" => want_string_array(k, v)?,
+                "files_touched" => want_files_touched(k, v)?,
                 "dispatch" => want_object(k, v)?,
                 _ => return Err(bad_key(k)),
             },
