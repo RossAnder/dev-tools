@@ -169,9 +169,11 @@ fn validate_attributes_for_kind(
     for (k, v) in obj {
         match kind {
             "story" => match k.as_str() {
-                "problem_statement" | "research_notes" | "execution_strategy" => {
-                    want_string(k, v)?
-                }
+                "problem_statement"
+                | "research_notes"
+                | "execution_strategy"
+                | "not_doing" => want_string(k, v)?,
+                "verification_commands" => want_object(k, v)?,
                 _ => return Err(bad_key(k)),
             },
             "task" => match k.as_str() {

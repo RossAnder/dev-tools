@@ -47,10 +47,12 @@ use tower::ServiceExt as _; // for `oneshot`
 use lumina::app::{AppState, build_router};
 use lumina::db::connect_in_memory;
 use lumina::domain::{
-    ClosureGate, CreateWorkItemRequest, Relevance, ResearchState, UpdateResearchNoteRequest,
+    ClosureGate, CreateWorkItemRequest, NextAction, Relevance, ResearchState, TaskKind,
+    UpdateResearchNoteRequest,
 };
 use lumina::mcp::{
     LuminaTools, RecordTaskActivityParams, SetStoryPlanParams, TaskActivityType,
+    VerificationCommands,
 };
 
 /// Drive the MCP `create_work_item` tool handler directly and return the created
@@ -1101,4 +1103,769 @@ async fn repo_links_flow() {
         count_after_delete, 2,
         "DELETE removed the third link — full thread closed"
     );
+}
+
+// =====================================================================
+// Round-2 (migration 0005) coverage — T5 of
+// docs/plans/lumina-story-planning-round-2.md.
+//
+// These threads exercise the new MCP / repo surface added by T4 (risks,
+// rejected_alternatives, task_dependencies, get_story_readiness,
+// set_task_kind) and the widened set_story_plan (not_doing,
+// verification_commands). The repo-level CRUD methods are `pub` and
+// therefore drivable from an integration test; the matching MCP
+// `#[tool]` methods (`add_risk` etc.) are private to the crate, so the
+// thread mirrors the existing `full_thread_planning_and_decisions_db_export_http`
+// pattern of calling through `repo::*` for the new families.
+// =====================================================================
+
+/// Helper: seed a legal project → epic → feature → story chain via the MCP
+/// create tool and return the story id. Mirrors `seed_chain_to_story` in
+/// `src/mcp.rs`'s own tests, scoped for these round-2 threads (each thread is
+/// independent so the chain titles can collide across threads).
+async fn seed_story(tools: &LuminaTools, label: &str) -> String {
+    let project = mcp_create(tools, "project", None, &format!("{label} Project")).await;
+    let epic = mcp_create(tools, "epic", Some(&project), &format!("{label} Epic")).await;
+    let feature = mcp_create(tools, "feature", Some(&epic), &format!("{label} Feature")).await;
+    mcp_create(tools, "story", Some(&feature), &format!("{label} Story")).await
+}
+
+/// (a) Setting `not_doing` AFTER setting `problem_statement` + `execution_strategy`
+/// MUST NOT clobber the sibling keys. Regresses the R1/R2 "merge-not-clobber"
+/// bug that made `/lumina:not-doing` the disabled skill — pre-fix,
+/// `update_work_item` column-level COALESCE on `attributes` overwrote the whole
+/// JSON object.
+#[tokio::test]
+async fn set_story_plan_with_not_doing_preserves_sibling_keys() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+    let story = seed_story(&tools, "Not-Doing-Preserve").await;
+
+    // First call — set problem_statement + execution_strategy in one patch.
+    tools
+        .set_story_plan(Parameters(SetStoryPlanParams {
+            id: story.clone(),
+            problem_statement: Some("PS".to_owned()),
+            research_notes: None,
+            execution_strategy: Some("ES".to_owned()),
+            not_doing: None,
+            verification_commands: None,
+        }))
+        .await
+        .expect("first set_story_plan succeeds");
+
+    // Second call — set only not_doing. Should merge, not clobber.
+    tools
+        .set_story_plan(Parameters(SetStoryPlanParams {
+            id: story.clone(),
+            problem_statement: None,
+            research_notes: None,
+            execution_strategy: None,
+            not_doing: Some("Not doing X".to_owned()),
+            verification_commands: None,
+        }))
+        .await
+        .expect("not_doing set_story_plan succeeds");
+
+    let attrs_str: String = sqlx::query_scalar("SELECT attributes FROM work_items WHERE id = ?")
+        .bind(&story)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("read story attributes");
+    let attrs: serde_json::Value =
+        serde_json::from_str(&attrs_str).expect("attributes JSON parses");
+    assert_eq!(
+        attrs["problem_statement"].as_str(),
+        Some("PS"),
+        "problem_statement preserved across the merge"
+    );
+    assert_eq!(
+        attrs["execution_strategy"].as_str(),
+        Some("ES"),
+        "execution_strategy preserved across the merge"
+    );
+    assert_eq!(
+        attrs["not_doing"].as_str(),
+        Some("Not doing X"),
+        "not_doing now set on the merged object"
+    );
+}
+
+/// (b) `not_doing: Option<String>` on `SetStoryPlanParams` is `#[serde(default)]`,
+/// so JSON `{"not_doing": null}` deserialises to `None` (the wire null cannot
+/// distinguish "absent" from "explicitly null" through a plain `Option<String>`
+/// — both produce `None`). Combined with the patch builder omitting the key
+/// when `None`, the on-disk value MUST NOT be deleted by a `null` send.
+///
+/// Additionally the underlying `repo::set_work_item_attributes` runs the patch
+/// through `normalise_object` which strips null-valued keys (see
+/// `lumina/src/repo.rs` near the `set_work_item_attributes` docstring referring
+/// to a future `clear_attribute_key` path) — so even if the MCP layer DID pass
+/// `{"not_doing": null}` through, the repo would no-op the deletion. This test
+/// asserts the contract end-to-end through the public MCP method.
+#[tokio::test]
+async fn set_story_plan_null_does_not_delete_key() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+    let story = seed_story(&tools, "Null-Delete-Guard").await;
+
+    // Seed not_doing="X".
+    tools
+        .set_story_plan(Parameters(SetStoryPlanParams {
+            id: story.clone(),
+            problem_statement: None,
+            research_notes: None,
+            execution_strategy: None,
+            not_doing: Some("X".to_owned()),
+            verification_commands: None,
+        }))
+        .await
+        .expect("seed not_doing");
+
+    // Drive `set_story_plan` over a JSON value that explicitly carries
+    // `"not_doing": null`. This round-trips through the rmcp `Parameters<T>`
+    // deserialiser the same way an MCP client would frame the call, exercising
+    // the wire-level behaviour rather than the Rust-construction shortcut.
+    let raw_null = serde_json::json!({
+        "id": story,
+        "not_doing": null,
+    });
+    let params: SetStoryPlanParams =
+        serde_json::from_value(raw_null).expect("JSON-null round-trips to Option::None on Option<String>");
+    tools
+        .set_story_plan(Parameters(params))
+        .await
+        .expect("null set_story_plan is accepted (treated as omission)");
+
+    let attrs_str: String = sqlx::query_scalar("SELECT attributes FROM work_items WHERE id = ?")
+        .bind(&story)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("read story attributes");
+    let attrs: serde_json::Value =
+        serde_json::from_str(&attrs_str).expect("attributes JSON parses");
+    assert_eq!(
+        attrs["not_doing"].as_str(),
+        Some("X"),
+        "JSON-null on `not_doing` did NOT delete the key — value preserved across the merge"
+    );
+}
+
+/// (c) `risks` end-to-end CRUD + supersession + live-fold filtering through the
+/// public `repo::*` surface (the matching MCP `#[tool]` methods are private to
+/// the crate). Exercises: add → update → supersede → live fold filters
+/// superseded → remove.
+#[tokio::test]
+async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+    let story = seed_story(&tools, "Risks-CRUD").await;
+
+    // add
+    let risk_id = lumina::repo::add_risk(
+        &pool,
+        &story,
+        "R1",
+        Some("body"),
+        Some("rationale"),
+        "medium",
+        Some("mitigation"),
+    )
+    .await
+    .expect("add risk")
+    .to_string();
+
+    let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM risks WHERE id = ?")
+        .bind(&risk_id)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("count");
+    assert_eq!(row_count, 1, "risk row inserted");
+
+    // update — promote severity to high.
+    lumina::repo::update_risk(
+        &pool,
+        &risk_id,
+        &lumina::domain::RiskPatch {
+            summary: None,
+            body: None,
+            rationale: None,
+            severity: Some(lumina::domain::RiskSeverity::High),
+            mitigation: None,
+        },
+    )
+    .await
+    .expect("update risk severity");
+
+    let sev: String = sqlx::query_scalar("SELECT severity FROM risks WHERE id = ?")
+        .bind(&risk_id)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("read severity");
+    assert_eq!(sev, "high", "severity updated by update_risk");
+
+    // supersede — supersede the high-severity row with a critical one.
+    let new_id = lumina::repo::supersede_risk(
+        &pool,
+        &story,
+        &risk_id,
+        "R1 superseded",
+        None,
+        None,
+        "critical",
+        None,
+    )
+    .await
+    .expect("supersede risk")
+    .to_string();
+
+    let superseded_by: Option<String> =
+        sqlx::query_scalar("SELECT superseded_by FROM risks WHERE id = ?")
+            .bind(&risk_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read superseded_by");
+    assert_eq!(
+        superseded_by.as_deref(),
+        Some(new_id.as_str()),
+        "old risk's superseded_by points at the new id"
+    );
+    let new_sev: String = sqlx::query_scalar("SELECT severity FROM risks WHERE id = ?")
+        .bind(&new_id)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("read new severity");
+    assert_eq!(new_sev, "critical");
+
+    // get_work_item_detail returns ONLY the live (non-superseded) risk.
+    let detail = lumina::repo::get_work_item_detail(&pool, &story)
+        .await
+        .expect("story detail");
+    assert_eq!(
+        detail.risks.len(),
+        1,
+        "live fold returns exactly the non-superseded row"
+    );
+    assert_eq!(detail.risks[0].id, new_id, "live risk is the new one");
+    assert!(
+        detail.risks.iter().all(|r| r.id != risk_id),
+        "superseded risk is excluded from the live fold"
+    );
+
+    // remove — hard-delete the new (live) row.
+    lumina::repo::remove_risk(&pool, &new_id)
+        .await
+        .expect("remove risk");
+    let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM risks WHERE id = ?")
+        .bind(&new_id)
+        .fetch_one(pool.as_ref())
+        .await
+        .expect("count after remove");
+    assert_eq!(remaining, 0, "remove_risk hard-deletes the row");
+    // Avoid clippy::no_effect_underscore_binding-style dead-binding warnings.
+    let _ = tools;
+}
+
+/// (d) `rejected_alternatives` end-to-end CRUD + supersession + live-fold
+/// filtering. Mirrors (c) without severity; confidence is free TEXT.
+#[tokio::test]
+async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live_fold() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+    let story = seed_story(&tools, "Alts-CRUD").await;
+
+    let alt_id = lumina::repo::add_rejected_alternative(
+        &pool,
+        &story,
+        "A1",
+        Some("body"),
+        Some("rationale"),
+        Some("medium"),
+    )
+    .await
+    .expect("add alternative")
+    .to_string();
+
+    let row_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rejected_alternatives WHERE id = ?")
+            .bind(&alt_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("count");
+    assert_eq!(row_count, 1, "alternative row inserted");
+
+    // update — bump confidence to high.
+    lumina::repo::update_rejected_alternative(
+        &pool,
+        &alt_id,
+        &lumina::domain::AlternativePatch {
+            summary: None,
+            body: None,
+            rationale: None,
+            confidence: Some("high".to_owned()),
+        },
+    )
+    .await
+    .expect("update alternative confidence");
+
+    let conf: Option<String> =
+        sqlx::query_scalar("SELECT confidence FROM rejected_alternatives WHERE id = ?")
+            .bind(&alt_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read confidence");
+    assert_eq!(conf.as_deref(), Some("high"));
+
+    let new_id = lumina::repo::supersede_rejected_alternative(
+        &pool,
+        &story,
+        &alt_id,
+        "A1 superseded",
+        None,
+        None,
+        Some("low"),
+    )
+    .await
+    .expect("supersede alternative")
+    .to_string();
+
+    let superseded_by: Option<String> =
+        sqlx::query_scalar("SELECT superseded_by FROM rejected_alternatives WHERE id = ?")
+            .bind(&alt_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read superseded_by");
+    assert_eq!(superseded_by.as_deref(), Some(new_id.as_str()));
+
+    let detail = lumina::repo::get_work_item_detail(&pool, &story)
+        .await
+        .expect("story detail");
+    assert_eq!(
+        detail.rejected_alternatives.len(),
+        1,
+        "live fold returns exactly the non-superseded alternative"
+    );
+    assert_eq!(detail.rejected_alternatives[0].id, new_id);
+
+    lumina::repo::remove_rejected_alternative(&pool, &new_id)
+        .await
+        .expect("remove alternative");
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rejected_alternatives WHERE id = ?")
+            .bind(&new_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("count after remove");
+    assert_eq!(remaining, 0);
+    let _ = tools;
+}
+
+/// (e) `block_task_on_task` + `compute_task_batches` happy path. Three tasks
+/// (foundation + two vertical slices both depending on foundation) produce a
+/// two-phase batching: `[[foundation], [slice_a, slice_b]]`. Verifies the
+/// foundation task floats to the earliest phase via the task_kind sort key.
+#[tokio::test]
+async fn compute_task_batches_happy_path_returns_phased_dag() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+    let story = seed_story(&tools, "Batches-Happy").await;
+
+    let t_foundation = mcp_create(&tools, "task", Some(&story), "T-Foundation").await;
+    let t_slice_a = mcp_create(&tools, "task", Some(&story), "T-Slice-A").await;
+    let t_slice_b = mcp_create(&tools, "task", Some(&story), "T-Slice-B").await;
+
+    lumina::repo::set_task_kind(&pool, &t_foundation, Some(TaskKind::Foundation))
+        .await
+        .expect("foundation task_kind");
+    lumina::repo::set_task_kind(&pool, &t_slice_a, Some(TaskKind::VerticalSlice))
+        .await
+        .expect("slice_a task_kind");
+    lumina::repo::set_task_kind(&pool, &t_slice_b, Some(TaskKind::VerticalSlice))
+        .await
+        .expect("slice_b task_kind");
+
+    lumina::repo::add_task_dependency(&pool, &t_slice_a, &t_foundation, "data")
+        .await
+        .expect("slice_a depends on foundation");
+    lumina::repo::add_task_dependency(&pool, &t_slice_b, &t_foundation, "data")
+        .await
+        .expect("slice_b depends on foundation");
+
+    let phases = lumina::repo::compute_task_batches(&pool, &story)
+        .await
+        .expect("compute_task_batches");
+    assert_eq!(phases.len(), 2, "two-phase batching");
+    assert_eq!(phases[0], vec![t_foundation.clone()], "phase 1 = foundation alone");
+    assert_eq!(phases[1].len(), 2, "phase 2 carries the two slices");
+    assert!(
+        phases[1].contains(&t_slice_a) && phases[1].contains(&t_slice_b),
+        "both slices in phase 2: got {:?}",
+        phases[1]
+    );
+
+    // The two edges round-trip through `list_task_dependencies`, ordered by
+    // (task_id, depends_on_id) — the deterministic-output contract.
+    let edges = lumina::repo::list_task_dependencies(&pool, &story)
+        .await
+        .expect("list_task_dependencies");
+    assert_eq!(edges.len(), 2, "two edges in the per-story graph");
+    assert!(
+        edges.iter().any(|e| e.task_id == t_slice_a && e.depends_on_id == t_foundation),
+        "slice_a → foundation edge present"
+    );
+    assert!(
+        edges.iter().any(|e| e.task_id == t_slice_b && e.depends_on_id == t_foundation),
+        "slice_b → foundation edge present"
+    );
+}
+
+/// (f) `compute_task_batches` cycle detection. A two-node cycle (t1 ↔ t2) is
+/// permitted at write-time (no synchronous cycle check on insert by design),
+/// but surfaces as `AppError::Cycle { edges }` when `compute_task_batches`
+/// runs Kahn's. The residue edges include both offending pairs.
+#[tokio::test]
+async fn compute_task_batches_cycle_returns_apperror_cycle() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+    let story = seed_story(&tools, "Batches-Cycle").await;
+
+    let t1 = mcp_create(&tools, "task", Some(&story), "T1").await;
+    let t2 = mcp_create(&tools, "task", Some(&story), "T2").await;
+
+    // Two opposing edges form a cycle. The repo does not block insert.
+    lumina::repo::add_task_dependency(&pool, &t1, &t2, "data")
+        .await
+        .expect("t1 depends on t2");
+    lumina::repo::add_task_dependency(&pool, &t2, &t1, "data")
+        .await
+        .expect("t2 depends on t1 — accepted at write time");
+
+    let result = lumina::repo::compute_task_batches(&pool, &story).await;
+    match result {
+        Err(lumina::error::AppError::Cycle { edges }) => {
+            // Both offending edges land in the residue (order depends on
+            // `list_task_dependencies` sort by (task_id, depends_on_id), but
+            // existence is what matters).
+            assert!(
+                edges.iter().any(|(a, b)| a == &t1 && b == &t2),
+                "residue carries the t1→t2 edge: got {edges:?}"
+            );
+            assert!(
+                edges.iter().any(|(a, b)| a == &t2 && b == &t1),
+                "residue carries the t2→t1 edge: got {edges:?}"
+            );
+        }
+        other => panic!(
+            "expected AppError::Cycle, got {other:?} — compute_task_batches must detect cycles"
+        ),
+    }
+}
+
+/// (g) `get_story_readiness` cascade — representative variants chosen for
+/// load-bearing branches per the plan: empty story (RunProblemStatement);
+/// PS + proposed-only research (RunVetResearch); fully populated up to
+/// the task-list gate (RunDecomposeTasks); fully populated story
+/// (StoryReady). Each is a fresh story to keep the cascade preconditions
+/// surgically clean.
+#[tokio::test]
+async fn get_story_readiness_cascade_covers_load_bearing_variants() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Empty story → RunProblemStatement.
+    let empty = seed_story(&tools, "Readiness-Empty").await;
+    let readiness = lumina::repo::get_story_readiness(&pool, &empty)
+        .await
+        .expect("empty readiness");
+    assert!(
+        !readiness.problem_statement_set,
+        "empty story has no problem_statement"
+    );
+    assert_eq!(
+        readiness.next_recommended_action,
+        NextAction::RunProblemStatement,
+        "cascade head = RunProblemStatement for a freshly-created story"
+    );
+
+    // 2. PS set + one proposed research note → RunVetResearch (proposed but
+    //    not yet accepted).
+    let vet = seed_story(&tools, "Readiness-Vet").await;
+    tools
+        .set_story_plan(Parameters(SetStoryPlanParams {
+            id: vet.clone(),
+            problem_statement: Some("PS".to_owned()),
+            research_notes: None,
+            execution_strategy: None,
+            not_doing: None,
+            verification_commands: None,
+        }))
+        .await
+        .expect("vet PS");
+    let _note = lumina::repo::add_research_note(
+        &pool,
+        &vet,
+        "proposed note",
+        None,
+        Some("medium"),
+        None,
+        None,
+    )
+    .await
+    .expect("proposed note");
+    let readiness = lumina::repo::get_story_readiness(&pool, &vet)
+        .await
+        .expect("vet readiness");
+    assert_eq!(
+        readiness.next_recommended_action,
+        NextAction::RunVetResearch,
+        "proposed-only research notes route to RunVetResearch"
+    );
+    assert_eq!(readiness.accepted_research_count, 0);
+
+    // 3. Fully populated story up to the decompose gate (no child tasks yet)
+    //    → RunDecomposeTasks. Requires: PS + accepted research + no open
+    //    questions + execution_strategy + verification_commands + risk.
+    let decomp = seed_story(&tools, "Readiness-Decomp").await;
+    tools
+        .set_story_plan(Parameters(SetStoryPlanParams {
+            id: decomp.clone(),
+            problem_statement: Some("PS".to_owned()),
+            research_notes: None,
+            execution_strategy: Some("ES".to_owned()),
+            not_doing: None,
+            verification_commands: Some(VerificationCommands {
+                build: Some("cargo build".to_owned()),
+                test: None,
+                lint: None,
+                smoke: None,
+            }),
+        }))
+        .await
+        .expect("decomp story plan");
+    let note = lumina::repo::add_research_note(
+        &pool,
+        &decomp,
+        "accepted note",
+        None,
+        Some("high"),
+        None,
+        None,
+    )
+    .await
+    .expect("research note")
+    .to_string();
+    lumina::repo::update_research_note(
+        &pool,
+        &note,
+        &UpdateResearchNoteRequest {
+            confidence: None,
+            state: Some(ResearchState::Accepted),
+            rationale: Some("ok".to_owned()),
+            lens: None,
+        },
+    )
+    .await
+    .expect("accept the note");
+    lumina::repo::add_risk(&pool, &decomp, "risk", None, None, "low", None)
+        .await
+        .expect("seed risk");
+
+    let readiness = lumina::repo::get_story_readiness(&pool, &decomp)
+        .await
+        .expect("decomp readiness");
+    assert_eq!(
+        readiness.next_recommended_action,
+        NextAction::RunDecomposeTasks,
+        "fully-populated story with no tasks routes to RunDecomposeTasks"
+    );
+    assert!(
+        readiness.ready_for_decomposition,
+        "ready_for_decomposition rolls up true once PS + accepted research + no open Q + approach"
+    );
+
+    // 4. Add a task with an acceptance criterion + a second task with an
+    //    acceptance criterion + at least one task→task edge so the cascade
+    //    reaches StoryReady. (cascade requires every task has AC; with ≥2
+    //    tasks at least one dep edge.)
+    let task_a = mcp_create(&tools, "task", Some(&decomp), "Ready Task A").await;
+    let task_b = mcp_create(&tools, "task", Some(&decomp), "Ready Task B").await;
+    lumina::repo::add_acceptance_criterion(&pool, &task_a, "task_a ok")
+        .await
+        .expect("AC on task_a");
+    lumina::repo::add_acceptance_criterion(&pool, &task_b, "task_b ok")
+        .await
+        .expect("AC on task_b");
+    lumina::repo::add_task_dependency(&pool, &task_b, &task_a, "data")
+        .await
+        .expect("task_b depends on task_a");
+
+    let readiness = lumina::repo::get_story_readiness(&pool, &decomp)
+        .await
+        .expect("ready readiness");
+    assert_eq!(
+        readiness.next_recommended_action,
+        NextAction::StoryReady,
+        "story with PS + accepted research + approach + verif + risk + tasks + AC + edges = StoryReady"
+    );
+    assert!(readiness.has_acceptance_criteria_on_all_tasks);
+}
+
+/// (h) `set_task_kind` happy path: set to `foundation` then clear back to NULL.
+/// Confirms the deliberate divergence from SET-OR-LEAVE — passing `None`
+/// CLEARS the column to NULL (per the tool docstring).
+#[tokio::test]
+async fn set_task_kind_sets_then_clears_to_null() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+    let story = seed_story(&tools, "Task-Kind").await;
+    let task = mcp_create(&tools, "task", Some(&story), "Kinded Task").await;
+
+    // Set.
+    lumina::repo::set_task_kind(&pool, &task, Some(TaskKind::Foundation))
+        .await
+        .expect("set foundation");
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT task_kind FROM work_items WHERE id = ?")
+            .bind(&task)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read task_kind");
+    assert_eq!(
+        stored.as_deref(),
+        Some("foundation"),
+        "task_kind stored as the SQL CHECK literal (kebab-case)"
+    );
+
+    // Clear.
+    lumina::repo::set_task_kind(&pool, &task, None)
+        .await
+        .expect("clear task_kind");
+    let stored_after: Option<String> =
+        sqlx::query_scalar("SELECT task_kind FROM work_items WHERE id = ?")
+            .bind(&task)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read cleared task_kind");
+    assert!(
+        stored_after.is_none(),
+        "passing None CLEARS task_kind back to NULL (composer-friendly divergence from SET-OR-LEAVE)"
+    );
+}
+
+/// (i) Export trail picks up the new sub-tables WITHOUT a parent-touching
+/// event. The single-mutation-path discipline routes every sub-table write's
+/// event through `aggregate_type="work_item"` carrying the OWNING work item's
+/// id, so `render_work_item` re-renders the parent's detail TOML — and the
+/// sub-table is folded by `get_work_item_detail`, which in turn flows through
+/// `WorkItemDetail.{risks, rejected_alternatives, task_dependencies}`.
+///
+/// Regresses T3's cross-aggregate routing decision: a sub-table mutation alone
+/// (no `set_story_plan`, no `update_work_item`) MUST suffice to refresh the
+/// parent's export snapshot.
+#[tokio::test]
+async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+    let story = seed_story(&tools, "Export-Subtables").await;
+    // Two tasks so a task→task edge becomes legal.
+    let task_a = mcp_create(&tools, "task", Some(&story), "Export Task A").await;
+    let task_b = mcp_create(&tools, "task", Some(&story), "Export Task B").await;
+
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+
+    // Baseline drain — all the create events flush; we are about to test that
+    // FUTURE sub-table mutations trigger a re-render of their parent.
+    lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("baseline drain");
+
+    // ---- (i.a) add_risk re-renders the story's snapshot ----
+    lumina::repo::add_risk(&pool, &story, "exported risk", None, None, "high", None)
+        .await
+        .expect("add risk");
+    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("drain after add_risk");
+    assert_eq!(
+        drained, 1,
+        "add_risk emitted exactly one event routed to the work_item aggregate"
+    );
+    let story_snapshot = export_dir.path().join("story").join(format!("{story}.toml"));
+    let story_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&story_snapshot).expect("read story snapshot"))
+            .expect("parse story snapshot TOML");
+    let snap_risks = story_toml["risks"]
+        .as_array()
+        .expect("risks array in story snapshot — sub-table fold reached the TOML");
+    assert_eq!(snap_risks.len(), 1, "exactly one risk in the snapshot");
+    assert_eq!(
+        snap_risks[0]["summary"].as_str(),
+        Some("exported risk"),
+        "the added risk's summary round-trips via the work_item aggregate routing"
+    );
+    assert_eq!(snap_risks[0]["severity"].as_str(), Some("high"));
+
+    // ---- (i.b) add_rejected_alternative re-renders the story's snapshot ----
+    lumina::repo::add_rejected_alternative(
+        &pool,
+        &story,
+        "exported alt",
+        None,
+        Some("rationale"),
+        Some("medium"),
+    )
+    .await
+    .expect("add alternative");
+    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("drain after add_rejected_alternative");
+    assert_eq!(
+        drained, 1,
+        "add_rejected_alternative emitted exactly one event routed to the work_item aggregate"
+    );
+    let story_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&story_snapshot).expect("read story snapshot 2"))
+            .expect("parse story snapshot TOML 2");
+    let snap_alts = story_toml["rejected_alternatives"]
+        .as_array()
+        .expect("rejected_alternatives array in story snapshot");
+    assert_eq!(snap_alts.len(), 1, "one alternative folded");
+    assert_eq!(snap_alts[0]["summary"].as_str(), Some("exported alt"));
+
+    // ---- (i.c) add_task_dependency re-renders the OWNING task's snapshot ----
+    //
+    // The repo routes `task_dependency.added` through
+    // `aggregate_type="work_item", aggregate_id=task_id` (the dependent task,
+    // i.e. `task_b` in the edge `task_b → task_a`). The export drain therefore
+    // re-renders the TASK's snapshot (not the story's); `WorkItemDetail
+    // .task_dependencies` is populated for kind=task rows only, so the task
+    // snapshot is where this surfaces — exactly the cross-aggregate routing
+    // the plan calls out.
+    lumina::repo::add_task_dependency(&pool, &task_b, &task_a, "data")
+        .await
+        .expect("task_b depends on task_a");
+    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("drain after add_task_dependency");
+    assert_eq!(
+        drained, 1,
+        "add_task_dependency emitted exactly one event routed to the work_item aggregate"
+    );
+    let task_b_snapshot = export_dir
+        .path()
+        .join("task")
+        .join(format!("{task_b}.toml"));
+    let task_b_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&task_b_snapshot).expect("read task_b snapshot"))
+            .expect("parse task_b snapshot TOML");
+    let snap_deps = task_b_toml["task_dependencies"]
+        .as_array()
+        .expect("task_dependencies array on task_b snapshot");
+    assert_eq!(
+        snap_deps.len(),
+        1,
+        "task_b carries exactly one outgoing dependency edge"
+    );
+    assert_eq!(snap_deps[0]["task_id"].as_str(), Some(task_b.as_str()));
+    assert_eq!(snap_deps[0]["depends_on_id"].as_str(), Some(task_a.as_str()));
 }
