@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO rejected_alternatives\n            (id, work_item_id, seq, summary, body, rationale, confidence)\n        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "2ef9a2e03b99085f28fe4edb1b6c19924d6df0a11ef2d2838e1e2f94c6d03fe1"
+}

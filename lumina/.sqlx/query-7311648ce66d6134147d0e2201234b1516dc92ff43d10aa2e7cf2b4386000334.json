@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            task_id       AS \"task_id!\",\n            depends_on_id AS \"depends_on_id!\",\n            kind          AS \"kind!\",\n            created_at    AS \"created_at!\"\n        FROM task_dependencies\n        WHERE task_id = ?1 AND depends_on_id = ?2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "task_id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_dependencies",
+            "name": "task_id"
+          }
+        }
+      },
+      {
+        "name": "depends_on_id!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_dependencies",
+            "name": "depends_on_id"
+          }
+        }
+      },
+      {
+        "name": "kind!",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_dependencies",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "task_dependencies",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7311648ce66d6134147d0e2201234b1516dc92ff43d10aa2e7cf2b4386000334"
+}

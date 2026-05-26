@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE rejected_alternatives\n        SET summary    = COALESCE(?2, summary),\n            body       = COALESCE(?3, body),\n            rationale  = COALESCE(?4, rationale),\n            confidence = COALESCE(?5, confidence)\n        WHERE id = ?1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "f21dbc3895193e33dbaccd464c5110d6ad74f9093ab6600c170b952a86b29417"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE risks\n        SET summary    = COALESCE(?2, summary),\n            body       = COALESCE(?3, body),\n            rationale  = COALESCE(?4, rationale),\n            severity   = COALESCE(?5, severity),\n            mitigation = COALESCE(?6, mitigation)\n        WHERE id = ?1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "4769fe9fcb79c46ea013b26473b81fbf1310d7ed7a46844392db3180a8ee11f9"
+}

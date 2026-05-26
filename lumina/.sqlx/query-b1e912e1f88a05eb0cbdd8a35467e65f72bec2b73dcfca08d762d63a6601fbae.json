@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            id            AS \"id!\",\n            kind          AS \"kind!\",\n            parent_id     AS \"parent_id?\",\n            title         AS \"title!\",\n            body          AS \"body?\",\n            status        AS \"status!\",\n            position      AS \"position?\",\n            attributes    AS \"attributes?\",\n            relevance              AS \"relevance?\",\n            effort                 AS \"effort?\",\n            complexity             AS \"complexity?\",\n            origin                 AS \"origin?\",\n            closure_gate           AS \"closure_gate?\",\n            blocked_by_question_id AS \"blocked_by_question_id?\",\n            enabling_option_id     AS \"enabling_option_id?\",\n            created_at    AS \"created_at!\",\n            updated_at    AS \"updated_at!\"\n        FROM work_items\n        WHERE deleted_at IS NULL\n          AND (?1 IS NULL OR parent_id = ?1)\n          AND (?2 IS NULL OR kind = ?2)\n        ORDER BY COALESCE(position, 0), created_at, id\n        ",
+  "query": "\n        SELECT\n            id            AS \"id!\",\n            kind          AS \"kind!\",\n            parent_id     AS \"parent_id?\",\n            title         AS \"title!\",\n            body          AS \"body?\",\n            status        AS \"status!\",\n            position      AS \"position?\",\n            attributes    AS \"attributes?\",\n            relevance              AS \"relevance?\",\n            effort                 AS \"effort?\",\n            complexity             AS \"complexity?\",\n            origin                 AS \"origin?\",\n            closure_gate           AS \"closure_gate?\",\n            blocked_by_question_id AS \"blocked_by_question_id?\",\n            enabling_option_id     AS \"enabling_option_id?\",\n            task_kind              AS \"task_kind?\",\n            created_at    AS \"created_at!\",\n            updated_at    AS \"updated_at!\"\n        FROM work_items\n        WHERE deleted_at IS NULL\n          AND (?1 IS NULL OR parent_id = ?1)\n          AND (?2 IS NULL OR kind = ?2)\n        ORDER BY COALESCE(position, 0), created_at, id\n        ",
   "describe": {
     "columns": [
       {
@@ -169,8 +169,19 @@
         }
       },
       {
-        "name": "created_at!",
+        "name": "task_kind?",
         "ordinal": 15,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "task_kind"
+          }
+        }
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 16,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -181,7 +192,7 @@
       },
       {
         "name": "updated_at!",
-        "ordinal": 16,
+        "ordinal": 17,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -210,9 +221,10 @@
       true,
       true,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "c9a995a8b70d6df2ae2e9e60eaaba59dd7125917f0c19458750b8c95a3a2b8c9"
+  "hash": "b1e912e1f88a05eb0cbdd8a35467e65f72bec2b73dcfca08d762d63a6601fbae"
 }

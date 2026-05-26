@@ -1,0 +1,122 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            id            AS \"id!\",\n            work_item_id  AS \"work_item_id!\",\n            seq           AS \"seq!\",\n            summary       AS \"summary!\",\n            body          AS \"body?\",\n            rationale     AS \"rationale?\",\n            confidence    AS \"confidence?\",\n            superseded_by AS \"superseded_by?\",\n            created_at    AS \"created_at!\"\n        FROM rejected_alternatives\n        WHERE work_item_id = ?1\n          AND superseded_by IS NULL\n        ORDER BY seq\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "work_item_id!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "work_item_id"
+          }
+        }
+      },
+      {
+        "name": "seq!",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "name": "summary!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "name": "body?",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "name": "rationale?",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "rationale"
+          }
+        }
+      },
+      {
+        "name": "confidence?",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "confidence"
+          }
+        }
+      },
+      {
+        "name": "superseded_by?",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "superseded_by"
+          }
+        }
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rejected_alternatives",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "9d30922a291058e1d0ca84eb16f56c89bc12122410c0300331c8941dfd05d006"
+}

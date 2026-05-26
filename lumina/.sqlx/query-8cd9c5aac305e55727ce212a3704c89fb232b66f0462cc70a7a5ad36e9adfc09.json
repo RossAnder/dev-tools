@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"n!\" FROM events WHERE event_type = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "n!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8cd9c5aac305e55727ce212a3704c89fb232b66f0462cc70a7a5ad36e9adfc09"
+}

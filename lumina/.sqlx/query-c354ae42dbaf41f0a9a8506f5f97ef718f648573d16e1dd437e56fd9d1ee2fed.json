@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            id            AS \"id!\",\n            kind          AS \"kind!\",\n            parent_id     AS \"parent_id?\",\n            title         AS \"title!\",\n            body          AS \"body?\",\n            status        AS \"status!\",\n            position      AS \"position?\",\n            attributes    AS \"attributes?\",\n            relevance              AS \"relevance?\",\n            effort                 AS \"effort?\",\n            complexity             AS \"complexity?\",\n            origin                 AS \"origin?\",\n            closure_gate           AS \"closure_gate?\",\n            blocked_by_question_id AS \"blocked_by_question_id?\",\n            enabling_option_id     AS \"enabling_option_id?\",\n            created_at    AS \"created_at!\",\n            updated_at    AS \"updated_at!\"\n        FROM work_items\n        WHERE id = ?1\n        ",
+  "query": "\n        SELECT\n            id            AS \"id!\",\n            kind          AS \"kind!\",\n            parent_id     AS \"parent_id?\",\n            title         AS \"title!\",\n            body          AS \"body?\",\n            status        AS \"status!\",\n            position      AS \"position?\",\n            attributes    AS \"attributes?\",\n            relevance              AS \"relevance?\",\n            effort                 AS \"effort?\",\n            complexity             AS \"complexity?\",\n            origin                 AS \"origin?\",\n            closure_gate           AS \"closure_gate?\",\n            blocked_by_question_id AS \"blocked_by_question_id?\",\n            enabling_option_id     AS \"enabling_option_id?\",\n            task_kind              AS \"task_kind?\",\n            created_at    AS \"created_at!\",\n            updated_at    AS \"updated_at!\"\n        FROM work_items\n        WHERE id = ?1\n        ",
   "describe": {
     "columns": [
       {
@@ -169,8 +169,19 @@
         }
       },
       {
-        "name": "created_at!",
+        "name": "task_kind?",
         "ordinal": 15,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "task_kind"
+          }
+        }
+      },
+      {
+        "name": "created_at!",
+        "ordinal": 16,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -181,7 +192,7 @@
       },
       {
         "name": "updated_at!",
-        "ordinal": 16,
+        "ordinal": 17,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -210,9 +221,10 @@
       true,
       true,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "98c72e51a9bc769ee77471dcf53bb02b6597624b4bccaa0edd7a9f1cbf0cb2f2"
+  "hash": "c354ae42dbaf41f0a9a8506f5f97ef718f648573d16e1dd437e56fd9d1ee2fed"
 }

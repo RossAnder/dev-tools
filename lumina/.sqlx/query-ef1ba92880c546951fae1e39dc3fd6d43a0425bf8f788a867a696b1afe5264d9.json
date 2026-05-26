@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT work_item_id AS \"work_item_id!\" FROM risks WHERE id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "work_item_id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "risks",
+            "name": "work_item_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ef1ba92880c546951fae1e39dc3fd6d43a0425bf8f788a867a696b1afe5264d9"
+}

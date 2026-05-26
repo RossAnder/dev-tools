@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"n!\" FROM events WHERE exported_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "n!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ef760b1c0519eefd5cb4068f6e139bfbf9c6fa3c9654b4f0e253cefe76ac841b"
+}
