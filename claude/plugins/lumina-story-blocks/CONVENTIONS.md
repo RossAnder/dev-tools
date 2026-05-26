@@ -287,8 +287,97 @@ Task dependencies in lumina are first-class edges (migration 0005's `task_depend
 
 The skill body cites this section by reference; do NOT inline Kahn's-algorithm semantics or the phase-display format here. This section is the contract for HOW the task graph composes with the downstream executor, not WHAT user prompts the skill body shows.
 
+## §k Tier derivation rule (round-3)
+
+Lumina's dispatch tier (`Tier::{Lite, Deep}` — migration 0006, `work_items.tier` column) is derived server-side via `repo::compute_tier`. The rule is a single source of truth: skill bodies that need to surface a derived tier MUST call `mcp__lumina__get_task_dispatch_plan` (which composes `compute_task_batches` + `compute_tier` per task) rather than re-deriving client-side.
+
+### §k.0 The rule
+
+```text
+compute_tier(effort, complexity, files_touched_count, has_cross_repo):
+    if complexity == "high":          Deep
+    if effort == "l":                 Deep
+    if files_touched_count > 3:       Deep
+    if has_cross_repo:                Deep
+    else:                             Lite
+```
+
+Mirrors `/implement`'s deep-vs-lite agent split: cross-file refactors, security-sensitive code, judgement-heavy work go Deep (Opus); mechanical, fully-specified, ≤3-file work goes Lite (Sonnet). The `> 3` ceiling matches the `/optimise-apply` / `/review-apply` 3-file-per-item cap — anything above is cross-file by definition.
+
+The rule is intentionally simple (no weights, no calibration). When real workload data accumulates, retuning happens in one place: `repo::compute_tier` + this §k. Round-3 tests pin every branch (`compute_tier_high_complexity_is_deep`, …); changes to the rule are deliberate.
+
+### §k.1 Canonical research-lens vocabulary
+
+The `research_notes.lens` column is free TEXT (migration 0003) — no DB-level enum. Round-3 documents the canonical 5-lens vocabulary used by `/lumina:research-explore`:
+
+| Lens | Meaning |
+|------|---------|
+| `codebase` | Read the project source; surface relevant existing patterns, anti-patterns, and prior decisions. |
+| `library` | Verify third-party library claims: API signatures, version pins, deprecations. |
+| `risk` | Surface failure modes, edge cases, regression vectors. |
+| `completeness` | Coverage analysis: what's missing from the story scope? |
+| `domain` | Subject-matter dive — used only when story `complexity = "high"`. |
+
+Skill bodies (specifically `research-explore`) MUST use these exact wire-form strings; new lenses are added by appending a row here AND updating the consumer skill in the same change. The pre-existing lens conventions documented in §g.2 (`edge-case`, `prior-art`, `tool-eval`, `codebase-recon`, `constraint`, `failure-mode`) are the round-1/2 `research-notes` skill's vocabulary and remain in §g.2 — the §k.1 set is the NEW round-3 multi-agent-exploration vocabulary. The two registries DO overlap in spirit (`risk` ≈ `failure-mode`; `codebase` ≈ `codebase-recon`); a future round-4 may consolidate them.
+
+### §k.2 Typed severity enums (the deliberate vocab split)
+
+Lumina carries TWO severity enums, both typed at the MCP wire surface. They are NOT unified — they describe different concerns:
+
+| Enum | Variants | Wire | Where written |
+|------|----------|------|---------------|
+| `Severity` | `Critical` / `Major` / `Minor` / `Suggestion` | `critical|major|minor|suggestion` (snake_case) | `findings.severity` (column-level free TEXT in DB; typed at MCP-param surface via `AddFindingParams.severity: Option<Severity>` / `UpdateFindingParams.severity: Option<Severity>`). Used for review/story-review/optimise/research-drift findings — categorisation of code-review findings. |
+| `RiskSeverity` | `Low` / `Medium` / `High` / `Critical` | `low|medium|high|critical` (lowercase) | `risks.severity` (column-level CHECK-enforced in DB by migration 0005; typed at MCP-param surface). Used for risk severity on the `risks` table — gates sprint composition. |
+
+**Round-3 closure-gate signal (deferred)**: the round-3 plan proposed extending the closure-gate's hard mode to additionally block `task → done` on open critical/high RISKS on the parent story (in addition to the existing AC-based gate). That extension is deferred to a round-4 follow-up — the load-bearing work (typed Tier + dispatch plan + repo plumbing) shipped in round-3 without requiring the gate extension. Once round-4 lands the extension, §k.2 should be amended to document the gate's risk-aware behaviour.
+
+## §l Six-phase canonical sequence (round-3)
+
+`/lumina:plan-story` walks a story through six canonical phases. Each phase has a HARD precondition computed from `get_story_readiness` booleans (round-2 / migration 0005). Phases gate forward progress; per-block invocation outside `plan-story` is unrestricted (R6 — orchestration ≠ enforcement).
+
+### §l.0 The phase table
+
+| Phase | Blocks | Hard precondition before entry |
+|-------|--------|--------------------------------|
+| 1. Frame | `problem-statement`, `user-interrogation` | none (story exists) |
+| 2. Explore | `research-explore`, `vet-research`, `research-directed` | `problem_statement_set == true` |
+| 3. Decide | `alternatives`, `approach`, `not-doing`, `edge-cases`, `risks` | `accepted_research_count >= 1` AND `unresolved_questions == 0` |
+| 4. Verify-design | `verification-commands`, `acceptance-criteria`, `story-review` | `has_approach == true` |
+| 5. Decompose | `decompose-tasks`, `set-task-spec`, `wire-task-deps` | `acceptance_criteria_count >= 1` AND `verification_commands_set == true` |
+| 6. Closure | `closure-gate`, `relevance` | all tasks have `effort` + `complexity` + `tier` set; zero open critical/high risks on the story (round-4 extension) |
+
+The `verification_commands_set` boolean is not yet exposed by `get_story_readiness` (round-2 added the column but the readiness rollup pre-dates round-3). Until a follow-up extends the readiness query, `plan-story` reads `detail.attributes.verification_commands != null` directly from `get_work_item`.
+
+`Phase` is also a typed domain enum (`lumina::domain::Phase` with kebab-case wire `frame|explore|decide|verify-design|decompose|closure`) — not persisted to a column, but available to skill bodies and the future composer.
+
+### §l.1 Skip-with-override audit contract
+
+`plan-story` allows users to skip a block whose precondition has failed, via a "Skip with override" option in the per-block AskUserQuestion. The override is recorded — never silently — via `record_task_activity`:
+
+```text
+mcp__lumina__record_task_activity {
+  work_item_id: <story_id>,
+  entry_type: "execution",          # NOT "vet" — that's vet-research's exclusive use (§c amendment)
+  origin: "plan",
+  summary: "skip_override: <block_slug>",
+  body: "phase=<phase>; prereq_failed=<short reason>; session=${CLAUDE_SESSION_ID}"
+}
+```
+
+The audit entry is what `/lumina:story-review` later surfaces ("you skipped <block>; was that intentional?"). Without the entry, an override is indistinguishable from a clean walk.
+
+Apply the §c substitution guard verbatim before the call (verify `${CLAUDE_SESSION_ID}` resolved; on non-substitution, write `session=unknown` and warn).
+
+### §l.2 Carve-out — per-block invocation outside plan-story
+
+The six-phase contract binds `/lumina:plan-story` ONLY. Per R6, calling individual skills directly (e.g. `/lumina:problem-statement <id>` when no phase is active) remains unrestricted — no precondition check fires. This carve-out preserves user agency: the chained runner gives structure; direct invocation gives escape.
+
+### §l.3 Phase persistence (deferred)
+
+Round-3 does NOT persist `current_phase` to a column. The phase is recomputed every invocation from `get_story_readiness` booleans. A future round-4 may extend `get_story_readiness` with a `current_phase: Phase` field if user telemetry shows resumption churn.
+
 ---
 
-> **§-letter allocation history**: §a-§h were the round-1 (`lumina-story-planning-workflow`) allocation. §i and §j were added by round-2 (`lumina-story-planning-round-2`). Future rounds should append §k, §l, … rather than re-using a freed letter; reserved letters protect cross-references in skill bodies that cite by short letter.
+> **§-letter allocation history**: §a-§h were the round-1 (`lumina-story-planning-workflow`) allocation. §i and §j were added by round-2 (`lumina-story-planning-round-2`). §k and §l were added by round-3 (`lumina-story-planning-round-3`). Future rounds should append §m, §n, … rather than re-using a freed letter; reserved letters protect cross-references in skill bodies that cite by short letter.
 
-Pointer back: the plugin entry point is `claude/plugins/lumina-story-blocks/README.md`; the parent plan is `docs/plans/lumina-story-planning-workflow.md` (round 1) and `docs/plans/lumina-story-planning-round-2.md` (round 2).
+Pointer back: the plugin entry point is `claude/plugins/lumina-story-blocks/README.md`; the parent plan is `docs/plans/lumina-story-planning-workflow.md` (round 1), `docs/plans/lumina-story-planning-round-2.md` (round 2), and `docs/plans/lumina-story-planning-round-3.md` (round 3).
