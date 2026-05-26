@@ -54,23 +54,52 @@ Default `N = max(3, ceil(0.3 × proposed_count))` — the sampling-N policy from
 
 Pick the sampled notes uniformly at random from the proposed set.
 
-### 4. Spot-check loop (cite `flow-contract-vet-research` for methodology — do NOT re-state the contract inline)
+**Round-3 amendment**: The verification spot-checks are dispatched in parallel — up to 4 concurrent verification sub-agents per pass (R30 — apply-flow agent-per-batch limit). The user-gate (Accept/Reject/Skip/Abort per note) stays sequential, since user decisions cannot parallelise. Sampling N continues to default to `max(3, ceil(0.3 × proposed_count))`.
 
-For each sampled note, follow the universal vet-pass procedure in [`flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md): triage by evidence-grade, honour any `ESCALATE-TO-DEEP` hooks in the body, drop unverified `low-confidence` claims, spot-check the cited claim against its citation. The lumina-specific bindings:
+### 4. Spot-check (cite `flow-contract-vet-research` for methodology — do NOT re-state the contract inline)
+
+For each sampled note, follow the universal vet-pass procedure in [`flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md): triage by evidence-grade, honour any `ESCALATE-TO-DEEP` hooks in the body, drop unverified `low-confidence` claims, spot-check the cited claim against its citation. The lumina-specific bindings split into two phases — a parallel verification dispatch followed by a sequential user gate.
+
+#### 4a. Phase A — parallel verification dispatch (R30 cap = 4)
+
+For the sampled note set of size N:
+
+- If `N <= 4`: dispatch one verification sub-agent per note in a SINGLE Agent-tool message — one `<invoke>` block per note, all in parallel.
+- If `N > 4`: chunk into `ceil(N / 4)` passes of up to 4 notes each. Each pass is itself a single-message parallel dispatch (parallel within the pass); passes run sequentially.
+
+Cite R30: the 4-agent cap matches `/plan-new` Phase 3's apply-flow agent-per-batch limit; above 4 the orchestrator chokes on returning agent count.
+
+Each sub-agent receives a self-contained prompt carrying ONE note and performs the spot-check work for that note:
 
 - **Citation extraction**: read the note's `body` and identify the verifiable claim:
   - URL → fetch with `WebFetch` (or `Read` if file://) and confirm the cited fact.
   - `file:line` → `Read` that range (or `Grep` the symbol) and confirm the code matches the description.
   - Library version pin → `mcp__plugin_context7_context7__query-docs` against the cited library ID and confirm the version reference.
   - Tool catalogue claim → cross-check against [`../mcp/SKILL.md`](../mcp/SKILL.md).
-- **Per-note `AskUserQuestion`** with a skill-agent recommendation derived from the spot-check:
-  > **Question header**: `Vet decision for "<note-summary>"?`
-  > **Question body**: `Note (lens=<lens>, confidence=<grade>): <summary>. Spot-check finding: <what the agent verified or failed to verify>. Recommendation: <Accept | Reject | Skip>.`
-  > **Options** (4):
-  > - `Accept (state=accepted)` — promote the note.
-  > - `Reject (state=rejected)` — drop the note from the live set.
-  > - `Skip` — leave as `proposed`, neither promoting nor rejecting.
-  > - `Abort` — stop the whole skill invocation; no further notes processed.
+
+Each sub-agent returns a structured record:
+
+```
+{
+  note_id: "<note id>",
+  verification_outcome: "confirmed" | "drift" | "inconclusive",
+  evidence: "<one-line description of what was checked and what the agent found>"
+}
+```
+
+The skill body collects the N records before proceeding to Phase B. No user prompts fire during Phase A.
+
+#### 4b. Phase B — sequential user gate
+
+Walk the verified set in the original sample order. For each note, fire a per-note `AskUserQuestion` with the sub-agent's verification outcome surfaced in the question body. This phase MUST stay sequential — user decisions cannot parallelise.
+
+> **Question header**: `Vet decision for "<note-summary>"?`
+> **Question body**: `Note (lens=<lens>, confidence=<grade>): <summary>. Spot-check outcome: <confirmed | drift | inconclusive> — <evidence>. Recommendation: <Accept | Reject | Skip>.`
+> **Options** (4):
+> - `Accept (state=accepted)` — promote the note.
+> - `Reject (state=rejected)` — drop the note from the live set.
+> - `Skip` — leave as `proposed`, neither promoting nor rejecting.
+> - `Abort` — stop the whole skill invocation; no further notes processed.
 
 ### 5. Promotion / rejection write (§b steps 3-5; per-element per §b-per-element)
 
