@@ -1,36 +1,45 @@
 @theme {
-  /* Colors — OKLCH from docs/design_handoff_lumina_control/styles.css :root */
-  --color-accent: oklch(0.78 0.13 70);
-  --color-accent-deep: oklch(0.62 0.13 65);
-  --color-accent-glow: oklch(0.78 0.13 70 / 0.18);
-  --color-in-flight: oklch(0.74 0.10 145);
-  --color-queued: oklch(0.68 0.04 80);
-  --color-blocked: oklch(0.65 0.16 28);
-  --color-done: oklch(0.62 0.04 95);
+    /* Colors — OKLCH from docs/design_handoff_lumina_control/styles.css :root */
+    --color-accent: oklch(0.6574 0.2008 37.1);
+    --color-accent-deep: oklch(0.603 0.2013 37.1);
+    --color-accent-glow: oklch(0.6574 0.2187 37.1 / 19.17%);
+    --color-in-flight: oklch(0.74 0.1 145);
+    --color-queued: oklch(0.68 0.04 80);
+    --color-blocked: oklch(0.65 0.16 28);
+    --color-done: oklch(0.62 0.04 95);
 
-  /* Fonts */
-  --font-display: "Instrument Serif", serif;
-  --font-sans: "Geist Sans", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    /* Fonts */
+    --font-display: "Instrument Serif", serif;
+    --font-sans: "Geist Sans", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* Radii */
-  --radius-sm: 3px;
-  --radius-md: 5px;
-  --radius-lg: 8px;
-  --radius-xl: 14px;
+    /* Radii */
+    --radius-sm: 3px;
+    --radius-md: 5px;
+    --radius-lg: 8px;
+    --radius-xl: 14px;
 
-  /* Animations — keyframes MUST live inside @theme so Tailwind v4
+    /* Animations — keyframes MUST live inside @theme so Tailwind v4
      tree-shakes them when no animate-* utility references them. */
-  --animate-pulse-dot: pulse-dot 2s infinite;
-  --animate-indeterminate: indeterminate 1.4s linear infinite;
+    --animate-pulse-dot: pulse-dot 2s infinite;
+    --animate-indeterminate: indeterminate 1.4s linear infinite;
 
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
+    @keyframes pulse-dot {
+        0%,
+        100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.4;
+        }
+    }
 
-  @keyframes indeterminate {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
-  }
+    @keyframes indeterminate {
+        0% {
+            transform: translateX(-100%);
+        }
+        100% {
+            transform: translateX(100%);
+        }
+    }
 }
