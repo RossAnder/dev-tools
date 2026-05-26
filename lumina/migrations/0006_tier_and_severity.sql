@@ -1,0 +1,67 @@
+-- Requires SQLite >=3.38 (forward-only typing of tier + severity)
+--
+-- lumina migration 0006: tier column on work_items (round-3 dispatch grade).
+--
+-- Additive / non-destructive over 0001-0005. One class of change:
+--   1. New nullable `work_items.tier` column — task-scope dispatch grade
+--      (lite | deep) consumed by the round-3 sprint composer to route a task
+--      to `flow-implement-lite` vs `flow-implement-deep`. Nullable, CHECK
+--      accepts NULL OR the two enum literals. Mirrors the 0005 `task_kind`
+--      ALTER idiom byte-for-byte (IS NULL OR IN (...) ordering, no default).
+--
+-- Design constraints (mirroring 0001-0005):
+--   * SQL kept ANSI-ish for a later Postgres port.
+--   * `tier` is added via ALTER TABLE ADD COLUMN with a CHECK that admits
+--     NULL (per R16 — ALTER-added columns must accept NULL; SQLite's
+--     ALTER TABLE ADD COLUMN cannot carry a non-constant DEFAULT, a
+--     PK/UNIQUE, or a retroactive CHECK that excludes NULL on a no-default
+--     column). No default; existing rows remain NULL.
+--   * Non-task rows are expected to leave this NULL; the repo layer is the
+--     source of truth for "only task rows may carry a tier" (no DB-level
+--     kind-coupling guard, matching how 0003's task-only `effort`/
+--     `complexity` columns and 0005's `task_kind` column are left
+--     repo-validated).
+
+-- ---------------------------------------------------------------------------
+-- work_items.tier: task-scope dispatch grade for the round-3 sprint composer.
+-- Nullable, no default — per R16, ALTER-added columns must accept NULL.
+-- The CHECK admits NULL OR one of the two enum literals (lite | deep).
+-- ---------------------------------------------------------------------------
+ALTER TABLE work_items ADD COLUMN tier TEXT
+    CHECK (tier IS NULL OR tier IN ('lite', 'deep'));
+
+-- ---------------------------------------------------------------------------
+-- findings.severity: deliberately NOT CHECK-constrained at the DB layer.
+--
+-- SQLite cannot ADD a CHECK constraint to an existing table without a full
+-- table rebuild (the 12-step CREATE/INSERT/DROP/RENAME dance documented at
+-- https://www.sqlite.org/lang_altertable.html#otheralter). The `findings`
+-- table was declared with `severity TEXT` (free, unconstrained) in
+-- migration 0001_init.sql and has carried real data since; a rebuild-just-
+-- to-tighten-the-column is a deliberate non-rebuild trade.
+--
+-- Round-3 instead enforces severity at the Rust layer via the existing
+-- `Severity` enum (lumina/src/domain.rs:471 — variants
+-- `Critical | Major | Minor | Suggestion`, snake_case wire form
+-- `critical|major|minor|suggestion`). The enum is already wired into
+-- `AddFindingParams.severity: Option<Severity>` at lumina/src/mcp.rs:451,
+-- so serde's param-deserialise path rejects free-form severity strings on
+-- every MCP write through `add_finding` / `update_finding`. The DB column
+-- `findings.severity` remains free TEXT — validate-before-write at every
+-- entry point is the authoritative guard.
+--
+-- CRITICAL — two severity vocabularies, deliberately distinct:
+--   * `Severity::{Critical, Major, Minor, Suggestion}`
+--     (lumina/src/domain.rs:471) — review-finding *categorisation*.
+--     Wire: `critical|major|minor|suggestion`. Used by `findings.severity`.
+--     Free TEXT at the DB layer; typed at the Rust layer.
+--   * `RiskSeverity::{Low, Medium, High, Critical}`
+--     (lumina/src/domain.rs:650) — risk *severity*. Wire:
+--     `low|medium|high|critical`. CHECK-enforced at the DB layer on
+--     `risks.severity` (migration 0005 line 90), because risk severity
+--     gates sprint composition and needs a closed enum at the DB layer.
+-- These two enums share only the literal `Critical` and otherwise have
+-- disjoint vocabularies; do NOT conflate them. The asymmetry — one
+-- DB-checked, one Rust-only — is a direct consequence of `risks` being a
+-- fresh table in 0005 (CHECK at create time) vs `findings` being a 0001
+-- table (no retroactive CHECK without rebuild).
