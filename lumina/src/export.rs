@@ -845,6 +845,7 @@ mod tests {
             closure_gate: Some("hard".to_owned()),
             blocked_by_question_id: None,
             enabling_option_id: None,
+            task_kind: None,
             created_at: "2026-05-22T00:00:00Z".to_owned(),
             updated_at: "2026-05-22T00:00:00Z".to_owned(),
         };
@@ -892,6 +893,9 @@ mod tests {
             research_notes: vec![],
             open_questions: vec![question],
             repo_links: vec![],
+            risks: vec![],
+            rejected_alternatives: vec![],
+            task_dependencies: vec![],
         };
 
         // The SAME conversion render_work_item performs: whole-struct → table →

@@ -403,6 +403,10 @@ pub async fn list_work_items(
                 closure_gate: r.closure_gate,
                 blocked_by_question_id: r.blocked_by_question_id,
                 enabling_option_id: r.enabling_option_id,
+                // T3 will widen this SELECT to include `task_kind` and populate
+                // the field from the row; T2 stubs it as None to keep the build
+                // green after adding the field to the struct.
+                task_kind: None,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             })
@@ -467,6 +471,10 @@ pub async fn get_work_item_detail(
         closure_gate: row.closure_gate,
         blocked_by_question_id: row.blocked_by_question_id,
         enabling_option_id: row.enabling_option_id,
+        // T3 will widen this SELECT to include `task_kind` and populate the
+        // field from the row; T2 stubs it as None to keep the build green
+        // after adding the field to the struct.
+        task_kind: None,
         created_at: row.created_at,
         updated_at: row.updated_at,
     };
@@ -515,6 +523,12 @@ pub async fn get_work_item_detail(
         research_notes,
         open_questions,
         repo_links,
+        // T3 will populate these from the new `risks` / `rejected_alternatives`
+        // / `task_dependencies` tables (migration 0005). T2 stubs them as empty
+        // vecs to keep the build green after adding the fields to the struct.
+        risks: Vec::new(),
+        rejected_alternatives: Vec::new(),
+        task_dependencies: Vec::new(),
     })
 }
 

@@ -44,6 +44,13 @@ pub struct WorkItem {
     pub blocked_by_question_id: Option<String>,
     /// Task is exclusive to this `question_options` branch (migration 0003).
     pub enabling_option_id: Option<String>,
+    /// Task-scope discriminator (migration 0005): `foundation|vertical-slice|
+    /// pattern-replacement|polish`. NULL on non-task rows; the repo layer is the
+    /// source of truth for the "task rows only" rule (no DB-level kind coupling).
+    /// Mirrors the `effort`/`complexity` idiom — stored as `Option<String>` on
+    /// the row, with the typed [`TaskKind`] enum used by the wire / MCP layer.
+    #[serde(default)]
+    pub task_kind: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -203,6 +210,74 @@ pub struct RepoLink {
     pub created_at: String,
 }
 
+/// A row of `rejected_alternatives` (migration 0005): a per-work-item option
+/// considered during planning and discarded, carrying a confidence grade and a
+/// self-FK supersession chain. Mirrors the 0003 `research_notes` idiom; the
+/// `confidence` column is free TEXT (validated in the repo), matching
+/// `research_notes.confidence`. Read aggregate only — `Serialize`, no
+/// `JsonSchema` (per the row-struct convention; the matching create/update
+/// bodies live as separate `*Request` types).
+#[derive(Debug, Clone, Serialize)]
+pub struct RejectedAlternative {
+    pub id: String,
+    pub work_item_id: String,
+    pub seq: i64,
+    pub summary: String,
+    pub body: Option<String>,
+    pub rationale: Option<String>,
+    /// `high|medium|low` evidence grade (free TEXT; validated in the repo,
+    /// matching `research_notes.confidence`).
+    pub confidence: Option<String>,
+    /// Self-FK to the alternative that supersedes this one; live alternatives
+    /// are `superseded_by IS NULL`.
+    pub superseded_by: Option<String>,
+    pub created_at: String,
+}
+
+/// A row of `risks` (migration 0005): a per-work-item risk register entry with
+/// a closed-enum severity (CHECK-constrained at the DB layer, see
+/// [`RiskSeverity`]) and an optional free-text mitigation. Shape mirrors
+/// [`RejectedAlternative`] / `ResearchNote`. Read aggregate only — `Serialize`,
+/// no `JsonSchema`. `severity` is `Option<String>` on the row (NOT a typed
+/// [`RiskSeverity`]) to match the codebase idiom: `Finding.severity`,
+/// `WorkItem.relevance`/`effort`/`complexity` all carry the closed enum as
+/// `Option<String>` and surface the typed enum at the wire / MCP-param layer.
+#[derive(Debug, Clone, Serialize)]
+pub struct Risk {
+    pub id: String,
+    pub work_item_id: String,
+    pub seq: i64,
+    pub summary: String,
+    pub body: Option<String>,
+    pub rationale: Option<String>,
+    /// `low|medium|high|critical` — CHECK-enforced at the DB layer (see
+    /// [`RiskSeverity`]). Carried as `Option<String>` on the row to match the
+    /// repo's `query_as!` field-typing idiom; absent (NULL) is rejected by the
+    /// `NOT NULL` column constraint, so in practice this is always `Some(_)`
+    /// when read, but the `Option<_>` mirrors the SQLite nullable-by-default
+    /// column-as-Rust-type convention used throughout the file.
+    pub severity: Option<String>,
+    pub mitigation: Option<String>,
+    /// Self-FK to the risk that supersedes this one; live risks are
+    /// `superseded_by IS NULL`.
+    pub superseded_by: Option<String>,
+    pub created_at: String,
+}
+
+/// A row of `task_dependencies` (migration 0005): a directed edge between two
+/// `kind=task` work-items. The composite PK `(task_id, depends_on_id)` makes
+/// duplicate edges structurally impossible; the kind-check trigger on INSERT
+/// enforces that both endpoints are task rows. Read aggregate only —
+/// `Serialize`, no `JsonSchema`.
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskDependency {
+    pub task_id: String,
+    pub depends_on_id: String,
+    /// Edge category — `data|sequence|…`; free TEXT, default `'data'`.
+    pub kind: String,
+    pub created_at: String,
+}
+
 /// A row of `context_blocks` — the drift-killer. Shared context is one row
 /// referenced by many work-items through `work_item_context`.
 #[derive(Debug, Clone, Serialize)]
@@ -236,6 +311,20 @@ pub struct WorkItemDetail {
     /// `item.kind == "project"`; empty otherwise.
     #[serde(default)]
     pub repo_links: Vec<RepoLink>,
+    /// The item's risk register (migration 0005), ordered by `seq`. Repo layer
+    /// implements the fold (Task 3).
+    #[serde(default)]
+    pub risks: Vec<Risk>,
+    /// The item's rejected planning alternatives (migration 0005), ordered by
+    /// `seq`. Repo layer implements the fold (Task 3).
+    #[serde(default)]
+    pub rejected_alternatives: Vec<RejectedAlternative>,
+    /// Outgoing task→task dependency edges (migration 0005) — populated only
+    /// when `item.kind == "task"`; empty otherwise. Repo layer (Task 3) is the
+    /// source of truth for the kind filter; an empty vec is the
+    /// not-applicable state for non-task rows.
+    #[serde(default)]
+    pub task_dependencies: Vec<TaskDependency>,
 }
 
 /// Create-body for a new work item. Deserialised by the HTTP POST handler
@@ -548,6 +637,105 @@ pub enum ClosureGate {
     Hard,
     /// Allow task→done but surface the unchecked-criterion count (default).
     Soft,
+}
+
+/// Risk severity (migration 0005) — CHECK-enforced at the DB layer on the
+/// `risks.severity` column (`low|medium|high|critical`). The wire form matches
+/// the SQL CHECK literals byte-for-byte (lowercase). Used at the MCP-param /
+/// HTTP layer; the [`Risk`] row struct carries severity as `Option<String>`
+/// per the row-struct idiom (see `Finding.severity`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RiskSeverity {
+    /// Low severity.
+    Low,
+    /// Medium severity.
+    Medium,
+    /// High severity.
+    High,
+    /// Critical severity — gates sprint composition.
+    Critical,
+}
+
+/// Task-scope discriminator (migration 0005) — CHECK-enforced at the DB layer
+/// on the `work_items.task_kind` column (`foundation|vertical-slice|
+/// pattern-replacement|polish`). The wire form matches the SQL CHECK literals
+/// byte-for-byte (kebab-case). Used at the MCP-param / HTTP layer; the
+/// [`WorkItem`] row struct carries `task_kind` as `Option<String>` per the
+/// row-struct idiom (see `effort`/`complexity`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskKind {
+    /// Foundation — must-land scaffolding for downstream work.
+    Foundation,
+    /// Vertical slice — end-to-end thin slice.
+    VerticalSlice,
+    /// Pattern replacement — swapping an existing pattern wholesale.
+    PatternReplacement,
+    /// Polish — quality / hardening work.
+    Polish,
+}
+
+/// Aggregate readiness summary for a story (migration 0005 / Phase 3 planning
+/// pipeline): the per-section counts, a roll-up boolean, and the next
+/// recommended planning action (see [`NextAction`]). Computed by the repo
+/// layer (Task 3) from the story's children + child tables; returned by the
+/// MCP `story_readiness` tool / matching HTTP endpoint. Read aggregate only —
+/// `Serialize`, no `JsonSchema` (mirrors `WorkItemDetail`; the MCP layer
+/// wraps it with `Content::json` rather than `Json<T>`).
+#[derive(Debug, Clone, Serialize)]
+pub struct StoryReadiness {
+    pub story_id: String,
+    pub problem_statement_set: bool,
+    pub accepted_research_count: u32,
+    pub unresolved_questions: u32,
+    pub has_approach: bool,
+    pub has_acceptance_criteria_on_all_tasks: bool,
+    pub ready_for_decomposition: bool,
+    pub next_recommended_action: NextAction,
+}
+
+/// The recommended next planning action for a story, computed from the story's
+/// current population state and the canonical Phase-3 block sequence:
+/// `problem-statement → research-notes → vet-research → user-interrogation →
+/// alternatives → approach → not-doing → verification-commands → edge-cases →
+/// risks → decompose-tasks → set-task-spec → wire-task-deps → story-review`.
+/// The terminal `StoryReady` variant indicates no recommendation; the story is
+/// fully populated. Serialises snake_case so the wire value matches the other
+/// planning enums.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NextAction {
+    /// Run the `problem-statement` block.
+    RunProblemStatement,
+    /// Run the `research-notes` block.
+    RunResearchNotes,
+    /// Run the `vet-research` block.
+    RunVetResearch,
+    /// Run the `user-interrogation` block.
+    RunUserInterrogation,
+    /// Run the `alternatives` block.
+    RunAlternatives,
+    /// Run the `approach` block.
+    RunApproach,
+    /// Run the `not-doing` block.
+    RunNotDoing,
+    /// Run the `verification-commands` block.
+    RunVerificationCommands,
+    /// Run the `edge-cases` block.
+    RunEdgeCases,
+    /// Run the `risks` block.
+    RunRisks,
+    /// Run the `decompose-tasks` block.
+    RunDecomposeTasks,
+    /// Run the `set-task-spec` block.
+    RunSetTaskSpec,
+    /// Run the `wire-task-deps` block.
+    RunWireTaskDeps,
+    /// Run the `story-review` block.
+    RunStoryReview,
+    /// Terminal — story is fully populated; no further action recommended.
+    StoryReady,
 }
 
 /// Partial-update body for a research note's curatable fields (migration 0003),
