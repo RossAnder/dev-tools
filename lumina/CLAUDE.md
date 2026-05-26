@@ -45,8 +45,8 @@ The migration-0005 story-planning-round-2 pass added the following tool families
 
 ## Story-block skills plugin
 
-Lumina's MCP tool surface is driven by the nine `/lumina:<block>` skills in the plugin at
-`claude/plugins/lumina-story-blocks/`. The prerequisites checklist (server running, MCP registered as `lumina`) and full skill catalogue live in `claude/plugins/lumina-story-blocks/README.md`.
+Lumina's MCP tool surface is driven by the `/lumina:<block>` skills in the plugin at
+`claude/plugins/lumina-story-blocks/`. Round-1 shipped nine per-block writers (problem-statement, research-notes, user-interrogation, acceptance-criteria, approach, not-doing, edge-cases, relevance, closure-gate); round-2 added ten more (risks, alternatives, verification-commands, vet-research, story-review, next-block advisor, plan-story chained runner, decompose-tasks, set-task-spec, wire-task-deps) — nineteen `/lumina:*` slash commands total. The prerequisites checklist (server running, MCP registered as `lumina`) and the full skill catalogue live in `claude/plugins/lumina-story-blocks/README.md`; the round-2 MCP tool catalogue extension (risks/alternatives CRUD, task graph, get_story_readiness, set_task_kind, widened set_story_plan) is in `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`.
 
 Permanent install (persists to `.claude/settings.json`, all clones inherit):
 
