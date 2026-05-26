@@ -207,3 +207,72 @@ summary = "All 9 implementation tasks complete; T10 manual smoke test awaits use
 from_status = "in-progress"
 to_status = "review"
 dedup_id = "32b4d0a47802bbbb"
+
+[[items]]
+id = "E17"
+type = "deviation"
+date = 2026-05-25
+agent = "review-apply"
+task_ref = "4"
+summary = "Disabled lumina:not-doing skill behind fail-loud abort gates (R1)"
+original_intent = "Task 4 shipped /lumina:not-doing as a live planning-block skill that writes attributes.not_doing via mcp__lumina__update_work_item; plan §The 9 skills lists it among the 9 active skills."
+rationale = "/review found that update_work_item performs column-level COALESCE on attributes (lumina/src/repo.rs:1404-1421), not per-key JSON merge — invoking the skill on a story that already has problem_statement or execution_strategy would silently destroy those siblings. The safe merge primitive set_work_item_attributes (repo.rs:1524) is composed only by set_story_plan/set_task_spec, not exposed as a standalone MCP tool. Disable the skill (warning banner + step 3/5 aborts) until lumina ships a safe attributes-merge MCP tool or widens SetStoryPlanParams to accept not_doing."
+supersedes_entry = "E6"
+dedup_id = "29017553ae4d9e64"
+
+[[items]]
+id = "E18"
+type = "deviation"
+date = 2026-05-25
+agent = "review-apply"
+task_ref = "2"
+summary = "CONVENTIONS.md §g attributes.not_doing row marked DISABLED (R2)"
+original_intent = "Task 2 wrote CONVENTIONS.md §g claiming attributes.not_doing rides update_work_item's JSON-merge semantics with absent keys untouched."
+rationale = "/review confirmed update_work_item does column-level COALESCE on attributes (lumina/src/repo.rs:1404-1421) — not per-key JSON merge. The §g row's storage primitive cell was rewritten to DISABLED with a pointer to R1; the Notes bullet was rewritten to enumerate two promotion options (new set_work_item_attributes MCP tool or widened SetStoryPlanParams)."
+supersedes_entry = "E4"
+dedup_id = "8967045689206bbe"
+
+[[items]]
+id = "E19"
+type = "deviation"
+date = 2026-05-25
+agent = "review-apply"
+task_ref = "2"
+summary = "Appended 5 lens rows to CONVENTIONS.md §g registry for /lumina:research-notes (R3)"
+original_intent = "Task 2 wrote CONVENTIONS.md §g with only 2 lens-convention rows (attributes.not_doing, lens=edge-case); the §g preamble declares it the SINGLE SOURCE OF TRUTH for lens conventions."
+rationale = "/review found that the research-notes skill body (Task 7, E9) writes 5 unregistered lens values to research_notes.lens (prior-art, tool-eval, codebase-recon, constraint, failure-mode) — exactly the silent-lens-use failure mode §g exists to prevent. Appended 5 rows binding each lens to lumina:research-notes; added a sentence confirming lens=edge-case remains reserved for /lumina:edge-cases. Restores the §g single-source-of-truth invariant."
+dedup_id = "57035af210bcc611"
+
+[[items]]
+id = "E20"
+type = "deviation"
+date = 2026-05-25
+agent = "review-apply"
+task_ref = "8"
+summary = "Absorbed standalone claude/skills/lumina/SKILL.md into the plugin as /lumina:mcp (R4)"
+original_intent = "Tasks 1 + 8 (E3 + E10) shipped the plugin with manifest name 'lumina' AND kept the standalone catalogue skill at claude/skills/lumina/SKILL.md (also name: lumina). Two surfaces with the same name coexisted in the agent routing context."
+rationale = "/review R4 flagged the namespace collision as critical. User chose path (c) over the two paths the finding originally suggested: rather than rename the plugin or the standalone skill, the catalogue is MOVED into the plugin as a new read-only mcp skill (invokable as /lumina:mcp). The plugin manifest's name: 'lumina' is preserved; the standalone claude/skills/lumina/ directory is deleted; CONVENTIONS.md §a is updated with a read-only / documentation-skill exception so the mcp skill can omit disable-model-invocation: true and remain model-discoverable. 9 in-scope file edits + 1 out-of-scope (root CLAUDE.md line 47)."
+supersedes_entry = "E10"
+dedup_id = "559c10b59a6e9fae"
+
+[[items]]
+id = "E21"
+type = "deviation"
+date = 2026-05-25
+agent = "review-apply"
+task_ref = "6"
+summary = "Replaced user-interrogation line-104 anchors with §Planning & decision tools (incidentally resolves R7)"
+original_intent = "Task 6 (E8) authored user-interrogation/SKILL.md with two cites of 'claude/skills/lumina/SKILL.md line 104' as the canonical anchor for the add_open_question story_id-not-work_item_id gotcha."
+rationale = "As part of the R4 catalogue move (E20), the user-interrogation SKILL.md needed updated paths. Line numbers don't survive file moves, so both anchors were upgraded to the durable section anchor §Planning & decision tools. This incidentally resolves /review finding R7 (stale line 104 reference) — R7 itself remains status=open in the ledger because it was not in the explicit selector; user may run /review-apply R7 to mark it verified-clean."
+dedup_id = "e12ce970ad0ffc3f"
+
+[[items]]
+id = "E22"
+type = "deviation"
+date = 2026-05-25
+agent = "review-apply"
+task_ref = "out-of-scope"
+summary = "Updated repo-root CLAUDE.md catalogue cross-reference (out-of-scope edit)"
+original_intent = "Repo-root CLAUDE.md line 47 cited the standalone skill at claude/skills/lumina/SKILL.md as the companion agent-facing usage guide."
+rationale = "The standalone file was moved into the plugin as part of R4's resolution (E20). The repo-root CLAUDE.md is OUTSIDE the flow's scope globs (claude/plugins/lumina-story-blocks/**, claude/skills/lumina/SKILL.md, lumina/CLAUDE.md) but the cross-reference would otherwise dangle. Single-line update repointing to claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md."
+dedup_id = "3f6553b9592b2da3"

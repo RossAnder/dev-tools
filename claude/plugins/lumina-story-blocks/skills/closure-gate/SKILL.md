@@ -13,7 +13,7 @@ This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIO
 
 ## Target
 
-`set_closure_gate` is story-only. Per the lumina tool catalogue (`claude/skills/lumina/SKILL.md` §Planning & decision tools), it rejects any other kind at the server. This skill fails loud at step 2 below if the caller passes a non-story id.
+`set_closure_gate` is story-only. Per the lumina tool catalogue (`../mcp/SKILL.md` §Planning & decision tools), it rejects any other kind at the server. This skill fails loud at step 2 below if the caller passes a non-story id.
 
 ## Behavioural effect (read this before invoking)
 
