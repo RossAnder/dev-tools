@@ -31,11 +31,11 @@ use sqlx::{Sqlite, SqlitePool, Transaction};
 use uuid::Uuid;
 
 use crate::domain::{
-    AcceptanceCriterion, ActivityType, AlternativePatch, ClosureGate, Complexity, ContextBlock,
-    Disposition, Effort, Finding, NextAction, OpenQuestion, QuestionOption, RejectedAlternative,
-    Relevance, RepoLink, ResearchNote, ResearchState, Risk, RiskPatch, RiskSeverity, StoryReadiness,
-    TaskDependency, TaskKind, UpdateFindingRequest, UpdateResearchNoteRequest,
-    UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
+    AcceptanceCriterion, ActivityType, AlternativePatch, BatchEntry, ClosureGate, Complexity,
+    ContextBlock, Disposition, Effort, Finding, NextAction, OpenQuestion, QuestionOption,
+    RejectedAlternative, Relevance, RepoLink, ResearchNote, ResearchState, Risk, RiskPatch,
+    RiskSeverity, StoryReadiness, TaskDependency, TaskKind, Tier, UpdateFindingRequest,
+    UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
 };
 use crate::error::AppError;
 
@@ -3867,6 +3867,52 @@ pub async fn set_task_kind(
 }
 
 // ---------------------------------------------------------------------------
+// compute_tier (migration 0006). Pure function deriving the dispatch [`Tier`]
+// from a task's spec (effort, complexity, files-touched count, cross-repo
+// flag). No I/O, no async — consumed by the read-only `get_task_dispatch_plan`
+// fold below.
+// ---------------------------------------------------------------------------
+
+/// Derive the dispatch [`Tier`] from a task's spec.
+///
+/// Rule (round-3, documented in CONVENTIONS.md §k of the
+/// `lumina-story-blocks` plugin):
+///
+/// ```text
+/// if complexity == "high":          Deep
+/// if effort == "l":                 Deep
+/// if files_touched_count > 3:       Deep
+/// if has_cross_repo:                Deep
+/// else:                             Lite
+/// ```
+///
+/// `effort` and `complexity` are passed as `Option<&str>` to match the
+/// row-struct idiom (free-text-in-row); unrecognised wire values fall through
+/// to the residual `Lite` branch (defensive — the wire surface should reject
+/// these at the MCP-param boundary via the typed [`Effort`] / [`Complexity`]
+/// enums).
+pub fn compute_tier(
+    effort: Option<&str>,
+    complexity: Option<&str>,
+    files_touched_count: usize,
+    has_cross_repo: bool,
+) -> Tier {
+    if complexity == Some("high") {
+        return Tier::Deep;
+    }
+    if effort == Some("l") {
+        return Tier::Deep;
+    }
+    if files_touched_count > 3 {
+        return Tier::Deep;
+    }
+    if has_cross_repo {
+        return Tier::Deep;
+    }
+    Tier::Lite
+}
+
+// ---------------------------------------------------------------------------
 // compute_task_batches (migration 0005). Kahn's algorithm topological sort on
 // the per-story task dependency graph. Read-only; no transaction, no events.
 // ---------------------------------------------------------------------------
@@ -4023,6 +4069,162 @@ pub async fn compute_task_batches(
     }
 
     Ok(phases)
+}
+
+// ---------------------------------------------------------------------------
+// get_task_dispatch_plan (migration 0006). Read-only fold that composes
+// `compute_task_batches` with per-task spec reads (effort/complexity/
+// files_touched) and runs `compute_tier` per row. Same outer shape as
+// `compute_task_batches` (`Vec<Vec<…>>` — batches of tasks), but each entry is
+// a [`BatchEntry`] carrying the derived [`Tier`] alongside the inputs.
+// Read-only; no transaction, no events.
+// ---------------------------------------------------------------------------
+
+/// Story-level dispatch plan. Composes [`compute_task_batches`] with per-task
+/// spec reads (effort/complexity/files_touched) and runs [`compute_tier`] per
+/// row. Returns the same outer shape as `compute_task_batches`
+/// (`Vec<Vec<…>>` — batches of tasks) but each entry is a [`BatchEntry`]
+/// carrying the derived [`Tier`] alongside the inputs.
+///
+/// `has_cross_repo` is currently always reported as `false`: the round-3
+/// scope did not add a `repo_link_id_for_slug` / `primary_repo_id_for_project`
+/// helper to resolve `{repo, path}` entries in `attributes.files_touched`
+/// against the project's `repo_links`. The other three Deep-triggering
+/// branches of [`compute_tier`] still fire correctly; the cross-repo branch
+/// remains dormant until a follow-up pass wires the slug→link resolver. The
+/// MCP `set_task_spec` edge validates slugs at write time so a stored
+/// `files_touched` entry referencing an unknown slug is unreachable.
+///
+/// Read-only: no transaction, no events. Cycles bubble out of the inner
+/// `compute_task_batches` call as `AppError::Cycle`.
+pub async fn get_task_dispatch_plan(
+    pool: &SqlitePool,
+    story_id: &str,
+) -> Result<Vec<Vec<BatchEntry>>, AppError> {
+    let batches = compute_task_batches(pool, story_id).await?;
+    if batches.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut out: Vec<Vec<BatchEntry>> = Vec::with_capacity(batches.len());
+    for batch in batches {
+        let mut entries: Vec<BatchEntry> = Vec::with_capacity(batch.len());
+        for task_id in batch {
+            // Fetch the task row for effort/complexity/attributes. Tombstoned
+            // rows are filtered to match the read-side convention; an absent
+            // row at this point would be a races-with-delete and surfaces as
+            // `NotFound`.
+            let row = sqlx::query!(
+                r#"
+                SELECT
+                    effort     AS "effort?",
+                    complexity AS "complexity?",
+                    attributes AS "attributes?"
+                FROM work_items
+                WHERE id = ?1 AND deleted_at IS NULL
+                "#,
+                task_id,
+            )
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("work_item '{task_id}' not found")))?;
+
+            // Count `files_touched` entries (bare-string OR {repo,path}
+            // objects). A malformed `attributes` blob is treated as 0 here
+            // rather than re-erroring — `decode_attributes` is the
+            // authoritative corruption-detector elsewhere; this read is a
+            // best-effort summary.
+            let files_touched_count: usize = match row.attributes.as_deref() {
+                None => 0,
+                Some(raw) => serde_json::from_str::<Value>(raw)
+                    .ok()
+                    .and_then(|v| v.get("files_touched").and_then(Value::as_array).map(Vec::len))
+                    .unwrap_or(0),
+            };
+
+            // TODO(round-3 follow-up): wire a {repo,path} slug resolver
+            // against the project ancestor's `repo_links` to flag a
+            // `{repo, path}` entry whose slug != primary as cross-repo. No
+            // helper exists in repo.rs yet — leaving this dormant; the other
+            // three Deep-triggering branches still fire correctly.
+            let has_cross_repo = false;
+
+            let tier = if row.effort.is_none()
+                && row.complexity.is_none()
+                && files_touched_count == 0
+                && !has_cross_repo
+            {
+                None
+            } else {
+                Some(compute_tier(
+                    row.effort.as_deref(),
+                    row.complexity.as_deref(),
+                    files_touched_count,
+                    has_cross_repo,
+                ))
+            };
+
+            entries.push(BatchEntry {
+                task_id,
+                effort: row.effort,
+                complexity: row.complexity,
+                tier,
+                files_touched_count,
+                has_cross_repo,
+            });
+        }
+        out.push(entries);
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// set_task_tier (migration 0006). Single-mutation-path write to the
+// `work_items.tier` column. Task-scope: rejects non-task rows at the Rust
+// layer (no DB-level kind-coupling guard, matching `set_task_kind`).
+// ---------------------------------------------------------------------------
+
+/// Set the dispatch [`Tier`] on a task work-item. Updates the
+/// `work_items.tier` column directly (NOT via attributes JSON — `tier` is a
+/// real column added in migration 0006). Records one `work_item.tier_set`
+/// event on the task's `work_item` aggregate. Rejects non-task rows at the
+/// Rust layer (no DB-level kind-coupling guard, matching `set_task_kind`).
+///
+/// `tier == None` clears the column (writes NULL).
+pub async fn set_task_tier(
+    pool: &SqlitePool,
+    task_id: &str,
+    tier: Option<Tier>,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, task_id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "tier is settable only on a task, not on '{kind}'"
+        )));
+    }
+
+    let value: Option<String> = tier.map(enum_to_str);
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE work_items SET tier = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
+        task_id,
+        value,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "task_id": task_id, "tier": value });
+    record_event(&mut tx, "work_item", task_id, "work_item.tier_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -5192,5 +5394,70 @@ mod tests {
     fn parse_github_slug_rejects_dot_and_dotdot_names() {
         assert!(parse_github_slug("x/.").is_err());
         assert!(parse_github_slug("x/..").is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // compute_tier (migration 0006) — one test per branch of the §k rule.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn compute_tier_high_complexity_is_deep() {
+        // complexity=high dominates even with otherwise-Lite inputs.
+        assert_eq!(
+            compute_tier(Some("s"), Some("high"), 0, false),
+            Tier::Deep,
+        );
+    }
+
+    #[test]
+    fn compute_tier_l_effort_is_deep() {
+        // effort=l dominates over a low/medium complexity.
+        assert_eq!(
+            compute_tier(Some("l"), Some("low"), 0, false),
+            Tier::Deep,
+        );
+    }
+
+    #[test]
+    fn compute_tier_files_above_three_is_deep() {
+        // files_touched_count > 3 — boundary just above the threshold.
+        assert_eq!(
+            compute_tier(Some("s"), Some("low"), 4, false),
+            Tier::Deep,
+        );
+    }
+
+    #[test]
+    fn compute_tier_files_at_three_is_lite() {
+        // Boundary: files_touched_count == 3 is NOT > 3, so Lite.
+        assert_eq!(
+            compute_tier(Some("s"), Some("low"), 3, false),
+            Tier::Lite,
+        );
+    }
+
+    #[test]
+    fn compute_tier_cross_repo_is_deep() {
+        // has_cross_repo flips an otherwise-Lite row to Deep.
+        assert_eq!(
+            compute_tier(Some("s"), Some("low"), 1, true),
+            Tier::Deep,
+        );
+    }
+
+    #[test]
+    fn compute_tier_residual_is_lite() {
+        // All Deep triggers absent → Lite.
+        assert_eq!(
+            compute_tier(Some("s"), Some("low"), 1, false),
+            Tier::Lite,
+        );
+    }
+
+    #[test]
+    fn compute_tier_all_none_is_lite() {
+        // Defensive: every input at its null-equivalent still falls through
+        // to the residual Lite branch (the wire surface gates None upstream).
+        assert_eq!(compute_tier(None, None, 0, false), Tier::Lite);
     }
 }

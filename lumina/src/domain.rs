@@ -722,6 +722,33 @@ pub enum Phase {
     Closure,
 }
 
+/// One row of [`crate::repo::get_task_dispatch_plan`]'s output: a task's
+/// derived dispatch inputs (effort/complexity), the computed [`Tier`], and the
+/// `files_touched_count` that fed `compute_tier`. Returned read-only by the
+/// repo's `get_task_dispatch_plan` (migration 0006). The composer + the
+/// `wire-task-deps` skill consume this to render the batch dispatch budget.
+/// Read aggregate only — `Serialize` but no `JsonSchema` (mirrors
+/// [`StoryReadiness`] / [`WorkItem`] — the MCP layer wraps it with
+/// `Content::json` rather than `Json<T>`).
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchEntry {
+    pub task_id: String,
+    /// `s|m|l` per the row-struct idiom (`None` ⇒ task spec unset).
+    pub effort: Option<String>,
+    /// `low|medium|high` per the row-struct idiom (`None` ⇒ task spec unset).
+    pub complexity: Option<String>,
+    /// Derived [`Tier`] per `compute_tier` (`None` ⇒ effort+complexity both
+    /// unset AND `files_touched_count == 0` AND `has_cross_repo == false` —
+    /// i.e. truly no spec).
+    pub tier: Option<Tier>,
+    /// Number of distinct files in `attributes.files_touched` (counts both
+    /// bare-string and {repo,path}-object entries).
+    pub files_touched_count: usize,
+    /// True when ANY entry in `attributes.files_touched` is a {repo,path}
+    /// object referencing a non-primary repo on the parent project.
+    pub has_cross_repo: bool,
+}
+
 /// Aggregate readiness summary for a story (migration 0005 / Phase 3 planning
 /// pipeline): the per-section counts, a roll-up boolean, and the next
 /// recommended planning action (see [`NextAction`]). Computed by the repo
