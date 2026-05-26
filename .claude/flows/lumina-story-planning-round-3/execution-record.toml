@@ -1,0 +1,331 @@
+schema_version = 1
+last_updated = 2026-05-26
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-26
+agent = "orchestrator"
+summary = "flow status: draft → in-progress (implement start)"
+from = "draft"
+to = "in-progress"
+dedup_id = "8d77c173343aa97a"
+
+[[items]]
+id = "E2"
+type = "deviation"
+date = 2026-05-26
+agent = "orchestrator"
+summary = "Severity vocab: keep existing Severity (review-finding categorisation) and RiskSeverity (risk severity) as DISTINCT enums; closure-gate severity-blocking applies to RISKS not findings"
+task_ref = "phase-1-prep"
+original_intent = "Plan T2 says: Add Severity::{Low, Medium, High, Critical} enum; tighten Finding.severity to typed Severity. T5(h) says closure-gate blocks on open FINDING with severity=high."
+rationale = "User clarified: Severity::{Critical, Major, Minor, Suggestion} (existing domain.rs:471) is for review-finding categorisation; RiskSeverity::{Low, Medium, High, Critical} (existing domain.rs:650) is for risk severity. These are two distinct vocabularies, not one. AddFindingParams.severity is already typed (Option<Severity>) at mcp.rs:451. Closure-gate severity-blocking therefore applies to RISKS (the DB-CHECK-enforced low|medium|high|critical column on the parent story) — not findings. T2 reduces to: add Tier+Phase enums only (no new/changed Severity). T13 §k.2 documents both existing enums. T5(h) tests closure-gate blocking on a story with an open RISK at severity=high."
+dedup_id = "906308d4d4a4e0fa"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T1"
+summary = "Migration 0006 created: work_items.tier column with CHECK constraint; findings.severity stays free TEXT (Rust-layer enforced)"
+status = "done"
+files = ["lumina/migrations/0006_tier_and_severity.sql"]
+commits = ["4d5a1c6c9cd4d6045c542876148ae869f7d11fde"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "1e7198fe82a682f9"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-lite"
+task_ref = "T2"
+summary = "Added Tier::{Lite,Deep} + Phase::{Frame,Explore,Decide,VerifyDesign,Decompose,Closure} enums; added WorkItem.tier:Option<String>; mechanical None fills in repo.rs and export.rs WorkItem literals"
+status = "done"
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/repo.rs",
+    "lumina/src/export.rs",
+]
+commits = ["2f5ddf045911de22e001064f6e7da19da908c152"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+scope_warning = false
+dedup_id = "2f0ff7013f39ce2e"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-05-26
+agent = "orchestrator"
+task_ref = "T3"
+summary = "Dropped set_finding_tier_hint (optional sub-task per plan); has_cross_repo simplification sanctioned by brief"
+original_intent = "T3 plan-detail line 235: add set_finding_tier_hint(tx, id, hint: Option<Tier>) (optional, attributes JSON merge)"
+rationale = "No findings.attributes column exists; migration 0006 adds work_items.tier only. The work_items.attributes schema validator (validate_attributes_for_kind, repo.rs:108-197) does not admit a tier_hint key on any kind. The plan-detail itself flags this tool as (optional, attributes JSON merge), so the schema gap is plausibly intentional. Extending the schema to support per-finding tier hints would require either a new findings.attributes column (additional migration) or a new attributes-allow-list entry — neither in T3 scope. Deferred to round-4 follow-up if needed. T11 (set-task-spec) does NOT depend on set_finding_tier_hint; T4 will skip the corresponding MCP wrapper. compute_tier + get_task_dispatch_plan + set_task_tier (the load-bearing trio for tier dispatch) shipped clean. Separately, get_task_dispatch_plan.has_cross_repo is hardcoded false with a TODO — the brief s IMPORTANT note in Step C sanctioned this when primary_repo_id_for_project / repo_link_id_for_slug helpers do not exist (they don t). The other three Deep-triggering branches of compute_tier (complexity=high / effort=L / files>3) still fire correctly."
+dedup_id = "7d84e6e72b230b59"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T3"
+summary = "compute_tier (pure) + get_task_dispatch_plan (read-only) + set_task_tier (write) + BatchEntry domain type; 7 unit tests; set_finding_tier_hint dropped per E5"
+status = "done"
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/repo.rs",
+]
+commits = ["85f1f3dcf298ef3322c75d52b1090df4e813cd30"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "b2d78c2364d9da4f"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T4"
+summary = "MCP: SetTaskSpecParams.dispatch renamed to tier (typed Option<Tier>); set_task_spec routes tier through second set_task_tier mutation; added get_task_dispatch_plan + set_task_tier #[tool]; tool-count assertion 53->55"
+status = "done"
+files = ["lumina/src/mcp.rs"]
+commits = ["2b6528ddb20df9a713888b8f817be3854330b000"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "e77b361962cb7714"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-05-26
+agent = "orchestrator"
+task_ref = "T3"
+summary = "Closure-gate severity-blocking deferred to round-4 — T3 shipped without the closure-gate extension; T5(h) test correspondingly dropped"
+original_intent = "T3 Key design decisions §3: the closure-gates hard mode is extended to block on open critical/high findings/risks. T5(h): closure-gate hard mode blocks task -> done when an open finding has severity=high."
+rationale = "T3 brief did not specify the closure-gate extension and the agent did not add it. Adding it now would require: (a) finding the closure-gate evaluation point in repo (likely transition_status), (b) wiring an open-risks query (post-E2 the gate should consider RISKS not findings since RiskSeverity has the high/critical vocab while finding-Severity has critical/major/minor/suggestion), (c) handling the closure_gate column being None vs hard semantics. This is a discrete next-pass best done in its own task. compute_tier + dispatch-plan + set_task_tier (the load-bearing scaffold for round-3) shipped clean and are independently useful. The closure-gate extension is deferred to a round-4 follow-up. T5 ships tests (d)(e)(f)(g) only; T5(h) is dropped with this deviation noted."
+dedup_id = "662f920891f80f83"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T5"
+summary = "5 e2e tests added: tier round-trip via set_task_spec; legacy dispatch silent-drop check; typed severity round-trip + INVALID rejection; get_task_dispatch_plan 3-task batches. T5(a/b/c) skipped (unit-covered by T3); T5(h) skipped per E7."
+status = "done"
+files = ["lumina/tests/e2e.rs"]
+commits = ["ccb12533a69f2b6fdc8de4d84c616377db8d451d"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "31ba5a4e1c4faffa"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-26
+agent = "orchestrator"
+task_ref = "T6"
+summary = "sqlx cache regenerated (2 new entries); lumina/CLAUDE.md updated with round-3 MCP surface paragraph + Story-block round-3 skills mention (T15 partially prefetched)"
+status = "done"
+files = [
+    "lumina/.sqlx/query-06ac0653138061d9b39d8f34f213c30d0842379923f5c9f2ad7f37a236b02bc5.json",
+    "lumina/.sqlx/query-9d2634e6f247ab1d0310ffb8280f600fbe99f72a35a89141ee493a5d03f4f04d.json",
+    "lumina/CLAUDE.md",
+]
+commits = ["c8786a7234bfb109626c08a667a289d3a9d1501e"]
+dispatch_tier = "deep"
+dispatch_agent = "orchestrator"
+dedup_id = "036503084ae98a51"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T7"
+summary = "research-explore SKILL.md (NEW): 7-key forked-context frontmatter; ~140 instructions; 4-lens default, 5th on complexity=high; single-message parallel dispatch (R30); add_research_note state=proposed"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/research-explore/SKILL.md"]
+commits = ["ac1f914c42493c61bb07e266e4f1c6317c7c4887"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "f8b7100a191d9afb"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T8"
+summary = "research-directed SKILL.md (NEW): 7-key forked-context frontmatter; ~123 lines; iterates decisions not claims (R31); drift -> supersede + add_finding(severity=major); confirm -> update_research_note confidence=high"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/research-directed/SKILL.md"]
+commits = ["ac1f914c42493c61bb07e266e4f1c6317c7c4887"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "e06761e2355f1809"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T9"
+summary = "vet-research amended: §4 two-phase split — Phase A parallel verification dispatch (R30 4-agent cap, ceil(N/4) passes), Phase B sequential user gate; 162 lines"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/vet-research/SKILL.md"]
+commits = ["ac1f914c42493c61bb07e266e4f1c6317c7c4887"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "0de75a7fd05284ca"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T13"
+summary = "CONVENTIONS §k (tier derivation + lens vocab + severity vocab split) and §l (six-phase canonical sequence + skip-override audit + carve-out + phase-persistence) appended; history footer + pointer-back updated"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/CONVENTIONS.md"]
+commits = ["ebac4df7400988a7cd8be9f30d80d870f6583339"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "4216f474c56c2c5d"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T11"
+summary = "set-task-spec amended: captures effort+complexity via set_effort/set_complexity at 4c.1/4c.2; derives tier client-side per §k.0 (Confirm/Override/Skip); set_task_spec body uses typed tier:lite|deep"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md"]
+commits = ["f60c8c2099f8fa167cc99cbb1b3e414421a41b7f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "92760cfd42de92c7"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T12"
+summary = "wire-task-deps amended: calls get_task_dispatch_plan; renders batches with [effort/complexity/tier] + agent budget + apply-flow 4-cap WARNING"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/wire-task-deps/SKILL.md"]
+commits = ["f60c8c2099f8fa167cc99cbb1b3e414421a41b7f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "3654a601e09080d3"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T10"
+summary = "plan-story rewritten to six-phase canonical sequence (Frame/Explore/Decide/Verify-design/Decompose/Closure) with hard precondition gates + Skip-with-override audit per §l.1; 228→219 lines"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/plan-story/SKILL.md"]
+commits = ["f06ca316550a638e411855c554b90e4606fa513e"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "8296d5dcd058e6dc"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-05-26
+agent = "flow-implement-deep"
+task_ref = "T14"
+summary = "Plugin closure: mcp/SKILL.md catalogue + README + plugin.json all updated for round-3; 21 skills total; plugin 0.2.0 -> 0.3.0"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+    "claude/plugins/lumina-story-blocks/README.md",
+    "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json",
+]
+commits = ["a78ed2ebb1abc821626cda8e3e19bb94ac61b841"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "7451eb55360dcf01"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-05-26
+agent = "orchestrator"
+task_ref = "T15"
+summary = "Repo-root CLAUDE.md ## lumina paragraph updated with round-3 dispatch composer + typed severity split (lumina/CLAUDE.md was pre-updated in T6)"
+status = "done"
+files = ["CLAUDE.md"]
+commits = ["4c491a2db53d9012e2f6c09f2fb940b0cc740871"]
+dispatch_tier = "deep"
+dispatch_agent = "orchestrator"
+dedup_id = "906bd38e7f92f115"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-05-26
+agent = "verification"
+summary = "cargo build --manifest-path lumina/Cargo.toml passed"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "1b049c6fa1528325"
+
+[[items]]
+id = "E21"
+type = "verification"
+date = 2026-05-26
+agent = "verification"
+summary = "cargo nextest run --manifest-path lumina/Cargo.toml passed"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "d6a70a5eff707b1e"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-05-26
+agent = "verification"
+summary = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets passed"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "8f6f2e46829d2455"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-05-26
+agent = "verification"
+summary = "cd lumina && cargo sqlx prepare --check passed"
+command = "cd lumina && cargo sqlx prepare --check"
+outcome = "pass"
+dedup_id = "351f5ba625543983"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-05-26
+agent = "verification"
+summary = "bash scripts/verify-shared-blocks.sh passed"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "2d3d4e2f4dbb5dd2"
+
+[[items]]
+id = "E25"
+type = "status-transition"
+date = 2026-05-26
+agent = "plan-update"
+summary = "flow status: in-progress -> review (Phase 4.5 sync: 15/15 automated tasks done; T16 manual smoke deferred to user release-checklist)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "44e8c3f9c75356b5"

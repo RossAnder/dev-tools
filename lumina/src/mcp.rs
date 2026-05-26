@@ -1022,7 +1022,9 @@ pub struct ComputeTaskBatchesParams {
 
 /// Arguments for the `get_story_readiness` read tool →
 /// `repo::get_story_readiness` (migration 0005). Returns the planning-pipeline
-/// readiness aggregate + the next recommended Phase-3 block.
+/// readiness aggregate + the next recommended block per the
+/// [`crate::domain::NextAction`] enum (a UX rollup over the §l six-phase
+/// sequence — see the enum docstring for the auto-recommended subset).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetStoryReadinessParams {
     /// The story work-item id whose readiness to summarise.
@@ -1030,9 +1032,10 @@ pub struct GetStoryReadinessParams {
 }
 
 /// Arguments for the `set_task_kind` write tool → `repo::set_task_kind`. The
-/// typed [`TaskKind`] enum advertises the four legal kebab-case values
-/// (`foundation`/`vertical-slice`/`pattern-replacement`/`polish`); omitting
-/// the field CLEARS the discriminator to NULL — a legitimate sprint-composer
+/// typed [`TaskKind`] enum advertises the three legal kebab-case values
+/// (`foundation`/`main`/`polish` — migration 0007 narrowed the round-2
+/// four-value vocab; see CONVENTIONS §j for the rationale). Omitting the
+/// field CLEARS the discriminator to NULL — a legitimate sprint-composer
 /// operation, not a no-op.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SetTaskKindParams {
@@ -1533,11 +1536,10 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<AddFindingParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let severity_str = p.severity.map(enum_to_str);
         let origin_str = p.origin.map(enum_to_str);
         let finding = NewFinding {
             kind: p.kind.as_deref(),
-            severity: severity_str.as_deref(),
+            severity: p.severity,
             effort: p.effort.as_deref(),
             category: p.category.as_deref(),
             status: None,
@@ -2281,7 +2283,7 @@ impl LuminaTools {
     /// Summarise a story's planning-pipeline readiness (single repo call →
     /// `repo::get_story_readiness`). Read-only; composes existing reads.
     #[tool(
-        description = "Summarise a story's planning-pipeline readiness: per-section counts, a roll-up `ready_for_decomposition` boolean, and the next recommended Phase-3 block (NextAction enum). Read-only; composes existing reads.",
+        description = "Summarise a story's planning-pipeline readiness: per-section counts, a roll-up `ready_for_decomposition` boolean, and the next recommended block (the `NextAction` enum — a UX rollup over the §l six-phase sequence; auto-recommended subset and per-variant phase mapping documented on the enum). Read-only; composes existing reads.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_story_readiness(
@@ -2300,7 +2302,7 @@ impl LuminaTools {
     /// divergence from the SET-OR-LEAVE convention — the sprint composer may
     /// legitimately want to clear the discriminator).
     #[tool(
-        description = "Set or clear a task's `task_kind` discriminator (foundation/vertical-slice/pattern-replacement/polish). Omitting `task_kind` CLEARS the column to NULL (deliberate composer-friendly divergence from SET-OR-LEAVE). Records one event (work_item.task_kind_set).",
+        description = "Set or clear a task's `task_kind` phase-disposition (foundation/main/polish — migration 0007 cull from the round-2 four-value vocab; see CONVENTIONS §j.1 for the rationale). Three buckets describe the task's role WITHIN its phase: foundation = prerequisite (floats earliest in intra-phase sort); main = core body of work (default); polish = hardening / quality (sinks latest). Intra-story task-subset groupings (vertical-slice, pattern-replacement; see CONVENTIONS §j.1) are NOT a `task_kind` value — a task that belongs to such a grouping is still tagged foundation/main/polish per its task-level disposition. Groupings are not yet modelled in schema; a future `task_groups`+`task_group_members` pair may land when a real consumer needs to query them. Omitting `task_kind` CLEARS the column to NULL (deliberate composer-friendly divergence from SET-OR-LEAVE). Records one event (work_item.task_kind_set).",
         annotations(idempotent_hint = true, open_world_hint = false)
     )]
     async fn set_task_kind(

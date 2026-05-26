@@ -1,0 +1,22 @@
+slug = "lumina-story-planning-round-2"
+plan_path = "docs/plans/lumina-story-planning-round-2.md"
+status = "review"
+created = 2026-05-26
+updated = 2026-05-26
+branch = "main"
+scope = [
+    "claude/plugins/lumina-story-blocks/**",
+    "lumina/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 23
+completed = 14
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-story-planning-round-2/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-story-planning-round-2/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-story-planning-round-2/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-story-planning-round-2/plan-review-findings.toml"

@@ -44,8 +44,8 @@ pub struct WorkItem {
     pub blocked_by_question_id: Option<String>,
     /// Task is exclusive to this `question_options` branch (migration 0003).
     pub enabling_option_id: Option<String>,
-    /// Task-scope discriminator (migration 0005): `foundation|vertical-slice|
-    /// pattern-replacement|polish`. NULL on non-task rows; the repo layer is the
+    /// Task-scope phase-disposition (migration 0005 + 0007 cull):
+    /// `foundation|main|polish`. NULL on non-task rows; the repo layer is the
     /// source of truth for the "task rows only" rule (no DB-level kind coupling).
     /// Mirrors the `effort`/`complexity` idiom — stored as `Option<String>` on
     /// the row, with the typed [`TaskKind`] enum used by the wire / MCP layer.
@@ -664,22 +664,38 @@ pub enum RiskSeverity {
     Critical,
 }
 
-/// Task-scope discriminator (migration 0005) — CHECK-enforced at the DB layer
-/// on the `work_items.task_kind` column (`foundation|vertical-slice|
-/// pattern-replacement|polish`). The wire form matches the SQL CHECK literals
-/// byte-for-byte (kebab-case). Used at the MCP-param / HTTP layer; the
-/// [`WorkItem`] row struct carries `task_kind` as `Option<String>` per the
-/// row-struct idiom (see `effort`/`complexity`).
+/// Task-scope phase-disposition (migration 0005 + 0007) — CHECK-enforced at
+/// the DB layer on the `work_items.task_kind` column (`foundation|main|polish`).
+/// The wire form matches the SQL CHECK literals byte-for-byte. Used at the
+/// MCP-param / HTTP layer; the [`WorkItem`] row struct carries `task_kind` as
+/// `Option<String>` per the row-struct idiom (see `effort`/`complexity`).
+///
+/// Three variants describe a task's role WITHIN a phase (used purely for
+/// intra-phase sort tie-breaking — see [`crate::repo::compute_task_batches`]):
+/// foundation tasks float earliest, polish tasks sink latest, main is the
+/// default bucket. The migration-0007 cull removed two earlier variants
+/// (`VerticalSlice` and `PatternReplacement`) that conflated intra-story
+/// task-subset groupings with task-level disposition — vertical-slice and
+/// pattern-replacement describe arbitrary subsets of a story's tasks that
+/// ship as one unit-of-implementation (implement + test + commit together);
+/// a story may contain 0+ such groupings, and a task may belong to 0+
+/// groupings. They are NOT properties of a single task. If a future
+/// composer needs to query groupings, a `task_groups` + `task_group_members`
+/// pair lands then (see CONVENTIONS §j.1); `TaskKind` stays strictly
+/// task-level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TaskKind {
-    /// Foundation — must-land scaffolding for downstream work.
+    /// Foundation — prerequisite work. Migrations, shared types, base
+    /// abstractions. Other tasks in the same story depend on this completing
+    /// first. Sorts earliest in intra-phase tie-breaking.
     Foundation,
-    /// Vertical slice — end-to-end thin slice.
-    VerticalSlice,
-    /// Pattern replacement — swapping an existing pattern wholesale.
-    PatternReplacement,
-    /// Polish — quality / hardening work.
+    /// Main — the core body of work; the default for a task that is neither
+    /// foundation (prerequisite) nor polish (after-work). Sorts after
+    /// foundation, before polish. This is the largest bucket by count.
+    Main,
+    /// Polish — hardening / quality work that runs after the main body.
+    /// Tests, docs, code-tightening. Sorts latest in intra-phase tie-breaking.
     Polish,
 }
 
@@ -768,45 +784,76 @@ pub struct StoryReadiness {
     pub next_recommended_action: NextAction,
 }
 
-/// The recommended next planning action for a story, computed from the story's
-/// current population state and the canonical Phase-3 block sequence:
-/// `problem-statement → research-notes → vet-research → user-interrogation →
-/// alternatives → approach → not-doing → verification-commands → edge-cases →
-/// risks → decompose-tasks → set-task-spec → wire-task-deps → story-review`.
-/// The terminal `StoryReady` variant indicates no recommendation; the story is
-/// fully populated. Serialises snake_case so the wire value matches the other
-/// planning enums.
+/// The recommended next planning action for a story, computed by the
+/// `get_story_readiness` cascade. The cascade is a **UX rollup** of "what
+/// measurable signal is missing?", not a strict re-encoding of CONVENTIONS
+/// §l's six-phase ordering — phase ordering is enforced by `/lumina:plan-story`,
+/// while this advisor returns the single most pressing block based on the
+/// story's current population state.
+///
+/// Variants split into two reachability classes:
+///
+/// **Auto-recommended** (cascade can emit, in cascade order):
+/// `RunProblemStatement` (§l P1) → `ResolveOpenQuestions` (§l P1, derived) →
+/// `RunUserInterrogation` (§l P1) → `RunVetResearch` / `RunResearchNotes`
+/// (§l P2) → `RunApproach` (§l P3) → `RunVerificationCommands` (§l P4) →
+/// `RunRisks` (§l P3) → `RunStoryReview` (§l P4) → `RunDecomposeTasks`
+/// (§l P5) → `RunSetTaskSpec` (§l P5) → `RunWireTaskDeps` (§l P5) →
+/// `StoryReady` (§l P6 entry).
+///
+/// **Optional / user-discretion** (declared variants, never auto-recommended
+/// — invoked directly via the `/lumina:` slash forms when the user judges
+/// them necessary; a story may legitimately have nothing to record):
+/// `RunAlternatives`, `RunNotDoing`, `RunEdgeCases`.
+///
+/// Serialises snake_case so the wire value matches the other planning enums.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NextAction {
-    /// Run the `problem-statement` block.
+    /// Run the `problem-statement` block (§l Phase 1, auto-recommended).
     RunProblemStatement,
-    /// Run the `research-notes` block.
-    RunResearchNotes,
-    /// Run the `vet-research` block.
-    RunVetResearch,
-    /// Run the `user-interrogation` block.
+    /// Resolve unanswered open questions (§l Phase 1 derivative,
+    /// auto-recommended). Emitted when the story has one or more
+    /// `open_questions` rows with `status = 'open'`; the user must answer
+    /// them via `resolve_open_question` before progressing. Distinct from
+    /// `RunUserInterrogation` which is "create more questions".
+    ResolveOpenQuestions,
+    /// Run the `user-interrogation` block (§l Phase 1, auto-recommended).
+    /// Emitted when the story has never had any open_questions rows recorded.
     RunUserInterrogation,
-    /// Run the `alternatives` block.
-    RunAlternatives,
-    /// Run the `approach` block.
+    /// Run the `research-notes` block (§l Phase 2, auto-recommended).
+    RunResearchNotes,
+    /// Run the `vet-research` block (§l Phase 2, auto-recommended).
+    RunVetResearch,
+    /// Run the `approach` block (§l Phase 3, auto-recommended).
     RunApproach,
-    /// Run the `not-doing` block.
-    RunNotDoing,
-    /// Run the `verification-commands` block.
+    /// Run the `verification-commands` block (§l Phase 4, auto-recommended).
     RunVerificationCommands,
-    /// Run the `edge-cases` block.
-    RunEdgeCases,
-    /// Run the `risks` block.
+    /// Run the `risks` block (§l Phase 3, auto-recommended).
     RunRisks,
-    /// Run the `decompose-tasks` block.
-    RunDecomposeTasks,
-    /// Run the `set-task-spec` block.
-    RunSetTaskSpec,
-    /// Run the `wire-task-deps` block.
-    RunWireTaskDeps,
-    /// Run the `story-review` block.
+    /// Run the `story-review` block (§l Phase 4, auto-recommended).
+    /// Emitted when the story has reached Phase 4 readiness (PS + accepted
+    /// research + approach + verification + risks) but has no
+    /// `findings.kind = 'story-review'` rows yet — i.e. has never been audited.
     RunStoryReview,
+    /// Run the `decompose-tasks` block (§l Phase 5, auto-recommended).
+    RunDecomposeTasks,
+    /// Run the `set-task-spec` block (§l Phase 5, auto-recommended).
+    RunSetTaskSpec,
+    /// Run the `wire-task-deps` block (§l Phase 5, auto-recommended).
+    RunWireTaskDeps,
+    /// Run the `alternatives` block (§l Phase 3, OPTIONAL — never
+    /// auto-recommended). Story may legitimately have no rejected alternatives
+    /// to record; user invokes via `/lumina:alternatives` when warranted.
+    RunAlternatives,
+    /// Run the `not-doing` block (§l Phase 3, OPTIONAL — never
+    /// auto-recommended). Story may legitimately have no scope-exclusions to
+    /// record; user invokes via `/lumina:not-doing` when warranted.
+    RunNotDoing,
+    /// Run the `edge-cases` block (§l Phase 3, OPTIONAL — never
+    /// auto-recommended). Edge-case enumeration is research-style exploration;
+    /// user invokes via `/lumina:edge-cases` when warranted.
+    RunEdgeCases,
     /// Terminal — story is fully populated; no further action recommended.
     StoryReady,
 }

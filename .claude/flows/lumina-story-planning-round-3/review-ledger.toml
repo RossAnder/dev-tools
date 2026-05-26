@@ -1,0 +1,838 @@
+schema_version = 1
+last_updated = 2026-05-26
+
+[[items]]
+id = "R1"
+file = "lumina/src/repo.rs"
+line = 182
+symbol = "validate_attributes_for_kind"
+category = "dead-code"
+severity = "warning"
+summary = "`dispatch` key still admitted as a legal task `attributes` key after round-3 replaced it with the typed `tier` column."
+description = 'Round-3 (per CLAUDE.md `## lumina` and migration 0006) renamed `set_task_spec.dispatch` to a typed `tier` column. `repo.rs:182` still admits `"dispatch" => want_object(k, v)?` in the per-kind validator, so a raw `update_work_item` payload or test fixture can still smuggle a `dispatch` JSON sub-object into `attributes`; it bypasses the tier code path entirely and is never read by anything. Either remove the key or add a migration that copies the legacy blob into `work_items.tier` before stripping.'
+source = "quality"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "1614dc6afce93e4a"
+
+[[items]]
+id = "R2"
+file = "lumina/src/mcp.rs"
+line = 357
+symbol = "SetTaskSpecParams.tier"
+category = "contract-drift"
+severity = "warning"
+summary = "Docstring says legacy `dispatch:` field yields `unknown field` deserialise error; actual behaviour is silent-drop (no `#[serde(deny_unknown_fields)]`)."
+description = "`mcp.rs:357-359` doc-comment promises a deserialise-time error for the renamed-away `dispatch` field. The struct carries no `#[serde(deny_unknown_fields)]`; serde's default tolerates unknown fields. CONVENTIONS §k.2 + CLAUDE.md correctly describe silent-drop; this docstring contradicts them. Either add `deny_unknown_fields` (and align doc) or fix the docstring to say `silently dropped`."
+source = "architecture"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = [
+    "R1",
+    "R3",
+]
+dedup_id = "ba52a53d623ce331"
+
+[[items]]
+id = "R3"
+file = "lumina/tests/e2e.rs"
+line = 1956
+symbol = "set_task_spec_rejects_legacy_dispatch_field"
+category = "missing-test"
+severity = "warning"
+summary = "`set_task_spec_rejects_legacy_dispatch_field` accepts BOTH silent-drop and Err outcomes; provides no regression value."
+description = 'The Ok branch asserts only `parsed.tier.is_none()`; the test passes whether or not deserialise rejects unknown fields. Inline comment says "We accept either shape here". A future re-introduction of a `dispatch`-shaped slot would not be caught. Either add `#[serde(deny_unknown_fields)]` to `SetTaskSpecParams` and flip the assertion to `assert!(res.is_err())`, or remove the misleading test name (the test is not actually a rejection regression).'
+source = "testability"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R2"]
+dedup_id = "e80c99cf8a44013c"
+
+[[items]]
+id = "R4"
+file = "claude/plugins/lumina-story-blocks/skills/next-block/SKILL.md"
+line = 139
+symbol = "set-task-spec catalogue row"
+category = "naming-drift"
+severity = "suggestion"
+summary = "Catalogue row still describes `/lumina:set-task-spec` as populating `dispatch`; field was renamed to `tier`."
+description = "Round-3 renamed `dispatch → tier`. CONVENTIONS §k, set-task-spec/SKILL.md, and mcp/SKILL.md all say `tier`. Only the next-block advisor's catalogue row at line 139 still says `dispatch`. The next-block skill is intentionally model-discoverable (omits `disable-model-invocation`), so this text reaches the model's routing context. One-line edit."
+source = "architecture"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R2"]
+dedup_id = "caed8902ec6a785e"
+
+[[items]]
+id = "R5"
+file = "lumina/src/export.rs"
+line = 583
+symbol = "export test fixture"
+category = "dead-code"
+severity = "suggestion"
+summary = "Test fixture writes `attributes.dispatch = {agent, level}` exercising a now-orphan attribute key."
+description = "The test was written pre-round-3 to verify nested-object attribute round-trips. Since round-3 deprecated `dispatch` as an attribute key, the fixture exercises a key with no production write path. Either rename the test to make clear it's a generic nested-object round-trip, or change the fixture to a key actively in use (e.g. `verification_commands`)."
+source = "architecture"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R1"]
+dedup_id = "ae46db76b9dd260f"
+
+[[items]]
+id = "R6"
+file = "lumina/src/domain.rs"
+line = 710
+symbol = "Phase"
+category = "dead-code"
+severity = "warning"
+summary = "`Phase` enum is declared with full serde/JsonSchema derives but has zero call sites in lumina/src."
+description = "`Phase::{Frame, Explore, Decide, VerifyDesign, Decompose, Closure}` declared `domain.rs:710` with `Serialize/Deserialize/JsonSchema`. Grep confirms no consumers — no function takes `Phase`, no `query!` returns one, no MCP tool exposes it. Plan-story SKILL.md represents phases as integers/strings, not as the typed enum. The `JsonSchema` derive leaks unused schema noise into the MCP wire surface. Either drop the enum until consumed, or drop `JsonSchema` and document `#[allow(dead_code)]` with a TODO pointing at a future composer."
+source = "quality"
+evidence_grade = "high"
+status = "deferred"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R45"]
+dedup_id = "a9aab99a178724cd"
+defer_reason = "`Phase` enum is forward-looking infrastructure for the round-4 composer + a future `get_current_phase` MCP read. Premature to cull while the consuming surface is still being built."
+defer_trigger = "reactivate when round-4 composer or `get_current_phase` MCP read lands"
+
+[[items]]
+id = "R7"
+file = "lumina/CLAUDE.md"
+symbol = "## MCP tool surface — Task kind discriminator + Risks CRUD paragraphs"
+category = "doc-drift"
+severity = "critical"
+summary = "lumina/CLAUDE.md describes `set_task_kind` and `add_risk` with FABRICATED parameter vocabularies; callers reading these docs will pass invalid values."
+description = "Two errors in the same file: (1) `set_task_kind` paragraph lists kind values as `implementation|research|review|test|deploy|chore` — the actual TaskKind CHECK (migration 0005 + domain.rs) is `foundation|vertical-slice|pattern-replacement|polish`; (2) Risks CRUD paragraph says rows carry a `description`, `mitigation`, and `severity` — actual columns are `summary, body, severity, mitigation` (no `description`). Both are critical because the docs are the agent-facing source and any caller following them will hit DB CHECK rejection or column-not-found errors."
+source = "completeness"
+evidence_grade = "high"
+status = "fixed"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "88ecfa2a002559aa"
+resolution = "Fixed both fabricated paragraphs in lumina/CLAUDE.md: (1) set_task_kind now correctly cites task_kind column (NOT kind) + TaskKind::{Foundation, VerticalSlice, PatternReplacement, Polish} kebab-case wire form + CHECK enforcement; (2) Risks CRUD now lists actual columns (summary, body, severity, mitigation — no `description`) + typed RiskSeverity. lumina/CLAUDE.md:39, 43."
+resolved_at = "2026-05-26"
+
+[[items]]
+id = "R8"
+file = "lumina/src/repo.rs"
+line = 4150
+symbol = "get_task_dispatch_plan"
+category = "abstraction"
+severity = "warning"
+summary = "`has_cross_repo` is permanently hard-coded `false` in `get_task_dispatch_plan` (TODO); one of four Deep-tier triggers is structurally dormant."
+description = "`compute_tier` has four Deep branches (complexity=high / effort=l / files>3 / has_cross_repo). `get_task_dispatch_plan` passes `false` for the fourth, gated by a `TODO(round-3 follow-up)` comment about wiring a `{repo,path}` slug resolver. A real cross-repo task that should route Deep will silently route Lite — a Sonnet (`flow-implement-lite`) agent gets dispatched to do cross-repo refactoring it should not be doing. `list_repo_links` already loads the data; resolver cost is low. Alternatively raise to `complexity=high` at `set_task_spec` time so the dormant branch becomes redundant."
+source = "quality"
+evidence_grade = "high"
+status = "deferred"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R9"]
+dedup_id = "0bb3f50fb1ffd9d2"
+defer_reason = "`has_cross_repo` dormant branch is explicitly gated by the in-source TODO(round-3 follow-up) for a `{repo,path}` slug resolver. The unimplemented half of cross-repo task handling."
+defer_trigger = "reactivate when round-4 wires the slug->link resolver in `get_task_dispatch_plan`"
+
+[[items]]
+id = "R9"
+file = "lumina/tests/e2e.rs"
+symbol = "get_task_dispatch_plan tests"
+category = "missing-test"
+severity = "suggestion"
+summary = "No test exercises a `{repo,path}` files_touched entry through `get_task_dispatch_plan`; the dormant cross-repo branch is undetected."
+description = "`compute_tier` unit tests cover all four Deep branches at the function level. The e2e test `get_task_dispatch_plan_returns_batches_with_tier` does not attempt a cross-repo file entry, so the dormant branch (R8) silently routes to Lite without test failure. A negative-case test attempting cross-repo and asserting either error or Deep tier would catch the bug if/when R8 is wired."
+source = "testability"
+evidence_grade = "high"
+status = "deferred"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R8"]
+dedup_id = "284354a2bdc91a29"
+defer_reason = "Test gap is downstream of R8 - no point writing a regression test for a branch that's known-dormant by design."
+defer_trigger = "reactivate when R8 reactivates"
+
+[[items]]
+id = "R10"
+file = "lumina/src/repo.rs"
+line = 4338
+symbol = "get_story_readiness cascade"
+category = "naming-drift"
+severity = "warning"
+summary = "Four `NextAction` variants are unreachable from the cascade: `RunAlternatives`, `RunNotDoing`, `RunEdgeCases`, `RunStoryReview` — server can never recommend them."
+description = "The cascade in `get_story_readiness` (repo.rs:4338-4362) checks problem-statement, research, questions, approach, verification-commands, risks, decompose, AC, and wire-task-deps — emitting variants for those. The four other `NextAction` variants declared in domain.rs:781-812 are never emitted. The `next-block` SKILL.md advisor table lists user-facing rows for them, so the model believes lumina can advise them. Either extend the cascade to emit them or shrink the enum + advisor table."
+source = "architecture"
+evidence_grade = "high"
+status = "fixed"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R38"]
+dedup_id = "ac5838bf7fa97500"
+resolution = "Resolved via cascade rewrite + enum-doc rewrite. Added ResolveOpenQuestions variant (Phase 1 derivative — questions exist + unresolved); reordered cascade to put Phase-1 gates (problem-statement, ResolveOpenQuestions, RunUserInterrogation) before Phase-2 research; added RunStoryReview Phase-4 audit gate (emits when story cleared PS + research + approach + verification + risks but has no findings.kind='story-review' row). The 3 genuinely optional variants (RunAlternatives, RunNotDoing, RunEdgeCases) are now explicitly documented as user-discretion / never-auto-recommended on the enum. lumina/src/{domain.rs:771-836, repo.rs:4294-4378, mcp.rs:2284}."
+resolved_at = "2026-05-26"
+
+[[items]]
+id = "R11"
+file = "lumina/src/repo.rs"
+line = 4350
+symbol = "get_story_readiness"
+category = "abstraction"
+severity = "suggestion"
+summary = "`get_story_readiness` reads `verification_commands` from attributes but doesn't expose `verification_commands_set` as a boolean; plan-story SKILL duplicates the read."
+description = "CONVENTIONS §l.0 acknowledges `verification_commands_set` is not yet exposed by `get_story_readiness`. plan-story SKILL.md reads `detail.attributes.verification_commands` directly — a second MCP call per Phase-5 evaluation that replicates server-side logic client-side. The readiness query already loads `detail.item.attributes` for `problem_statement`/`execution_strategy`; adding `verification_commands_set` is a trivial third boolean."
+source = "architecture"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "e3bd330d5b6f1b56"
+
+[[items]]
+id = "R12"
+file = "lumina/src/repo.rs"
+line = 1828
+symbol = "supersede_finding / supersede_research_note"
+category = "error-handling"
+severity = "suggestion"
+summary = "`supersede_*` validates `new_id` exists with a SELECT issued OUTSIDE the transaction; leaves a TOCTOU window."
+description = "Both functions do `SELECT 1 FROM <table> WHERE id = ?1` against the pool (not `&mut tx`) before opening the transaction. A concurrent delete of `new_id` between this check and the `UPDATE … SET superseded_by = new_id` would silently leave a dangling FK reference (ON DELETE NO ACTION); the UPDATE would fail with FK violation surfacing as Db 500 rather than clean Validation 422. Move the existence check inside the tx with `fetch_optional(&mut *tx)`."
+source = "quality"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "d6068bf738b2ee79"
+
+[[items]]
+id = "R13"
+file = "lumina/src/repo.rs"
+line = 63
+symbol = "enum_to_str"
+category = "dry"
+severity = "suggestion"
+summary = '`enum_to_str` is byte-identical-duplicated across repo.rs:63 and mcp.rs:138; doc-comment misleadingly cites "cannot share across module boundary".'
+description = 'Both copies are 6 lines, bit-for-bit identical. The cited reason — "module boundary" — is not a real constraint: a `pub(crate) fn` in a small `util.rs` would suffice. If duplication is intentional, the doc should say so honestly (e.g. "per-file copy avoids a dependency cycle") rather than claim a non-existent constraint.'
+source = "quality"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "746c75e5fcd9bbfa"
+
+[[items]]
+id = "R14"
+file = "lumina/src/repo.rs"
+line = 1023
+symbol = "set_relevance / set_effort / set_complexity / set_closure_gate / set_task_kind / set_task_tier"
+category = "dry"
+severity = "suggestion"
+summary = "Six single-column setters share near-identical 30-line bodies; round-3 added the 6th without consolidating."
+description = "Each setter: kind precondition → `UPDATE work_items SET <col> = ?2` → event. Only the column name, permitted-kinds set, and event name change. A generic helper would shrink the surface ~150 lines and remove per-round risk of forgetting `updated_at = CURRENT_TIMESTAMP` or `record_event`. CAVEAT: `sqlx::query!` is compile-time and refuses dynamic column names — a runtime `query()` builder would lose the offline-cache compile-check. If the duplication is deliberate for that reason, document it inline."
+source = "quality"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "2cb892500fb17eb8"
+
+[[items]]
+id = "R15"
+file = "lumina/src/repo.rs"
+line = 3130
+symbol = "risks/rejected_alternatives CRUD"
+category = "dry"
+severity = "suggestion"
+summary = "`add_risk` / `add_rejected_alternative` and supersede counterparts are structural near-twins differing in ~5 lines per ~60."
+description = "Both add paths share: existence-check via `work_item_kind`, UUIDv7 mint, tx begin, `SELECT COALESCE(MAX(seq),0)+1 ... WHERE work_item_id=?1`, INSERT, event payload build, `record_event`, commit. Differences are limited to severity-vs-confidence and the extra mitigation column. A child-table-insert generic helper would let the next sub-table cost ~30 lines instead of ~120. Same sqlx::query! macro caveat as R14 applies."
+source = "quality"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "33644539f7d18495"
+
+[[items]]
+id = "R16"
+file = "lumina/src/mcp.rs"
+line = 2284
+symbol = "get_story_readiness tool description"
+category = "comments"
+severity = "suggestion"
+summary = 'Tool description says "next recommended Phase-3 block" but `NextAction` covers all six phases.'
+description = "`mcp.rs:2284` description text is round-2 vintage (`Phase-3 planning` shorthand). Round-3 introduced the six-phase model where `NextAction` spans Phase 1 (`RunProblemStatement`) through Phase 6 (`RunRelevance`). Same wording carried into `repo.rs:4236`. Clients reading the description will be mis-informed about scope."
+source = "quality"
+evidence_grade = "high"
+status = "fixed"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "8bd856087ace6154"
+resolution = "Updated get_story_readiness tool description to cite the NextAction enum's six-phase mapping (lumina/src/mcp.rs:2284). The 'Phase-3 block' wording is gone; description now references the auto-recommended subset documented on the enum."
+resolved_at = "2026-05-26"
+
+[[items]]
+id = "R17"
+file = "lumina/src/repo.rs"
+line = 4310
+symbol = "get_story_readiness — has_acceptance_criteria_on_all_tasks"
+category = "complexity"
+severity = "suggestion"
+summary = "N+1 query loop over a story's tasks (one SELECT COUNT per task)."
+description = """The function loops over each task child issuing one `SELECT COUNT(*) FROM acceptance_criteria WHERE work_item_id = ?1`. Inline comment acknowledges O(n) is "acceptable for a per-story summary". A single `SELECT COUNT(*) FROM work_items t WHERE t.parent_id=?1 AND t.kind='task' AND NOT EXISTS(SELECT 1 FROM acceptance_criteria WHERE work_item_id=t.id)` collapses to one query. plan-story SKILL calls `get_story_readiness` multiple times per phase walk — amplification matters with 10+ tasks."""
+source = "quality"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "18390e5191549a39"
+
+[[items]]
+id = "R18"
+file = "lumina/migrations/0005_round2_planning.sql"
+line = 114
+symbol = "task_dependencies.kind"
+category = "db"
+severity = "suggestion"
+summary = "`task_dependencies.kind` is free TEXT DEFAULT 'data' — no CHECK against the documented enum."
+description = 'Migration doc-comment declares "edge category (data | sequence | …)" but the column has no CHECK. A typo like `kind="dat a"` is silently accepted. Compare to `risks.severity` (same migration) which IS CHECK-enforced. If the openness is intentional (forward-looking edges), the doc-comment should not enumerate values that look closed; if closed, add the CHECK.'
+source = "quality"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "699b3bdca8fdcb39"
+
+[[items]]
+id = "R19"
+file = "lumina/migrations/0005_round2_planning.sql"
+line = 137
+symbol = "task_dependencies_kind_check trigger"
+category = "sql-trigger"
+severity = "suggestion"
+summary = "BEFORE-INSERT trigger only — UPDATE to `work_items.kind` can orphan dependency edges by demoting a task to a non-task kind."
+description = "The trigger correctly rejects new edges whose endpoints aren't `kind='task'`. The migration acknowledges no BEFORE-UPDATE trigger because the FK columns aren't mutated. But `work_items.kind` itself IS mutable via `update_work_item` (COALESCE update on kind). If a task that's an endpoint in a live edge is re-typed, the edge becomes orphaned and `compute_task_batches` will process a non-task node. Either add a BEFORE-UPDATE trigger on work_items checking NEW.kind against task_dependencies, or pre-check in `update_work_item`."
+source = "quality"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "822e0692e6958b30"
+
+[[items]]
+id = "R20"
+file = "lumina/migrations/0005_round2_planning.sql"
+line = 111
+symbol = "task_dependencies table"
+category = "db"
+severity = "suggestion"
+summary = "`task_dependencies` lacks a `seq` column — diverges from the migration's own child-table idiom without comment."
+description = """Every other migration-0005 sub-table follows the "TEXT PK + `seq` UNIQUE + `created_at`" idiom per the migration header. `task_dependencies` uses a composite PK `(task_id, depends_on_id)` instead, which is structurally correct for edges. The deviation isn't justified in the schema comment; a reader expecting the idiom would assume a bug. Add a one-line comment explaining edges vs rows."""
+source = "architecture"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "3e093c94b042fff4"
+
+[[items]]
+id = "R21"
+file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
+line = 263
+symbol = "§h kind-precondition signpost"
+category = "doc-drift"
+severity = "warning"
+summary = "§h claims `not-doing` is an any-kind skill; round-2 reactivated it as story-only via `set_story_plan`."
+description = '§h line 263 reads "skills that write to a §g.2 lens convention (`research-notes`, `edge-cases`, and eventually `not-doing` once reactivated) accept any work-item kind and MUST NOT impose a kind-precondition check". The shipped `not-doing/SKILL.md` line 19 explicitly imposes the kind precondition (`set_story_plan` is story-only). §h is now factually wrong for not-doing; move it to the §g.1 group or amend the §h text.'
+source = "quality"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "2a27b11d93ace123"
+
+[[items]]
+id = "R22"
+file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
+line = 11
+symbol = "§a forward-reference + §d intro"
+category = "doc-drift"
+severity = "suggestion"
+summary = '§a says "exactly one forked skill (`research-notes`)"; §d intro says round-2 added two (`story-review` + `decompose-tasks`); round-3 added two more (`research-explore` + `research-directed`) — both sections stale.'
+description = "§a forward-reference at line 11 is two rounds behind; §d intro at line 154 is one round behind (only mentions round-2 additions). Per round-3 plan T7/T8, both new research skills fork. Update both sections to count the current five forked skills."
+source = "completeness"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "1022df425ee4f928"
+
+[[items]]
+id = "R23"
+file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
+line = 273
+symbol = "§i severity vocabulary"
+category = "doc-drift"
+severity = "warning"
+summary = "§i severity table uses `{low,medium,high,critical}` — contradicts canonical `Severity::{Critical,Major,Minor,Suggestion}` documented at §k.2."
+description = '§i was written before round-3 typed `Severity::{Critical,Major,Minor,Suggestion}` and never updated. §k.2 correctly documents the new taxonomy. §i now actively misleads any skill author writing findings via `add_finding` — they will pass `severity:"high"` and hit a serde rejection. Amend §i with a one-line pointer to §k.2 or rewrite to the typed vocabulary.'
+source = "completeness"
+evidence_grade = "high"
+status = "fixed"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "c9d9be4323e8a722"
+resolution = "Rewrote CONVENTIONS §i:273 with the canonical Severity::{Critical,Major,Minor,Suggestion} vocab + per-rubric mapping (contradiction→critical/major; ungrounded approach→major; missing AC→major; uncovered edge case→minor-major). Added explicit cross-reference to §k.2 for the deliberate Severity vs RiskSeverity split."
+resolved_at = "2026-05-26"
+
+[[items]]
+id = "R24"
+file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
+line = 323
+symbol = "§k.2 closure-gate severity-blocking"
+category = "acceptance-miss"
+severity = "warning"
+summary = "Round-3 T13 acceptance required §k.2 to document `closure-gate severity-blocking behaviour`; shipped §k.2 explicitly defers it to round-4."
+description = """§k.2 documents the typed Severity enum correctly, but then states: "Round-3 closure-gate signal (deferred): the round-3 plan proposed extending the closure-gate's hard mode to additionally block `task → done` on open critical/high findings… That extension is deferred to a round-4 follow-up." The §l.0 table also carries a parenthetical "(round-4 extension)". The feature itself is not implemented (see R25); the documentation correctly reports that. The acceptance miss is that the round-3 plan promised the gate behaviour and shipped neither feature nor documentation of the rule."""
+source = "completeness"
+evidence_grade = "high"
+status = "deferred"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R25"]
+dedup_id = "abb6a77e0495a1db"
+defer_reason = "section k.2 + l.0 both flag closure-gate severity-blocking as explicit round-4 deferral. The deferral itself is honest documentation; the acceptance-miss tag belongs on whichever future round picks it up."
+defer_trigger = "reactivate when closure-gate severity-blocking lands (round-4 candidate)"
+
+[[items]]
+id = "R25"
+file = "lumina/src/repo.rs"
+line = 886
+symbol = "enforce_closure_gate"
+category = "feature-not-implemented"
+severity = "warning"
+summary = "Round-3 T5(h) closure-gate severity-blocking is ABSENT: enforce_closure_gate checks only AC, not finding severity; matching test also absent."
+description = "`enforce_closure_gate` (repo.rs:886-974) checks ONLY unchecked acceptance criteria; there is no branch reading `findings.severity`. The plan's T5(h) acceptance criterion was that `add_finding` with `severity=high` blocks `task→done`. Neither code nor test exists. Either implement the feature (extend the gate to count open high/critical findings) or formally defer to round-4 in both the plan and the corresponding test annotation."
+source = "testability"
+evidence_grade = "high"
+status = "deferred"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R24"]
+dedup_id = "4f9d458b89957722"
+defer_reason = "Closure-gate severity-blocking feature is explicitly deferred to round-4. Pairs with R24."
+defer_trigger = "reactivate when closure-gate severity-blocking lands"
+
+[[items]]
+id = "R26"
+file = "claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md"
+symbol = "derived-tier preview"
+category = "acceptance-miss"
+severity = "warning"
+summary = "Round-3 T11 acceptance required `compute_tier_preview` MCP read or client-side §k derivation to present derived tier for user confirmation BEFORE write; SKILL does neither."
+description = """T11 acceptance: "call `repo::compute_tier` via a new read-only MCP wrapper (`compute_tier_preview`) — or recompute client-side per §k rule — to derive `dispatch` and present it to the user for confirmation". `compute_tier_preview` was not added in T4. The shipped SKILL lists `set_effort`, `set_complexity`, `set_task_spec` and reads `task.tier` from the post-write `get_work_item`. The user never confirms the derived tier; the surface lies about a UX gate that doesn't exist."""
+source = "completeness"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "7de1882eeeb78afc"
+
+[[items]]
+id = "R27"
+file = "lumina/src/repo.rs"
+line = 3894
+symbol = "compute_tier"
+category = "acceptance-miss"
+severity = "suggestion"
+summary = "Plan T3 acceptance specified `compute_tier(effort: Option<Effort>, complexity: Option<Complexity>, …)`; actual signature uses `Option<&str>` slices."
+description = "Round-3 T3 acceptance said `compute_tier` should take typed enum parameters. Actual signature: `compute_tier(effort: Option<&str>, complexity: Option<&str>, files_touched_count: usize, has_cross_repo: bool)`. The typing happens at the MCP-param layer; the pure function operates on string slices. Unit tests pin the string form. Acceptable as a tradeoff but flags as plan-divergence — either align the function signature or amend CONVENTIONS §k pseudocode to match."
+source = "completeness"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "2fd89f20cc6a8929"
+
+[[items]]
+id = "R28"
+file = "lumina/migrations/0006_tier_and_severity.sql"
+line = 1
+symbol = "header comment"
+category = "acceptance-miss"
+severity = "suggestion"
+summary = "T1 acceptance required header `≥3.38` (Unicode); shipped uses ASCII `>=3.38`. Inconsistent with migration 0005 which uses Unicode."
+description = "Migration 0005 header uses `Requires SQLite ≥3.38`. Migration 0006 uses `Requires SQLite >=3.38`. The two are inconsistent. Round-3 plan T1 acceptance text uses the Unicode form. Cosmetic-only."
+source = "completeness"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "c3914c27bb8aab67"
+
+[[items]]
+id = "R29"
+file = "lumina/src/mcp.rs"
+symbol = "UpdateFindingParams.status"
+category = "input-validation"
+severity = "warning"
+summary = "`findings.status` remains free `Option<String>` after round-3 typed `severity` — same pattern, opposite outcome."
+description = 'Round-3 tightened `AddFindingParams.severity` / `UpdateFindingParams.severity` from free text to typed `Severity`. The parallel `status` field on `UpdateFindingParams` remains `Option<String>` with no validation; any string is accepted. There is no DB-level CHECK on `findings.status` and no Rust-layer enum guard. A caller can store arbitrary status strings (e.g. `"pending"` vs `"whatever"`), making consumer queries unreliable. Migration 0006 commentary documents the severity-only choice but says nothing about status.'
+source = "security"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "1960c1f4535fb322"
+
+[[items]]
+id = "R30"
+file = "lumina/tests/e2e.rs"
+symbol = "set_task_spec null-deletion test"
+category = "missing-test"
+severity = "suggestion"
+summary = "json_patch null-deletion contract is tested for `set_story_plan` but not for `set_task_spec` composer."
+description = "`set_story_plan_null_does_not_delete_key` covers the contract end-to-end for set_story_plan. The parallel path `set_task_spec` composes the same `set_work_item_attributes` under the same `normalise_object` guard, but no analogous test exists for set_task_spec with e.g. `{execution_detail: null}`. The shared code path means low risk, but the test asymmetry documents only half of the contract."
+source = "security"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "593788e47dbdc52e"
+
+[[items]]
+id = "R31"
+file = "lumina/src/domain.rs"
+line = 266
+symbol = "Risk.severity field"
+category = "idiom"
+severity = "suggestion"
+summary = "`Risk.severity: Option<String>` with apologetic doc-comment — adopt typed `RiskSeverity` on the row struct."
+description = """The Risk row carries `severity: Option<String>` with a four-line doc apologising: "Carried as Option<String> on the row to match the repo's query_as! field-typing idiom; absent (NULL) is rejected by NOT NULL, so in practice always Some(_)". The DB column is `NOT NULL CHECK (severity IN ('low','medium','high','critical'))` — a guaranteed-Some-of-closed-enum could be typed `RiskSeverity` via a `sqlx::Type` impl, eliminating the `.expect()` ladder consumers maintain. Tradeoff: the `sqlx::Type` derive costs portability if a future Postgres port lands."""
+source = "quality"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "aab30f47b4fdb9e0"
+
+[[items]]
+id = "R32"
+file = "claude/plugins/lumina-story-blocks/README.md"
+line = 97
+symbol = "skill-count claim"
+category = "doc-drift"
+severity = "suggestion"
+summary = 'README + plugin.json claim "twenty-one" skills but the directory carries 22 SKILL.md files (mcp catalogue is the 22nd).'
+description = "plugin.json:5 and README.md:97 both claim twenty-one `/lumina:<block>` commands. The README skill table at 46-67 lists 21 rows, but the `mcp` catalogue skill (`name: mcp`, no `disable-model-invocation`) surfaces as `/lumina:mcp` too — bringing the user-facing total to 22. Either add the `mcp` row to the README table and bump the claim to 22, or explicitly exclude the read-only catalogue from the count in prose."
+source = "quality"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "4de92ac053beda9f"
+
+[[items]]
+id = "R33"
+file = "lumina/src/mcp.rs"
+line = 1349
+symbol = "set_task_spec tool body"
+category = "mutation-path"
+severity = "warning"
+summary = "`set_task_spec` composer issues two distinct transactions (attribute merge + set_task_tier) without an atomic wrap; partial-success observable."
+description = 'Lines 1406-1418: `set_work_item_attributes` runs first, commits, then `set_task_tier` runs in a separate tx. If the second call fails, the first is already committed. Two events are emitted for one tool call. CLAUDE.md asserts "+1 work_items / +1 events single-mutation-path invariant" — a two-mutation tool emitting two events contradicts singularity. Either wrap both in a single tx via a new `repo::set_task_spec_full(payload)`, or document the partial-success window in the tool doc.'
+source = "architecture"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "34f16f5abad31968"
+
+[[items]]
+id = "R34"
+file = "lumina/src/repo.rs"
+symbol = "module size"
+category = "module-boundary"
+severity = "suggestion"
+summary = "repo.rs is ~5400 lines post round-2/round-3; natural seams (risks-module, task-graph-module, dispatch-module) crystallised."
+description = "Round-2 added risks (~250 lines), rejected_alternatives (~250 lines), task_dependencies (~200 lines); round-3 added compute_tier + dispatch_plan + set_task_tier (~360 lines). Each is internally cohesive (CRUD + fold + event-emitter) with thin coupling. A `repo/` directory with `risks.rs`, `task_graph.rs`, `dispatch.rs` + a `mod.rs` re-exporter would reduce per-file cognitive load. Trade-off: splitting invalidates line-anchored `.sqlx/` cache entries — small regen cost. Defer to round-4 unless another sub-table lands first."
+source = "architecture"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "d71a331bdb4df1c0"
+
+[[items]]
+id = "R35"
+file = "lumina/src/repo.rs"
+line = 3894
+symbol = "compute_tier placement"
+category = "module-boundary"
+severity = "suggestion"
+summary = "`compute_tier` is a pure function (no pool, no async, no I/O) but lives in repo.rs; would fit domain.rs."
+description = """Signature `fn(Option<&str>, Option<&str>, usize, bool) -> Tier` has no DB dependencies. Placing in `repo.rs` couples the Tier derivation rule to the DB module — any consumer (future composer, HTTP-only renderer, lumina lib import) must pull in `repo.rs` and its sqlx deps. CONVENTIONS §k calls it "single source of truth" — that's a stronger claim than the current placement supports. Stylistic improvement only."""
+source = "architecture"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "3d74c4e7cb352289"
+
+[[items]]
+id = "R36"
+file = "lumina/src/db.rs"
+line = 44
+symbol = "connect_in_memory"
+category = "test-isolation"
+severity = "suggestion"
+summary = '`connect_in_memory` calls `init("sqlite::memory:")` with no `max_connections(1)`; pool may open separate DBs per connection (R19 hazard).'
+description = """SQLite in-memory databases are connection-scoped: each connection to `sqlite::memory:` opens a SEPARATE database. SqlitePool's default may spawn multiple connections lazily. Tests work today only because each creates an Arc<connect_in_memory()> and writes sequentially. A future `tokio::test(flavor="multi_thread")` or parallel-query path inside `export_pending` would silently corrupt. Fix: `SqliteConnectOptions::max_connections(1)` or `sqlite:file::memory:?cache=shared&mode=memory`."""
+source = "testability"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "209ee74d59913c4b"
+
+[[items]]
+id = "R37"
+file = "lumina/tests/e2e.rs"
+line = 1522
+symbol = "AppError::Cycle HTTP serialisation"
+category = "missing-test"
+severity = "suggestion"
+summary = "`AppError::Cycle` HTTP JSON shape (`edges` key) is not exercised end-to-end; only direct repo call tested."
+description = 'The IntoResponse for `AppError::Cycle` includes `"edges":[{task_id,depends_on_id}]` in the JSON body. The only test (`compute_task_batches_cycle_returns_apperror_cycle`) calls `repo::compute_task_batches` directly. No test routes a cycle through the axum router (`oneshot`) and asserts the wire JSON carries the `edges` array.'
+source = "testability"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "8f855506e71e0926"
+
+[[items]]
+id = "R38"
+file = "lumina/tests/e2e.rs"
+line = 1564
+symbol = "get_story_readiness NextAction coverage"
+category = "missing-test"
+severity = "warning"
+summary = 'Round-2 T5(f) said "exercising each NextAction enum variant"; only 4 of 15 variants are tested.'
+description = "Tested: `RunProblemStatement`, `RunVetResearch`, `RunDecomposeTasks`, `StoryReady`. Untested (11): `RunResearchNotes`, `RunUserInterrogation`, `RunAlternatives`, `RunApproach`, `RunNotDoing`, `RunVerificationCommands`, `RunEdgeCases`, `RunRisks`, `RunSetTaskSpec`, `RunWireTaskDeps`, `RunStoryReview`. Combined with R10 (four variants unreachable from cascade), the gap may overstate — but at least 7 declared-reachable variants are still untested."
+source = "testability"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R10"]
+dedup_id = "3d936e513c8dbdea"
+resolution_progress = "Partially addressed — added explicit tests for RunUserInterrogation, ResolveOpenQuestions, RunStoryReview (the new reachable variants). Total now 6 of 13 auto-recommended variants tested (was 4 of 11). Still missing: RunResearchNotes, RunApproach, RunVerificationCommands, RunRisks, RunSetTaskSpec, RunWireTaskDeps, plus the 3 optional variants (which can never be auto-emitted — testing requires constructing one manually and round-tripping serde)."
+
+[[items]]
+id = "R39"
+file = "lumina/tests/e2e.rs"
+line = 1765
+symbol = "export_trail_picks_up_subtable_mutations_via_work_item_aggregate"
+category = "missing-test"
+severity = "suggestion"
+summary = "Round-2 T5(h) export test does not verify that supersession or removal of risk/alternative rows updates the exported TOML."
+description = "The test asserts `risks` appears after `add_risk`, `rejected_alternatives` appears after `add_rejected_alternative`. It never re-drains export after a `supersede_*` or `remove_*` call to confirm the live-fold filter (superseded_by IS NULL) is honoured in the TOML snapshot. The fold is tested at the get_work_item_detail layer; the export serialisation layer isn't."
+source = "testability"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "011f1c1de8fc916f"
+
+[[items]]
+id = "R40"
+file = "lumina/tests/e2e.rs"
+line = 1892
+symbol = "set_task_spec tier round-trip"
+category = "missing-test"
+severity = "suggestion"
+summary = 'T5(c) test for `set_task_spec` with `tier:"lite"` bypasses the MCP composer by calling two repo functions directly.'
+description = "The MCP method is crate-private; the test mirrors its two repo calls directly. A regression in the composer (e.g. skipping `set_task_tier` when tier is Some(Lite)) would not be caught. Either make the MCP method `pub` for testing, add an in-module test inside mcp.rs, or route through `oneshot` against the axum router."
+source = "testability"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R33"]
+dedup_id = "0057b4c7ef4066e0"
+
+[[items]]
+id = "R41"
+file = "lumina/tests/e2e.rs"
+line = 1463
+symbol = "unblock_task_from_task"
+category = "negative-case-gap"
+severity = "suggestion"
+summary = "`unblock_task_from_task` (edge removal) has no test; task-graph write surface is add-only in tests."
+description = "`compute_task_batches_happy_path_returns_phased_dag` adds edges and reads batches. No test removes an edge and re-computes. A minimal test adding an edge, removing it, and asserting batches collapse to a single phase would close the gap."
+source = "testability"
+evidence_grade = "high"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "b0d3c8af4f9467af"
+
+[[items]]
+id = "R42"
+file = "lumina/migrations/0006_tier_and_severity.sql"
+line = 53
+symbol = "findings.severity DB-side guard"
+category = "diagnostics"
+severity = "suggestion"
+summary = "`findings.severity` is free TEXT (no DB CHECK); typed enum is sole defence at MCP-param layer."
+description = 'Migration 0006 commentary documents the choice not to rebuild `findings` for a CHECK. The Rust `create_finding` accepts raw `&str` severity. `NewFinding { severity: Some("low"), ... }` — a RiskSeverity value, not a Severity value — would silently persist through the direct repo path. No regression test confirms a RiskSeverity-vocab value is unreachable through normal flow.'
+source = "testability"
+evidence_grade = "high"
+status = "fixed"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "3f811543bc73583d"
+resolution = "Tightened NewFinding<'a>.severity from Option<&'a str> to Option<Severity> (lumina/src/repo.rs:1944). The Rust type system now precludes a RiskSeverity wire value (low/medium/high) reaching findings.severity from any direct repo caller. create_finding materialises the typed value via enum_to_str before binding. mcp.rs add_finding simplified — drops the severity_str workaround. import.rs adds a single-line tomlctl-flow→lumina translation (warning→major) at the import boundary; unknown values error out with a CONVENTIONS §k.2 pointer. DB-level CHECK on findings.severity remains intentionally absent per migration 0006 commentary (no rebuild for the asymmetry)."
+resolved_at = "2026-05-26"
+
+[[items]]
+id = "R43"
+file = "claude/plugins/lumina-story-blocks/skills/plan-story/SKILL.md"
+symbol = "skip-with-override audit"
+category = "observability"
+severity = "suggestion"
+summary = "Skip-with-override events: if emitted as conversation prose rather than `record_task_activity`, audit trail is undetectable programmatically."
+description = 'Round-3 plan T10 + Q3 promised: "Skip with override records `record_task_activity { entry_type: \"execution\", origin: \"plan\", summary: \"skip_override: <block>\" }`". This must be verified by reading the actual plan-story SKILL.md body to confirm the activity write is wired. If absent, the audit trail exists only in conversation history; the round-3 promise that `/lumina:story-review` can surface override events later is broken.'
+source = "testability"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "de63fac5c8b3e301"
+
+[[items]]
+id = "R44"
+file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
+symbol = "§l Phase-5 precondition"
+category = "contract-drift"
+severity = "suggestion"
+summary = "`acceptance_criteria_count` semantic shifts between Phase 4 (story-level AC) and Phase 5 (per-task AC) without disambiguation."
+description = 'CONVENTIONS §l.0 Phase 5 precondition says `acceptance_criteria_count >= 1 AND verification_commands_set`. plan-story SKILL echoes this. But `has_acceptance_criteria_on_all_tasks` is per-task; story-level AC are at Phase 4. The semantics of "AC" shift between phases without explicit acknowledgement. Amend §l.0 to disambiguate.'
+source = "architecture"
+evidence_grade = "medium"
+status = "open"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+dedup_id = "0e7384e740720088"
+
+[[items]]
+id = "R45"
+file = "lumina/src/domain.rs"
+line = 710
+symbol = "Phase vs plan-story SKILL phase table"
+category = "naming-drift"
+severity = "suggestion"
+summary = "`Phase` enum and plan-story SKILL's integer/string phase table encode the same concept twice without cross-reference; drift hazard."
+description = "domain.rs:710 declares `Phase::{Frame,…,Closure}` kebab-case. plan-story SKILL represents phases as integers 1..6 and string labels. No `get_current_phase` MCP read exists, so the two encodings can't drift observably today — but if a future MCP read returns `Phase`, the two sources will need explicit binding. Add a SKILL-side note pointing at `lumina::domain::Phase` so the binding is documented."
+source = "architecture"
+evidence_grade = "medium"
+status = "deferred"
+rounds = 1
+first_flagged = 2026-05-26
+last_updated = 2026-05-26
+related = ["R6"]
+dedup_id = "421f47ae3a153a2c"
+defer_reason = "Drift between `Phase` enum and plan-story SKILL phase-table is gated on R6 - there's nothing to bind until `Phase` has a real consumer."
+defer_trigger = "reactivate when R6 reactivates"
+
+[[vet_events]]
+date = 2026-05-26
+agent = "Agent-1 (quality, Opus)"
+sampled = 5
+dropped = 0
+downgraded = 0
+note = "spot-checked dispatch validator key, Phase dead-code, enum_to_str duplication, CONVENTIONS §h misclass, lumina/CLAUDE.md task_kind vocab — all confirmed by direct file read"
+
+[[vet_events]]
+date = 2026-05-26
+agent = "Agent-2 (security, Sonnet)"
+sampled = 3
+dropped = 0
+downgraded = 0
+note = "spot-checked dispatch key, UpdateFindingParams.status free-text, set_task_spec dispatch test outcome — all confirmed"
+
+[[vet_events]]
+date = 2026-05-26
+agent = "Agent-3 (architecture, Opus)"
+sampled = 5
+dropped = 0
+downgraded = 0
+note = "spot-checked SetTaskSpecParams docstring drift, lumina/CLAUDE.md task_kind vocab, NextAction unreachable variants, verification_commands_set gap, Phase enum — all confirmed"
+
+[[vet_events]]
+date = 2026-05-26
+agent = "Agent-4 (completeness, Sonnet)"
+sampled = 6
+dropped = 1
+downgraded = 0
+note = "spot-checked §i severity vocab, §a/§d forked-skill counts, §k.2 closure-gate deferral, lumina/CLAUDE.md risks param names, lumina/CLAUDE.md task_kind vocab, compute_tier signature divergence. Dropped: 'research-explore/research-directed SKILL.md files not verified to exist' — both files confirmed present in git ls-files output."
+
+[[vet_events]]
+date = 2026-05-26
+agent = "Agent-5 (testability, Sonnet)"
+sampled = 5
+dropped = 0
+downgraded = 0
+note = "spot-checked closure-gate severity-blocking absent, dispatch field test accepts either outcome, compute_tier cross_repo dormant, in-memory pool isolation, NextAction variant coverage — all confirmed"

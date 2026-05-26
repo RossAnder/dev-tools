@@ -42,8 +42,8 @@ For EACH task child (in `detail.children` order), call `mcp__lumina__get_work_it
 - `task.effort` — column on `work_items` (`s|m|l`); may be null/absent.
 - `task.complexity` — column on `work_items` (`low|medium|high`); may be null/absent.
 - `task.tier` — column on `work_items` (`lite|deep`); may be null/absent. Round-3 added this column (migration 0006) — see CONVENTIONS.md §k for the derivation rule.
-- `attributes.task_kind` — read-only here; relevant because `task_kind == "pattern-replacement"` enables the drift-check option in step 3.
-- `attributes.files_touched_pattern` — optional informational key; if `decompose-tasks` recorded the Grep pattern, it lives here. If absent on a pattern-replacement task, the drift-check branch prompts the user for the pattern interactively.
+- `attributes.task_kind` — read-only here; the migration-0007 narrowed vocab is `foundation|main|polish`. No `task_kind` value indicates pattern-replacement membership — pattern-replacement is an intra-story task-subset grouping (see CONVENTIONS §j.1), and a task that participates in one is still tagged `main` per its task-level disposition. Per-task pattern-replacement membership is signalled by the PRESENCE of `attributes.files_touched_pattern`.
+- `attributes.files_touched_pattern` — optional informational key; if `decompose-tasks` recorded the Grep pattern for a pattern-replacement grouping this task belongs to, it lives here. Multiple tasks within the same pattern-replacement bundle each carry the same pattern. The presence of this key is the signal that enables the drift-check option in step 3. If absent on a task the user knows is part of a sweep, the drift-check branch prompts for the pattern interactively.
 
 ### 3. Per-task triage
 
@@ -56,7 +56,7 @@ Surface a per-task `AskUserQuestion`:
 > **Options**:
 > - `Edit` — `Collect execution_detail / files_touched / outcome / effort / complexity / tier and write via set_effort + set_complexity + set_task_spec`
 > - `Skip` — `Leave this task's spec unchanged; move to the next task`
-> - `Pattern-replacement drift check` — *(presented ONLY if `attributes.task_kind == "pattern-replacement"`)* `Re-run Grep against the recorded pattern and reconcile any new files`
+> - `Pattern-replacement drift check` — *(presented ONLY if `attributes.files_touched_pattern` is set — the Grep pattern recorded by `/lumina:decompose-tasks` for pattern-replacement stories)* `Re-run Grep against the recorded pattern and reconcile any new files`
 
 On `Skip`, log `"set-task-spec: task '<title>' skipped per user."` and move on (no write, no activity entry). On `Edit`, proceed to step 4. On `Pattern-replacement drift check`, proceed to step 5.
 
@@ -66,11 +66,11 @@ Each sub-prompt is its own `AskUserQuestion` so the user can stage one field at 
 
 **4a. `execution_detail`** — single `AskUserQuestion` with options `Provide execution_detail` / `Skip this field`. On `Provide`, the user types free-text via the Other field; the text is written VERBATIM to lumina (no reformatting). Frame the prompt around a step-by-step plan: "What are the ordered steps for this task? Include the rough edit sequence, the files in scope (you'll list them precisely next), and any sequencing constraints (e.g. migration must run before the repo method that queries the new column)."
 
-**4b. `files_touched`** — branch on `attributes.task_kind`:
+**4b. `files_touched`** — branch on whether the task was part of a pattern-replacement decomposition (signal: `attributes.files_touched_pattern` is set):
 
-- **Non-pattern-replacement task** (`task_kind ∈ {foundation, vertical-slice, polish, null}`): single `AskUserQuestion` with options `Provide files_touched` / `Skip this field`. On `Provide`, the user types newline-separated paths. Each path is sent as a bare string (the legacy `FileRef::Path` shape — resolves to the project's primary linked repo). If a path needs to reference a non-primary linked repo, format the line as `<owner>/<name>:<path>` and the skill converts that to the `{"repo": "owner/name", "path": "<path>"}` qualified shape per `lumina/src/mcp.rs::FileRef::Qualified`. Glob patterns are FORBIDDEN (R25 — every entry must be a concrete file path).
+- **Non-pattern-replacement task** (`attributes.files_touched_pattern` absent): single `AskUserQuestion` with options `Provide files_touched` / `Skip this field`. On `Provide`, the user types newline-separated paths. Each path is sent as a bare string (the legacy `FileRef::Path` shape — resolves to the project's primary linked repo). If a path needs to reference a non-primary linked repo, format the line as `<owner>/<name>:<path>` and the skill converts that to the `{"repo": "owner/name", "path": "<path>"}` qualified shape per `lumina/src/mcp.rs::FileRef::Qualified`. Glob patterns are FORBIDDEN (R25 — every entry must be a concrete file path).
 
-- **Pattern-replacement task** (`task_kind == "pattern-replacement"`): jump into the drift-check sub-flow at step 5, then return here with the reconciled list. The reconciled list is what gets written.
+- **Pattern-replacement task** (`attributes.files_touched_pattern` present): jump into the drift-check sub-flow at step 5, then return here with the reconciled list. The reconciled list is what gets written.
 
 **4c. `outcome`** — dual-track per R23. Two sequential prompts:
 
@@ -136,7 +136,7 @@ mcp__lumina__set_task_spec {
 
 ### 5. Pattern-replacement drift check (R25)
 
-Fires from either: the user picking `Pattern-replacement drift check` in step 3, OR step 4b on a `task_kind == "pattern-replacement"` task. The flow:
+Fires from either: the user picking `Pattern-replacement drift check` in step 3, OR step 4b on a task with `attributes.files_touched_pattern` set. The flow:
 
 1. Bind the recorded pattern: prefer `attributes.files_touched_pattern` if `decompose-tasks` stored it. If absent, prompt the user: `"This task is a pattern-replacement but no Grep pattern is recorded. What pattern should drift-check against? (e.g. 'fn foo\\(' or 'set_story_plan')"` via `AskUserQuestion` with one `Provide pattern` option.
 2. Re-run `Grep --files_with_matches` against the pattern, scoped to the project's affected-areas directories (the same scope `decompose-tasks` used). Capture the current matching file list as `current_files`.

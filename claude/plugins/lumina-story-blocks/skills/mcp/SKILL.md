@@ -55,7 +55,7 @@ The plugin at `claude/plugins/lumina-story-blocks/` adds 21 composable skills (r
 | story-review | `/lumina:story-review <id>` | Critique a story across all planning blocks; emits structured findings via `add_finding{kind="story-review"}`. |
 | next-block | `/lumina:next-block <id>` | Read a story's readiness and recommend the next `/lumina:<block>` slash command to run. |
 | plan-story | `/lumina:plan-story <id>` | Walk a story through the six-phase canonical sequence (frame / explore / decide / verify-design / decompose / closure) with hard phase gates and skip-with-override audit. *(amended in round-3 — six-phase gates)* |
-| decompose-tasks | `/lumina:decompose-tasks <id>` | Decompose a ready story into task children with task_kind, vertical-slice grouping, and pattern-replacement file enumeration. |
+| decompose-tasks | `/lumina:decompose-tasks <id>` | Decompose a ready story into task children — proposing vertical-slice and pattern-replacement GROUPINGS over subsets of those tasks (units-of-implementation; not modelled in schema in round-3.5), with each task individually tagged with a task-level `task_kind` (foundation/main/polish) for intra-phase sort ordering. |
 | set-task-spec | `/lumina:set-task-spec <id>` | Walk a story's task children and capture per-task spec (execution_detail, files_touched, dual-track outcome, effort, complexity, derived tier). *(amended in round-3 — captures effort+complexity, derives typed tier)* |
 | wire-task-deps | `/lumina:wire-task-deps <id>` | Wire explicit task→task dependency edges across a story's task children, then surface the Kahn-ordered phase schedule with per-task tier annotations and an agent budget. *(amended in round-3 — renders batch dispatch budget + agent cap check)* |
 
@@ -194,11 +194,11 @@ Fine-grained prerequisite edges between task siblings of a story. Both endpoints
 |------|-------------|
 | `get_story_readiness` | `{ story_id } → StoryReadiness` — composes existing reads; returns `{ problem_statement_set, accepted_research_count, unresolved_questions, has_approach, has_acceptance_criteria_on_all_tasks, ready_for_decomposition, next_recommended_action }`. Read-only. |
 
-### Task kind discriminator (migration 0005)
+### Task kind phase-disposition (migration 0005 + 0007)
 
 | Tool | When to use |
 |------|-------------|
-| `set_task_kind` | `{ id, task_kind? } → ()` — stamp a task's `task_kind` column. Values: `foundation | vertical-slice | pattern-replacement | polish` (kebab-case; matches the SQL CHECK). Omit `task_kind` (or pass null) to clear (deliberate composer-friendly divergence from the SET-OR-LEAVE convention). |
+| `set_task_kind` | `{ id, task_kind? } → ()` — stamp a task's `task_kind` phase-disposition. Values: `foundation \| main \| polish` (kebab-case; matches the migration-0007 narrowed CHECK). Three buckets describe the task's role within its phase: foundation (prerequisite, floats earliest), main (core body of work, default), polish (after-work, sinks latest). Omit `task_kind` (or pass null) to clear (deliberate composer-friendly divergence from the SET-OR-LEAVE convention). Vertical-slice and pattern-replacement are NOT `task_kind` values — they are intra-story task-subset groupings (units-of-implementation) that span arbitrary subsets of a story's tasks, not single tasks; the round-2 four-value taxonomy was culled in migration 0007 (see CONVENTIONS §j.1). Groupings are not yet modelled in schema; `/lumina:decompose-tasks` surfaces them in proposal prose. |
 
 ### Read tools
 

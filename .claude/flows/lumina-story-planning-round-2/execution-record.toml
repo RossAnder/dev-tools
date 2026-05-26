@@ -1,0 +1,334 @@
+schema_version = 1
+last_updated = 2026-05-26
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-26
+agent = "implement"
+summary = "flow transitioned to in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "4257a54678cfeca3"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "migration-0005-round2-planning"
+status = "done"
+files = ["lumina/migrations/0005_round2_planning.sql"]
+commits = ["f33f9ea"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added migration 0005: rejected_alternatives + risks + task_dependencies child tables + work_items.task_kind column with kind-check trigger; 89/89 tests pass"
+dedup_id = "9a785ab28f8c2c7e"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "domain-types-risk-alternative-taskdep-storyreadiness"
+status = "done"
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/repo.rs",
+    "lumina/src/export.rs",
+]
+commits = ["2511b40"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added Risk/RejectedAlternative/TaskDependency row structs + RiskSeverity/TaskKind/NextAction enums + StoryReadiness aggregate + WorkItemDetail field additions; stub construction-site fixes to keep build green; 89/89 tests pass; clippy clean"
+dedup_id = "d2998fc10a00659e"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "repo-extensions-json-patch-refactor-crud-folds"
+status = "done"
+files = [
+    "lumina/src/repo.rs",
+    "lumina/src/domain.rs",
+    "lumina/src/error.rs",
+    "lumina/src/mcp.rs",
+]
+commits = ["fd49fc8"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added repo CRUD for risks/alternatives/task_deps; compute_task_batches (Kahn) with AppError::Cycle{edges}; get_story_readiness cascade; set_task_kind; get_work_item_detail fold + SELECT widening for task_kind. 89/89 tests pass; clippy clean; sqlx cache stale (T6)"
+dedup_id = "207afe867b76064e"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "mcp-widened-set-story-plan-and-14-new-tools"
+status = "done"
+files = [
+    "lumina/src/mcp.rs",
+    "lumina/tests/e2e.rs",
+]
+commits = ["43a9b9b"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Widened SetStoryPlanParams (not_doing + verification_commands) and added 14 new MCP tools (risks/alternatives CRUD x8, task graph x4, get_story_readiness, set_task_kind). 89/89 tests pass; clippy clean"
+dedup_id = "b91c464b5ddcc762"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "e2e-tests-round-2-tool-surface"
+status = "done"
+files = [
+    "lumina/tests/e2e.rs",
+    "lumina/src/repo.rs",
+]
+commits = ["bfb29ae"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added 9 e2e thread tests (13/13 e2e pass; 98/98 full suite); included a T3 validator fix-up to widen the story arm of validate_attributes_for_kind for not_doing + verification_commands"
+dedup_id = "6b16f178b3da27f4"
+
+[[items]]
+id = "E7"
+type = "deviation"
+date = 2026-05-26
+agent = "implement"
+task_ref = "repo-extensions-json-patch-refactor-crud-folds"
+summary = "T3 validator never widened for new SetStoryPlanParams keys; fixed inline during T5"
+original_intent = "T3 was to deliver complete repo CRUD for the widened set_story_plan; the story-arm of validate_attributes_for_kind needed not_doing + verification_commands accepting"
+rationale = "T5 e2e tests surfaced the bug (3/9 tests failed with 'unknown attributes key for kind story'). The fix is mechanical (one match arm widening) and was applied inline rather than re-dispatching T3"
+commits = ["bfb29ae"]
+dedup_id = "17367c5653776986"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "sqlx-cache-regen-and-claudemd-mcp-surface-update"
+status = "done"
+files = [
+    "lumina/.sqlx",
+    "lumina/CLAUDE.md",
+]
+commits = ["3d3cbba"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Regenerated sqlx offline cache (--all-targets, 109 entries up from 87) and added round-2 MCP-surface paragraph to lumina/CLAUDE.md. Phase 1 complete."
+dedup_id = "66281f3d39a19b9e"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "conventions-md-amendments-round-2"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/CONVENTIONS.md"]
+commits = ["51a2d6a"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Amended CONVENTIONS.md: §c vet exception; §g.1 not_doing reactivation + verification_commands row; §i story-review pattern; §j batch-scheduled task execution; §-letter allocation history note"
+dedup_id = "1aeeebfcf8ac3238"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "phase-2-2-block-writers-risks-alternatives-verification-commands-vet-research"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/risks/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/alternatives/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/verification-commands/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/vet-research/SKILL.md",
+]
+commits = ["77a9f04"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added 4 block-writer SKILL.md files (T8 risks, T9 alternatives, T10 verification-commands, T11 vet-research) — 462 lines total; all 5-key frontmatter, cites CONVENTIONS.md, only blessed MCP tools"
+dedup_id = "37f6d6add8521103"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "phase-2-3-story-review-not-doing-approach"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/story-review/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/not-doing/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/approach/SKILL.md",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md",
+]
+commits = ["1fe4d79"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added story-review (177-line forked critique skill); reactivated not-doing via widened set_story_plan; hardened approach to abort on zero accepted notes; amended CONVENTIONS §d to reflect two forked skills. Phase 2 complete."
+dedup_id = "6e23795eff54c375"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "t14-next-block-advisor-t16-decompose-tasks"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/next-block/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks/SKILL.md",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md",
+]
+commits = ["f18726d"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T14: 144-line next-block advisor (model-discoverable, maps NextAction→slash commands). T16: 221-line decompose-tasks (forked, multi-agent fan-out, R28 tri-state via status=cancelled). CONVENTIONS §d updated for 3 forked skills."
+dedup_id = "2e5354b8bdab6a87"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "t17-set-task-spec-t18-wire-task-deps"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/wire-task-deps/SKILL.md",
+]
+commits = ["dd9722f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T17: 182-line set-task-spec (per-task spec writer; R25 drift check). T18: 186-line wire-task-deps (Kahn batches surfacing; cycle handling; R27 gate)."
+dedup_id = "beb75614a55811fc"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "t15-plan-story-chained-runner"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/plan-story/SKILL.md"]
+commits = ["fa7597d"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T15: 228-line plan-story chained runner walking canonical 14-block sequence; Run/Skip/Inspect/Abort per block; re-reads get_story_readiness after each block."
+dedup_id = "5260b92fbeb0686d"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "t19-closure-research-notes-mcp-readme-plugin-json"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/README.md",
+    "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json",
+    "claude/plugins/lumina-story-blocks/skills/research-notes/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+commits = ["04ad7d9"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T19a: catalogue + research-notes cite; T19b: README 19-skill table + Orchestration section + plugin.json 0.1.0→0.2.0; nine→nineteen prose sweep."
+dedup_id = "8d3a2d5d40d63807"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-05-26
+agent = "implement"
+task_ref = "t20-cross-ref-claudemd-updates"
+status = "done"
+files = [
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+]
+commits = ["9597faa"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "T20: lumina/CLAUDE.md story-block plugin section updated to 19-skill enumeration; repo-root CLAUDE.md ## lumina section gained round-2 MCP tool-family paragraph."
+dedup_id = "4ff663cf573e1e68"
+
+[[items]]
+id = "E17"
+type = "deferral"
+date = 2026-05-26
+agent = "implement"
+task_ref = "t21-manual-smoke-test"
+summary = "T21 deferred per the plan's Dispatch note: human-gated checklist, not dispatchable to /implement"
+reason = "The plan explicitly marks T21 as not dispatchable — the 8-step procedure drives an interactive Claude Code session against a real test story and cannot be self-driven by a batch agent. A future follow-up should convert to a scripted lumina/tests/smoke.rs for automation"
+reevaluate_when = "after Phase 1-4 land and a real test story is available for the end-to-end /lumina:plan-story walk"
+dedup_id = "c6fc9996eee82586"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-05-26
+agent = "implement"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "build clean"
+dedup_id = "ef1d6741f8525aab"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-05-26
+agent = "implement"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "98/98 tests pass"
+dedup_id = "1dd96637272ad87e"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-05-26
+agent = "implement"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+summary = "clippy clean"
+dedup_id = "a9b066aa5860bcce"
+
+[[items]]
+id = "E21"
+type = "verification"
+date = 2026-05-26
+agent = "implement"
+command = "cd lumina && cargo sqlx prepare --check"
+outcome = "pass"
+summary = "sqlx offline cache in sync (benign all-targets superset warning)"
+dedup_id = "825efb70a47ed7a8"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-05-26
+agent = "implement"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "no-op guardrail (manifest does not cover this plan's file set)"
+dedup_id = "61e578ab49864b42"
+
+[[items]]
+id = "E23"
+type = "status-transition"
+date = 2026-05-26
+agent = "implement"
+summary = "flow transitioned to review after Phase 4 completion (T1-T20 done; T21 deferred as human-gated)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "93679c1b6cb14825"

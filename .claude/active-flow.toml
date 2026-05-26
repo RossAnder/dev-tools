@@ -149,3 +149,29 @@ scope = [
     "claude/skills/lumina/SKILL.md",
     "lumina/CLAUDE.md",
 ]
+
+[[active]]
+slug = "lumina-story-planning-round-2"
+last_used = "2026-05-26T07:47:04.7487102Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "claude/plugins/lumina-story-blocks/**",
+    "lumina/**",
+    "CLAUDE.md",
+]
+
+[[active]]
+slug = "lumina-story-planning-round-3"
+last_used = "2026-05-26T10:52:37.5728378Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "claude/plugins/lumina-story-blocks/**",
+    "lumina/**",
+    "CLAUDE.md",
+]

@@ -873,7 +873,7 @@ async fn repo_links_flow() {
         &task,
         &lumina::repo::NewFinding {
             kind: Some("review"),
-            severity: Some("minor"),
+            severity: Some(lumina::domain::Severity::Minor),
             summary: Some("uses a deprecated API"),
             file: Some("src/lib.rs"),
             line: Some(42),
@@ -1477,10 +1477,10 @@ async fn compute_task_batches_happy_path_returns_phased_dag() {
     lumina::repo::set_task_kind(&pool, &t_foundation, Some(TaskKind::Foundation))
         .await
         .expect("foundation task_kind");
-    lumina::repo::set_task_kind(&pool, &t_slice_a, Some(TaskKind::VerticalSlice))
+    lumina::repo::set_task_kind(&pool, &t_slice_a, Some(TaskKind::Main))
         .await
         .expect("slice_a task_kind");
-    lumina::repo::set_task_kind(&pool, &t_slice_b, Some(TaskKind::VerticalSlice))
+    lumina::repo::set_task_kind(&pool, &t_slice_b, Some(TaskKind::Main))
         .await
         .expect("slice_b task_kind");
 
@@ -1587,8 +1587,56 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         "cascade head = RunProblemStatement for a freshly-created story"
     );
 
-    // 2. PS set + one proposed research note → RunVetResearch (proposed but
-    //    not yet accepted).
+    // 1b. PS set + no questions ever → RunUserInterrogation (Phase 1 gate).
+    let interrog = seed_story(&tools, "Readiness-Interrog").await;
+    tools
+        .set_story_plan(Parameters(SetStoryPlanParams {
+            id: interrog.clone(),
+            problem_statement: Some("PS".to_owned()),
+            research_notes: None,
+            execution_strategy: None,
+            not_doing: None,
+            verification_commands: None,
+        }))
+        .await
+        .expect("interrog PS");
+    let readiness = lumina::repo::get_story_readiness(&pool, &interrog)
+        .await
+        .expect("interrog readiness");
+    assert_eq!(
+        readiness.next_recommended_action,
+        NextAction::RunUserInterrogation,
+        "PS set with no questions ever recorded → RunUserInterrogation (§l Phase 1)"
+    );
+
+    // 1c. PS + one open (unanswered) question → ResolveOpenQuestions.
+    let resolve = seed_story(&tools, "Readiness-Resolve").await;
+    tools
+        .set_story_plan(Parameters(SetStoryPlanParams {
+            id: resolve.clone(),
+            problem_statement: Some("PS".to_owned()),
+            research_notes: None,
+            execution_strategy: None,
+            not_doing: None,
+            verification_commands: None,
+        }))
+        .await
+        .expect("resolve PS");
+    let _open_q = lumina::repo::add_open_question(&pool, &resolve, "what cache?")
+        .await
+        .expect("open question");
+    let readiness = lumina::repo::get_story_readiness(&pool, &resolve)
+        .await
+        .expect("resolve readiness");
+    assert_eq!(
+        readiness.next_recommended_action,
+        NextAction::ResolveOpenQuestions,
+        "PS set with status=open questions → ResolveOpenQuestions"
+    );
+    assert_eq!(readiness.unresolved_questions, 1);
+
+    // 2. PS set + interrogation done (any_user_questions_ever) + one proposed
+    //    research note → RunVetResearch (proposed but not yet accepted).
     let vet = seed_story(&tools, "Readiness-Vet").await;
     tools
         .set_story_plan(Parameters(SetStoryPlanParams {
@@ -1601,6 +1649,18 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         }))
         .await
         .expect("vet PS");
+    // Seed an answered question so the cascade clears Phase 1.
+    let vet_q = lumina::repo::add_open_question(&pool, &vet, "decided?")
+        .await
+        .expect("vet question")
+        .to_string();
+    sqlx::query!(
+        r#"UPDATE open_questions SET status = 'answered' WHERE id = ?1"#,
+        vet_q
+    )
+    .execute(pool.as_ref())
+    .await
+    .expect("mark vet question answered");
     let _note = lumina::repo::add_research_note(
         &pool,
         &vet,
@@ -1622,9 +1682,9 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
     );
     assert_eq!(readiness.accepted_research_count, 0);
 
-    // 3. Fully populated story up to the decompose gate (no child tasks yet)
-    //    → RunDecomposeTasks. Requires: PS + accepted research + no open
-    //    questions + execution_strategy + verification_commands + risk.
+    // 3. Fully populated story (PS + interrogated + accepted research +
+    //    approach + verification + risk) but no story-review finding yet →
+    //    RunStoryReview (§l Phase 4 audit gate).
     let decomp = seed_story(&tools, "Readiness-Decomp").await;
     tools
         .set_story_plan(Parameters(SetStoryPlanParams {
@@ -1642,6 +1702,17 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         }))
         .await
         .expect("decomp story plan");
+    let decomp_q = lumina::repo::add_open_question(&pool, &decomp, "interrogated?")
+        .await
+        .expect("decomp question")
+        .to_string();
+    sqlx::query!(
+        r#"UPDATE open_questions SET status = 'answered' WHERE id = ?1"#,
+        decomp_q
+    )
+    .execute(pool.as_ref())
+    .await
+    .expect("mark decomp question answered");
     let note = lumina::repo::add_research_note(
         &pool,
         &decomp,
@@ -1672,11 +1743,34 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
 
     let readiness = lumina::repo::get_story_readiness(&pool, &decomp)
         .await
+        .expect("decomp readiness (pre-audit)");
+    assert_eq!(
+        readiness.next_recommended_action,
+        NextAction::RunStoryReview,
+        "PS + interrogated + accepted research + approach + verif + risk but no story-review finding → RunStoryReview"
+    );
+
+    // 3b. Add a story-review finding → cascade advances to RunDecomposeTasks.
+    lumina::repo::create_finding(
+        &pool,
+        &decomp,
+        &lumina::repo::NewFinding {
+            kind: Some("story-review"),
+            severity: Some(lumina::domain::Severity::Minor),
+            summary: Some("audit pass"),
+            ..lumina::repo::NewFinding::default()
+        },
+    )
+    .await
+    .expect("seed story-review finding");
+
+    let readiness = lumina::repo::get_story_readiness(&pool, &decomp)
+        .await
         .expect("decomp readiness");
     assert_eq!(
         readiness.next_recommended_action,
         NextAction::RunDecomposeTasks,
-        "fully-populated story with no tasks routes to RunDecomposeTasks"
+        "fully-populated audited story with no tasks routes to RunDecomposeTasks"
     );
     assert!(
         readiness.ready_for_decomposition,
@@ -2018,7 +2112,7 @@ async fn add_finding_round_trips_typed_severity() {
         &story,
         &lumina::repo::NewFinding {
             kind: parsed.kind.as_deref(),
-            severity: Some("critical"),
+            severity: parsed.severity,
             summary: parsed.summary.as_deref(),
             ..lumina::repo::NewFinding::default()
         },

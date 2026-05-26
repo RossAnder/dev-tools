@@ -39,6 +39,7 @@ use anyhow::Context as _;
 use serde::Deserialize;
 use sqlx::SqlitePool;
 
+use crate::domain::Severity;
 use crate::repo::{self, NewFinding};
 
 /// Counts returned by [`import_flow`] for the CLI summary line and the test.
@@ -338,9 +339,43 @@ pub async fn import_flow(pool: &SqlitePool, flow_dir: &Path) -> anyhow::Result<I
                 .resolved_at
                 .or(fi.resolved)
                 .map(|d| d.to_string());
+            // Parse the imported severity (free TEXT in the on-disk ledger)
+            // into the typed `Severity` enum. The tomlctl-flow ledger format
+            // uses its own severity vocab (`critical|warning|suggestion` —
+            // see the round-3 plan's "Canonical lumina vocabulary"
+            // cross-system note); lumina's `Severity` is
+            // `critical|major|minor|suggestion`. We bridge the two at this
+            // single import boundary: tomlctl-flow's `warning` maps to
+            // lumina's `Major` (the closest equivalent in lumina's four-tier
+            // ladder). Other tomlctl-flow names round-trip identically.
+            // A genuinely unknown value (not in either vocab) errors out so
+            // stale ledgers surface rather than silently degrade.
+            // CONVENTIONS §k.2 documents the deliberate severity split.
+            let severity_typed: Option<Severity> = match fi.severity.as_deref() {
+                None => None,
+                Some(s) => {
+                    let canonical = match s {
+                        "warning" => "major", // tomlctl-flow → lumina mapping
+                        other => other,
+                    };
+                    Some(
+                        serde_json::from_value::<Severity>(serde_json::Value::String(
+                            canonical.to_owned(),
+                        ))
+                        .with_context(|| {
+                            format!(
+                                "invalid finding severity '{s}' (expected one of \
+                                 critical|major|minor|suggestion — or the \
+                                 tomlctl-flow alias `warning` — see \
+                                 CONVENTIONS §k.2)"
+                            )
+                        })?,
+                    )
+                }
+            };
             let new_finding = NewFinding {
                 kind: None,
-                severity: fi.severity.as_deref(),
+                severity: severity_typed,
                 effort: fi.effort.as_deref(),
                 category: fi.category.as_deref(),
                 status: fi.status.as_deref(),

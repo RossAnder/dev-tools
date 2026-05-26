@@ -34,7 +34,7 @@ use crate::domain::{
     AcceptanceCriterion, ActivityType, AlternativePatch, BatchEntry, ClosureGate, Complexity,
     ContextBlock, Disposition, Effort, Finding, NextAction, OpenQuestion, QuestionOption,
     RejectedAlternative, Relevance, RepoLink, ResearchNote, ResearchState, Risk, RiskPatch,
-    RiskSeverity, StoryReadiness, TaskDependency, TaskKind, Tier, UpdateFindingRequest,
+    RiskSeverity, Severity, StoryReadiness, TaskDependency, TaskKind, Tier, UpdateFindingRequest,
     UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
 };
 use crate::error::AppError;
@@ -1941,7 +1941,13 @@ pub async fn delete_work_item(pool: &SqlitePool, id: &str) -> Result<(), AppErro
 #[derive(Debug, Clone, Default)]
 pub struct NewFinding<'a> {
     pub kind: Option<&'a str>,
-    pub severity: Option<&'a str>,
+    /// Typed [`Severity`] — review-finding categorisation (see CONVENTIONS §k.2
+    /// for the deliberate vocab split with [`RiskSeverity`]). The DB column is
+    /// free TEXT for historical reasons (migration 0001 / `findings` table
+    /// pre-dates round-3); this field is the authoritative compile-time guard.
+    /// Direct-repo callers (test fixtures, import paths) thus cannot smuggle a
+    /// `RiskSeverity` wire value (`low|medium|high`) into `findings.severity`.
+    pub severity: Option<Severity>,
     pub effort: Option<&'a str>,
     pub category: Option<&'a str>,
     pub status: Option<&'a str>,
@@ -1987,6 +1993,12 @@ pub async fn create_finding(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
+    // Materialise the typed `Severity` into its wire form for the TEXT column
+    // bind. `enum_to_str` round-trips via serde, so a `Severity::Minor` →
+    // `"minor"`. No Severity value can produce a `RiskSeverity` wire literal
+    // (`"low"|"medium"|"high"`) — the type system precludes it.
+    let severity_str = finding.severity.map(enum_to_str);
+
     let mut tx = pool.begin().await?;
 
     sqlx::query!(
@@ -2007,7 +2019,7 @@ pub async fn create_finding(
         id_str,
         work_item_id,
         finding.kind,
-        finding.severity,
+        severity_str,
         finding.effort,
         finding.category,
         finding.status,
@@ -3817,11 +3829,11 @@ pub async fn remove_task_dependency(
 }
 
 // ---------------------------------------------------------------------------
-// work_items.task_kind setter (migration 0005). Task-scoped column; the CHECK
-// constraint accepts NULL OR the four enum literals (foundation | vertical-
-// slice | pattern-replacement | polish). We validate the enum value here
-// before the write so an unknown literal surfaces as `Validation` (→ 422)
-// rather than a `Db` 500.
+// work_items.task_kind setter (migration 0005, vocab narrowed in 0007).
+// Task-scoped column; the CHECK constraint accepts NULL OR the three enum
+// literals (foundation | main | polish — see CONVENTIONS §j for the cull
+// rationale). We validate the enum value here before the write so an unknown
+// literal surfaces as `Validation` (→ 422) rather than a `Db` 500.
 // ---------------------------------------------------------------------------
 
 /// Set or clear a task's `task_kind` (migration 0005). Task-scoped: a non-`task`
@@ -3919,15 +3931,24 @@ pub fn compute_tier(
 
 /// Sort-key projection of [`TaskKind`] for intra-phase tie-breaking. Foundation
 /// tasks float to the earliest possible phase so the sprint composer's
-/// "Phase 1 (foundation)" labelling is structural, not advisory. NULL
-/// `task_kind` sorts LAST (after all four enum values).
+/// "Phase 1 (foundation)" labelling is structural, not advisory. Polish tasks
+/// sink to the latest position within their phase. NULL `task_kind` sorts at
+/// the `Main` slot — treating an unlabelled task as "default main work" gives
+/// stable foundation-before-everything-else-before-polish ordering without
+/// penalising callers that haven't yet stamped a kind.
+///
+/// Pre-migration-0007 values (`vertical-slice`, `pattern-replacement`) cannot
+/// be produced by any current Rust write path; should they survive in a
+/// stale read (or arrive from a foreign data source bypassing the typed
+/// enum), the catch-all arm puts them in the same `Main` bucket as NULL —
+/// preserving the historical "neither foundation nor polish" intent without
+/// reanimating the deprecated taxonomy.
 fn task_kind_sort_key(s: Option<&str>) -> u8 {
     match s {
         Some("foundation") => 0,
-        Some("vertical-slice") => 1,
-        Some("pattern-replacement") => 2,
-        Some("polish") => 3,
-        _ => 4,
+        Some("main") => 1,
+        Some("polish") => 2,
+        _ => 1, // NULL or any legacy / unknown value → same slot as Main.
     }
 }
 
@@ -4233,23 +4254,32 @@ pub async fn set_task_tier(
 // Read-only; no transaction, no events.
 // ---------------------------------------------------------------------------
 
-/// Compute a story's [`StoryReadiness`] aggregate (migration 0005 / Phase-3
-/// planning). Composes existing reads only — no mutations, no events.
+/// Compute a story's [`StoryReadiness`] aggregate (migration 0005). Composes
+/// existing reads only — no mutations, no events.
 ///
-/// The `next_recommended_action` cascade follows the canonical Phase-3 block
-/// sequence (first match wins):
+/// The `next_recommended_action` cascade is a UX rollup over the CONVENTIONS
+/// §l six-phase sequence (first match wins). See [`NextAction`]'s docstring
+/// for the auto-recommended subset and the optional variants. Implemented
+/// order (matches the cascade body below):
 ///   1. !problem_statement_set                         → `RunProblemStatement`
-///   2. accepted_research_count == 0
-///      a. any proposed research note            → `RunVetResearch`
-///      b. else                                  → `RunResearchNotes`
-///   3. unresolved_questions > 0                     → `RunUserInterrogation`
-///   4. !has_approach                                → `RunApproach`
-///   5. no `attributes.verification_commands`        → `RunVerificationCommands`
-///   6. no risks rows (live)                         → `RunRisks`
-///   7. no child tasks                               → `RunDecomposeTasks`
-///   8. !has_acceptance_criteria_on_all_tasks        → `RunSetTaskSpec`
-///   9. ≥2 tasks AND no task_dependencies rows       → `RunWireTaskDeps`
-///  10. else                                         → `StoryReady`
+///   2. unresolved_questions > 0                       → `ResolveOpenQuestions`
+///   3. !any_user_questions_ever                       → `RunUserInterrogation`
+///   4. accepted_research_count == 0
+///      a. any proposed research note                  → `RunVetResearch`
+///      b. else                                        → `RunResearchNotes`
+///   5. !has_approach                                  → `RunApproach`
+///   6. no `attributes.verification_commands`          → `RunVerificationCommands`
+///   7. no risks rows (live)                           → `RunRisks`
+///   8. no `findings.kind='story-review'` row (live)   → `RunStoryReview`
+///   9. no child tasks                                 → `RunDecomposeTasks`
+///  10. !has_acceptance_criteria_on_all_tasks          → `RunSetTaskSpec`
+///  11. ≥2 tasks AND no task_dependencies rows         → `RunWireTaskDeps`
+///  12. else                                           → `StoryReady`
+///
+/// Variants `RunAlternatives`, `RunNotDoing`, `RunEdgeCases` are present in
+/// the [`NextAction`] enum but NEVER auto-recommended by this cascade — they
+/// are user-discretion blocks (a story may legitimately have nothing to
+/// record); users invoke them directly via the `/lumina:` slash forms.
 ///
 /// Errors:
 ///   * `NotFound` — `story_id` does not exist.
@@ -4296,6 +4326,12 @@ pub async fn get_story_readiness(
         .iter()
         .filter(|q| q.status.as_deref() == Some("open"))
         .count() as u32;
+    // Distinguishes "story has never been interrogated" from "story has been
+    // interrogated and all questions are answered" — the cascade emits
+    // `RunUserInterrogation` only in the former case (when zero questions
+    // exist), and `ResolveOpenQuestions` in the latter when `status='open'`
+    // questions remain.
+    let any_user_questions_ever = !detail.open_questions.is_empty();
 
     // Tasks under the story. We need each task's acceptance-criteria count to
     // compute `has_acceptance_criteria_on_all_tasks`; one query per task is
@@ -4325,6 +4361,15 @@ pub async fn get_story_readiness(
     // Risk count (live).
     let has_risks = !detail.risks.is_empty();
 
+    // Story-review audit signal — the story has been audited if at least one
+    // `findings.kind = 'story-review'` row exists. The advisor does not
+    // inspect status/severity of those findings (that's the user's call); it
+    // surfaces `RunStoryReview` only when no audit has ever happened.
+    let story_review_audited = detail
+        .findings
+        .iter()
+        .any(|f| f.kind.as_deref() == Some("story-review"));
+
     // Dependency edges among this story's tasks.
     let dep_count = list_task_dependencies(pool, story_id).await?.len();
 
@@ -4333,24 +4378,38 @@ pub async fn get_story_readiness(
         && unresolved_questions == 0
         && has_approach;
 
-    // Cascade — first match wins. Ordering is the canonical Phase-3 block
-    // sequence (documented on the function header above).
+    // Cascade — first match wins. Ordering is a UX rollup keyed on missing
+    // signals; see [`NextAction`]'s docstring for the auto-recommended subset
+    // and its mapping back to CONVENTIONS §l phases. The cascade is NOT a
+    // strict re-encoding of §l ordering — phase ordering is enforced by
+    // `/lumina:plan-story`.
     let next_recommended_action = if !problem_statement_set {
         NextAction::RunProblemStatement
+    } else if unresolved_questions > 0 {
+        // Phase 1 derivative: questions exist and are still open; user must
+        // answer them before moving on.
+        NextAction::ResolveOpenQuestions
+    } else if !any_user_questions_ever {
+        // Phase 1: no questions have ever been recorded — invite the user to
+        // interrogate.
+        NextAction::RunUserInterrogation
     } else if accepted_research_count == 0 {
         if any_proposed_research {
             NextAction::RunVetResearch
         } else {
             NextAction::RunResearchNotes
         }
-    } else if unresolved_questions > 0 {
-        NextAction::RunUserInterrogation
     } else if !has_approach {
         NextAction::RunApproach
     } else if !has_verification_commands {
         NextAction::RunVerificationCommands
     } else if !has_risks {
         NextAction::RunRisks
+    } else if !story_review_audited {
+        // Phase 4 audit gate — emitted once the story has cleared PS +
+        // research + approach + verification + risks but has never been
+        // audited via `/lumina:story-review`.
+        NextAction::RunStoryReview
     } else if task_count == 0 {
         NextAction::RunDecomposeTasks
     } else if !has_acceptance_criteria_on_all_tasks {

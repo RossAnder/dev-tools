@@ -1,0 +1,294 @@
+schema_version = 1
+last_updated = 2026-05-26
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "executability"
+plan_section = "#### 15. Chained runner — plan-story [L]"
+summary = "T15 declares Depends-on 14,18,19,20 but T19 lists T15 as a dependency — hard cycle."
+description = "Plan text at line 320 reads `- **Depends on**: 14, 18, 19, 20`. T19 (line 348) reads `- **Depends on**: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18` (includes T15). Dependency Graph (lines 380-384) orders Batch 3.4 (T15) before Batch 3.5 (T19) before Batch 4.1 (T20). Either the task body and graph contradict, or T15→T19→T15 is a self-cycle. Likely typo: intended 14, 16, 17, 18."
+anchor_old = "- **Depends on**: 14, 18, 19, 20 (the chain walks every block including the new task-decomposition family)"
+anchor_new = "- **Depends on**: 14, 16, 17, 18 (the chain walks every block including the new task-decomposition family; T19's closure batch lists this skill in README so T19 depends downstream on T15, not vice versa)"
+dedup_id = "4f80cb5cb716f36a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 3. Repo extensions — SQL json_patch refactor + new CRUD + WorkItemDetail fold [L]"
+summary = "SQL json_patch() refactor as written drops the per-kind validator path; ambiguous about RETURNING vs Rust-side merge retention."
+description = "`set_work_item_attributes` (repo.rs:1524) today does Rust-side read+merge → `normalise_object` → `validate_attributes_for_kind` on the merged map, THEN write (repo.rs:1530-1566). The plan's single-statement `UPDATE … SET attributes = json_patch(COALESCE(attributes,'{}'), ?)` removes the read+validate round-trip — to validate the merged-target the executor must either (a) keep the Rust merge (negating atomicity), (b) add `RETURNING attributes` + post-write rollback-on-validation-error, or (c) precompute merged in SQL via a subquery then validate via a follow-up query (still 2 round-trips). Plan's `validate the merged-target shape, not the patch` wording doesn't pin which path. Also: `normalise_object` strips null-valued keys before storage today, so R11's null-deletes-key semantics test (T5b) exercises a path the current normaliser blocks unless normalise_object is also relaxed for the patch path or null-deletion is routed through a separate explicit remove-attribute tool."
+anchor_old = "(a) refactor `set_work_item_attributes` (line 1524) to use `UPDATE work_items SET attributes = json_patch(COALESCE(attributes,'{}'), ?) WHERE id = ?` — single round-trip; keep the per-kind validator call BEFORE the write (validate the merged-target shape, not the patch)"
+anchor_new = "(a) refactor `set_work_item_attributes` (line 1524): retain the Rust-side read+merge so `normalise_object` + `validate_attributes_for_kind` continue to run on the merged map, then write via `UPDATE … json_patch(...)` for atomic single-statement write semantics — OR add `RETURNING attributes` + post-write validation that rolls back the tx on Validation error. Document that `normalise_object` strips null-valued keys today, so the null-deletes-key contract (R11) requires either relaxing `normalise_object` for the patch path or routing key-deletion through a separate explicit `remove_attribute_key` tool"
+dedup_id = "2b5374c9c3818c54"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "executability"
+plan_section = "#### 3. Repo extensions — SQL json_patch refactor + new CRUD + WorkItemDetail fold [L]"
+summary = "T3 bundles json_patch refactor + 12+ new public functions + WorkItemDetail fold — exceeds one focused agent session."
+description = "Action enumerates three logically distinct edits: (a) refactor, (b) 12+ new repo functions including a non-trivial Kahn topological sort with cycle detection, (c) detail-fold extension. User CLAUDE.md preference is one focused session per task. Acceptance (`cargo build succeeds; clippy clean`) does not gate per-function correctness. Recommend split into T3a (json_patch refactor + WorkItemDetail fold), T3b (risks/alternatives CRUD), T3c (task_dependencies + Kahn + get_story_readiness + set_task_kind)."
+anchor_old = "#### 3. Repo extensions — SQL json_patch refactor + new CRUD + WorkItemDetail fold [L]"
+anchor_new = "#### 3. Repo extensions — SQL json_patch refactor + new CRUD + WorkItemDetail fold [L] (RECOMMEND SPLIT into 3a/3b/3c per /review-plan P3)"
+dedup_id = "513e06974338b9d8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 19. Research-notes cite + mcp catalogue update + README + plugin.json [M]"
+summary = "T19 modifies 4 files, exceeding the apply-flow 3-file-per-task default cap."
+description = "Plan acknowledges `4 files, ≤6 cap` in Dependency Graph (line 381), but the dev-tools apply-flow constraint family caps at 3 files unless `--allow-cross-file`. README + plugin.json are mechanically separable from the skill-body edits. Split into T19a (research-notes + mcp catalogue) and T19b (README + plugin.json), OR explicitly assert `--allow-cross-file` in the task body."
+anchor_old = """
+#### 19. Research-notes cite + mcp catalogue update + README + plugin.json [M]
+- **Files**: `claude/plugins/lumina-story-blocks/skills/research-notes/SKILL.md`, `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`, `claude/plugins/lumina-story-blocks/README.md`, `claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json`
+- **Depends on**: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18"""
+anchor_new = """
+#### 19a. Research-notes cite + mcp catalogue update [M]
+- **Files**: `claude/plugins/lumina-story-blocks/skills/research-notes/SKILL.md`, `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`
+- **Depends on**: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
+
+#### 19b. README skill-list + plugin.json version bump [S]
+- **Files**: `claude/plugins/lumina-story-blocks/README.md`, `claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json`
+- **Depends on**: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18"""
+dedup_id = "aa6f1a02b151df1c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 5. E2E tests — new tool coverage [L]"
+summary = "T5 omits regression coverage for existing set_work_item_attributes tests after the json_patch refactor."
+description = "Existing tests in repo.rs: `set_work_item_attributes_merges_without_clobber` (~3357), a bogus-key rejection test (~3377) exercising the per-kind validator, and a non-object-root rejection test (~3382). T3's path-order change (patch-validate vs merged-validate) can subtly change which error path fires and what message returns. T5 must add an acceptance criterion that these existing tests still pass without modification, OR explicitly enumerate any expected message-string drift."
+dedup_id = "2d442b0256a43731"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 5. E2E tests — new tool coverage [L]"
+summary = "Sub-table mutations emit events whose aggregate_id resolves to no work_item — export drain will silently no-op without dual-emit or render-side branching."
+description = "T3 specifies record_event with `aggregate_type` values `risk` / `rejected_alternative` / `task_dependency` / `work_item.task_kind`. `export::render_work_item` (export.rs:111 + render dispatch ~:229) looks up the aggregate via `repo::get_work_item_detail(aggregate_id)` — for a sub-row the aggregate_id is the sub-row's PK, not a work_items.id, so the lookup returns NotFound and the drain treats it as a missing aggregate (skip). Net: the git-export audit trail does NOT capture sub-table mutations except incidentally when an unrelated parent event fires. T5(h) currently says `git-export trail picks up the new sub-tables` but does not specify the dual-emit contract. Fix: every sub-table mutation emits TWO events in one tx (one for the sub-aggregate, one `work_item.updated` on the parent), OR `render_work_item` gains an aggregate_type branch that resolves sub→parent work_item id."
+anchor_old = "(h) git-export trail picks up the new sub-tables (verify TOML output via `export_pending`)."
+anchor_new = "(h) git-export trail picks up the new sub-tables — verify TOML output via `export_pending` AFTER a sub-mutation alone (no parent-touching event). Requires T3 to either dual-emit (sub-aggregate event + `work_item.updated` on the parent in the same tx) or extend `export::render_work_item` with an aggregate_type branch resolving sub→parent."
+dedup_id = "27adb295845f2b6c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope > Out of scope"
+summary = "lumina/web/src/api.ts WorkItemDetailWireSchema needs additive entries for new sub-tables; UI completeness gap."
+description = "`lumina/web/src/api.ts:459` `WorkItemDetailWireSchema` is plain `z.object()` (not `.strict()`), so unknown keys are stripped silently — SPA will NOT throw on the new `risks` / `rejected_alternatives` / `task_dependencies` fields. Downgraded from critical (no release-blocker) to warning (UI completeness). Without schema additions, the new sub-tables are invisible in the SPA. Either add 3 lines to T20 (api.ts schema additions mirroring the Rust `#[serde(default)]` semantics: `.optional().default([])`), or document explicitly that the SPA gains no rendering for round-2 sub-tables until a follow-up plan."
+dedup_id = "ab9fa3d0815591d1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "executability"
+plan_section = "#### 21. End-to-end smoke test [M]"
+summary = "T21 has no file artefact and 8-step interactive procedure — not dispatchable to /implement."
+description = "Files = `(none — manual)`; action describes launching `claude --plugin-dir …` interactively and walking blocks via AskUserQuestion. A /implement batch agent cannot drive an interactive Claude Code session against itself. Acceptance (`every block produces expected writes`) is observation-judged, not mechanical. Either (a) lift T21 out of the plan as a release-checklist item run by the human after T20, or (b) convert to a scripted MCP-driven smoke at `lumina/tests/smoke.rs` calling each tool sequentially with assertions."
+dedup_id = "85d283279db8f4e1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "executability"
+plan_section = "#### 16. Task decomposition — decompose-tasks [L]"
+summary = "'Foundation-disjoint module' heuristic is an executor-time architectural decision with no precise definition in the task body."
+description = "R26 (lines 128-129) defines the heuristic as `separate crates, separate top-level dirs with no shared types`, but T16's Action says `Multi-agent fan-out: if … indicate >1 foundation-disjoint module (R26 heuristic — sub-agent prompt construction described inline)` — cites R26 by reference rather than inlining. The skill-author then either re-derives the rule or leaves it ambiguous for end-users. Inline R26's heuristic verbatim in T16's Detail, OR extract to a new CONVENTIONS.md §k."
+anchor_old = "Multi-agent fan-out: if the story's verification_commands or research_notes indicate >1 foundation-disjoint module (R26 heuristic — sub-agent prompt construction described inline), dispatch parallel sub-decompose-agents within the fork; otherwise single-pass."
+anchor_new = "Multi-agent fan-out: if the story's verification_commands or research_notes indicate >1 foundation-disjoint module — defined per R26 as `separate crates, separate top-level dirs with no shared types` — dispatch parallel sub-decompose-agents within the fork; otherwise single-pass. The SKILL.md body MUST transcribe this heuristic verbatim, not summarise."
+dedup_id = "017e414cf70a83d5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "risk"
+plan_section = "### Phase 3 findings — Orchestration / advisor / state-machine architecture"
+summary = "R26 / Risks line 404 cite '5-10% merge-conflict rate' to arxiv 2602.16873; figure not in that paper."
+description = "Agent 4 verified the AdaptOrch abstract (arxiv 2602.16873) carries no merge-conflict-rate statistic; the figure may originate from arxiv 2604.03551 (AgenticFlict) or another source. Citation-integrity issue per `flow-contract-vet-research`. Fix: drop the figure or re-attribute with the correct paper."
+anchor_old = "Multi-agent fan-out in `/lumina:decompose-tasks` may produce conflicting tasks across sub-agents (R26 — 5–10% empirical merge-conflict rate)"
+anchor_new = "Multi-agent fan-out in `/lumina:decompose-tasks` may produce conflicting tasks across sub-agents (R26 acknowledges an empirical conflict rate in published multi-agent code-generation studies; specific figure to be re-verified at implementation time)"
+dedup_id = "470c1d01e2c46ca3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 7. CONVENTIONS.md amendments [M]"
+summary = "§c amendment grants vet exception but leaves the comment ban ambiguous."
+description = "Existing §c at CONVENTIONS.md:144 reads: `The other accepted values (vet, comment) are legal but reserved … MUST NOT be used by skills in this plugin`. T7's amendment grants the vet exception for /lumina:vet-research only but says nothing about comment. Readers may infer either (a) comment ban still in force, or (b) comment also now permitted by analogy. Make explicit."
+anchor_old = 'Amend §c to permit `entry_type: "vet"` for the `vet-research` skill only (explicitly-named exception, mirroring the §a read-only exception for `mcp`).'
+anchor_new = 'Amend §c to permit `entry_type: "vet"` for the `vet-research` skill only (explicitly-named exception, mirroring the §a read-only exception for `mcp`). The `entry_type: "comment"` ban remains in force for ALL skills in this plugin — no skill in round-2 writes `comment` activity entries.'
+dedup_id = "f769c8fb46a72a4a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 12. Story-review critique skill [L]"
+summary = "findings.kind discriminator has no read-side consumer today — mitigation relies on UI/repo filtering that doesn't exist this round."
+description = """`lumina/migrations/0001_init.sql:108` defines `findings.kind` as plain TEXT (no CHECK). `repo::list_findings` (repo.rs:713) does not filter by kind, and the SPA's Finding schema does not appear to filter either. Plan's Risks-section mitigation says `UI filters by kind; SQL queries can disambiguate` — no UI filter exists today. Either add `list_findings_by_kind` to T3/T4 (5-line repo method + 1 MCP read tool), or explicitly annotate T12 that `kind="story-review"` is forward-compatible storage only — no read-side consumer this round."""
+dedup_id = "6e226e975f9d29a1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Exploration Notes"
+summary = "Three stale line references in Exploration Notes — export_pending, check_acceptance_criterion, TaskActivityType."
+description = "`export.rs:90` → actually :111 (verified). `check_acceptance_criterion`'s line cite `mcp.rs:553` points to the params struct; the tool fn is at `:1360`. `TaskActivityType` enum cite `mcp.rs:1138` points to the fn body; enum is at `:364`. Functionally accurate text but misleading line numbers — refresh before bootstrap."
+anchor_old = "`export::export_pending(pool, root)` (`src/export.rs:90`)"
+anchor_new = "`export::export_pending(pool, root)` (`src/export.rs:111`)"
+dedup_id = "a2f00035ccab49da"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Exploration Notes"
+summary = "Stale line ref: check_acceptance_criterion at :553 vs :1360."
+description = "`mcp.rs:553` is CheckAcceptanceCriterionParams struct (verified); the tool fn is at `mcp.rs:1360`."
+anchor_old = "**`check_acceptance_criterion`** (`mcp.rs:553`) internally appends a `verification` activity entry"
+anchor_new = "**`check_acceptance_criterion`** (params at `mcp.rs:553`; tool fn at `mcp.rs:1360`) internally appends a `verification` activity entry"
+dedup_id = "33533f072f456f10"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Exploration Notes"
+summary = "Stale line ref: TaskActivityType at :1138 vs :364."
+description = "`mcp.rs:1138` is the `record_task_activity` fn body (verified); the param-edge enum `TaskActivityType` is at `mcp.rs:364` (with `Vet` variant on line 379). Domain-side `ActivityType` at `domain.rs:406` validated by `validate_entry_kind` (`repo.rs:71`) — already accepts `vet`, no backend change needed for T11."
+anchor_old = "**`record_task_activity`**: `TaskActivityType{Execution|Vet|Comment}` (`mcp.rs:1138`)."
+anchor_new = "**`record_task_activity`**: `TaskActivityType{Execution|Vet|Comment}` (param-edge enum at `mcp.rs:364`; backend `ActivityType` at `domain.rs:406` validated by `validate_entry_kind` at `repo.rs:71` — accepts `vet` today, no backend change needed for T11)."
+dedup_id = "9bb2ca9f8bf3fd66"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### 5. E2E tests — new tool coverage [L]"
+summary = "db::connect_in_memory pool sizing for R19 hazard — verify or fix as part of T5, not verify-only."
+description = '`db::connect_in_memory` calls `init("sqlite::memory:")` (db.rs:48-49); the literal URL does not share cache by default. If `init` does not pin `max_connections(1)` or use the shared-cache URI form, new T5 tests that exercise multi-connection paths may flake. Current single-connection happy paths may pass by accident. Treat as a fix step, not verify-only.'
+anchor_old = "Existing `db::connect_in_memory()` helper is the canonical entry point; verify its pool sizing."
+anchor_new = 'The current `db::connect_in_memory()` calls `init("sqlite::memory:")` (db.rs:48-49) — confirm `init` pins `max_connections(1)` or use the shared-cache URI; if neither holds today, fix as part of T5 (rather than verify-only).'
+dedup_id = "0b64cfa661e36f51"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Verification"
+summary = "YAML frontmatter validity gated only by T21 manual smoke — add per-skill-task acceptance check."
+description = "10 new SKILL.md files with strict frontmatter (4-key or 6-key); YAML errors only surface at plugin load. T21 is the sole gate. Add a per-skill-task acceptance one-liner that parses the frontmatter and asserts required keys (e.g. PowerShell or Python YAML parse + key-set check)."
+dedup_id = "e2b1e41dd3b292dc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 8-11 acceptance criteria"
+summary = "Reused `Frontmatter 4 keys` acceptance does not enumerate which 4 keys."
+description = "Tasks 8, 9, 10, 11 reuse the wording `Frontmatter 4 keys; §b 5-step + §b-per-element; calls only X/Y/Z`. T14 enumerates implicitly via `4-key frontmatter (no disable-model-invocation)`. Add explicit key names — `name`, `description`, `allowed-tools`, `disable-model-invocation` — to make verification mechanical without inferring from sibling skills."
+dedup_id = "650c9d26caf67604"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 13. Re-enable not-doing + harden approach for hard-fail-on-zero-accepted [M]"
+summary = "T13 touches 2 unrelated SKILL.md files; T8-T11 use 1 file per task — granularity drift."
+description = "not-doing/SKILL.md and approach/SKILL.md are conceptually linked (close critique B+F) but mechanically independent. Split into T13a (not-doing) + T13b (approach) for parity with Wave 2 Batch 2.2's one-file-per-task pattern."
+dedup_id = "24950700c40c908b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### 19. Research-notes cite + mcp catalogue update + README + plugin.json [M]"
+summary = "README skill-count math ambiguous — mcp + next-block are read-only skills, may or may not count toward 19."
+description = "`claude/plugins/lumina-story-blocks/skills/` currently has 10 SKILL.md directories (9 user-facing + mcp catalogue). T19 acceptance says `19 rows total (existing 9 + new 10)`. Whether `mcp` (existing) and `next-block` (new, also read-only) count toward the 19 needs to be stated explicitly so a future reader's count check is unambiguous."
+anchor_old = "README's skill-list table has 19 rows total (existing 9 + new 10); mcp catalogue mentions every new tool by name with parameter shapes;"
+anchor_new = "README's skill-list table has 19 rows total (existing 9 user-facing + 10 new — `mcp` continues to be documented separately as the absorbed catalogue, NOT counted in the skill-list table per the R4 resolution); mcp catalogue mentions every new tool by name with parameter shapes;"
+dedup_id = "0202c162a466ce95"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 4. MCP layer — widened SetStoryPlanParams + new tool surface [L]"
+summary = "New read tools should mirror existing rmcp annotation pair (read_only_hint + open_world_hint = false), not just read_only_hint."
+description = "Existing read tools in mcp.rs use `annotations(read_only_hint = true, open_world_hint = false)`. R13 only cites `read_only_hint`. T4 should mirror the pair for `get_story_readiness`, `list_task_dependencies`, `compute_task_wave_order` — house-style consistency."
+anchor_old = "Follow rmcp 1.7 macro patterns from R13. Read tools carry `annotations(read_only_hint = true)`."
+anchor_new = "Follow rmcp 1.7 macro patterns from R13. Read tools carry `annotations(read_only_hint = true, open_world_hint = false)` (matches existing mcp.rs reads)."
+dedup_id = "0931971bde6e6e6a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P22"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 1. Migration 0005 — new sub-tables and task_kind column [M]"
+summary = "Migration 0005 should banner the SQLite version floor (json_patch requires json1, in 3.38+ as built-in)."
+description = "sqlx 0.9 bundles a recent SQLite (json1 always available), but system-SQLite feature switches could downgrade. Add a comment-banner in the .sql file documenting `requires SQLite ≥3.38 (json1 built-in)` so a future contributor swapping features sees the floor."
+dedup_id = "ea43fc632ea667be"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P23"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Scope"
+summary = "24-file scope exceeds 15-file ceiling; consider splitting into round-2a (backend) + round-2b (plugin) flows."
+description = "Wave 1 is 6 sequential files with no internal checkpoint commit; failure in any one blocks all 21 downstream tasks. Splitting at the Wave 1/2 boundary into two `tomlctl flow init` flows lets backend land + ship with its own e2e tests before plugin authors depend on the new MCP surface. Decision at Phase 9 bootstrap; suggestion-only because the existing wave-sequencing already gates plugin behind backend completion."
+dedup_id = "54abf7ead7d726d6"

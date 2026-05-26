@@ -62,7 +62,7 @@ The skills, ordered by typical workflow position (round-1 family + round-2 addit
 | story-review | `/lumina:story-review <id>` | Critique a story across all planning blocks; emits structured findings via `add_finding{kind="story-review"}`. |
 | next-block | `/lumina:next-block <id>` | Read a story's readiness and recommend the next `/lumina:<block>` slash command to run. |
 | plan-story | `/lumina:plan-story <id>` | Walk a story through the six-phase canonical sequence with hard phase gates and skip-with-override audit. *(amended in round-3)* |
-| decompose-tasks | `/lumina:decompose-tasks <id>` | Decompose a ready story into task children with task_kind, vertical-slice grouping, and pattern-replacement file enumeration. |
+| decompose-tasks | `/lumina:decompose-tasks <id>` | Decompose a ready story into task children — proposing vertical-slice and pattern-replacement groupings (units-of-implementation spanning task subsets; not yet modelled in schema) with per-task `task_kind` (foundation/main/polish) and exhaustive Grep-derived `files_touched` for pattern-replacement bundles. *(task_kind vocab narrowed in round-3.5 migration 0007)* |
 | set-task-spec | `/lumina:set-task-spec <id>` | Walk a story's task children and capture per-task spec (execution_detail, files_touched, dual-track outcome, effort, complexity, derived tier). *(amended in round-3)* |
 | wire-task-deps | `/lumina:wire-task-deps <id>` | Wire explicit task→task dependency edges across a story's task children, then surface the Kahn-ordered phase schedule with per-task tier annotations and an agent budget. *(amended in round-3)* |
 
