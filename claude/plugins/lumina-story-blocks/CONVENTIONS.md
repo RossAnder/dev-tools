@@ -149,9 +149,9 @@ Notes:
 - **Substitution guard**: before calling `record_task_activity`, the skill MUST verify `${CLAUDE_SESSION_ID}` resolved to a non-empty value that does not contain the literal substring `CLAUDE_SESSION_ID`. If the substitution did not fire (older harness, non-session invocation, future regression), the literal string `session=${CLAUDE_SESSION_ID}` would land in lumina verbatim and silently break the audit trail. On detected non-substitution, record `body: "session=unknown"` instead AND emit a one-line warning to the user (e.g. `"warning: CLAUDE_SESSION_ID did not substitute; recorded as 'unknown'"`). This makes the failure visible rather than silent.
 - One activity entry per write — not per skill invocation. A skill that writes twice (e.g. supersedes one note AND adds a new one in the same invocation) records two activity entries.
 
-## §d Forked context (research-notes only)
+## §d Forked context (research-notes + story-review)
 
-Exactly ONE skill in this plugin runs in a forked subagent context: `research-notes`. That skill's frontmatter adds two extra keys (per R2) beyond the mandatory ones from §a — `context: fork` and `agent: general-purpose`. The §a `argument-hint` recommendation still applies whenever `arguments` is non-empty, so the canonical research-notes frontmatter is seven keys (the §a four plus `argument-hint` plus the two fork keys):
+Round-1 had exactly one forked skill (`research-notes`); round-2 added a second (`story-review`). Both skills' frontmatters add two extra keys (per R2) beyond the mandatory ones from §a — `context: fork` and `agent: general-purpose`. The §a `argument-hint` recommendation still applies whenever `arguments` is non-empty, so the canonical forked frontmatter is seven keys (the §a four plus `argument-hint` plus the two fork keys):
 
 ```yaml
 ---
@@ -167,7 +167,7 @@ agent: general-purpose
 
 The §a → §d delta is exactly two keys (`context`, `agent`) — `argument-hint` belongs to the §a shape and rides through unchanged.
 
-**Why fork only here**: research is a multi-step exploration — gap identification, Context7 lookups, WebSearch queries, targeted code reads, draft synthesis. Each of those operations leaves tool-output noise in the conversation context that the main planning session does not need. Running this skill in a forked subagent isolates that noise; the parent conversation sees only the final summary (and the lumina rows themselves are queryable via `get_work_item`).
+**Why fork these two**: both skills are multi-step explorations whose intermediate tool output would saturate the main planning context. `research-notes` runs Context7 lookups, WebSearch queries, targeted code reads, and draft synthesis; `story-review` runs a 7-category rubric over the full story detail, performing cross-block semantic comparisons and per-rubric finding writes. Each operation leaves tool-output noise in the conversation context that the main planning session does not need. Running these skills in a forked subagent isolates that noise; the parent conversation sees only the final summary (and the lumina rows themselves are queryable via `get_work_item`).
 
 **Why every other skill stays inline**: all other skills in this plugin are short interactive Q&A loops — the user types a few sentences, the skill writes one or two MCP calls, done. Inline execution keeps the user in the parent context where they can interject, ask follow-ups, or chain skills. Forking these would force a context switch with no compensating benefit.
 

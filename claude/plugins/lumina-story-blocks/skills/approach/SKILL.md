@@ -33,10 +33,12 @@ From the `detail` returned by `get_work_item`, inspect:
 
 - **`detail.attributes.problem_statement`** — the foundation of any approach. If null / absent / empty, emit:
   > `⚠ This story has no problem_statement set yet; running '/lumina:problem-statement <id>' first usually produces a better approach.`
-- **`detail.research_notes`** — the WorkItemDetail fold of the research_notes table. Filter to rows where `state == "accepted"`. If none exist (the list is empty OR every note is `proposed` / `rejected` / superseded), emit:
-  > `⚠ No accepted research notes on this story; the approach will be drafted without research backing. Run '/lumina:research-notes <id>' (and accept the resulting notes via raw MCP) for a stronger draft.`
+- **`detail.research_notes`** — the WorkItemDetail fold of the research_notes table. Filter to rows where `state == "accepted"`. If the count is **zero**, ABORT (do not continue) with the exact one-line message:
+  > `approach requires at least one accepted research note; run /lumina:vet-research <id> to accept proposed notes first, then re-run.`
 
-  Note on note-state defaults: `add_research_note` inserts notes with `state: "proposed"` (the repo default — there is no `state` parameter on the MCP tool). Promotion to `accepted` happens only via a manual `mcp__lumina__update_research_note { id, state: "accepted" }` call; no skill in this plugin promotes notes automatically (the research-notes skill explicitly forbids it — see `research-notes/SKILL.md §State lifecycle`). Expect the "no accepted notes" warning on first invocation of /lumina:approach for any story whose research was collected via /lumina:research-notes — that is the normal state until the operator runs manual acceptance.
+  Substitute `<id>` with the literal `$work_item_id` value (not the template). The skill MUST NOT call `set_story_plan` in this branch. Round-2 hardened this gate (previously warn-and-continue, now hard-fail) — drafting an approach from zero accepted research material lets the approach hallucinate, and the integrity boundary belongs at the read layer per R7. The fix-up path is `/lumina:vet-research <id>`, which is the canonical promotion route from `state="proposed"` to `state="accepted"`.
+
+  Note on note-state defaults: `add_research_note` inserts notes with `state: "proposed"` (the repo default — there is no `state` parameter on the MCP tool). Promotion to `accepted` happens via `/lumina:vet-research <id>` (which calls `update_research_note { id, state: "accepted" | "rejected", rationale }` per the §c vet exception). No skill in this plugin promotes notes silently — vetting is an explicit, user-mediated step. The hard-fail above is what enforces the gate.
 - **`detail.open_questions`** — the WorkItemDetail fold of the open_questions table. Filter to rows where `status == "answered"` (resolved). If any rows have `status == "open"`, emit:
   > `⚠ <N> open question(s) remain unresolved on this story; their answers may change the right approach. Consider running '/lumina:user-interrogation <id>' and resolving via raw MCP first.`
 
