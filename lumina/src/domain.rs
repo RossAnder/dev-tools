@@ -738,6 +738,52 @@ pub enum NextAction {
     StoryReady,
 }
 
+/// Partial-update body for a risk's curatable fields (migration 0005),
+/// consumed by the repo's `update_risk` path (Task 3) and the matching MCP tool
+/// (Task 4). Every field is optional with SET-OR-LEAVE semantics (absent ⇒
+/// column untouched, NOT cleared to NULL). Mirrors [`UpdateResearchNoteRequest`].
+/// `JsonSchema` is derived for the rmcp `Parameters<T>` contract.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct RiskPatch {
+    /// New short summary; absent leaves it unchanged.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// New longer body; absent leaves it unchanged.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// New rationale ("why this risk"); absent leaves it unchanged.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// New severity (typed [`RiskSeverity`]); absent leaves it unchanged. The
+    /// closed enum is the same one the DB CHECK constraint enforces, so an
+    /// invalid wire value fails at deserialisation rather than the SQL layer.
+    #[serde(default)]
+    pub severity: Option<RiskSeverity>,
+    /// New mitigation strategy; absent leaves it unchanged.
+    #[serde(default)]
+    pub mitigation: Option<String>,
+}
+
+/// Partial-update body for a rejected-alternative's curatable fields (migration
+/// 0005), mirroring [`RiskPatch`] minus severity (alternatives carry a free-text
+/// `confidence` instead). Every field is optional with SET-OR-LEAVE semantics.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct AlternativePatch {
+    /// New short summary; absent leaves it unchanged.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// New longer body; absent leaves it unchanged.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// New rationale ("why this was rejected"); absent leaves it unchanged.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// New evidence grade (`high|medium|low`); absent leaves it unchanged.
+    /// Free TEXT (validated in the repo), matching `research_notes.confidence`.
+    #[serde(default)]
+    pub confidence: Option<String>,
+}
+
 /// Partial-update body for a research note's curatable fields (migration 0003),
 /// consumed by the repo's `update_research_note` path (Task 4) and the matching
 /// MCP tool (Task 5). Every field is optional with SET-OR-LEAVE semantics

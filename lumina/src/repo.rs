@@ -31,10 +31,11 @@ use sqlx::{Sqlite, SqlitePool, Transaction};
 use uuid::Uuid;
 
 use crate::domain::{
-    AcceptanceCriterion, ActivityType, ClosureGate, Complexity, ContextBlock, Disposition, Effort,
-    Finding, OpenQuestion, QuestionOption, Relevance, RepoLink, ResearchNote, ResearchState,
-    UpdateFindingRequest, UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem,
-    WorkItemActivity, WorkItemDetail,
+    AcceptanceCriterion, ActivityType, AlternativePatch, ClosureGate, Complexity, ContextBlock,
+    Disposition, Effort, Finding, NextAction, OpenQuestion, QuestionOption, RejectedAlternative,
+    Relevance, RepoLink, ResearchNote, ResearchState, Risk, RiskPatch, RiskSeverity, StoryReadiness,
+    TaskDependency, TaskKind, UpdateFindingRequest, UpdateResearchNoteRequest,
+    UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
 };
 use crate::error::AppError;
 
@@ -370,6 +371,7 @@ pub async fn list_work_items(
             closure_gate           AS "closure_gate?",
             blocked_by_question_id AS "blocked_by_question_id?",
             enabling_option_id     AS "enabling_option_id?",
+            task_kind              AS "task_kind?",
             created_at    AS "created_at!",
             updated_at    AS "updated_at!"
         FROM work_items
@@ -403,10 +405,7 @@ pub async fn list_work_items(
                 closure_gate: r.closure_gate,
                 blocked_by_question_id: r.blocked_by_question_id,
                 enabling_option_id: r.enabling_option_id,
-                // T3 will widen this SELECT to include `task_kind` and populate
-                // the field from the row; T2 stubs it as None to keep the build
-                // green after adding the field to the struct.
-                task_kind: None,
+                task_kind: r.task_kind,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             })
@@ -444,6 +443,7 @@ pub async fn get_work_item_detail(
             closure_gate           AS "closure_gate?",
             blocked_by_question_id AS "blocked_by_question_id?",
             enabling_option_id     AS "enabling_option_id?",
+            task_kind              AS "task_kind?",
             created_at    AS "created_at!",
             updated_at    AS "updated_at!"
         FROM work_items
@@ -471,10 +471,7 @@ pub async fn get_work_item_detail(
         closure_gate: row.closure_gate,
         blocked_by_question_id: row.blocked_by_question_id,
         enabling_option_id: row.enabling_option_id,
-        // T3 will widen this SELECT to include `task_kind` and populate the
-        // field from the row; T2 stubs it as None to keep the build green
-        // after adding the field to the struct.
-        task_kind: None,
+        task_kind: row.task_kind,
         created_at: row.created_at,
         updated_at: row.updated_at,
     };
@@ -490,6 +487,17 @@ pub async fn get_work_item_detail(
     // empty Vec — to keep the per-detail read count low.
     let repo_links = if item.kind == "project" {
         list_repo_links(pool, &item.id).await?
+    } else {
+        Vec::new()
+    };
+
+    // Migration 0005 folds: risks and rejected_alternatives are per-work-item
+    // (live = `superseded_by IS NULL`); task_dependencies are per-task outgoing
+    // edges, so the kind filter mirrors the repo_links project-only filter.
+    let risks = list_risks(pool, &item.id).await?;
+    let rejected_alternatives = list_rejected_alternatives(pool, &item.id).await?;
+    let task_dependencies = if item.kind == "task" {
+        list_outgoing_task_dependencies(pool, &item.id).await?
     } else {
         Vec::new()
     };
@@ -523,12 +531,9 @@ pub async fn get_work_item_detail(
         research_notes,
         open_questions,
         repo_links,
-        // T3 will populate these from the new `risks` / `rejected_alternatives`
-        // / `task_dependencies` tables (migration 0005). T2 stubs them as empty
-        // vecs to keep the build green after adding the fields to the struct.
-        risks: Vec::new(),
-        rejected_alternatives: Vec::new(),
-        task_dependencies: Vec::new(),
+        risks,
+        rejected_alternatives,
+        task_dependencies,
     })
 }
 
@@ -1535,6 +1540,30 @@ pub async fn append_activity(
 /// (object-root, drop null-valued keys), per-kind validate, write back. This is
 /// the fn the MCP `set_story_plan`/`set_task_spec` partial setters compose on, so
 /// merging must NOT clobber sibling keys. One event `work_item.updated`.
+///
+/// # Why Rust-side merge (not SQL `json_patch`) — T3
+///
+/// We deliberately retain the Rust-side read+merge inside the transaction
+/// rather than swapping in `UPDATE … SET attributes = json_patch(attributes, ?)`.
+/// The validator chain ([`normalise_object`] + [`validate_attributes_for_kind`])
+/// must run on the MERGED MAP, not on the patch alone, so that an unknown key
+/// (which the per-kind validator rejects) and a non-object root (rejected by
+/// `normalise_object`) are surfaced as a clean typed [`AppError::Validation`]
+/// (→ 422) instead of a constraint-free `json_patch` overwrite. The atomicity
+/// gain — read and write are committed together, or neither — comes from the
+/// surrounding `pool.begin()` tx, not from the SQL primitive.
+///
+/// # Null-key semantics — unsupported via this entry point (T3)
+///
+/// `normalise_object` strips null-valued keys on every call, so a patch shaped
+/// `{"x": null}` does NOT delete an existing `x` key — it is silently dropped
+/// from the patch before the merge. This is intentional: the widened
+/// `set_story_plan` callers (the `not-doing` and `verification-commands`
+/// SKILLs) never pass null values, only omitted-or-string. Callers needing
+/// explicit key-deletion semantics must go through a future dedicated
+/// `clear_attribute_key` path; do not work around it by storing an empty
+/// string or by editing `normalise_object` to preserve nulls (the TOML export
+/// path depends on null-key stripping).
 pub async fn set_work_item_attributes(
     pool: &SqlitePool,
     id: &str,
@@ -3011,6 +3040,1131 @@ pub async fn set_finding_repo(
 
     tx.commit().await?;
     Ok(())
+}
+
+// ===========================================================================
+// Migration 0005 — round-2 planning surface
+//
+// Three new child tables (`risks`, `rejected_alternatives`, `task_dependencies`)
+// and one new column (`work_items.task_kind`). Every mutation in this section
+// follows the single-mutation-path discipline: open one `pool.begin()` tx,
+// write to exactly ONE domain table, call `record_event` for ONE outbox row,
+// commit. Events are routed to the owning work-item's `work_item` aggregate
+// (NOT a fresh `risk` / `rejected_alternative` / `task_dependency` aggregate),
+// because `export.rs`'s drain dispatch only re-renders `work_item` aggregates;
+// a stand-alone aggregate type would never reach the git-export snapshot.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Risks (migration 0005). Mirror the `research_notes` CRUD: append-with-seq,
+// partial set-or-leave update, supersession by self-FK, hard remove. Severity
+// is a closed enum CHECK-constrained at the DB layer (low|medium|high|critical);
+// we validate it here so an invalid value surfaces as `Validation` (→ 422)
+// rather than a constraint-violation 500.
+// ---------------------------------------------------------------------------
+
+/// Render the canonical wire spelling of a `RiskSeverity` for storage. Mirrors
+/// `enum_to_str` but takes a typed enum so callers cannot fabricate an invalid
+/// value at the call site. The `&str` callers (e.g. `add_risk`) go through
+/// `validate_risk_severity_str` to project a raw string into this enum first.
+fn risk_severity_str(s: RiskSeverity) -> String {
+    enum_to_str(s)
+}
+
+/// Validate a raw severity string against the closed [`RiskSeverity`] enum.
+/// Surfaces a clean `Validation` (→ 422) on an unknown value, BEFORE the DB
+/// CHECK constraint would otherwise fire as a `Db` 500. The canonical wire
+/// spelling (lowercase) is returned for storage.
+fn validate_risk_severity_str(s: &str) -> Result<String, AppError> {
+    serde_json::from_value::<RiskSeverity>(Value::String(s.to_owned()))
+        .map(risk_severity_str)
+        .map_err(|_| {
+            AppError::Validation(format!(
+                "unknown risk severity '{s}' (expected one of low, medium, high, critical)"
+            ))
+        })
+}
+
+/// List the LIVE risk rows for a work item (migration 0005), ordered by the
+/// per-item monotonic `seq`. "Live" = `superseded_by IS NULL`; a superseded
+/// risk drops out of this fold. `query_as!` straight onto the [`Risk`] read
+/// struct (all columns map 1:1).
+async fn list_risks(pool: &SqlitePool, work_item_id: &str) -> Result<Vec<Risk>, AppError> {
+    let rows = sqlx::query_as!(
+        Risk,
+        r#"
+        SELECT
+            id            AS "id!",
+            work_item_id  AS "work_item_id!",
+            seq           AS "seq!",
+            summary       AS "summary!",
+            body          AS "body?",
+            rationale     AS "rationale?",
+            severity      AS "severity?",
+            mitigation    AS "mitigation?",
+            superseded_by AS "superseded_by?",
+            created_at    AS "created_at!"
+        FROM risks
+        WHERE work_item_id = ?1
+          AND superseded_by IS NULL
+        ORDER BY seq
+        "#,
+        work_item_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Append ONE `risks` row under the single-mutation-path discipline (migration
+/// 0005). Mirrors [`add_research_note`]: `seq = MAX+1` per work item allocated
+/// inside the tx, work item must exist (`NotFound` otherwise), severity validated
+/// against the closed [`RiskSeverity`] enum BEFORE the write so an unknown value
+/// is a clean 422 (not a `Db` 500 from the CHECK constraint). Event
+/// `risk.added` routed to the owning work-item's `work_item` aggregate so
+/// `export.rs` re-renders. Returns the new risk id.
+pub async fn add_risk(
+    pool: &SqlitePool,
+    work_item_id: &str,
+    summary: &str,
+    body: Option<&str>,
+    rationale: Option<&str>,
+    severity: &str,
+    mitigation: Option<&str>,
+) -> Result<Uuid, AppError> {
+    let severity = validate_risk_severity_str(severity)?;
+    // Verify the work item exists first (NotFound, not a dangling-FK 500).
+    let _ = work_item_kind(pool, work_item_id).await?;
+
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+
+    let mut tx = pool.begin().await?;
+
+    let seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM risks WHERE work_item_id = ?1"#,
+        work_item_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO risks
+            (id, work_item_id, seq, summary, body, rationale, severity, mitigation)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "#,
+        id_str,
+        work_item_id,
+        seq,
+        summary,
+        body,
+        rationale,
+        severity,
+        mitigation,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({
+        "risk_id": id_str,
+        "seq": seq,
+        "severity": severity,
+    });
+    record_event(&mut tx, "work_item", work_item_id, "risk.added", payload).await?;
+
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Read a risk's owning `work_item_id`, erroring `NotFound` if the risk id has
+/// no row. Mirrors [`research_note_work_item`] — the update / supersede /
+/// remove paths all need the owning aggregate id for the event routing.
+async fn risk_work_item(pool: &SqlitePool, id: &str) -> Result<String, AppError> {
+    sqlx::query!(
+        r#"SELECT work_item_id AS "work_item_id!" FROM risks WHERE id = ?1"#,
+        id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .map(|r| r.work_item_id)
+    .ok_or_else(|| AppError::NotFound(format!("risk '{id}' not found")))
+}
+
+/// Partial set-or-leave update of a risk's curatable fields (migration 0005):
+/// `summary`/`body`/`rationale`/`severity`/`mitigation` via `COALESCE(?, col)`.
+/// The typed [`RiskSeverity`] is rendered to its wire form before the COALESCE
+/// bind. Mirrors [`update_research_note`]. `NotFound` via `rows_affected()==0`;
+/// one event `risk.updated`.
+pub async fn update_risk(
+    pool: &SqlitePool,
+    id: &str,
+    patch: &RiskPatch,
+) -> Result<(), AppError> {
+    let work_item_id = risk_work_item(pool, id).await?;
+    let severity_str: Option<String> = patch.severity.map(risk_severity_str);
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"
+        UPDATE risks
+        SET summary    = COALESCE(?2, summary),
+            body       = COALESCE(?3, body),
+            rationale  = COALESCE(?4, rationale),
+            severity   = COALESCE(?5, severity),
+            mitigation = COALESCE(?6, mitigation)
+        WHERE id = ?1
+        "#,
+        id,
+        patch.summary,
+        patch.body,
+        patch.rationale,
+        severity_str,
+        patch.mitigation,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("risk '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({
+        "risk_id": id,
+        "severity": severity_str,
+    });
+    record_event(&mut tx, "work_item", &work_item_id, "risk.updated", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Supersede a risk (migration 0005): insert a NEW risk row under the same
+/// work item, then set `superseded_by = new_id` on the OLD row so it drops out
+/// of the live `list_risks` fold. Both writes share ONE transaction and emit
+/// EXACTLY ONE `risk.superseded` event (NOT a separate `risk.added` for the
+/// new row — supersession is one logical write, mirroring the research-note
+/// supersession discipline in [`supersede_research_note`]). Returns the new id.
+#[allow(clippy::too_many_arguments)]
+pub async fn supersede_risk(
+    pool: &SqlitePool,
+    work_item_id: &str,
+    old_id: &str,
+    new_summary: &str,
+    new_body: Option<&str>,
+    new_rationale: Option<&str>,
+    new_severity: &str,
+    new_mitigation: Option<&str>,
+) -> Result<Uuid, AppError> {
+    let severity = validate_risk_severity_str(new_severity)?;
+    // Verify the old risk belongs to the named work item; NotFound otherwise.
+    let actual_wi = risk_work_item(pool, old_id).await?;
+    if actual_wi != work_item_id {
+        return Err(AppError::Validation(format!(
+            "risk '{old_id}' belongs to work_item '{actual_wi}', not '{work_item_id}'"
+        )));
+    }
+
+    let new_id = Uuid::now_v7();
+    let new_id_str = new_id.to_string();
+
+    let mut tx = pool.begin().await?;
+
+    let seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM risks WHERE work_item_id = ?1"#,
+        work_item_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO risks
+            (id, work_item_id, seq, summary, body, rationale, severity, mitigation)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "#,
+        new_id_str,
+        work_item_id,
+        seq,
+        new_summary,
+        new_body,
+        new_rationale,
+        severity,
+        new_mitigation,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE risks SET superseded_by = ?2 WHERE id = ?1"#,
+        old_id,
+        new_id_str,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        // Concurrent delete between `risk_work_item` read and the UPDATE; the
+        // tx drops → ROLLBACK so the INSERT above does not leak.
+        return Err(AppError::NotFound(format!("risk '{old_id}' not found")));
+    }
+
+    let payload = serde_json::json!({
+        "old_id": old_id,
+        "new_id": new_id_str,
+        "seq": seq,
+        "severity": severity,
+    });
+    record_event(&mut tx, "work_item", work_item_id, "risk.superseded", payload).await?;
+
+    tx.commit().await?;
+    Ok(new_id)
+}
+
+/// Hard-delete a risk under the single-mutation-path discipline. Risks have no
+/// independent export identity (they fold into the owning work-item's TOML), so
+/// removal is a hard DELETE. `NotFound` via `rows_affected()==0`. Event
+/// `risk.removed` on the owning work-item's aggregate.
+pub async fn remove_risk(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+    let work_item_id = risk_work_item(pool, id).await?;
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(r#"DELETE FROM risks WHERE id = ?1"#, id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("risk '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "risk_id": id, "removed": true });
+    record_event(&mut tx, "work_item", &work_item_id, "risk.removed", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Rejected alternatives (migration 0005). Same shape as `risks` minus severity;
+// `confidence` is free TEXT (matches `research_notes.confidence` — validated in
+// the repo, NOT a DB CHECK).
+// ---------------------------------------------------------------------------
+
+/// List the LIVE rejected-alternative rows for a work item (migration 0005),
+/// ordered by the per-item monotonic `seq`. "Live" = `superseded_by IS NULL`.
+async fn list_rejected_alternatives(
+    pool: &SqlitePool,
+    work_item_id: &str,
+) -> Result<Vec<RejectedAlternative>, AppError> {
+    let rows = sqlx::query_as!(
+        RejectedAlternative,
+        r#"
+        SELECT
+            id            AS "id!",
+            work_item_id  AS "work_item_id!",
+            seq           AS "seq!",
+            summary       AS "summary!",
+            body          AS "body?",
+            rationale     AS "rationale?",
+            confidence    AS "confidence?",
+            superseded_by AS "superseded_by?",
+            created_at    AS "created_at!"
+        FROM rejected_alternatives
+        WHERE work_item_id = ?1
+          AND superseded_by IS NULL
+        ORDER BY seq
+        "#,
+        work_item_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Append ONE `rejected_alternatives` row under the single-mutation-path
+/// discipline (migration 0005). Mirrors [`add_risk`] minus the severity
+/// validation: `confidence` is free TEXT (validated nowhere at the DB; mirrors
+/// `research_notes.confidence`). Event `rejected_alternative.added`.
+pub async fn add_rejected_alternative(
+    pool: &SqlitePool,
+    work_item_id: &str,
+    summary: &str,
+    body: Option<&str>,
+    rationale: Option<&str>,
+    confidence: Option<&str>,
+) -> Result<Uuid, AppError> {
+    // Verify the work item exists first (NotFound, not a dangling-FK 500).
+    let _ = work_item_kind(pool, work_item_id).await?;
+
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+
+    let mut tx = pool.begin().await?;
+
+    let seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM rejected_alternatives WHERE work_item_id = ?1"#,
+        work_item_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO rejected_alternatives
+            (id, work_item_id, seq, summary, body, rationale, confidence)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "#,
+        id_str,
+        work_item_id,
+        seq,
+        summary,
+        body,
+        rationale,
+        confidence,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({
+        "alternative_id": id_str,
+        "seq": seq,
+    });
+    record_event(
+        &mut tx,
+        "work_item",
+        work_item_id,
+        "rejected_alternative.added",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Read a rejected-alternative's owning `work_item_id`, erroring `NotFound` if
+/// the id has no row. Mirrors [`risk_work_item`].
+async fn rejected_alternative_work_item(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<String, AppError> {
+    sqlx::query!(
+        r#"SELECT work_item_id AS "work_item_id!" FROM rejected_alternatives WHERE id = ?1"#,
+        id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .map(|r| r.work_item_id)
+    .ok_or_else(|| AppError::NotFound(format!("rejected_alternative '{id}' not found")))
+}
+
+/// Partial set-or-leave update of a rejected-alternative's curatable fields
+/// (migration 0005). Mirrors [`update_risk`] minus severity; `confidence` is
+/// free TEXT, no enum projection. Event `rejected_alternative.updated`.
+pub async fn update_rejected_alternative(
+    pool: &SqlitePool,
+    id: &str,
+    patch: &AlternativePatch,
+) -> Result<(), AppError> {
+    let work_item_id = rejected_alternative_work_item(pool, id).await?;
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"
+        UPDATE rejected_alternatives
+        SET summary    = COALESCE(?2, summary),
+            body       = COALESCE(?3, body),
+            rationale  = COALESCE(?4, rationale),
+            confidence = COALESCE(?5, confidence)
+        WHERE id = ?1
+        "#,
+        id,
+        patch.summary,
+        patch.body,
+        patch.rationale,
+        patch.confidence,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("rejected_alternative '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "alternative_id": id });
+    record_event(
+        &mut tx,
+        "work_item",
+        &work_item_id,
+        "rejected_alternative.updated",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Supersede a rejected alternative (migration 0005): insert a NEW row under
+/// the same work item, then point the OLD row at it via `superseded_by`.
+/// Mirrors [`supersede_risk`]; one transaction, one event
+/// `rejected_alternative.superseded`. Returns the new id.
+pub async fn supersede_rejected_alternative(
+    pool: &SqlitePool,
+    work_item_id: &str,
+    old_id: &str,
+    new_summary: &str,
+    new_body: Option<&str>,
+    new_rationale: Option<&str>,
+    new_confidence: Option<&str>,
+) -> Result<Uuid, AppError> {
+    let actual_wi = rejected_alternative_work_item(pool, old_id).await?;
+    if actual_wi != work_item_id {
+        return Err(AppError::Validation(format!(
+            "rejected_alternative '{old_id}' belongs to work_item '{actual_wi}', \
+             not '{work_item_id}'"
+        )));
+    }
+
+    let new_id = Uuid::now_v7();
+    let new_id_str = new_id.to_string();
+
+    let mut tx = pool.begin().await?;
+
+    let seq = sqlx::query!(
+        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM rejected_alternatives WHERE work_item_id = ?1"#,
+        work_item_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .next;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO rejected_alternatives
+            (id, work_item_id, seq, summary, body, rationale, confidence)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "#,
+        new_id_str,
+        work_item_id,
+        seq,
+        new_summary,
+        new_body,
+        new_rationale,
+        new_confidence,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE rejected_alternatives SET superseded_by = ?2 WHERE id = ?1"#,
+        old_id,
+        new_id_str,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!(
+            "rejected_alternative '{old_id}' not found"
+        )));
+    }
+
+    let payload = serde_json::json!({
+        "old_id": old_id,
+        "new_id": new_id_str,
+        "seq": seq,
+    });
+    record_event(
+        &mut tx,
+        "work_item",
+        work_item_id,
+        "rejected_alternative.superseded",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(new_id)
+}
+
+/// Hard-delete a rejected alternative under the single-mutation-path discipline.
+/// `NotFound` via `rows_affected()==0`; one event `rejected_alternative.removed`.
+pub async fn remove_rejected_alternative(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+    let work_item_id = rejected_alternative_work_item(pool, id).await?;
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(r#"DELETE FROM rejected_alternatives WHERE id = ?1"#, id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("rejected_alternative '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "alternative_id": id, "removed": true });
+    record_event(
+        &mut tx,
+        "work_item",
+        &work_item_id,
+        "rejected_alternative.removed",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Task dependencies (migration 0005). Directed edges between two `kind=task`
+// work-items. The BEFORE INSERT trigger on `task_dependencies` enforces the
+// kind=task constraint on both endpoints; we PRE-CHECK in the repo so an
+// illegal edge surfaces as a clean `Validation` (→ 422) rather than the
+// trigger's RAISE(ABORT, ...) mapped to a `Db` 500.
+// ---------------------------------------------------------------------------
+
+/// List the OUTGOING task_dependencies edges from `task_id`, ordered by
+/// `depends_on_id` for deterministic output. Used by `get_work_item_detail`'s
+/// per-task fold.
+async fn list_outgoing_task_dependencies(
+    pool: &SqlitePool,
+    task_id: &str,
+) -> Result<Vec<TaskDependency>, AppError> {
+    let rows = sqlx::query_as!(
+        TaskDependency,
+        r#"
+        SELECT
+            task_id       AS "task_id!",
+            depends_on_id AS "depends_on_id!",
+            kind          AS "kind!",
+            created_at    AS "created_at!"
+        FROM task_dependencies
+        WHERE task_id = ?1
+        ORDER BY depends_on_id
+        "#,
+        task_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// List all task_dependencies edges where BOTH endpoints are direct task
+/// children of `story_id`. Sorted by `(task_id, depends_on_id)` for
+/// deterministic output. Used by [`compute_task_batches`] and by the
+/// `wire-task-deps` SKILL to render the story's dependency graph.
+pub async fn list_task_dependencies(
+    pool: &SqlitePool,
+    story_id: &str,
+) -> Result<Vec<TaskDependency>, AppError> {
+    let rows = sqlx::query_as!(
+        TaskDependency,
+        r#"
+        SELECT
+            task_id       AS "task_id!",
+            depends_on_id AS "depends_on_id!",
+            kind          AS "kind!",
+            created_at    AS "created_at!"
+        FROM task_dependencies
+        WHERE task_id       IN (SELECT id FROM work_items WHERE parent_id = ?1 AND kind = 'task')
+          AND depends_on_id IN (SELECT id FROM work_items WHERE parent_id = ?1 AND kind = 'task')
+        ORDER BY task_id, depends_on_id
+        "#,
+        story_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Add a task→task dependency edge under the single-mutation-path discipline.
+/// PRE-CHECKs that both endpoints reference `kind='task'` rows so the kind-
+/// check trigger's `RAISE(ABORT, ...)` does not surface as a `Db` 500. The
+/// composite PK `(task_id, depends_on_id)` makes duplicate edges structurally
+/// impossible — a re-add surfaces as a UNIQUE-violation `Validation`.
+/// Self-loops are rejected by the row-level `CHECK (task_id <> depends_on_id)`,
+/// re-projected here as a clean `Validation`. Event `task_dependency.added`
+/// routed to the owning task's aggregate so `export.rs` re-renders.
+pub async fn add_task_dependency(
+    pool: &SqlitePool,
+    task_id: &str,
+    depends_on_id: &str,
+    kind: &str,
+) -> Result<TaskDependency, AppError> {
+    if task_id == depends_on_id {
+        return Err(AppError::Validation(format!(
+            "task_dependency self-loop rejected: task '{task_id}' cannot depend on itself"
+        )));
+    }
+
+    // Pre-check both endpoints are kind=task; surfaces NotFound (id absent)
+    // and Validation (wrong kind) as clean typed errors.
+    let task_kind = work_item_kind(pool, task_id).await?;
+    if task_kind != "task" {
+        return Err(AppError::Validation(format!(
+            "task_dependency.task_id must reference a 'task', not a '{task_kind}'"
+        )));
+    }
+    let dep_kind = work_item_kind(pool, depends_on_id).await?;
+    if dep_kind != "task" {
+        return Err(AppError::Validation(format!(
+            "task_dependency.depends_on_id must reference a 'task', not a '{dep_kind}'"
+        )));
+    }
+
+    let mut tx = pool.begin().await?;
+
+    let insert = sqlx::query!(
+        r#"
+        INSERT INTO task_dependencies (task_id, depends_on_id, kind)
+        VALUES (?1, ?2, ?3)
+        "#,
+        task_id,
+        depends_on_id,
+        kind,
+    )
+    .execute(&mut *tx)
+    .await;
+
+    if let Err(e) = insert {
+        if is_unique_violation(&e) {
+            return Err(AppError::Validation(format!(
+                "task_dependency '{task_id} -> {depends_on_id}' already exists"
+            )));
+        }
+        return Err(e.into());
+    }
+
+    let row = sqlx::query_as!(
+        TaskDependency,
+        r#"
+        SELECT
+            task_id       AS "task_id!",
+            depends_on_id AS "depends_on_id!",
+            kind          AS "kind!",
+            created_at    AS "created_at!"
+        FROM task_dependencies
+        WHERE task_id = ?1 AND depends_on_id = ?2
+        "#,
+        task_id,
+        depends_on_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let payload = serde_json::json!({
+        "task_id": task_id,
+        "depends_on_id": depends_on_id,
+        "kind": kind,
+    });
+    record_event(&mut tx, "work_item", task_id, "task_dependency.added", payload).await?;
+
+    tx.commit().await?;
+    Ok(row)
+}
+
+/// Remove a task→task dependency edge. `NotFound` via `rows_affected()==0` so
+/// removing an absent edge does not emit a spurious event. Event
+/// `task_dependency.removed` routed to the owning task's aggregate.
+pub async fn remove_task_dependency(
+    pool: &SqlitePool,
+    task_id: &str,
+    depends_on_id: &str,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"DELETE FROM task_dependencies WHERE task_id = ?1 AND depends_on_id = ?2"#,
+        task_id,
+        depends_on_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!(
+            "task_dependency '{task_id} -> {depends_on_id}' not found"
+        )));
+    }
+
+    let payload = serde_json::json!({
+        "task_id": task_id,
+        "depends_on_id": depends_on_id,
+    });
+    record_event(&mut tx, "work_item", task_id, "task_dependency.removed", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// work_items.task_kind setter (migration 0005). Task-scoped column; the CHECK
+// constraint accepts NULL OR the four enum literals (foundation | vertical-
+// slice | pattern-replacement | polish). We validate the enum value here
+// before the write so an unknown literal surfaces as `Validation` (→ 422)
+// rather than a `Db` 500.
+// ---------------------------------------------------------------------------
+
+/// Set or clear a task's `task_kind` (migration 0005). Task-scoped: a non-`task`
+/// kind is rejected with a typed [`AppError::Validation`] (mirrors
+/// [`set_effort`] / [`set_complexity`]). `task_kind = None` CLEARS the column to
+/// NULL (deliberate divergence from the SET-OR-LEAVE convention — `task_kind`
+/// is a discriminator the sprint composer may legitimately want to clear). One
+/// event `work_item.task_kind_set`.
+pub async fn set_task_kind(
+    pool: &SqlitePool,
+    task_id: &str,
+    task_kind: Option<TaskKind>,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, task_id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "task_kind is settable only on a task, not on '{kind}'"
+        )));
+    }
+
+    let value: Option<String> = task_kind.map(enum_to_str);
+
+    let mut tx = pool.begin().await?;
+
+    let affected = sqlx::query!(
+        r#"UPDATE work_items SET task_kind = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
+        task_id,
+        value,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "task_id": task_id, "task_kind": value });
+    record_event(&mut tx, "work_item", task_id, "work_item.task_kind_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// compute_task_batches (migration 0005). Kahn's algorithm topological sort on
+// the per-story task dependency graph. Read-only; no transaction, no events.
+// ---------------------------------------------------------------------------
+
+/// Sort-key projection of [`TaskKind`] for intra-phase tie-breaking. Foundation
+/// tasks float to the earliest possible phase so the sprint composer's
+/// "Phase 1 (foundation)" labelling is structural, not advisory. NULL
+/// `task_kind` sorts LAST (after all four enum values).
+fn task_kind_sort_key(s: Option<&str>) -> u8 {
+    match s {
+        Some("foundation") => 0,
+        Some("vertical-slice") => 1,
+        Some("pattern-replacement") => 2,
+        Some("polish") => 3,
+        _ => 4,
+    }
+}
+
+/// Compute task batches (phases) for a story via Kahn's topological sort.
+/// Returns a `Vec` of phases, each phase a `Vec` of task ids whose dependencies
+/// were satisfied by earlier phases. Within a phase, tasks sort by
+/// `(task_kind ordering, created_at)` so foundation tasks rise to the earliest
+/// phase as a deterministic tie-break.
+///
+/// Errors:
+///   * `NotFound` — `story_id` does not exist.
+///   * `Validation` — `story_id` exists but is not `kind='story'`.
+///   * `Cycle { edges }` — the dependency graph contains a cycle; the residue
+///     (edges that remain after Kahn's drains the zero-in-degree frontier) is
+///     returned so the caller can surface the offending edges.
+///
+/// Read-only: no transaction, no events.
+pub async fn compute_task_batches(
+    pool: &SqlitePool,
+    story_id: &str,
+) -> Result<Vec<Vec<String>>, AppError> {
+    // Validate the story exists and IS a story (NotFound vs Validation split).
+    let kind = work_item_kind(pool, story_id).await?;
+    if kind != "story" {
+        return Err(AppError::Validation(format!(
+            "compute_task_batches expects a 'story', not a '{kind}'"
+        )));
+    }
+
+    // Load all task children of the story, ordered by created_at for stable
+    // intra-phase tie-breaking when task_kind is NULL on every task. We carry
+    // `task_kind` alongside the id so the intra-phase sort can use it without
+    // a second query.
+    let tasks = sqlx::query!(
+        r#"
+        SELECT
+            id        AS "id!",
+            task_kind AS "task_kind?",
+            created_at AS "created_at!"
+        FROM work_items
+        WHERE parent_id = ?1
+          AND kind = 'task'
+          AND deleted_at IS NULL
+        ORDER BY created_at, id
+        "#,
+        story_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if tasks.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Build the dependency graph: in_degree[v] = number of unsatisfied deps;
+    // successors[u] = tasks that depend on u (so we can decrement their
+    // in-degree when u is drained).
+    use std::collections::BTreeMap;
+    let task_ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
+    let mut id_to_idx: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, id) in task_ids.iter().enumerate() {
+        id_to_idx.insert(id.as_str(), i);
+    }
+
+    let edges = list_task_dependencies(pool, story_id).await?;
+    let n = task_ids.len();
+    let mut in_degree: Vec<usize> = vec![0; n];
+    let mut successors: Vec<Vec<usize>> = vec![Vec::new(); n];
+
+    for edge in &edges {
+        // Both endpoints must be in the per-story task set; defensively skip
+        // edges whose endpoints lie outside (should not happen given the
+        // `list_task_dependencies` WHERE clause, but the index lookup is the
+        // authority here).
+        let Some(&u) = id_to_idx.get(edge.depends_on_id.as_str()) else {
+            continue;
+        };
+        let Some(&v) = id_to_idx.get(edge.task_id.as_str()) else {
+            continue;
+        };
+        successors[u].push(v);
+        in_degree[v] += 1;
+    }
+
+    // Build the intra-phase sort key cache once.
+    let sort_key: Vec<(u8, &str, &str)> = tasks
+        .iter()
+        .map(|t| (task_kind_sort_key(t.task_kind.as_deref()), t.created_at.as_str(), t.id.as_str()))
+        .collect();
+
+    // Kahn's: repeatedly drain the zero-in-degree frontier as a phase, then
+    // decrement successors. Within each phase, sort by (task_kind, created_at,
+    // id) so foundation tasks float earliest.
+    let mut remaining: usize = n;
+    let mut drained: Vec<bool> = vec![false; n];
+    let mut phases: Vec<Vec<String>> = Vec::new();
+
+    loop {
+        let mut frontier: Vec<usize> = (0..n)
+            .filter(|&i| !drained[i] && in_degree[i] == 0)
+            .collect();
+        if frontier.is_empty() {
+            break;
+        }
+        frontier.sort_by(|&a, &b| sort_key[a].cmp(&sort_key[b]));
+
+        let phase: Vec<String> = frontier.iter().map(|&i| task_ids[i].clone()).collect();
+        for &i in &frontier {
+            drained[i] = true;
+            remaining -= 1;
+            // Defensive clone of successor list — borrow-checker won't let us
+            // index `successors[i]` while mutably borrowing `in_degree` if the
+            // successor list itself borrows from `successors` (it doesn't,
+            // since `Vec<usize>` is Copy-like). This pattern is the simplest.
+            for j in successors[i].clone() {
+                in_degree[j] = in_degree[j].saturating_sub(1);
+            }
+        }
+        phases.push(phase);
+    }
+
+    if remaining > 0 {
+        // Cycle: the residue is the set of undrained tasks plus the edges that
+        // remain among them. Carry the offending edges (not just the task ids)
+        // so the caller can render a precise error.
+        let residue_edges: Vec<(String, String)> = edges
+            .iter()
+            .filter_map(|e| {
+                let u = id_to_idx.get(e.depends_on_id.as_str())?;
+                let v = id_to_idx.get(e.task_id.as_str())?;
+                if !drained[*u] && !drained[*v] {
+                    Some((e.task_id.clone(), e.depends_on_id.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        return Err(AppError::Cycle { edges: residue_edges });
+    }
+
+    Ok(phases)
+}
+
+// ---------------------------------------------------------------------------
+// get_story_readiness (migration 0005). Compose existing reads to summarise a
+// story's planning-pipeline readiness and the next recommended block.
+// Read-only; no transaction, no events.
+// ---------------------------------------------------------------------------
+
+/// Compute a story's [`StoryReadiness`] aggregate (migration 0005 / Phase-3
+/// planning). Composes existing reads only — no mutations, no events.
+///
+/// The `next_recommended_action` cascade follows the canonical Phase-3 block
+/// sequence (first match wins):
+///   1. !problem_statement_set                         → `RunProblemStatement`
+///   2. accepted_research_count == 0
+///      a. any proposed research note            → `RunVetResearch`
+///      b. else                                  → `RunResearchNotes`
+///   3. unresolved_questions > 0                     → `RunUserInterrogation`
+///   4. !has_approach                                → `RunApproach`
+///   5. no `attributes.verification_commands`        → `RunVerificationCommands`
+///   6. no risks rows (live)                         → `RunRisks`
+///   7. no child tasks                               → `RunDecomposeTasks`
+///   8. !has_acceptance_criteria_on_all_tasks        → `RunSetTaskSpec`
+///   9. ≥2 tasks AND no task_dependencies rows       → `RunWireTaskDeps`
+///  10. else                                         → `StoryReady`
+///
+/// Errors:
+///   * `NotFound` — `story_id` does not exist.
+///   * `Validation` — `story_id` exists but is not `kind='story'`.
+pub async fn get_story_readiness(
+    pool: &SqlitePool,
+    story_id: &str,
+) -> Result<StoryReadiness, AppError> {
+    let kind = work_item_kind(pool, story_id).await?;
+    if kind != "story" {
+        return Err(AppError::Validation(format!(
+            "get_story_readiness expects a 'story', not a '{kind}'"
+        )));
+    }
+
+    // Load the story row (attributes carries problem_statement /
+    // execution_strategy / verification_commands keys).
+    let detail = get_work_item_detail(pool, story_id).await?;
+    let attrs: serde_json::Map<String, Value> = detail
+        .item
+        .attributes
+        .as_ref()
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+
+    let problem_statement_set = attrs.contains_key("problem_statement");
+    let has_approach = attrs.contains_key("execution_strategy");
+    let has_verification_commands = attrs.contains_key("verification_commands");
+
+    // Accepted research = live notes with state='accepted'. The detail fold
+    // already filters `superseded_by IS NULL`.
+    let accepted_research_count: u32 = detail
+        .research_notes
+        .iter()
+        .filter(|n| n.state.as_deref() == Some("accepted"))
+        .count() as u32;
+    let any_proposed_research = detail
+        .research_notes
+        .iter()
+        .any(|n| n.state.as_deref() == Some("proposed"));
+
+    let unresolved_questions: u32 = detail
+        .open_questions
+        .iter()
+        .filter(|q| q.status.as_deref() == Some("open"))
+        .count() as u32;
+
+    // Tasks under the story. We need each task's acceptance-criteria count to
+    // compute `has_acceptance_criteria_on_all_tasks`; one query per task is
+    // O(n) reads but acceptable for a per-story summary (n is small).
+    let tasks: Vec<&WorkItem> = detail
+        .children
+        .iter()
+        .filter(|c| c.kind == "task")
+        .collect();
+    let task_count = tasks.len();
+
+    let mut tasks_with_no_ac: u32 = 0;
+    for t in &tasks {
+        let n = sqlx::query!(
+            r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
+            t.id,
+        )
+        .fetch_one(pool)
+        .await?
+        .n;
+        if n == 0 {
+            tasks_with_no_ac += 1;
+        }
+    }
+    let has_acceptance_criteria_on_all_tasks = task_count > 0 && tasks_with_no_ac == 0;
+
+    // Risk count (live).
+    let has_risks = !detail.risks.is_empty();
+
+    // Dependency edges among this story's tasks.
+    let dep_count = list_task_dependencies(pool, story_id).await?.len();
+
+    let ready_for_decomposition = problem_statement_set
+        && accepted_research_count >= 1
+        && unresolved_questions == 0
+        && has_approach;
+
+    // Cascade — first match wins. Ordering is the canonical Phase-3 block
+    // sequence (documented on the function header above).
+    let next_recommended_action = if !problem_statement_set {
+        NextAction::RunProblemStatement
+    } else if accepted_research_count == 0 {
+        if any_proposed_research {
+            NextAction::RunVetResearch
+        } else {
+            NextAction::RunResearchNotes
+        }
+    } else if unresolved_questions > 0 {
+        NextAction::RunUserInterrogation
+    } else if !has_approach {
+        NextAction::RunApproach
+    } else if !has_verification_commands {
+        NextAction::RunVerificationCommands
+    } else if !has_risks {
+        NextAction::RunRisks
+    } else if task_count == 0 {
+        NextAction::RunDecomposeTasks
+    } else if !has_acceptance_criteria_on_all_tasks {
+        NextAction::RunSetTaskSpec
+    } else if task_count >= 2 && dep_count == 0 {
+        NextAction::RunWireTaskDeps
+    } else {
+        NextAction::StoryReady
+    };
+
+    Ok(StoryReadiness {
+        story_id: story_id.to_owned(),
+        problem_statement_set,
+        accepted_research_count,
+        unresolved_questions,
+        has_approach,
+        has_acceptance_criteria_on_all_tasks,
+        ready_for_decomposition,
+        next_recommended_action,
+    })
 }
 
 /// Append ONE `events` row inside an in-flight transaction. Called by every

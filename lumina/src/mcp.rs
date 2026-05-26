@@ -90,6 +90,21 @@ fn app_error_to_mcp(err: AppError) -> ErrorData {
     match err {
         AppError::NotFound(m) => ErrorData::resource_not_found(m, None),
         AppError::Validation(m) => ErrorData::invalid_params(m, None),
+        // Cycle is caller-fixable input (a task-dependency graph cycle); map to
+        // `invalid_params` like `Validation`. The offending-edge list is included
+        // in the surfaced message so the wire-task-deps SKILL / composer can act
+        // on it without a separate query.
+        AppError::Cycle { ref edges } => {
+            let edge_str = edges
+                .iter()
+                .map(|(a, b)| format!("{a} -> {b}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            ErrorData::invalid_params(
+                format!("task-dependency cycle detected: [{edge_str}]"),
+                None,
+            )
+        }
         AppError::Db(_) => ErrorData::internal_error("a database error occurred", None),
         AppError::Other(_) => ErrorData::internal_error("an internal error occurred", None),
     }
