@@ -74,7 +74,7 @@ use sqlx::SqlitePool;
 
 use crate::domain::{
     AlternativePatch, ClosureGate, Complexity, CreateWorkItemRequest, Disposition, Effort, Kind,
-    Origin, Relevance, RiskPatch, RiskSeverity, Severity, Status, TaskKind,
+    Origin, Relevance, RiskPatch, RiskSeverity, Severity, Status, TaskKind, Tier,
     UpdateResearchNoteRequest,
 };
 use crate::error::AppError;
@@ -351,9 +351,14 @@ pub struct SetTaskSpecParams {
     /// The task's outcome; absent ⇒ leave any existing value untouched.
     #[serde(default)]
     pub outcome: Option<String>,
-    /// The task's dispatch metadata object; absent ⇒ leave any existing value untouched.
+    /// The task's dispatch tier (`lite|deep`); absent ⇒ leave any existing
+    /// value untouched. When present, the tool also makes a SECOND mutation
+    /// (`set_task_tier`) that writes the `work_items.tier` column directly.
+    /// Replaces the round-2 free-form `dispatch` field; legacy callers passing
+    /// `dispatch: …` now get a deserialise-time `unknown field` error
+    /// (intentional — round-3 forward-only typing per plan).
     #[serde(default)]
-    pub dispatch: Option<serde_json::Value>,
+    pub tier: Option<Tier>,
 }
 
 /// Arguments for the `create_context_block` write tool. Both block fields are
@@ -1038,6 +1043,31 @@ pub struct SetTaskKindParams {
     pub task_kind: Option<TaskKind>,
 }
 
+// ---- Task dispatch-plan + tier params (migration 0006, round-3 T4) -------
+
+/// Arguments for the `get_task_dispatch_plan` read tool →
+/// `repo::get_task_dispatch_plan` (migration 0006). Returns the per-batch
+/// dispatch plan: each batch is a parallel-safe set of tasks ordered by
+/// `compute_task_batches`, and each entry carries the derived [`Tier`]
+/// alongside the inputs (effort/complexity/files_touched_count/has_cross_repo).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetTaskDispatchPlanParams {
+    /// The story work-item id whose dispatch plan to compute.
+    pub story_id: String,
+}
+
+/// Arguments for the `set_task_tier` write tool → `repo::set_task_tier`
+/// (migration 0006). `tier == None` clears the column. Task-scoped: a non-task
+/// target is rejected with `invalid_params`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetTaskTierParams {
+    /// The task work-item id whose `tier` to set or clear.
+    pub id: String,
+    /// The new dispatch tier; omit to clear back to NULL.
+    #[serde(default)]
+    pub tier: Option<Tier>,
+}
+
 /// The MCP tool-handler. Holds the shared `Arc<SqlitePool>` and the generated
 /// `ToolRouter` (the `#[tool_router]` macro emits `Self::tool_router()`; we
 /// store its result in the `tool_router` field so `#[tool_handler]` can route
@@ -1299,9 +1329,11 @@ impl LuminaTools {
         structured_result(serde_json::json!({ "id": p.id }))
     }
 
-    /// Set a task's spec attributes (execution_detail / files_touched / outcome /
-    /// dispatch) in one call: build a sub-object of the present keys, then make
-    /// ONE `set_work_item_attributes` call.
+    /// Set a task's spec attributes (execution_detail / files_touched /
+    /// outcome) and dispatch tier in one call: build a sub-object of the
+    /// present attribute keys, then make ONE `set_work_item_attributes` call,
+    /// and (if `tier` is set) make a SECOND mutation through `set_task_tier`
+    /// to write the `work_items.tier` typed column (migration 0006).
     ///
     /// `files_touched` accepts either a bare path string (resolves to the
     /// project's primary linked repo) or a `{repo, path}` object naming a
@@ -1311,7 +1343,7 @@ impl LuminaTools {
     /// (`Validation` → `invalid_params`). If no structured entries are present,
     /// no repo-link lookup is issued (zero query cost for legacy callers).
     #[tool(
-        description = "Set a task's spec attributes (execution_detail/files_touched/outcome/dispatch) in one merge call. `files_touched` accepts either bare path strings (resolve to the project's primary linked repo) or `{repo, path}` objects whose `repo` slug must reference a `repo_links` row on the task's project ancestor (migration 0004). Records one event.",
+        description = "Set a task's spec attributes (execution_detail/files_touched/outcome) and dispatch tier (typed: lite|deep) in one call. When `tier` is present, the tool also writes the `work_items.tier` column (a second mutation via `set_task_tier`). `files_touched` accepts either bare path strings (resolve to the project's primary linked repo) or `{repo, path}` objects whose `repo` slug must reference a `repo_links` row on the task's project ancestor (migration 0004). Records one or two events depending on which fields are set.",
         annotations(idempotent_hint = true, open_world_hint = false)
     )]
     async fn set_task_spec(
@@ -1368,12 +1400,23 @@ impl LuminaTools {
         if let Some(v) = p.outcome {
             obj.insert("outcome".into(), serde_json::Value::String(v));
         }
-        if let Some(v) = p.dispatch {
-            obj.insert("dispatch".into(), v);
-        }
-        repo::set_work_item_attributes(&self.pool, &p.id, &serde_json::Value::Object(obj))
+        // The `attributes` merge writes execution_detail/files_touched/outcome.
+        // `tier` is a TYPED COLUMN on work_items (migration 0006), not an
+        // attribute — route it through the dedicated `set_task_tier` write.
+        if !obj.is_empty() {
+            repo::set_work_item_attributes(
+                &self.pool,
+                &p.id,
+                &serde_json::Value::Object(obj),
+            )
             .await
             .map_err(app_error_to_mcp)?;
+        }
+        if let Some(tier) = p.tier {
+            repo::set_task_tier(&self.pool, &p.id, Some(tier))
+                .await
+                .map_err(app_error_to_mcp)?;
+        }
         structured_result(serde_json::json!({ "id": p.id }))
     }
 
@@ -2269,6 +2312,49 @@ impl LuminaTools {
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::json!({ "id": id }))
     }
+
+    // ---- Task dispatch-plan + tier tools (migration 0006, round-3 T4) ---
+
+    /// Story-level dispatch plan. Returns `Vec<Vec<BatchEntry>>` — outer
+    /// dimension is the topologically-sorted batch sequence (one batch per
+    /// dependency-respecting wave), inner dimension is the per-task entries
+    /// with effort/complexity/tier/files_touched_count/has_cross_repo. The
+    /// `wire-task-deps` skill consumes this to render the dispatch budget.
+    /// Single repo call → `repo::get_task_dispatch_plan`. Read-only; a cycle
+    /// surfaces as `invalid_params` carrying the offending edges (via
+    /// [`AppError::Cycle`] → `app_error_to_mcp`).
+    #[tool(
+        description = "Compute the per-batch dispatch plan for a story: each batch is a parallel-safe set of tasks ordered by `compute_task_batches`, and each entry carries the derived `Tier` (lite|deep) computed via the round-3 derivation rule. Read-only.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_task_dispatch_plan(
+        &self,
+        Parameters(GetTaskDispatchPlanParams { story_id }): Parameters<GetTaskDispatchPlanParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let plan = repo::get_task_dispatch_plan(&self.pool, &story_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "story_id": story_id, "batches": plan }))
+    }
+
+    /// Set or clear a task's dispatch tier directly (single repo call →
+    /// `repo::set_task_tier`). Convenience wrapper for callers that need to
+    /// set/clear tier without touching the rest of the task spec. Rejects
+    /// non-task rows at the Rust layer (matching `set_task_kind`).
+    /// `tier == None` clears the column.
+    #[tool(
+        description = "Set the dispatch tier on a task work-item (`lite|deep`, or null to clear). Convenience wrapper for callers that only want to set tier; `set_task_spec` also accepts a tier field if writing other spec fields too. Rejects non-task rows. Records one `work_item.tier_set` event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn set_task_tier(
+        &self,
+        Parameters(SetTaskTierParams { id, tier }): Parameters<SetTaskTierParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::set_task_tier(&self.pool, &id, tier)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id }))
+    }
 }
 
 impl LuminaTools {
@@ -2444,6 +2530,9 @@ mod tests {
             // story readiness + task_kind (migration 0005, T4)
             "get_story_readiness",
             "set_task_kind",
+            // task dispatch-plan + tier (migration 0006, round-3 T4)
+            "get_task_dispatch_plan",
+            "set_task_tier",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -2453,11 +2542,12 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 53 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4).
+        // 55 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier).
         assert_eq!(
             names.len(),
-            53,
-            "advertised tool count must be exactly 53, got {}: {names:?}",
+            55,
+            "advertised tool count must be exactly 55, got {}: {names:?}",
             names.len()
         );
 
@@ -2562,6 +2652,8 @@ mod tests {
             "list_task_dependencies",
             "compute_task_batches",
             "get_story_readiness",
+            // migration 0006 / round-3 T4 read tool.
+            "get_task_dispatch_plan",
         ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,
@@ -2618,6 +2710,8 @@ mod tests {
             "supersede_rejected_alternative",
             "unblock_task_from_task",
             "set_task_kind",
+            // migration 0006 / round-3 T4 tier setter.
+            "set_task_tier",
         ] {
             assert_eq!(
                 annotations_of(&tools, idem).idempotent_hint,
