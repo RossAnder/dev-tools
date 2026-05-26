@@ -1,6 +1,6 @@
 ---
 name: plan-story
-description: Walk a story through the canonical block sequence; AskUserQuestion-gated per block; dispatches /lumina:<block> via the Skill tool.
+description: Walk a story through the six-phase canonical sequence (frame / explore / decide / verify-design / decompose / closure) with hard phase gates and skip-with-override audit.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
 disable-model-invocation: true
@@ -8,221 +8,212 @@ disable-model-invocation: true
 
 # `lumina:plan-story`
 
-Chained-runner orchestrator: walks a story through the canonical block
-sequence end-to-end, with one `AskUserQuestion` gate per block, dispatching
-the matching `/lumina:<block>` skill via the `Skill` tool. The runner stays
-INLINE in the parent context (no `context: fork` — five §a keys, NOT forked)
-because the per-block gates are user-mediated. Each dispatched per-block skill
-may itself fork (`research-notes`, `story-review`, `decompose-tasks` per §d) —
-those forks are children of this inline runner.
+Chained-runner orchestrator: walks a story through six canonical phases
+end-to-end, with one `AskUserQuestion` gate per block, dispatching the matching
+`/lumina:<block>` skill via the `Skill` tool. The runner stays INLINE (five §a
+keys, NOT forked) because the per-block gates are user-mediated. Dispatched
+per-block skills may themselves fork (`research-explore`, `research-directed`,
+`research-notes`, `story-review`, `decompose-tasks` per §d).
+
+Each phase carries a HARD precondition computed from `get_story_readiness`
+booleans (with a Phase-5/6 tail read against `detail`). When MET, the per-block
+AUQ is `Run / Skip (warn) / Inspect / Abort`. When FAILED, it swaps to
+`Resolve prereq / Skip with override / Abort` — `Run` is HIDDEN, and `Skip
+with override` writes a §l.1 audit row so `/lumina:story-review` can later
+surface the gap.
 
 Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (frontmatter — five keys, NOT forked), §b (per-DISPATCHED-SKILL, not
-per-runner — each dispatched skill enforces its own §b), §c (runner emits ONE
-rollup `record_task_activity` at end of walk; each dispatch emits its own §c
-on internal writes), §e (Sentry — runner = orchestration, MCP = state), §i
-(story-review is LAST block), §j (wire-task-deps composes with
-`compute_task_batches`).
-
-Chained-runner analogue of plan R1's Superpowers advisor precedent (see
-[`../next-block/SKILL.md`](../next-block/SKILL.md) — the read-only variant);
-R5 (no `plays.yaml`; the chained-runner IS the play); R6 (body budget).
+§a (five keys, NOT forked), §b (per-DISPATCHED-SKILL; each dispatched skill
+enforces its own §b), §c (runner emits ONE rollup + ONE §l.1 audit per
+override; dispatched skills emit their own §c on internal writes), §e
+(Sentry — runner = orchestration, MCP = state), §i (story-review fires in
+Phase 4), §j (wire-task-deps composes with `compute_task_batches` in Phase 5),
+**§l (the six-phase contract — phase table §l.0, audit §l.1, carve-out §l.2)**.
 
 ## MCP tools used directly by this runner
 
-- `mcp__lumina__get_work_item` — step 1 (kind precondition + story header).
-- `mcp__lumina__get_story_readiness` — top-of-walk read + re-call after each
-  block to refresh `next_recommended_action` (handles user-side out-of-band
-  edits between blocks).
-- `mcp__lumina__record_task_activity` — final §c rollup write (one entry).
+- `mcp__lumina__get_work_item` — kind precondition + Phase 5/6 tail reads
+  (`attributes.verification_commands`, task children's `tier`/`effort`/`complexity`).
+- `mcp__lumina__get_story_readiness` — top-of-walk + before each phase entry + after each block.
+- `mcp__lumina__record_task_activity` — final §c rollup + one §l.1 audit per overridden block.
 
-Per-block dispatches go through the `Skill` tool; each dispatched skill runs
-its own MCP writes.
-
-## Skill-tool dispatch pattern
-
-Invoke each per-block skill via the `Skill` tool with the plugin-prefixed
-name and the `$work_item_id` argument. Canonical form:
-
-```
-Skill("lumina:<block>", "$work_item_id")
-```
-
-(Substitute `<block>` with the per-row block name; `$work_item_id` with the
-runner's bound argument.) If the local `Skill` tool form differs, use the
-harness form — each dispatched skill receives one positional arg per its
-`arguments: [work_item_id]` frontmatter.
+Per-block dispatch: `Skill("lumina:<block>", "$work_item_id")` — each
+dispatched skill takes one positional arg per its `arguments` frontmatter.
 
 ## Body
 
-### Step 1 — story header read + kind precondition
+### Step 1 — kind precondition
 
-```
-detail = mcp__lumina__get_work_item({ id: "$work_item_id" })
-```
+`detail = mcp__lumina__get_work_item({ id: "$work_item_id" })`. If
+`detail.kind != "story"`, ABORT: `"plan-story requires a story work item;
+got kind=<kind> for id=<id>."`
 
-If `detail.kind != "story"`, ABORT with: `"plan-story requires a story work
-item; got kind=<kind> for id=<id>."` Do not continue; do not call
-`get_story_readiness`; do not write the §c rollup. The runner is story-only by
-design.
+### Step 2 — initial readiness read + header
 
-Bind `detail.title` and `$work_item_id` for the header surface.
-
-### Step 2 — initial readiness read + header display
-
-```
-readiness = mcp__lumina__get_story_readiness({ story_id: "$work_item_id" })
-```
-
-Display a 3-line header before entering the loop:
+`readiness = mcp__lumina__get_story_readiness({ story_id: "$work_item_id" })`.
+Display 3-line header:
 
 1. `Story: "<detail.title>" (id=<work_item_id>)`
 2. `Current next_recommended_action: <readiness.next_recommended_action>`
-3. `Canonical sequence (14 blocks): problem-statement → research-notes →
-   vet-research → user-interrogation → alternatives → approach → not-doing →
-   verification-commands → edge-cases → risks → decompose-tasks →
-   set-task-spec → wire-task-deps → story-review`
+3. `Six-phase walk: 1.Frame → 2.Explore → 3.Decide → 4.Verify-design → 5.Decompose → 6.Closure`
 
-### Step 3 — canonical block sequence walk
+Init: `run_count`/`skip_count`/`override_count`/`phases_completed`=0;
+`abort_block`/`abort_phase`=null; `overrides`=[].
 
-Iterate in this EXACT order:
+### Step 3 — six-phase walk
 
-```
-problem-statement
-research-notes
-vet-research
-user-interrogation
-alternatives
-approach
-not-doing
-verification-commands
-edge-cases
-risks
-decompose-tasks
-set-task-spec
-wire-task-deps
-story-review
-```
+Iterate Phases 1–6 in order. Before each phase entry, re-read
+`get_story_readiness` (re-read `get_work_item` lazily for Phase 5/6 fields not
+on readiness). Evaluate the phase precondition (table below); its truth value
+branches the per-block AUQ shape (step 4). After walking every block, increment
+`phases_completed`. On `Abort`, set `abort_phase = N` and break the walk.
 
-Track `run_count`, `skip_count`, `abort_block` (initially `null`). For EACH
-block, run the per-block gate (step 4). On `Abort`, break and set
-`abort_block` to the current block name.
+| Phase | Blocks | Hard precondition | Resolve-prereq upstream |
+|-------|--------|-------------------|--------------------------|
+| 1. Frame | `problem-statement`, `user-interrogation` | none (story exists) | n/a |
+| 2. Explore | `research-explore`, `vet-research`, `research-directed` | `readiness.problem_statement_set == true` | `problem-statement` |
+| 3. Decide | `alternatives`, `approach`, `not-doing`, `edge-cases`, `risks` | `readiness.accepted_research_count >= 1 AND readiness.unresolved_questions == 0` | first failing: `vet-research` (if AC<1) else `user-interrogation` |
+| 4. Verify-design | `verification-commands`, `acceptance-criteria`, `story-review` | `readiness.has_approach == true` | `approach` |
+| 5. Decompose | `decompose-tasks`, `set-task-spec`, `wire-task-deps` | `acceptance_criteria_count >= 1 AND detail.attributes.verification_commands != null` | first failing: `acceptance-criteria` (if AC=0) else `verification-commands` |
+| 6. Closure | `closure-gate`, `relevance` | every task in `detail.children` (kind=task) has `tier`, `complexity`, `effort` all non-null | `set-task-spec` (surface failing task ids in the AUQ body line) |
 
-### Step 4 — per-block gate
+**Phase 5 detail**: `verification_commands_set` is not yet on
+`get_story_readiness` (per §l.0); read `detail.attributes.verification_commands`
+directly. `acceptance_criteria_count` is the sum over
+`detail.children.filter(c=>c.kind==="task").map(c=>c.acceptance_criteria.length)`;
+fall back to counting `detail.acceptance_criteria` rows on the story.
 
-For the current block `<name>`, derive the body-line from the most recent
-readiness:
+**Phase 6 detail — Round-3 limitation**: the round-3 plan also gated closure
+on "zero open critical/high risks on the story". That sub-condition is
+DEFERRED per CONVENTIONS §k.2 (deferred) and execution-record E7. Treat the
+risk half as ALWAYS-TRUE for round-3; the task-spec half stands. Surface
+failing task ids in the AUQ body so the user knows where to run
+`/lumina:set-task-spec`.
 
-- If `<name>` maps to the readiness' `next_recommended_action` →
-  `Current state: this block is the next_recommended_action.`
-- Otherwise, cite the relevant readiness field (e.g. for `problem-statement`,
-  cite `readiness.problem_statement_set` — if true, `Current state:
-  problem_statement is set ("<first 80 chars>") — re-run will let you
-  supersede.`; if false, `Current state: problem_statement is empty.`).
-- For collection blocks (`research-notes`, `edge-cases`, `risks`, etc.) cite
-  the readiness count where present, else `detail.attributes` / sub-table.
+### Step 4 — per-block gate (two AUQ shapes per precondition)
 
-Invoke `AskUserQuestion`:
+For each block `<name>` in the phase, derive a body-line from the latest
+`readiness` (and `detail` where needed). If `<name>` maps to
+`readiness.next_recommended_action`, prefix `Current state: this block is
+the next_recommended_action.` Otherwise cite the relevant readiness field
+or child-table count.
 
-> **Header**: `Block: <name>`
->
+#### Step 4A — precondition MET (standard AUQ, 4 options)
+
+> **Header**: `Block: <name> (Phase <N> — <phase-name>)`
 > **Body**: `<derived state line>\n\nDispatch /lumina:<name> for this story?`
->
-> **Options** (exactly 4):
-> - `Run` — `Dispatch /lumina:<name> via the Skill tool now`
-> - `Skip` — `Move to the next block without running this one`
-> - `Inspect current state` — `Print readiness + detail subset, then re-ask`
-> - `Abort` — `Exit the runner with a summary of progress so far`
+> **Options**:
+> - `Run` — Dispatch `Skill("lumina:<name>", "$work_item_id")`.
+> - `Skip (warn)` — Skip + warn `"Skipping in-phase blocks may leave Phase
+>   <N> incomplete; run /lumina:story-review later."`
+> - `Inspect current state` — Print readiness slice + `detail` subset, then
+>   RE-ASK. Does NOT advance, does NOT count.
+> - `Abort` — Set `abort_block`/`abort_phase`, break the walk.
 
-**Run** → Dispatch `Skill("lumina:<name>", "$work_item_id")`. The dispatched
-skill runs its own §b sequence, may run forked, emits its own §c on internal
-writes. Wait for return. Increment `run_count`. Goto step 5.
+`Run` → `run_count++` + re-read readiness. `Skip (warn)` → `skip_count++` +
+re-read readiness. `Abort` → break step 3.
 
-**Skip** → Log `skipped: <name>`. Increment `skip_count`. Do NOT dispatch.
-Goto step 5 (re-read readiness to catch out-of-band edits during the gate).
+#### Step 4B — precondition FAILED (Run HIDDEN; 3 options)
 
-**Inspect current state** → Print to the user (no MCP write): (1) the
-block-specific subset of the most recent `readiness` (e.g. for
-`research-notes`: `readiness.accepted_research_count`); (2) the
-block-specific subset of `detail.attributes` or sub-table (e.g. for
-`problem-statement`: the full `detail.attributes.problem_statement` text;
-for `risks`: each row of `detail.risks` as a one-liner; for
-`decompose-tasks`: count + titles of
-`detail.children.filter(c => c.kind === "task")`). After printing, RE-ASK
-the same `AskUserQuestion` (4 options). `Inspect current state` does NOT
-advance the loop and does NOT count against `run_count` / `skip_count`.
+> **Header**: `Block: <name> (Phase <N> — <phase-name>, prereq failed)`
+> **Body**: `<derived state line>; prereq <expression> = false\n\nThe
+> Phase-<N> entry precondition is not met. Choose:`
+> **Options**:
+> - `Resolve prereq (dispatch <upstream-skill>)` — Dispatch the upstream
+>   skill from the phase table. On return, RE-EVALUATE the precondition;
+>   if MET, the same block's AUQ switches to 4A; else re-ask this AUQ.
+> - `Skip with override` — Write the §l.1 audit (step 4C), `override_count++`,
+>   push `<name>` onto `overrides`, advance to the NEXT block in the phase
+>   WITHOUT dispatching.
+> - `Abort` — Set `abort_block`/`abort_phase`, break the walk.
 
-**Abort** → Set `abort_block = <name>`. Break the loop. Proceed to step 6.
+For phases with multiple sub-conditions (Phase 3, Phase 5), the upstream
+maps to the FIRST failing sub-condition (per the table's upstream column).
 
-### Step 5 — re-read readiness after each block
+#### Step 4C — Skip-with-override audit (§l.1)
 
-After EVERY `Run` or `Skip` (NOT after `Inspect current state`), re-call:
-
-```
-readiness = mcp__lumina__get_story_readiness({ story_id: "$work_item_id" })
-```
-
-Refreshes `next_recommended_action` + per-block status so the next block's
-body-line reflects latest state. Handles user-side out-of-band edits between
-blocks (e.g. user manually accepts research notes via raw MCP between blocks).
-Lazy-refresh `detail` via `get_work_item` only when a subsequent
-`Inspect current state` requires fields not in `readiness`.
-
-### Step 6 — §c provenance rollup (ONE activity entry)
-
-After the loop ends (natural end or `Abort`), append exactly ONE rollup entry.
-This is the only direct write this runner performs:
+Before advancing past `Skip with override`, write one audit entry. Apply
+the §c substitution guard verbatim: verify `${CLAUDE_SESSION_ID}` resolved
+to a non-empty value not containing the literal `CLAUDE_SESSION_ID`; on
+non-substitution, replace it with `session=unknown` AND emit a one-line
+warning.
 
 ```
 mcp__lumina__record_task_activity {
   work_item_id: "$work_item_id",
   entry_type: "execution",
   origin: "plan",
-  summary: "plan-story: walked <N_walked> blocks (run=<run_count>, skip=<skip_count>, abort=<abort_block_or_'none'>) on <story_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
+  summary: "skip_override: <name>",
+  body: "phase=<N>; prereq_failed=<short reason>; session=${CLAUDE_SESSION_ID}"
 }
 ```
 
-`<N_walked> = run_count + skip_count + (1 if abort_block else 0)` — the abort
-counts as walked-but-not-acted-on. Apply the §c substitution guard: if
-`${CLAUDE_SESSION_ID}` did not substitute, replace body with
-`body: "session=unknown"` and emit a one-line warning.
+`<short reason>` is the first failing sub-condition rendered short, e.g.
+`accepted_research_count<1` or `verification_commands==null`. Channel is
+`execution` (NOT `vet` — that channel is reserved to `/lumina:vet-research`
+per §c).
 
-Single rollup is intentional — each per-block dispatch already emitted its
-own §c entry on internal writes; the rollup is the per-run audit (which
-session walked which blocks).
+### Step 5 — re-read readiness after each block
+
+After EVERY `Run` / `Skip (warn)` / `Skip with override` (NOT `Inspect`),
+re-call `get_story_readiness`. If the phase precondition transitions
+met→failed mid-phase, remaining blocks switch to 4B; failed→met flips back
+to 4A. Lazy-refresh `detail` only when an `Inspect` or a Phase 5/6
+precondition needs fields absent from readiness.
+
+After the LAST block in a phase, `phases_completed++` and advance to Phase
+`N+1`. If `N == 6`, exit the loop.
+
+### Step 6 — §c provenance rollup (ONE post-walk entry)
+
+After the loop ends (natural or `Abort`), append exactly ONE rollup. This
+is the only end-of-walk direct write (the per-override §l.1 entries at
+step 4C are separate):
+
+```
+mcp__lumina__record_task_activity {
+  work_item_id: "$work_item_id",
+  entry_type: "execution",
+  origin: "plan",
+  summary: "plan-story: walked <N_walked> blocks across <phases_completed>/6 phases (run=<run_count>, skip=<skip_count>, skip_override=<override_count>, abort=<abort_phase_or_'none'>) on <story_id>",
+  body: "session=${CLAUDE_SESSION_ID}; phases_completed=<phases_completed>; overrides=[<comma-joined overrides>]"
+}
+```
+
+`<N_walked> = run_count + skip_count + override_count + (1 if abort_block else 0)`.
+Apply the §c guard: on non-substitution, swap to
+`session=unknown; phases_completed=<...>; overrides=[<...>]` and warn.
+
+Dispatched skills emit their own §c on internal writes; this runner emits
+only (a) the rollup, AND (b) one row per overridden block.
 
 ### Step 7 — final summary
 
-Emit a single structured summary:
-
 ```
-plan-story: ran <run_count> blocks, skipped <skip_count>;
-  <"aborted at <abort_block>" | "completed full sequence">;
+plan-story: <phases_completed>/6 phases completed; <run_count> blocks run, <skip_count> skipped, <override_count> with override;
+  <"aborted at Phase <abort_phase> / block <abort_block>" | "completed full sequence">;
   next-recommended-action: <readiness.next_recommended_action>;
-  suggested next: <slash command from next-block table for that variant,
-  or "(story complete)" if story_ready>.
+  suggested next: <slash command from next-block table>.
 ```
 
-The suggested-next slash command mirrors the table in
-[`../next-block/SKILL.md`](../next-block/SKILL.md) — runner cites the
-advisor's NextAction → slash-command table by reference, does NOT
-re-implement.
+The suggested-next slash command mirrors
+[`../next-block/SKILL.md`](../next-block/SKILL.md)'s NextAction →
+slash-command table — runner cites by reference, does NOT re-implement.
 
 ## Sentry-pattern compliance (per §e)
 
-Runner body decides: which block to walk next (sequence is fixed, gated
-per-block), when to break on `Abort`, how to derive the body-line from
-readiness + detail. Runner MUST NOT replicate per-block §b sequences (each
-dispatched skill handles its own check-before-act), MUST NOT pre-compute
-readiness state (always call `get_story_readiness`), MUST NOT absorb
-dispatched skills' internal §c writes. Runner's only direct writes: the
-single §c rollup at step 6.
+Runner decides: phase order (canonical six per §l.0), per-block dispatch
+order within each phase (canonical), AUQ shape (precondition met/failed
+branch at step 4). Runner MUST NOT compute readiness client-side (always
+call `get_story_readiness`); MUST NOT replicate per-block §b (each
+dispatched skill handles its own check-before-act); MUST NOT absorb
+dispatched skills' §c writes. Runner's only direct writes: (a) the §c
+rollup at step 6, (b) one §l.1 audit per overridden block at step 4C.
+Local `detail.kind == "story"` at step 1 is the §e-blessed exception.
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §i, §j.
-- Advisor: [`../next-block/SKILL.md`](../next-block/SKILL.md) — runner's NextAction → slash-command mapping IS the advisor's table.
-- Forked dispatched siblings: [`../research-notes/SKILL.md`](../research-notes/SKILL.md), [`../story-review/SKILL.md`](../story-review/SKILL.md), [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md).
-- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md).
-- Round-2 plan: [`../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../docs/plans/lumina-story-planning-round-2.md) — R1, R5, R6.
+- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §i, §j, **§l**.
+- Advisor: [`../next-block/SKILL.md`](../next-block/SKILL.md); MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md).
+- Forked dispatched siblings: [`../research-explore/SKILL.md`](../research-explore/SKILL.md), [`../research-directed/SKILL.md`](../research-directed/SKILL.md), [`../research-notes/SKILL.md`](../research-notes/SKILL.md), [`../story-review/SKILL.md`](../story-review/SKILL.md), [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md).
+- Plans: round-2 [`docs/plans/lumina-story-planning-round-2.md`](../../../../docs/plans/lumina-story-planning-round-2.md) (R1, R5, R6); round-3 [`docs/plans/lumina-story-planning-round-3.md`](../../../../docs/plans/lumina-story-planning-round-3.md) T10 + CONVENTIONS §l.
