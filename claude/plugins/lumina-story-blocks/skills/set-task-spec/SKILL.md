@@ -1,6 +1,6 @@
 ---
 name: set-task-spec
-description: Walk a story's task children and capture per-task spec (execution_detail, files_touched, dual-track outcome, dispatch tier).
+description: Walk a story's task children and capture per-task spec (execution_detail, files_touched, dual-track outcome, effort, complexity, derived tier).
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
 disable-model-invocation: true
@@ -8,17 +8,19 @@ disable-model-invocation: true
 
 # `lumina:set-task-spec`
 
-Per-task spec writer. Invoked on a STORY id; walks each TASK child of the story and collects four spec attributes — `execution_detail` (free-text step-by-step plan), `files_touched` (concrete file paths, with R25 pattern-replacement drift check when applicable), `outcome` (dual-track per R23: `automated` + `manual`), and `dispatch` (tier: `lite` or `deep`) — writing them via `mcp__lumina__set_task_spec`. The skill assumes the story's tasks have already been created by `/lumina:decompose-tasks`; it does NOT create tasks. The downstream consumer is `/lumina:wire-task-deps` (which writes the task→task edges and fires the R27 complexity-high gate, not this skill).
+Per-task spec writer. Invoked on a STORY id; walks each TASK child of the story and collects per-task spec — `execution_detail` (free-text step-by-step plan), `files_touched` (concrete file paths, with R25 pattern-replacement drift check when applicable), `outcome` (dual-track per R23: `automated` + `manual`), `effort` (`s|m|l`), `complexity` (`low|medium|high`), and a derived `tier` (`lite|deep`, per CONVENTIONS §k.0) — writing them via `mcp__lumina__set_effort`, `mcp__lumina__set_complexity`, and `mcp__lumina__set_task_spec` (one `set_task_spec` per task carrying the remaining keys, including `tier`). The skill assumes the story's tasks have already been created by `/lumina:decompose-tasks`; it does NOT create tasks. The downstream consumer is `/lumina:wire-task-deps` (which writes the task→task edges and fires the R27 complexity-high gate, not this skill).
 
 This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied **per-task-child** per §b-per-element), §c (provenance recording — one entry per TASK touched, not per skill invocation), §e (Sentry pattern — skill = instructions, MCP = execution), §i (story-review pattern, informational), §j (batch-scheduled task execution — informational: this skill writes the spec rows `/lumina:wire-task-deps` consumes).
 
 ## MCP tools used
 
-- `mcp__lumina__get_work_item` — story read (for kind precondition + task-children list); per-task read inside the loop to inspect existing `attributes.execution_detail` / `attributes.files_touched` / `attributes.outcome` / `attributes.dispatch` / `attributes.task_kind` / `attributes.files_touched_pattern`.
-- `mcp__lumina__set_task_spec` — the ONE write tool. Set-or-leave per key: absent keys preserve existing attributes (`SetTaskSpecParams` in `lumina/src/mcp.rs` uses `#[serde(default)]` per field; the tool builds a sub-object of the present keys and makes ONE `set_work_item_attributes` call). Calling with only `outcome` set DOES NOT clobber `files_touched` or `execution_detail`.
+- `mcp__lumina__get_work_item` — story read (for kind precondition + task-children list); per-task read inside the loop to inspect existing `attributes.execution_detail` / `attributes.files_touched` / `attributes.outcome` / `attributes.task_kind` / `attributes.files_touched_pattern`, plus the top-level `task.effort` / `task.complexity` / `task.tier` columns (migrations 0003 + 0006).
+- `mcp__lumina__set_effort` — task-scoped effort setter (`s|m|l`); a dedicated MCP write, NOT routed through `set_task_spec`. Called per-task in step 4c.1 when the user picks a grade.
+- `mcp__lumina__set_complexity` — task-scoped complexity setter (`low|medium|high`); a dedicated MCP write, NOT routed through `set_task_spec`. Called per-task in step 4c.2 when the user picks a grade.
+- `mcp__lumina__set_task_spec` — the per-task spec writer. Set-or-leave per key: absent keys preserve existing attributes (`SetTaskSpecParams` in `lumina/src/mcp.rs` uses `#[serde(default)]` per field; the tool builds a sub-object of the present keys and makes ONE `set_work_item_attributes` call). Carries `execution_detail` / `files_touched` / `outcome` / `tier`. Calling with only `outcome` set DOES NOT clobber `files_touched` or `execution_detail`.
 - `mcp__lumina__record_task_activity` — provenance per §c, one entry per TASK touched.
 
-This skill MUST NOT call any other lumina write tool (no `add_*`, no `update_work_item`, no `set_*` other than `set_task_spec`). For the drift check (step 5) it MAY use `Grep --files_with_matches` — a read tool, not a lumina write.
+This skill MUST NOT call any other lumina write tool (no `add_*`, no `update_work_item`, no `set_*` other than the three listed above). For the drift check (step 5) it MAY use `Grep --files_with_matches` — a read tool, not a lumina write.
 
 ## Target
 
@@ -37,7 +39,9 @@ For EACH task child (in `detail.children` order), call `mcp__lumina__get_work_it
 - `attributes.execution_detail` — may be null/absent.
 - `attributes.files_touched` — may be null/absent or a partial list.
 - `attributes.outcome` — may be null/absent (and, when present, may be a plain string OR the JSON-in-string dual-track encoding — see step 3 below).
-- `attributes.dispatch` — may be null/absent or `{"tier": "lite"|"deep"}`.
+- `task.effort` — column on `work_items` (`s|m|l`); may be null/absent.
+- `task.complexity` — column on `work_items` (`low|medium|high`); may be null/absent.
+- `task.tier` — column on `work_items` (`lite|deep`); may be null/absent. Round-3 added this column (migration 0006) — see CONVENTIONS.md §k for the derivation rule.
 - `attributes.task_kind` — read-only here; relevant because `task_kind == "pattern-replacement"` enables the drift-check option in step 3.
 - `attributes.files_touched_pattern` — optional informational key; if `decompose-tasks` recorded the Grep pattern, it lives here. If absent on a pattern-replacement task, the drift-check branch prompts the user for the pattern interactively.
 
@@ -47,10 +51,10 @@ Surface a per-task `AskUserQuestion`:
 
 > **Question header**: `Spec task '<task title>' (id=<task_id>)`
 >
-> **Question body**: `Current spec: execution_detail=<set|absent>, files_touched=<N items|absent>, outcome=<set|absent>, dispatch=<tier or absent>. Choose:`
+> **Question body**: `Current spec: execution_detail=<set|absent>, files_touched=<N items|absent>, outcome=<set|absent>, effort=<s|m|l|absent>, complexity=<low|medium|high|absent>, tier=<lite|deep|absent>. Choose:`
 >
 > **Options**:
-> - `Edit` — `Collect execution_detail / files_touched / outcome / dispatch and write via set_task_spec`
+> - `Edit` — `Collect execution_detail / files_touched / outcome / effort / complexity / tier and write via set_effort + set_complexity + set_task_spec`
 > - `Skip` — `Leave this task's spec unchanged; move to the next task`
 > - `Pattern-replacement drift check` — *(presented ONLY if `attributes.task_kind == "pattern-replacement"`)* `Re-run Grep against the recorded pattern and reconcile any new files`
 
@@ -82,19 +86,42 @@ outcome = json_encode({ "automated": "<verbatim>", "manual": "<verbatim>" })
 
 If only one track is provided, encode the other as `null`. If the user skips BOTH tracks, omit `outcome` from the `set_task_spec` call entirely (set-or-leave). Readers (`/lumina:story-review`, SPA detail panel) MUST `json_decode` the string. Literal key names are `automated` and `manual`; alternate casings/hyphenations produce drift and MUST NOT be introduced.
 
-**4d. `dispatch`** — single `AskUserQuestion` with exactly two options:
+**4c.1. `effort`** — single `AskUserQuestion` with options `s`, `m`, `l`, `Skip this field`. Header: `Effort grade for '<task title>'`. Body: `Pick the batch-sizing grade (s ≈ <30min, m ≈ 30-120min, l ≈ >120min). Skip leaves the existing column unchanged.` If the user picks a grade, call `mcp__lumina__set_effort({id: "<task_id>", effort: "<s|m|l>"})` IMMEDIATELY (a separate write — `set_effort` is its own MCP tool, not part of `set_task_spec`). On `Skip this field`, no write.
 
-> Header: `Dispatch tier for '<task title>'`
-> Body: `Which implementer should handle this task?`
-> Options:
-> - `lite` — `Mechanical, fully-specified work; flow-implement-lite suffices`
-> - `deep` — `Judgement-heavy, ambiguous, cross-cutting, or security-sensitive; flow-implement-deep required`
+**4c.2. `complexity`** — single `AskUserQuestion` with options `low`, `medium`, `high`, `Skip this field`. Header: `Complexity grade for '<task title>'`. Body: `Pick the model-tier-input grade (low = mechanical, medium = some judgement, high = cross-cutting / security-sensitive / ambiguous). Skip leaves the existing column unchanged.` If the user picks a grade, call `mcp__lumina__set_complexity({id: "<task_id>", complexity: "<low|medium|high>"})` IMMEDIATELY.
 
-Written as `dispatch: {"tier": "lite"}` or `dispatch: {"tier": "deep"}` (an object, not a bare string — `SetTaskSpecParams.dispatch` is `Option<serde_json::Value>` so the JSON object goes through verbatim). If the user wants to defer the decision, expose a third option `Defer (leave dispatch unset)` which omits the `dispatch` key from the `set_task_spec` call.
+**4d. `tier` (derive + confirm)** — apply the §k.0 derivation rule client-side using the captured-or-existing values:
 
-**4e. Write**: invoke `set_task_spec` ONCE per task, passing ONLY the keys the user filled. Absent keys are omitted from the JSON body — `SetTaskSpecParams` uses `#[serde(default)]` per field and the tool builds a sub-object of the present keys, preserving any pre-existing values for omitted keys.
+```text
+effort_eff       = the value just captured in 4c.1, or task.effort if 4c.1 was skipped
+complexity_eff   = the value just captured in 4c.2, or task.complexity if 4c.2 was skipped
+files_count      = len(files_touched array) — use the just-captured array if 4b was filled; otherwise len(task.attributes.files_touched)
+has_cross_repo   = any entry in files_touched is a {repo, path} object (not a bare-string path)
 
+derived_tier = compute_tier(effort_eff, complexity_eff, files_count, has_cross_repo)
+             = (if complexity_eff == "high")    "deep"
+             | (if effort_eff == "l")           "deep"
+             | (if files_count > 3)             "deep"
+             | (if has_cross_repo)              "deep"
+             | else                              "lite"
 ```
+
+Cite CONVENTIONS §k.0 verbatim — the skill body transcribes the rule rather than relying on the user to look it up. (Future round-4 may expose a `compute_tier_preview` read tool that returns the same value server-side; until then, client-side transcription matches the load-bearing single-source rule in `repo::compute_tier`.)
+
+Then surface the derived tier via `AskUserQuestion`:
+
+> Header: `Dispatch tier (derived: <derived_tier>) for '<task title>'`
+> Body: `§k.0 derivation: effort=<effort_eff>, complexity=<complexity_eff>, files=<files_count>, cross-repo=<has_cross_repo> ⇒ <derived_tier>. Confirm or override.`
+> Options (3):
+> - `Confirm <derived_tier>` — proceed; the `SetTaskSpecParams.tier` field is set to `<derived_tier>`.
+> - `Override → <other_tier>` — proceed with the OTHER tier (record the override; the §c activity body notes it).
+> - `Skip this field` — omit `tier` from the `set_task_spec` call; the column stays as-is.
+
+The `tier` field is passed to `set_task_spec` as the typed wire value (`"lite"` or `"deep"`) — NOT wrapped in an object. This aligns with the T4 MCP-side rename (`SetTaskSpecParams.tier: Option<Tier>` replaces the round-2 free-form `dispatch` field). When the user picked Override, append `; tier_override=<from→to>` to the §6 activity entry body.
+
+**4e. Write**: invoke `set_task_spec` ONCE per task, passing ONLY the keys the user filled (effort + complexity are NOT passed through `set_task_spec` — they were already written via `set_effort` + `set_complexity` at 4c.1 and 4c.2). Absent keys are omitted; `SetTaskSpecParams` uses `#[serde(default)]` per field and the tool builds a sub-object of the present keys, preserving any pre-existing values for omitted keys.
+
+```text
 mcp__lumina__set_task_spec {
   id: "<task_id>",
   execution_detail: "<verbatim user text>",      # only if 4a was filled
@@ -103,7 +130,7 @@ mcp__lumina__set_task_spec {
     {"repo": "owner/name", "path": "src/bar.rs"}
   ],
   outcome: "<JSON-encoded dual-track string>",   # only if at least one track in 4c was filled
-  dispatch: {"tier": "lite"}                       # only if 4d was filled
+  tier: "lite"                                     # only if 4d was Confirm or Override
 }
 ```
 
@@ -131,19 +158,27 @@ Fires from either: the user picking `Pattern-replacement drift check` in step 3,
 
 ### 6. §c provenance (one entry per TASK TOUCHED)
 
-After each successful `set_task_spec` call, append exactly ONE activity entry via `record_task_activity`. **One entry per task touched, NOT one per skill invocation** — if N tasks are updated, N activity entries are appended (mirrors `acceptance-criteria` per-write semantics; differs from `decompose-tasks` per-invocation rollup). Apply the §c substitution guard (`${CLAUDE_SESSION_ID}` must substitute; fall back to `session=unknown` + one-line warning otherwise).
+After each task is touched (one or more of: `set_effort`, `set_complexity`, `set_task_spec`), append exactly ONE activity entry via `record_task_activity`. **One entry per task touched, NOT one per skill invocation** and NOT one per MCP write — if N tasks are updated, N activity entries are appended (mirrors `acceptance-criteria` per-write semantics; differs from `decompose-tasks` per-invocation rollup). Apply the §c substitution guard (`${CLAUDE_SESSION_ID}` must substitute; fall back to `session=unknown` + one-line warning otherwise).
 
-```
+```text
 mcp__lumina__record_task_activity {
   work_item_id: "<task_id>",
   entry_type: "execution",
   origin: "plan",
-  summary: "set-task-spec: updated <comma-separated-keys-touched> on <task_id>",
+  summary: "set-task-spec: updated execution_detail, files_touched, effort, complexity, tier on <task_id>",
   body: "session=${CLAUDE_SESSION_ID}"
 }
 ```
 
-`<comma-separated-keys-touched>` lists exactly the keys passed in the `set_task_spec` call (e.g. `"execution_detail, outcome"` if only those two were filled; `"files_touched"` if a drift-check resolution touched only that key). The activity row's `work_item_id` is the TASK's id (where the spec was written), not the story's — activity entries fold onto the task record per §c.
+The summary's `<comma-separated-keys-touched>` lists EVERY key written during this task's pass — including `effort` and `complexity` (even though those were written via dedicated MCP tools, not through `set_task_spec`) and `tier` (when 4d was Confirm or Override). Each MCP write the skill made for this task constitutes one "key touched" for activity-summary purposes; the §c entry is the per-task rollup. Examples: `"execution_detail, outcome"` if only 4a and 4c were filled; `"effort, complexity, tier"` if only the round-3 grade fields were filled; `"files_touched"` if a drift-check resolution touched only that key.
+
+If the user picked `Override` at 4d, append the override to the body so the audit trail surfaces the divergence from the §k.0 derivation:
+
+```text
+body: "session=${CLAUDE_SESSION_ID}; tier_override=lite→deep"
+```
+
+(Substitute the actual `<from→to>` pair — e.g. `tier_override=deep→lite` if the user overrode a derived `deep` down to `lite`.) The activity row's `work_item_id` is the TASK's id (where the spec was written), not the story's — activity entries fold onto the task record per §c.
 
 ### 7. Final summary
 
@@ -173,10 +208,13 @@ The skill body decides WHICH keys to surface, WHEN to fire the drift-check (only
 
 Dual-track `outcome` is JSON-in-string within `SetTaskSpecParams.outcome: Option<String>` today. If a later migration widens to structured `{automated, manual}`, step 4c MUST switch in lockstep; the literal key names align so the migration is a wire-shape rename only.
 
+**Round-3 amendment**: the round-2 free-form `dispatch: Option<serde_json::Value>` field on `SetTaskSpecParams` is replaced with `tier: Option<Tier>` (typed enum, wire form `lite|deep`). Legacy callers that passed `dispatch: { tier: "lite" }` are silently dropped at deserialise (the field is gone). Tier derivation lives server-side in `repo::compute_tier` and is documented in CONVENTIONS §k.0 — this skill transcribes the rule client-side until a `compute_tier_preview` read tool ships.
+
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §i, §j.
-- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — Planning & decision tools (`set_task_spec`, `record_task_activity`).
+- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §i, §j, §k.
+- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — Planning & decision tools (`set_effort`, `set_complexity`, `set_task_spec`, `record_task_activity`).
 - Upstream: [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md) — creates the tasks; records `task_kind` (step 4b branch) and optional `files_touched_pattern` (step 5).
-- Downstream: `/lumina:wire-task-deps` — consumes dispatch + complexity for the R27 high-complexity gate; composes Kahn-batches per §j.
+- Downstream: `/lumina:wire-task-deps` — consumes tier + complexity for the R27 high-complexity gate; composes Kahn-batches per §j.
 - Round-2 plan: [`../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../docs/plans/lumina-story-planning-round-2.md) — R23 (dual-track outcome), R25 (pattern-replacement `files_touched`), R27 (complexity gate; fires in wire-task-deps).
+- Round-3 plan: [`../../../../docs/plans/lumina-story-planning-round-3.md`](../../../../docs/plans/lumina-story-planning-round-3.md) — T4 (`SetTaskSpecParams.dispatch → tier` rename), §k (tier derivation rule).

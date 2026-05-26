@@ -18,6 +18,7 @@ This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIO
 - `mcp__lumina__block_task_on_task` — adds one task→task edge (`{task_id, depends_on_id, kind}`; `kind` defaults to `"data"` per the migration-0005 free-text column). One write per user-confirmed edge.
 - `mcp__lumina__unblock_task_from_task` — removes one task→task edge (`{task_id, depends_on_id}`). One write per user-confirmed removal, AND one per edge the user selects during cycle resolution.
 - `mcp__lumina__compute_task_batches` — read-only Kahn topological sort on the per-story task-dependency graph (`{story_id}`). Returns `Vec<Vec<task_id>>` (each inner Vec is a parallel-safe phase). On cycle, surfaces as MCP `invalid_params` with the offending edges embedded in the message string per the §j contract.
+- `mcp__lumina__get_task_dispatch_plan` — read-only. Returns `Vec<Vec<BatchEntry>>` — same outer shape as `compute_task_batches` but each entry carries `{task_id, effort, complexity, tier, files_touched_count, has_cross_repo}` with the tier derived server-side per CONVENTIONS §k.0. Called once after `compute_task_batches` succeeds; the rendered schedule uses its per-task spec annotations.
 - `mcp__lumina__record_task_activity` — provenance per §c (ONE rollup entry per skill invocation per the deviation below).
 
 `list_task_dependencies` is read once at the top of the skill so the per-task loop can filter locally for the current outgoing-edge view; the skill body MUST NOT call any other lumina write tools.
@@ -85,32 +86,35 @@ For each task in the post-gate universe (in `created_at` order):
    - **Done with this task** → advance to the next task in `task_universe`.
    - **Skip rest** → exit the per-task loop immediately. Remaining tasks contribute their existing edges to the phase compute unchanged.
 
-### 4. Compute the phase schedule (per §j)
+### 4. Compute the phase schedule (per §j) and the dispatch plan (per §k.0, R34)
 
-After the per-task loop exits, call:
+After the per-task loop exits, run the following sequence:
 
-```
-mcp__lumina__compute_task_batches { story_id: "$work_item_id" }
-```
+1. **Kahn batch compute** — call `mcp__lumina__compute_task_batches { story_id: "$work_item_id" }`. Response is `Vec<Vec<task_id>>` (each inner Vec is a parallel-safe phase, topologically ordered; within-phase tie-break is the migration-0005 server-side `task_kind` ordering followed by `created_at`). On cycle, branch to step 4b.
+2. **Dispatch plan compute** — call `mcp__lumina__get_task_dispatch_plan { story_id: "$work_item_id" }`. The MCP response wrapper is `{ "story_id": "...", "batches": Vec<Vec<BatchEntry>> }` — bind `batches` from the wrapper. Each `BatchEntry` is `{task_id, effort, complexity, tier, files_touched_count, has_cross_repo}`; `tier` is the server-side derivation per CONVENTIONS §k.0 (this skill MUST NOT re-derive client-side — single source of truth lives in `repo::compute_tier`).
+3. **Cross-check** — assert the outer shape matches between the two reads (same batch count, same task-ids per batch in the same order). If they diverge (concurrent write between the two reads, or an MCP-layer shape regression), the `get_task_dispatch_plan` return SUPERSEDES for rendering — it's the consolidated read that drives the surfaced schedule.
 
-The response is `Vec<Vec<task_id>>` — each inner Vec is a parallel-safe phase, in topological order. The within-phase tie-break is the migration-0005 server-side `task_kind` ordering followed by `created_at`.
+#### 4a. Success → surface the enriched batch schedule
 
-#### 4a. Success → surface the phase schedule
-
-Format per §j:
+Format the rendered schedule one line per batch, plus the agent-budget summary and the apply-flow cap-check line. Example:
 
 ```
-Phase 1 (foundation): T<id>, T<id> | Phase 2 (parallel): T<id>, T<id> | Phase 3 (after T<dep_id>): T<id> | …
+Batch 1 (foundation, 3 tasks): T1 [L/high/deep], T2 [M/low/lite], T3 [S/medium/lite]
+Batch 2 (parallel, 2 tasks):   T4 [M/medium/lite], T5 [M/low/lite]
+Batch 3 (after T4, 1 task):    T6 [L/high/deep]
+Agent budget: 2 deep (Opus) + 4 lite (Sonnet) across 3 batches
+Apply-flow agent cap: max 4 agents per batch. Largest batch in this schedule: 3 tasks.
 ```
 
-Phase-label derivation (the parenthetical):
+Render rules:
 
-- If every task in the phase has `task_kind == "foundation"`, label `foundation`.
-- Else if the phase has ≥2 tasks AND none of them depend on any task in the previous phase (i.e. the phase is unblocked because no inbound edges land on its tasks from the immediately-preceding phase), label `parallel`.
-- Else if every task in the phase shares one common prerequisite `<dep_id>` from a previous phase, label `after T<dep_id>` (use the most-cited common dependency if multiple).
-- Else fall back to `parallel` (the generic post-foundation label).
+- One line per batch; batch index is 1-based. Phase-label derivation (the parenthetical): `foundation` if every task has `task_kind == "foundation"`; else `parallel` if ≥2 tasks AND none depend on any task in the previous batch; else `after T<dep_id>` if every task shares one common previous-batch prerequisite (most-cited on ties); else `parallel`. The suffix `, <N> tasks` is appended after the label.
+- Per-task annotation `[effort/complexity/tier]` from the dispatch-plan `BatchEntry`: `effort` UPPERCASE (`S`/`M`/`L`) even though wire is lowercase (matches plan-convention casing elsewhere in this plugin); `complexity` wire-form (`low|medium|high`); `tier` wire-form (`lite|deep`). If any axis is `None` (task spec unset), render that slot as `unset` (e.g. `[unset/medium/unset]`).
+- **Agent budget line**: `Agent budget: <D> deep (Opus) + <L> lite (Sonnet) across <K> batches`. `<D>` counts entries with `tier == "deep"` across all batches; `<L>` counts `tier == "lite"`; `<K>` is the batch count. `unset` tiers are NOT counted in either total (and surface via `<U>` in steps 5/6).
+- **Apply-flow cap-check line**: `Apply-flow agent cap: max 4 agents per batch. Largest batch in this schedule: <N> tasks.` where `<N>` is `max(batch.len())` across all batches.
+- **Cap-overflow WARNING**: for any batch `i` with `>4` tasks, emit immediately after the cap-check: `⚠ batch <i> has <N> tasks — exceeds the 4-agent apply-flow cap. /implement will need to chunk this batch (or split tasks).` One WARNING line per overflowing batch.
 
-The label is presentation-only — the executor consumes the raw `Vec<Vec<task_id>>` shape, not the prose label.
+The labels and annotations are presentation-only — the downstream executor consumes the raw structured form, not the prose. Cites R34 and CONVENTIONS §k.0 for the tier rule.
 
 #### 4b. Cycle → surface the offending edges, never silently drop
 
@@ -142,9 +146,11 @@ mcp__lumina__record_task_activity {
   entry_type: "execution",
   origin: "plan",
   summary: "wire-task-deps: <edges_added> edges added, <edges_removed> edges removed; phases=<K>; cycles_resolved=<C>",
-  body: "session=${CLAUDE_SESSION_ID}"
+  body: "session=${CLAUDE_SESSION_ID}; deep=<D>; lite=<L>; tasks_unset=<U>"
 }
 ```
+
+`<D>` / `<L>` are the agent-budget totals computed in step 4a. `<U>` is the count of tasks whose `tier == None` in the dispatch-plan response (i.e. `set-task-spec` has not been run on them yet).
 
 `entry_type: "execution"` per §c (NOT `verification`; the lumina enum rejects it). `origin: "plan"` because this skill runs in the planning workflow.
 
@@ -153,7 +159,7 @@ mcp__lumina__record_task_activity {
 Emit a single structured one-liner:
 
 ```
-wire-task-deps: <edges_added> edges added / <edges_removed> edges removed; phase schedule: <K> phases; cycles resolved: <C>; high-complexity tasks skipped: <skipped_high_complexity>
+wire-task-deps: <edges_added> edges added / <edges_removed> edges removed; <K> batches; <D> deep + <L> lite; <U> tasks unset tier; cycles resolved: <C>; high-complexity skipped: <skipped_high_complexity>
 ```
 
 If `task_universe` was empty at step 1, the alternate one-liner is:
@@ -176,11 +182,16 @@ Recommended next step: `/implement --flow <story-flow-slug>` (the downstream exe
 
 ## Sentry-pattern compliance (per §e)
 
-The skill body decides which prompts to show, which edges to write, and how to handle the cycle (which edge the user picks). The MCP tools handle all business logic: `block_task_on_task` validates both endpoints reference task rows, checks the depends-on relationship is not self-referential, runs the write in one transaction, and emits the event; `unblock_task_from_task` validates the edge exists before removing; `compute_task_batches` runs Kahn's algorithm server-side, detects cycles, surfaces the residue edges. The skill body MUST NOT compute the phase batches client-side or pre-validate the edge endpoints — both are MCP-server responsibilities per §j ("the phase batching is computed downstream — the skill body MUST NOT pre-batch the tasks itself").
+The skill body decides which prompts to show, which edges to write, and how to handle the cycle (which edge the user picks). The MCP tools handle all business logic: `block_task_on_task` validates both endpoints reference task rows, checks the depends-on relationship is not self-referential, runs the write in one transaction, and emits the event; `unblock_task_from_task` validates the edge exists before removing; `compute_task_batches` runs Kahn's algorithm server-side, detects cycles, surfaces the residue edges; `get_task_dispatch_plan` runs `compute_tier` server-side per CONVENTIONS §k.0. The skill body MUST NOT compute the phase batches client-side, MUST NOT re-derive the per-task tier client-side, and MUST NOT pre-validate the edge endpoints — all are MCP-server responsibilities per §j and §k ("the phase batching is computed downstream — the skill body MUST NOT pre-batch the tasks itself"; the tier derivation has a single source of truth in `repo::compute_tier`).
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §j.
-- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — see Task graph (block_task_on_task, unblock_task_from_task, list_task_dependencies, compute_task_batches).
+- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §j, §k.
+- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — see Task graph (block_task_on_task, unblock_task_from_task, list_task_dependencies, compute_task_batches, get_task_dispatch_plan).
 - Upstream skill: [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md) — writes the task children this skill wires.
 - Round-2 plan: [`../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../docs/plans/lumina-story-planning-round-2.md) — see R22 (Kiro wave-batched execution), R27 (complexity-high gate fires here, not in decompose-tasks).
+- Round-3 plan: [`../../../../docs/plans/lumina-story-planning-round-3.md`](../../../../docs/plans/lumina-story-planning-round-3.md) — see R34 (dispatch plan + agent budget render), T12 (this amendment).
+
+## Round-3 amendment
+
+The phase-render format includes per-task `[effort/complexity/tier]` annotations and an agent-budget summary, sourced from the new `mcp__lumina__get_task_dispatch_plan` read tool. The tier per task is derived server-side via `repo::compute_tier` per CONVENTIONS §k.0; this skill MUST NOT re-derive it client-side (single source of truth lives in the repo function). Tasks whose tier is `None` (no `set-task-spec` run yet) render as `unset` and are counted separately in the agent budget. The apply-flow 4-agent-per-batch cap is checked at render time; a batch with > 4 tasks surfaces a WARNING line so the user can split or chunk before dispatching to `/implement`.
