@@ -408,6 +408,7 @@ pub async fn list_work_items(
                 blocked_by_question_id: r.blocked_by_question_id,
                 enabling_option_id: r.enabling_option_id,
                 task_kind: r.task_kind,
+                tier: None,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             })
@@ -474,6 +475,7 @@ pub async fn get_work_item_detail(
         blocked_by_question_id: row.blocked_by_question_id,
         enabling_option_id: row.enabling_option_id,
         task_kind: row.task_kind,
+        tier: None,
         created_at: row.created_at,
         updated_at: row.updated_at,
     };

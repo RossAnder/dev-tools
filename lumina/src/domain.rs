@@ -51,6 +51,13 @@ pub struct WorkItem {
     /// the row, with the typed [`TaskKind`] enum used by the wire / MCP layer.
     #[serde(default)]
     pub task_kind: Option<String>,
+    /// Dispatch tier (migration 0006): `lite|deep`. NULL on non-task rows; the
+    /// repo layer is the source of truth for the "task rows only" rule (no
+    /// DB-level kind coupling). Mirrors the `task_kind`/`effort`/`complexity`
+    /// idiom — stored as `Option<String>` on the row, with the typed [`Tier`]
+    /// enum used by the wire / MCP layer.
+    #[serde(default)]
+    pub tier: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -674,6 +681,45 @@ pub enum TaskKind {
     PatternReplacement,
     /// Polish — quality / hardening work.
     Polish,
+}
+
+/// Dispatch tier (migration 0006) — CHECK-enforced at the DB layer on the
+/// `work_items.tier` column (`lite|deep`). The wire form matches the SQL CHECK
+/// literals byte-for-byte (lowercase / snake_case — both equivalent for
+/// one-word variants). Used at the MCP-param / HTTP layer; the [`WorkItem`]
+/// row struct carries `tier` as `Option<String>` per the row-struct idiom
+/// (see `task_kind`/`effort`/`complexity`). Derived by `compute_tier` (see
+/// `repo.rs`) from `effort`/`complexity`/`files_touched_count`/`has_cross_repo`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Tier {
+    /// Lite — Sonnet-class executor, mechanical / fully-specified work.
+    Lite,
+    /// Deep — Opus-class executor, cross-file / judgement-heavy / security-sensitive work.
+    Deep,
+}
+
+/// Plan-time / workflow-time logical grouping — the six canonical phases of
+/// the `/lumina:plan-story` chained runner. NOT persisted to a column in this
+/// round; this enum is a domain-layer derivation aid for the plan-story skill
+/// body. Wire form is kebab-case (matching `TaskKind`'s multi-word convention)
+/// — `frame|explore|decide|verify-design|decompose|closure`. Documented
+/// further in CONVENTIONS.md §l "Six-phase canonical sequence".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Phase {
+    /// Phase 1 — problem-statement + user-interrogation.
+    Frame,
+    /// Phase 2 — research-explore + vet-research + research-directed.
+    Explore,
+    /// Phase 3 — alternatives + approach + not-doing + edge-cases + risks.
+    Decide,
+    /// Phase 4 — verification-commands + acceptance-criteria + story-review.
+    VerifyDesign,
+    /// Phase 5 — decompose-tasks + set-task-spec + wire-task-deps.
+    Decompose,
+    /// Phase 6 — closure-gate + relevance.
+    Closure,
 }
 
 /// Aggregate readiness summary for a story (migration 0005 / Phase 3 planning
