@@ -6,7 +6,7 @@
 //! Later waves fill in the seam bodies in their own module files and never edit
 //! this file, so Wave B/C parallelism is conflict-free.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use anyhow::Context as _;
@@ -22,9 +22,20 @@ pub struct AppState {
     pub pool: Arc<SqlitePool>,
 }
 
-/// Default loopback port when `PORT` is unset. Loopback-only for the slice:
-/// no auth, single local user (mirrors the MCP `allowed_hosts` loopback default).
-const DEFAULT_PORT: u16 = 8080;
+/// Default port when `PORT` is unset. Picked to be uncommon (no well-known
+/// service binds it) and below 32768 so it sits outside the Linux kernel's
+/// default ephemeral-port range (`net.ipv4.ip_local_port_range`, typically
+/// 32768–60999) — that avoids transient collisions with outbound sockets.
+const DEFAULT_PORT: u16 = 24817;
+
+/// Default bind address when `HOST` is unset. `0.0.0.0` makes the SPA and the
+/// JSON `/api/*` surface reachable from the LAN; the MCP `/mcp` surface stays
+/// loopback-only regardless, because the rmcp 1.7 `allowed_hosts` default
+/// rejects any Host header outside `{localhost, 127.0.0.1, ::1}` (the
+/// DNS-rebinding mitigation per GHSA-89vp-x53w-74fx — see `mcp.rs`). Override
+/// with `HOST=127.0.0.1` to restore loopback-only HTTP, or `HOST=::` for
+/// dual-stack IPv6.
+const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
 /// Build the pool, assemble the router, spawn the export task, and serve.
 ///
@@ -59,7 +70,11 @@ pub async fn serve() -> anyhow::Result<()> {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(DEFAULT_PORT);
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let host: IpAddr = std::env::var("HOST")
+        .ok()
+        .and_then(|h| h.parse().ok())
+        .unwrap_or(DEFAULT_HOST);
+    let addr = SocketAddr::from((host, port));
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await

@@ -1,7 +1,7 @@
 // Thin fetch wrapper over the lumina axum JSON API.
 //
 // All requests go to `/api/*`; in development Vite proxies that prefix to the
-// axum server on 127.0.0.1:8080 (see vite.config.ts), and in production the
+// axum server on 127.0.0.1:24817 (see vite.config.ts), and in production the
 // SPA is served from the same origin as the API, so a relative base works in
 // both cases. Plain `fetch` is used deliberately — the store layer can be
 // swapped to Pinia Colada later without touching this module's contract.

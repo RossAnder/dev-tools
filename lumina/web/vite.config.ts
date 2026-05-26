@@ -42,13 +42,14 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     // Dev-only cross-origin handling: proxy `/api/*` to the axum server on
-    // 127.0.0.1:8080. This is the *entire* CORS story for development — the
-    // server intentionally ships no tower-http cors layer (plan P15). The
+    // 127.0.0.1:24817 (the lumina default port — see `DEFAULT_PORT` in
+    // `lumina/src/app.rs`). This is the *entire* CORS story for development —
+    // the server intentionally ships no tower-http cors layer (plan P15). The
     // axum routes are themselves mounted under `/api`, so the path is passed
     // through verbatim (no `rewrite`).
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: 'http://127.0.0.1:24817',
         changeOrigin: true,
       },
     },

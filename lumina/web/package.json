@@ -15,6 +15,7 @@
     "@fontsource/geist-sans": "^5.2.5",
     "@fontsource/instrument-serif": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "fast-check": "^4.8.0",
     "vue": "3.6.0-beta.12",
     "zod": "^4.0.1"
   },
@@ -25,7 +26,6 @@
     "@types/node": "^25.9.1",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
-    "fast-check": "^4.8.0",
     "npm-run-all2": "^9.0.1",
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.3",
