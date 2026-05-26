@@ -6,14 +6,38 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   // The SPA is served from the axum binary's root in production, so the
   // built asset URLs must be root-relative.
   base: '/',
-  plugins: [vue(), vueDevTools(), tailwindcss()],
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: {
+          comments: false,
+        },
+      },
+      features: {
+        optionsAPI: false,
+      },
+    }),
+    // vue-devtools is dev-only — loading it during `vite build` adds ~1s of
+    // plugin-init time for zero benefit (no devtools UI in a prod bundle).
+    ...(command === 'serve' ? [vueDevTools()] : []),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
+  build: {
+    target: 'esnext',
+    reportCompressedSize: false,
+    rolldownOptions: {
+      output: {
+        strictExecutionOrder: true,
+      },
     },
   },
   server: {
@@ -29,4 +53,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
