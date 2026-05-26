@@ -26,15 +26,10 @@ const { setFocus } = useHierarchy()
     data-testid="spine-node"
     @click="setFocus(node.id)"
   >
-    <!-- vertical gradient spine line (mirrors styles.css .spine-rail) -->
-    <span
-      aria-hidden="true"
-      class="absolute left-3 top-0 bottom-0 w-px spine-rail"
-    ></span>
     <!-- diamond marker -->
     <span
       aria-hidden="true"
-      class="absolute left-[9px] top-1/2 -translate-y-1/2 w-[6px] h-[6px] rotate-45 border z-10"
+      class="absolute left-3 top-1/2 w-[6px] h-[6px] border z-10"
       :class="
         isFocused
           ? 'border-[var(--accent)] bg-[var(--accent)]'
@@ -42,7 +37,10 @@ const { setFocus } = useHierarchy()
             ? 'border-[var(--color-accent-deep)] bg-[var(--bg)]'
             : 'border-[var(--border-strong)] bg-[var(--bg)]'
       "
-      :style="isFocused ? 'box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent), 0 0 10px var(--color-accent-glow);' : ''"
+      :style="
+        (isFocused ? 'box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent), 0 0 10px var(--color-accent-glow); ' : '')
+        + 'transform: translate(-50%, -50%) rotate(45deg);'
+      "
     ></span>
     <span class="flex flex-col flex-1 min-w-0 gap-[2px]">
       <span
@@ -65,8 +63,3 @@ const { setFocus } = useHierarchy()
   </button>
 </template>
 
-<style scoped>
-.spine-rail {
-  background: linear-gradient(to bottom, transparent 0%, var(--border-strong) 20%, var(--border-strong) 80%, transparent 100%);
-}
-</style>

@@ -100,6 +100,12 @@ const spineList: ComputedRef<SpineEntry[]> = computed(() => {
         v-if="treeStatus === 'ready' || treeStatus === 'stale-error'"
         class="flex flex-col gap-1 relative"
       >
+        <!-- continuous vertical spine line behind all nodes -->
+        <span
+          aria-hidden="true"
+          class="pointer-events-none absolute left-3 top-0 bottom-0 w-px spine-rail"
+          style="transform: translateX(-50%);"
+        ></span>
         <li v-for="entry in spineList" :key="entry.node.id">
           <SpineNode
             :node="entry.node"
@@ -132,3 +138,9 @@ const spineList: ComputedRef<SpineEntry[]> = computed(() => {
     </section>
   </aside>
 </template>
+
+<style scoped>
+.spine-rail {
+  background: linear-gradient(to bottom, transparent 0%, var(--border-strong) 8%, var(--border-strong) 92%, transparent 100%);
+}
+</style>

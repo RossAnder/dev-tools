@@ -42,13 +42,6 @@ export function effortLabel(effort: string | null | undefined): string | null {
   return null
 }
 
-// Display-only rename: the backend kind `epic` surfaces in the UI as
-// "PROJECT". The MCP/DB term stays `epic` everywhere except user-facing
-// labels — ChildGrid's pluraliser turns "PROJECT" into "PROJECTS" naturally.
-const KIND_LABEL_OVERRIDES: Record<string, string> = {
-  epic: 'PROJECT',
-}
-
 export function kindLabel(kind: string): string {
-  return KIND_LABEL_OVERRIDES[kind] ?? kind.toUpperCase()
+  return kind.toUpperCase()
 }
