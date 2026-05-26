@@ -1,6 +1,6 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "lumina",
   "version": "0.1.0",
-  "description": "Composable story-block skills for lumina work-items",
-  "skills": "./skills/"
+  "description": "Nine /lumina:<block> skills for filling story planning fields in a lumina work-item one block at a time."
 }

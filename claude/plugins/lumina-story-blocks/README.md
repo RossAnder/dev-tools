@@ -25,8 +25,9 @@ claude --plugin-dir claude/plugins/lumina-story-blocks
 **SDK (Claude Agent SDK)**:
 
 ```ts
+// workItemId is the lumina work-item UUID — fetch via mcp__lumina__list_work_items.
 const session = query({
-  prompt: "/lumina:problem-statement <work_item_id>",
+  prompt: `/lumina:problem-statement ${workItemId}`,
   options: {
     plugins: [{ type: "local", path: "./claude/plugins/lumina-story-blocks" }]
   }
@@ -34,6 +35,8 @@ const session = query({
 ```
 
 The plugin's namespace (`/lumina:…`) comes from the `name: "lumina"` field in `.claude-plugin/plugin.json`, not from the directory name (`lumina-story-blocks`). The two are intentionally distinct: the directory name describes the package; the manifest name controls the slash invocation prefix.
+
+Note: `version` in `.claude-plugin/plugin.json` controls update delivery — bump it when making breaking changes to skill bodies or convention contracts. For a locally-checked-in plugin loaded via `--scope project`, version pinning is benign and operators always run whatever is checked in.
 
 ## Skill list
 
@@ -86,3 +89,7 @@ After loading the plugin, these quick checks confirm everything is wired up:
 - **Diagnostic for `tool not found` errors after a successful `/mcp` listing**: if `/mcp` shows `lumina` as active but skill invocations fail with `tool not found`, run `claude mcp list` and confirm the entry is named exactly `lumina` (case-sensitive). If it is named differently (`Lumina`, `lumina-dev`, etc.), remove it and re-add it with the exact name `lumina`. Symbol resolution for `mcp__<server>__<tool>` is case-sensitive on the server prefix; a mismatch produces the same error surface as a down server, so check the name before restarting lumina.
 
 - **`add_open_question` gotcha**: `mcp__lumina__add_open_question` takes `story_id` (NOT `work_item_id` like its table neighbours). If the user-interrogation skill errors with `invalid_params` and the work-item id is otherwise correct, confirm the SKILL.md body uses the `story_id` parameter name — passing `work_item_id` to this tool is the most common cause of `invalid_params` here. The user-interrogation `SKILL.md` flags this in its own body, but the operator-facing reproduction is here.
+
+## Supply-chain note
+
+Review PR diffs touching `claude/plugins/lumina-story-blocks/**` with the same scrutiny you would apply to an unsandboxed CI step — a malicious `SKILL.md` runs in your Claude Code session with full MCP access (including the lumina write tools) on next plugin load. There is no signed-content assertion or hash manifest; trust is established only by what is checked into git. Mirror the disclaimer in `CLAUDE.md`'s `.githooks/` paragraph.
