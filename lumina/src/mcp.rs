@@ -73,8 +73,9 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::domain::{
-    ClosureGate, Complexity, CreateWorkItemRequest, Disposition, Effort, Kind, Origin, Relevance,
-    Severity, Status, UpdateResearchNoteRequest,
+    AlternativePatch, ClosureGate, Complexity, CreateWorkItemRequest, Disposition, Effort, Kind,
+    Origin, Relevance, RiskPatch, RiskSeverity, Severity, Status, TaskKind,
+    UpdateResearchNoteRequest,
 };
 use crate::error::AppError;
 use crate::repo;
@@ -242,10 +243,38 @@ pub struct DeleteWorkItemParams {
     pub id: String,
 }
 
-/// Arguments for the `set_story_plan` write tool: the three story attributes
+/// Structured per-story verification commands (migration 0005 / T4): the
+/// canonical commands a verifier runs against a story's slice. Rides on
+/// `attributes.verification_commands` as a JSON object; absent fields stay
+/// absent (no NULL coercion). Mirrors the shape used by `/test-bootstrap` and
+/// the planning-block prompts.
+#[derive(Debug, Clone, serde::Serialize, Deserialize, schemars::JsonSchema)]
+pub struct VerificationCommands {
+    /// The canonical build command (e.g. `cargo build --manifest-path …`).
+    #[serde(default)]
+    pub build: Option<String>,
+    /// The canonical test command (e.g. `cargo nextest run --manifest-path …`).
+    #[serde(default)]
+    pub test: Option<String>,
+    /// The canonical lint command (e.g. `cargo clippy …`).
+    #[serde(default)]
+    pub lint: Option<String>,
+    /// An optional one-line smoke check (e.g. `cargo run -- --help`).
+    #[serde(default)]
+    pub smoke: Option<String>,
+}
+
+/// Arguments for the `set_story_plan` write tool: the story-plan attributes
 /// keys set in one call. Each field is optional; the tool builds a sub-object
 /// of the present keys and makes ONE `set_work_item_attributes` call (a
 /// read-modify-merge that does not clobber sibling keys).
+///
+/// Migration 0005 / T4 widened the surface with two structured-plan fields:
+/// `not_doing` (free-text "what we are NOT doing") and `verification_commands`
+/// (the structured per-story command set). `risks` and `rejected_alternatives`
+/// have row-shaped data with supersession history; they live on their own
+/// dedicated CRUD tools (`add_risk`, `add_rejected_alternative`, …) rather
+/// than riding this attribute merge.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SetStoryPlanParams {
     /// The story work-item id whose plan attributes to set.
@@ -259,6 +288,16 @@ pub struct SetStoryPlanParams {
     /// The story's execution strategy; absent ⇒ leave any existing value untouched.
     #[serde(default)]
     pub execution_strategy: Option<String>,
+    /// The "what we are NOT doing" prose; rides on `attributes.not_doing`.
+    /// Absent ⇒ leave any existing value untouched.
+    #[serde(default)]
+    pub not_doing: Option<String>,
+    /// Structured per-story verification commands; rides on
+    /// `attributes.verification_commands`. Absent ⇒ leave any existing value
+    /// untouched (set-or-leave at the key level, NOT a deep merge of the
+    /// sub-object).
+    #[serde(default)]
+    pub verification_commands: Option<VerificationCommands>,
 }
 
 /// A `files_touched` entry on `set_task_spec` (migration 0004 / T4).
@@ -772,6 +811,233 @@ pub struct SetFindingRepoParams {
     pub repo_id: Option<String>,
 }
 
+// ---- Risk-register params (migration 0005, T4) ---------------------------
+
+/// Arguments for the `add_risk` write tool → `repo::add_risk` (migration 0005).
+/// `severity` is the closed [`RiskSeverity`] enum (wire form
+/// `low|medium|high|critical`); a bogus value fails deserialisation, surfacing
+/// as `invalid_params` before the handler runs.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AddRiskParams {
+    /// The work-item id the risk attaches to.
+    pub work_item_id: String,
+    /// A one-line summary of the risk.
+    pub summary: String,
+    /// Optional long-form body.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Optional rationale ("why this is a risk").
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// The risk severity; one of `low`/`medium`/`high`/`critical`.
+    pub severity: RiskSeverity,
+    /// Optional mitigation strategy.
+    #[serde(default)]
+    pub mitigation: Option<String>,
+}
+
+/// Arguments for the `update_risk` write tool → `repo::update_risk`. Carries
+/// the target `id` plus the optional mutable fields (mirrors [`RiskPatch`],
+/// which lacks `id`). The MCP layer reshapes to a `RiskPatch` before the call.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateRiskParams {
+    /// The risk id to update.
+    pub id: String,
+    /// New summary; absent leaves the existing summary unchanged.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// New body; absent leaves the existing body unchanged.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// New rationale; absent leaves the existing rationale unchanged.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// New severity; absent leaves the existing severity unchanged.
+    #[serde(default)]
+    pub severity: Option<RiskSeverity>,
+    /// New mitigation strategy; absent leaves the existing mitigation unchanged.
+    #[serde(default)]
+    pub mitigation: Option<String>,
+}
+
+/// Arguments for the `supersede_risk` write tool → `repo::supersede_risk`. The
+/// old risk's `superseded_by` is set to the new risk's id, and the new risk
+/// is appended under the same work item — both in ONE transaction, ONE event
+/// `risk.superseded`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SupersedeRiskParams {
+    /// The work-item id the risk attaches to (must match the old risk's owner).
+    pub work_item_id: String,
+    /// The superseded (old) risk id.
+    pub old_id: String,
+    /// A one-line summary of the new risk.
+    pub summary: String,
+    /// Optional long-form body for the new risk.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Optional rationale for the new risk.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// The new risk's severity; one of `low`/`medium`/`high`/`critical`.
+    pub severity: RiskSeverity,
+    /// Optional mitigation strategy for the new risk.
+    #[serde(default)]
+    pub mitigation: Option<String>,
+}
+
+/// Arguments for the (DESTRUCTIVE) `remove_risk` write tool →
+/// `repo::remove_risk` (a hard delete — risks have no independent export
+/// identity; they fold into the owning work-item's TOML).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RemoveRiskParams {
+    /// The risk id to hard-delete.
+    pub id: String,
+}
+
+// ---- Rejected-alternative params (migration 0005, T4) --------------------
+
+/// Arguments for the `add_rejected_alternative` write tool →
+/// `repo::add_rejected_alternative`. Mirrors [`AddRiskParams`] minus severity;
+/// `confidence` is free TEXT (validated nowhere at the DB, matching
+/// `research_notes.confidence`).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AddRejectedAlternativeParams {
+    /// The work-item id the rejected alternative attaches to.
+    pub work_item_id: String,
+    /// A one-line summary of the rejected alternative.
+    pub summary: String,
+    /// Optional long-form body.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Optional rationale ("why this was rejected").
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// Optional evidence grade (`high|medium|low`).
+    #[serde(default)]
+    pub confidence: Option<String>,
+}
+
+/// Arguments for the `update_rejected_alternative` write tool →
+/// `repo::update_rejected_alternative` (mirrors [`AlternativePatch`] + `id`).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateRejectedAlternativeParams {
+    /// The rejected-alternative id to update.
+    pub id: String,
+    /// New summary; absent leaves the existing summary unchanged.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// New body; absent leaves the existing body unchanged.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// New rationale; absent leaves the existing rationale unchanged.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// New evidence grade (`high|medium|low`); absent leaves it unchanged.
+    #[serde(default)]
+    pub confidence: Option<String>,
+}
+
+/// Arguments for the `supersede_rejected_alternative` write tool →
+/// `repo::supersede_rejected_alternative`. Mirrors [`SupersedeRiskParams`]
+/// minus severity.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SupersedeRejectedAlternativeParams {
+    /// The work-item id the alternative attaches to (must match the old row's owner).
+    pub work_item_id: String,
+    /// The superseded (old) rejected-alternative id.
+    pub old_id: String,
+    /// A one-line summary of the new rejected alternative.
+    pub summary: String,
+    /// Optional long-form body for the new row.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Optional rationale for the new row.
+    #[serde(default)]
+    pub rationale: Option<String>,
+    /// Optional evidence grade (`high|medium|low`) for the new row.
+    #[serde(default)]
+    pub confidence: Option<String>,
+}
+
+/// Arguments for the (DESTRUCTIVE) `remove_rejected_alternative` write tool →
+/// `repo::remove_rejected_alternative` (a hard delete).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RemoveRejectedAlternativeParams {
+    /// The rejected-alternative id to hard-delete.
+    pub id: String,
+}
+
+// ---- Task-dependency params (migration 0005, T4) -------------------------
+
+/// Arguments for the `block_task_on_task` write tool → `repo::add_task_dependency`
+/// (migration 0005). Both endpoints must reference `kind='task'` rows; the
+/// repo pre-checks so an illegal endpoint surfaces as a clean `Validation`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct BlockTaskOnTaskParams {
+    /// The task that is blocked (the dependent).
+    pub task_id: String,
+    /// The task it depends on (the dependency).
+    pub depends_on_id: String,
+    /// Edge category — free TEXT, defaults to `"data"` if absent. Common values
+    /// are `data`/`sequence`/… per the wire-task-deps SKILL.
+    #[serde(default)]
+    pub kind: Option<String>,
+}
+
+/// Arguments for the `unblock_task_from_task` write tool →
+/// `repo::remove_task_dependency` (migration 0005).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UnblockTaskFromTaskParams {
+    /// The task that is blocked (the dependent).
+    pub task_id: String,
+    /// The task it depends on (the dependency).
+    pub depends_on_id: String,
+}
+
+/// Arguments for the `list_task_dependencies` read tool →
+/// `repo::list_task_dependencies` (migration 0005). Returns every edge whose
+/// BOTH endpoints are direct task children of `story_id`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListTaskDependenciesParams {
+    /// The story work-item id whose task-dependency graph to list.
+    pub story_id: String,
+}
+
+/// Arguments for the `compute_task_batches` read tool →
+/// `repo::compute_task_batches` (migration 0005). Returns the topological-sort
+/// phases for the story's task dependency graph; a cycle surfaces as
+/// `invalid_params` (mapped from [`AppError::Cycle`] with the offending edges).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ComputeTaskBatchesParams {
+    /// The story work-item id whose task-dependency graph to batch.
+    pub story_id: String,
+}
+
+// ---- Story readiness + task_kind params (migration 0005, T4) -------------
+
+/// Arguments for the `get_story_readiness` read tool →
+/// `repo::get_story_readiness` (migration 0005). Returns the planning-pipeline
+/// readiness aggregate + the next recommended Phase-3 block.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetStoryReadinessParams {
+    /// The story work-item id whose readiness to summarise.
+    pub story_id: String,
+}
+
+/// Arguments for the `set_task_kind` write tool → `repo::set_task_kind`. The
+/// typed [`TaskKind`] enum advertises the four legal kebab-case values
+/// (`foundation`/`vertical-slice`/`pattern-replacement`/`polish`); omitting
+/// the field CLEARS the discriminator to NULL — a legitimate sprint-composer
+/// operation, not a no-op.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetTaskKindParams {
+    /// The task work-item id whose `task_kind` to set or clear.
+    pub id: String,
+    /// The new task-kind discriminator; omit to clear back to NULL.
+    #[serde(default)]
+    pub task_kind: Option<TaskKind>,
+}
+
 /// The MCP tool-handler. Holds the shared `Arc<SqlitePool>` and the generated
 /// `ToolRouter` (the `#[tool_router]` macro emits `Self::tool_router()`; we
 /// store its result in the `tool_router` field so `#[tool_handler]` can route
@@ -1011,6 +1277,21 @@ impl LuminaTools {
         }
         if let Some(v) = p.execution_strategy {
             obj.insert("execution_strategy".into(), serde_json::Value::String(v));
+        }
+        if let Some(v) = p.not_doing {
+            obj.insert("not_doing".into(), serde_json::Value::String(v));
+        }
+        if let Some(vc) = p.verification_commands {
+            // Serialise the typed sub-object to a JSON value; absent fields on
+            // VerificationCommands stay absent in the rendered object (no NULL
+            // coercion) thanks to the `#[serde(default)]` + `Option` shape.
+            let vc_value = serde_json::to_value(&vc).map_err(|e| {
+                ErrorData::internal_error(
+                    format!("failed to serialise verification_commands: {e}"),
+                    None,
+                )
+            })?;
+            obj.insert("verification_commands".into(), vc_value);
         }
         repo::set_work_item_attributes(&self.pool, &p.id, &serde_json::Value::Object(obj))
             .await
@@ -1685,6 +1966,309 @@ impl LuminaTools {
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::json!({ "finding_id": finding_id }))
     }
+
+    // ---- Risk-register tools (migration 0005, T4) -----------------------
+
+    /// Add a risk to a work item (single repo call → `repo::add_risk`). The
+    /// `severity` is the closed [`RiskSeverity`] enum, rendered to the wire
+    /// form (`low|medium|high|critical`) before the call.
+    #[tool(
+        description = "Add a risk (summary/body/rationale/severity/mitigation) to a work item. Severity is one of low/medium/high/critical. Records one event (risk.added).",
+        annotations(open_world_hint = false)
+    )]
+    async fn add_risk(
+        &self,
+        Parameters(p): Parameters<AddRiskParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let severity_str = enum_to_str(p.severity);
+        let id = repo::add_risk(
+            &self.pool,
+            &p.work_item_id,
+            &p.summary,
+            p.body.as_deref(),
+            p.rationale.as_deref(),
+            &severity_str,
+            p.mitigation.as_deref(),
+        )
+        .await
+        .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id.to_string() }))
+    }
+
+    /// Partial set-or-leave update of a risk (single repo call →
+    /// `repo::update_risk`).
+    #[tool(
+        description = "Partially update a risk by id (summary/body/rationale/severity/mitigation; absent fields unchanged). Records one event (risk.updated).",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn update_risk(
+        &self,
+        Parameters(p): Parameters<UpdateRiskParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let patch = RiskPatch {
+            summary: p.summary,
+            body: p.body,
+            rationale: p.rationale,
+            severity: p.severity,
+            mitigation: p.mitigation,
+        };
+        repo::update_risk(&self.pool, &p.id, &patch)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": p.id }))
+    }
+
+    /// Supersede a risk with a new one (single repo call →
+    /// `repo::supersede_risk`). The old row's `superseded_by` is set to the
+    /// new row's id; both writes ride ONE transaction and ONE event
+    /// (`risk.superseded`).
+    #[tool(
+        description = "Supersede an old risk with a new one under the same work item (sets the old row's superseded_by; appends the new row). One transaction, one event (risk.superseded).",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn supersede_risk(
+        &self,
+        Parameters(p): Parameters<SupersedeRiskParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let severity_str = enum_to_str(p.severity);
+        let new_id = repo::supersede_risk(
+            &self.pool,
+            &p.work_item_id,
+            &p.old_id,
+            &p.summary,
+            p.body.as_deref(),
+            p.rationale.as_deref(),
+            &severity_str,
+            p.mitigation.as_deref(),
+        )
+        .await
+        .map_err(app_error_to_mcp)?;
+        structured_result(
+            serde_json::json!({ "old_id": p.old_id, "new_id": new_id.to_string() }),
+        )
+    }
+
+    /// HARD-delete a risk (single repo call → `repo::remove_risk`). Risks
+    /// have no independent export identity; the export fold drops them from
+    /// the owning work-item's TOML.
+    #[tool(
+        description = "Remove (hard-delete) a risk by id. Records one event (risk.removed).",
+        annotations(destructive_hint = true, open_world_hint = false)
+    )]
+    async fn remove_risk(
+        &self,
+        Parameters(RemoveRiskParams { id }): Parameters<RemoveRiskParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::remove_risk(&self.pool, &id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id, "removed": true }))
+    }
+
+    // ---- Rejected-alternative tools (migration 0005, T4) ----------------
+
+    /// Add a rejected planning alternative to a work item (single repo call →
+    /// `repo::add_rejected_alternative`).
+    #[tool(
+        description = "Add a rejected planning alternative (summary/body/rationale/confidence) to a work item. Records one event (rejected_alternative.added).",
+        annotations(open_world_hint = false)
+    )]
+    async fn add_rejected_alternative(
+        &self,
+        Parameters(p): Parameters<AddRejectedAlternativeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let id = repo::add_rejected_alternative(
+            &self.pool,
+            &p.work_item_id,
+            &p.summary,
+            p.body.as_deref(),
+            p.rationale.as_deref(),
+            p.confidence.as_deref(),
+        )
+        .await
+        .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id.to_string() }))
+    }
+
+    /// Partial set-or-leave update of a rejected alternative (single repo call
+    /// → `repo::update_rejected_alternative`).
+    #[tool(
+        description = "Partially update a rejected planning alternative by id (summary/body/rationale/confidence; absent fields unchanged). Records one event (rejected_alternative.updated).",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn update_rejected_alternative(
+        &self,
+        Parameters(p): Parameters<UpdateRejectedAlternativeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let patch = AlternativePatch {
+            summary: p.summary,
+            body: p.body,
+            rationale: p.rationale,
+            confidence: p.confidence,
+        };
+        repo::update_rejected_alternative(&self.pool, &p.id, &patch)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": p.id }))
+    }
+
+    /// Supersede a rejected alternative with a new one (single repo call →
+    /// `repo::supersede_rejected_alternative`).
+    #[tool(
+        description = "Supersede an old rejected planning alternative with a new one (sets the old row's superseded_by; appends the new row). One transaction, one event (rejected_alternative.superseded).",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn supersede_rejected_alternative(
+        &self,
+        Parameters(p): Parameters<SupersedeRejectedAlternativeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let new_id = repo::supersede_rejected_alternative(
+            &self.pool,
+            &p.work_item_id,
+            &p.old_id,
+            &p.summary,
+            p.body.as_deref(),
+            p.rationale.as_deref(),
+            p.confidence.as_deref(),
+        )
+        .await
+        .map_err(app_error_to_mcp)?;
+        structured_result(
+            serde_json::json!({ "old_id": p.old_id, "new_id": new_id.to_string() }),
+        )
+    }
+
+    /// HARD-delete a rejected alternative (single repo call →
+    /// `repo::remove_rejected_alternative`).
+    #[tool(
+        description = "Remove (hard-delete) a rejected planning alternative by id. Records one event (rejected_alternative.removed).",
+        annotations(destructive_hint = true, open_world_hint = false)
+    )]
+    async fn remove_rejected_alternative(
+        &self,
+        Parameters(RemoveRejectedAlternativeParams { id }): Parameters<
+            RemoveRejectedAlternativeParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::remove_rejected_alternative(&self.pool, &id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id, "removed": true }))
+    }
+
+    // ---- Task-dependency tools (migration 0005, T4) ---------------------
+
+    /// Block one task on another (single repo call → `repo::add_task_dependency`).
+    /// Both endpoints must reference `kind='task'` rows; the repo pre-checks
+    /// so an illegal endpoint surfaces as a clean `Validation`. The `kind`
+    /// edge category defaults to `"data"` when omitted.
+    #[tool(
+        description = "Add a task→task dependency edge (task_id depends on depends_on_id). Both endpoints must reference task rows; the edge `kind` (defaults to `data`) is free TEXT. Records one event (task_dependency.added).",
+        annotations(open_world_hint = false)
+    )]
+    async fn block_task_on_task(
+        &self,
+        Parameters(BlockTaskOnTaskParams { task_id, depends_on_id, kind }): Parameters<
+            BlockTaskOnTaskParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        let edge_kind = kind.unwrap_or_else(|| "data".to_owned());
+        let edge = repo::add_task_dependency(&self.pool, &task_id, &depends_on_id, &edge_kind)
+            .await
+            .map_err(app_error_to_mcp)?;
+        json_result(&edge)
+    }
+
+    /// Remove a task→task dependency edge (single repo call →
+    /// `repo::remove_task_dependency`).
+    #[tool(
+        description = "Remove a task→task dependency edge (task_id depends on depends_on_id). Records one event (task_dependency.removed).",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn unblock_task_from_task(
+        &self,
+        Parameters(UnblockTaskFromTaskParams { task_id, depends_on_id }): Parameters<
+            UnblockTaskFromTaskParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::remove_task_dependency(&self.pool, &task_id, &depends_on_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(
+            serde_json::json!({ "task_id": task_id, "depends_on_id": depends_on_id, "removed": true }),
+        )
+    }
+
+    /// List every task→task dependency edge under a story (single repo call →
+    /// `repo::list_task_dependencies`). Read-only; no transaction, no events.
+    #[tool(
+        description = "List every task→task dependency edge whose both endpoints are direct task children of `story_id`. Sorted by (task_id, depends_on_id) for deterministic output.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn list_task_dependencies(
+        &self,
+        Parameters(ListTaskDependenciesParams { story_id }): Parameters<ListTaskDependenciesParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let edges = repo::list_task_dependencies(&self.pool, &story_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        json_result(&edges)
+    }
+
+    /// Compute the per-phase batching of a story's tasks via Kahn's algorithm
+    /// (single repo call → `repo::compute_task_batches`). Read-only; a cycle
+    /// surfaces as `invalid_params` carrying the offending edges (via
+    /// [`AppError::Cycle`] → `app_error_to_mcp`).
+    #[tool(
+        description = "Compute the per-phase batching of a story's tasks (Kahn's topological sort). Returns a list of phases, each phase a list of task ids whose dependencies were satisfied by earlier phases. Within a phase, tasks sort by (task_kind ordering, created_at). A cycle surfaces as invalid_params with the offending edges.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn compute_task_batches(
+        &self,
+        Parameters(ComputeTaskBatchesParams { story_id }): Parameters<ComputeTaskBatchesParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let phases = repo::compute_task_batches(&self.pool, &story_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        json_result(&phases)
+    }
+
+    // ---- Story readiness + task_kind tools (migration 0005, T4) ---------
+
+    /// Summarise a story's planning-pipeline readiness (single repo call →
+    /// `repo::get_story_readiness`). Read-only; composes existing reads.
+    #[tool(
+        description = "Summarise a story's planning-pipeline readiness: per-section counts, a roll-up `ready_for_decomposition` boolean, and the next recommended Phase-3 block (NextAction enum). Read-only; composes existing reads.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_story_readiness(
+        &self,
+        Parameters(GetStoryReadinessParams { story_id }): Parameters<GetStoryReadinessParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let readiness = repo::get_story_readiness(&self.pool, &story_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        json_result(&readiness)
+    }
+
+    /// Set or clear a task's `task_kind` discriminator (single repo call →
+    /// `repo::set_task_kind`). Task-scoped: a non-task target is rejected with
+    /// `invalid_params`. Omitting `task_kind` CLEARS the column (deliberate
+    /// divergence from the SET-OR-LEAVE convention — the sprint composer may
+    /// legitimately want to clear the discriminator).
+    #[tool(
+        description = "Set or clear a task's `task_kind` discriminator (foundation/vertical-slice/pattern-replacement/polish). Omitting `task_kind` CLEARS the column to NULL (deliberate composer-friendly divergence from SET-OR-LEAVE). Records one event (work_item.task_kind_set).",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn set_task_kind(
+        &self,
+        Parameters(SetTaskKindParams { id, task_kind }): Parameters<SetTaskKindParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        repo::set_task_kind(&self.pool, &id, task_kind)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id }))
+    }
 }
 
 impl LuminaTools {
@@ -1842,6 +2426,24 @@ mod tests {
             "set_primary_repo",
             "list_repo_links",
             "set_finding_repo",
+            // risk-register tools (migration 0005, T4 / lumina-story-planning-round-2)
+            "add_risk",
+            "update_risk",
+            "supersede_risk",
+            "remove_risk",
+            // rejected-alternative tools (migration 0005, T4)
+            "add_rejected_alternative",
+            "update_rejected_alternative",
+            "supersede_rejected_alternative",
+            "remove_rejected_alternative",
+            // task-dependency tools (migration 0005, T4)
+            "block_task_on_task",
+            "unblock_task_from_task",
+            "list_task_dependencies",
+            "compute_task_batches",
+            // story readiness + task_kind (migration 0005, T4)
+            "get_story_readiness",
+            "set_task_kind",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -1850,11 +2452,12 @@ mod tests {
         }
 
         // Exact total: catches a stray (or silently-dropped) tool that the
-        // membership loop above would not. 39 = 34 baseline + 5 repo-link tools (T4).
+        // membership loop above would not.
+        // 53 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4).
         assert_eq!(
             names.len(),
-            39,
-            "advertised tool count must be exactly 39, got {}: {names:?}",
+            53,
+            "advertised tool count must be exactly 53, got {}: {names:?}",
             names.len()
         );
 
@@ -1955,6 +2558,10 @@ mod tests {
             "get_tree",
             "get_sprint_view",
             "list_repo_links",
+            // migration 0005 / T4 read tools.
+            "list_task_dependencies",
+            "compute_task_batches",
+            "get_story_readiness",
         ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,
@@ -1963,8 +2570,15 @@ mod tests {
             );
         }
 
-        // destructive_hint = true on delete_work_item + remove_repo_link.
-        for destructive in ["delete_work_item", "remove_repo_link"] {
+        // destructive_hint = true on hard-delete tools.
+        for destructive in [
+            "delete_work_item",
+            "remove_repo_link",
+            // migration 0005 / T4 hard-delete tools (rows fold into the owning
+            // work-item's TOML export — no independent identity).
+            "remove_risk",
+            "remove_rejected_alternative",
+        ] {
             assert_eq!(
                 annotations_of(&tools, destructive).destructive_hint,
                 Some(true),
@@ -1997,6 +2611,13 @@ mod tests {
             // repo-link setters (migration 0004, T4)
             "set_primary_repo",
             "set_finding_repo",
+            // migration 0005 / T4 setters + supersession + edge removal.
+            "update_risk",
+            "supersede_risk",
+            "update_rejected_alternative",
+            "supersede_rejected_alternative",
+            "unblock_task_from_task",
+            "set_task_kind",
         ] {
             assert_eq!(
                 annotations_of(&tools, idem).idempotent_hint,
@@ -2078,6 +2699,8 @@ mod tests {
                 problem_statement: Some("the problem".to_owned()),
                 research_notes: Some("the research".to_owned()),
                 execution_strategy: Some("the strategy".to_owned()),
+                not_doing: None,
+                verification_commands: None,
             }))
             .await
             .expect("set_story_plan succeeds");

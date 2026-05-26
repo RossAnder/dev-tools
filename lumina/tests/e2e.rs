@@ -98,6 +98,8 @@ async fn mcp_set_story_plan(
             problem_statement: Some(problem_statement.to_owned()),
             research_notes: Some(research_notes.to_owned()),
             execution_strategy: Some(execution_strategy.to_owned()),
+            not_doing: None,
+            verification_commands: None,
         }))
         .await
         .expect("set_story_plan tool succeeds");
