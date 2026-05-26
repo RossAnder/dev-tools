@@ -91,7 +91,7 @@ store only).
 | `update_work_item` | Partial set-or-leave update of an item (title / body / status / position / attributes); absent fields are left unchanged. |
 | `move_work_item` | Reposition an item among its siblings (new ordering `position`). |
 | `delete_work_item` | DESTRUCTIVE (soft): stamp `deleted_at`; the row and its history are preserved, but it drops out of lists. |
-| `set_story_plan` | Set a story's plan attributes — `problem_statement` / `research_notes` / `execution_strategy` — in one merge call (absent keys untouched). |
+| `set_story_plan` | Set a story's plan attributes — `problem_statement` / `research_notes` / `execution_strategy` — in one merge call (absent keys untouched). Round-2 widened the params to accept `not_doing: Option<String>` (free-text scope-exclusion) and `verification_commands: Option<{build, test, lint, smoke}>` (each sub-key Option<String>). The tool composes these into the attributes JSON via the merge-safe `set_work_item_attributes` path. |
 | `set_task_spec` | Set a task's spec attributes — `execution_detail` / `files_touched` / `outcome` / `dispatch` — in one merge call. Each `files_touched` entry may be a bare path string (resolves to the project's primary linked repo) or a `{repo: "<owner>/<name>", path: "<repo-relative path>"}` object whose `repo` slug must reference a `repo_links` row on the task's project ancestor (migration 0004). |
 | `create_context_block` | Create a reusable context block (optional title/body); pass `link_to` to also link it to a work item immediately. |
 | `link_context_block` | Link an existing context block to a work item. |
@@ -124,6 +124,14 @@ These set the composer-facing grading axes and drive the decision lifecycle. `re
 | `update_research_note` | Partial set-or-leave update of a research note's `confidence` / `state` (`proposed` / `accepted` / `rejected`) / `rationale` / `lens`. |
 | `supersede_research_note` | Mark an old research note superseded by a new one; superseded notes drop from the live detail fold. |
 | `supersede_finding` | Mark an old finding superseded by a new one (sets the old finding's `superseded_by`); superseded findings drop from the live detail fold. |
+| `add_risk` | `{ work_item_id, summary, body?, rationale?, severity, mitigation? } → { id }` — append a risk to a work-item's risk register. `severity` ∈ `low | medium | high | critical` (lowercase; matches the SQL CHECK). |
+| `update_risk` | `{ id, summary?, body?, rationale?, severity?, mitigation? } → ()` — partial set-or-leave update. |
+| `supersede_risk` | `{ work_item_id, old_id, summary, body?, rationale?, severity, mitigation? } → { old_id, new_id }` — replace an existing risk; chains via `superseded_by`. |
+| `remove_risk` | `{ id } → ()` — hard delete. |
+| `add_rejected_alternative` | `{ work_item_id, summary, body?, rationale?, confidence? } → { id }` — append a rejected planning alternative (no severity; carries `confidence`). |
+| `update_rejected_alternative` | `{ id, summary?, body?, rationale?, confidence? } → ()` — partial set-or-leave update. |
+| `supersede_rejected_alternative` | `{ work_item_id, old_id, summary, body?, rationale?, confidence? } → { old_id, new_id }` — replace an existing rejected alternative; chains via `superseded_by`. |
+| `remove_rejected_alternative` | `{ id } → ()` — hard delete. |
 | `add_open_question` | Add a story-scoped open question (rejected on non-story targets). Takes `story_id` (NOT `work_item_id` like its table neighbours) plus `question`. |
 | `add_question_option` | Add an answer option (label + optional detail) to an open question. |
 | `block_task_on_question` | Block a task on an open question (sets `blocked_by_question_id` and `status=blocked`). |
@@ -158,6 +166,29 @@ Constraints:
 - Repo links live exclusively on `kind='project'` rows; descendants inherit by walking up the parent chain. Adding a repo link to a non-project work-item is rejected.
 - A `{repo, path}` entry whose `repo` slug does not match any `repo_links` row on the task's project ancestor is rejected as `invalid_params`.
 - Slug shape is GitHub-only (`<owner>/<name>`, no host prefix); GitLab / self-hosted support would require a follow-up migration.
+
+### Task graph tools (migration 0005)
+
+Fine-grained prerequisite edges between task siblings of a story. Both endpoints of every edge must reference `kind='task'` rows; the repo-layer kind-check trigger rejects illegal endpoints as `invalid_params`. The execution-batching read (`compute_task_batches`) composes these edges with the story's open-question blocks to produce the topologically-sorted phase list the sprint composer dispatches.
+
+| Tool | When to use |
+|------|-------------|
+| `block_task_on_task` | `{ task_id, depends_on_id, kind? } → { TaskDependency row }` — write a directed edge; `kind` defaults to `"data"`. The kind-check trigger validates both endpoints are `kind='task'`. |
+| `unblock_task_from_task` | `{ task_id, depends_on_id } → ()` — remove an edge. |
+| `list_task_dependencies` | `{ story_id } → Vec<TaskDependency>` — list all edges among the story's task children. Read-only. |
+| `compute_task_batches` | `{ story_id } → Vec<Vec<task_id>>` — Kahn's-algorithm phase batches; returns `invalid_params` carrying the offending edges on cycle. Read-only. |
+
+### Readiness (migration 0005)
+
+| Tool | When to use |
+|------|-------------|
+| `get_story_readiness` | `{ story_id } → StoryReadiness` — composes existing reads; returns `{ problem_statement_set, accepted_research_count, unresolved_questions, has_approach, has_acceptance_criteria_on_all_tasks, ready_for_decomposition, next_recommended_action }`. Read-only. |
+
+### Task kind discriminator (migration 0005)
+
+| Tool | When to use |
+|------|-------------|
+| `set_task_kind` | `{ id, task_kind? } → ()` — stamp a task's `task_kind` column. Values: `foundation | vertical-slice | pattern-replacement | polish` (kebab-case; matches the SQL CHECK). Omit `task_kind` (or pass null) to clear (deliberate composer-friendly divergence from the SET-OR-LEAVE convention). |
 
 ### Read tools
 

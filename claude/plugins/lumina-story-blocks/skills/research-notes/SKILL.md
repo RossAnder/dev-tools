@@ -85,7 +85,7 @@ mcp__lumina__add_research_note {
 }
 ```
 
-New notes inherit the repo's default state at insert time (per the [`claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`](../mcp/SKILL.md) catalogue, that default is `proposed`). This skill MUST NOT call `update_research_note` to flip the state; manual acceptance happens later via a raw `mcp__lumina__update_research_note { id, state: "accepted" }` call or a future `/lumina:accept-research` skill.
+New notes inherit the repo's default state at insert time (per the [`claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`](../mcp/SKILL.md) catalogue, that default is `proposed`). This skill MUST NOT call `update_research_note` to flip the state; manual acceptance happens later via a raw `mcp__lumina__update_research_note { id, state: "accepted" }` call or a future `/lumina:accept-research` skill. The canonical promotion route from `state="proposed"` to `state="accepted" | "rejected"` is the `/lumina:vet-research` slash command, which drives the per-note accept/reject decision and writes the `update_research_note` call (plus a §c-canonical activity entry) on the user's behalf.
 
 After each successful `add_research_note`, append one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c (one entry per NOTE, not per skill invocation — a fork that adds 5 net-new notes records 5 entries). The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape.
 
