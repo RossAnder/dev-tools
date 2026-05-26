@@ -25,7 +25,7 @@ Reach for the lumina MCP tools when you are:
 
 - Building or enriching the `epic → feature → story → task` hierarchy.
 - Attaching a story's plan (problem statement / research notes / execution strategy).
-- Specifying a task (execution detail / files touched / outcome / dispatch metadata).
+- Specifying a task (execution detail / files touched / outcome / dispatch tier (Tier::{Lite, Deep})).
 - Recording execution, vet, or comment activity onto a task record.
 - Raising, updating, or resolving findings.
 - Querying the hierarchy: list, get one item with its detail, walk a tree, or view a
@@ -33,14 +33,14 @@ Reach for the lumina MCP tools when you are:
 
 ## Story-block skill family
 
-The plugin at `claude/plugins/lumina-story-blocks/` adds nine composable skills, one per
-story block, each independently triggerable via a `/lumina:<block> <id>` slash invocation,
-each driving the lumina MCP tools catalogued below.
+The plugin at `claude/plugins/lumina-story-blocks/` adds 21 composable skills (round-1's 9 + round-2's 10 + round-3's 2), one per story block, each independently triggerable via a `/lumina:<block> <id>` slash invocation, each driving the lumina MCP tools catalogued below. The plugin's [`README.md`](../../README.md#skill-list) carries the authoritative skill enumeration; the table below mirrors it.
 
 | Skill | Slash invocation | One-line summary |
 |---|---|---|
 | problem-statement | `/lumina:problem-statement <id>` | Sets `attributes.problem_statement` (3-axis prompt). |
 | research-notes | `/lumina:research-notes <id>` | Forked subagent: adds 3-7 `research_notes` rows. |
+| research-explore | `/lumina:research-explore <id>` | Forked subagent: dispatch parallel lens-agents to explore the story; each agent returns proposed research notes for vet-research to triage. *(new in round-3)* |
+| research-directed | `/lumina:research-directed <id>` | Forked subagent: verify decision-grade claims (libraries, APIs, file:line) after user decisions land; emit drift findings and supersede stale notes. *(new in round-3)* |
 | user-interrogation | `/lumina:user-interrogation <id>` | HumanLayer 4-axis open-questions enumeration. |
 | acceptance-criteria | `/lumina:acceptance-criteria <id>` | Adds free-text AC rows to task children. |
 | approach | `/lumina:approach <id>` | Sets `attributes.execution_strategy` (drafts from prerequisites). |
@@ -48,6 +48,16 @@ each driving the lumina MCP tools catalogued below.
 | edge-cases | `/lumina:edge-cases <id>` | Adds `research_notes` with `lens="edge-case"`. |
 | relevance | `/lumina:relevance <id>` | Thin wrapper over `set_relevance` (active/backlog/deferred/rejected). |
 | closure-gate | `/lumina:closure-gate <id>` | Thin wrapper over `set_closure_gate` (hard/soft). |
+| risks | `/lumina:risks <id>` | Capture or update a story's risks with severity + mitigation; per-element supersession on label collision. |
+| alternatives | `/lumina:alternatives <id>` | Capture or update a story's rejected alternatives with confidence + rationale; per-element supersession on label collision. |
+| verification-commands | `/lumina:verification-commands <id>` | Capture or update a story's verification commands (build/test/lint/smoke). |
+| vet-research | `/lumina:vet-research <id>` | Sample, spot-check, and promote/reject a story's proposed research notes; the only plugin skill that records `entry_type=vet` activity. *(amended in round-3 — parallelised verification dispatch)* |
+| story-review | `/lumina:story-review <id>` | Critique a story across all planning blocks; emits structured findings via `add_finding{kind="story-review"}`. |
+| next-block | `/lumina:next-block <id>` | Read a story's readiness and recommend the next `/lumina:<block>` slash command to run. |
+| plan-story | `/lumina:plan-story <id>` | Walk a story through the six-phase canonical sequence (frame / explore / decide / verify-design / decompose / closure) with hard phase gates and skip-with-override audit. *(amended in round-3 — six-phase gates)* |
+| decompose-tasks | `/lumina:decompose-tasks <id>` | Decompose a ready story into task children with task_kind, vertical-slice grouping, and pattern-replacement file enumeration. |
+| set-task-spec | `/lumina:set-task-spec <id>` | Walk a story's task children and capture per-task spec (execution_detail, files_touched, dual-track outcome, effort, complexity, derived tier). *(amended in round-3 — captures effort+complexity, derives typed tier)* |
+| wire-task-deps | `/lumina:wire-task-deps <id>` | Wire explicit task→task dependency edges across a story's task children, then surface the Kahn-ordered phase schedule with per-task tier annotations and an agent budget. *(amended in round-3 — renders batch dispatch budget + agent cap check)* |
 
 Load via `claude --plugin-dir claude/plugins/lumina-story-blocks` — see
 [`../../README.md`](../../README.md)
@@ -92,7 +102,7 @@ store only).
 | `move_work_item` | Reposition an item among its siblings (new ordering `position`). |
 | `delete_work_item` | DESTRUCTIVE (soft): stamp `deleted_at`; the row and its history are preserved, but it drops out of lists. |
 | `set_story_plan` | Set a story's plan attributes — `problem_statement` / `research_notes` / `execution_strategy` — in one merge call (absent keys untouched). Round-2 widened the params to accept `not_doing: Option<String>` (free-text scope-exclusion) and `verification_commands: Option<{build, test, lint, smoke}>` (each sub-key Option<String>). The tool composes these into the attributes JSON via the merge-safe `set_work_item_attributes` path. |
-| `set_task_spec` | Set a task's spec attributes — `execution_detail` / `files_touched` / `outcome` / `dispatch` — in one merge call. Each `files_touched` entry may be a bare path string (resolves to the project's primary linked repo) or a `{repo: "<owner>/<name>", path: "<repo-relative path>"}` object whose `repo` slug must reference a `repo_links` row on the task's project ancestor (migration 0004). |
+| `set_task_spec` | Set a task's spec attributes — `execution_detail` / `files_touched` / `outcome` / `tier` (typed `"lite"|"deep"` per round-3; legacy free-form `dispatch:` is dropped at deserialise) — in one merge call. Each `files_touched` entry may be a bare path string (resolves to the project's primary linked repo) or a `{repo: "<owner>/<name>", path: "<repo-relative path>"}` object whose `repo` slug must reference a `repo_links` row on the task's project ancestor (migration 0004). |
 | `create_context_block` | Create a reusable context block (optional title/body); pass `link_to` to also link it to a work item immediately. |
 | `link_context_block` | Link an existing context block to a work item. |
 
@@ -225,7 +235,7 @@ The top-down build flow:
    }
    ```
    Specify each task with `set_task_spec` (`execution_detail` / `files_touched` /
-   `outcome` / `dispatch`).
+   `outcome` / `tier`).
 
 3. **Record progress** as work proceeds — append activity onto the task record and move
    its status:
@@ -263,6 +273,17 @@ Constraints:
   task (`blocked→todo`), and cancels the OTHER branches' exclusive tasks — those whose
   `enabling_option` does not match the chosen option (`→cancelled`). The whole resolution
   emits exactly one event.
+
+## Tier tools (round-3)
+
+Round-3 (migration 0006) added a typed dispatch tier and dispatch-plan composer:
+
+- `set_task_tier { id: <task>, tier: "lite" | "deep" | null }` — direct write to the `work_items.tier` column. Rejects non-task rows. Records one `work_item.tier_set` event.
+- `get_task_dispatch_plan { story_id: <story> }` — read-only. Returns `{ story_id, batches: Vec<Vec<BatchEntry>> }` where each `BatchEntry = { task_id, effort, complexity, tier, files_touched_count, has_cross_repo }`. Composes `compute_task_batches` + per-task spec reads + `compute_tier` per row. Tier derivation follows the rule in `CONVENTIONS.md §k.0`: `Deep` if `complexity == "high"` OR `effort == "l"` OR `files_touched_count > 3` OR `has_cross_repo == true`; else `Lite`.
+
+`set_task_spec` was also tightened: the round-2 free-form `dispatch: Option<serde_json::Value>` field is replaced with `tier: Option<Tier>` (typed wire form `"lite"|"deep"`). Callers passing legacy `dispatch:` are silently dropped at deserialise (the field is gone).
+
+Severity typing was already in place for `add_finding` / `update_finding` (`Severity::{Critical, Major, Minor, Suggestion}`); round-3 documents the deliberate vocab split with `RiskSeverity::{Low, Medium, High, Critical}` in CONVENTIONS.md §k.2. Findings and risks carry distinct severity vocabularies — they are NOT unified.
 
 ## Notes
 
