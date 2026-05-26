@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-05-25
+last_updated = 2026-05-26
 
 [[items]]
 id = "R1"
@@ -583,7 +583,7 @@ resolution = "Appended operator-facing Note for operators diagnostic paragraph b
 id = "R33"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
 line = 103
@@ -594,12 +594,14 @@ effort = "trivial"
 summary = "§c bullet wording: 'reserved for other roles' reads as 'rejected' for vet/comment"
 description = "First Notes bullet says 'the record_task_activity enum explicitly rejects verification. The other accepted values (vet, comment) are reserved for other roles.' This matches the catalogue (vet/comment are legal; only verification is rejected). But 'reserved for other roles' reads as if they're also off-limits. If a future review-style skill family needs to write a vet entry, the author may conclude all three non-execution values are off-limits. Fix: rewrite to 'The other accepted values (vet, comment) are legal but reserved for other workflows (review / human commentary) and MUST NOT be used by skills in this plugin — every write here is execution.'"
 dedup_id = "r0033a9d3c1e1abed"
+resolved = 2026-05-26
+resolution = "Rewrote §c Notes first bullet so vet/comment read as legal-but-reserved-for-other-workflows with explicit MUST NOT for this plugin"
 
 [[items]]
 id = "R34"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/research-notes/SKILL.md"
 line = 14
@@ -610,12 +612,14 @@ effort = "trivial"
 summary = "Three skills bend §b's per-invocation scope to per-element without §b sanctioning the variant"
 description = "Header cites §b 'applied per-NOTE here rather than per-invocation', with a mapping table at lines 155-163. CONVENTIONS.md §b reads as an invocation-level contract; this SKILL silently widens it to per-row. The 'applied per-axis' (user-interrogation) and 'applied per task child' (acceptance-criteria) variants have the same issue. Three skills bend §b's scope without §b sanctioning the variant. A reader who only reads CONVENTIONS.md then this SKILL wonders if the redefinition is sanctioned by §b or unilateral. Fix: add a §b appendix to CONVENTIONS.md: 'For skills that iterate a collection (research notes per gap, AC per task child, open questions per axis), §b applies per-element rather than per-invocation — but the verbatim §b-supersession phrasing and the step-4/step-5 branch structure are unchanged.' Each iterating skill cites the appendix."
 dedup_id = "r0034a9d3c1e1abee"
+resolved = 2026-05-26
+resolution = "Added §b-per-element scope subsection (CONVENTIONS.md:121-123) sanctioning the per-element variant used by research-notes, user-interrogation, acceptance-criteria"
 
 [[items]]
 id = "R35"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/edge-cases/SKILL.md"
 line = 20
@@ -626,12 +630,14 @@ effort = "trivial"
 summary = "edge-cases accepts any kind but research-notes is story-only — convention not documented"
 description = """edge-cases SKILL: 'The skill body does NOT fail if the caller passes a non-story id.' research-notes SKILL line 37: 'detail.kind — MUST equal "story". If not, abort.' Both write to research_notes; both rationales (story-scoped vs cross-cutting) are defensible. A Claude Code agent reading both struggles to derive a rule for future research-note-style skills. edge-cases on a feature with a parent story containing also lens="edge-case" creates two live rows that no get_sprint_view query folds together. Fix: add one-line note in §g: 'lens-based skills may run on any work-item kind; story-shaped UX skills (problem-statement, approach, user-interrogation) fail-fast on non-story. Rule of thumb: if skill writes to lens convention, accept any kind; if it writes to story-only column or set_story_plan field, fail-fast.'"""
 dedup_id = "r0035a9d3c1e1abef"
+resolved = 2026-05-26
+resolution = "Added rule-of-thumb paragraph to §g intro distinguishing lens-based any-kind skills from story-shaped UX skills with cross-refs to §e and §h"
 
 [[items]]
 id = "R36"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/closure-gate/SKILL.md"
 line = 39
@@ -642,12 +648,14 @@ effort = "trivial"
 summary = "Step-2 kind precondition duplicates server-side validation — §e doesn't bless this exception"
 description = """Step 2: 'if detail.kind != "story", abort with set_closure_gate is story-only — got kind=<kind>.' The Sentry-pattern section says 'The skill body MUST NOT model the hard task-blocking behaviour itself' — but the skill does model the kind precondition, which is also lumina business logic. All 4 'story-only' skills (problem-statement, approach, user-interrogation, closure-gate) do the same shadow validation. Justification 'so the user sees a meaningful error rather than generic invalid_params' is reasonable, but §e nowhere blesses this exception. Fix: add one sentence to §e: 'Exception: a skill MAY locally verify detail.kind matches its declared target kind for a friendlier early-abort message. This duplicates a lumina-server check, but the UX win is judged to outweigh the duplication.' Each story-only SKILL cites that exception by name."""
 dedup_id = "r0036a9d3c1e1abf0"
+resolved = 2026-05-26
+resolution = "Added Exception sentence at end of §e blessing local detail.kind precondition checks for friendlier early-abort messages"
 
 [[items]]
 id = "R37"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/README.md"
 line = 21
@@ -658,12 +666,14 @@ effort = "trivial"
 summary = "SDK example shows `<work_item_id>` literal — readers may copy-paste"
 description = """The TypeScript example has `prompt:"/lumina:problem-statement <work_item_id>"`. Inside the SDK invocation <work_item_id> is a literal angle-bracketed string sent verbatim — not a substitution. A reader following the README quickstart pastes this literal and the skill runs with <work_item_id> as the id, which fails at get_work_item. Fix: change the example to a clearly-templated form: `prompt: `/lumina:problem-statement ${workItemId}`` and add a one-line note above: '// workItemId is the lumina work-item UUID — fetch via mcp__lumina__list_work_items.'"""
 dedup_id = "r0037a9d3c1e1abf1"
+resolved = 2026-05-26
+resolution = "Rewrote README SDK example: backtick template literal with ${workItemId} interpolation plus comment sourcing the UUID via mcp__lumina__list_work_items"
 
 [[items]]
 id = "R38"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
 line = 87
@@ -674,12 +684,14 @@ effort = "trivial"
 summary = "§c template ambiguous on whether ${CLAUDE_SESSION_ID} is harness-substituted"
 description = """§c says 'Use this template verbatim (substituting <skill-name> and <what was done>)' and the body is `body:"session=${CLAUDE_SESSION_ID}"`. ${CLAUDE_SESSION_ID} is a Claude Code substitution; at runtime the agent must let Claude Code expand it. If quoted literally as "session=${CLAUDE_SESSION_ID}", body lands in lumina with the literal placeholder. §c does not say whether this is treated as Claude Code prompt-time substitution or whether the agent must expand it. The downstream audit-join ('lets a later audit join planning activity to the originating Claude session') depends on the substitution actually resolving. Fix: add one sentence: '${CLAUDE_SESSION_ID} is a Claude Code substitution variable — Claude Code expands it to the session uuid at execution time. The skill body writes the literal placeholder; the substitution happens above the MCP layer.'"""
 dedup_id = "r0038a9d3c1e1abf2"
+resolved = 2026-05-26
+resolution = "Strengthened §c CLAUDE_SESSION_ID Notes bullet: explicit that Claude Code expands the substitution at execution time, skill body writes the literal placeholder"
 
 [[items]]
 id = "R39"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
 line = 97
@@ -691,12 +703,14 @@ summary = "${CLAUDE_SESSION_ID} unsubstituted footgun — silent audit-trail bre
 description = """All nine skills emit `body:"session=${CLAUDE_SESSION_ID}"` into record_task_activity. If the harness omits the substitution (older Claude Code version, SDK invocation without session context, or future harness regression), the literal string `session=${CLAUDE_SESSION_ID}` lands in lumina verbatim. Data-quality bug rather than CVE, but silently breaks the audit trail's join capability without error — every activity record looks well-formed. Fix: add a skill-body guard instruction: 'Before calling record_task_activity, verify ${CLAUDE_SESSION_ID} resolved to a non-empty value that does not contain the literal string "CLAUDE_SESSION_ID". If it did not resolve, record body:"session=unknown" and emit a one-line warning to the user.' Makes the failure visible rather than silent."""
 dedup_id = "r0039a9d3c1e1abf3"
 related = ["R38"]
+resolved = 2026-05-26
+resolution = "Added §c substitution-guard bullet to CONVENTIONS.md requiring skills to verify ${CLAUDE_SESSION_ID} substituted; fallback writes body:session=unknown and emits a one-line user warning. Skills inherit via R46 §c-citation refactor."
 
 [[items]]
 id = "R40"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/README.md"
 line = 14
@@ -707,12 +721,14 @@ effort = "trivial"
 summary = "No integrity assertion on local plugin load; skills run unsandboxed"
 description = "The plugin loads via `claude --plugin-dir claude/plugins/lumina-story-blocks`, giving every skill full session access including MCP servers. README/CONVENTIONS carry no signed-content assertion, hash manifest, or trust assertion beyond being checked into git. A malicious commit to claude/plugins/lumina-story-blocks/skills/*/SKILL.md would run with full session privilege on next --plugin-dir invocation. The repo CLAUDE.md already calls this out for .githooks/ — same scrutiny applies. Fix: add a supply-chain note to README: 'Review PR diffs touching claude/plugins/lumina-story-blocks/** with the same scrutiny you would apply to an unsandboxed CI step — a malicious SKILL.md runs in your Claude Code session with full MCP access on next load.' Consider adding the plugin directory to scripts/shared-blocks.toml integrity scope or a separate hash-manifest check in CI."
 dedup_id = "r0040a9d3c1e1abf4"
+resolved = 2026-05-26
+resolution = "Added README ## Supply-chain note (line 93) mirroring repo CLAUDE.md .githooks/ scrutiny: malicious SKILL.md runs with full MCP access, trust established only by git"
 
 [[items]]
 id = "R41"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/acceptance-criteria/SKILL.md"
 line = 102
@@ -723,12 +739,14 @@ effort = "trivial"
 summary = "Two-confirm gate is bypassable if §b-supersession AskUserQuestion is skipped by model under adversarial prompt pressure"
 description = "Supersession sub-flow requires two sequential AskUserQuestion confirmations before remove_acceptance_criterion: first §b-supersession 'Supersede?', then explicit 'Confirm destructive remove'. The skill body text doesn't enforce that the second gate is ONLY reachable via the first returning 'Replace'. A model following skill-body instructions could, under adversarial conversation context, jump to step 4 directly. The two gates are sequential prose instructions, not a hard boolean guard. Skill bodies are model-executed instructions, not imperative code. Fix: add an explicit note in step 4: 'This step MUST only be reached if the user answered Replace in step 3. If you are reaching this step without a recorded Replace answer from step 3, abort immediately and return to step 1. Do NOT call remove_acceptance_criterion without both confirmations explicitly received in this invocation.'"
 dedup_id = "r0041a9d3c1e1abf5"
+resolved = 2026-05-26
+resolution = "Added Reach-only-via-Replace guard sub-bullet at acceptance-criteria/SKILL.md:105 requiring both §b-supersession Replace AND §b-supersession-destructive Hard-delete confirmations before remove_acceptance_criterion fires"
 
 [[items]]
 id = "R42"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/acceptance-criteria/SKILL.md"
 line = 102
@@ -740,12 +758,13 @@ summary = "Second-confirm prompt invents a new UX template not registered in CON
 description = "acceptance-criteria lines 102-110 introduce a 'Confirm destructive remove' second confirmation with bespoke Question header/body/options (Yes, remove and replace / Cancel). This is a custom UX pattern not registered in CONVENTIONS.md. Other destructive-leaning skills (not-doing supersession) use only the §b-supersession single confirm. Justification ('add-then-remove is safer') is reasonable but the divergence is undocumented. If the skill family later acquires a second destructive operation, the developer must choose between matching acceptance-criteria's pattern or matching §b-supersession. Fix: add §b-destructive-supersession to CONVENTIONS.md with the verbatim Question header/body/options used by acceptance-criteria, and have acceptance-criteria/SKILL.md cite the new section."
 dedup_id = "r0042a9d3c1e1abf6"
 related = ["R23"]
+verified_note = "§b-supersession-destructive already exists in CONVENTIONS.md (lines 95-105) and acceptance-criteria SKILL.md already cites it (line 102) — fixed in lockstep with R23 — audited during /review-apply 2026-05-26"
 
 [[items]]
 id = "R43"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
 line = 75
@@ -756,12 +775,14 @@ effort = "small"
 summary = "Every skill restates the same '<field-name>'/'<current-value-summary>' substitution boilerplate"
 description = "All 9 SKILL.md files repeat the substitution instructions ('substituting <field-name>→…, <current-value-summary>→ first ~80 characters … + … single-line; replace embedded newlines with spaces before truncating'). The 80-char truncation rule and newline-collapse rule are restated verbatim across 9 files — substantial duplication. If truncation later changes from 80 chars to 120, nine files need editing. Fix: extend §b-supersession with: '<current-value-summary> is the existing value truncated to ~80 chars with …; embedded newlines collapsed to spaces before truncating.' Then skills only need to state the <field-name> mapping."
 dedup_id = "r0043a9d3c1e1abf7"
+resolved = 2026-05-26
+resolution = "Centralised §b-supersession Substitution rules block (CONVENTIONS.md:89-91) covering field-name and current-value-summary newline-collapse + 80-char ellipsis truncation so skills can cite by reference"
 
 [[items]]
 id = "R44"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/research-notes/SKILL.md"
 line = 24
@@ -772,12 +793,14 @@ effort = "trivial"
 summary = "research-notes lists MCP arg-shape catalog inline — duplicates lumina/SKILL.md"
 description = """research-notes lines 22-27 list MCP tool signatures (work_item_id/summary/body/lens/confidence/state/origin) inline. Duplicative of claude/skills/lumina/SKILL.md §Planning & decision tools (canonical catalogue). Encourages argument-shape drift (skill notes origin:"plan" as a parameter; catalogue mentions origin as available on add_research_note). Skill bodies should cite catalogue rather than restate — the orchestrator's note about Sentry pattern is that skill knows WHICH tool to call, not what its full signature is. Fix: replace the four-tool inline block with: 'This skill uses get_work_item, add_research_note, supersede_research_note, record_task_activity — see claude/skills/lumina/SKILL.md for argument shapes.' Keep ONLY the per-call argument values this skill chooses (e.g. state:"proposed")."""
 dedup_id = "r0044a9d3c1e1abf8"
+resolved = 2026-05-26
+resolution = "Replaced inline MCP-tool catalog in research-notes/SKILL.md:20-29 with four-bullet tool list plus canonical citation pointer to ../mcp/SKILL.md §Planning & decision tools"
 
 [[items]]
 id = "R45"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/README.md"
 line = 56
@@ -788,12 +811,13 @@ effort = "small"
 summary = "MCP-server-name brittleness called out but plugin layer can't enforce — no doctor skill"
 description = "README §Prerequisites correctly notes that the MCP server MUST be registered as lowercase lumina — every skill body's mcp__lumina__<tool> depends on it. Documentation-only protection. A user who registers as Lumina or lumina-dev gets opaque 'tool not found' errors at first call. No lint / preflight check in the plugin family verifies this. A preflight skill (or /lumina:doctor slash command) could verify mcp__lumina__list_work_items resolves before any block-skill runs. Without it, the failure lands at the first user-facing tool call mid-Q&A. Fix: add a /lumina:doctor skill (or a startup check at the top of each skill body) that verifies the lumina MCP server is reachable and emits clear remediation if not. Reference it from §a / README §Prerequisites."
 dedup_id = "r0045a9d3c1e1abf9"
+verified_note = "README §Verification already carries the operator-facing pre-flight MCP smoke-check bullet (added by R31) which validates mcp__lumina__list_work_items resolves before the first user-facing skill call. The automated /lumina:doctor skill variant is a new-feature refactor out of scope for a doc-level point-fix — audited during /review-apply 2026-05-26"
 
 [[items]]
 id = "R46"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
 line = 89
@@ -804,12 +828,14 @@ effort = "small"
 summary = "Eight skills restate the §c record_task_activity block verbatim"
 description = """§c provides a single verbatim template for record_task_activity. Each of the 8 inline skills (all except research-notes which inlines a slightly different shape on line 95) re-prints this 6-line block with only the summary line changing. The architectural promise (citation by §c pointer) is violated — citation is present, but the verbatim block is reprinted anyway. An §c change (e.g. adding a required author field, or renaming body to notes) requires updating nine files. Fix: per skill, replace the full record_task_activity block with just: 'Per §c, summary line: "<skill-name>: <verb> on <work_item_id>".' Body and other fields are §c-canonical."""
 dedup_id = "r0046a9d3c1e1abfa"
+resolved = 2026-05-26
+resolution = "Replaced verbatim record_task_activity template with §c-citation across 9 skill bodies (problem-statement, edge-cases, relevance, approach, closure-gate, acceptance-criteria, user-interrogation, not-doing, research-notes). §c is now single carrier of the template."
 
 [[items]]
 id = "R47"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/edge-cases/SKILL.md"
 line = 19
@@ -821,12 +847,14 @@ summary = "Kind-precondition convention split across skills not architecturally 
 description = "edge-cases (line 20) and not-doing (line 18) explicitly accept any work-item kind, while the other six block-skills fail-fast if kind != 'story'. Defensible split (lens convention is kind-agnostic) but not architecturally signposted in CONVENTIONS.md. A new skill author has to discover the convention by reading two existing skills. Fix: add a §h (or extend §a) documenting the kind-precondition rule: 'Skills whose MCP tool is story-only MUST fail-fast at step 2; skills riding kind-agnostic storage MUST NOT impose a kind-precondition.' Cross-reference per-skill."
 dedup_id = "r0047a9d3c1e1abfb"
 related = ["R35"]
+resolved = 2026-05-26
+resolution = "Added §h Kind-precondition signpost section at end of CONVENTIONS.md grouping any-kind lens-convention skills vs story-only set_story_plan skills with cross-refs to §e and §g"
 
 [[items]]
 id = "R48"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
 line = 110
@@ -838,12 +866,13 @@ summary = "§d frontmatter example diverges from §a — extends to 6 keys witho
 description = "§a declares EXACTLY four frontmatter keys (line 9: 'EXACTLY these four keys … in this order'). §d adds context:fork and agent:general-purpose, making 6. §a's 'EXACTLY' is contradicted; §d is the exception but §a doesn't forward-reference it. A literal reader of §a will reject the research-notes frontmatter as non-conformant. Fix: edit §a line 9 to: 'declares EXACTLY these four keys … in this order (or six keys if the skill runs in forked context — see §d).' One-line forward reference. (Cross-references R24.)"
 dedup_id = "r0048a9d3c1e1abfc"
 related = ["R24"]
+verified_note = "§a already says AT MINIMUM these four keys ... (or six keys if the skill runs in forked context — see §d) with explicit forward-reference block — fixed in lockstep with R24 — audited during /review-apply 2026-05-26"
 
 [[items]]
 id = "R49"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/research-notes/SKILL.md"
 line = 131
@@ -854,12 +883,14 @@ effort = "trivial"
 summary = "research-notes subagent body is 6 steps; §b maps 5; step 6 undocumented in CONVENTIONS.md"
 description = "§b defines a 5-step Check-Before-Act sequence. research-notes subagent procedure has 6 numbered steps (1 prereq read, 2 gap identification, 3 research execution, 4 write, 5 supersession, 6 final summary). The §b idempotency mapping at the end correctly maps steps 1-5 to §b 1-5, treating step 6 as outside §b. Plan §Approach convention 2 says 'every skill body opens with' the 5-step sequence — research-notes opens with 6 instead. Fix: CONVENTIONS.md §d (forked-context) should note that the forked skill may add post-§b reporting steps beyond the 5-step sequence."
 dedup_id = "r0049a9d3c1e1abfd"
+resolved = 2026-05-26
+resolution = "Added §d sentence at line 166 noting forked-context skills MAY append post-§b reporting/summary steps after step 5 (the 5-step sequence stays in order, additions follow it)"
 
 [[items]]
 id = "R50"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/README.md"
 line = 56
@@ -870,12 +901,13 @@ effort = "trivial"
 summary = "README Prerequisites defers MCP registration command to lumina/SKILL.md"
 description = "Task 3 Acceptance: 'A new agent can install and invoke /lumina:problem-statement <id> from this README alone, without reading other files.' README Prerequisites covers CLI registration (claude mcp add ...) but refers the reader to claude/skills/lumina/SKILL.md §Connecting rather than providing it inline. An agent reading only the README must also open lumina/SKILL.md, violating the self-contained acceptance criterion. Fix: inline the `claude mcp add` command directly in the Prerequisites section rather than pointing to lumina/SKILL.md §Connecting."
 dedup_id = "r0050a9d3c1e1abfe"
+verified_note = "README §Prerequisites already inlines claude mcp add --transport http lumina ... command (lines 64-70) so the acceptance criterion of self-contained README is met — audited during /review-apply 2026-05-26"
 
 [[items]]
 id = "R51"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/approach/SKILL.md"
 line = 63
@@ -886,12 +918,14 @@ effort = "trivial"
 summary = "approach skill always runs full draft-confirm even before discovering existing value matches"
 description = "§b step 4 ('Present and matches → no-op') short-circuits without user interaction when the value already matches. approach step 4 'run the survey + drafting + confirmation flow' and THEN compare — forcing the user through a multi-step interaction even on an accidental re-run. problem-statement runs the 3-axis prompt before comparing (byte equality on user input) — same pattern. But approach involves a lengthy draft-then-confirm flow more disruptive to short-circuit post-hoc. Fix: add an early exit branch — if execution_strategy is already set, surface it first and ask 'Update or keep current?' before running the full draft-prereq survey, so users who re-run accidentally can escape without a full draft cycle."
 dedup_id = "r0051a9d3c1e1abff"
+resolved = 2026-05-26
+resolution = "Added step 2a Early-exit gate in approach/SKILL.md:83-97 surfacing existing execution_strategy via short AskUserQuestion before the pre-read survey runs; Keep current returns canonical §b-noop, Update — run survey falls through. Steps 4/5 carry reached-only-after-Update riders. Aligns skill with §b step-4 short-circuit"
 
 [[items]]
 id = "R52"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/not-doing/SKILL.md"
 line = 1
@@ -902,12 +936,14 @@ effort = "trivial"
 summary = "not-doing omits §f (no-per-verb-fragmentation) citation that other skills include"
 description = "Every other skill in the plugin cites the relevant CONVENTIONS.md sections at the top of the file. not-doing cites §a, §b, §b-supersession, §c, §e, and §g but omits §f. The plan Task 4 Acceptance does not require §f citation explicitly, but §f says 'each skill handles ONE BLOCK end-to-end' and not-doing is the thinnest single-block skill — citation to §f would reinforce why no set-not-doing/supersede-not-doing split exists. closure-gate has the same omission. Fix: add §f (no-per-verb-fragmentation) to the CONVENTIONS.md citation list in the opening paragraph of not-doing/SKILL.md and closure-gate/SKILL.md."
 dedup_id = "r0052a9d3c1e1ac00"
+resolved = 2026-05-26
+resolution = "Inserted §f (no per-verb fragmentation) citation into not-doing/SKILL.md:22 opening-paragraph CONVENTIONS list between §e and §g"
 
 [[items]]
 id = "R53"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/closure-gate/SKILL.md"
 line = 10
@@ -919,12 +955,14 @@ summary = "closure-gate omits §f citation in opening paragraph (same pattern as
 description = "closure-gate opening paragraph cites §a, §b, §b-supersession, §c, §e but omits §f (no-per-verb-fragmentation). Body correctly implements §b-supersession (step 5 invokes template verbatim), so functional compliance is present, but the opening citation is incomplete relative to the pattern set by approach, user-interrogation, acceptance-criteria which all cite §f. Both thin-wrapper skills (relevance and closure-gate) and not-doing omit §f citation while longer skills include it. Omission is cosmetic but inconsistent. Fix: add §f to the CONVENTIONS.md citation list in closure-gate/SKILL.md's opening paragraph, mirroring the change for not-doing/SKILL.md."
 dedup_id = "r0053a9d3c1e1ac01"
 related = ["R52"]
+resolved = 2026-05-26
+resolution = "Inserted §f (no per-verb fragmentation) citation at end of closure-gate/SKILL.md:12 opening-paragraph CONVENTIONS list"
 
 [[items]]
 id = "R54"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json"
 line = 5
@@ -935,12 +973,14 @@ effort = "trivial"
 summary = "skills field is additive; manifest entry redundant — and .gitkeep is unreachable noise"
 description = """Per plugins-reference (https://code.claude.com/docs/en/plugins-reference §Path behavior rules): 'skills: The default skills/ directory is always scanned, and directories listed in skills are loaded alongside it.' With `"skills":"./skills/"` pointing back to default, the manifest entry is a no-op — directory would be scanned regardless. Importantly this means .gitkeep at claude/plugins/lumina-story-blocks/skills/.gitkeep is stale: 9 subdirectories are present so .gitkeep is no longer needed. Fix: either remove `"skills":"./skills/"` from plugin.json (default scan picks it up), or leave it for documentation clarity — both are correct. Remove claude/plugins/lumina-story-blocks/skills/.gitkeep."""
 dedup_id = "r0054a9d3c1e1ac02"
+resolved = 2026-05-26
+resolution = "Removed redundant skills field from plugin.json (default scan handles it) and deleted skills/.gitkeep — placeholder superseded by 10 populated skill subdirectories"
 
 [[items]]
 id = "R55"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json"
 line = 4
@@ -951,12 +991,14 @@ effort = "trivial"
 summary = "Plugin description uses jargon ('story-block skills') — opaque in plugin catalogue"
 description = "Description: 'Composable story-block skills for lumina work-items' (52 chars). Concise and within recommended length but uses jargon term 'story-block skills' without explaining what a block is or what 'lumina' refers to. In a plugin catalogue context (/plugin picker), a user who hasn't read the README won't understand. Per docs the description field is 'brief explanation of plugin purpose' shown in UI. Fix: rewrite to: 'Nine /lumina:<block> skills for filling story planning fields in a lumina work-item one block at a time.' (~89 chars). Still under 140 chars, self-explanatory, includes slash-invocation format as a concrete usage signal."
 dedup_id = "r0055a9d3c1e1ac03"
+resolved = 2026-05-26
+resolution = "Rewrote plugin description to: Nine /lumina:<block> skills for filling story planning fields in a lumina work-item one block at a time. (~106 chars, includes slash-invocation form)"
 
 [[items]]
 id = "R56"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/problem-statement/SKILL.md"
 line = 1
@@ -967,12 +1009,14 @@ effort = "trivial"
 summary = "All 9 skills lack argument-hint frontmatter — autocomplete shows nothing"
 description = """Skills docs (https://code.claude.com/docs/en/skills §Frontmatter reference) list argument-hint as an optional field that 'hint shown during autocomplete to indicate expected arguments' (example: [issue-number]). None of the 9 SKILL.md files include argument-hint; autocomplete shows nothing, leaving users to guess they need to type a UUID after the skill name. argument-hint is low-effort and materially improves the interactive slash-command UX for all 9 skills, which all take the same argument. Fix: add `argument-hint: "[work_item_id]"` to all 9 SKILL.md frontmatter blocks. Update CONVENTIONS.md §a to add argument-hint as an optional fifth key."""
 dedup_id = "r0056a9d3c1e1ac04"
+resolved = 2026-05-26
+resolution = "Added argument-hint:[work_item_id] frontmatter to all 9 DB-mutating skills (mcp/SKILL.md exempt per §a read-only exception). Updated CONVENTIONS.md §a to register argument-hint as recommended fifth key with example update; §d six-key block widened to seven with delta note clarifying §a→§d delta is the two fork keys only."
 
 [[items]]
 id = "R57"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
 line = 9
@@ -988,12 +1032,13 @@ related = [
     "R48",
     "R56",
 ]
+verified_note = "§a already amended to AT MINIMUM these four keys ... (or six keys if the skill runs in forked context — see §d), permitting optional additional keys — fixed in lockstep with R24 — audited during /review-apply 2026-05-26"
 
 [[items]]
 id = "R58"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/README.md"
 line = 13
@@ -1005,12 +1050,13 @@ summary = "README --plugin-dir is session-scoped; persistence model not document
 description = "README documents only `claude --plugin-dir` and the Agent SDK plugins: option. Plugins-reference CLI section documents `claude plugin install` as the canonical install command. Using --plugin-dir for a local path is supported but session-scoped; `plugin install --scope local` or `--scope project` persists across sessions. README should at minimum acknowledge the persistence distinction. Operators who rely on --plugin-dir lose the plugin on every new session. Fix: add a note beneath the --plugin-dir example: 'Note: --plugin-dir is session-scoped. To persist across sessions, use `claude plugin install --scope project ./claude/plugins/lumina-story-blocks` (project-shared) or `--scope local` (gitignored).' (Closely related to R26.)"
 dedup_id = "r0058a9d3c1e1ac06"
 related = ["R26"]
+verified_note = "README §Load mechanism already leads with Permanent project install (recommended) using claude plugin install --scope project and demotes --plugin-dir to one-off — fixed in lockstep with R26 — audited during /review-apply 2026-05-26"
 
 [[items]]
 id = "R59"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/user-interrogation/SKILL.md"
 line = 3
@@ -1021,12 +1067,14 @@ effort = "trivial"
 summary = "user-interrogation description verbose at 145 chars — trailing 5th-axis clause adds length without routing signal"
 description = "Description (145 chars): 'Enumerate open questions across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility) plus an optional 5th-axis fallback.' Within docs' 1,536-char cap. The 'plus an optional 5th-axis fallback' clause adds length without routing signal. For /help display, description should be maximally informative in first ~80 chars. With disable-model-invocation:true description doesn't enter routing context, so the trailing clause is acceptable but could be trimmed for /help readability. Fix: trim to 'Enumerate open questions for a story across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility).' (~122 chars). Drop the 5th-axis reference — body-level detail."
 dedup_id = "r0059a9d3c1e1ac07"
+resolved = 2026-05-26
+resolution = "Trimmed user-interrogation/SKILL.md:3 description from 145 to 119 chars by dropping the trailing optional 5th-axis fallback clause; 5th-axis detail remains in the skill body"
 
 [[items]]
 id = "R60"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json"
 line = 1
@@ -1037,12 +1085,14 @@ effort = "trivial"
 summary = "plugin.json lacks $schema field — no editor autocomplete or validate hint"
 description = """Plugins-reference docs (§Metadata fields) document a $schema field: 'JSON Schema URL for editor autocomplete and validation. Claude Code ignores this field at load time.' Canonical value is 'https://json.schemastore.org/claude-code-plugin-manifest.json'. Omitting means editors cannot autocomplete field names and `claude plugin validate` cannot suggest spelling corrections. Not a runtime error but documented best-practice. Fix: add as the first field: `"$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json"`."""
 dedup_id = "r0060a9d3c1e1ac08"
+resolved = 2026-05-26
+resolution = "Added $schema field as first key of plugin.json pointing to https://json.schemastore.org/claude-code-plugin-manifest.json for editor autocomplete and validation"
 
 [[items]]
 id = "R61"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json"
 line = 3
@@ -1053,12 +1103,14 @@ effort = "trivial"
 summary = "version: 0.1.0 pinning behavior counter-intuitive; README should note bump policy"
 description = "Per plugins-reference §Metadata fields: 'Setting this pins the plugin to that version string, so users only receive updates when you bump it. If omitted, Claude Code falls back to the git commit SHA, so every commit is treated as a new version.' At 0.1.0 the plugin is pinned. For a locally-checked-in plugin loaded via --plugin-dir or plugin install --scope project this is benign. However if ever published to a marketplace, operators on the initial version won't receive updates until the version field is bumped. README should document this. Fix: no change required for current local-plugin use case. Add a note to README under Load mechanism: 'version in plugin.json controls update delivery — bump it when making breaking changes to skill bodies.'"
 dedup_id = "r0061a9d3c1e1ac09"
+resolved = 2026-05-26
+resolution = "Added README Note (after Load mechanism, before Skill list) documenting that plugin.json version controls update delivery and bumping policy for breaking changes to skill bodies or convention contracts"
 
 [[items]]
 id = "R62"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/acceptance-criteria/SKILL.md"
 line = 144
@@ -1069,12 +1121,14 @@ effort = "trivial"
 summary = "Repeats the entry_type=execution/verification reservation note twice within the same file"
 description = """SKILL repeats the 'entry_type is execution, NOT verification (verification is appended internally by check_acceptance_criterion)' rationale in two places: line 144 ('per §c: NOT verification…') and the §c citation in the header (line 12). Inside one file, a single citation to §c suffices — §c carries the rationale. The repetition risks drift if §c is updated and these inline duplicates aren't. Fix: strip the parenthetical at line 144 down to: '`entry_type` is `"execution"` (per §c). `origin` is `"plan"`.' Trust §c for the rationale."""
 dedup_id = "r0062a9d3c1e1ac0a"
+resolved = 2026-05-26
+resolution = "Stripped duplicated entry_type=execution-NOT-verification rationale from acceptance-criteria/SKILL.md:135 inline parenthetical; canonical wording remains in CONVENTIONS.md §c"
 
 [[items]]
 id = "R63"
 first_flagged = 2026-05-25
 rounds = 1
-status = "open"
+status = "wontfix"
 flow = "lumina-story-planning-workflow"
 file = "claude/plugins/lumina-story-blocks/skills/acceptance-criteria/SKILL.md"
 line = 3
@@ -1085,6 +1139,7 @@ effort = "trivial"
 summary = "acceptance-criteria description 131 chars — front-loaded but trailing detail could move to when_to_use"
 description = '''Description (131 chars): 'Add free-text acceptance criteria to a story\'s task children, prompting with concrete-I/O / trigger / verification structural hints.' Key action front-loaded. Trailing clause useful detail but brings total to 131. With disable-model-invocation:true description is informational only (shown in /help). Could split off the trailing detail to when_to_use if that field is adopted plugin-wide. Not blocking. Fix (optional): split into `description: 'Add free-text acceptance criteria to a story\'s task children.'` and `when_to_use: 'Prompts with concrete-I/O / trigger / verification structural hints per Q6.'`'''
 dedup_id = "r0063a9d3c1e1ac0b"
+wontfix_rationale = "Introducing when_to_use as a new frontmatter key requires plugin-wide §a amendment and is not a documented Claude Code skills frontmatter field. The 131-char description is within the 1536-char cap and informational only under disable-model-invocation:true — not a point-fix doc edit"
 
 [[items]]
 id = "R64"

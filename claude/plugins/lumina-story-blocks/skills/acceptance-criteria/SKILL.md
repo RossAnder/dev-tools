@@ -2,6 +2,7 @@
 name: acceptance-criteria
 description: Add free-text acceptance criteria to a story's task children, prompting with concrete-I/O / trigger / verification structural hints.
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 
@@ -102,37 +103,16 @@ The 5-step idempotency check (§b) applies per-task: the default for tasks with 
 4. On `Replace`, invoke the §b-supersession-destructive `AskUserQuestion` template verbatim (per `../../CONVENTIONS.md` §b-supersession-destructive), substituting `<field-name>` with `acceptance criterion`, `<new-value-summary>` with the new criterion text (truncated single-line to ~80 chars + ellipsis), and `<old_id>` / `<new_id>` with the corresponding criterion ids. This second confirmation is required because `remove_acceptance_criterion` is explicitly destructive (per `../mcp/SKILL.md`: "criteria have no independent export identity") — the §b-supersession single-prompt is insufficient for this destructive write.
 
 5. On `Hard-delete and replace`:
+   - **Reach-only-via-Replace guard**: this step MUST only be reached if the user answered `Replace` in the §b-supersession prompt AND `Hard-delete and replace` in the §b-supersession-destructive prompt. If you are reaching this step without BOTH recorded confirmations from the current invocation, abort immediately and return to the top of the supersession sub-flow. Do NOT call `remove_acceptance_criterion` without both confirmations explicitly recorded.
    - Run the per-task AC prompt (3 structural hints) to collect the NEW AC text. Call `add_acceptance_criterion` first (so a transient failure leaves the old AC intact). Then call `remove_acceptance_criterion` on the old id. Record TWO provenance entries (one per write, per §c). Order matters: add-then-remove is safer than remove-then-add, because a failure between the two writes leaves duplicates the user can resolve later, rather than total data loss.
    - **Failure-recovery branch**: if `add_acceptance_criterion` succeeds but `remove_acceptance_criterion` fails, do NOT swallow the error. Record a provenance entry tagging the duplicate state via `mcp__lumina__record_task_activity { work_item_id, entry_type: "comment", body: "AC supersession partial-failure: new AC <new_id> added; old AC <old_id> remove failed — manual hard-delete needed via raw mcp__lumina__remove_acceptance_criterion." }`. Then abort the skill with the one-line operator-facing message: `add succeeded but remove failed — manual cleanup needed: hard-delete criterion <old_id> via raw MCP call.` Two live ACs on one task is the expected post-failure state; the activity-log entry restores audit coherence.
    - On `Cancel`, abort the sub-flow without writing.
 
 ## Provenance recording (per §c)
 
-After EACH `add_acceptance_criterion` write, append one activity entry:
+After EACH `add_acceptance_criterion` or `remove_acceptance_criterion` write, append one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c. The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape. Per §c, one activity entry per write — a supersession (add + remove) emits two entries.
 
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "<task-id>",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "acceptance-criteria: added AC to task <task_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
-
-After EACH `remove_acceptance_criterion` write (in the supersession sub-flow), append:
-
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "<task-id>",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "acceptance-criteria: removed superseded AC <criterion_id> from task <task_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
-
-`entry_type` is `"execution"` (per §c: NOT `verification` — `verification` is appended internally by `check_acceptance_criterion`, not by this skill or `record_task_activity`). `origin` is `"plan"`. Per §c, one activity entry per write — a supersession (add + remove) emits two entries.
+Summary line: `"acceptance-criteria: added AC to task <task_id>"` for an add write; `"acceptance-criteria: removed superseded AC <criterion_id> from task <task_id>"` for a remove write in the supersession sub-flow.
 
 Substitute `<task_id>` and `<criterion_id>` with literal id values (not the `$work_item_id` template — note also that the activity's `work_item_id` is the TASK's id, NOT the story's, because activity entries fold onto the task record).
 

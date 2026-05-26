@@ -2,7 +2,7 @@ slug = "lumina-story-planning-workflow"
 plan_path = "docs/plans/lumina-story-planning-workflow.md"
 status = "review"
 created = 2026-05-25
-updated = 2026-05-25
+updated = 2026-05-26
 branch = "main"
 scope = [
     "claude/plugins/lumina-story-blocks/**",

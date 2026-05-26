@@ -6,7 +6,7 @@ The plugin's purpose is to drive lumina's existing MCP tool surface (catalogued 
 
 ## §a Frontmatter shape
 
-Every DB-mutating skill in this plugin declares AT MINIMUM these four keys in its YAML frontmatter, in this order (or six keys if the skill runs in forked context — see §d). Read-only documentation skills (currently only the `mcp` catalogue) omit `disable-model-invocation: true` per the exception below; they MAY also omit `arguments` if they take none.
+Every DB-mutating skill in this plugin declares AT MINIMUM these four keys in its YAML frontmatter, in this order (or six keys if the skill runs in forked context — see §d), and SHOULD additionally declare `argument-hint` whenever `arguments` is non-empty. Read-only documentation skills (currently only the `mcp` catalogue) omit `disable-model-invocation: true` per the exception below; they MAY also omit `arguments` (and correspondingly `argument-hint`) if they take none.
 
 > **Forward reference**: the four-key shape below is the minimum. Exactly one skill in this plugin (`research-notes`) runs in a forked subagent context and declares two ADDITIONAL keys (`context: fork`, `agent: general-purpose`) for a total of six — see §d for the rationale and the canonical six-key example.
 
@@ -15,6 +15,7 @@ Every DB-mutating skill in this plugin declares AT MINIMUM these four keys in it
 name: <skill-name>
 description: <one-sentence summary>
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 ```
@@ -22,6 +23,7 @@ disable-model-invocation: true
 - `name` is the skill's invocation suffix; combined with the plugin manifest's `name: "lumina"`, the full slash form is `/lumina:<name>`.
 - `description` is a single sentence. It is what model-auto-invocation matches against — but see `disable-model-invocation` below: in this plugin the description is informational only (it does NOT enter the routing context).
 - `arguments: [work_item_id]` declares one named positional argument, substituted as `$work_item_id` in the body. Per R8, named arguments give the body a stable substitution rather than relying on `$ARGUMENTS` blob parsing.
+- `argument-hint: "[work_item_id]"` is the slash-autocomplete hint surfaced to the user when they type `/lumina:<name>` — without it the autocomplete shows nothing and the user has to guess that a work-item id is expected. It is RECOMMENDED whenever `arguments` is non-empty (and omitted alongside `arguments` for read-only catalogues that take none). The hint mirrors the `arguments` shape verbatim.
 - `disable-model-invocation: true` is MANDATORY for every DB-mutating skill in this plugin. Per R1, Claude Code exposes three invocation paths — `/name` slash, model-auto-trigger via `description`, and explicit `Skill` tool dispatch — and `disable-model-invocation: true` removes the description from the routing context so ONLY explicit triggers (the user typing `/lumina:<name>`, or eventually a UI button dispatching the skill) fire it. This is non-negotiable: these skills write to the lumina database and would be unsafe to auto-fire mid-conversation off a description match.
 
 **Exception — read-only / documentation skills.** The `mcp` skill in this plugin is a read-only documentation surface (it documents the lumina MCP tool catalogue and does not call any write tool itself). Such skills MAY omit `disable-model-invocation: true` to remain model-discoverable — letting agents auto-find the catalogue when they need to drive the lumina MCP surface. The rule above applies only to skills that write to the lumina database via `mcp__lumina__*` write tools.
@@ -33,6 +35,7 @@ Example (the `problem-statement` skill):
 name: problem-statement
 description: Capture or update a story's problem_statement (what's broken, who's affected, success criteria).
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 ```
@@ -76,7 +79,7 @@ return "problem_statement superseded."
 
 ### §b-supersession — verbatim `AskUserQuestion` phrasing
 
-Every skill in this plugin invokes step 5 with the SAME wording so the user sees a consistent UX across the plugin. Copy this template verbatim, substituting `<field-name>` and `<current-value-summary>` (a short, single-line summary of the existing value — truncate long bodies to ~80 chars + ellipsis):
+Every skill in this plugin invokes step 5 with the SAME wording so the user sees a consistent UX across the plugin. Copy this template verbatim:
 
 > **Question header**: `Supersede?`
 >
@@ -85,6 +88,10 @@ Every skill in this plugin invokes step 5 with the SAME wording so the user sees
 > **Options** (exactly 2):
 > - `Replace` — `Write the new value, superseding the existing one`
 > - `Keep current` — `Abort this invocation, leave the existing value in place`
+
+**Substitution rules**:
+- `<field-name>` — the skill-specific block name (e.g. `problem_statement`, `closure_gate`, `acceptance criterion`).
+- `<current-value-summary>` — the existing value's first ~80 characters as a single line. Embedded newlines are collapsed to spaces BEFORE truncating; truncated output ends with `…` (ellipsis).
 
 For skills whose target is a row-shaped sub-table (e.g. `research_notes`, `open_questions`, `acceptance_criteria`), substitute the field name with the row's identifying summary (e.g. `<field-name>` → `research note "auth-flow gap"`), and the supersession write is `supersede_research_note` rather than an in-place update.
 
@@ -114,6 +121,10 @@ Examples per skill:
 
 Skill bodies that currently use a slightly different phrasing (e.g. `closure_gate already set to <value> — no change.`) are not yet aligned to this template; aligning them is a separate refactor task.
 
+### §b-per-element scope
+
+Three skills in this plugin — `research-notes`, `user-interrogation`, and `acceptance-criteria` — iterate a collection rather than operating on a single scalar field. For these skills, §b applies per-element (per research note, per open-question axis, per task-child's acceptance criteria row) rather than per skill invocation. The verbatim §b-supersession phrasing and the step-4/step-5 branch structure are unchanged within each element iteration; the skill simply runs the 5-step sequence once per element. Each iterating skill cites this subsection to document that its per-element scope is intentional and convention-compliant.
+
 ## §c Provenance recording
 
 After ANY successful write, the skill MUST append exactly one activity entry to the work item via `mcp__lumina__record_task_activity`. This is how the planning lifecycle is auditable in the lumina activity log. Use this template verbatim (substituting `<skill-name>` and `<what was done>`):
@@ -130,30 +141,36 @@ mcp__lumina__record_task_activity {
 
 Notes:
 
-- `entry_type` is `"execution"` for all writes from this plugin. Do NOT use `"verification"` — the lumina SKILL.md catalogue notes that `verification` activity entries are appended INTERNALLY by `check_acceptance_criterion` and the `record_task_activity` enum explicitly rejects `verification`. The other accepted values (`vet`, `comment`) are reserved for other roles.
+- `entry_type` is `"execution"` for all writes from this plugin. Do NOT use `"verification"` — the lumina SKILL.md catalogue notes that `verification` activity entries are appended INTERNALLY by `check_acceptance_criterion` and the `record_task_activity` enum explicitly rejects `verification`. The other accepted values (`vet`, `comment`) are legal but reserved for other workflows (review / human commentary) and MUST NOT be used by skills in this plugin — every write here is `execution`.
 - **Note on entry_type / origin orthogonality**: `entry_type` (`execution` / `vet` / `comment`) is the activity-stream channel; `origin` (`plan` / `implement` / `review` / `optimise` / `tdd` / `human` / `none`) is the agent or lifecycle stamp. They are orthogonal — `entry_type: "execution"` here pairs with `origin: "plan"`. If `lumina` migration N+ adds a `planning` entry_type, this convention should re-map plan-time writes to `entry_type: "planning"` to distinguish them from `/implement`-driven activity. Until then, `execution` is the chosen channel for plan-time writes and the agent SHOULD read the `origin` stamp to tell which lifecycle phase produced any given row.
 - `origin` is `"plan"` because these skills run inside the planning workflow (R8 origin taxonomy: `plan` / `implement` / `review` / `optimise` / `tdd` / `human` / `none`).
-- `${CLAUDE_SESSION_ID}` is the Claude Code session substitution variable (R8). Threading it through the activity body lets a later audit join planning activity to the originating Claude session.
+- `${CLAUDE_SESSION_ID}` is a Claude Code substitution variable — Claude Code expands it to the session uuid at execution time. The skill body writes the literal placeholder string; the substitution happens above the MCP layer. Threading it through the activity body lets a later audit join planning activity to the originating Claude session.
+- **Substitution guard**: before calling `record_task_activity`, the skill MUST verify `${CLAUDE_SESSION_ID}` resolved to a non-empty value that does not contain the literal substring `CLAUDE_SESSION_ID`. If the substitution did not fire (older harness, non-session invocation, future regression), the literal string `session=${CLAUDE_SESSION_ID}` would land in lumina verbatim and silently break the audit trail. On detected non-substitution, record `body: "session=unknown"` instead AND emit a one-line warning to the user (e.g. `"warning: CLAUDE_SESSION_ID did not substitute; recorded as 'unknown'"`). This makes the failure visible rather than silent.
 - One activity entry per write — not per skill invocation. A skill that writes twice (e.g. supersedes one note AND adds a new one in the same invocation) records two activity entries.
 
 ## §d Forked context (research-notes only)
 
-Exactly ONE skill in this plugin runs in a forked subagent context: `research-notes`. That skill's frontmatter adds two extra keys (per R2) beyond the four mandatory ones from §a:
+Exactly ONE skill in this plugin runs in a forked subagent context: `research-notes`. That skill's frontmatter adds two extra keys (per R2) beyond the mandatory ones from §a — `context: fork` and `agent: general-purpose`. The §a `argument-hint` recommendation still applies whenever `arguments` is non-empty, so the canonical research-notes frontmatter is seven keys (the §a four plus `argument-hint` plus the two fork keys):
 
 ```yaml
 ---
 name: research-notes
 description: Identify research gaps and add proposed research notes to a story.
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 context: fork
 agent: general-purpose
 ---
 ```
 
+The §a → §d delta is exactly two keys (`context`, `agent`) — `argument-hint` belongs to the §a shape and rides through unchanged.
+
 **Why fork only here**: research is a multi-step exploration — gap identification, Context7 lookups, WebSearch queries, targeted code reads, draft synthesis. Each of those operations leaves tool-output noise in the conversation context that the main planning session does not need. Running this skill in a forked subagent isolates that noise; the parent conversation sees only the final summary (and the lumina rows themselves are queryable via `get_work_item`).
 
 **Why every other skill stays inline**: all other skills in this plugin are short interactive Q&A loops — the user types a few sentences, the skill writes one or two MCP calls, done. Inline execution keeps the user in the parent context where they can interject, ask follow-ups, or chain skills. Forking these would force a context switch with no compensating benefit.
+
+A forked-context skill MAY append reporting/summary steps after the 5-step §b sequence (e.g. research-notes' final summary step). The 5-step §b sequence itself MUST appear in order; additions go after step 5, not interleaved.
 
 ## §e Sentry pattern — skill = instructions, MCP = execution
 
@@ -171,6 +188,8 @@ Worked correct example:
 > ✓ Skill body calls `mcp__lumina__set_story_plan({id, problem_statement: <new>})`. Lumina's `repo.rs` reads the existing attributes, merges the present key, leaves absent keys untouched, runs the write in one transaction, and emits the event.
 
 The skill's job is to know which MCP tool to call and what to put in the arguments. Lumina's job is to make that call safe.
+
+Exception: a skill MAY locally verify `detail.kind` matches its declared target kind for a friendlier early-abort message. This duplicates a lumina-server check, but the UX win is judged to outweigh the duplication.
 
 ## §f No per-verb fragmentation
 
@@ -192,6 +211,8 @@ This keeps the user's mental model 1:1 with the story schema: one block, one sla
 ## §g Storage-convention registry
 
 Some story blocks have no first-class column on `work_items` (or on a dedicated sub-table) and instead ride on existing storage via a named-key or named-lens convention. This section is the SINGLE SOURCE OF TRUTH for those bindings — the skill bodies cite this registry by reference rather than re-stating where the data lives.
+
+**Rule of thumb — kind-precondition vs lens-based skills**: lens-based skills may run on any work-item kind; story-shaped UX skills (problem-statement, approach, user-interrogation) fail-fast on non-story. If the skill writes to a §g.2 lens convention, accept any kind; if it writes to a story-only column or `set_story_plan` field, fail-fast. (See §e for the exception that blesses the local kind-precondition check, and §h for the architectural signpost.)
 
 Two architecturally distinct primitive types live here, each with its own promotion path:
 
@@ -231,6 +252,15 @@ Notes:
 - The `lens="edge-case"` convention rides the existing `research_notes.lens` column added in migration 0003. The `add_research_note` tool already accepts `lens` as a free-form string, so no schema change is needed. `lens="edge-case"` remains reserved for `/lumina:edge-cases`; the five `lens` values consumed by `/lumina:research-notes` (`prior-art`, `tool-eval`, `codebase-recon`, `constraint`, `failure-mode`) are registered as their own rows above.
 
 **Promotion policy for §g.2**: when lumina later adds a dedicated table for one of these lens values (e.g. a dedicated `edge_cases` table with its own MCP tool surface), the corresponding skill body is updated in lockstep via a new typed table + data migration that copies existing `research_notes` rows of that lens into the new table. The slash command name and user-facing prompt stay the same; the lens-binding row moves out of this registry; and the row in the table above is deleted with a one-line note in the migration PR. New lens conventions are added by appending a row here AND updating the consuming skill body in the same change.
+
+## §h Kind-precondition signpost
+
+Skills in this plugin fall into two groups based on which MCP tool they write to:
+
+- **Any-kind skills** (lens-convention writers): skills that write to a §g.2 lens convention (`research-notes`, `edge-cases`, and eventually `not-doing` once reactivated) accept any work-item kind and MUST NOT impose a kind-precondition check.
+- **Story-only skills** (story-column writers): skills that write to a story-only column or call `set_story_plan` (`problem-statement`, `approach`, `user-interrogation`, `closure-gate`, `acceptance-criteria`, `relevance`) MUST fail-fast at step 2 with a kind-precondition check per §e's exception.
+
+The rule-of-thumb phrasing lives in §g (lens vs story-only split); §e contains the permission for local `detail.kind` checks. This section is the architectural signpost — cross-reference from §e and §g rather than repeating the rule here.
 
 ---
 

@@ -2,6 +2,7 @@
 name: relevance
 description: Set or supersede an epic/feature/story's relevance (active / backlog / deferred / rejected).
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 
@@ -37,21 +38,9 @@ mcp__lumina__set_relevance {
 
 ## Provenance recording (per §c)
 
-After ANY successful write (step 3 first-create or step 5 supersession), append exactly one activity entry:
+After ANY successful write (step 3 first-create or step 5 supersession), append exactly one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c. The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape.
 
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "$work_item_id",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "relevance: set <work_item_id> to <new_value>",     # step 3
-  # — or — for step 5 superseded:
-  # summary: "relevance: superseded <work_item_id> from <old> to <new>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
-
-Use the `superseded` summary form only when the prior value was non-null and the user chose `Replace` in step 5. The `<work_item_id>` substitution is the literal id value (not the `$work_item_id` template).
+Summary line: `"relevance: set <work_item_id> to <new_value>"` for step 3 (first-create); `"relevance: superseded <work_item_id> from <old> to <new>"` for step 5 (supersession). Use the `superseded` form only when the prior value was non-null and the user chose `Replace` in step 5. The `<work_item_id>` substitution is the literal id value (not the `$work_item_id` template).
 
 ## Sentry-pattern compliance (per §e)
 

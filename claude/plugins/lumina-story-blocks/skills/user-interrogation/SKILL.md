@@ -1,7 +1,8 @@
 ---
 name: user-interrogation
-description: Enumerate open questions across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility) plus an optional 5th-axis fallback.
+description: Enumerate open questions for a story across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility).
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 
@@ -135,31 +136,11 @@ For row-shaped `question_options`, the same "no in-place update" rule applies �
 
 ## Provenance recording (per §c)
 
-After EACH `add_open_question` write, append one activity entry:
+After EACH `add_open_question` or `add_question_option` write, append one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c. The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape.
 
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "$work_item_id",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "user-interrogation: added <axis>-axis question to <work_item_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
+Summary line: `"user-interrogation: added <axis>-axis question to <work_item_id>"` for an `add_open_question` write; `"user-interrogation: added option \"<label>\" to question Q<question_id>"` for an `add_question_option` write.
 
-After EACH `add_question_option` write, append one activity entry:
-
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "$work_item_id",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "user-interrogation: added option \"<label>\" to question Q<question_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
-
-Substitute `<axis>`, `<work_item_id>`, `<label>`, `<question_id>` with literal values (not the `$work_item_id` template). `entry_type` is `"execution"` (per §c: NOT `verification` — that's reserved for internal `check_acceptance_criterion` writes). `origin` is `"plan"` because this skill runs inside the planning workflow.
+Substitute `<axis>`, `<work_item_id>`, `<label>`, `<question_id>` with literal values (not the `$work_item_id` template). `entry_type` is `"execution"` per §c (NOT `verification` — that's reserved for internal `check_acceptance_criterion` writes); `origin` is `"plan"` because this skill runs inside the planning workflow.
 
 ## Body — 5-step check-before-act (per §b), applied per-axis
 

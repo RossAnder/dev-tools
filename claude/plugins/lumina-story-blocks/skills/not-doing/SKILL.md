@@ -2,6 +2,7 @@
 name: not-doing
 description: Capture or supersede a story's "Not Included" scope boundary as a free-text attributes.not_doing entry.
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 
@@ -19,7 +20,7 @@ disable-model-invocation: true
 
 Wraps `mcp__lumina__update_work_item` to write the story's "Not Included" scope boundary — the Augment-Code-style micro-spec field that records what the story is explicitly NOT trying to do (parent plan finding R17).
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter), §b (5-step check-before-act), §b-supersession (verbatim `AskUserQuestion` supersede prompt), §c (provenance via `record_task_activity`), §e (Sentry pattern — critical here; see below), and §g (lens conventions registry).
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter), §b (5-step check-before-act), §b-supersession (verbatim `AskUserQuestion` supersede prompt), §c (provenance via `record_task_activity`), §e (Sentry pattern — critical here; see below), §f (no per-verb fragmentation), and §g (lens conventions registry).
 
 ## Lens convention (per §g)
 
@@ -70,16 +71,6 @@ Lumina's `update_work_item` performs read-modify-merge inside one transaction: P
 
 ## Provenance recording (per §c)
 
-After any successful write, append one activity entry:
+> **Documentation-only — skill is DISABLED per the banner at the top.** When/if re-enabled, after any successful write the skill MUST append one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c. The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape.
 
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "$work_item_id",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "not-doing: set attributes.not_doing on <work_item_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
-
-For step-5 supersession use `"not-doing: superseded attributes.not_doing on <work_item_id>"` instead.
+Summary line: `"not-doing: set attributes.not_doing on <work_item_id>"` for step 3 (first-create); `"not-doing: superseded attributes.not_doing on <work_item_id>"` for step 5 (supersession).

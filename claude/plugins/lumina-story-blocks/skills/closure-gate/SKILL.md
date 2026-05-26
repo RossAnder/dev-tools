@@ -2,6 +2,7 @@
 name: closure-gate
 description: Set or supersede a story's closure_gate (hard / soft), controlling how unchecked acceptance criteria block child-task →done transitions.
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 
@@ -9,7 +10,7 @@ disable-model-invocation: true
 
 Thin wrapper over `mcp__lumina__set_closure_gate`. Exists for UI parity (per the parent plan §Approach §The 9 skills — "Exists for UI parity (Q1)") so the eventual lumina web UI can drive the same skill the user invokes from `/lumina:closure-gate <id>`.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter), §b (5-step check-before-act), §b-supersession (verbatim `AskUserQuestion` phrasing), §c (provenance via `record_task_activity`), §e (Sentry pattern).
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter), §b (5-step check-before-act), §b-supersession (verbatim `AskUserQuestion` phrasing), §c (provenance via `record_task_activity`), §e (Sentry pattern), §f (no per-verb fragmentation).
 
 ## Target
 
@@ -46,19 +47,9 @@ mcp__lumina__set_closure_gate {
 
 ## Provenance recording (per §c)
 
-After any successful write, append one activity entry:
+After any successful write, append one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c. The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape.
 
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "$work_item_id",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "closure-gate: set <work_item_id> to <hard|soft>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
-
-For step-5 supersession use `"closure-gate: superseded <work_item_id> from <old> to <new>"` instead.
+Summary line: `"closure-gate: set <work_item_id> to <hard|soft>"` for step 3 (first-create); `"closure-gate: superseded <work_item_id> from <old> to <new>"` for step 5 (supersession).
 
 ## Sentry-pattern compliance (per §e)
 

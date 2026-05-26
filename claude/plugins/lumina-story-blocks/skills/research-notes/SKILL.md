@@ -2,6 +2,7 @@
 name: research-notes
 description: Identify research gaps and add proposed research notes to a story (forked subagent).
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 context: fork
 agent: general-purpose
@@ -19,12 +20,12 @@ Research is a multi-step exploration: gap identification, Context7 docs lookups,
 
 ## MCP tools used
 
-```
-mcp__lumina__get_work_item          { id: "$work_item_id" }
-mcp__lumina__add_research_note      { work_item_id, summary, body, lens, confidence, state: "proposed", origin: "plan" }
-mcp__lumina__supersede_research_note{ old_id, new_id }
-mcp__lumina__record_task_activity   { work_item_id, entry_type: "execution", origin: "plan", summary, body }
-```
+- `mcp__lumina__get_work_item` — story read.
+- `mcp__lumina__add_research_note` — adds a research_notes row.
+- `mcp__lumina__supersede_research_note` — supersedes an existing note in place.
+- `mcp__lumina__record_task_activity` — provenance per §c.
+
+See [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools for the canonical argument shapes. Per-call argument values this skill chooses are documented inline at each call site below.
 
 The subagent ALSO uses the read/research tools available in its toolbelt: `Glob`, `Grep`, `Read`, `WebSearch`, `WebFetch`, `mcp__plugin_context7_context7__resolve-library-id`, and `mcp__plugin_context7_context7__query-docs`. These are the gap-filling tools; the lumina MCP tools are the write tools.
 
@@ -86,17 +87,9 @@ mcp__lumina__add_research_note {
 
 New notes inherit the repo's default state at insert time (per the [`claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`](../mcp/SKILL.md) catalogue, that default is `proposed`). This skill MUST NOT call `update_research_note` to flip the state; manual acceptance happens later via a raw `mcp__lumina__update_research_note { id, state: "accepted" }` call or a future `/lumina:accept-research` skill.
 
-After each successful `add_research_note`, append the §c provenance entry (one per note):
+After each successful `add_research_note`, append one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c (one entry per NOTE, not per skill invocation — a fork that adds 5 net-new notes records 5 entries). The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape.
 
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "$work_item_id",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "research-notes: added '<note-summary>' to <work_item_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
+Summary line for an add: `"research-notes: added '<note-summary>' to <work_item_id>"`. Summary line for a supersession (step 5): `"research-notes: superseded <old_id> with '<new-summary>' on <work_item_id>"`.
 
 ### 5. Supersession path (gap matches an existing note, new findings differ)
 

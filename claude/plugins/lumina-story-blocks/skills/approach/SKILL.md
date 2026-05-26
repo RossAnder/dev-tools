@@ -2,6 +2,7 @@
 name: approach
 description: Capture or update a story's execution_strategy, drafting from accepted research and resolved questions.
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 
@@ -80,30 +81,34 @@ On `Edit draft` or `Discard and rewrite`, prompt the user with an `Other` free-t
 
 1. **Read**: call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind `detail.kind`, `detail.attributes.execution_strategy`, plus the prerequisite fields surveyed above.
 2. **Precondition**: if `detail.kind != "story"`, abort with a one-line error: `"approach requires a story work item; got kind=<kind>."` Do NOT call the tool.
+2a. **Early-exit gate (§b step-4 short-circuit)**: if `detail.attributes.execution_strategy` is **already set** (non-null, non-empty), surface it to the user BEFORE running the pre-read survey or drafting flow:
+
+    > **Question header**: `Update execution_strategy?`
+    >
+    > **Question body**: `This story's execution_strategy is already set to: <current-value-summary>. Run the full draft survey to replace it, or keep the current value?`
+    >
+    > (Compute `<current-value-summary>` using the §b-supersession substitution rules: collapse embedded newlines to spaces, truncate to ~80 chars + `…`.)
+    >
+    > **Options** (exactly 2):
+    > - `Update — run survey` — `Run the full prerequisite survey and draft a new execution_strategy`
+    > - `Keep current` — `Abort this invocation; existing execution_strategy left in place`
+
+    On `Keep current` → return: `"execution_strategy already matches the value you provided — no change."` (§b-noop canonical template). Do NOT call the pre-read survey, drafting step, or `set_story_plan`.
+
+    On `Update — run survey` → fall through to the pre-read survey and drafting flow below (steps 3–5).
+
 3. **Absent → create**: if `detail.attributes.execution_strategy` is null / absent / empty, run the survey + drafting + confirmation flow above. Call `set_story_plan({id: $work_item_id, execution_strategy: <confirmed>})`. Record provenance per §c with the `set` summary form. Return: `"execution_strategy created on <work_item_id>."`
-4. **Present and matches**: run the survey + drafting + confirmation flow. If the user-confirmed text matches `detail.attributes.execution_strategy` byte-for-byte, return the §b step-4 one-line confirmation: `"execution_strategy already matches the confirmed value — no change."`
-5. **Present and differs**: invoke the §b-supersession `AskUserQuestion` template verbatim, substituting:
+4. **Present and matches**: *(reached only after user chose `Update — run survey` in step 2a)* run the survey + drafting + confirmation flow. If the user-confirmed text matches `detail.attributes.execution_strategy` byte-for-byte, return the §b step-4 one-line confirmation: `"execution_strategy already matches the confirmed value — no change."`
+5. **Present and differs**: *(reached only after user chose `Update — run survey` in step 2a)* invoke the §b-supersession `AskUserQuestion` template verbatim, substituting:
    - `<field-name>` → `execution_strategy`
    - `<current-value-summary>` → the first ~80 characters of `detail.attributes.execution_strategy` + `…` (single-line; replace any embedded newlines with spaces before truncating).
    On `Replace`, call `set_story_plan({id: $work_item_id, execution_strategy: <new>})`, then record provenance per §c with the `superseded` summary form. On `Keep current`, abort the invocation without writing.
 
 ## Provenance recording (per §c)
 
-After ANY successful write (step 3 first-create or step 5 supersession), append exactly one activity entry:
+After ANY successful write (step 3 first-create or step 5 supersession), append exactly one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c. The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape.
 
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "$work_item_id",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "approach: set on <work_item_id>",                  # step 3
-  # — or — for step 5 superseded:
-  # summary: "approach: superseded on <work_item_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
-
-Use the `superseded` summary form only when the prior value was non-null and the user chose `Replace` in step 5. The `<work_item_id>` substitution is the literal id value (not the `$work_item_id` template).
+Summary line: `"approach: set on <work_item_id>"` for step 3 (first-create); `"approach: superseded on <work_item_id>"` for step 5 (supersession). Use the `superseded` form only when the prior value was non-null and the user chose `Replace` in step 5. The `<work_item_id>` substitution is the literal id value (not the `$work_item_id` template).
 
 ## Sentry-pattern compliance (per §e)
 

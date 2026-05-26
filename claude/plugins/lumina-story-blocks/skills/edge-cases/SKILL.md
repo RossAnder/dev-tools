@@ -2,6 +2,7 @@
 name: edge-cases
 description: Enumerate edge cases for a work item as research notes with lens="edge-case" and a per-case confidence grade.
 arguments: [work_item_id]
+argument-hint: "[work_item_id]"
 disable-model-invocation: true
 ---
 
@@ -86,21 +87,9 @@ New notes inherit the repo's default state at insert time (`proposed`). This ski
 
 ## Provenance recording (per §c)
 
-After EACH successful write (step 5 add, or step 4 supersession), append exactly one activity entry. One activity entry per write — so a single invocation that adds 3 cases and supersedes 1 records 4 entries total (per §c "one activity entry per write — not per skill invocation").
+After EACH successful write (step 5 add, or step 4 supersession), append exactly one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c. One activity entry per write — so a single invocation that adds 3 cases and supersedes 1 records 4 entries total (per §c "one activity entry per write — not per skill invocation"). The `body`, `entry_type`, `origin`, and `work_item_id` fields are §c-canonical — see the §c template for the exact call shape.
 
-```
-mcp__lumina__record_task_activity {
-  work_item_id: "$work_item_id",
-  entry_type: "execution",
-  origin: "plan",
-  summary: "edge-cases: added '<label>' to <work_item_id>",          # step 5 add
-  # — or — for step 4 supersession:
-  # summary: "edge-cases: superseded '<old label>' with '<new label>' on <work_item_id>",
-  body: "session=${CLAUDE_SESSION_ID}"
-}
-```
-
-The `<work_item_id>` substitution is the literal id value (not the `$work_item_id` template).
+Summary line: `"edge-cases: added '<label>' to <work_item_id>"` for step 5 (add); `"edge-cases: superseded '<old label>' with '<new label>' on <work_item_id>"` for step 4 (supersession). The `<work_item_id>` substitution is the literal id value (not the `$work_item_id` template).
 
 ## Sentry-pattern compliance (per §e)
 
