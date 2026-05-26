@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                SELECT\n                    effort     AS \"effort?\",\n                    complexity AS \"complexity?\",\n                    attributes AS \"attributes?\"\n                FROM work_items\n                WHERE id = ?1 AND deleted_at IS NULL\n                ",
+  "describe": {
+    "columns": [
+      {
+        "name": "effort?",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "effort"
+          }
+        }
+      },
+      {
+        "name": "complexity?",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "complexity"
+          }
+        }
+      },
+      {
+        "name": "attributes?",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "work_items",
+            "name": "attributes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "06ac0653138061d9b39d8f34f213c30d0842379923f5c9f2ad7f37a236b02bc5"
+}

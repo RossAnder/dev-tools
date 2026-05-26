@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE work_items SET tier = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "9d2634e6f247ab1d0310ffb8280f600fbe99f72a35a89141ee493a5d03f4f04d"
+}
