@@ -141,7 +141,8 @@ mcp__lumina__record_task_activity {
 
 Notes:
 
-- `entry_type` is `"execution"` for all writes from this plugin. Do NOT use `"verification"` — the lumina SKILL.md catalogue notes that `verification` activity entries are appended INTERNALLY by `check_acceptance_criterion` and the `record_task_activity` enum explicitly rejects `verification`. The other accepted values (`vet`, `comment`) are legal but reserved for other workflows (review / human commentary) and MUST NOT be used by skills in this plugin — every write here is `execution`.
+- `entry_type` is `"execution"` for all writes from this plugin. Do NOT use `"verification"` — the lumina SKILL.md catalogue notes that `verification` activity entries are appended INTERNALLY by `check_acceptance_criterion` and the `record_task_activity` enum explicitly rejects `verification`. The `comment` value is legal but reserved for human commentary and MUST NOT be used by skills in this plugin.
+- **Exception (vet)**: the `vet-research` skill MAY write `entry_type: "vet"` to record vet-pass outcomes against a story's research notes. No other skill in this plugin may write `vet`; round-2 narrows the channel to this one explicitly-named exception. Every other plugin write stays `execution`.
 - **Note on entry_type / origin orthogonality**: `entry_type` (`execution` / `vet` / `comment`) is the activity-stream channel; `origin` (`plan` / `implement` / `review` / `optimise` / `tdd` / `human` / `none`) is the agent or lifecycle stamp. They are orthogonal — `entry_type: "execution"` here pairs with `origin: "plan"`. If `lumina` migration N+ adds a `planning` entry_type, this convention should re-map plan-time writes to `entry_type: "planning"` to distinguish them from `/implement`-driven activity. Until then, `execution` is the chosen channel for plan-time writes and the agent SHOULD read the `origin` stamp to tell which lifecycle phase produced any given row.
 - `origin` is `"plan"` because these skills run inside the planning workflow (R8 origin taxonomy: `plan` / `implement` / `review` / `optimise` / `tdd` / `human` / `none`).
 - `${CLAUDE_SESSION_ID}` is a Claude Code substitution variable — Claude Code expands it to the session uuid at execution time. The skill body writes the literal placeholder string; the substitution happens above the MCP layer. Threading it through the activity body lets a later audit join planning activity to the originating Claude session.
@@ -225,12 +226,14 @@ Do not conflate the two: an attribute-key convention is data hiding inside a JSO
 
 | Convention | Where stored | Storage primitive | Used by |
 |---|---|---|---|
-| `attributes.not_doing` | `work_items.attributes` JSON key | **DISABLED — see R1**: `update_work_item` performs column-level COALESCE on `attributes`, clobbering sibling keys. The `lumina:not-doing` skill is disabled until lumina exposes a safe attributes-merge MCP tool. | `lumina:not-doing` skill (disabled) |
+| `attributes.not_doing` | `work_items.attributes` JSON key | `mcp__lumina__set_story_plan` (round-2 widened-params form). The repo-side `set_work_item_attributes` merges via Rust-side patch + per-kind validator, so sibling keys are preserved. | `lumina:not-doing` skill |
+| `attributes.verification_commands` | `work_items.attributes` JSON key (object: `{build, test, lint, smoke}`, each `Option<String>`) | `mcp__lumina__set_story_plan` (round-2 widened-params form). | `lumina:verification-commands` skill |
 
 Notes:
 
-- The `attributes.not_doing` convention WAS intended to ride a non-existent JSON-merge semantics of `update_work_item` (column-level COALESCE clobbers sibling keys, verified in `lumina/src/repo.rs:1404-1421`). The skill is currently disabled — see R1 / R2 in the review ledger. Promotion options: add a dedicated `set_work_item_attributes` MCP tool, OR widen `SetStoryPlanParams` to accept `not_doing` so `set_story_plan` becomes the entry point.
-- **Lens-key drift warning**: consumers of `attributes.not_doing` (skill bodies, future UI code, exporter, smoke tests) MUST reference the literal key string `not_doing` (snake_case). Lumina has no schema-level protection against typos — writing `attributes.notDoing` or `attributes.not-doing` succeeds silently and produces drift. Consider adding a lumina-side test that scans `work_items.attributes` for unknown top-level keys as a drift smoke check.
+- Round-2 reactivated `attributes.not_doing`. The earlier disabled-status referenced a column-level COALESCE bug in `update_work_item.attributes` — round-2 widened `SetStoryPlanParams` to accept `not_doing` and routes through the merge-safe `set_story_plan` path. The not-doing skill writes via this entry point only; `update_work_item` with raw `attributes` payloads remains forbidden.
+- **Lens-key drift warning**: consumers of `attributes.not_doing` and `attributes.verification_commands` (skill bodies, future UI code, exporter, smoke tests) MUST reference the literal snake_case key strings. Lumina has no schema-level protection against typos — writing `attributes.notDoing` or `attributes.not-doing` succeeds silently and produces drift. The same applies for `verification_commands` (NOT `verificationCommands`, NOT `verification-commands`). Consider adding a lumina-side test that scans `work_items.attributes` for unknown top-level keys as a drift smoke check.
+- **`verification_commands` shape**: the object's keys (`build`, `test`, `lint`, `smoke`) and value type (`Option<String>`) are validated server-side via the round-2 `VerificationCommands` struct. Unknown keys inside the object are rejected at the MCP layer.
 
 **Promotion policy for §g.1**: when lumina later adds a first-class column for one of these (e.g. a `not_doing` column on `work_items`), the corresponding skill body in this plugin is updated in lockstep with the schema migration via `ALTER TABLE ADD COLUMN` plus the per-key code paths. The slash command name and user-facing prompt stay the same; the key-binding row moves out of this registry; and the row in the table above is deleted with a one-line note in the migration PR. New attribute-key conventions are added by appending a row here AND updating the consuming skill body in the same change.
 
@@ -262,6 +265,30 @@ Skills in this plugin fall into two groups based on which MCP tool they write to
 
 The rule-of-thumb phrasing lives in §g (lens vs story-only split); §e contains the permission for local `detail.kind` checks. This section is the architectural signpost — cross-reference from §e and §g rather than repeating the rule here.
 
+## §i Story-review pattern (round-2)
+
+The `/lumina:story-review` skill is the plugin's first critique surface — it reads the full story (problem statement, approach, accepted research notes, open questions, edge cases, tasks + AC) and writes critique findings via `mcp__lumina__add_finding` against the existing `findings` table (migration 0001).
+
+- **Finding kind**: every finding written by `/lumina:story-review` MUST carry `kind: "story-review"`. This is the round-2 reservation for the kind discriminator and lets read-side consumers (UI filter, future `list_findings_by_kind` repo method) disambiguate from `kind: "code-review"` used by `/review` and `kind: "performance"` used by `/optimise`.
+- **Severity**: `severity ∈ {low, medium, high, critical}` matching the existing `findings.severity` taxonomy. Pick severity by the rubric category — contradiction across blocks is `high`; ungrounded approach claim is `medium`; missing AC coverage is `medium`; uncovered edge case is `low`–`medium`.
+- **Supersession**: if a prior `/lumina:story-review` run left findings that are still relevant but materially restated by the new run, use `mcp__lumina__supersede_finding {old_id, new_*}` to chain — never bare add a duplicate. If the prior finding is no longer applicable, `mcp__lumina__update_finding {status: "resolved"}` closes it without supersession. Otherwise leave the old finding as a historical trail.
+- **Provenance**: every finding carries `origin: "plan"` (mirroring §c) and is written from within the forked context (`context: fork` per §d's pattern). The `confidence` field is optional but recommended for findings derived from heuristic checks (word-overlap, LLM judgement) — distinguishes them from finds that surface a structural contradiction.
+
+The skill body cites this section by reference; do NOT inline the rubric here (it lives in the skill's SKILL.md). This section is the contract for HOW critique persists, not WHAT critique runs.
+
+## §j Batch-scheduled task execution (round-2)
+
+Task dependencies in lumina are first-class edges (migration 0005's `task_dependencies` table), not implicit phase ordering. The `/lumina:wire-task-deps` skill writes those edges; `/implement` (and any future sprint composer) consumes the dependency DAG via `mcp__lumina__compute_task_batches`, which returns Kahn's-algorithm phase batches: a `Vec<Vec<task_id>>` where each inner vec is a parallel-safe batch and earlier batches gate later ones.
+
+- **The skill writes EDGES, not phases.** `/lumina:wire-task-deps` calls `mcp__lumina__block_task_on_task {task_id, depends_on_id, kind}` for each user-confirmed edge. The phase batching is computed downstream — the skill body MUST NOT pre-batch the tasks itself.
+- **Cycle detection is server-side.** `compute_task_batches` returns `AppError::Cycle {edges}` when the DAG contains a cycle (surfacing as MCP `invalid_params` with the offending edges in the message). `/lumina:wire-task-deps` MUST treat a cycle result as a hard error — prompt the user to remove one edge before retrying, NEVER silently drop an edge.
+- **Phase display format**: when surfacing the computed batches to the user, format as `Phase 1 (foundation): T1, T2 | Phase 2 (parallel): T3, T4 | Phase 3 (after T3): T5 | …`. The phase label (foundation / parallel / after `<dep>`) is derived from the within-phase `task_kind` tie-break order computed server-side.
+- **Complexity-high gate**: for any task with `complexity = "high"`, the skill MUST prompt the user to confirm it shouldn't split further BEFORE writing any inbound or outbound edge. This gate protects against the empirical reliability degradation documented in R27 for high-complexity tasks.
+
+The skill body cites this section by reference; do NOT inline Kahn's-algorithm semantics or the phase-display format here. This section is the contract for HOW the task graph composes with the downstream executor, not WHAT user prompts the skill body shows.
+
 ---
 
-Pointer back: the plugin entry point is `claude/plugins/lumina-story-blocks/README.md`; the parent plan is `docs/plans/lumina-story-planning-workflow.md`.
+> **§-letter allocation history**: §a-§h were the round-1 (`lumina-story-planning-workflow`) allocation. §i and §j were added by round-2 (`lumina-story-planning-round-2`). Future rounds should append §k, §l, … rather than re-using a freed letter; reserved letters protect cross-references in skill bodies that cite by short letter.
+
+Pointer back: the plugin entry point is `claude/plugins/lumina-story-blocks/README.md`; the parent plan is `docs/plans/lumina-story-planning-workflow.md` (round 1) and `docs/plans/lumina-story-planning-round-2.md` (round 2).
