@@ -92,31 +92,34 @@ export interface WorkItem {
 }
 
 export const WorkItemSchema = z.object({
-  id: z.string(),
+  id: z.string().max(200),
   kind: KindSchema,
-  parent_id: z.string().nullable(),
-  title: z.string(),
-  body: z.string().nullable(),
+  parent_id: z.string().max(200).nullable(),
+  title: z.string().max(500),
+  body: z.string().max(65536).nullable(),
   status: StatusSchema,
   position: z.number().nullable(),
   // The server emits `attributes` as an arbitrary JSON object (or null);
   // `z.record(z.string(), z.unknown())` is the zod 4 form (single-arg
   // `z.record` was removed — it now requires both key and value schemas).
+  // NOTE: deliberately uncapped — `attributes` is intentionally arbitrary
+  // JSON whose shape is opaque at this boundary; capping would risk
+  // rejecting valid responses. Same rationale for `WorkItemActivity.payload`.
   attributes: z.record(z.string(), z.unknown()).nullable(),
   relevance: RelevanceSchema.nullable(),
   effort: EffortSchema.nullable(),
   complexity: ComplexitySchema.nullable(),
   origin: OriginSchema.nullable(),
   closure_gate: ClosureGateSchema.nullable(),
-  blocked_by_question_id: z.string().nullable(),
-  enabling_option_id: z.string().nullable(),
+  blocked_by_question_id: z.string().max(200).nullable(),
+  enabling_option_id: z.string().max(200).nullable(),
   // Round-4 additions (T7). `.nullable()` is correct: domain.rs has zero
   // `skip_serializing_if` attributes (grep-verified during T7), so an unset
   // column is emitted as JSON `null` rather than as an absent key.
   task_kind: TaskKindSchema.nullable(),
   tier: TierSchema.nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: z.string().max(50),
+  updated_at: z.string().max(50),
 })
 
 /**
@@ -175,40 +178,40 @@ export interface Finding {
 }
 
 export const FindingSchema = z.object({
-  id: z.string(),
-  work_item_id: z.string().nullable(),
-  kind: z.string(),
+  id: z.string().max(200),
+  work_item_id: z.string().max(200).nullable(),
+  kind: z.string().max(100),
   severity: SeveritySchema,
-  effort: z.string().nullable(),
-  category: z.string(),
-  status: z.string(),
-  file: z.string().nullable(),
+  effort: z.string().max(50).nullable(),
+  category: z.string().max(100),
+  status: z.string().max(50),
+  file: z.string().max(2000).nullable(),
   line: z.number().nullable(),
-  symbol: z.string().nullable(),
-  summary: z.string(),
-  description: z.string().nullable(),
-  first_flagged: z.string().nullable(),
+  symbol: z.string().max(500).nullable(),
+  summary: z.string().max(1000),
+  description: z.string().max(16384).nullable(),
+  first_flagged: z.string().max(50).nullable(),
   rounds: z.number().nullable(),
-  fingerprint: z.string().nullable(),
-  flow: z.string().nullable(),
-  dedup_id: z.string().nullable(),
+  fingerprint: z.string().max(200).nullable(),
+  flow: z.string().max(200).nullable(),
+  dedup_id: z.string().max(200).nullable(),
   origin: OriginSchema.nullable(),
   confidence: ConfidenceSchema.nullable(),
-  superseded_by: z.string().nullable(),
-  resolved_at: z.string().nullable(),
+  superseded_by: z.string().max(200).nullable(),
+  resolved_at: z.string().max(50).nullable(),
   // `resolution` is free-text describing the change that fixed the finding
   // (e.g. "Added exp check in refresh handler"), NOT a Disposition value. The
   // disposition vocabulary belongs on `status` above. Keep this as a plain
   // nullable string to match the wire.
-  resolution: z.string().nullable(),
-  defer_reason: z.string().nullable(),
-  defer_trigger: z.string().nullable(),
-  wontfix_rationale: z.string().nullable(),
+  resolution: z.string().max(4000).nullable(),
+  defer_reason: z.string().max(2000).nullable(),
+  defer_trigger: z.string().max(2000).nullable(),
+  wontfix_rationale: z.string().max(4000).nullable(),
   // Migration 0004: `findings.repo_id` — nullable foreign key into `repo_links`.
   // `nullable()` handles the live wire shape (column is nullable, NULL = the
   // file lives in the project's primary repo); `optional()` tolerates absent
   // fields from any pre-deploy caches that wouldn't yet emit the key.
-  repo_id: z.string().nullable().optional(),
+  repo_id: z.string().max(200).nullable().optional(),
 })
 
 export interface ContextBlock {
@@ -220,11 +223,11 @@ export interface ContextBlock {
 }
 
 export const ContextBlockSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  body: z.string(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  id: z.string().max(200),
+  title: z.string().max(500),
+  body: z.string().max(65536),
+  created_at: z.string().max(50),
+  updated_at: z.string().max(50),
 })
 
 /**
@@ -248,14 +251,14 @@ export interface AcceptanceCriterion {
 // (exposed as {@link AcceptanceCriterion}) is produced by fetchDetail's
 // post-parse transform.
 export const AcceptanceCriterionWireSchema = z.object({
-  id: z.string(),
-  work_item_id: z.string(),
+  id: z.string().max(200),
+  work_item_id: z.string().max(200),
   seq: z.number(),
-  text: z.string(),
+  text: z.string().max(2000),
   checked: z.number(),
-  checked_at: z.string().nullable(),
-  checked_by: z.string().nullable(),
-  created_at: z.string(),
+  checked_at: z.string().max(50).nullable(),
+  checked_by: z.string().max(200).nullable(),
+  created_at: z.string().max(50),
 })
 
 /** A row of `research_notes` (migration 0003). */
@@ -275,18 +278,18 @@ export interface ResearchNote {
 }
 
 export const ResearchNoteSchema = z.object({
-  id: z.string(),
-  work_item_id: z.string(),
+  id: z.string().max(200),
+  work_item_id: z.string().max(200),
   seq: z.number(),
-  summary: z.string(),
-  body: z.string().nullable(),
+  summary: z.string().max(1000),
+  body: z.string().max(16384).nullable(),
   confidence: ConfidenceSchema.nullable(),
   state: ResearchStateSchema.nullable(),
-  rationale: z.string().nullable(),
-  lens: z.string().nullable(),
+  rationale: z.string().max(4000).nullable(),
+  lens: z.string().max(200).nullable(),
   origin: OriginSchema.nullable(),
-  superseded_by: z.string().nullable(),
-  created_at: z.string(),
+  superseded_by: z.string().max(200).nullable(),
+  created_at: z.string().max(50),
 })
 
 /** A row of `question_options` (migration 0003): one branch of an open question. */
@@ -300,12 +303,12 @@ export interface QuestionOption {
 }
 
 export const QuestionOptionSchema = z.object({
-  id: z.string(),
-  question_id: z.string(),
+  id: z.string().max(200),
+  question_id: z.string().max(200),
   seq: z.number(),
-  label: z.string(),
-  detail: z.string().nullable(),
-  created_at: z.string(),
+  label: z.string().max(500),
+  detail: z.string().max(2000).nullable(),
+  created_at: z.string().max(50),
 })
 
 /** A row of `open_questions` (migration 0003): a story-scoped decision. */
@@ -326,18 +329,18 @@ export interface OpenQuestion {
 }
 
 export const OpenQuestionSchema = z.object({
-  id: z.string(),
-  story_id: z.string(),
+  id: z.string().max(200),
+  story_id: z.string().max(200),
   seq: z.number(),
-  question: z.string(),
+  question: z.string().max(2000),
   status: QuestionStatusSchema.nullable(),
-  answer: z.string().nullable(),
-  chosen_option_id: z.string().nullable(),
-  decided_at: z.string().nullable(),
-  decided_by: z.string().nullable(),
-  prompting_finding_id: z.string().nullable(),
-  prompting_note_id: z.string().nullable(),
-  created_at: z.string(),
+  answer: z.string().max(4000).nullable(),
+  chosen_option_id: z.string().max(200).nullable(),
+  decided_at: z.string().max(50).nullable(),
+  decided_by: z.string().max(200).nullable(),
+  prompting_finding_id: z.string().max(200).nullable(),
+  prompting_note_id: z.string().max(200).nullable(),
+  created_at: z.string().max(50),
   options: z.array(QuestionOptionSchema),
 })
 
@@ -355,15 +358,17 @@ export interface WorkItemActivity {
 }
 
 export const WorkItemActivitySchema = z.object({
-  id: z.string(),
-  work_item_id: z.string(),
+  id: z.string().max(200),
+  work_item_id: z.string().max(200),
   seq: z.number(),
   entry_kind: ActivityTypeSchema,
-  author: z.string().nullable(),
-  summary: z.string(),
+  author: z.string().max(200).nullable(),
+  summary: z.string().max(2000),
+  // NOTE: `payload` deliberately uncapped — arbitrary JSON whose shape is
+  // opaque at this boundary (mirrors the `WorkItem.attributes` rationale).
   payload: z.record(z.string(), z.unknown()).nullable(),
   origin: OriginSchema.nullable(),
-  created_at: z.string(),
+  created_at: z.string().max(50),
 })
 
 // ---------------------------------------------------------------------------
@@ -396,16 +401,16 @@ export interface Risk {
 }
 
 export const RiskSchema = z.object({
-  id: z.string(),
-  work_item_id: z.string(),
+  id: z.string().max(200),
+  work_item_id: z.string().max(200),
   seq: z.number(),
-  summary: z.string(),
-  body: z.string().nullable(),
-  rationale: z.string().nullable(),
+  summary: z.string().max(1000),
+  body: z.string().max(16384).nullable(),
+  rationale: z.string().max(4000).nullable(),
   severity: RiskSeveritySchema.nullable(),
-  mitigation: z.string().nullable(),
-  superseded_by: z.string().nullable(),
-  created_at: z.string(),
+  mitigation: z.string().max(4000).nullable(),
+  superseded_by: z.string().max(200).nullable(),
+  created_at: z.string().max(50),
 })
 
 /** A row of `rejected_alternatives` (migration 0005): a discarded planning option. */
@@ -428,15 +433,15 @@ export interface RejectedAlternative {
 }
 
 export const RejectedAlternativeSchema = z.object({
-  id: z.string(),
-  work_item_id: z.string(),
+  id: z.string().max(200),
+  work_item_id: z.string().max(200),
   seq: z.number(),
-  summary: z.string(),
-  body: z.string().nullable(),
-  rationale: z.string().nullable(),
+  summary: z.string().max(1000),
+  body: z.string().max(16384).nullable(),
+  rationale: z.string().max(4000).nullable(),
   confidence: ConfidenceSchema.nullable(),
-  superseded_by: z.string().nullable(),
-  created_at: z.string(),
+  superseded_by: z.string().max(200).nullable(),
+  created_at: z.string().max(50),
 })
 
 /** A row of `task_dependencies` (migration 0005): a task→task prerequisite edge. */
@@ -449,10 +454,10 @@ export interface TaskDependency {
 }
 
 export const TaskDependencySchema = z.object({
-  task_id: z.string(),
-  depends_on_id: z.string(),
-  kind: z.string(),
-  created_at: z.string(),
+  task_id: z.string().max(200),
+  depends_on_id: z.string().max(200),
+  kind: z.string().max(100),
+  created_at: z.string().max(50),
 })
 
 // ---------------------------------------------------------------------------

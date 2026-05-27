@@ -16,6 +16,7 @@ import {
   __resetForTests,
   __setApiForTests,
 } from '../composables/useRejectedAlternatives'
+import { workItemDetail } from './fixtures'
 
 function rejectedAlternative(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -28,44 +29,6 @@ function rejectedAlternative(overrides: Record<string, unknown> = {}): Record<st
     confidence: 'medium',
     superseded_by: null,
     created_at: '2026-05-25T00:00:00Z',
-    ...overrides,
-  }
-}
-
-function workItemDetail(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    item: {
-      id: 's-1',
-      kind: 'story',
-      parent_id: null,
-      title: 's',
-      body: null,
-      status: 'open',
-      position: 0,
-      attributes: null,
-      relevance: null,
-      effort: null,
-      complexity: null,
-      origin: null,
-      closure_gate: null,
-      blocked_by_question_id: null,
-      enabling_option_id: null,
-      task_kind: null,
-      tier: null,
-      created_at: '2026-05-25T00:00:00Z',
-      updated_at: '2026-05-25T00:00:00Z',
-    },
-    children: [],
-    findings: [],
-    context_blocks: [],
-    activity: [],
-    acceptance_criteria: [],
-    research_notes: [],
-    open_questions: [],
-    repo_links: [],
-    risks: [],
-    rejected_alternatives: [],
-    task_dependencies: [],
     ...overrides,
   }
 }

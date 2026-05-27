@@ -33,8 +33,8 @@ import type {
   Tier,
 } from '@/api'
 
-/** See {@link import('./useHierarchy').Result} for the design rationale. */
-export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
+import type { Result } from './result'
+export type { Result }
 
 // ---------------------------------------------------------------------------
 // Module-singleton state.

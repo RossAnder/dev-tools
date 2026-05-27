@@ -128,7 +128,7 @@ Two structured PATCHes — JSON-merge bodies via `repo::set_work_item_attributes
 - `POST  /work-items/{story_id}/open-questions`               → `repo::add_open_question`.
 - `POST  /open-questions/{id}/options`                        → `repo::add_question_option`.
 - `POST  /work-items/{task_id}/block-on-question/{question_id}` → `repo::block_task_on_question`.
-- `PATCH /work-items/{task_id}/enabling-option/{option_id}`   → `repo::set_enabling_option`.
+- `PUT   /work-items/{task_id}/enabling-option/{option_id}`   → `repo::set_enabling_option`.
 - `POST  /open-questions/{id}/resolve`                        → `repo::resolve_open_question` (one event for the whole branch-unblock + sibling-cancel resolution).
 
 ### Findings (`http/findings.rs`, round-4 T5)

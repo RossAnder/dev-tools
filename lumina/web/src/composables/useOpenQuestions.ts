@@ -31,8 +31,8 @@ import * as productionApi from '@/api'
 import type { AddQuestionOptionBody, OpenQuestion } from '@/api'
 import { useHierarchy } from './useHierarchy'
 
-/** See {@link import('./useHierarchy').Result} for the design rationale. */
-export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
+import type { Result } from './result'
+export type { Result }
 
 // ---------------------------------------------------------------------------
 // Module-singleton state.

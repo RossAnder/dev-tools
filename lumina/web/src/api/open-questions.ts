@@ -6,7 +6,7 @@
 //   * POST  /work-items/{story_id}/open-questions                — add question; 201 + { id }
 //   * POST  /open-questions/{id}/options                          — add option; 201 + { id }
 //   * POST  /work-items/{task_id}/block-on-question/{question_id} — block; 201 + { ok }
-//   * PATCH /work-items/{task_id}/enabling-option/{option_id}    — set branch; 200 + { ok }
+//   * PUT   /work-items/{task_id}/enabling-option/{option_id}    — set branch; 200 + { ok }
 //   * POST  /open-questions/{id}/resolve                          — resolve; 200 + { ok }
 //
 // Schemas: `OpenQuestion` / `QuestionOption` (and their zod schemas) are still
@@ -115,7 +115,7 @@ export async function blockTaskOnQuestion(
 }
 
 /**
- * `PATCH /api/work-items/{task_id}/enabling-option/{option_id}` — tie an
+ * `PUT /api/work-items/{task_id}/enabling-option/{option_id}` — tie an
  * exclusive-branch task to a question option (so resolution either unblocks or
  * cancels it). No body. Returns `{ ok: true }`.
  */
@@ -127,7 +127,7 @@ export async function setEnablingOption(
     await fetch(
       `${API_BASE}/work-items/${encodeURIComponent(taskId)}/enabling-option/${encodeURIComponent(optionId)}`,
       {
-        method: 'PATCH',
+        method: 'PUT',
         body: '',
       },
     ),
@@ -150,7 +150,10 @@ export async function resolveOpenQuestion(
     await fetch(`${API_BASE}/open-questions/${encodeURIComponent(questionId)}/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(by === undefined ? { chosen_option_id: chosenOptionId } : { chosen_option_id: chosenOptionId, by }),
+      body: JSON.stringify({
+        chosen_option_id: chosenOptionId,
+        ...(by !== undefined && { by }),
+      }),
     }),
     OkResponseSchema,
   )

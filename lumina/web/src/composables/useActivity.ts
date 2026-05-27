@@ -17,17 +17,20 @@
 //
 // Pure-mutator semantics: this composable does NOT fold appended rows into a
 // local cache. The HTTP route returns only `{ ok: true }` (not the new row),
-// and the panel rendering the activity-log is expected to re-fetch the parent
-// detail via `useHierarchy().detail` after `record()` resolves. The local
+// so after `api.recordActivity` succeeds the composable triggers a hierarchy
+// refresh so panels bound to `useHierarchy().detail` reflect the new row,
+// mirroring the convention used by the other family composables. The local
 // state is confined to `lastRecorded` (a watch-able ISO timestamp ref —
-// handy for optimistic-UI flash effects) plus `loading` / `error`.
+// handy for optimistic-UI flash effects) plus `loading` / `error`; the new
+// activity row surfaces on the hierarchy refresh.
 
 import { ref } from 'vue'
 import * as productionApi from '@/api'
 import type { RecordActivityBody } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
-/** See {@link import('./useHierarchy').Result} for the design rationale. */
-export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
+import type { Result } from './result'
+export type { Result }
 
 // ---------------------------------------------------------------------------
 // Module-singleton state.
@@ -97,6 +100,7 @@ export function useActivity() {
     error.value = null
     try {
       const result = await api.recordActivity(workItemId, body)
+      await useHierarchy().refresh(workItemId)
       lastRecorded.value = new Date().toISOString()
       return { ok: true, value: result }
     } catch (e) {

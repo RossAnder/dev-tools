@@ -7,7 +7,7 @@
 //!   * `POST  /work-items/{story_id}/open-questions`              — add question.
 //!   * `POST  /open-questions/{id}/options`                        — add option.
 //!   * `POST  /work-items/{task_id}/block-on-question/{question_id}` — block a task.
-//!   * `PATCH /work-items/{task_id}/enabling-option/{option_id}`   — set exclusive branch.
+//!   * `PUT   /work-items/{task_id}/enabling-option/{option_id}`   — set exclusive branch.
 //!   * `POST  /open-questions/{id}/resolve`                        — resolve via picked option.
 //!
 //! Each handler delegates to a single `repo::*` call, preserving the
@@ -18,7 +18,7 @@ use axum::Router;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{patch, post};
+use axum::routing::{post, put};
 use serde::Deserialize;
 
 use crate::app::AppState;
@@ -68,7 +68,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/work-items/{task_id}/enabling-option/{option_id}",
-            patch(set_enabling_option_handler),
+            put(set_enabling_option_handler),
         )
         .route(
             "/open-questions/{id}/resolve",
@@ -125,7 +125,7 @@ async fn block_task_on_question_handler(
     ))
 }
 
-/// `PATCH /work-items/{task_id}/enabling-option/{option_id}` — tie an
+/// `PUT /work-items/{task_id}/enabling-option/{option_id}` — tie an
 /// exclusive-branch task to a question option. No body. Returns 200 +
 /// `{ "ok": true }`.
 async fn set_enabling_option_handler(
@@ -271,12 +271,12 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
 
-        // PATCH /work-items/{task_id}/enabling-option/{option_id}
+        // PUT /work-items/{task_id}/enabling-option/{option_id}
         let resp = router
             .clone()
             .oneshot(
                 Request::builder()
-                    .method("PATCH")
+                    .method("PUT")
                     .uri(format!(
                         "/api/work-items/{task_id}/enabling-option/{option1_id}"
                     ))

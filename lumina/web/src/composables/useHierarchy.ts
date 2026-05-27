@@ -16,17 +16,8 @@ import {
   type DescendantCounts,
 } from './treeUtils'
 
-/**
- * Discriminated result type for mutating composable operations. Lets callers
- * disambiguate failure from success-with-empty-value against a LOCAL return
- * (rather than coupling the call site to the singleton `error` ref).
- *
- * The failure-path side effect on `error.value` is preserved alongside the
- * returned `{ ok: false, ... }` so the UI's existing error-banner subscription
- * keeps working — the new shape is additive to the side-effect, not a
- * replacement.
- */
-export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
+import type { Result } from './result'
+export type { Result }
 
 // Module-singleton reactive state — the simplest store pattern that works
 // natively in Vapor without registering a plugin on the app instance. Every
