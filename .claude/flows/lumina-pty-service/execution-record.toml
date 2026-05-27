@@ -64,3 +64,67 @@ original_intent = "Plan recommended jiff::Timestamp for TypedMessage.created_at 
 rationale = "jiff = 0.2 in Cargo.toml does NOT have the serde feature enabled, and Cargo.toml ownership was held by T1 in the same parallel batch. Independently, domain.rs convention for every row struct is `created_at: String` ('timestamps are CURRENT_TIMESTAMP strings'). String matches the codebase-wide convention and is serde-compatible without changing deps. T8 supervisor will mint timestamps via jiff::Timestamp::now().to_string() per existing export.rs pattern."
 commits = ["6475e78"]
 dedup_id = "96358627513b5232"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "define-transport-trait-handle-types"
+status = "done"
+files = [
+    "lumina/src/pty/transport.rs",
+    "lumina/src/pty/mod.rs",
+]
+commits = ["d5468ea"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "async_trait Transport trait + SpawnConfig (w/ prompt_pattern), SessionExit, TransportHandle in pty/transport.rs; re-exports added to pty/mod.rs"
+dedup_id = "d9cd410ce879fd1b"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "implement-vt100-parser-end-of-turn-heuristic"
+status = "done"
+files = [
+    "lumina/src/pty/parser.rs",
+    "lumina/src/pty/mod.rs",
+]
+commits = ["d5468ea"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "vt100::Parser-backed Parser struct + feed/check_idle + 5 inline unit tests (all pass). matches_prompt is a free function (regex crate intentionally not a dep). Parser re-exported in mod.rs"
+dedup_id = "2770944ce84f26fe"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "extend-repo-rs-with-pty-crud"
+status = "done"
+files = [
+    "lumina/src/repo.rs",
+    "lumina/src/domain.rs",
+    "lumina/.sqlx/",
+]
+commits = ["d5468ea"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "pub mod pty appended to repo.rs with 12 CRUD helpers (sessions+messages+queue) + now_string helper; PtySession/PtyMessage/PtyQueueEntry added to domain.rs; .sqlx offline cache regenerated with --all-targets"
+dedup_id = "9c1d9e56186ccd10"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "extend-repo-rs-with-pty-crud"
+summary = "PtySession/PtyMessage/PtyQueueEntry omit Deserialize + sqlx::FromRow + rename-all per domain.rs convention"
+original_intent = "Dispatch spec listed derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow) with serde rename-all snake_case"
+rationale = "Established domain.rs convention is Debug+Clone+Serialize only (no Deserialize/FromRow/rename-all) for read-only row structs; query_as! works without FromRow via macro-generated field-by-name assignment, and column names are already snake_case. The spec said to match conventions over the literal derive list. If T9/T10 need wire-Deserialize for HTTP request bodies they will define their own request structs."
+commits = ["d5468ea"]
+dedup_id = "fd4331efed94d689"

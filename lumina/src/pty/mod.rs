@@ -19,3 +19,7 @@ pub use protocol::{
 };
 pub use transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
 pub use parser::Parser;
+pub use pty_transport::PtyTransport;
+pub use session::Session;
+pub use registry::SessionRegistry;
+pub use queue::Queue;
