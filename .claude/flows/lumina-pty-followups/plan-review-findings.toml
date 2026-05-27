@@ -121,3 +121,33 @@ category = "executability"
 plan_section = "### Spawn helper module"
 summary = "Pseudocode block elides Arc<Session>/pool.clone() before tokio::spawn — show explicit let-bindings"
 dedup_id = "af9a080e5e042275"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Spawn helper module"
+summary = "Bridge task: extract persistence fields before broadcast move (robustness against future clone-removal refactor)"
+dedup_id = "f7cd334578fdc4ac"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Verification (Manual smoke)"
+summary = "Manual smoke preconditions: claude on PATH + lumina/web/dist/ present (vite-only build works around RepoLinksPanel TS error)"
+dedup_id = "ffc349a04957ffd2"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Frontend empty-state"
+summary = "Delete-active-session must call disconnect() + reset currentId to avoid zombie WS"
+dedup_id = "29fc671aef771a58"

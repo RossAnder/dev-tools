@@ -91,25 +91,31 @@ The broadcast-bridge task replaces the existing per-message forward with three a
 loop {
     match transport_rx.recv().await {
         Ok(msg) => {
-            // Action 1: forward to registry-side broadcast (existing behaviour)
-            let _ = bridge_tx.send(msg.clone());
-
-            // Action 2: assign sequence, persist to pty_messages
-            let seq = session.next_sequence();
-            let msg_id = uuid::Uuid::now_v7().to_string();
-            let kind_wire = msg.kind.as_wire();  // &'static str — promote MessageKind::as_wire to `pub fn` in protocol.rs
+            // Action 1: extract persistence-bound fields BEFORE the broadcast move.
+            // Rationale: a future maintainer might "optimise" away the clone — if
+            // we extracted via msg.clone() and then borrowed from msg below, the
+            // change to broadcast move-semantics would silently break persistence
+            // at compile time. By extracting first and moving msg into the
+            // broadcast at the end, the field bindings own their own copies and
+            // the broadcast-send call site is the natural last user of msg.
+            let kind = msg.kind;                            // Copy enum
+            let kind_wire = kind.as_wire();                 // &'static str — needs MessageKind::as_wire promoted to `pub fn`
             let content_json = serde_json::to_string(&msg.content)
                 .unwrap_or_else(|_| "{}".to_string());
-            let raw_text = msg.raw_text.as_deref();
+            let raw_text = msg.raw_text.clone();
+            let seq = session.next_sequence();
+            let msg_id = uuid::Uuid::now_v7().to_string();
+
+            // Action 2: persist to pty_messages
             if let Err(e) = repo::pty::insert_pty_message(
                 &pool, &msg_id, &session_id_str, seq,
-                &kind_wire, &content_json, raw_text,
+                kind_wire, &content_json, raw_text.as_deref(),
             ).await {
                 eprintln!("pty bridge: insert_pty_message failed for {session_id_str}: {e}");
             }
 
             // Action 3: on first Prompt, flip status Spawning -> Idle
-            if !idle_flipped && matches!(msg.kind, MessageKind::Prompt) {
+            if !idle_flipped && matches!(kind, MessageKind::Prompt) {
                 idle_flipped = true;
                 session.set_status(SessionStatus::Idle).await;
                 if let Err(e) = repo::pty::update_pty_session_status(
@@ -118,6 +124,10 @@ loop {
                     eprintln!("pty bridge: status -> idle persist failed for {session_id_str}: {e}");
                 }
             }
+
+            // Action 4: forward to registry-side broadcast (msg moves; broadcast
+            // keeps its own clone via the channel's per-subscriber buffer).
+            let _ = bridge_tx.send(msg);
         }
         Err(broadcast::error::RecvError::Lagged(_)) => continue,
         Err(broadcast::error::RecvError::Closed) => break,
@@ -200,7 +210,7 @@ Note: `cd lumina/web && npm run build` is expected to fail on the pre-existing `
 #### 2. PtyConsole spawn affordance [M]
 - **Files**: `lumina/web/src/components/PtyConsole.vue`
 - **Depends on**: —
-- **Action**: Widen the existing `usePtySession()` destructure on `PtyConsole.vue:47-52` to add `select` and `error: focusError` (current destructure is `{ currentId, messages, status: wsStatus, submit }` — `select` is missing). Add a `v-if="currentId === null"` empty-state branch above the existing header. Render two sections: "Select a session" (v-for over `usePtySessions().sessions` with click handler → `select(s.id)`; show id, label, status, started_at) and "Spawn new session" (cwd input + Spawn button). The Spawn button calls `usePtySessions().spawn({...})` with default config (claude_args: [], env_passthrough_otel: false, all optionals null), then on success calls `select(result.id)`. Surface `usePtySessions().error` near the form (catches spawn failures). Wrap the existing header + list + input in a `v-else` branch; surface `focusError` (the renamed `usePtySession().error`) in that branch so post-spawn WS/history errors aren't silently swallowed.
+- **Action**: Widen the existing `usePtySession()` destructure on `PtyConsole.vue:47-52` to add `select`, `disconnect`, and `error: focusError` (current destructure is `{ currentId, messages, status: wsStatus, submit }` — `select` and `disconnect` are missing). Add a `v-if="currentId === null"` empty-state branch above the existing header. Render two sections: "Select a session" (v-for over `usePtySessions().sessions` with click handler → `select(s.id)`; show id, label, status, started_at) and "Spawn new session" (cwd input + Spawn button). The Spawn button calls `usePtySessions().spawn({...})` with default config (claude_args: [], env_passthrough_otel: false, all optionals null), then on success calls `select(result.id)`. Surface `usePtySessions().error` near the form (catches spawn failures). Wrap the existing header + list + input in a `v-else` branch; surface `focusError` (the renamed `usePtySession().error`) in that branch so post-spawn WS/history errors aren't silently swallowed. **Delete-active-session handler**: the existing `cancelSession(currentId)` / `deleteSession(currentId)` buttons in the v-else branch leave the WS attached to a tombstoned session. Wrap each in `async () => { const id = currentId.value; if (!id) return; await deleteSession(id); if (currentId.value === id) { disconnect(); currentId.value = null; } }` so the empty-state re-renders and the WS doesn't keep retrying.
 - **Detail**: Defaults: cwd = the input value (trimmed) or `'.'` (current working dir of lumina) when empty. Tailwind classes consistent with the rest of the component (`var(--surface)`, `var(--border)`, `var(--accent)` tokens). Session list renders as clickable rows with hover state; no separate "open" button needed.
 - **Acceptance**: `npx vue-tsc --noEmit -p tsconfig.app.json | grep PtyConsole | wc -l` returns 0. `bun test` does not regress. Manual: switch to PTY view, see the empty-state. (Real spawn won't work until T4+T5 land — for this task the spawn call merely returns a row; the assistant-output flow requires the helper.)
 
@@ -262,6 +272,11 @@ End-to-end test plan (`/implement` Phase 3):
 
 Manual smoke (the goal of this plan):
 
+**Preconditions:**
+- `claude --version` succeeds in the shell that will run `cargo run` — PtyTransport hardcodes `CommandBuilder::new("claude")`; spawn returns 422 if `claude` is not on PATH.
+- `lumina/web/dist/index.html` exists — debug builds serve the SPA from the filesystem (not embedded). The pre-existing `RepoLinksPanel.vue` TS error blocks `npm run build`, but `cd lumina/web && npx vite build` emits dist/ even with the typecheck failure (vue-tsc and vite are separate steps). Run it once if dist/ is absent.
+
+**Smoke steps:**
 - Start lumina (`cargo run --manifest-path lumina/Cargo.toml`).
 - Open the SPA, switch to the PTY view — see the empty-state with the spawn form.
 - Enter a cwd (or leave blank for `.`) and click Spawn — a row appears in the session list with status `spawning` → `idle`.
