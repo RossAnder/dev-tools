@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT aggregate_id AS \"aggregate_id!\", event_type AS \"event_type!\", exported_at AS \"exported_at?\"\n               FROM events",
+  "describe": {
+    "columns": [
+      {
+        "name": "aggregate_id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "aggregate_id"
+          }
+        }
+      },
+      {
+        "name": "event_type!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "event_type"
+          }
+        }
+      },
+      {
+        "name": "exported_at?",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "exported_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "3c9a48f318627fda87eb52558ce8befcc60e8359a43d53d51881107d26191c61"
+}

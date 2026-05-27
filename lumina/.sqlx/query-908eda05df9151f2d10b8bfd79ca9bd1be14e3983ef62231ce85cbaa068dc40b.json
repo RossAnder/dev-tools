@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT exported_at AS \"exported_at?\" FROM events WHERE aggregate_id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "exported_at?",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "exported_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "908eda05df9151f2d10b8bfd79ca9bd1be14e3983ef62231ce85cbaa068dc40b"
+}

@@ -10,3 +10,54 @@ summary = "flow status draft -> in-progress at /implement start"
 from_status = "draft"
 to_status = "in-progress"
 dedup_id = "d63ff385da225bbc"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "split-http-rs-into-http-module-directory-pre-declare-router-merges-add-delete-work-item"
+status = "done"
+files = [
+    "lumina/src/http/mod.rs",
+    "lumina/src/http/work_items.rs",
+    "lumina/src/http/repo_links.rs",
+    "lumina/src/http/structured_patches.rs",
+    "lumina/src/http/acceptance_criteria.rs",
+    "lumina/src/http/research_notes.rs",
+    "lumina/src/http/risks.rs",
+    "lumina/src/http/rejected_alternatives.rs",
+    "lumina/src/http/task_dependencies.rs",
+    "lumina/src/http/open_questions.rs",
+    "lumina/src/http/findings.rs",
+    "lumina/src/http/activity.rs",
+    "lumina/src/http/context_blocks.rs",
+    "lumina/src/http/readiness.rs",
+]
+commits = ["9419d7e"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Split http.rs into http/ module; pre-declared 11 stubs; added DELETE /work-items/{id} + test."
+dedup_id = "59dc5213bbe119b3"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "phase-2-per-family-routes"
+summary = "Phase-2 per-family smoke tests written as in-file mod tests rather than lumina/tests/e2e.rs extensions"
+original_intent = "Per the plan, each Phase-2 task (T2-T5) was to extend lumina/tests/e2e.rs with one tokio test per family."
+rationale = "Four parallel implementer agents cannot safely append to the same e2e.rs file — file-ownership-is-absolute would have forced serialisation of T2/T3/T4/T5. Each agent instead wrote its smoke tests as a #[cfg(test)] mod tests block at the bottom of its own family file (the canonical pattern already used by lumina/src/http/work_items.rs). Test count unchanged (15 new tests across 11 files); coverage equivalent; parallelism preserved."
+dedup_id = "14154cf7542d6b3c"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "phase-2-per-family-routes"
+summary = "Folded pre-existing tier reader-path defect fix into Phase 2 (out of plan scope but blocked round-4 deliverable)"
+original_intent = "Round-4 plan scoped HTTP and FE only; no Rust read-path edits planned beyond per-family route handlers. Specifically repo.rs was out of scope."
+rationale = """T2's implementer surfaced that repo::list_work_items and repo::get_work_item_detail did NOT project the tier column added in migration 0006 — both hardcoded tier: None in their row->WorkItem mapping. PATCH /tier and PATCH /task-spec.tier would succeed on write but the re-fetch (which the FE PATCH return contract relies on) would silently return tier=null. Two-line fix per call site (project `tier AS "tier?"` in SELECT + read row.tier in mapping) directly unblocks the round-4 deliverable; deferring would propagate broken state into T7/T8a. Regenerated lumina/.sqlx/ offline cache to reflect updated query macros (cargo sqlx prepare -- --all-targets)."""
+dedup_id = "26448fd56e55fcb9"
