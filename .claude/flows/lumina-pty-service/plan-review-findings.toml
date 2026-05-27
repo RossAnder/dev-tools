@@ -1,0 +1,324 @@
+schema_version = 1
+last_updated = 2026-05-27
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 1. Add dependencies + write migration 0008 [S]"
+summary = "axum 0.8 ws feature is NOT in defaults — Task 1 deps incomplete; Tasks 9+12+16 will fail to compile"
+description = """axum 0.8 ships without the `ws` feature in its defaults (verified: lumina/Cargo.toml:22 has `axum = "0.8"` with no features). Tasks 9 (WebSocketUpgrade), 12 (browser WS opener — backend has to accept the upgrade), and 16 (tokio_tungstenite e2e) all require it. Task 1's acceptance only runs `cargo build` with no PTY usages yet, so the gap surfaces deep into Phase 3 instead of at the deps boundary."""
+anchor_old = """
+- **Action**: Add `portable-pty = "0.9"`, `vt100 = "0.16"`, `async-trait = "0.1"`
+  to `[dependencies]`. Write the migration SQL exactly as specified in the
+  Approach section's "Database schema" subsection."""
+anchor_new = """
+- **Action**: Add `portable-pty = "0.9"`, `vt100 = "0.16.2"`, `async-trait = "0.1"`,
+  and `bytes = "1"` to `[dependencies]`. Update the existing `axum = "0.8"` line to
+  `axum = { version = "0.8", features = ["ws"] }` (`ws` is NOT a default feature — verified
+  docs.rs/crate/axum/0.8.7/features). Also add `assert_cmd = "2"` and `tokio-tungstenite =
+  "0.24"` to `[dev-dependencies]` for the Task 16 e2e test. Write the migration SQL
+  exactly as specified in the Approach section's "Database schema" subsection."""
+dedup_id = "027cb8dd1d0138b3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "executability"
+plan_section = "### Phase 2: Backend implementation (parallel — 4 tasks, after Phase 1)"
+summary = "Tasks 4, 5, 6 (and Task 8) all list pty/mod.rs in Files — four concurrent agents editing same file = guaranteed merge conflict"
+description = "Plan Tasks 3, 4, 5, 6, 8 each include `lumina/src/pty/mod.rs` in their Files. The Dependency Graph claims Tasks 4, 5, 6, 7 are parallel-safe. Concurrent agents writing to mod.rs will clobber each other. Fix: Task 2 already writes mod.rs — pre-declare ALL `pub mod ...;` statements upfront (protocol/transport/pty_transport/parser/session/registry/queue/supervisor), and remove `pty/mod.rs` from the Files lists of Tasks 3, 4, 5, 6, 8. Each downstream task adds its own file content but does NOT touch mod.rs."
+anchor_old = """
+#### 2. Define PTY wire types in `pty/protocol.rs` [S]
+- **Files**: `lumina/src/pty/mod.rs`, `lumina/src/pty/protocol.rs`,
+  `lumina/src/lib.rs`"""
+anchor_new = """
+#### 2. Define PTY wire types in `pty/protocol.rs` + pre-declare full module tree [S]
+- **Files**: `lumina/src/pty/mod.rs`, `lumina/src/pty/protocol.rs`,
+  `lumina/src/lib.rs`
+- **Note**: Task 2 writes the COMPLETE pty/mod.rs upfront with all eight
+  `pub mod ...;` declarations (protocol, transport, pty_transport, parser,
+  session, registry, queue, supervisor) plus planned re-exports. Tasks 3, 4,
+  5, 6, 8 do NOT touch mod.rs — they only add content to their owned files."""
+dedup_id = "62b6e17cce59301e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "executability"
+plan_section = "### Phase 4: Frontend (parallel — 3 tasks, after Phase 3)"
+summary = "Heading says 'parallel — 3 tasks' but lists 4 tasks (12-15) and Dependency Graph says they are a sequential chain"
+description = "Phase 4 heading at the canonical plan position says 'parallel — 3 tasks' but the body lists Tasks 12, 13, 14, 15 (four tasks) and the Dependency Graph below explicitly describes them as 12→13→14→15 sequential. An implementer/dispatcher cannot tell whether to run them concurrently or serially."
+anchor_old = "### Phase 4: Frontend (parallel — 3 tasks, after Phase 3)"
+anchor_new = "### Phase 4: Frontend (sequential chain — 4 tasks 12→13→14→15, after Phase 3)"
+dedup_id = "ec31c745f91c494f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 16. Write integration test `tests/pty_e2e.rs` with stub binary [M]"
+summary = "assert_cmd, escargot, and tokio_tungstenite are NOT in dev-deps — Task 16 cannot run as written"
+description = "Verified lumina/Cargo.toml:85-101 contains only tower, rstest, pretty_assertions, proptest, insta in dev-deps. Task 16 explicitly names assert_cmd/escargot for stub-binary discovery AND tokio_tungstenite for the WebSocket client. None present. Additionally, Cargo does NOT auto-compile arbitrary .rs files under tests/fixtures/ — the stub binary needs an explicit [[bin]] manifest entry so the CARGO_BIN_EXE_pty_stub env var resolves, OR escargot's runtime build pattern. Pick one approach explicitly so the implementer doesn't have to choose."
+anchor_old = """
+- **Files**: `lumina/tests/pty_e2e.rs`,
+  `lumina/tests/fixtures/pty_stub.rs` (or compile inline via `escargot`)"""
+anchor_new = """
+- **Files**: `lumina/tests/pty_e2e.rs`, `lumina/tests/fixtures/pty_stub.rs`,
+  `lumina/Cargo.toml` (declare `[[bin]] name = "pty_stub" path = "tests/fixtures/pty_stub.rs"` so `env!("CARGO_BIN_EXE_pty_stub")` resolves)"""
+dedup_id = "77bfb549f7dff921"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "critical"
+category = "completeness"
+plan_section = "#### 15. Wire PTY view into `App.vue` layout [S]"
+summary = "Task 15 Files missing useHierarchy.ts (view union widening) and CenterToolbar.vue (toggle button)"
+description = "Verified lumina/web/src/composables/useHierarchy.ts:47 holds `const view = ref<'focus' | 'tree'>('focus')`. Adding a `'pty'` view mode requires widening this TS string-literal union in useHierarchy.ts AND adding the toggle button in CenterToolbar.vue:40-54 (which is where setView is wired today). Task 15 lists only App.vue — implementer will hit a TS compile error and have to discover the union site mid-implementation."
+anchor_old = """
+#### 15. Wire PTY view into `App.vue` layout [S]
+- **Files**: `lumina/web/src/App.vue`"""
+anchor_new = """
+#### 15. Wire PTY view into App.vue layout [S]
+- **Files**: `lumina/web/src/App.vue`,
+  `lumina/web/src/composables/useHierarchy.ts` (widen `view` union to `'focus' | 'tree' | 'pty'`),
+  `lumina/web/src/components/CenterToolbar.vue` (add the third view-toggle button)"""
+dedup_id = "7beab6ddd9fa07d7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "completeness"
+plan_section = "## Approach — Database schema (migration `0008_pty_sessions.sql`)"
+summary = "project_id FK to work_items needs a kind-check trigger (or rename to work_item_id) — precedent in migrations 0004/0005"
+description = """
+Plan's `pty_sessions.project_id TEXT REFERENCES work_items(id) ON DELETE SET NULL` correctly matches work_items.id TEXT (verified migrations/0001_init.sql) but a column CHECK cannot subquery sibling rows. Migrations 0004 (repo_links) and 0005 (task_dependencies) both use a BEFORE INSERT trigger to enforce that the referenced row has `kind='project'`. A PTY session FK'd to a non-project work_item slips through today.
+
+Fix: either add the trigger (mirror 0004's repo_links kind-check shape) or rename `project_id` → `work_item_id` and document that PTY sessions may attach to any kind."""
+dedup_id = "f01d331611149d7e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 10. Add MCP tools for PTY in `mcp.rs` [M]"
+summary = "mcp.rs test enumeration at 2459-2540 (advertised list + count) and 2647-2659 (read_only_hint) needs extending"
+description = "Verified lumina/src/mcp.rs:2461 `create_tool_writes_rows_and_lists_domain_tools` test enumerates every tool name and asserts `names.len() == 55`. Adding 6 PTY tools without updating both the enumerated list AND the total-count assertion will fail the test silently (the assertion would just need bumping to 61). The plan's Task 10 says nothing about touching the test enumeration. Additionally, `list_pty_sessions` + `get_pty_session` must appear in the `read_only_hint` loop at 2647-2659."
+anchor_old = "- **Acceptance**: `cargo build` + `cargo nextest run` clean."
+anchor_new = """
+- **Acceptance**: `cargo build` + `cargo nextest run` clean. Includes extending the
+  `create_tool_writes_rows_and_lists_domain_tools` enumeration at mcp.rs:2472-2538 with the 6
+  new PTY tool names AND bumping the total-count assertion at mcp.rs:2549 from 55 to 61.
+  `list_pty_sessions` and `get_pty_session` must appear in the read_only_hint loop at
+  mcp.rs:2647-2659."""
+dedup_id = "3b43130a2de82599"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope — Affected areas"
+summary = "lumina/CLAUDE.md HTTP routes section and MCP tool surface section need updating (and tool count stale)"
+description = "lumina/CLAUDE.md `## HTTP routes` enumerates every per-family module under /api and `## MCP tool surface` lists every tool family. Adding /api/pty/sessions and 6 MCP tools without updating these will leave the canonical surface description stale. Add a Phase 5 task or extend Task 17 to update these sections + the plugin's mcp/SKILL.md catalogue if PTY tools are user-facing."
+dedup_id = "3296f1b4ff0089c4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 4. Implement `PtyTransport` via `portable-pty` in `pty/pty_transport.rs` [M]"
+summary = "`bytes` crate not in Cargo.toml; Task 4 detail uses Bytes for PTY chunks"
+description = """Verified lumina/Cargo.toml has no `bytes` entry. Task 4 detail says 'pushing Bytes into an mpsc::Sender<Bytes>'. Either add `bytes = "1"` to deps (rolled into the P1 anchor patch above) or replace the Bytes references with Vec<u8> throughout the plan. Sister Approach §Transport abstraction also refers to Bytes."""
+dedup_id = "73ac3c0307a0224a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Dependency Graph"
+summary = "Task 7 introduces query!/query_as! macros and regenerates .sqlx — must run before Batch 3 to avoid stale-cache build failures in Tasks 9/10"
+description = "Task 7's own Detail explicitly says `.sqlx/` regeneration is needed. Tasks 9 (HTTP handlers) and 10 (MCP tools) will likely add more query!/query_as! macros that depend on Task 7's regenerated cache being in place. If Task 7 lands without the cache update, subsequent agents see stale-cache build failures. Move Task 7 to its own sequential gate before Batch 3."
+anchor_old = """
+Batch 2 (parallel): 4, 5, 6, 7        ; all depend on Phase 1 outputs
+Batch 3 (sequential after Batch 2): 8 ; integrates 4+5+6+7"""
+anchor_new = """
+Batch 2a (parallel): 4, 5, 6           ; all depend on Phase 1 outputs
+Batch 2b (sequential after 2a): 7      ; introduces query!/query_as! macros — regenerate `.sqlx/` cache and commit before any Phase 3 task starts
+Batch 3 (sequential after Batch 2b): 8 ; integrates 4+5+6+7"""
+dedup_id = "57d4a1ba52e536b6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "risk"
+plan_section = "#### 9. Implement HTTP family + WebSocket in `http/pty_sessions.rs` [M]"
+summary = "WS Origin allowlist incomplete (missing 127.0.0.1 / [::1]) and tower-http cors feature is not enabled — must hand-roll in handler"
+description = 'Task 9 detail names the allowlist as `http://localhost:<port>` + dev-server env. Browsers may emit `http://127.0.0.1:<port>` or `http://[::1]:<port>` for the same trust origin. Additionally, tower-http is configured with `features = ["fs"]` only (verified Cargo.toml:25) — no `cors`. The Origin check should be hand-rolled inside the WS upgrade handler; do NOT add the `cors` feature. Also worth a Risks-section caveat: Origin is browser-CSRF defence only — any local process can forge the Origin header.'
+anchor_old = """
+WebSocket Origin check: read `Origin` header; reject if
+  not in an allowlist (`http://localhost:<port>`, plus dev-server
+  origin if present in env)."""
+anchor_new = "WebSocket Origin check: read `Origin` header inside the WS upgrade handler (do NOT add tower-http's `cors` feature); reject if not in the allowlist `{http,https}://{localhost,127.0.0.1,[::1]}:<port>` plus dev-server origin if present in env. Note: Origin is browser-CSRF defence only — any local process can forge it. Trust model is the same localhost surface as the rest of lumina."
+dedup_id = "68c20125cef0ee81"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "executability"
+plan_section = "#### 5. Implement `vt100` parser + end-of-turn heuristic in `pty/parser.rs` [M]"
+summary = "Prompt regex marked 'empirical, document as a tunable' punts decisions to the implementer"
+description = '''Task 5 detail says: 'Prompt regex: start with literal `^\s*[>›❯]\s*$` or `^Human:\s*$` — empirical, document as a tunable.' Where does the tunable live? `SpawnConfig`? A const? Default value? Storage path? Plan must pick the default and the storage location so the implementer doesn't invent them. Cross-cutting: prompt regex fidelity also affects Task 16 (stub binary's chosen prompt) and Task 14 (manual 'advance queue' backstop button).'''
+anchor_old = '''
+Prompt regex: start with
+  literal `^\s*[>›❯]\s*$` or `^Human:\s*$` — empirical, document as
+  a tunable.'''
+anchor_new = '''Prompt regex: default is the compiled-once `Regex::new(r"^\s*[>›❯]\s*$|^Human:\s*$").unwrap()`, stored as a `Parser` field. Override via optional `prompt_pattern: Option<String>` on SpawnConfig (default None → use the built-in). The implementer does NOT verify against captured-real-claude fixtures in this plan; risk is accepted that the pattern may need post-launch tuning. The manual 'advance queue' UI button in Task 14 is the front-line backstop.'''
+dedup_id = "a3d9abd01e19bbe3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "completeness"
+plan_section = "## Risks"
+summary = "No `tracing` subscriber exists in lumina; PTY error paths need explicit `last_error` persistence discipline"
+description = "Verified `grep tracing lumina/src/` returns nothing — there is no logging subscriber today. Plan's Risks section mentions error handling generally but the per-task bodies (Tasks 4, 5, 6, 8) never specify the discipline. Without a log sink, supervisor errors are invisible unless they round-trip to `pty_sessions.last_error` + atomic status='failed' transition. Add a Constraint clarifying this and a one-line acceptance check on Tasks 4/5/6/8."
+dedup_id = "465403837cfdb7bd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "executability"
+plan_section = "#### 16. Write integration test `tests/pty_e2e.rs` with stub binary [M]"
+summary = "Acceptance 'run 3× locally' is not mechanically verifiable in CI"
+description = "Task 16 acceptance says 'passes consistently (run 3× locally to confirm no flake)'. A subjective human instruction; an automated /implement verification run cannot record this. Convert to a checkable contract: the test source must contain no `tokio::time::sleep`/fixed-duration waits (grep-checkable), AND the verification harness runs the test 3× in a row with no flake."
+anchor_old = "passes consistently (run 3× locally to confirm no flake). Coverage of session lifecycle:"
+anchor_new = "passes when invoked 3× in a row by the verification harness with `--retries 0`, AND `grep -E 'tokio::time::sleep|std::thread::sleep' lumina/tests/pty_e2e.rs` returns empty (test must be event-driven, never time-based). Coverage of session lifecycle:"
+dedup_id = "e0d62be0ae4adfa8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Migration 0008 is forward-only; rollback / project-delete UI handling not addressed"
+description = "lumina's migration chain (0001-0007) is forward-only. Once 0008 ships, feature back-out leaves three orphan tables in every user DB. Separately, `project_id ON DELETE SET NULL` means existing PTY sessions can suddenly have a NULL project — Task 14's PtyMessage / PtyConsole need to render that gracefully. Add a Risks entry and extend Task 14 acceptance to include null-project rendering."
+dedup_id = "94494ae17e367de6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Upstream Claude Code has open TTY-handling issues (#12507, #36156, #48440) — track before relying on long-lived PTY sessions"
+description = "GitHub anthropics/claude-code has multiple open issues touching the exact paths this plan exercises: #12507 (stdin consumed by shell-detection subprocesses), #36156 (Windows hook stdin classified as TTY when piped), #48440 (TTY handling). The Task 16 stub binary does NOT exercise these — manual smoke against a real `claude` binary is the only signal. Add a Risks entry that the parser-fragility risk is compounded by upstream TTY-handling bugs."
+dedup_id = "fd4de160f4683858"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P17"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Exploration Notes"
+summary = "db.rs cited line ranges are off — init is 43-64 (not 43-76); connect_in_memory is 88-90 (not 98-116)"
+description = "Cosmetic but confusing for future readers cross-checking the plan. Cited ranges overshoot into `begin_write` (73-75) and the test module. Functions themselves exist with matching signatures — no architectural impact."
+dedup_id = "485d958047762b5c"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P18"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### 3. Define `Transport` trait + handle types in `pty/transport.rs` [S]"
+summary = "async-trait correctly retained because registry holds Box<dyn Transport> — note this in Research Notes"
+description = "With 2026-vintage Rust (project rust-version 1.95), native `async fn` in traits would suffice for STATIC dispatch only. The plan's Approach §Background supervisor wire-up explicitly uses `Box<dyn Transport>` (dynamic dispatch) so async-trait IS needed. Add a one-line Research Note: 'async-trait retained because registry holds Box<dyn Transport>; a future enum-dispatch refactor could drop it.'"
+dedup_id = "892a20d736f03583"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Research Notes"
+summary = "vt100 crate maintenance signal is mixed — ChrisTitusTech/vt100-rust fork exists; pin to 0.16.2"
+description = "vt100 0.16.2 (2025-10-24) is current but a community fork named 'fix functionality on abandoned vt100 crate' exists, implying perceived abandonment. The 2025-10 release argues the original is still alive but the signal is mixed. Pin to 0.16.2 explicitly; note in Risks. Pre-implementation: confirm `vt100::Screen::rows_formatted` (or equivalent) exists on 0.16.2 before T5 starts."
+dedup_id = "149839f8ec04be5d"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P20"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 1. Add dependencies + write migration 0008 [S]"
+summary = "Effort tag could be M not S — version-research + 50-line migration with three tables + multiple indexes/FKs sits at the boundary"
+description = """Task 1 Detail says 'Confirm portable-pty 0.9.x latest on crates.io; pin if a newer minor exists. vt100 = "0.16" per latest doc check; verify via cargo search vt100' — version-research is open-ended. Touching Cargo.toml + writing the migration sits at S/M boundary. If P1's anchor patch is accepted (also touches axum line + adds dev-deps), it shifts firmly into M. Either tag M or strip the live-research instruction and treat the pins as authoritative."""
+dedup_id = "7d971600fa62fed0"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P21"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 11. Wire supervisor + registry into `app.rs` [S]"
+summary = "Specify exact insertion point — mirror the export::spawn call site at app.rs:82-107"
+description = "Task 11 says 'follow the export.rs ExportHandle pattern' but doesn't name the line. Minor friction; cross-reference is in the Approach section. Inline the line reference for the implementer."
+dedup_id = "616f34ddf3eb18f0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P22"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 13. Implement composables for PTY sessions [M]"
+summary = "Name the bun test mirror file path so implementer doesn't have to hunt"
+description = "Task 13 says 'add at least one bun unit test exercising select → history load → message append'. Existing tests live under `lumina/web/src/__tests__/` (e.g. `__tests__/readiness.test.ts`). Name the target path: `lumina/web/src/__tests__/pty-session.test.ts`."
+dedup_id = "98600885715d28c2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P23"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 10. Add MCP tools for PTY in `mcp.rs` [M]"
+summary = "Reuse only existing AppError variants — error.rs is Task 9's exclusive surface"
+description = "Task 10 (MCP) and Task 9 (HTTP) are nominally parallel but both could need an AppError variant. Approach §MCP doesn't mention error variants — implying Task 10 reuses. State this explicitly so an implementer doesn't add a new variant racing Task 9's error.rs edits. AppError::{Validation, NotFound} should suffice for the MCP layer."
+dedup_id = "c324e27404784ccd"

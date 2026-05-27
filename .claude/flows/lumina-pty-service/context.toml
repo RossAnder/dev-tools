@@ -1,0 +1,21 @@
+slug = "lumina-pty-service"
+plan_path = "docs/plans/lumina-pty-service.md"
+status = "in-progress"
+created = 2026-05-27
+updated = 2026-05-27
+branch = "main"
+scope = [
+    "lumina/**",
+    "docs/plans/lumina-pty-service.md",
+]
+
+[tasks]
+total = 17
+completed = 0
+in_progress = 2
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-pty-service/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-pty-service/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-pty-service/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-pty-service/plan-review-findings.toml"

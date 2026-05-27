@@ -26,3 +26,4 @@ pub mod assets;
 pub mod mcp;
 pub mod export;
 pub mod import;
+pub mod pty;

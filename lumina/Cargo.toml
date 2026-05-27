@@ -19,11 +19,26 @@ path = "src/main.rs"
 
 [dependencies]
 # --- web / runtime ---
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs"] }
 tokio-util = "0.7"                                  # CancellationToken for the export-loop shutdown seam (Task 6)
+
+# --- PTY supervisor (interactive `claude` REPL sessions, migration 0008) ---
+# portable-pty gives cross-platform PTY (Unix98 + Windows ConPTY) with a
+# synchronous Read/Write API bridged to tokio via spawn_blocking workers.
+# vt100 maintains a virtual screen we *don't render* — we only use it to
+# extract typed message blocks (assistant text, tool-call, prompt) from
+# Claude's interactive TUI byte stream. async-trait gives the Transport
+# trait async methods so PtyTransport / future AcpTransport can both
+# satisfy the same shape. bytes is the standard zero-copy buffer type
+# used on the read/write channels between the blocking PTY workers and
+# the parser pipeline.
+portable-pty = "0.9"
+vt100 = "0.16.2"
+async-trait = "0.1"
+bytes = "1"
 
 # --- persistence ---
 # PINNED to 0.9, NOT the plan's 0.8: the installed sqlx-cli is 0.9.0 and the
@@ -99,6 +114,13 @@ rstest = "0.26"
 pretty_assertions = "1.4"
 proptest = "1"
 insta = "1.47"
+
+# PTY e2e test (Task 16): assert_cmd drives a stub `claude`-replacement binary
+# fixture (no real claude required); tokio-tungstenite drives the WebSocket
+# endpoint as a client. Both are dev-only — neither is reachable from the
+# library or binary crate.
+assert_cmd = "2"
+tokio-tungstenite = "0.24"
 
 [profile.release]
 opt-level = 3
