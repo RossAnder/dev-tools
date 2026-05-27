@@ -78,3 +78,32 @@ export async function handle<T>(res: Response, schema?: z.ZodType<T>): Promise<T
   }
   return parsed.data
 }
+
+/**
+ * Variant of {@link handle} for routes whose success body is empty (204 No
+ * Content, or a 200 with no JSON body). Returns `void` on success; on a
+ * non-2xx, performs the same best-effort error-envelope extraction as
+ * `handle<T>` (200-char message clamp, fallback to `"<status> <statusText>"`)
+ * and throws `Error('API request failed: ...')`.
+ *
+ * Round-4 R9: extracted from six DELETE wrappers that each inlined a ~14-line
+ * copy of this block (`removeAcceptanceCriterion`, `removeRisk`,
+ * `removeRejectedAlternative`, `removeRepoLink`, `unlinkContextBlock`,
+ * `removeTaskDependency`). Centralising it keeps the error-message clamp +
+ * envelope-parse contract consistent across the no-body family.
+ */
+export async function handleVoid(res: Response): Promise<void> {
+  if (res.ok) return
+  let detail = `${res.status} ${res.statusText}`
+  try {
+    const raw: unknown = await res.json()
+    const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
+    if (parsed.success && parsed.data.error?.message) {
+      const message = parsed.data.error.message
+      detail = message.length > 200 ? message.slice(0, 197) + '…' : message
+    }
+  } catch {
+    // non-JSON error body — keep the status line
+  }
+  throw new Error(`API request failed: ${detail}`)
+}

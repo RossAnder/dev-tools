@@ -20,6 +20,7 @@
 import * as z from 'zod'
 
 import { API_BASE, handle } from './http'
+import type { ActivityType } from './wire-enums'
 
 // Re-export — see file-level comment.
 export {
@@ -32,13 +33,13 @@ const RecordActivityResponseSchema = z.object({ ok: z.literal(true) })
 
 /**
  * Wire body for `POST /api/work-items/{id}/activity`. Mirrors the backend's
- * `AppendActivityBody` (lumina/src/http/activity.rs) — `entry_kind` is free
- * TEXT validated server-side by `repo::validate_entry_kind`, NOT this layer.
- * `body` and `ref_id` are top-level wire fields here; the backend folds them
- * into the persisted `payload` JSON object on its end.
+ * `AppendActivityBody` (lumina/src/http/activity.rs). `entry_kind` is closed
+ * to the 9-value `ActivityType` enum (matching `repo::validate_entry_kind`'s
+ * allowlist). `body` and `ref_id` are top-level wire fields here; the backend
+ * folds them into the persisted `payload` JSON object on its end.
  */
 export interface RecordActivityBody {
-  entry_kind: string
+  entry_kind: ActivityType
   by?: string
   summary: string
   body?: string

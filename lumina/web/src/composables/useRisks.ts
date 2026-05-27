@@ -13,6 +13,7 @@
 import { ref } from 'vue'
 import * as productionApi from '@/api'
 import type { Risk } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
 /** See {@link import('./useHierarchy').Result} for the design rationale. */
 export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
@@ -21,7 +22,7 @@ export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error:
 // Module-singleton state.
 // ---------------------------------------------------------------------------
 
-const currentWorkItemRisks = ref<Risk[]>([])
+const items = ref<Risk[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -51,7 +52,7 @@ export function __setApiForTests(override: Partial<Api>): void {
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
 export function __resetForTests(): void {
-  currentWorkItemRisks.value = []
+  items.value = []
   loading.value = false
   error.value = null
   api = {
@@ -73,7 +74,7 @@ async function refresh(workItemId: string): Promise<Risk[]> {
   // already, but keep the guard so a pre-deploy cache without the field
   // resolves cleanly.
   const risks = detail.risks ?? []
-  currentWorkItemRisks.value = risks
+  items.value = risks
   return risks
 }
 
@@ -87,11 +88,11 @@ function toMessage(e: unknown): string {
 
 export function useRisks() {
   /**
-   * Seed `currentWorkItemRisks` for a work item without performing a
-   * mutation. Call from a panel's `onMounted` / `watch(workItemId)` so the
-   * singleton reflects the focused work item's risk register.
+   * Seed `items` for a work item without performing a mutation. Call from a
+   * panel's `onMounted` / `watch(workItemId)` so the singleton reflects the
+   * focused work item's risk register.
    */
-  async function bindWorkItem(workItemId: string): Promise<Result<Risk[]>> {
+  async function bind(workItemId: string): Promise<Result<Risk[]>> {
     loading.value = true
     error.value = null
     try {
@@ -115,6 +116,7 @@ export function useRisks() {
     try {
       const created = await api.addRisk(workItemId, body)
       await refresh(workItemId)
+      await useHierarchy().refresh(workItemId)
       return { ok: true, value: created.id }
     } catch (e) {
       const message = toMessage(e)
@@ -135,6 +137,7 @@ export function useRisks() {
     try {
       await api.updateRisk(riskId, patch)
       await refresh(workItemId)
+      await useHierarchy().refresh(workItemId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -155,6 +158,7 @@ export function useRisks() {
     try {
       const result = await api.supersedeRisk(oldId, body)
       await refresh(workItemId)
+      await useHierarchy().refresh(workItemId)
       return { ok: true, value: result.id }
     } catch (e) {
       const message = toMessage(e)
@@ -171,6 +175,7 @@ export function useRisks() {
     try {
       await api.removeRisk(riskId)
       await refresh(workItemId)
+      await useHierarchy().refresh(workItemId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -181,14 +186,20 @@ export function useRisks() {
     }
   }
 
+  /** Clear `error.value` — for the UI's "dismiss banner" button. */
+  function clearError(): void {
+    error.value = null
+  }
+
   return {
-    currentWorkItemRisks,
+    items,
     loading,
     error,
-    bindWorkItem,
+    bind,
     add,
     update,
     supersede,
     remove,
+    clearError,
   }
 }

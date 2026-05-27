@@ -168,8 +168,8 @@ test('useResearchNotes.add calls api and refreshes parent', async () => {
 
   expect(addMock.mock.calls[0]).toEqual(['s-1', { summary: 'fresh', confidence: 'high' }])
   expect(result.ok).toBe(true)
-  expect(rn.currentParentNotes.value).toHaveLength(1)
-  expect(rn.currentParentNotes.value[0].id).toBe('rn-new')
+  expect(rn.items.value).toHaveLength(1)
+  expect(rn.items.value[0].id).toBe('rn-new')
 })
 
 test('useResearchNotes.update seeds from response detail (no refresh fetch)', async () => {
@@ -187,7 +187,7 @@ test('useResearchNotes.update seeds from response detail (no refresh fetch)', as
   expect(result.ok).toBe(true)
   // update doesn't refresh — fetchDetail must NOT have been called.
   expect(fetchDetailMock).not.toHaveBeenCalled()
-  expect(rn.currentParentNotes.value[0].state).toBe('rejected')
+  expect(rn.items.value[0].state).toBe('rejected')
 })
 
 // ---------------------------------------------------------------------------
@@ -200,11 +200,11 @@ test('__resetForTests clears notes + state', async () => {
   })
   const rn = useResearchNotes()
   await rn.update('rn-1', { confidence: 'high' })
-  expect(rn.currentParentNotes.value).toHaveLength(1)
+  expect(rn.items.value).toHaveLength(1)
 
   __resetForTests()
   const after = useResearchNotes()
-  expect(after.currentParentNotes.value).toEqual([])
+  expect(after.items.value).toEqual([])
   expect(after.loading.value).toBe(false)
   expect(after.error.value).toBeNull()
 })

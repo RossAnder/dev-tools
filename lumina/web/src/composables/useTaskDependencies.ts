@@ -6,8 +6,7 @@
 //   1. The bound aggregate is STORY-scoped, not work-item-scoped — every
 //      edge under a story is owned by its two task endpoints, but the
 //      story's `task_dependencies` slice on the detail endpoint is the
-//      canonical read surface. The `bindStory()` method seeds the
-//      singleton.
+//      canonical read surface. The `bind()` method seeds the singleton.
 //
 //   2. The mutating actions surface a structured CYCLE error (with the
 //      offending `edges` from the server's Kahn residue) alongside the
@@ -21,6 +20,7 @@
 import { ref } from 'vue'
 import * as productionApi from '@/api'
 import type { CycleError, CycleOrError, TaskDependency, TaskDependencyKind } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
 /** See {@link import('./useHierarchy').Result} for the design rationale. */
 export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
@@ -31,10 +31,15 @@ export type { CycleError, CycleOrError } from '@/api'
 
 // ---------------------------------------------------------------------------
 // Module-singleton state.
+//
+// Two collection refs because this composable's bound aggregate is two-part:
+// the raw edge list (`dependencies`) and the Kahn batches (`batches`). The
+// canonical "items" naming used by the other family composables would be
+// ambiguous here, so we keep two domain-specific ref names.
 // ---------------------------------------------------------------------------
 
-const currentStoryDependencies = ref<TaskDependency[]>([])
-const currentStoryBatches = ref<string[][]>([])
+const dependencies = ref<TaskDependency[]>([])
+const batches = ref<string[][]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 /**
@@ -69,8 +74,8 @@ export function __setApiForTests(override: Partial<Api>): void {
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
 export function __resetForTests(): void {
-  currentStoryDependencies.value = []
-  currentStoryBatches.value = []
+  dependencies.value = []
+  batches.value = []
   loading.value = false
   error.value = null
   cycleError.value = null
@@ -114,18 +119,17 @@ function projectCycleOrError(e: CycleOrError): string {
 
 export function useTaskDependencies() {
   /**
-   * Seed `currentStoryDependencies` from the list endpoint. Use this
-   * variant when only the edge list is needed (e.g. a deps panel) — does
-   * NOT compute batches. Call `refreshBatches(storyId)` separately if both
-   * are needed.
+   * Seed `dependencies` from the list endpoint. Use this variant when only
+   * the edge list is needed (e.g. a deps panel) — does NOT compute batches.
+   * Call `refreshBatches(storyId)` separately if both are needed.
    */
-  async function bindStory(storyId: string): Promise<Result<TaskDependency[]>> {
+  async function bind(storyId: string): Promise<Result<TaskDependency[]>> {
     loading.value = true
     error.value = null
     cycleError.value = null
     try {
       const edges = await api.listTaskDependencies(storyId)
-      currentStoryDependencies.value = edges
+      dependencies.value = edges
       return { ok: true, value: edges }
     } catch (e) {
       const message = toMessage(e)
@@ -154,7 +158,7 @@ export function useTaskDependencies() {
         projectCycleOrError(result.error)
         return result
       }
-      currentStoryBatches.value = result.value
+      batches.value = result.value
       return { ok: true, value: result.value }
     } catch (e) {
       const message = toMessage(e)
@@ -175,9 +179,14 @@ export function useTaskDependencies() {
    * compute, per the repo's lazy-cycle-check) surfaces immediately on the
    * singleton refs.
    *
-   * The cycle-aware failure arm fires when EITHER the add OR the
-   * downstream batch-compute returns a cycle envelope — they are folded
-   * into the same `Result` so consumers handle one path.
+   * Cycle handling lives entirely on the downstream `computeTaskBatches`
+   * arm: the POST insert never raises `AppError::Cycle` (the repo PRE-CHECK
+   * is only kind=task + non-self-loop — see
+   * `lumina/src/http/task_dependencies.rs::block_task_on_task_handler`),
+   * so any cycle introduced by THIS edge surfaces lazily on the batch
+   * recompute. Round-4 R13 simplified the wrapper's return shape: the
+   * insert path now throws generic errors via `handle<T>` instead of
+   * returning a never-occurring cycle-Result arm.
    */
   async function addEdge(
     storyId: string,
@@ -189,14 +198,10 @@ export function useTaskDependencies() {
     error.value = null
     cycleError.value = null
     try {
-      const added = await api.addTaskDependency(taskId, dependsOnId, kind)
-      if (!added.ok) {
-        projectCycleOrError(added.error)
-        return added
-      }
+      await api.addTaskDependency(taskId, dependsOnId, kind)
       // Refresh the edge list so the panel reflects the new row.
       try {
-        currentStoryDependencies.value = await api.listTaskDependencies(storyId)
+        dependencies.value = await api.listTaskDependencies(storyId)
       } catch (e) {
         // A failure to refresh the read shouldn't undo the successful
         // mutation; surface the message on the singleton but keep the
@@ -204,12 +209,13 @@ export function useTaskDependencies() {
         error.value = toMessage(e)
       }
       // Recompute batches — a cycle introduced by this edge surfaces here.
-      const batches = await api.computeTaskBatches(storyId)
-      if (!batches.ok) {
-        projectCycleOrError(batches.error)
-        return { ok: false, error: batches.error }
+      const result = await api.computeTaskBatches(storyId)
+      if (!result.ok) {
+        projectCycleOrError(result.error)
+        return { ok: false, error: result.error }
       }
-      currentStoryBatches.value = batches.value
+      batches.value = result.value
+      await useHierarchy().refresh(storyId)
       return { ok: true, value: true }
     } catch (e) {
       const message = toMessage(e)
@@ -234,16 +240,17 @@ export function useTaskDependencies() {
     try {
       await api.removeTaskDependency(taskId, dependsOnId)
       // Refresh both list + batches so the panel reflects the drop.
-      currentStoryDependencies.value = await api.listTaskDependencies(storyId)
-      const batches = await api.computeTaskBatches(storyId)
-      if (batches.ok) {
-        currentStoryBatches.value = batches.value
+      dependencies.value = await api.listTaskDependencies(storyId)
+      const result = await api.computeTaskBatches(storyId)
+      if (result.ok) {
+        batches.value = result.value
       } else {
         // Cycle on a non-cycle-introducing op means the graph was already
         // cyclic — surface as a structured cycleError but return success
         // for the DELETE itself (the row IS gone).
-        projectCycleOrError(batches.error)
+        projectCycleOrError(result.error)
       }
+      await useHierarchy().refresh(storyId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -254,15 +261,22 @@ export function useTaskDependencies() {
     }
   }
 
+  /** Clear `error.value` and `cycleError.value` — for the UI's "dismiss banner" button. */
+  function clearError(): void {
+    error.value = null
+    cycleError.value = null
+  }
+
   return {
-    currentStoryDependencies,
-    currentStoryBatches,
+    dependencies,
+    batches,
     loading,
     error,
     cycleError,
-    bindStory,
+    bind,
     refreshBatches,
     addEdge,
     removeEdge,
+    clearError,
   }
 }

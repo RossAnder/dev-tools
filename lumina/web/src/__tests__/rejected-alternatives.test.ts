@@ -149,7 +149,7 @@ test('useRejectedAlternatives.add calls api and refreshes', async () => {
   expect(addMock).toHaveBeenCalledTimes(1)
   expect(addMock.mock.calls[0][0]).toBe('s-1')
   expect(result.ok).toBe(true)
-  expect(alts.currentWorkItemAlternatives.value).toHaveLength(1)
+  expect(alts.items.value).toHaveLength(1)
 })
 
 test('useRejectedAlternatives.remove refreshes after delete', async () => {
@@ -161,13 +161,13 @@ test('useRejectedAlternatives.remove refreshes after delete', async () => {
   })
 
   const alts = useRejectedAlternatives()
-  alts.currentWorkItemAlternatives.value = [rejectedAlternative()] as never
+  alts.items.value = [rejectedAlternative()] as never
   const result = await alts.remove('s-1', 'ra-1')
 
   expect(removeMock.mock.calls[0]).toEqual(['ra-1'])
   expect(fetchDetailMock).toHaveBeenCalledTimes(1)
   expect(result.ok).toBe(true)
-  expect(alts.currentWorkItemAlternatives.value).toEqual([])
+  expect(alts.items.value).toEqual([])
 })
 
 // ---------------------------------------------------------------------------
@@ -176,11 +176,11 @@ test('useRejectedAlternatives.remove refreshes after delete', async () => {
 
 test('__resetForTests clears alternatives + state', async () => {
   const alts = useRejectedAlternatives()
-  alts.currentWorkItemAlternatives.value = [rejectedAlternative()] as never
+  alts.items.value = [rejectedAlternative()] as never
 
   __resetForTests()
   const after = useRejectedAlternatives()
-  expect(after.currentWorkItemAlternatives.value).toEqual([])
+  expect(after.items.value).toEqual([])
   expect(after.loading.value).toBe(false)
   expect(after.error.value).toBeNull()
 })

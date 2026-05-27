@@ -10,3 +10,57 @@ summary = "Flow status transition: draft -> in-progress"
 from_status = "draft"
 to_status = "in-progress"
 dedup_id = "1d4ee25772131129"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "add-dependencies-write-migration-0008"
+status = "done"
+files = [
+    "lumina/Cargo.toml",
+    "lumina/migrations/0008_pty_sessions.sql",
+]
+commits = ["6475e78"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Added portable-pty/vt100/async-trait/bytes deps + axum ws feature + dev-deps assert_cmd/tokio-tungstenite; created migration 0008 (3 tables + 4 indexes + 2 triggers)"
+dedup_id = "26eab550eaeb12da"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "define-pty-wire-types"
+status = "done"
+files = [
+    "lumina/src/lib.rs",
+    "lumina/src/pty/mod.rs",
+    "lumina/src/pty/protocol.rs",
+    "lumina/src/pty/transport.rs",
+    "lumina/src/pty/pty_transport.rs",
+    "lumina/src/pty/parser.rs",
+    "lumina/src/pty/session.rs",
+    "lumina/src/pty/registry.rs",
+    "lumina/src/pty/queue.rs",
+    "lumina/src/pty/supervisor.rs",
+]
+commits = ["6475e78"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Frozen pty/ module tree with 8 sub-module declarations + stubs; protocol.rs defines SessionId/SessionStatus/MessageKind/TypedMessage/InputFrame/InputKind"
+dedup_id = "9a974e45a25a72cf"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "define-pty-wire-types"
+summary = "TypedMessage.created_at uses String, not jiff::Timestamp"
+original_intent = "Plan recommended jiff::Timestamp for TypedMessage.created_at to align with export.rs usage"
+rationale = "jiff = 0.2 in Cargo.toml does NOT have the serde feature enabled, and Cargo.toml ownership was held by T1 in the same parallel batch. Independently, domain.rs convention for every row struct is `created_at: String` ('timestamps are CURRENT_TIMESTAMP strings'). String matches the codebase-wide convention and is serde-compatible without changing deps. T8 supervisor will mint timestamps via jiff::Timestamp::now().to_string() per existing export.rs pattern."
+commits = ["6475e78"]
+dedup_id = "96358627513b5232"

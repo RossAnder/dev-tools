@@ -16,6 +16,7 @@
 import { ref } from 'vue'
 import * as productionApi from '@/api'
 import type { RepoLink } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
 /** See {@link import('./useHierarchy').Result} for the design rationale. */
 export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
@@ -24,7 +25,7 @@ export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error:
 // Module-singleton state.
 // ---------------------------------------------------------------------------
 
-const currentProjectLinks = ref<RepoLink[]>([])
+const items = ref<RepoLink[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -52,7 +53,7 @@ export function __setApiForTests(override: Partial<Api>): void {
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
 export function __resetForTests(): void {
-  currentProjectLinks.value = []
+  items.value = []
   loading.value = false
   error.value = null
   api = {
@@ -65,7 +66,7 @@ export function __resetForTests(): void {
 
 // ---------------------------------------------------------------------------
 // Internal: refresh the singleton from the work-item detail endpoint.
-// Used by every mutator AND by `bindProject` (the panel's onMounted entry).
+// Used by every mutator AND by `bind` (the panel's onMounted entry).
 // ---------------------------------------------------------------------------
 
 async function refresh(projectId: string): Promise<RepoLink[]> {
@@ -75,7 +76,7 @@ async function refresh(projectId: string): Promise<RepoLink[]> {
   // applies `.optional().default([])` so a pre-deploy cache without the field
   // resolves to []. Either way the assignment is safe.
   const links = detail.repo_links ?? []
-  currentProjectLinks.value = links
+  items.value = links
   return links
 }
 
@@ -89,11 +90,11 @@ function toMessage(e: unknown): string {
 
 export function useRepoLinks() {
   /**
-   * Seed `currentProjectLinks` for a project, without performing a mutation.
-   * Call this from a panel's `onMounted` / `watch(projectId)` so the singleton
-   * reflects the focused project's link set.
+   * Seed `items` for a project, without performing a mutation. Call this from
+   * a panel's `onMounted` / `watch(projectId)` so the singleton reflects the
+   * focused project's link set.
    */
-  async function bindProject(projectId: string): Promise<Result<RepoLink[]>> {
+  async function bind(projectId: string): Promise<Result<RepoLink[]>> {
     loading.value = true
     error.value = null
     try {
@@ -118,6 +119,7 @@ export function useRepoLinks() {
     try {
       const created = await api.addRepoLink(projectId, slug, isPrimary)
       await refresh(projectId)
+      await useHierarchy().refresh(projectId)
       return { ok: true, value: created.id }
     } catch (e) {
       const message = toMessage(e)
@@ -134,6 +136,7 @@ export function useRepoLinks() {
     try {
       await api.removeRepoLink(projectId, id)
       await refresh(projectId)
+      await useHierarchy().refresh(projectId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -150,6 +153,7 @@ export function useRepoLinks() {
     try {
       await api.setPrimaryRepo(projectId, id)
       await refresh(projectId)
+      await useHierarchy().refresh(projectId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -160,13 +164,19 @@ export function useRepoLinks() {
     }
   }
 
+  /** Clear `error.value` — for the UI's "dismiss banner" button. */
+  function clearError(): void {
+    error.value = null
+  }
+
   return {
-    currentProjectLinks,
+    items,
     loading,
     error,
-    bindProject,
+    bind,
     add,
     remove,
     setPrimary,
+    clearError,
   }
 }

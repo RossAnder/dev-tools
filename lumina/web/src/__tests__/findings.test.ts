@@ -1,7 +1,7 @@
 // Bun tests for the `findings` wire family + `useFindings` composable.
 //
 // Round-4 T12b. Covers the four wrappers: addFinding / updateFinding /
-// resolveFinding / supersedeFinding, and the composable's bindItem / add /
+// resolveFinding / supersedeFinding, and the composable's bind / add /
 // update / resolve / supersede mutators.
 //
 // `resolveFinding` body carries a typed `disposition` in snake_case wire form —
@@ -269,8 +269,8 @@ describe('useFindings (mocked api adapter)', () => {
     if (result.ok) expect(result.value).toBe('f-new')
     expect(addCalled).toBe(true)
     expect(fetchDetailCalled).toBe(true)
-    expect(composable.currentItemFindings.value).toHaveLength(1)
-    expect(composable.currentItemFindings.value[0]!.id).toBe('f-new')
+    expect(composable.items.value).toHaveLength(1)
+    expect(composable.items.value[0]!.id).toBe('f-new')
   })
 
   test('update sets error.value on a thrown wrapper failure', async () => {
@@ -311,7 +311,7 @@ describe('useFindings (mocked api adapter)', () => {
     const composable = useFindings()
     const result = await composable.supersede('wi-1', 'f-old', 'f-new')
     expect(result.ok).toBe(true)
-    expect(composable.currentItemFindings.value[0]!.superseded_by).toBe('f-new')
+    expect(composable.items.value[0]!.superseded_by).toBe('f-new')
   })
 })
 
@@ -320,7 +320,7 @@ describe('useFindings (mocked api adapter)', () => {
 // ---------------------------------------------------------------------------
 
 describe('useFindings __resetForTests', () => {
-  test('clears currentItemFindings and error after a previous run', async () => {
+  test('clears items and error after a previous run', async () => {
     __setApiForTests({
       addFinding: async () => {
         throw new Error('seed-error')
@@ -335,6 +335,6 @@ describe('useFindings __resetForTests', () => {
 
     const fresh = useFindings()
     expect(fresh.error.value).toBeNull()
-    expect(fresh.currentItemFindings.value).toEqual([])
+    expect(fresh.items.value).toEqual([])
   })
 })

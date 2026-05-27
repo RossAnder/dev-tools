@@ -377,3 +377,51 @@ dispatch_tier = "deep"
 dispatch_agent = "flow-implement-deep"
 summary = "T12b: 5 bun-test files, 86 new tests. Cycle-422 parse showcase for task-deps. NextAction enum exhaustiveness via test.each over 16 variants."
 dedup_id = "e5f7c1a8974fd0f1"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "update-claude-md-route-catalogue-plugin-skill-md-backlink"
+status = "done"
+files = [
+    "lumina/CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+    "CLAUDE.md",
+]
+commits = ["bc8728f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T13: added ## HTTP routes catalogue to lumina/CLAUDE.md, MCP SKILL.md backlink, repo-root CLAUDE.md cross-reference. Skipped lumina/web/CLAUDE.md per documented judgment call."
+dedup_id = "66bab691db75ed5e"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-05-27
+agent = "implement"
+summary = "bun test 159/159 pass"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "c9d8e28d9084cb1f"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-05-27
+agent = "implement"
+summary = "npm run build (vue-tsc + vite) clean"
+command = "cd lumina/web && npm run build"
+outcome = "pass"
+dedup_id = "167965fd2281ec56"
+
+[[items]]
+id = "E26"
+type = "status-transition"
+date = 2026-05-27
+agent = "plan-update"
+summary = "Round-4 complete: 38 routes + 12 composables + 141 new tests landed; transitioning in-progress -> review for /review + /optimise"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "402b8b0f8bbb573b"

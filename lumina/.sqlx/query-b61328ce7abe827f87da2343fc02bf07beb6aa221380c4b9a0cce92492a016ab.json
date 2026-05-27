@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO pty_queue (\n                id, session_id, sequence, input_kind, payload, enqueued_at, status\n            )\n            VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "b61328ce7abe827f87da2343fc02bf07beb6aa221380c4b9a0cce92492a016ab"
+}

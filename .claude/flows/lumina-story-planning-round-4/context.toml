@@ -1,6 +1,6 @@
 slug = "lumina-story-planning-round-4"
 plan_path = "docs/plans/lumina-story-planning-round-4.md"
-status = "in-progress"
+status = "review"
 created = 2026-05-27
 updated = 2026-05-27
 branch = "main"
@@ -11,8 +11,8 @@ scope = [
 
 [tasks]
 total = 16
-completed = 0
-in_progress = 1
+completed = 15
+in_progress = 0
 
 [artifacts]
 review_ledger = ".claude/flows/lumina-story-planning-round-4/review-ledger.toml"

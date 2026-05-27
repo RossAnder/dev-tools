@@ -21,7 +21,7 @@
 
 import * as z from 'zod'
 
-import { API_BASE, ApiErrorEnvelopeSchema, handle } from './http'
+import { API_BASE, handle, handleVoid } from './http'
 
 // Re-export — see file-level comment.
 export {
@@ -45,6 +45,9 @@ const OkResponseSchema = z.object({ ok: z.literal(true) })
 export interface CreateContextBlockBody {
   title?: string
   body?: string
+  /**
+   * @deprecated Currently ignored server-side — pending future migration. Setting this field has no effect on the persisted row.
+   */
   kind?: string
 }
 
@@ -101,18 +104,5 @@ export async function unlinkContextBlock(
     `${API_BASE}/work-items/${encodeURIComponent(workItemId)}/context-blocks/${encodeURIComponent(contextBlockId)}`,
     { method: 'DELETE' },
   )
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const raw: unknown = await res.json()
-      const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
-      if (parsed.success && parsed.data.error?.message) {
-        const message = parsed.data.error.message
-        detail = message.length > 200 ? message.slice(0, 197) + '…' : message
-      }
-    } catch {
-      // non-JSON error body — keep the status line
-    }
-    throw new Error(`API request failed: ${detail}`)
-  }
+  return handleVoid(res)
 }

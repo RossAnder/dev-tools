@@ -7,6 +7,7 @@
 import { ref } from 'vue'
 import * as productionApi from '@/api'
 import type { RejectedAlternative } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
 /** See {@link import('./useHierarchy').Result} for the design rationale. */
 export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
@@ -15,7 +16,7 @@ export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error:
 // Module-singleton state.
 // ---------------------------------------------------------------------------
 
-const currentWorkItemAlternatives = ref<RejectedAlternative[]>([])
+const items = ref<RejectedAlternative[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -45,7 +46,7 @@ export function __setApiForTests(override: Partial<Api>): void {
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
 export function __resetForTests(): void {
-  currentWorkItemAlternatives.value = []
+  items.value = []
   loading.value = false
   error.value = null
   api = {
@@ -64,7 +65,7 @@ export function __resetForTests(): void {
 async function refresh(workItemId: string): Promise<RejectedAlternative[]> {
   const detail = await api.fetchDetail(workItemId)
   const alternatives = detail.rejected_alternatives ?? []
-  currentWorkItemAlternatives.value = alternatives
+  items.value = alternatives
   return alternatives
 }
 
@@ -77,7 +78,7 @@ function toMessage(e: unknown): string {
 // ---------------------------------------------------------------------------
 
 export function useRejectedAlternatives() {
-  async function bindWorkItem(
+  async function bind(
     workItemId: string,
   ): Promise<Result<RejectedAlternative[]>> {
     loading.value = true
@@ -103,6 +104,7 @@ export function useRejectedAlternatives() {
     try {
       const created = await api.addRejectedAlternative(workItemId, body)
       await refresh(workItemId)
+      await useHierarchy().refresh(workItemId)
       return { ok: true, value: created.id }
     } catch (e) {
       const message = toMessage(e)
@@ -123,6 +125,7 @@ export function useRejectedAlternatives() {
     try {
       await api.updateRejectedAlternative(altId, patch)
       await refresh(workItemId)
+      await useHierarchy().refresh(workItemId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -143,6 +146,7 @@ export function useRejectedAlternatives() {
     try {
       const result = await api.supersedeRejectedAlternative(oldId, body)
       await refresh(workItemId)
+      await useHierarchy().refresh(workItemId)
       return { ok: true, value: result.id }
     } catch (e) {
       const message = toMessage(e)
@@ -159,6 +163,7 @@ export function useRejectedAlternatives() {
     try {
       await api.removeRejectedAlternative(altId)
       await refresh(workItemId)
+      await useHierarchy().refresh(workItemId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -169,14 +174,20 @@ export function useRejectedAlternatives() {
     }
   }
 
+  /** Clear `error.value` — for the UI's "dismiss banner" button. */
+  function clearError(): void {
+    error.value = null
+  }
+
   return {
-    currentWorkItemAlternatives,
+    items,
     loading,
     error,
-    bindWorkItem,
+    bind,
     add,
     update,
     supersede,
     remove,
+    clearError,
   }
 }

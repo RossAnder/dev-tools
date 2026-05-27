@@ -10,7 +10,7 @@
 
 import * as z from 'zod'
 
-import { API_BASE, ApiErrorEnvelopeSchema, handle } from './http'
+import { API_BASE, handle, handleVoid } from './http'
 
 /**
  * A row of `repo_links` (migration 0004): a GitHub repo linked to a `kind='project'`
@@ -73,20 +73,7 @@ export async function removeRepoLink(projectId: string, id: string): Promise<voi
     `${API_BASE}/work-items/${encodeURIComponent(projectId)}/repo-links/${encodeURIComponent(id)}`,
     { method: 'DELETE' },
   )
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const raw: unknown = await res.json()
-      const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
-      if (parsed.success && parsed.data.error?.message) {
-        const message = parsed.data.error.message
-        detail = message.length > 200 ? message.slice(0, 197) + '…' : message
-      }
-    } catch {
-      // non-JSON error body — keep the status line
-    }
-    throw new Error(`API request failed: ${detail}`)
-  }
+  return handleVoid(res)
 }
 
 /**

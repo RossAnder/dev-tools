@@ -145,7 +145,7 @@ test('useRisks.add calls api and refreshes', async () => {
   expect(addMock).toHaveBeenCalledTimes(1)
   expect(addMock.mock.calls[0][0]).toBe('s-1')
   expect(result.ok).toBe(true)
-  expect(risks.currentWorkItemRisks.value).toHaveLength(1)
+  expect(risks.items.value).toHaveLength(1)
 })
 
 test('useRisks.add surfaces a thrown error', async () => {
@@ -174,11 +174,11 @@ test('__resetForTests clears risks + state', async () => {
   })
   const risks = useRisks()
   await risks.add('s-1', { summary: 'r', severity: 'low' })
-  expect(risks.currentWorkItemRisks.value).toHaveLength(1)
+  expect(risks.items.value).toHaveLength(1)
 
   __resetForTests()
   const after = useRisks()
-  expect(after.currentWorkItemRisks.value).toEqual([])
+  expect(after.items.value).toEqual([])
   expect(after.loading.value).toBe(false)
   expect(after.error.value).toBeNull()
 })

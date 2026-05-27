@@ -4,7 +4,7 @@ import type {
   WorkItem,
   WorkItemNode,
   WorkItemDetail,
-  CreateWorkItemRequest,
+  CreateWorkItemBody,
   Status,
 } from '@/api'
 import {
@@ -148,7 +148,7 @@ async function setFocus(id: string | null): Promise<void> {
  * Callers narrow with `if (!r.ok) { /* handle r.error * / return }` and then
  * use `r.value` as a string.
  */
-async function createNode(req: CreateWorkItemRequest): Promise<Result<string>> {
+async function createNode(req: CreateWorkItemBody): Promise<Result<string>> {
   error.value = null
   try {
     const created = await api.createWorkItem(req)
@@ -181,6 +181,33 @@ function patchTreeStatus(nodes: WorkItemNode[], id: string, status: Status): boo
 // Per-id in-flight guard: drop a second concurrent status flip for the same
 // node rather than racing the two responses to land in unspecified order.
 const inFlightStatus = new Set<string>()
+
+/**
+ * Re-fetch `detail.value` for `id` IF it matches the current focus.
+ *
+ * Used by the per-family composables (useRepoLinks, useAcceptanceCriteria,
+ * useRisks, useFindings, …) after a mutation, so the hierarchy detail panel
+ * stays consistent with the family-singleton fold that just refreshed. Calls
+ * with `id !== focusId.value` are no-ops — there's nothing on screen to
+ * refresh when the hierarchy isn't focused on the mutated work item.
+ *
+ * Errors are surfaced on the singleton `error` ref but NOT re-thrown — the
+ * family composable's `Result` arm already carried the mutation's outcome;
+ * a refresh failure here is a soft UI concern.
+ */
+async function refresh(id: string): Promise<void> {
+  if (focusId.value !== id) return
+  try {
+    detail.value = await api.fetchDetail(id)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+/** Clear `error.value` — for the UI's "dismiss banner" button. */
+function clearError(): void {
+  error.value = null
+}
 
 async function changeStatus(id: string, status: Status): Promise<void> {
   if (inFlightStatus.has(id)) return
@@ -303,6 +330,8 @@ export function useHierarchy() {
     setFocus,
     createNode,
     changeStatus,
+    refresh,
+    clearError,
     descendantCountFor,
     getSiblings,
     countMatching,

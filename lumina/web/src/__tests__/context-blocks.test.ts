@@ -225,10 +225,10 @@ describe('useContextBlocks (mocked api adapter)', () => {
     // `create` is parent-less; the typical UX is create→link, so we don't
     // refresh on create alone.
     expect(fetchDetailCalls).toBe(0)
-    expect(composable.currentParentBlocks.value).toEqual([])
+    expect(composable.items.value).toEqual([])
   })
 
-  test('link refreshes currentParentBlocks from fetchDetail', async () => {
+  test('link refreshes items from fetchDetail', async () => {
     const linked = makeBlock({ id: 'cb-1', title: 'linked' })
     __setApiForTests({
       linkContextBlock: async () => ({ ok: true }),
@@ -237,11 +237,11 @@ describe('useContextBlocks (mocked api adapter)', () => {
     const composable = useContextBlocks()
     const result = await composable.link('wi-1', 'cb-1')
     expect(result.ok).toBe(true)
-    expect(composable.currentParentBlocks.value).toHaveLength(1)
-    expect(composable.currentParentBlocks.value[0]!.title).toBe('linked')
+    expect(composable.items.value).toHaveLength(1)
+    expect(composable.items.value[0]!.title).toBe('linked')
   })
 
-  test('unlink refreshes currentParentBlocks from fetchDetail (now empty)', async () => {
+  test('unlink refreshes items from fetchDetail (now empty)', async () => {
     __setApiForTests({
       unlinkContextBlock: async () => undefined,
       fetchDetail: async () => makeDetail([]),
@@ -249,7 +249,7 @@ describe('useContextBlocks (mocked api adapter)', () => {
     const composable = useContextBlocks()
     const result = await composable.unlink('wi-1', 'cb-1')
     expect(result.ok).toBe(true)
-    expect(composable.currentParentBlocks.value).toEqual([])
+    expect(composable.items.value).toEqual([])
   })
 
   test('link sets error.value on a thrown wrapper failure', async () => {
@@ -272,19 +272,19 @@ describe('useContextBlocks (mocked api adapter)', () => {
 // ---------------------------------------------------------------------------
 
 describe('useContextBlocks __resetForTests', () => {
-  test('clears currentParentBlocks and error after a previous run', async () => {
+  test('clears items and error after a previous run', async () => {
     __setApiForTests({
       linkContextBlock: async () => ({ ok: true }),
       fetchDetail: async () => makeDetail([makeBlock()]),
     })
     const composable = useContextBlocks()
     await composable.link('wi-1', 'cb-1')
-    expect(composable.currentParentBlocks.value).toHaveLength(1)
+    expect(composable.items.value).toHaveLength(1)
 
     __resetForTests()
 
     const fresh = useContextBlocks()
-    expect(fresh.currentParentBlocks.value).toEqual([])
+    expect(fresh.items.value).toEqual([])
     expect(fresh.error.value).toBeNull()
   })
 })

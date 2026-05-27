@@ -285,6 +285,71 @@ pub struct TaskDependency {
     pub created_at: String,
 }
 
+/// A row of `pty_sessions` (migration 0008): a supervised `claude` PTY
+/// session, carrying lifecycle status, the spawn-config snapshot, and the
+/// parse-strategy version pin. Read aggregate only — `Serialize`, no
+/// `JsonSchema` (mirrors the other row structs; create/update bodies live
+/// as separate types when needed).
+///
+/// `status` is one of `spawning|active|idle|awaiting|completed|failed|cancelled`
+/// (free TEXT on the column — the typed enum is `pty::protocol::SessionStatus`
+/// at the wire layer). `parse_strategy_version` is the supervisor's parser
+/// generation (defaults to 1 on insert; bumped when a future parse-strategy
+/// change requires a session reset).
+#[derive(Debug, Clone, Serialize)]
+pub struct PtySession {
+    pub id: String,
+    pub label: Option<String>,
+    pub project_id: Option<String>,
+    pub cwd: String,
+    pub config_json: String,
+    pub parse_strategy_version: i64,
+    pub status: String,
+    pub started_at: String,
+    pub updated_at: String,
+    pub ended_at: Option<String>,
+    pub exit_code: Option<i64>,
+    pub last_error: Option<String>,
+    pub previous_session_id: Option<String>,
+}
+
+/// A row of `pty_messages` (migration 0008): one ordered transcript entry on
+/// a PTY session, with `sequence` monotone within the session and `kind`
+/// drawn from `user_input|assistant_text|tool_call|tool_result|prompt|system|
+/// error|parser_unknown` (free TEXT on the column — typed at the wire layer
+/// via `pty::protocol::MessageKind`). `content_json` carries the per-kind
+/// payload; `raw_text` is the ansi-stripped fallback retained for replay /
+/// debugging.
+#[derive(Debug, Clone, Serialize)]
+pub struct PtyMessage {
+    pub id: String,
+    pub session_id: String,
+    pub sequence: i64,
+    pub created_at: String,
+    pub kind: String,
+    pub content_json: String,
+    pub raw_text: Option<String>,
+}
+
+/// A row of `pty_queue` (migration 0008): one pending or in-flight client
+/// input frame waiting to be dispatched to the supervisor. `sequence` is
+/// monotone within the session; `input_kind` is `prompt|cancel|control` (free
+/// TEXT; typed via `pty::protocol::InputKind`); `status` walks
+/// `pending → dispatched → completed|failed|cancelled`.
+#[derive(Debug, Clone, Serialize)]
+pub struct PtyQueueEntry {
+    pub id: String,
+    pub session_id: String,
+    pub sequence: i64,
+    pub input_kind: String,
+    pub payload: String,
+    pub enqueued_at: String,
+    pub dispatched_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub status: String,
+    pub error: Option<String>,
+}
+
 /// A row of `context_blocks` — the drift-killer. Shared context is one row
 /// referenced by many work-items through `work_item_context`.
 #[derive(Debug, Clone, Serialize)]

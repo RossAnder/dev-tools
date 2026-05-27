@@ -23,8 +23,7 @@ import type { RepoLink } from '@/api'
 
 const props = defineProps<{ projectId: string }>()
 
-const { currentProjectLinks, loading, error, bindProject, add, remove, setPrimary } =
-  useRepoLinks()
+const { items, loading, error, bind, add, remove, setPrimary } = useRepoLinks()
 
 const newSlug = ref('')
 
@@ -32,12 +31,12 @@ const newSlug = ref('')
 // singleton state lets sibling components observe the same list without
 // re-fetching.
 onMounted(() => {
-  void bindProject(props.projectId)
+  void bind(props.projectId)
 })
 watch(
   () => props.projectId,
   (id) => {
-    void bindProject(id)
+    void bind(id)
   },
 )
 
@@ -72,11 +71,11 @@ async function handleSetPrimary(link: RepoLink): Promise<void> {
     </h3>
 
     <ul
-      v-if="currentProjectLinks.length > 0"
+      v-if="items.length > 0"
       class="flex flex-col gap-2 mb-3"
     >
       <li
-        v-for="link in currentProjectLinks"
+        v-for="link in items"
         :key="link.id"
         class="flex items-center gap-3 text-[13px]"
       >

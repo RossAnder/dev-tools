@@ -17,9 +17,9 @@
 // (effort/complexity/files-touched-count/has-cross-repo) and the computed
 // `Tier`. NOTE this is a DIFFERENT shape from the per-cell value of
 // `compute_task_batches` (which returns `Vec<Vec<String>>` of plain task ids,
-// surfaced in `task-deps.ts` as `BatchEntrySchema = z.string()`). To avoid
-// a naming collision through the `api/index.ts` barrel re-export the row
-// schema is named `DispatchBatchEntrySchema` here.
+// surfaced in `task-deps.ts` as `TaskIdSchema = z.string()`). The row
+// schema here is named `DispatchBatchEntrySchema` to keep the two endpoints'
+// per-cell shapes lexically distinct.
 
 import * as z from 'zod'
 
@@ -106,10 +106,9 @@ export const StoryReadinessSchema = z.object({
 //   * `has_cross_repo` — true when any `attributes.files_touched` entry is
 //     a {repo,path} object referencing a non-primary repo.
 //
-// Named `DispatchBatchEntry` (and `DispatchBatchEntrySchema`) here to avoid
-// the barrel-re-export collision with `task-deps.ts`'s `BatchEntrySchema`
-// (which is the per-cell `z.string()` for the OTHER endpoint,
-// `/task-batches`).
+// Named `DispatchBatchEntry` (and `DispatchBatchEntrySchema`) here to stay
+// lexically distinct from `task-deps.ts`'s `TaskIdSchema` (the per-cell
+// `z.string()` for the OTHER endpoint, `/task-batches`).
 // ---------------------------------------------------------------------------
 
 /** One row of a dispatch-plan wave. See module header for field semantics. */

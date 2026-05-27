@@ -14,7 +14,7 @@
 
 import * as z from 'zod'
 
-import { API_BASE, ApiErrorEnvelopeSchema, handle } from './http'
+import { API_BASE, handle, handleVoid } from './http'
 import type { Confidence } from './wire-enums'
 import {
   type RejectedAlternative,
@@ -41,7 +41,7 @@ const SupersedeAlternativeResponseSchema = z.object({
  * TEXT on the Rust side; we narrow the TS form to the closed `Confidence`
  * enum but tolerate omission with `?`.
  */
-export interface AddRejectedAlternativeRequest {
+export interface AddRejectedAlternativeBody {
   summary: string
   body?: string | null
   rationale?: string | null
@@ -49,7 +49,7 @@ export interface AddRejectedAlternativeRequest {
 }
 
 /** Body for `updateRejectedAlternative` — mirrors `domain::AlternativePatch`. */
-export interface UpdateRejectedAlternativeRequest {
+export interface UpdateRejectedAlternativeBody {
   summary?: string
   body?: string
   rationale?: string
@@ -62,7 +62,7 @@ export interface UpdateRejectedAlternativeRequest {
  */
 export async function addRejectedAlternative(
   workItemId: string,
-  body: AddRejectedAlternativeRequest,
+  body: AddRejectedAlternativeBody,
 ): Promise<{ id: string }> {
   return handle(
     await fetch(
@@ -83,7 +83,7 @@ export async function addRejectedAlternative(
  */
 export async function updateRejectedAlternative(
   altId: string,
-  patch: UpdateRejectedAlternativeRequest,
+  patch: UpdateRejectedAlternativeBody,
 ): Promise<{ ok: boolean }> {
   return handle(
     await fetch(
@@ -105,7 +105,7 @@ export async function updateRejectedAlternative(
  */
 export async function supersedeRejectedAlternative(
   oldId: string,
-  body: AddRejectedAlternativeRequest,
+  body: AddRejectedAlternativeBody,
 ): Promise<{ ok: boolean; id: string }> {
   return handle(
     await fetch(
@@ -129,18 +129,5 @@ export async function removeRejectedAlternative(altId: string): Promise<void> {
     `${API_BASE}/rejected-alternatives/${encodeURIComponent(altId)}`,
     { method: 'DELETE' },
   )
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const raw: unknown = await res.json()
-      const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
-      if (parsed.success && parsed.data.error?.message) {
-        const message = parsed.data.error.message
-        detail = message.length > 200 ? message.slice(0, 197) + '…' : message
-      }
-    } catch {
-      // non-JSON error body — keep the status line
-    }
-    throw new Error(`API request failed: ${detail}`)
-  }
+  return handleVoid(res)
 }

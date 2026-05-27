@@ -17,3 +17,5 @@ pub mod supervisor;       // T8
 pub use protocol::{
     InputFrame, InputKind, MessageKind, SessionId, SessionStatus, TypedMessage,
 };
+pub use transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
+pub use parser::Parser;

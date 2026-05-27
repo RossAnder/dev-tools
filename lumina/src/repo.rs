@@ -4472,6 +4472,547 @@ async fn record_event(
     Ok(())
 }
 
+/// PTY-session CRUD (migration 0008). Separate submodule because the `pty_*`
+/// tables do NOT participate in the `events` outbox — they are a per-session
+/// transcript / queue store with no git-export materialisation, so the
+/// single-mutation-path "+1 work_items / +1 events" invariant does not apply
+/// here. Each mutator opens its own `db::begin_write` transaction (still
+/// `BEGIN IMMEDIATE`, so writer contention surfaces upfront) and either
+/// commits a single statement or composes a read-then-write atomically;
+/// neither flow appends an `events` row.
+pub mod pty {
+    use sqlx::SqlitePool;
+
+    use crate::db;
+    use crate::domain::{PtyMessage, PtyQueueEntry, PtySession};
+    use crate::error::AppError;
+
+    /// Render a Rust-side timestamp string compatible with the TEXT timestamp
+    /// columns of the `pty_*` tables. Matches the convention in `export.rs`
+    /// (`jiff::Timestamp::now().to_string()`) — the only existing call site in
+    /// the crate that mints a timestamp in Rust rather than via the SQL
+    /// `CURRENT_TIMESTAMP` literal. `pty_*` tables declare their timestamps
+    /// `NOT NULL` without a SQL default, so the Rust side must supply the
+    /// value at INSERT/UPDATE time.
+    fn now_string() -> String {
+        jiff::Timestamp::now().to_string()
+    }
+
+    // -------------------------------------------------------------------
+    // Sessions
+    // -------------------------------------------------------------------
+
+    /// Insert a new `pty_sessions` row in `status='spawning'` with
+    /// `parse_strategy_version=1` and `started_at = updated_at = now()`. One
+    /// `db::begin_write` transaction; an INSERT followed by a SELECT-back of
+    /// the freshly-stamped row. No `events` outbox write (pinned in this
+    /// module's docstring).
+    pub async fn create_pty_session(
+        pool: &SqlitePool,
+        id: &str,
+        label: Option<&str>,
+        project_id: Option<&str>,
+        cwd: &str,
+        config_json: &str,
+    ) -> Result<PtySession, AppError> {
+        let now = now_string();
+        let parse_strategy_version: i64 = 1;
+        let status = "spawning";
+
+        let mut tx = db::begin_write(pool).await?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO pty_sessions (
+                id, label, project_id, cwd, config_json, parse_strategy_version,
+                status, started_at, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+            "#,
+            id,
+            label,
+            project_id,
+            cwd,
+            config_json,
+            parse_strategy_version,
+            status,
+            now,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let row = sqlx::query_as!(
+            PtySession,
+            r#"
+            SELECT
+                id                     AS "id!",
+                label                  AS "label?",
+                project_id             AS "project_id?",
+                cwd                    AS "cwd!",
+                config_json            AS "config_json!",
+                parse_strategy_version AS "parse_strategy_version!",
+                status                 AS "status!",
+                started_at             AS "started_at!",
+                updated_at             AS "updated_at!",
+                ended_at               AS "ended_at?",
+                exit_code              AS "exit_code?",
+                last_error             AS "last_error?",
+                previous_session_id    AS "previous_session_id?"
+            FROM pty_sessions
+            WHERE id = ?1
+            "#,
+            id,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(row)
+    }
+
+    /// Update a session's lifecycle `status` (plus an optional `last_error`
+    /// snapshot) in one transaction. The constraint surfaced by the plan's
+    /// Important Constraints — status and last_error MUST be set together so
+    /// readers never see a stale error against a clean status — is satisfied
+    /// by issuing both column assignments in the same UPDATE statement.
+    /// `NotFound` via `rows_affected()==0`.
+    pub async fn update_pty_session_status(
+        pool: &SqlitePool,
+        id: &str,
+        status: &str,
+        last_error: Option<&str>,
+    ) -> Result<(), AppError> {
+        let now = now_string();
+        let mut tx = db::begin_write(pool).await?;
+
+        let affected = sqlx::query!(
+            r#"
+            UPDATE pty_sessions
+            SET status = ?2,
+                last_error = ?3,
+                updated_at = ?4
+            WHERE id = ?1
+            "#,
+            id,
+            status,
+            last_error,
+            now,
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("pty_session '{id}' not found")));
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Mark a session as ended: stamp `status`, `ended_at=now`, optional
+    /// `exit_code`, optional `last_error`, and `updated_at=now` in one
+    /// transaction. Typical terminal statuses are `completed|failed|cancelled`;
+    /// the caller picks. `NotFound` via `rows_affected()==0`.
+    pub async fn update_pty_session_ended(
+        pool: &SqlitePool,
+        id: &str,
+        status: &str,
+        exit_code: Option<i64>,
+        last_error: Option<&str>,
+    ) -> Result<(), AppError> {
+        let now = now_string();
+        let mut tx = db::begin_write(pool).await?;
+
+        let affected = sqlx::query!(
+            r#"
+            UPDATE pty_sessions
+            SET status = ?2,
+                ended_at = ?3,
+                exit_code = ?4,
+                last_error = ?5,
+                updated_at = ?3
+            WHERE id = ?1
+            "#,
+            id,
+            status,
+            now,
+            exit_code,
+            last_error,
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("pty_session '{id}' not found")));
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// List sessions, optionally filtered by `status` and/or `project_id`,
+    /// newest-first by `started_at`. Filters use the `?n IS NULL OR col = ?n`
+    /// idiom so a single prepared statement covers every filter combination.
+    /// Reads, no transaction.
+    pub async fn list_pty_sessions(
+        pool: &SqlitePool,
+        status: Option<&str>,
+        project_id: Option<&str>,
+    ) -> Result<Vec<PtySession>, AppError> {
+        let rows = sqlx::query_as!(
+            PtySession,
+            r#"
+            SELECT
+                id                     AS "id!",
+                label                  AS "label?",
+                project_id             AS "project_id?",
+                cwd                    AS "cwd!",
+                config_json            AS "config_json!",
+                parse_strategy_version AS "parse_strategy_version!",
+                status                 AS "status!",
+                started_at             AS "started_at!",
+                updated_at             AS "updated_at!",
+                ended_at               AS "ended_at?",
+                exit_code              AS "exit_code?",
+                last_error             AS "last_error?",
+                previous_session_id    AS "previous_session_id?"
+            FROM pty_sessions
+            WHERE (?1 IS NULL OR status = ?1)
+              AND (?2 IS NULL OR project_id = ?2)
+            ORDER BY started_at DESC, id
+            "#,
+            status,
+            project_id,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// Fetch a single session row by id, erroring `NotFound` if the id has no
+    /// row. Reads, no transaction.
+    pub async fn get_pty_session(
+        pool: &SqlitePool,
+        id: &str,
+    ) -> Result<PtySession, AppError> {
+        let row = sqlx::query_as!(
+            PtySession,
+            r#"
+            SELECT
+                id                     AS "id!",
+                label                  AS "label?",
+                project_id             AS "project_id?",
+                cwd                    AS "cwd!",
+                config_json            AS "config_json!",
+                parse_strategy_version AS "parse_strategy_version!",
+                status                 AS "status!",
+                started_at             AS "started_at!",
+                updated_at             AS "updated_at!",
+                ended_at               AS "ended_at?",
+                exit_code              AS "exit_code?",
+                last_error             AS "last_error?",
+                previous_session_id    AS "previous_session_id?"
+            FROM pty_sessions
+            WHERE id = ?1
+            "#,
+            id,
+        )
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("pty_session '{id}' not found")))?;
+
+        Ok(row)
+    }
+
+    /// Soft-delete a session: set `status='cancelled'` and stamp `ended_at=now`
+    /// (plus `updated_at`). The row is retained so the transcript and queue
+    /// stay intact for inspection. `NotFound` via `rows_affected()==0`.
+    pub async fn delete_pty_session(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+        let now = now_string();
+        let mut tx = db::begin_write(pool).await?;
+
+        let affected = sqlx::query!(
+            r#"
+            UPDATE pty_sessions
+            SET status = 'cancelled',
+                ended_at = ?2,
+                updated_at = ?2
+            WHERE id = ?1
+            "#,
+            id,
+            now,
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("pty_session '{id}' not found")));
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------
+    // Messages
+    // -------------------------------------------------------------------
+
+    /// Append one transcript row to `pty_messages`. `sequence` is supplied by
+    /// the caller (the supervisor owns the per-session monotone counter); the
+    /// `UNIQUE(session_id, sequence)` constraint surfaces a sequence collision
+    /// as a DB error. `created_at` is stamped now-side. One transaction.
+    pub async fn insert_pty_message(
+        pool: &SqlitePool,
+        id: &str,
+        session_id: &str,
+        sequence: i64,
+        kind: &str,
+        content_json: &str,
+        raw_text: Option<&str>,
+    ) -> Result<(), AppError> {
+        let now = now_string();
+        let mut tx = db::begin_write(pool).await?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO pty_messages (
+                id, session_id, sequence, created_at, kind, content_json, raw_text
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "#,
+            id,
+            session_id,
+            sequence,
+            now,
+            kind,
+            content_json,
+            raw_text,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// List transcript rows for a session in ascending `sequence` order,
+    /// optionally starting strictly after `since_sequence`. `limit` caps the
+    /// page size. Reads, no transaction.
+    pub async fn list_pty_messages(
+        pool: &SqlitePool,
+        session_id: &str,
+        since_sequence: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<PtyMessage>, AppError> {
+        let rows = sqlx::query_as!(
+            PtyMessage,
+            r#"
+            SELECT
+                id           AS "id!",
+                session_id   AS "session_id!",
+                sequence     AS "sequence!",
+                created_at   AS "created_at!",
+                kind         AS "kind!",
+                content_json AS "content_json!",
+                raw_text     AS "raw_text?"
+            FROM pty_messages
+            WHERE session_id = ?1
+              AND (?2 IS NULL OR sequence > ?2)
+            ORDER BY sequence ASC
+            LIMIT ?3
+            "#,
+            session_id,
+            since_sequence,
+            limit,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    // -------------------------------------------------------------------
+    // Queue
+    // -------------------------------------------------------------------
+
+    /// Append a pending input frame to `pty_queue`. Caller-supplied `sequence`
+    /// (matching the `pty_messages` discipline); `UNIQUE(session_id, sequence)`
+    /// surfaces a collision. `enqueued_at=now`, `status='pending'`. One
+    /// transaction.
+    pub async fn enqueue_pty_input(
+        pool: &SqlitePool,
+        id: &str,
+        session_id: &str,
+        sequence: i64,
+        input_kind: &str,
+        payload: &str,
+    ) -> Result<(), AppError> {
+        let now = now_string();
+        let mut tx = db::begin_write(pool).await?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO pty_queue (
+                id, session_id, sequence, input_kind, payload, enqueued_at, status
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending')
+            "#,
+            id,
+            session_id,
+            sequence,
+            input_kind,
+            payload,
+            now,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// List every queue row for a session in ascending `sequence` order
+    /// (regardless of status). The HTTP layer (T9) renders this as the
+    /// per-session queue view. Reads, no transaction.
+    pub async fn list_pty_queue(
+        pool: &SqlitePool,
+        session_id: &str,
+    ) -> Result<Vec<PtyQueueEntry>, AppError> {
+        let rows = sqlx::query_as!(
+            PtyQueueEntry,
+            r#"
+            SELECT
+                id            AS "id!",
+                session_id    AS "session_id!",
+                sequence      AS "sequence!",
+                input_kind    AS "input_kind!",
+                payload       AS "payload!",
+                enqueued_at   AS "enqueued_at!",
+                dispatched_at AS "dispatched_at?",
+                completed_at  AS "completed_at?",
+                status        AS "status!",
+                error         AS "error?"
+            FROM pty_queue
+            WHERE session_id = ?1
+            ORDER BY sequence ASC
+            "#,
+            session_id,
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// Atomically pop the oldest `status='pending'` row for a session: SELECT
+    /// the lowest-sequence pending row, then UPDATE it to
+    /// `status='dispatched', dispatched_at=now` within the SAME transaction.
+    /// Returns the freshly-dispatched row (with `dispatched_at` filled in) or
+    /// `None` if no pending row exists. The supervisor calls this each
+    /// dispatch tick; the partial index `idx_pty_queue_pending` keeps the
+    /// SELECT cheap.
+    pub async fn pop_next_pending_pty(
+        pool: &SqlitePool,
+        session_id: &str,
+    ) -> Result<Option<PtyQueueEntry>, AppError> {
+        let now = now_string();
+        let mut tx = db::begin_write(pool).await?;
+
+        let Some(picked) = sqlx::query_as!(
+            PtyQueueEntry,
+            r#"
+            SELECT
+                id            AS "id!",
+                session_id    AS "session_id!",
+                sequence      AS "sequence!",
+                input_kind    AS "input_kind!",
+                payload       AS "payload!",
+                enqueued_at   AS "enqueued_at!",
+                dispatched_at AS "dispatched_at?",
+                completed_at  AS "completed_at?",
+                status        AS "status!",
+                error         AS "error?"
+            FROM pty_queue
+            WHERE session_id = ?1 AND status = 'pending'
+            ORDER BY sequence ASC
+            LIMIT 1
+            "#,
+            session_id,
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        else {
+            // No pending row; close the (empty-write) tx and return None.
+            tx.commit().await?;
+            return Ok(None);
+        };
+
+        sqlx::query!(
+            r#"
+            UPDATE pty_queue
+            SET status = 'dispatched',
+                dispatched_at = ?2
+            WHERE id = ?1
+            "#,
+            picked.id,
+            now,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        // Reflect the just-applied transition in the returned struct (avoids a
+        // second SELECT-back: the only column shape change is the two stamped
+        // fields below).
+        let mut dispatched = picked;
+        dispatched.status = "dispatched".to_owned();
+        dispatched.dispatched_at = Some(now);
+        Ok(Some(dispatched))
+    }
+
+    /// Mark a queue row as terminally completed (typical: `'completed'` /
+    /// `'failed'` / `'cancelled'`): stamp `status`, `completed_at=now`, and
+    /// optional `error`. One transaction. `NotFound` via `rows_affected()==0`.
+    pub async fn complete_pty_queue_entry(
+        pool: &SqlitePool,
+        id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<(), AppError> {
+        let now = now_string();
+        let mut tx = db::begin_write(pool).await?;
+
+        let affected = sqlx::query!(
+            r#"
+            UPDATE pty_queue
+            SET status = ?2,
+                completed_at = ?3,
+                error = ?4
+            WHERE id = ?1
+            "#,
+            id,
+            status,
+            now,
+            error,
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("pty_queue entry '{id}' not found")));
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

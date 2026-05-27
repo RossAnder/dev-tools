@@ -13,11 +13,11 @@
 //     because the module-singleton state itself leaks across test boundaries
 //     — overriding the api alone is insufficient.
 //
-// Scope note: `currentItemFindings` tracks the findings folded onto the bound
-// work item. The four mutators (`add`, `update`, `resolve`, `supersede`) all
-// refresh from `fetchDetail(itemId)`; the supersede case touches the OLD
-// finding's row, so callers should bind to the work item that owns the old
-// finding (typically they are the same item for in-place chains).
+// Scope note: `items` tracks the findings folded onto the bound work item.
+// The four mutators (`add`, `update`, `resolve`, `supersede`) all refresh
+// from `fetchDetail(itemId)`; the supersede case touches the OLD finding's
+// row, so callers should bind to the work item that owns the old finding
+// (typically they are the same item for in-place chains).
 
 import { ref } from 'vue'
 import * as productionApi from '@/api'
@@ -27,6 +27,7 @@ import type {
   ResolveFindingBody,
   UpdateFindingBody,
 } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
 /** See {@link import('./useHierarchy').Result} for the design rationale. */
 export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
@@ -35,7 +36,7 @@ export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error:
 // Module-singleton state.
 // ---------------------------------------------------------------------------
 
-const currentItemFindings = ref<Finding[]>([])
+const items = ref<Finding[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -65,7 +66,7 @@ export function __setApiForTests(override: Partial<Api>): void {
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
 export function __resetForTests(): void {
-  currentItemFindings.value = []
+  items.value = []
   loading.value = false
   error.value = null
   api = {
@@ -89,7 +90,7 @@ function toMessage(e: unknown): string {
 async function refresh(itemId: string): Promise<Finding[]> {
   const detail = await api.fetchDetail(itemId)
   const findings = detail.findings ?? []
-  currentItemFindings.value = findings
+  items.value = findings
   return findings
 }
 
@@ -99,11 +100,11 @@ async function refresh(itemId: string): Promise<Finding[]> {
 
 export function useFindings() {
   /**
-   * Seed `currentItemFindings` for a work item, without performing a mutation.
-   * Call this from a panel's `onMounted` / `watch(itemId)` so the singleton
-   * reflects the focused work item's findings.
+   * Seed `items` for a work item, without performing a mutation. Call this
+   * from a panel's `onMounted` / `watch(itemId)` so the singleton reflects
+   * the focused work item's findings.
    */
-  async function bindItem(itemId: string): Promise<Result<Finding[]>> {
+  async function bind(itemId: string): Promise<Result<Finding[]>> {
     loading.value = true
     error.value = null
     try {
@@ -124,6 +125,7 @@ export function useFindings() {
     try {
       const created = await api.addFinding(itemId, body)
       await refresh(itemId)
+      await useHierarchy().refresh(itemId)
       return { ok: true, value: created.id }
     } catch (e) {
       const message = toMessage(e)
@@ -149,6 +151,7 @@ export function useFindings() {
     try {
       await api.updateFinding(findingId, patch)
       await refresh(itemId)
+      await useHierarchy().refresh(itemId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -174,6 +177,7 @@ export function useFindings() {
     try {
       await api.resolveFinding(findingId, body)
       await refresh(itemId)
+      await useHierarchy().refresh(itemId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -199,6 +203,7 @@ export function useFindings() {
     try {
       await api.supersedeFinding(oldId, newId)
       await refresh(itemId)
+      await useHierarchy().refresh(itemId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -209,14 +214,20 @@ export function useFindings() {
     }
   }
 
+  /** Clear `error.value` — for the UI's "dismiss banner" button. */
+  function clearError(): void {
+    error.value = null
+  }
+
   return {
-    currentItemFindings,
+    items,
     loading,
     error,
-    bindItem,
+    bind,
     add,
     update,
     resolve,
     supersede,
+    clearError,
   }
 }

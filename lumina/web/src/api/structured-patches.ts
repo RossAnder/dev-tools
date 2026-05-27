@@ -18,12 +18,16 @@
 // aggregate — so the FE can refresh its detail singleton without a second
 // round-trip).
 //
-// `files_touched` is typed as `string[]` here (bare paths only) because the
-// HTTP slice (`PatchTaskSpecBody.files_touched: Option<Vec<String>>`)
-// accepts only the bare-path form — the MCP `Qualified {repo, path}` form
-// is deferred for the HTTP layer (see the doc-comment on
-// `PatchTaskSpecBody` in `structured_patches.rs`). A future widening would
-// switch this to a discriminated union, mirroring the MCP `FileRef` shape.
+// `files_touched` is a heterogeneous array whose entries are either a
+// bare-path string (legacy form, resolves to the project's primary linked
+// repo) OR a `{repo: "<owner>/<name>", path: "<repo-relative path>"}`
+// object (qualified form, R14 widening). Mixed arrays are supported in a
+// single PATCH. The wire shape mirrors the MCP `set_task_spec` tool's
+// `FileRef` union; the corresponding Rust body type
+// (`PatchTaskSpecBody.files_touched: Option<Vec<serde_json::Value>>`)
+// passes each entry through unchanged to the repo-layer
+// `want_files_touched` validator, which enforces the union shape and
+// rejects any other JSON form with a 422.
 
 import * as z from 'zod'
 
@@ -144,20 +148,30 @@ export async function setStoryPlan(
  * `tier` is `Tier | null`: `null` clears the column (passed through to
  * `set_task_tier(pool, &id, None)`); absent leaves the column unchanged.
  *
- * `files_touched` here is the bare-path form only — the HTTP slice does
- * not yet accept the MCP `Qualified {repo, path}` shape (see the type
- * note in this module's header for the future-widening path).
+ * `files_touched` is a heterogeneous array (R14 widening): each entry is
+ * either a bare-path string (legacy form, resolves to the project's primary
+ * linked repo) OR a `{repo: "<owner>/<name>", path: "<repo-relative path>"}`
+ * object (qualified form). Mixed arrays are supported in one request. This
+ * mirrors the MCP `set_task_spec` tool's `FileRef` union — see the module
+ * header for the wire-shape contract.
  */
 export interface SetTaskSpecBody {
   execution_detail?: string
-  files_touched?: string[]
+  files_touched?: (string | { repo: string; path: string })[]
   outcome?: string
   tier?: Tier | null
 }
 
 export const SetTaskSpecBodySchema = z.object({
   execution_detail: z.string().optional(),
-  files_touched: z.array(z.string()).optional(),
+  files_touched: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({ repo: z.string(), path: z.string() }),
+      ]),
+    )
+    .optional(),
   outcome: z.string().optional(),
   tier: TierSchema.nullable().optional(),
 })
@@ -165,15 +179,8 @@ export const SetTaskSpecBodySchema = z.object({
 /**
  * `PATCH /api/work-items/{id}/task-spec` — set any subset of the task's
  * spec attributes (and optionally its `tier` column) in one round-trip.
- * Returns the re-fetched {@link WorkItemDetail}.
- *
- * Reader-path caveat: the backend's `repo::get_work_item_detail` currently
- * hardcodes `tier: None` in its row→struct mapping (a pre-existing defect
- * — the WRITE path correctly persists the column). Callers that need to
- * observe the post-PATCH `tier` value cannot rely on
- * `detail.item.tier`; the column is correctly written but the read mapping
- * elides it. This caveat is documented on the corresponding backend
- * handler (`patch_task_spec` in `lumina/src/http/structured_patches.rs`).
+ * Returns the re-fetched {@link WorkItemDetail} — `detail.item.tier`
+ * reflects the post-PATCH column value.
  */
 export async function setTaskSpec(
   workItemId: string,

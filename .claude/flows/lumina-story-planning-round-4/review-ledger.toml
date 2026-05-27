@@ -1,0 +1,637 @@
+schema_version = 1
+last_updated = 2026-05-27
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R1"
+file = "lumina/web/src/api/structured-patches.ts"
+line = 170
+symbol = "setTaskSpec"
+severity = "critical"
+effort = "trivial"
+category = "quality"
+summary = "Stale 'tier reader-path defect' comments in 3 files — repo.rs actually projects tier correctly"
+description = """Doc-comments in lumina/web/src/api/structured-patches.ts:170-176, lumina/web/src/composables/useTaskSpec.ts:11-16, and lumina/src/http/structured_patches.rs:353-356,594 all warn callers that repo::get_work_item_detail and repo::list_work_items 'hardcode tier: None' and that detail.item.tier is unreliable. Verified false: repo.rs:380 and repo.rs:454 both SELECT 'tier AS "tier?"' and repo.rs:415/483 assign 'tier: row.tier'. The round-3 fix (E4 deviation in execution-record) landed; the warning comments survived. A UI author building a tier-display panel will read these comments and either add a redundant follow-up GET or build a separate query path that isn't needed. Delete the stale comments from all three sites."""
+dedup_id = "061e6fb0a66fd8ae"
+resolved = 2026-05-27
+resolution = "Deleted stale 'tier reader-path defect' comments from structured-patches.ts:170-176, useTaskSpec.ts:11-16, and structured_patches.rs (test docstrings + raw-SQL workarounds rewritten to assert JSON body). repo.rs reader-path verified correct."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R2"
+file = "lumina/web/src/composables/useRisks.ts"
+line = 117
+symbol = "useRisks().add (and 8 sibling composables)"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Per-family mutations don't propagate to useHierarchy().detail — UI bound to detail will show stale data after every per-family mutation"
+description = "Each per-family composable's mutation path writes only to its own module-singleton ref (currentWorkItemRisks, currentItemFindings, currentParentCriteria, etc.). useHierarchy().detail — the canonical detail source that the composables' own doc-comments explicitly defer to (useScalars.ts:47, useStoryPlan.ts:36) — is never updated by the per-family writes. After useRisks().add() the WorkItemDetail held in useHierarchy is missing the new row until something else triggers fetchDetail. UI components rendering detail.value.risks vs currentWorkItemRisks.value will diverge. Either every refresh() additionally pokes useHierarchy().detail when the bound id matches focusId, or the convention is documented for UI authors (bind both refs, refetch hierarchy after every per-family write)."
+dedup_id = "5452a5cb8c2ca46e"
+resolved = 2026-05-27
+resolution = "Per-family composables now call useHierarchy().refresh(workItemId) after successful mutations; refresh added to useHierarchy.ts. Open-question task-side mutators refresh the affected task id, not the bound story id."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R3"
+file = "lumina/web/src/api/task-deps.ts"
+line = 92
+symbol = "Result"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Result<T,E> re-exported via api/index.ts barrel has no default E param — type-collides with composable Result<T, E=string>"
+description = """api/index.ts:27 does 'export * from "./task-deps"'. task-deps.ts:92 exports 'type Result<T, E>' with no default. Every composable defines its own 'type Result<T, E = string>' locally (17 sites). A UI author who imports 'type { Result } from "@/api"' (the natural barrel path) gets the task-deps version with mandatory second type parameter — Result<WorkItem> fails to type-check. This will surface as confusing TS errors the moment UI components try to type composable returns. Fix: either don't export Result from task-deps.ts, rename it (TaskDepsResult), or hoist a single Result type to api/http.ts and have everyone import it."""
+dedup_id = "9492f0ee106a0d59"
+resolved = 2026-05-27
+resolution = "Added default E = CycleOrError to Result<T, E> in api/task-deps.ts:92, fixing the barrel re-export type collision."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "wontfix"
+flow = "lumina-story-planning-round-4"
+id = "R4"
+file = "lumina/web/src/api/risks.ts"
+line = 105
+symbol = "supersedeRisk / supersedeRejectedAlternative vs supersedeResearchNote / supersedeFinding"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Supersede wrappers diverge across four families using identical URL shapes — copy-paste from one family to another will silently misbehave"
+description = "All four supersede routes use /{family}/{old_id}/supersede/{new_id}. But wrappers split: supersedeFinding(oldId,newId) and supersedeResearchNote(oldId,newId) take two real ids and no body; supersedeRisk(oldId,body) and supersedeRejectedAlternative(oldId,body) pass 'placeholder' as new_id and have the server mint a fresh uuid from the body. Composable arities also diverge: useFindings.supersede(itemId,oldId,newId) vs useRisks.supersede(workItemId,oldId,body). A UI author who copies the findings pattern onto risks will pass two real ids and the new_id segment will be silently ignored. Either unify the wire (dedicated *-with-replacement endpoint for risks/RA) or rename the divergent wrappers to supersedeWithReplacement."
+dedup_id = "14e3fb6616d193f3"
+wontfix_rationale = "Backend semantics genuinely diverge: research-notes (lumina/src/http/research_notes.rs:166-171) and findings (lumina/src/http/findings.rs:198-203) chain by ID-only with NO request body (Path((old_id,new_id)) handler). risks (lumina/src/http/risks.rs:111-159) and rejected-alternatives (lumina/src/http/rejected_alternatives.rs:100-133) chain by inserting a new row with body (Path + Json<AddBody>). The TS wrappers correctly mirror these semantics. Unifying without backend handler changes (out of scope this round) would require either lying to the backend or accepting silent misbehaviour. Split into a backend-side handler-unification finding for a future round if convergence is desired."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R5"
+file = "lumina/web/src/composables/useAcceptanceCriteria.ts"
+line = 115
+symbol = "bind*"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "bind* method named 5 different ways across 9 composables with identical signatures"
+description = "The 'seed singleton from parent id' method appears as: bindParent (useAcceptanceCriteria, useResearchNotes, useContextBlocks), bindItem (useFindings), bindStory (useOpenQuestions, useTaskDependencies), bindWorkItem (useRisks, useRejectedAlternatives), bindProject (useRepoLinks). All take (id: string) and return Promise<Result<X[]>>. Five names, identical signature — divergence carries no signal, just multiplies surface a UI author must memorise. Pick one (bind(id) everywhere, or bindParent(id) everywhere) and apply before component work."
+dedup_id = "635759ee2c7b2ef6"
+resolved = 2026-05-27
+resolution = "Unified to canonical `bind(parentId)` across 9 family composables (drops bindParent/bindProject/bindWorkItem/bindStory/bindItem suffixes); the composable name already disambiguates the family"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R6"
+file = "lumina/web/src/composables/useRepoLinks.ts"
+line = 27
+symbol = "currentProjectLinks/currentParentCriteria/currentWorkItemRisks/currentItemFindings/etc."
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "current<X> ref names diverge across 9 composables (currentProjectLinks/Parent/WorkItem/Story/Item) — pattern-matching across panels is hard"
+description = "Per-family ref names: useRepoLinks→currentProjectLinks; useAcceptanceCriteria/ResearchNotes/ContextBlocks→currentParentX; useRisks/RejectedAlternatives→currentWorkItemX; useFindings→currentItemFindings; useOpenQuestions→currentStoryQuestions; useTaskDependencies→currentStoryDependencies + currentStoryBatches. The varying name documents bind scope but the cost is paid every time the same author writes panels for multiple families in sequence. Consolidate alongside R5 (bind*) to a uniform shape: items + bind(id)."
+dedup_id = "4747195898545f26"
+resolved = 2026-05-27
+resolution = "Unified to canonical `items` ref name across 8 single-collection composables (drops currentParent/Project/WorkItem/Story/Item prefixes); useTaskDependencies retains domain-specific `dependencies`/`batches` since the two refs are not interchangeable in the panel UX"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R7"
+file = "lumina/web/src/composables/useScalars.ts"
+line = 162
+symbol = "clearError"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "clearError() exposed on 7 of 14 composables — banner-dismiss UX will be inconsistent across panels"
+description = "clearError() (sets error.value = null) is exported from useScalars, useStoryPlan, useTaskSpec, useReadiness, useDispatchPlan, useContextBlocks, useActivity. MISSING from useHierarchy, useRepoLinks, useAcceptanceCriteria, useResearchNotes, useRisks, useRejectedAlternatives, useFindings, useOpenQuestions, useTaskDependencies. First UI component that wants a dismissible error banner will copy the working pattern from one composable into a panel bound to another and discover clearError() doesn't exist. Either expose on all 14 or remove from the 7 where it lives and document 'error ref is writable, assign null to dismiss'."
+dedup_id = "6e863406d1254927"
+resolved = 2026-05-27
+resolution = "Added clearError() to the 7 family composables that lacked it + useHierarchy; useTaskDependencies.clearError clears both error.value and cycleError.value; useDisplay correctly skipped (no error ref)"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R8"
+file = "lumina/web/src/api/risks.ts"
+line = 43
+symbol = "AddRiskRequest vs AddFindingBody (etc.)"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Body-type naming split: 10 *Body suffixes vs 6 *Request suffixes — autocomplete will guess wrong half the time"
+description = "Inventory: 10 *Body (Finding/ResearchNote/QuestionOption/Activity/ContextBlock/StoryPlan/TaskSpec/etc.) and 6 *Request (Risk/RejectedAlternative/WorkItem). Split correlates with implementation wave. Pick one suffix and rename — auto-import will pick the type a UI author was reaching for by guessing."
+dedup_id = "c986a506d705c504"
+resolved = 2026-05-27
+resolution = "Renamed *Request → *Body in api/risks.ts (AddRiskBody, UpdateRiskBody), api/rejected-alternatives.ts (AddRejectedAlternativeBody, UpdateRejectedAlternativeBody), api/work-items.ts (CreateWorkItemBody, UpdateWorkItemBody); chose *Body since it mirrors Rust-side struct names in lumina/src/http/**"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R9"
+file = "lumina/web/src/api/acceptance-criteria.ts"
+line = 121
+symbol = "removeAcceptanceCriterion / removeRisk / removeRejectedAlternative / removeRepoLink / unlinkContextBlock / removeTaskDependency"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Six DELETE wrappers each inline a ~14-line 4xx-envelope-parse helper that should live in http.ts"
+description = "acceptance-criteria.ts:121-139, risks.ts:130-148, rejected-alternatives.ts:127-146, repo-links.ts:71-92, context-blocks.ts:96-118, task-deps.ts:230-252 duplicate the same 'if (!res.ok) { ApiErrorEnvelopeSchema.safeParse ... slice(0, 197) + ... throw new Error }' block, because handle<T>() only supports JSON-body responses and 204 has none. Add handleVoid(res) (or a handle<T>(res, null) overload) to http.ts; each DELETE wrapper drops to 2 lines."
+dedup_id = "187bad090adec85a"
+resolved = 2026-05-27
+resolution = "Extracted handleVoid(res: Response): Promise<void> into api/http.ts; refactored 6 DELETE wrappers to call it (removeAcceptanceCriterion, removeRisk, removeRejectedAlternative, removeRepoLink, unlinkContextBlock, removeTaskDependency). Each wrapper now ~3 lines"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R10"
+file = "lumina/web/src/api/activity.ts"
+line = 41
+symbol = "RecordActivityBody.entry_kind"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "entry_kind typed as bare string when wire-enums.ts already exports the closed ActivityType union"
+description = "wire-enums.ts:97-110 declares ActivityTypeSchema (9 closed values: execution/verification/deviation/deferral/reconcile/status_transition/checkpoint/vet/comment). activity.ts:41 ignores it: 'entry_kind: string'. The doc-comment justifies it as 'free TEXT validated server-side, NOT this layer' — but the typed wire enum is exactly the layer to surface the closed set. Typing entry_kind: ActivityType flips a runtime 422 into a TS compile error and gives the UI author autocomplete for the legal <select> values."
+dedup_id = "ad4bec7f435e097e"
+resolved = 2026-05-27
+resolution = "Typed RecordActivityBody.entry_kind as ActivityType (imported from ./wire-enums); removed stale 'free TEXT validated server-side' justification."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R11"
+file = "lumina/web/src/api/task-deps.ts"
+line = 185
+symbol = "BatchEntrySchema (vs DispatchBatchEntrySchema in readiness.ts)"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Two distinct BatchEntry shapes leak through the barrel — task-deps one is z.string(), readiness one is a rich object"
+description = "task-deps.ts:185 BatchEntrySchema = z.string() (per-cell of /task-batches Vec<Vec<String>>). readiness.ts:125 DispatchBatchEntrySchema (rich object per cell of /dispatch-plan). The readiness module explicitly renamed to avoid a barrel collision (readiness.ts:18-22). Pick one: rename task-deps' to TaskIdSchema (it IS just a task id) or drop the export — no consumer composes task-deps' BatchEntrySchema directly."
+dedup_id = "49ccf24433759121"
+resolved = 2026-05-27
+resolution = "Renamed BatchEntrySchema → TaskIdSchema in api/task-deps.ts (export + comments + header). Cleaned up prose-drift in api/readiness.ts (old name referenced in two comment blocks)."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R12"
+file = "lumina/web/src/api/context-blocks.ts"
+line = 48
+symbol = "CreateContextBlockBody.kind"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "CreateContextBlockBody.kind is silently dropped server-side — UI form bindings will appear to save and lose data"
+description = "context-blocks.ts:48 declares kind?: string with a doc-comment noting it is 'currently dropped server-side, pending migration'. No JSDoc @deprecated / @experimental tag surfaces in VS Code hover, no zod refinement throws. A UI author binding a form field to this will see no error on POST and never see the value persist. Either remove the field outright (re-add when the migration lands) or mark @deprecated with an explicit 'ignored — pending migration' tag."
+dedup_id = "4551b541b3c5edd5"
+resolved = 2026-05-27
+resolution = "Added @deprecated JSDoc to CreateContextBlockBody.kind in api/context-blocks.ts. Field retained (not removed) because a test fixture asserts wire-forwarding of the value."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R13"
+file = "lumina/web/src/api/task-deps.ts"
+line = 196
+symbol = "addTaskDependency"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "addTaskDependency wrapper plumbed as cycle-aware but the backend never raises cycles on insert — Result error-arm is dead code"
+description = "addTaskDependency routes through handleWithCycleCheck and returns Result<true, CycleOrError> (task-deps.ts:206-223). But task_dependencies.rs:65-70 documents that 'a cycle introduced by this edge is detected lazily on the next compute_task_batches call (the row itself goes in successfully)'. The repo only pre-checks kind=task and non-self-loop. The CycleOrError arm of addTaskDependency never fires; useTaskDependencies.addEdge compensates by running compute_task_batches as a second call. A UI author consuming addTaskDependency directly will assume the wrapper covers cycle detection per the doc — it doesn't. Drop the cycle-aware return shape from addTaskDependency or make the backend pre-check the graph in the INSERT txn."
+dedup_id = "d3bec73df6dd6b1b"
+resolved = 2026-05-27
+resolution = "Dropped dead Result<true,CycleOrError> from addTaskDependency in api/task-deps.ts; confirmed via lumina/src/http/task_dependencies.rs:65-82 that POST insert never raises AppError::Cycle (cycles surface only on compute_task_batches/dispatch-plan reads). Updated useTaskDependencies.addEdge consumer + task-deps.test.ts (16/16 pass; cycle envelope test on computeTaskBatches retained)"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R14"
+file = "lumina/src/http/structured_patches.rs"
+line = 106
+symbol = "PatchTaskSpecBody.files_touched"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "HTTP files_touched accepts only bare Vec<String> — MCP-equivalent {repo,path} qualified form is unreachable from the SPA, blocks cross-repo task UI"
+description = "MCP set_task_spec accepts a discriminated union of bare path strings AND {repo, path} objects (lumina/CLAUDE.md MCP-tool-surface section), validated against the project's repo_links. The HTTP route declares files_touched: Option<Vec<String>> only (structured_patches.rs:106), and the FE wrapper inherits the narrowness (structured-patches.ts:153-161 — z.array(z.string())). No path-shape validation either — '../', '/etc/hosts', absolute paths all accepted (Security S3). Any UI panel that wants to author tasks touching files in a non-primary linked repo cannot use the HTTP route; UI authors must drop down to MCP. Either widen the wire to mirror the FileRef union (and add path-shape regex), or carve the gap out explicitly in round-5's plan."
+dedup_id = "ed2b63f8f7743289"
+resolved = 2026-05-27
+resolution = "Widened PatchTaskSpecBody.files_touched from Option<Vec<String>> to Option<Vec<serde_json::Value>>; widened TS SetTaskSpecBody.files_touched to (string | {repo,path})[] with zod union; added task_spec_files_touched_accepts_mixed_union test exercising mixed array round-trip. Strict widening; bare-string callers continue to work. Validation reuses existing repo.rs want_files_touched (already union-aware per migration 0004). Note: agent stashed work mid-run requiring orchestrator recovery; final state verified"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "verified-clean"
+flow = "lumina-story-planning-round-4"
+id = "R15"
+file = "CLAUDE.md"
+line = 0
+symbol = "## lumina paragraph"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Repo-root CLAUDE.md missing T13's one-line HTTP-routes backlink — T13 acceptance criterion not met"
+description = "Plan T13 required appending a one-line note to the MCP-tool-families paragraph in the repo-root CLAUDE.md: 'HTTP route mirror landed in round-4; see lumina/CLAUDE.md'. Grep across CLAUDE.md returns no match for any expected fragment ('HTTP route mirror', 'lumina/CLAUDE.md#http-routes', etc.). The lumina/CLAUDE.md and MCP SKILL.md backlinks both landed; only the repo-root reference is missing. Low-risk but violates T13's stated acceptance."
+dedup_id = "79bac8ede7c875cd"
+verified_note = "Backlink already present at CLAUDE.md:51 — superset of the required text (includes parenthetical on repo::* delegation). Audited during /review-apply 2026-05-27."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R16"
+file = "lumina/src/http/structured_patches.rs"
+line = 511
+symbol = "scalar_null_value_is_422"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "scalar_null_value_is_422 covers only relevance — effort/complexity/closure-gate null-rejection has no individual HTTP smoke"
+description = "structured_patches.rs:511-536 has one null-422 test covering relevance only; effort/complexity/closure-gate rely on the shared require_value helper being correct. A future refactor that drops require_value from any of the three other handlers wouldn't fail any test. Add three parametric cases (or one rstest-rstest table) so each scalar's null-rejection is independently smoked. Matching TS-side: scalars.test.ts also tests only setRelevance 422."
+dedup_id = "e9d2221e5ba8122b"
+resolved = 2026-05-27
+resolution = "Extended scalar_null_value_is_422 in http/structured_patches.rs to a four-case parameterised loop covering relevance/effort/complexity/closure-gate (each case asserts HTTP 422 + error.kind = validation)."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R17"
+file = "lumina/web/src/composables/useDispatchPlan.ts"
+line = 14
+symbol = "fetchDispatchPlan"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "useDispatchPlan flattens cycle-422 to a generic thrown Error — structured cycle edges inaccessible to dispatch-plan panel"
+description = "useDispatchPlan.ts:14-18 documents that fetchDispatchPlan goes through the non-cycle handle<T>() path; a 422 cycle response is flattened to thrown Error with the message string, losing the edges array. Component tests for the dispatch-plan panel cannot drive the structured cycle path through useDispatchPlan — they have to use useTaskDependencies.refreshBatches. Either route fetchDispatchPlan through handleWithCycleCheck (so both surfaces parse the cycle envelope uniformly), or surface the limitation in a JSDoc on the composable's fetch() so the dispatch-panel author knows to source cycle data from useTaskDependencies."
+dedup_id = "55ac5294fbfdcbc1"
+resolved = 2026-05-27
+resolution = "Added JSDoc on refresh() in composables/useDispatchPlan.ts documenting cycle-422 flattening and directing UI authors needing structured edges[] to useTaskDependencies().refreshBatches()."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R18"
+file = "lumina/web/src/composables/useStoryPlan.ts"
+line = 0
+symbol = "useStoryPlan, useTaskSpec"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "No bun tests for useStoryPlan or useTaskSpec composables — error-arm and __resetForTests untested"
+description = "Glob of lumina/web/src/__tests__/ shows no story-plan.test.ts or task-spec.test.ts. The composables follow the established pattern (mirror useScalars) so the runSetter error path is indirectly exercised, but useTaskSpec.apply has special two-mutation semantics (setTaskSpec + setTaskKind dance) that have no test coverage at the composable level. Add story-plan.test.ts and task-spec.test.ts mirroring scalars.test.ts shape before component-test authoring begins."
+dedup_id = "4fcb5eac6b9372cf"
+resolved = 2026-05-27
+resolution = "Added bun tests at __tests__/story-plan.test.ts (5 tests) and task-spec.test.ts (7 tests); suite at 176/176. Test shape matches actual composable contract (single setTaskSpec api call; tier mutation handled server-side) — spec's 'two-mutation dance' was a server-side description, vet-checked and confirmed."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-4"
+id = "R19"
+file = "lumina/web/src/__tests__/open-questions.test.ts"
+line = 137
+symbol = "blockTaskOnQuestion / setEnablingOption / resolveOpenQuestion"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "open-questions block/setEnabling/resolve have no 4xx test at wrapper or composable level"
+description = "open-questions.test.ts:137-148 covers all three mutators through a single shared mock returning { ok: true }; no 4xx path is exercised for any. resolveOpenQuestion in particular has branching semantics (one event for branch-unblock + sibling-cancel) and a 404/422 is a real production path. Add at least one 4xx test per wrapper before component tests for the open-questions panel land."
+dedup_id = "4f3e5561fef1c71a"
+resolved = 2026-05-27
+resolution = "Added 3 4xx test cases to __tests__/open-questions.test.ts: blockTaskOnQuestion 404, setEnablingOption 404, resolveOpenQuestion 422 (already-resolved). Suite at 162/162."
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R20"
+file = "lumina/web/src/api/work-items.ts"
+line = 98
+symbol = "title/body/summary/description/rationale/notes fields"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "No .max() length caps on any free-text zod field the UI will render"
+description = "Every free-text field in every zod schema (title, body, summary, description, problem_statement, research_notes, execution_strategy, wontfix_rationale, rationale, etc.) is z.string() with no .max() constraint. Backend's only length gate is axum DefaultBodyLimit (2 MiB on the whole request). http.ts:60-61 already manually clamps error.message to 200 chars with comment 'denial-of-readability defence only' — that intent should extend to success-path payloads the UI will render. Add .max() to UI-visible fields (title: 500, body/description/rationale: 10000 ish) at the zod layer."
+dedup_id = "da54f4509b9b9b30"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R21"
+file = "lumina/web/src/api/work-items.ts"
+line = 105
+symbol = "WorkItemSchema.attributes"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "attributes typed as z.record(z.string(), z.unknown()) — unbounded server JSON flows into composables as TypeScript unknown"
+description = "WorkItemSchema.attributes is z.record(z.string(), z.unknown()).nullable() (work-items.ts:105). Structured-patch fields (problem_statement/research_notes/execution_strategy/not_doing/verification_commands) are stored in this blob and read back as arbitrary JSON. UI components that bind {{ detail.item.attributes.problem_statement }} are working with TypeScript unknown — TS will not block a v-html or innerHTML assignment. Define a typed sub-schema for known attribute keys (z.string() coercions for the plan fields) so TS marks them as 'string | null' and v-html misuse becomes a type error."
+dedup_id = "808a69c1a257b6fc"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R22"
+file = "lumina/web/src/api/work-items.ts"
+line = 362
+symbol = "WorkItemActivitySchema.payload"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "WorkItemActivity.payload typed as Record<string,unknown> — UI activity feed will render unknown content unsafely"
+description = "WorkItemActivitySchema.payload is z.record(z.string(), z.unknown()).nullable() (work-items.ts:364). Activity route body fields (body, ref_id, summary) fold into this. Combined with no ownership check (R23), any caller can inject arbitrary content into a work item's activity stream. UI activity-row component that renders payload.* values has no type-level hint to sanitise. Type known payload sub-keys (summary: z.string().max(2000), etc.) and remove the catch-all z.unknown()."
+dedup_id = "139d6617cb914bcc"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R23"
+file = "lumina/src/http/context_blocks.rs"
+line = 73
+symbol = "link_context_block / and all child-resource write routes"
+severity = "suggestion"
+effort = "medium"
+category = "security"
+summary = "No ownership/hierarchy check on any child-resource write route — pattern bakes in future multi-user retrofit debt"
+description = "POST /work-items/{id}/context-blocks/{cb_id} (context_blocks.rs:73) and every sibling child-resource route (findings, AC, research-notes, depends-on/{depends_on_id}) accept caller-supplied IDs with no parent-scope check; only FK constraints guard. Accepted under the current single-user posture (per CLAUDE.md), but the pattern repeats across ~15 routes. When multi-user auth lands, each handler needs individual retrofit. Add a comment in route handlers ('parent-scope verification required before multi-user auth') so the future-debt is visible. This is structural-pattern flagging, not the in-process posture itself."
+dedup_id = "5f1229888e52fe09"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R24"
+file = "lumina/web/src/api/work-items.ts"
+line = 18
+symbol = "Finding/AC/Research/Question/Activity/Risk/RA/TaskDep schemas"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "Eight aggregate schemas declared inline in work-items.ts, re-exported by per-family files (E20 deviation persisted)"
+description = "work-items.ts:18-27 acknowledges T9/T10/T11 will MOVE the per-family schemas out; the deviation E20 documents that the move was deferred for wave-1 parallelism. As of T13 it hasn't happened. UI authors using LSP 'go to definition' on FindingSchema land in work-items.ts:177, not findings.ts. Paper cut for UI work but precedent for per-family carve-up not being carved. Schedule the move as a single follow-up; touches imports only."
+dedup_id = "58e5f15bbb15985a"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R25"
+file = "lumina/web/src/composables/useTaskSpec.ts"
+line = 23
+symbol = "type Result<T, E = string>"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Identical Result<T, E = string> declaration duplicated in 17 files with a 'See useHierarchy.Result' doc-comment that doesn't actually import"
+description = "Grep returns 17 files declaring 'type Result<T, E = string>' (16 composables + api/task-deps.ts). Each has a 'See {@link import(./useHierarchy).Result}' comment referencing the canonical version, but no actual import. Hoist to composables/result.ts (or api/result.ts) and re-import; one-line edit per file."
+dedup_id = "22305da246d7d736"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R26"
+file = "lumina/web/src/composables/useFindings.ts"
+line = 142
+symbol = "update / resolve / supersede vs useOpenQuestions.block / setEnabling"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Caller-passes-parent-id pattern has exceptions: useOpenQuestions.block/setEnabling are deliberately task-side without parent refresh"
+description = "Mutation methods on useFindings/useRisks/useRejectedAlternatives all take (parentId, childId, patch) so the refresh hits the right aggregate. useOpenQuestions.block/setEnabling instead deliberately don't refresh (task-side mutation, no story-aggregate delta — useOpenQuestions.ts:21-25 documents this). The asymmetry is real but the doc-comments are scattered. A consolidated 'mutator family conventions' note at the top of the composables/ directory or in lumina/web/CLAUDE.md would prevent UI authors from assuming uniform refresh semantics."
+dedup_id = "82e257fb4a3386df"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R27"
+file = "lumina/web/src/api/structured-patches.ts"
+line = 78
+symbol = "verification_commands shallow-merge"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "verification_commands sub-object is REPLACED not deep-merged — UI 'edit one command' shortcut will silently wipe other fields"
+description = """structured-patches.ts:78-80 documents that 'verification_commands: {build: "x"}' REPLACES the whole sub-object server-side. A UI author building an 'edit build command' form who naively patches only the changed field will wipe test/lint/smoke. Either deep-merge on the backend, or push a read-modify-merge helper into the FE wrapper that composes the patch from the current detail's verification_commands. The doc-comment is loud but easy to miss."""
+dedup_id = "70eea0ca643f334b"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R28"
+file = "lumina/web/src/composables/useTaskDependencies.ts"
+line = 187
+symbol = "addEdge / refreshBatches / removeEdge"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "useTaskDependencies returns Result<T, CycleOrError>; 15 other composables return Result<T, string> — error-handling pattern divergence"
+description = "useTaskDependencies is the only family with structured failure shape (CycleError). UI 'show error toast' code is error.message for this family, error for fifteen others. The asymmetry reflects reality (cycle edges are real data the UI wants), but it costs documentation surface. Either accept and document explicitly in a composables/README, or lift CycleError to a top-level error variant in a unified Result type."
+dedup_id = "ba8402805b7b14a9"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R29"
+file = "lumina/src/http/open_questions.rs"
+line = 70
+symbol = "PATCH /work-items/{task_id}/enabling-option/{option_id}"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "PATCH used for a no-body URL-state-only setter — canonical idempotent verb is PUT"
+description = "open_questions.rs:69-72 declares the route as PATCH but takes only path params (no body) and replaces enabling_option_id atomically. PATCH conventionally implies partial-merge body; PUT is the canonical idempotent state replacement. Local precedent exists (PATCH /work-items/{project_id}/repo-links/{id} also has a body) so consistency may favour PATCH — but flag for future polish if the convention is reconsidered."
+dedup_id = "0ad903851fc2f7e9"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R30"
+file = "lumina/web/src/api/research-notes.ts"
+line = 38
+symbol = "AddResearchNoteBody"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Add-body omits state/rationale — forces POST+PATCH for the common 'add already-accepted note' UX"
+description = "AddResearchNoteBody (research-notes.ts:38-44) carries summary/body/confidence/lens/origin but not state or rationale. Repo defaults state to 'proposed'. The most common UI flow — adding a note that's already validated — needs state=accepted AND rationale set on creation. Two-call dance (POST then PATCH) is required as shipped. Either widen the wire body to include state+rationale on create, or document the two-step dance in the wrapper JSDoc."
+dedup_id = "2fc0b608e0676966"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R31"
+file = "lumina/web/src/api/open-questions.ts"
+line = 153
+symbol = "resolveOpenQuestion"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Body construction uses an awkward ternary string-template instead of spread-pattern — readability friction"
+description = "resolveOpenQuestion uses 'by === undefined ? {chosen_option_id} : {chosen_option_id, by}' as the body. Sibling routes (checkAcceptanceCriterion, recordActivity) handle the optional 'by' field differently. Pick one idiom (e.g. '...(by !== undefined ? {by} : {})') and apply uniformly so patterns a UI author copies parse the same at a glance."
+dedup_id = "129c2bf9a6fe8d00"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R32"
+file = "lumina/web/src/composables/useResearchNotes.ts"
+line = 167
+symbol = "supersede"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "useResearchNotes.supersede returns Result<void>; useRisks.supersede returns Result<string> with the new id — divergent return shapes"
+description = "useResearchNotes.supersede discards the wrapper's response and returns Result<void>. useRisks.supersede returns Result<string> with the new id. For chain operations a UI may legitimately want the new live id (to render a snackbar). Mirror useRisks for uniformity, even if the FE call simply echoes newId — the type tells consumers what the value means."
+dedup_id = "52b2789b06a3cd2c"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R33"
+file = "lumina/web/src/__tests__/acceptance-criteria.test.ts"
+line = 38
+symbol = "workItemDetail / makeDetail fixture"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "WorkItemDetail fixture duplicated in 5+ test files — no shared fixture module; future schema changes require N parallel edits"
+description = "workItemDetail(overrides) and makeDetail() variants appear in acceptance-criteria.test.ts:38, open-questions.test.ts:48, rejected-alternatives.test.ts, research-notes.test.ts:40, risks.test.ts:30, context-blocks.test.ts, findings.test.ts. Each declares the same 18-field item shape + 12 aggregate arrays. Also: position is 0 in some files and null in others (fixture drift). Extract src/__tests__/fixtures.ts exporting makeWorkItem(partial?), makeWorkItemDetail(...) factories before component tests start importing fixtures."
+dedup_id = "6c1c483c632567e3"
+
+[[items]]
+first_flagged = 2026-05-27
+rounds = 1
+status = "open"
+flow = "lumina-story-planning-round-4"
+id = "R34"
+file = "lumina/web/src/composables/useActivity.ts"
+line = 43
+symbol = "record / lastRecorded"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "useActivity.record() doesn't update any activity-row cache — component tests asserting on rows after record() will pass with stale state"
+description = "useActivity.ts:43-46 — record() writes lastRecorded (an ISO timestamp string) but does NOT cache activity rows; POST /activity returns { ok: true }, not the new row. A component test that calls record() then asserts an activity-row list will pass regardless of whether the row landed (useHierarchy().fetchDetail re-fetch is the correct post-mutation path). Document the re-fetch contract in the composable header or add a helper (recordAndRefetch) so component-test authors don't write the wrong assertion."
+dedup_id = "8d3b49c92afdd605"
+
+[[vet_events]]
+timestamp = "2026-05-27T12:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All sampled findings verified at file:line. No fabrications detected."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-27T12:00:01Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All five findings verified; S3 (files_touched accepts ../) merged into R14 (cross-repo gap). S5 retained as structural-pattern flag (not the in-process auth posture itself)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-27T12:00:02Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All sampled findings verified. Reactive-hole (R2), Result-collision (R3), stale tier doc (R1) confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-27T12:00:03Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped the 'tier reader-path defect' finding: agent took stale doc-comment at face value. Direct read of repo.rs:380/415/454/483 confirms tier IS projected and assigned correctly. The real issue (stale comments) is captured as R1."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-27T12:00:04Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped F5 'tier reader-path defect blocks UI tests' for the same reason as Agent-4: stale comment, not real defect. The actual reader-path code is correct."
+dedup_id = "45ca31c3315a5978"

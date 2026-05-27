@@ -82,9 +82,20 @@ export function useDispatchPlan() {
   /**
    * Re-fetch the dispatch plan for `storyId` and seed `current`. Replaces
    * any previously-fetched plan — the singleton holds at most one story's
-   * plan at a time. A cycle in the story's underlying task-dependency
-   * graph surfaces as a thrown error on the server side which flattens
-   * here to a `Result.error` string.
+   * plan at a time.
+   *
+   * **Cycle limitation**: a cycle in the story's underlying task-dependency
+   * graph causes the server to return a 422 with a structured
+   * `{ error: { kind: "cycle", edges: [...] } }` envelope.  This composable
+   * routes through the generic `handle<T>()` path, so that envelope is
+   * flattened to a plain `Error` whose `.message` is the server's error
+   * string.  The structured `edges[]` array is **lost**.
+   *
+   * If a component needs the structured cycle data (e.g. to highlight the
+   * offending edges in the dispatch-plan panel), pre-validate the graph via
+   * `useTaskDependencies().refreshBatches(storyId)` — that composable uses
+   * `handleWithCycleCheck()` and surfaces a typed `CycleError` with the
+   * full `edges` array before this fetch is attempted.
    */
   async function refresh(
     storyId: string,

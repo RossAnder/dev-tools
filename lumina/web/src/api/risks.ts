@@ -18,7 +18,7 @@
 
 import * as z from 'zod'
 
-import { API_BASE, ApiErrorEnvelopeSchema, handle } from './http'
+import { API_BASE, handle, handleVoid } from './http'
 import type { RiskSeverity } from './wire-enums'
 import { type Risk, RiskSchema } from './work-items'
 
@@ -40,7 +40,7 @@ const SupersedeRiskResponseSchema = z.object({ ok: z.boolean(), id: z.string() }
  * typed [`RiskSeverity`] closed enum (low|medium|high|critical), distinct
  * from the finding-`Severity` vocab.
  */
-export interface AddRiskRequest {
+export interface AddRiskBody {
   summary: string
   body?: string | null
   rationale?: string | null
@@ -53,7 +53,7 @@ export interface AddRiskRequest {
  * optional with SET-OR-LEAVE semantics (absent leaves the column untouched,
  * does NOT clear to NULL).
  */
-export interface UpdateRiskRequest {
+export interface UpdateRiskBody {
   summary?: string
   body?: string
   rationale?: string
@@ -69,7 +69,7 @@ export interface UpdateRiskRequest {
  */
 export async function addRisk(
   workItemId: string,
-  body: AddRiskRequest,
+  body: AddRiskBody,
 ): Promise<{ id: string }> {
   return handle(
     await fetch(`${API_BASE}/work-items/${encodeURIComponent(workItemId)}/risks`, {
@@ -87,7 +87,7 @@ export async function addRisk(
  */
 export async function updateRisk(
   riskId: string,
-  patch: UpdateRiskRequest,
+  patch: UpdateRiskBody,
 ): Promise<{ ok: boolean }> {
   return handle(
     await fetch(`${API_BASE}/risks/${encodeURIComponent(riskId)}`, {
@@ -108,7 +108,7 @@ export async function updateRisk(
  */
 export async function supersedeRisk(
   oldId: string,
-  body: AddRiskRequest,
+  body: AddRiskBody,
 ): Promise<{ ok: boolean; id: string }> {
   return handle(
     await fetch(
@@ -131,18 +131,5 @@ export async function removeRisk(riskId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/risks/${encodeURIComponent(riskId)}`, {
     method: 'DELETE',
   })
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const raw: unknown = await res.json()
-      const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
-      if (parsed.success && parsed.data.error?.message) {
-        const message = parsed.data.error.message
-        detail = message.length > 200 ? message.slice(0, 197) + '…' : message
-      }
-    } catch {
-      // non-JSON error body — keep the status line
-    }
-    throw new Error(`API request failed: ${detail}`)
-  }
+  return handleVoid(res)
 }

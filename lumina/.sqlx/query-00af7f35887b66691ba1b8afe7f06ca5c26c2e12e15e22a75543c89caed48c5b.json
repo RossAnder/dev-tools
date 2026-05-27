@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE pty_sessions\n            SET status = 'cancelled',\n                ended_at = ?2,\n                updated_at = ?2\n            WHERE id = ?1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "00af7f35887b66691ba1b8afe7f06ca5c26c2e12e15e22a75543c89caed48c5b"
+}

@@ -187,8 +187,8 @@ test('useAcceptanceCriteria.add calls api and refreshes state', async () => {
   expect(addMock.mock.calls[0]).toEqual(['s-1', 'a new criterion'])
   expect(fetchDetailMock).toHaveBeenCalledTimes(1)
   expect(result.ok).toBe(true)
-  expect(acs.currentParentCriteria.value).toHaveLength(1)
-  expect(acs.currentParentCriteria.value[0].id).toBe('ac-new')
+  expect(acs.items.value).toHaveLength(1)
+  expect(acs.items.value[0].id).toBe('ac-new')
 })
 
 test('useAcceptanceCriteria.check seeds singleton from the response detail', async () => {
@@ -201,14 +201,14 @@ test('useAcceptanceCriteria.check seeds singleton from the response detail', asy
   const acs = useAcceptanceCriteria()
   const result = await acs.check('ac-1', 'ross')
   expect(result.ok).toBe(true)
-  expect(acs.currentParentCriteria.value[0].checked).toBe(true)
+  expect(acs.items.value[0].checked).toBe(true)
 })
 
 // ---------------------------------------------------------------------------
 // 6. __resetForTests smoke.
 // ---------------------------------------------------------------------------
 
-test('__resetForTests clears currentParentCriteria + state', async () => {
+test('__resetForTests clears items + state', async () => {
   const checkedDetail = workItemDetail({
     acceptance_criteria: [{ ...wireCriterion({ checked: 1 }), checked: true }],
   })
@@ -216,11 +216,11 @@ test('__resetForTests clears currentParentCriteria + state', async () => {
 
   const acs = useAcceptanceCriteria()
   await acs.check('ac-1')
-  expect(acs.currentParentCriteria.value).toHaveLength(1)
+  expect(acs.items.value).toHaveLength(1)
 
   __resetForTests()
   const after = useAcceptanceCriteria()
-  expect(after.currentParentCriteria.value).toEqual([])
+  expect(after.items.value).toEqual([])
   expect(after.loading.value).toBe(false)
   expect(after.error.value).toBeNull()
 })

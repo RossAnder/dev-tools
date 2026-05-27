@@ -22,6 +22,7 @@ import type {
   UpdateResearchNoteBody,
   WorkItemDetail,
 } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
 /** See {@link import('./useHierarchy').Result} for the design rationale. */
 export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
@@ -30,13 +31,13 @@ export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error:
 // Module-singleton state.
 //
 // The note CRUD all happens against the live `superseded_by IS NULL` fold for
-// a specific parent work item. `currentParentNotes` holds that live set; the
-// mutators refresh from `fetchDetail(parentId)` so the singleton stays
-// consistent with what the parent panel renders. The supersede mutator is the
+// a specific parent work item. `items` holds that live set; the mutators
+// refresh from `fetchDetail(parentId)` so the singleton stays consistent
+// with what the parent panel renders. The supersede mutator is the
 // exception: its response is `{ ok: true }`, so we refresh explicitly after.
 // ---------------------------------------------------------------------------
 
-const currentParentNotes = ref<ResearchNote[]>([])
+const items = ref<ResearchNote[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -64,7 +65,7 @@ export function __setApiForTests(override: Partial<Api>): void {
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
 export function __resetForTests(): void {
-  currentParentNotes.value = []
+  items.value = []
   loading.value = false
   error.value = null
   api = {
@@ -95,13 +96,13 @@ async function refresh(parentId: string): Promise<ResearchNote[]> {
   // the zod schema applies `.optional().default([])` so a pre-deploy cache
   // without it would still resolve.
   const notes = detail.research_notes ?? []
-  currentParentNotes.value = notes
+  items.value = notes
   return notes
 }
 
 /** Seed the singleton from a freshly-returned `WorkItemDetail` (no extra fetch). */
 function seedFromDetail(detail: WorkItemDetail): void {
-  currentParentNotes.value = detail.research_notes ?? []
+  items.value = detail.research_notes ?? []
 }
 
 // ---------------------------------------------------------------------------
@@ -110,11 +111,11 @@ function seedFromDetail(detail: WorkItemDetail): void {
 
 export function useResearchNotes() {
   /**
-   * Seed `currentParentNotes` for a parent work item, without performing a
-   * mutation. Call this from a panel's `onMounted` / `watch(parentId)` so the
-   * singleton reflects the focused parent's notes.
+   * Seed `items` for a parent work item, without performing a mutation. Call
+   * this from a panel's `onMounted` / `watch(parentId)` so the singleton
+   * reflects the focused parent's notes.
    */
-  async function bindParent(parentId: string): Promise<Result<ResearchNote[]>> {
+  async function bind(parentId: string): Promise<Result<ResearchNote[]>> {
     loading.value = true
     error.value = null
     try {
@@ -135,6 +136,7 @@ export function useResearchNotes() {
     try {
       const created = await api.addResearchNote(parentId, body)
       await refresh(parentId)
+      await useHierarchy().refresh(parentId)
       return { ok: true, value: created.id }
     } catch (e) {
       const message = toMessage(e)
@@ -154,6 +156,7 @@ export function useResearchNotes() {
     try {
       const detail = await api.updateResearchNote(noteId, patch)
       seedFromDetail(detail)
+      await useHierarchy().refresh(detail.item.id)
       return { ok: true, value: detail }
     } catch (e) {
       const message = toMessage(e)
@@ -179,6 +182,7 @@ export function useResearchNotes() {
     try {
       await api.supersedeResearchNote(oldId, newId)
       await refresh(parentId)
+      await useHierarchy().refresh(parentId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -189,13 +193,19 @@ export function useResearchNotes() {
     }
   }
 
+  /** Clear `error.value` — for the UI's "dismiss banner" button. */
+  function clearError(): void {
+    error.value = null
+  }
+
   return {
-    currentParentNotes,
+    items,
     loading,
     error,
-    bindParent,
+    bind,
     add,
     update,
     supersede,
+    clearError,
   }
 }

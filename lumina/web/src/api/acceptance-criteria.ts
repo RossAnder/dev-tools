@@ -16,7 +16,7 @@
 
 import * as z from 'zod'
 
-import { API_BASE, ApiErrorEnvelopeSchema, handle } from './http'
+import { API_BASE, handle, handleVoid } from './http'
 import {
   type WorkItemDetail,
   WorkItemDetailWireSchema,
@@ -122,18 +122,5 @@ export async function removeAcceptanceCriterion(acId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/acceptance-criteria/${encodeURIComponent(acId)}`, {
     method: 'DELETE',
   })
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const raw: unknown = await res.json()
-      const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
-      if (parsed.success && parsed.data.error?.message) {
-        const message = parsed.data.error.message
-        detail = message.length > 200 ? message.slice(0, 197) + '…' : message
-      }
-    } catch {
-      // non-JSON error body — keep the status line
-    }
-    throw new Error(`API request failed: ${detail}`)
-  }
+  return handleVoid(res)
 }

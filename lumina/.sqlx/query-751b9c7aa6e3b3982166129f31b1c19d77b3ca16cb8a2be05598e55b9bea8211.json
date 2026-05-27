@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE pty_queue\n            SET status = ?2,\n                completed_at = ?3,\n                error = ?4\n            WHERE id = ?1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "751b9c7aa6e3b3982166129f31b1c19d77b3ca16cb8a2be05598e55b9bea8211"
+}

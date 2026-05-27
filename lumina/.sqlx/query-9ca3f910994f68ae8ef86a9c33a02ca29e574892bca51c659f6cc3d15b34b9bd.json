@@ -1,0 +1,170 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT\n                id                     AS \"id!\",\n                label                  AS \"label?\",\n                project_id             AS \"project_id?\",\n                cwd                    AS \"cwd!\",\n                config_json            AS \"config_json!\",\n                parse_strategy_version AS \"parse_strategy_version!\",\n                status                 AS \"status!\",\n                started_at             AS \"started_at!\",\n                updated_at             AS \"updated_at!\",\n                ended_at               AS \"ended_at?\",\n                exit_code              AS \"exit_code?\",\n                last_error             AS \"last_error?\",\n                previous_session_id    AS \"previous_session_id?\"\n            FROM pty_sessions\n            WHERE id = ?1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "label?",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "label"
+          }
+        }
+      },
+      {
+        "name": "project_id?",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "project_id"
+          }
+        }
+      },
+      {
+        "name": "cwd!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "cwd"
+          }
+        }
+      },
+      {
+        "name": "config_json!",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "config_json"
+          }
+        }
+      },
+      {
+        "name": "parse_strategy_version!",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "parse_strategy_version"
+          }
+        }
+      },
+      {
+        "name": "status!",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "started_at!",
+        "ordinal": 7,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "name": "updated_at!",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "name": "ended_at?",
+        "ordinal": 9,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "ended_at"
+          }
+        }
+      },
+      {
+        "name": "exit_code?",
+        "ordinal": 10,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "exit_code"
+          }
+        }
+      },
+      {
+        "name": "last_error?",
+        "ordinal": 11,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "name": "previous_session_id?",
+        "ordinal": 12,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "pty_sessions",
+            "name": "previous_session_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9ca3f910994f68ae8ef86a9c33a02ca29e574892bca51c659f6cc3d15b34b9bd"
+}

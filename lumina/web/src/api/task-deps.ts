@@ -6,8 +6,7 @@
 // `lumina/src/http/task_dependencies.rs`).
 //
 // Cycle-422 contract — the load-bearing piece of this module.
-// `compute_task_batches` and `add_task_dependency` MAY return a 422 with a
-// structured cycle envelope:
+// `compute_task_batches` MAY return a 422 with a structured cycle envelope:
 //
 //   { "error": { "kind": "cycle", "message": "...",
 //                "edges": [ { "task_id": "...", "depends_on_id": "..." }, ... ] } }
@@ -16,24 +15,33 @@
 // confirmed by reading the file. Each edge is a `{task_id, depends_on_id}`
 // object, NOT a tuple.)
 //
+// `add_task_dependency` does NOT raise a cycle on insert. The repo PRE-CHECK
+// is only kind=task + non-self-loop; a cycle introduced by an INSERT is a
+// graph-level property that surfaces lazily on the next `compute_task_batches`
+// read (per `lumina/src/http/task_dependencies.rs::block_task_on_task_handler`
+// comment line 70: "the row itself goes in successfully — the cycle is a
+// property of the GRAPH, not the single INSERT"). Round-4 R13 removed the
+// dead cycle-Result error-arm from `addTaskDependency`.
+//
 // `handle<T>()` does NOT distinguish cycle errors from generic 4xx/5xx — it
 // flattens every non-2xx into a thrown `Error`. We therefore introduce a
-// local `handleWithCycleCheck<T>()` that parses success identically but
-// returns a `Result<T, CycleError | string>` on failure, surfacing the
-// structured `edges` distinctly so the future UI can render the offending
-// pairs without re-running the topo sort.
+// local `handleWithCycleCheck<T>()` for the ONE read endpoint that actually
+// raises cycles (`compute_task_batches`); the wrapper parses success
+// identically but returns a `Result<T, CycleError | string>` on failure,
+// surfacing the structured `edges` distinctly so the future UI can render the
+// offending pairs without re-running the topo sort.
 //
 // Schema re-export note: `TaskDependencySchema` is defined inline in
-// `work-items.ts`. `BatchEntrySchema` is NOT pre-declared there — the
+// `work-items.ts`. `TaskIdSchema` is NOT pre-declared there — the
 // `compute_task_batches` route returns a `Vec<Vec<String>>` of plain task
 // ids (see `http::task_dependencies::compute_task_batches_handler`), not a
-// row aggregate. We expose `BatchEntrySchema = z.string()` here as the
+// row aggregate. We expose `TaskIdSchema = z.string()` here as the
 // per-cell schema in case future code wants to compose it; the read wrapper
 // returns `string[][]` directly.
 
 import * as z from 'zod'
 
-import { API_BASE, ApiErrorEnvelopeSchema, handle } from './http'
+import { API_BASE, ApiErrorEnvelopeSchema, handle, handleVoid } from './http'
 import {
   type TaskDependency,
   TaskDependencySchema,
@@ -85,11 +93,11 @@ const CycleEnvelopeSchema = z.object({ error: CycleEnvelopeErrorSchema })
 // ---------------------------------------------------------------------------
 
 /**
- * Discriminated-Result mirror of `useHierarchy::Result`. The error arm is a
- * union: a cycle (structured edges) OR a plain string for any other failure
- * path (network, contract violation, generic 4xx).
+ * Discriminated-Result mirror of `useHierarchy::Result`. The error arm
+ * defaults to `CycleOrError` (the union used by both cycle-aware verbs in
+ * this module); callers may override `E` for a narrower type.
  */
-export type Result<T, E> =
+export type Result<T, E = CycleOrError> =
   | { ok: true; value: T }
   | { ok: false; error: E }
 
@@ -178,12 +186,12 @@ const TaskDependencyListSchema = z.array(TaskDependencySchema)
 
 /**
  * Per-cell schema for `compute_task_batches` rows. Backend currently emits
- * `Vec<Vec<String>>` (plain task ids), so each cell is a string. Surfaced
- * here so future code can compose it; `computeTaskBatches` returns
+ * `Vec<Vec<String>>` (plain task ids), so each cell is a task-id string.
+ * Surfaced here so future code can compose it; `computeTaskBatches` returns
  * `string[][]` directly to match the live wire.
  */
-export const BatchEntrySchema = z.string()
-const TaskBatchesSchema = z.array(z.array(BatchEntrySchema))
+export const TaskIdSchema = z.string()
+const TaskBatchesSchema = z.array(z.array(TaskIdSchema))
 
 // ---------------------------------------------------------------------------
 // Wrappers.
@@ -192,34 +200,39 @@ const TaskBatchesSchema = z.array(z.array(BatchEntrySchema))
 /** Edge kind on `task_dependencies.kind`. Defaults to `'data'` server-side. */
 export type TaskDependencyKind = 'data' | string
 
+/** Response shape of `POST /api/work-items/{task_id}/depends-on/{depends_on_id}`. */
+const AddTaskDependencyResponseSchema = z.object({ ok: z.boolean() })
+
 /**
  * `POST /api/work-items/{task_id}/depends-on/{depends_on_id}` — add a
- * task→task prerequisite edge. Returns `{ ok: true, value: true }` on
- * insert.
+ * task→task prerequisite edge. Returns void on success (server replies
+ * `{ ok: true }` with 201 Created; we discard the envelope).
  *
- * Cycle handling: the repo PRE-CHECK is only kind=task + non-self-loop. A
- * cycle introduced by THIS edge goes in successfully and surfaces lazily on
- * the next `computeTaskBatches` call. Even so, we route through
- * `handleWithCycleCheck` because (a) the repo MAY tighten this in future
- * and (b) the wrapper's failure-arm typing is the right shape regardless.
+ * Cycle handling: the repo PRE-CHECK is only kind=task + non-self-loop, so
+ * the insert never raises `AppError::Cycle`. A cycle introduced by THIS edge
+ * goes in successfully and surfaces lazily on the next `computeTaskBatches`
+ * call — see the file-level comment and
+ * `lumina/src/http/task_dependencies.rs::block_task_on_task_handler`. The
+ * round-4 R13 sweep removed this wrapper's dead `Result<true, CycleOrError>`
+ * return shape: only generic 4xx/5xx can come back here, and `handle<T>`'s
+ * thrown-Error path is the right surface for those.
  */
 export async function addTaskDependency(
   taskId: string,
   dependsOnId: string,
   kind?: TaskDependencyKind,
-): Promise<Result<true, CycleOrError>> {
-  const res = await fetch(
-    `${API_BASE}/work-items/${encodeURIComponent(taskId)}/depends-on/${encodeURIComponent(dependsOnId)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(kind === undefined ? {} : { kind }),
-    },
+): Promise<void> {
+  await handle(
+    await fetch(
+      `${API_BASE}/work-items/${encodeURIComponent(taskId)}/depends-on/${encodeURIComponent(dependsOnId)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(kind === undefined ? {} : { kind }),
+      },
+    ),
+    AddTaskDependencyResponseSchema,
   )
-  // Server replies `{ ok: true }` with 201 Created on insert.
-  const result = await handleWithCycleCheck(res, z.object({ ok: z.boolean() }))
-  if (!result.ok) return result
-  return { ok: true, value: true }
 }
 
 /**
@@ -235,20 +248,7 @@ export async function removeTaskDependency(
     `${API_BASE}/work-items/${encodeURIComponent(taskId)}/depends-on/${encodeURIComponent(dependsOnId)}`,
     { method: 'DELETE' },
   )
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const raw: unknown = await res.json()
-      const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
-      if (parsed.success && parsed.data.error?.message) {
-        const message = parsed.data.error.message
-        detail = message.length > 200 ? message.slice(0, 197) + '…' : message
-      }
-    } catch {
-      // non-JSON error body — keep the status line
-    }
-    throw new Error(`API request failed: ${detail}`)
-  }
+  return handleVoid(res)
 }
 
 /**

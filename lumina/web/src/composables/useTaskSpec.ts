@@ -6,14 +6,8 @@
 // translates into a SECOND mutation through `set_task_tier` (writes the
 // typed `work_items.tier` column directly). Tier-aware apply is therefore a
 // single-action call: pass `tier` to `apply` and the column write is
-// dispatched server-side.
-//
-// Reader-path caveat: `repo::get_work_item_detail` currently hardcodes
-// `tier: None` in its row→struct mapping (a pre-existing defect — the WRITE
-// path correctly persists the column). The re-fetched detail's
-// `item.tier` will therefore be `null` even after a successful tier
-// update. The column is correctly written; only the reader path elides
-// it. Same caveat applies to the `setTaskSpec` wrapper.
+// dispatched server-side. The re-fetched detail's `item.tier` reflects
+// the post-PATCH column value.
 
 import { ref } from 'vue'
 import * as productionApi from '@/api'

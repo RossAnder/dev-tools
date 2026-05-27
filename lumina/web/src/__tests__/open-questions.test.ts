@@ -3,7 +3,7 @@
 //
 // Covers both the question-side flow (add, addOption, resolve — refresh the
 // story singleton) AND the task-side flow (block, setEnabling — task-side
-// mutations that do NOT refresh `currentStoryQuestions`, per the composable's
+// mutations that do NOT refresh `items`, per the composable's
 // documented scope).
 
 import { test, expect, beforeEach, afterEach, mock } from 'bun:test'
@@ -148,7 +148,7 @@ test('blockTaskOnQuestion + setEnablingOption + resolveOpenQuestion all return {
 })
 
 // ---------------------------------------------------------------------------
-// 3. Fetch wrapper error path.
+// 3. Fetch wrapper error paths.
 // ---------------------------------------------------------------------------
 
 test('addOpenQuestion — 422 surfaces the server message (story-only validation)', async () => {
@@ -160,6 +160,39 @@ test('addOpenQuestion — 422 surfaces the server message (story-only validation
       ),
   ) as typeof globalThis.fetch
   await expect(addOpenQuestion('p-1', 'q?')).rejects.toThrow(/questions only on stories/)
+})
+
+test('blockTaskOnQuestion — 404 surfaces the server message', async () => {
+  globalThis.fetch = mock(
+    async () =>
+      new Response(
+        JSON.stringify({ error: { kind: 'not_found', message: 'no such question' } }),
+        { status: 404, statusText: 'Not Found', headers: { 'Content-Type': 'application/json' } },
+      ),
+  ) as typeof globalThis.fetch
+  await expect(blockTaskOnQuestion('t-1', 'q-missing')).rejects.toThrow(/no such question/)
+})
+
+test('setEnablingOption — 404 surfaces the server message', async () => {
+  globalThis.fetch = mock(
+    async () =>
+      new Response(
+        JSON.stringify({ error: { kind: 'not_found', message: 'no such option' } }),
+        { status: 404, statusText: 'Not Found', headers: { 'Content-Type': 'application/json' } },
+      ),
+  ) as typeof globalThis.fetch
+  await expect(setEnablingOption('t-1', 'opt-missing')).rejects.toThrow(/no such option/)
+})
+
+test('resolveOpenQuestion — 422 surfaces the server message (already-resolved)', async () => {
+  globalThis.fetch = mock(
+    async () =>
+      new Response(
+        JSON.stringify({ error: { kind: 'validation', message: 'question already resolved' } }),
+        { status: 422, statusText: 'Unprocessable Entity', headers: { 'Content-Type': 'application/json' } },
+      ),
+  ) as typeof globalThis.fetch
+  await expect(resolveOpenQuestion('q-done', 'opt-1', 'ross')).rejects.toThrow(/question already resolved/)
 })
 
 // ---------------------------------------------------------------------------
@@ -183,7 +216,7 @@ test('useOpenQuestions.add refreshes story questions list', async () => {
   expect(addMock.mock.calls[0]).toEqual(['s-1', 'new question'])
   expect(fetchDetailMock).toHaveBeenCalledTimes(1)
   expect(result.ok).toBe(true)
-  expect(oq.currentStoryQuestions.value).toHaveLength(1)
+  expect(oq.items.value).toHaveLength(1)
 })
 
 test('useOpenQuestions.block — task-side, does NOT refresh question list', async () => {
@@ -196,8 +229,8 @@ test('useOpenQuestions.block — task-side, does NOT refresh question list', asy
 
   // Seed an initial question into the singleton so we can assert NO mutation.
   const oq = useOpenQuestions()
-  oq.currentStoryQuestions.value = [openQuestion()] as never
-  const before = oq.currentStoryQuestions.value
+  oq.items.value = [openQuestion()] as never
+  const before = oq.items.value
 
   const result = await oq.block('t-1', 'q-1')
   expect(result.ok).toBe(true)
@@ -205,8 +238,8 @@ test('useOpenQuestions.block — task-side, does NOT refresh question list', asy
   // Task-side ops MUST NOT call fetchDetail.
   expect(fetchDetailMock).not.toHaveBeenCalled()
   // The story-side singleton must be untouched (same reference, same content).
-  expect(oq.currentStoryQuestions.value).toBe(before)
-  expect(oq.currentStoryQuestions.value).toHaveLength(1)
+  expect(oq.items.value).toBe(before)
+  expect(oq.items.value).toHaveLength(1)
 })
 
 test('useOpenQuestions.setEnabling — task-side, does NOT refresh', async () => {
@@ -227,14 +260,14 @@ test('useOpenQuestions.setEnabling — task-side, does NOT refresh', async () =>
 // 5. __resetForTests smoke.
 // ---------------------------------------------------------------------------
 
-test('__resetForTests clears currentStoryQuestions + state', async () => {
+test('__resetForTests clears items + state', async () => {
   const oq = useOpenQuestions()
-  oq.currentStoryQuestions.value = [openQuestion()] as never
-  expect(oq.currentStoryQuestions.value).toHaveLength(1)
+  oq.items.value = [openQuestion()] as never
+  expect(oq.items.value).toHaveLength(1)
 
   __resetForTests()
   const after = useOpenQuestions()
-  expect(after.currentStoryQuestions.value).toEqual([])
+  expect(after.items.value).toEqual([])
   expect(after.loading.value).toBe(false)
   expect(after.error.value).toBeNull()
 })

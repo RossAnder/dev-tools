@@ -17,6 +17,7 @@
 import { ref } from 'vue'
 import * as productionApi from '@/api'
 import type { AcceptanceCriterion, WorkItemDetail } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
 /** See {@link import('./useHierarchy').Result} for the design rationale. */
 export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
@@ -26,12 +27,12 @@ export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error:
 //
 // The check/uncheck/remove mutators all touch acceptance criteria living on a
 // specific parent work item — exactly like `useRepoLinks` binds to a project.
-// `currentParentCriteria` holds the live fold for that bound parent; the
-// mutators refresh from `fetchDetail(parentId)` so the singleton stays
-// consistent with what the parent panel renders.
+// `items` holds the live fold for that bound parent; the mutators refresh
+// from `fetchDetail(parentId)` so the singleton stays consistent with what
+// the parent panel renders.
 // ---------------------------------------------------------------------------
 
-const currentParentCriteria = ref<AcceptanceCriterion[]>([])
+const items = ref<AcceptanceCriterion[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -61,7 +62,7 @@ export function __setApiForTests(override: Partial<Api>): void {
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
 export function __resetForTests(): void {
-  currentParentCriteria.value = []
+  items.value = []
   loading.value = false
   error.value = null
   api = {
@@ -93,13 +94,13 @@ async function refresh(parentId: string): Promise<AcceptanceCriterion[]> {
   // the zod schema applies `.optional().default([])` so a pre-deploy cache
   // without it would still resolve.
   const acs = detail.acceptance_criteria ?? []
-  currentParentCriteria.value = acs
+  items.value = acs
   return acs
 }
 
 /** Seed the singleton from a freshly-returned `WorkItemDetail` (no extra fetch). */
 function seedFromDetail(detail: WorkItemDetail): void {
-  currentParentCriteria.value = detail.acceptance_criteria ?? []
+  items.value = detail.acceptance_criteria ?? []
 }
 
 // ---------------------------------------------------------------------------
@@ -108,11 +109,11 @@ function seedFromDetail(detail: WorkItemDetail): void {
 
 export function useAcceptanceCriteria() {
   /**
-   * Seed `currentParentCriteria` for a parent work item, without performing a
-   * mutation. Call this from a panel's `onMounted` / `watch(parentId)` so the
-   * singleton reflects the focused parent's criteria.
+   * Seed `items` for a parent work item, without performing a mutation. Call
+   * this from a panel's `onMounted` / `watch(parentId)` so the singleton
+   * reflects the focused parent's criteria.
    */
-  async function bindParent(parentId: string): Promise<Result<AcceptanceCriterion[]>> {
+  async function bind(parentId: string): Promise<Result<AcceptanceCriterion[]>> {
     loading.value = true
     error.value = null
     try {
@@ -133,6 +134,7 @@ export function useAcceptanceCriteria() {
     try {
       const created = await api.addAcceptanceCriterion(parentId, text)
       await refresh(parentId)
+      await useHierarchy().refresh(parentId)
       return { ok: true, value: created.id }
     } catch (e) {
       const message = toMessage(e)
@@ -149,6 +151,7 @@ export function useAcceptanceCriteria() {
     try {
       const detail = await api.checkAcceptanceCriterion(acId, by)
       seedFromDetail(detail)
+      await useHierarchy().refresh(detail.item.id)
       return { ok: true, value: detail }
     } catch (e) {
       const message = toMessage(e)
@@ -165,6 +168,7 @@ export function useAcceptanceCriteria() {
     try {
       const detail = await api.uncheckAcceptanceCriterion(acId)
       seedFromDetail(detail)
+      await useHierarchy().refresh(detail.item.id)
       return { ok: true, value: detail }
     } catch (e) {
       const message = toMessage(e)
@@ -181,6 +185,7 @@ export function useAcceptanceCriteria() {
     try {
       await api.removeAcceptanceCriterion(acId)
       await refresh(parentId)
+      await useHierarchy().refresh(parentId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -191,14 +196,20 @@ export function useAcceptanceCriteria() {
     }
   }
 
+  /** Clear `error.value` — for the UI's "dismiss banner" button. */
+  function clearError(): void {
+    error.value = null
+  }
+
   return {
-    currentParentCriteria,
+    items,
     loading,
     error,
-    bindParent,
+    bind,
     add,
     check,
     uncheck,
     remove,
+    clearError,
   }
 }

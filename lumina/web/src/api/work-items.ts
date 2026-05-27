@@ -509,7 +509,7 @@ export const WorkItemDetailWireSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** Body accepted by `POST /api/work-items`. */
-export interface CreateWorkItemRequest {
+export interface CreateWorkItemBody {
   kind: Kind
   parent_id?: string | null
   title: string
@@ -550,7 +550,7 @@ export async function fetchDetail(id: string): Promise<WorkItemDetail> {
 }
 
 /** `POST /api/work-items` — create a node; returns the created work item. */
-export async function createWorkItem(req: CreateWorkItemRequest): Promise<WorkItem> {
+export async function createWorkItem(req: CreateWorkItemBody): Promise<WorkItem> {
   return handle<WorkItem>(
     await fetch(`${API_BASE}/work-items`, {
       method: 'POST',
@@ -567,7 +567,7 @@ export async function createWorkItem(req: CreateWorkItemRequest): Promise<WorkIt
  * the column untouched (the repo's `COALESCE(?, col)` write), it does NOT clear
  * the column to NULL.
  */
-export interface UpdateWorkItemRequest {
+export interface UpdateWorkItemBody {
   title?: string
   body?: string
   status?: Status
@@ -581,7 +581,7 @@ export interface UpdateWorkItemRequest {
  */
 export async function updateWorkItem(
   id: string,
-  patch: UpdateWorkItemRequest,
+  patch: UpdateWorkItemBody,
 ): Promise<WorkItem> {
   return handle<WorkItem>(
     await fetch(`${API_BASE}/work-items/${encodeURIComponent(id)}`, {

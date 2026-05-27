@@ -15,18 +15,21 @@
 //     — overriding the api alone is insufficient.
 //
 // Scope note: the five wrappers cross two parent kinds (story for add/resolve;
-// task for block/setEnabling). `currentStoryQuestions` tracks the bound story
+// task for block/setEnabling). `items` tracks the bound story's question list
 // — `block` and `setEnabling` write task-side state that is NOT folded into
 // this singleton (they touch a task's `blocked_by_question_id` /
 // `enabling_option_id` columns, surfaced via `useHierarchy().detail` for the
 // owning task). Mutators that affect the story's question list (`add`,
 // `addOption`, `resolve`) refresh from `fetchDetail(storyId)`; the two
-// task-side mutators do not refresh (no story-side delta to mirror) — callers
-// that also render the affected task should re-fetch via `useHierarchy()`.
+// task-side mutators do not refresh the local items (no story-side delta to
+// mirror) — they still ask `useHierarchy()` to refresh the affected task so
+// the hierarchy detail panel reflects the new `blocked_by_question_id` /
+// `enabling_option_id`.
 
 import { ref } from 'vue'
 import * as productionApi from '@/api'
 import type { AddQuestionOptionBody, OpenQuestion } from '@/api'
+import { useHierarchy } from './useHierarchy'
 
 /** See {@link import('./useHierarchy').Result} for the design rationale. */
 export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E }
@@ -35,7 +38,7 @@ export type Result<T, E = string> = { ok: true; value: T } | { ok: false; error:
 // Module-singleton state.
 // ---------------------------------------------------------------------------
 
-const currentStoryQuestions = ref<OpenQuestion[]>([])
+const items = ref<OpenQuestion[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -67,7 +70,7 @@ export function __setApiForTests(override: Partial<Api>): void {
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
 export function __resetForTests(): void {
-  currentStoryQuestions.value = []
+  items.value = []
   loading.value = false
   error.value = null
   api = {
@@ -92,7 +95,7 @@ function toMessage(e: unknown): string {
 async function refresh(storyId: string): Promise<OpenQuestion[]> {
   const detail = await api.fetchDetail(storyId)
   const questions = detail.open_questions ?? []
-  currentStoryQuestions.value = questions
+  items.value = questions
   return questions
 }
 
@@ -102,11 +105,11 @@ async function refresh(storyId: string): Promise<OpenQuestion[]> {
 
 export function useOpenQuestions() {
   /**
-   * Seed `currentStoryQuestions` for a story, without performing a mutation.
-   * Call this from a panel's `onMounted` / `watch(storyId)` so the singleton
-   * reflects the focused story's question set.
+   * Seed `items` for a story, without performing a mutation. Call this from a
+   * panel's `onMounted` / `watch(storyId)` so the singleton reflects the
+   * focused story's question set.
    */
-  async function bindStory(storyId: string): Promise<Result<OpenQuestion[]>> {
+  async function bind(storyId: string): Promise<Result<OpenQuestion[]>> {
     loading.value = true
     error.value = null
     try {
@@ -127,6 +130,7 @@ export function useOpenQuestions() {
     try {
       const created = await api.addOpenQuestion(storyId, question)
       await refresh(storyId)
+      await useHierarchy().refresh(storyId)
       return { ok: true, value: created.id }
     } catch (e) {
       const message = toMessage(e)
@@ -153,6 +157,7 @@ export function useOpenQuestions() {
     try {
       const created = await api.addQuestionOption(questionId, body)
       await refresh(storyId)
+      await useHierarchy().refresh(storyId)
       return { ok: true, value: created.id }
     } catch (e) {
       const message = toMessage(e)
@@ -165,14 +170,16 @@ export function useOpenQuestions() {
 
   /**
    * Block a task on an open question. Task-side mutation — does NOT refresh
-   * `currentStoryQuestions` (no story-side delta). Callers that also render
-   * the affected task should re-fetch the task's detail via `useHierarchy()`.
+   * `items` (no story-side delta). Asks `useHierarchy()` to refresh the
+   * affected task so the hierarchy detail panel reflects the new
+   * `blocked_by_question_id`.
    */
   async function block(taskId: string, questionId: string): Promise<Result<void>> {
     loading.value = true
     error.value = null
     try {
       await api.blockTaskOnQuestion(taskId, questionId)
+      await useHierarchy().refresh(taskId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -185,7 +192,7 @@ export function useOpenQuestions() {
 
   /**
    * Tie an exclusive-branch task to a question option. Task-side mutation —
-   * does NOT refresh `currentStoryQuestions` (same rationale as `block`).
+   * does NOT refresh `items` (same rationale as `block`).
    */
   async function setEnabling(
     taskId: string,
@@ -195,6 +202,7 @@ export function useOpenQuestions() {
     error.value = null
     try {
       await api.setEnablingOption(taskId, optionId)
+      await useHierarchy().refresh(taskId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -221,6 +229,7 @@ export function useOpenQuestions() {
     try {
       await api.resolveOpenQuestion(questionId, chosenOptionId, by)
       await refresh(storyId)
+      await useHierarchy().refresh(storyId)
       return { ok: true, value: undefined }
     } catch (e) {
       const message = toMessage(e)
@@ -231,15 +240,21 @@ export function useOpenQuestions() {
     }
   }
 
+  /** Clear `error.value` — for the UI's "dismiss banner" button. */
+  function clearError(): void {
+    error.value = null
+  }
+
   return {
-    currentStoryQuestions,
+    items,
     loading,
     error,
-    bindStory,
+    bind,
     add,
     addOption,
     block,
     setEnabling,
     resolve,
+    clearError,
   }
 }
