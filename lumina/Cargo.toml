@@ -48,7 +48,7 @@ futures = "0.3"                                     # FuturesUnordered for the P
 # satisfy the same shape. bytes is the standard zero-copy buffer type
 # used on the read/write channels between the blocking PTY workers and
 # the parser pipeline.
-portable-pty = "0.9"
+portable-pty = "=0.8.1"
 vt100 = "0.16.2"
 async-trait = "0.1"
 bytes = "1"

@@ -138,10 +138,18 @@ impl Transport for PtyTransport {
         // Obtain a cloneable killer BEFORE moving `child` into the wait task.
         let mut killer = child.clone_killer();
 
-        // ---- 4. Drop the slave immediately ---------------------------------
-        // portable-pty requires this to avoid blocking on EOF reads after the
-        // child exits.
+        // ---- 4. Drop the slave (Unix only) ---------------------------------
+        // On Unix, dropping the slave is required to avoid blocking on EOF
+        // reads after the child exits — the child holds its own fd to the
+        // slave tty. On Windows ConPTY, the slave handle participates in
+        // ConPTY's internal I/O routing and dropping it severs the path
+        // child stdout takes to the master; see wezterm/wezterm#4206. We
+        // move the slave into the cancel task (below) on Windows so it
+        // outlives the spawn function and is only dropped on shutdown.
+        #[cfg(not(windows))]
         drop(pair.slave);
+        #[cfg(windows)]
+        let windows_slave = pair.slave;
 
         // Take reader / writer handles BEFORE moving `master` into the cancel
         // task. Both calls consume from the master's internal slots; on Unix
@@ -311,9 +319,13 @@ impl Transport for PtyTransport {
         // On shutdown, kill the child via the cloned `ChildKiller`, then drop
         // `master` to unblock any in-flight blocking read on Unix (closing the
         // master fd / handle causes pending `read()` syscalls in the
-        // reader-blocking worker to unblock with EOF rather than hang).
+        // reader-blocking worker to unblock with EOF rather than hang). On
+        // Windows the slave handle is moved into this task too so it lives
+        // for the full session and is dropped only on shutdown.
         {
             let shutdown_child = shutdown.clone();
+            #[cfg(windows)]
+            let windows_slave_in_task = windows_slave;
             tokio::spawn(async move {
                 shutdown_child.cancelled().await;
                 if let Err(e) = killer.kill() {
@@ -322,6 +334,8 @@ impl Transport for PtyTransport {
                 // `master` is dropped here when the task returns; doing it via
                 // an explicit `drop` documents the intent.
                 drop(master);
+                #[cfg(windows)]
+                drop(windows_slave_in_task);
             });
         }
 
