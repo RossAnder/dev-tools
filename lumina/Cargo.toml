@@ -17,6 +17,18 @@ path = "src/lib.rs"
 name = "lumina"
 path = "src/main.rs"
 
+# Test fixture binary: a tiny stub that stands in for the real `claude` CLI
+# in `tests/pty_e2e.rs`. The test prepends a tempdir containing this binary
+# (renamed to `claude` / `claude.exe`) to PATH before invoking the spawn
+# handler, so `PtyTransport`'s hard-coded `CommandBuilder::new("claude")`
+# resolves to the stub. `env!("CARGO_BIN_EXE_pty_stub")` lets the test
+# locate it at runtime without an `escargot`-style runtime build. The
+# stub is dep-free (std only) so it doesn't pull anyhow/tokio/sqlx into
+# the fixture's compile graph.
+[[bin]]
+name = "pty_stub"
+path = "tests/fixtures/pty_stub.rs"
+
 [dependencies]
 # --- web / runtime ---
 axum = { version = "0.8", features = ["ws"] }

@@ -237,3 +237,51 @@ original_intent = "Plan says PATCH updates label/project_id"
 rationale = "No repo::pty::update_pty_session_meta helper exists; adding one was out of T9 scope. Stub returns 501; follow-up PR can add the helper + handler."
 commits = ["df2fa18"]
 dedup_id = "bc80f11bb6aea99a"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "6-mcp-tools-for-pty"
+status = "done"
+files = [
+    "lumina/src/mcp.rs",
+    "lumina/tests/e2e.rs",
+]
+commits = ["ffdc403"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "6 PTY MCP tools (list/get/spawn/send_input/cancel/delete); tool count 55->61; LuminaTools widened with state: AppState + back-compat new(pool); added mcp::service_with_state; updated 4 hint loops (read_only/destructive/idempotent) + count + enumeration. 7/7 mcp::tests pass."
+dedup_id = "9fdf5e219d0dae50"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "wire-supervisor-registry-into-app-rs"
+status = "done"
+files = ["lumina/src/app.rs"]
+commits = ["ffdc403"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "Supervisor spawned in app::serve; state.pty_register_tx = Some(supervisor.register_tx()); shared SessionRegistry across HTTP+MCP via build_router calling mcp::service_with_state(state); shutdown ordering: HTTP -> PTY supervisor -> export. 145/145 backend tests pass."
+dedup_id = "e78ef81f29eff922"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "pty-api-client-ws-opener"
+status = "done"
+files = [
+    "lumina/web/src/api/pty.ts",
+    "lumina/web/src/api/index.ts",
+]
+commits = ["ffdc403"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+summary = "zod schemas (PtySession/PtyMessage/PtyQueueEntry/InputFrame/WsFrame) + 9 fetch wrappers + openSessionStream WS opener with exponential backoff reconnect. cancelSession + deleteSession are aliases (same DELETE route in v1). 175/175 bun tests pass."
+dedup_id = "e35beb31e31e9fa3"
