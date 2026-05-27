@@ -8,59 +8,65 @@
 //!
 //! Build-profile split:
 //!   * **release** (`#[cfg(not(debug_assertions))]`): the `web/dist` build is
-//!     baked into the binary via `rust-embed` and served through
-//!     `axum_embed::ServeEmbed` with `FallbackBehavior::Ok` (any miss → the
-//!     index file, status 200). Single-binary distribution, no filesystem
-//!     dependency at runtime.
+//!     baked into the binary via `static-serve`'s `embed_assets!` macro. Each
+//!     asset is precompressed at compile time with zstd + gzip (the macro
+//!     keeps a compressed variant only when its size is < 90% of the
+//!     original — incompressible / tiny files are served uncompressed
+//!     automatically). The router negotiates `Accept-Encoding` per request
+//!     and handles ETag/`If-None-Match` (→ 304) plus byte-range requests
+//!     (→ 206) without extra wiring. `web/dist/assets/*` carries vite's
+//!     content-hashed filenames, so it is marked `cache_busted_paths` →
+//!     `Cache-Control: public, max-age=31536000, immutable`. The SPA
+//!     history-fallback is `embed_asset!("web/dist/index.html")` mounted as
+//!     the router's fallback service — unknown paths return its bytes at
+//!     status 200.
 //!   * **debug** (`#[cfg(debug_assertions)]`): `tower_http`'s
 //!     `ServeDir::new("web/dist").fallback(ServeFile::new("web/dist/index.html"))`
 //!     reads from disk for hot-reload. `.fallback(...)` (NOT
-//!     `.not_found_service(...)`) leaves the fallback's status untouched, so the
-//!     index file is served with its natural 200.
+//!     `.not_found_service(...)`) leaves the fallback's status untouched, so
+//!     the index file is served with its natural 200.
 //!
-//! **Single return type across both arms:** each branch wraps its concrete
-//! tower `Service` (both have `Error = Infallible`) in
-//! [`axum::routing::any_service`], so `spa_fallback` returns one
-//! `MethodRouter` regardless of profile — the same erased type the Task-1 stub
-//! returned, which `app.rs`'s `.fallback_service(...)` already accepts.
+//! `build.rs` shells out to `bun run build` before rustc reaches this module,
+//! so `web/dist` is guaranteed to exist at compile time (release) and at
+//! runtime (debug). `LUMINA_SKIP_WEB_BUILD=1` opts out and falls back to a
+//! placeholder `index.html` (the macros still compile against that stub).
 
-use axum::routing::{MethodRouter, any_service};
+use axum::Router;
 
-/// Build the SPA fallback service for the active build profile.
+/// Build the SPA fallback router for the active build profile.
 ///
-/// Returns a `MethodRouter` so the single return type is identical across the
-/// two `#[cfg]` arms and matches what the composition root mounts.
-pub fn spa_fallback() -> MethodRouter {
+/// Returned as `Router` so callers can `.fallback_service(spa_fallback())` —
+/// the released router carries its own fallback (index.html), so any unknown
+/// path under the outer router's reach resolves to the SPA shell at 200.
+pub fn spa_fallback() -> Router {
     #[cfg(debug_assertions)]
     {
         use tower_http::services::{ServeDir, ServeFile};
 
         // `.fallback` (not `.not_found_service`) keeps the served file's status
         // at 200 for unknown paths — the SPA history-fallback contract.
-        let service = ServeDir::new("web/dist")
-            .fallback(ServeFile::new("web/dist/index.html"));
-        any_service(service)
+        let service =
+            ServeDir::new("web/dist").fallback(ServeFile::new("web/dist/index.html"));
+        Router::new().fallback_service(service)
     }
 
     #[cfg(not(debug_assertions))]
     {
-        use axum_embed::{FallbackBehavior, ServeEmbed};
-        use rust_embed::RustEmbed;
+        use static_serve::{embed_asset, embed_assets};
 
-        // The release binary embeds the built SPA. The folder must exist at
-        // compile time — Task 4 commits a placeholder `web/dist/index.html`
-        // (Task 8's `npm run build` overwrites the directory).
-        #[derive(RustEmbed, Clone)]
-        #[folder = "web/dist"]
-        struct Assets;
-
-        // FallbackBehavior::Ok → an unknown path resolves to the index file with
-        // HTTP 200 (not 404), matching the debug `ServeDir` behaviour.
-        let service = ServeEmbed::<Assets>::with_parameters(
-            Some("index.html".to_owned()),
-            FallbackBehavior::Ok,
-            Some("index.html".to_owned()),
+        // Declares a local `pub fn static_router<S>() -> axum::Router<S>` whose
+        // routes serve every file under `web/dist`. `cache_busted_paths` marks
+        // vite's hashed-asset directory as immutable; the index file does NOT
+        // belong there (it must revalidate on every load).
+        embed_assets!(
+            "web/dist",
+            compress = true,
+            cache_busted_paths = ["assets"]
         );
-        any_service(service)
+
+        // SPA history-fallback: any unknown path serves index.html bytes at 200.
+        let index = embed_asset!("web/dist/index.html", compress = true);
+
+        static_router().fallback_service(index)
     }
 }

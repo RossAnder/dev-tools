@@ -23,19 +23,38 @@ pub struct AppState {
 }
 
 /// Default port when `PORT` is unset. Picked to be uncommon (no well-known
-/// service binds it) and below 32768 so it sits outside the Linux kernel's
-/// default ephemeral-port range (`net.ipv4.ip_local_port_range`, typically
-/// 32768–60999) — that avoids transient collisions with outbound sockets.
+/// service binds it) and below the lowest default ephemeral-port floor across
+/// Linux/macOS/Windows (Linux's `net.ipv4.ip_local_port_range` starts at 32768;
+/// macOS and Windows start at 49152) — that avoids transient collisions with
+/// outbound sockets on any of the three.
 const DEFAULT_PORT: u16 = 24817;
 
-/// Default bind address when `HOST` is unset. `0.0.0.0` makes the SPA and the
-/// JSON `/api/*` surface reachable from the LAN; the MCP `/mcp` surface stays
-/// loopback-only regardless, because the rmcp 1.7 `allowed_hosts` default
-/// rejects any Host header outside `{localhost, 127.0.0.1, ::1}` (the
-/// DNS-rebinding mitigation per GHSA-89vp-x53w-74fx — see `mcp.rs`). Override
-/// with `HOST=127.0.0.1` to restore loopback-only HTTP, or `HOST=::` for
-/// dual-stack IPv6.
-const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+/// Default bind address when `HOST` is unset. Loopback-only by default: the
+/// JSON `/api/*` surface has no auth and no Host-header check (the MCP `/mcp`
+/// surface is separately protected by rmcp 1.7's `allowed_hosts` default —
+/// `{localhost, 127.0.0.1, ::1}` per GHSA-89vp-x53w-74fx — but that protection
+/// does NOT extend to `/api/*`). Set `HOST=0.0.0.0` to opt in to LAN exposure
+/// of the REST surface, or `HOST=::` for dual-stack IPv6.
+const DEFAULT_HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+/// Parse an env var into `T`, falling back to `default` when unset. A parse
+/// failure on a *set* value logs to stderr and still falls back — so a typo
+/// like `PORT=8080a` does not silently bind the default without trace.
+fn parse_env_or_default<T: std::str::FromStr>(var: &str, default: T) -> T
+where
+    T::Err: std::fmt::Display,
+{
+    match std::env::var(var) {
+        Err(_) => default,
+        Ok(raw) => match raw.parse() {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("warning: {var}={raw:?} is not a valid value ({e}); using default");
+                default
+            }
+        },
+    }
+}
 
 /// Build the pool, assemble the router, spawn the export task, and serve.
 ///
@@ -66,14 +85,8 @@ pub async fn serve() -> anyhow::Result<()> {
 
     let app = build_router(state);
 
-    let port: u16 = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(DEFAULT_PORT);
-    let host: IpAddr = std::env::var("HOST")
-        .ok()
-        .and_then(|h| h.parse().ok())
-        .unwrap_or(DEFAULT_HOST);
+    let port: u16 = parse_env_or_default("PORT", DEFAULT_PORT);
+    let host: IpAddr = parse_env_or_default("HOST", DEFAULT_HOST);
     let addr = SocketAddr::from((host, port));
 
     let listener = tokio::net::TcpListener::bind(addr)
