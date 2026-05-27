@@ -11,23 +11,45 @@
 //! would break the offline build.
 
 use std::str::FromStr as _;
+use std::time::Duration;
 
 use anyhow::Context as _;
-use sqlx::SqlitePool;
-use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::{Sqlite, SqlitePool, Transaction};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
+
+/// SQLite busy-wait budget applied to every pooled connection. With WAL + an
+/// upfront `BEGIN IMMEDIATE` (see [`begin_write`]) the only remaining source of
+/// `SQLITE_BUSY` is a concurrent writer holding the RESERVED lock; the
+/// busy-handler retries internally for up to this duration before surfacing the
+/// error. Five seconds is generous enough to absorb any realistic burst from
+/// the MCP write path + the export drain without masking a true deadlock.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Open (creating if absent) the SQLite database at `database_url`, enable
 /// foreign-key enforcement, and run all embedded migrations.
+///
+/// On-disk databases additionally opt into WAL journal mode and a 5-second
+/// busy-timeout: WAL lets the export drain's auto-commit reads run concurrent
+/// with the writer (instead of mutually excluding it under the default
+/// rollback-journal mode), and the busy-timeout absorbs short bursts of writer
+/// contention before bubbling `SQLITE_BUSY` to the caller. In-memory databases
+/// (used by tests and the e2e thread) skip WAL — `:memory:` has no file to
+/// spill the WAL sidecar to, so the mode is meaningless there.
 ///
 /// `sqlx::migrate!("./migrations")` embeds the migration directory at compile
 /// time (relative to the crate root / `CARGO_MANIFEST_DIR`); it needs only the
 /// directory present on disk at build time, NOT a live database, so the crate
 /// still compiles offline.
 pub async fn init(database_url: &str) -> anyhow::Result<SqlitePool> {
-    let connect_opts = SqliteConnectOptions::from_str(database_url)
+    let mut connect_opts = SqliteConnectOptions::from_str(database_url)
         .with_context(|| format!("parsing DATABASE_URL {database_url}"))?
         .create_if_missing(true)
-        .foreign_keys(true);
+        .foreign_keys(true)
+        .busy_timeout(BUSY_TIMEOUT);
+
+    if !is_in_memory(database_url) {
+        connect_opts = connect_opts.journal_mode(SqliteJournalMode::Wal);
+    }
 
     let pool = SqlitePool::connect_with(connect_opts)
         .await
@@ -39,6 +61,24 @@ pub async fn init(database_url: &str) -> anyhow::Result<SqlitePool> {
         .context("running embedded migrations")?;
 
     Ok(pool)
+}
+
+/// Open a SQLite write transaction with an upfront RESERVED lock — replaces
+/// the default `pool.begin()` (which issues `BEGIN DEFERRED`) so writer
+/// contention surfaces at begin-time rather than after the first statement.
+///
+/// Every mutation path in [`crate::repo`] uses this helper; read paths stay on
+/// auto-commit (the pool directly) and do NOT need this, since IMMEDIATE on a
+/// read-only call would pessimistically take the writer lock for nothing.
+pub async fn begin_write(pool: &SqlitePool) -> Result<Transaction<'_, Sqlite>, sqlx::Error> {
+    pool.begin_with("BEGIN IMMEDIATE").await
+}
+
+/// True if `database_url` names an in-memory SQLite database. Accepts the bare
+/// `:memory:` form and the URI form (`sqlite::memory:`, with or without query
+/// params like `?cache=shared`).
+fn is_in_memory(database_url: &str) -> bool {
+    database_url == ":memory:" || database_url.starts_with("sqlite::memory:")
 }
 
 /// Stand up a freshly-migrated in-memory SQLite pool for tests / e2e.
