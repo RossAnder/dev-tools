@@ -174,3 +174,36 @@ summary = "sqlx offline cache check pass (benign unused-queries warning expected
 command = "cd lumina && cargo sqlx prepare --check"
 outcome = "pass"
 dedup_id = "1bbb7ee6dc6e1be3"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "split-api-ts-extend-schemas-pre-declare-per-family-modules"
+status = "done"
+files = [
+    "lumina/web/src/api/index.ts",
+    "lumina/web/src/api/http.ts",
+    "lumina/web/src/api/wire-enums.ts",
+    "lumina/web/src/api/work-items.ts",
+    "lumina/web/src/api/repo-links.ts",
+    "lumina/web/src/api/scalars.ts",
+    "lumina/web/src/api/structured-patches.ts",
+    "lumina/web/src/api/readiness.ts",
+    "lumina/web/src/api/acceptance-criteria.ts",
+    "lumina/web/src/api/research-notes.ts",
+    "lumina/web/src/api/risks.ts",
+    "lumina/web/src/api/rejected-alternatives.ts",
+    "lumina/web/src/api/task-deps.ts",
+    "lumina/web/src/api/open-questions.ts",
+    "lumina/web/src/api/findings.ts",
+    "lumina/web/src/api/activity.ts",
+    "lumina/web/src/api/context-blocks.ts",
+    "lumina/web/src/__tests__/showcase.test.ts",
+]
+commits = ["d59a712"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Split api.ts into api/ directory (4 impl + 12 stubs + 1 barrel). Added TaskKind/Tier/RiskSeverity wire enums. Extended WorkItemSchema and WorkItemDetailWireSchema. Empirically picked .nullable() over .nullish(). bun test 18/18, vue-tsc + vite build clean."
+dedup_id = "6a6f304b14cb996d"
