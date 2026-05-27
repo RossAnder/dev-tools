@@ -47,7 +47,15 @@ rmcp = { version = "1.7", features = [
 schemars = "1" # tool-parameter JSON schemas for rmcp #[tool] methods
 
 # --- CLI (Task 7: the `import-flow` subcommand; bare invocation still serves) ---
-clap = { version = "4", features = ["derive"] }
+# Trimmed defaults: no `color` / `suggestions` / `error-context` — lumina's CLI
+# surface is a single `import-flow` subcommand plus bare-invocation server start,
+# so the rich error-rendering features are dead weight.
+clap = { version = "4", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+] }
 
 # --- serialization / domain support ---
 serde = { version = "1", features = ["derive"] }
@@ -57,6 +65,14 @@ anyhow = "1"
 jiff = "0.2"
 tempfile = "3"
 uuid = { version = "1", features = ["v7", "serde"] }
+
+# mimalloc as the global allocator (mirrors tomlctl O56). lumina's hot paths are
+# small-allocation-heavy: every MCP tool call round-trips JSON through serde,
+# every sqlx Row materialises a handful of Strings, and the git-export drain
+# serialises work-item trees to TOML. Microsoft's benchmarks show ~5× faster
+# small-alloc throughput vs system malloc. `default-features = false` skips the
+# optional `secure` mode (~10% guard-page/encrypted-free-list overhead).
+mimalloc = { version = "0.1", default-features = false }
 
 # --- SPA embedding (release builds bake web/dist into the binary) ---
 # `static-serve` precompresses each asset at compile time with zstd + gzip,
