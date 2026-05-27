@@ -81,8 +81,6 @@ use crate::domain::{
 use crate::error::AppError;
 use crate::pty::protocol::{InputFrame, InputKind, SessionId, SessionStatus};
 use crate::pty::queue::Queue;
-use crate::pty::session::Session;
-use crate::pty::supervisor::SessionRegistration;
 use crate::pty::transport::SpawnConfig;
 use crate::repo;
 use crate::repo::NewFinding;
@@ -2543,31 +2541,11 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<SpawnPtySessionParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        // ---- 1. Resolve worktree root ----
-        let worktree_root: std::path::PathBuf = match std::env::var("LUMINA_WORKTREE_ROOT") {
-            Ok(s) => std::path::PathBuf::from(s),
-            Err(_) => std::env::current_dir().map_err(|e| {
-                app_error_to_mcp(AppError::Other(anyhow::anyhow!("resolving cwd: {e}")))
-            })?,
-        };
+        // ---- 1+2. Resolve worktree root + validate cwd (shared helper) ----
+        let canonical_cwd =
+            crate::pty::spawn::resolve_and_validate_cwd(&p.cwd).map_err(app_error_to_mcp)?;
 
-        // ---- 2. Validate cwd ----
-        let canonical_cwd = std::fs::canonicalize(&p.cwd).map_err(|e| {
-            app_error_to_mcp(AppError::Validation(format!(
-                "cwd {:?} cannot be resolved: {e}",
-                p.cwd
-            )))
-        })?;
-        let canonical_root =
-            std::fs::canonicalize(&worktree_root).unwrap_or_else(|_| worktree_root.clone());
-        if !canonical_cwd.starts_with(&canonical_root) {
-            return Err(app_error_to_mcp(AppError::Validation(format!(
-                "cwd {:?} is not under worktree root {:?}",
-                canonical_cwd, canonical_root
-            ))));
-        }
-
-        // ---- 3. Spawn the transport ----
+        // ---- 3. Build SpawnConfig (helper clones internally for transport spawn) ----
         let config = SpawnConfig {
             cwd: canonical_cwd.clone(),
             claude_args: p.claude_args.clone(),
@@ -2577,78 +2555,17 @@ impl LuminaTools {
             settings_json: p.settings_json.clone(),
             prompt_pattern: p.prompt_pattern.clone(),
         };
-        let handle = self
-            .state
-            .pty_transport
-            .spawn(config.clone())
-            .await
-            .map_err(app_error_to_mcp)?;
-        let session_id = handle.session_id;
 
-        // ---- 4. Bridge the transport broadcast tail into a fresh sender ----
-        // (matches T9's HTTP handler — `broadcast::Receiver` cannot be resubscribed
-        //  via the original sender, so we own a NEW sender and forward.)
-        let (broadcast_tx, _initial_rx) =
-            tokio::sync::broadcast::channel::<crate::pty::protocol::TypedMessage>(1024);
-        {
-            let mut transport_rx = handle.outbound;
-            let bridge_tx = broadcast_tx.clone();
-            tokio::spawn(async move {
-                loop {
-                    match transport_rx.recv().await {
-                        Ok(msg) => {
-                            let _ = bridge_tx.send(msg);
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    }
-                }
-            });
-        }
-
-        // ---- 5. Persist the row ----
-        let session_id_str = session_id.to_string();
-        let config_json = serde_json::to_string(&config).map_err(|e| {
-            app_error_to_mcp(AppError::Other(anyhow::anyhow!(
-                "serialise spawn config: {e}"
-            )))
-        })?;
-        let cwd_str = canonical_cwd.to_string_lossy().into_owned();
-        let row: PtySession = repo::pty::create_pty_session(
-            self.state.pool.as_ref(),
-            &session_id_str,
-            p.label.as_deref(),
-            p.project_id.as_deref(),
-            &cwd_str,
-            &config_json,
+        // ---- 4. Delegate the 6-step pipeline to the shared helper ----
+        let row: PtySession = crate::pty::spawn::spawn_pty_session_internal(
+            &self.state,
+            config,
+            p.label,
+            p.project_id,
+            canonical_cwd.to_string_lossy().into_owned(),
         )
         .await
         .map_err(app_error_to_mcp)?;
-
-        // ---- 6. Insert into the registry ----
-        let session = Session::new(session_id, broadcast_tx, handle.inbound);
-        self.state.pty_registry.insert(session).await;
-
-        // ---- 7. Best-effort supervisor registration ----
-        if let Some(tx) = self.state.pty_register_tx.as_ref() {
-            let registration = SessionRegistration {
-                session_id,
-                completed: handle.completed,
-            };
-            if let Err(e) = tx.send(registration).await {
-                eprintln!(
-                    "mcp spawn_pty_session: supervisor register_tx send failed for {session_id_str}: {e}"
-                );
-            }
-        } else {
-            eprintln!(
-                "mcp spawn_pty_session: supervisor not wired (pty_register_tx is None); \
-                 session {session_id_str} has no exit reaper"
-            );
-            // Don't leak the completed receiver / shutdown token if no one is listening.
-            drop(handle.completed);
-            drop(handle.shutdown);
-        }
 
         json_result(&row)
     }

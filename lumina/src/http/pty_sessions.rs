@@ -68,10 +68,8 @@ use uuid::Uuid;
 use crate::app::AppState;
 use crate::domain::{PtyMessage, PtyQueueEntry, PtySession};
 use crate::error::AppError;
-use crate::pty::protocol::{InputFrame, InputKind, SessionId, TypedMessage};
+use crate::pty::protocol::{InputFrame, InputKind, SessionId};
 use crate::pty::queue::Queue;
-use crate::pty::session::Session;
-use crate::pty::supervisor::SessionRegistration;
 use crate::pty::transport::SpawnConfig;
 use crate::repo;
 
@@ -159,139 +157,40 @@ struct SpawnSessionBody {
 
 /// `POST /pty/sessions` — spawn a fresh PTY-backed `claude` session.
 ///
-/// Pipeline (best-effort; failures unwind in reverse where possible):
-///
-///   1. Resolve worktree root (env `LUMINA_WORKTREE_ROOT` or process cwd).
-///   2. Validate `cwd` canonicalises under the worktree root (best-effort —
-///      a non-existent cwd is rejected as 422).
-///   3. Build a `SpawnConfig`, call `Transport::spawn`.
-///   4. Persist a `pty_sessions` row via `repo::pty::create_pty_session`.
-///   5. Insert a `Session` (broadcast + input channels from the transport)
-///      into the registry.
-///   6. Send a `SessionRegistration` on the supervisor's `register_tx` IF the
-///      `Option` is set; otherwise skip (the supervisor is wired by T11).
+/// Entry-point shell: parses the JSON body, validates the caller-supplied
+/// `cwd` against the worktree root via `pty::spawn::resolve_and_validate_cwd`,
+/// then delegates the entire 6-step spawn pipeline (transport spawn, row
+/// persist, registry insert, broadcast-bridge task, supervisor registration)
+/// to `pty::spawn::spawn_pty_session_internal`. The MCP `spawn_pty_session`
+/// tool delegates to the same helper (single source of truth for the spawn
+/// behaviour).
 ///
 /// Returns 201 + the freshly-stamped `PtySession` row.
 async fn spawn_session(
     State(state): State<AppState>,
     Json(body): Json<SpawnSessionBody>,
 ) -> Result<impl IntoResponse, AppError> {
-    // ---- 1. Resolve worktree root ----
-    let worktree_root: PathBuf = match std::env::var("LUMINA_WORKTREE_ROOT") {
-        Ok(s) => PathBuf::from(s),
-        Err(_) => std::env::current_dir()
-            .map_err(|e| AppError::Other(anyhow::anyhow!("resolving cwd: {e}")))?,
-    };
+    let canonical_cwd =
+        crate::pty::spawn::resolve_and_validate_cwd(&PathBuf::from(&body.cwd))?;
 
-    // ---- 2. Validate cwd ----
-    let requested_cwd = PathBuf::from(&body.cwd);
-    // Try to canonicalise; if either canonical form fails we fall back to a
-    // path-prefix check on the raw values (worktree-root may be relative on
-    // some test rigs and `canonicalize` insists on existence).
-    let canonical_cwd = std::fs::canonicalize(&requested_cwd).map_err(|e| {
-        AppError::Validation(format!(
-            "cwd {:?} cannot be resolved: {e}",
-            body.cwd
-        ))
-    })?;
-    let canonical_root = std::fs::canonicalize(&worktree_root).unwrap_or(worktree_root.clone());
-    if !canonical_cwd.starts_with(&canonical_root) {
-        return Err(AppError::Validation(format!(
-            "cwd {:?} is not under worktree root {:?}",
-            canonical_cwd, canonical_root
-        )));
-    }
-
-    // ---- 3. Spawn the transport ----
     let config = SpawnConfig {
         cwd: canonical_cwd.clone(),
-        claude_args: body.claude_args.clone(),
-        agent_json: body.agent_json.clone(),
-        model: body.model.clone(),
+        claude_args: body.claude_args,
+        agent_json: body.agent_json,
+        model: body.model,
         env_passthrough_otel: body.env_passthrough_otel,
-        settings_json: body.settings_json.clone(),
-        prompt_pattern: body.prompt_pattern.clone(),
+        settings_json: body.settings_json,
+        prompt_pattern: body.prompt_pattern,
     };
-    let handle = state.pty_transport.spawn(config.clone()).await?;
-    let session_id = handle.session_id;
 
-    // Stash a clone of the broadcast sender (so the registry's Session can
-    // hand out subscriptions). We need the *sender*, but `TransportHandle`
-    // gives us a `Receiver`; resubscribe via the original sender is not
-    // exposed, so we build a NEW broadcast pair here and bridge the receiver
-    // into it on a background task. That way every WS client subscribes
-    // through `Session::subscribe()` against our owned sender, and the
-    // transport's broadcast tail is fanned into ours.
-    let (broadcast_tx, _initial_rx) = broadcast::channel::<TypedMessage>(1024);
-
-    // Bridge: receive on `handle.outbound` (the transport's broadcast tail),
-    // forward into our owned `broadcast_tx`.
-    {
-        let mut transport_rx = handle.outbound;
-        let bridge_tx = broadcast_tx.clone();
-        tokio::spawn(async move {
-            loop {
-                match transport_rx.recv().await {
-                    Ok(msg) => {
-                        // Ignore "no receivers" — clients can attach later.
-                        let _ = bridge_tx.send(msg);
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        // Drop and continue; the WS-side sender task will
-                        // report the lag to its own subscribers separately.
-                        continue;
-                    }
-                }
-            }
-        });
-    }
-
-    // ---- 4. Persist the row ----
-    let session_id_str = session_id.to_string();
-    // Stash the spawn-config as the persisted `config_json` snapshot.
-    let config_json = serde_json::to_string(&config)
-        .map_err(|e| AppError::Other(anyhow::anyhow!("serialise spawn config: {e}")))?;
-    let cwd_str = canonical_cwd.to_string_lossy().into_owned();
-    let row = repo::pty::create_pty_session(
-        state.pool.as_ref(),
-        &session_id_str,
-        body.label.as_deref(),
-        body.project_id.as_deref(),
-        &cwd_str,
-        &config_json,
+    let row = crate::pty::spawn::spawn_pty_session_internal(
+        &state,
+        config,
+        body.label,
+        body.project_id,
+        canonical_cwd.to_string_lossy().into_owned(),
     )
     .await?;
-
-    // ---- 5. Insert into the registry ----
-    let session = Session::new(session_id, broadcast_tx, handle.inbound);
-    state.pty_registry.insert(session).await;
-
-    // ---- 6. Register with the supervisor (if wired) ----
-    if let Some(tx) = state.pty_register_tx.as_ref() {
-        let registration = SessionRegistration {
-            session_id,
-            completed: handle.completed,
-        };
-        if let Err(e) = tx.send(registration).await {
-            // Supervisor receiver gone — log and continue; the session row
-            // is already persisted. v1 best-effort.
-            eprintln!(
-                "pty_sessions: supervisor register_tx send failed for {session_id_str}: {e}"
-            );
-        }
-    } else {
-        // T11 will replace `pty_register_tx` with `Some(...)`. Until then,
-        // the supervisor is not wired; the session can still take input and
-        // stream output, but no terminal-exit reaping happens.
-        eprintln!(
-            "pty_sessions: supervisor not wired (pty_register_tx is None); \
-             session {session_id_str} has no exit reaper"
-        );
-        // We still need to NOT leak the completed receiver; drop it.
-        drop(handle.completed);
-        drop(handle.shutdown);
-    }
 
     Ok((StatusCode::CREATED, Json(row)))
 }
