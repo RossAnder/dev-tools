@@ -1,8 +1,11 @@
 //! Repository layer — the sole mutation path with transactional event writes (Task 3).
 //!
 //! **Single-source-of-truth discipline (the drift-killer):** every mutation in
-//! this module opens a `pool.begin()` transaction, mutates exactly one domain
-//! table, calls [`record_event`] to append ONE `events` row, then commits.
+//! this module opens a [`crate::db::begin_write`] transaction (which issues
+//! `BEGIN IMMEDIATE`, taking the SQLite RESERVED lock upfront so writer
+//! contention surfaces at begin-time rather than after the first statement),
+//! mutates exactly one domain table, calls [`record_event`] to append ONE
+//! `events` row, then commits.
 //! Nothing outside this module writes the domain tables, so the HTTP handlers
 //! (Task 4) and the MCP tools (Task 5) — both of which call these functions —
 //! cannot drift on validation or event emission. If any step in a mutation
@@ -851,7 +854,7 @@ pub async fn create_work_item_with_origin(
         _ => None,
     };
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     sqlx::query!(
         r#"
@@ -984,7 +987,7 @@ pub async fn update_work_item_status(
     id: &str,
     status: &str,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     // Closure gate (migration 0003): reject task→done under a `hard` story while
     // any acceptance criterion is unchecked. Runs before the UPDATE in this tx.
@@ -1033,7 +1036,7 @@ pub async fn set_relevance(
     }
     let value = enum_to_str(relevance);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET relevance = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
@@ -1068,7 +1071,7 @@ pub async fn set_effort(pool: &SqlitePool, id: &str, effort: Effort) -> Result<(
     }
     let value = enum_to_str(effort);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET effort = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
@@ -1107,7 +1110,7 @@ pub async fn set_complexity(
     }
     let value = enum_to_str(complexity);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET complexity = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
@@ -1147,7 +1150,7 @@ pub async fn set_closure_gate(
     }
     let value = enum_to_str(gate);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET closure_gate = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
@@ -1186,7 +1189,7 @@ pub async fn add_acceptance_criterion(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let seq = sqlx::query!(
         r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
@@ -1250,7 +1253,7 @@ pub async fn check_acceptance_criterion(
 ) -> Result<(), AppError> {
     let work_item_id = acceptance_criterion_work_item(pool, id).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -1314,7 +1317,7 @@ pub async fn check_acceptance_criterion(
 pub async fn uncheck_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
     let work_item_id = acceptance_criterion_work_item(pool, id).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -1354,7 +1357,7 @@ pub async fn remove_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result<
     // (and so an absent criterion is NotFound before any write).
     let work_item_id = acceptance_criterion_work_item(pool, id).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(r#"DELETE FROM acceptance_criteria WHERE id = ?1"#, id)
         .execute(&mut *tx)
@@ -1414,7 +1417,7 @@ pub async fn update_work_item(
 
     let status_str: Option<String> = req.status.map(enum_to_str);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     // Closure gate (migration 0003): this generic PATCH can set status="done"
     // directly, so it routes through the SAME gate as update_work_item_status
@@ -1499,7 +1502,7 @@ pub async fn append_activity(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     // Allocate the per-item monotonic seq inside the tx.
     let seq = sqlx::query!(
@@ -1555,7 +1558,7 @@ pub async fn append_activity(
 /// `normalise_object`) are surfaced as a clean typed [`AppError::Validation`]
 /// (→ 422) instead of a constraint-free `json_patch` overwrite. The atomicity
 /// gain — read and write are committed together, or neither — comes from the
-/// surrounding `pool.begin()` tx, not from the SQL primitive.
+/// surrounding [`crate::db::begin_write`] tx, not from the SQL primitive.
 ///
 /// # Null-key semantics — unsupported via this entry point (T3)
 ///
@@ -1576,7 +1579,7 @@ pub async fn set_work_item_attributes(
     // The patch itself must be a null-free object root.
     let patch_obj = normalise_object(patch, "attributes")?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     // Read current kind + attributes (do not resurrect a tombstoned row).
     let current = sqlx::query!(
@@ -1639,7 +1642,7 @@ pub async fn reorder_work_item(
     id: &str,
     position: i64,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET position = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
@@ -1671,7 +1674,7 @@ pub async fn create_context_block(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     sqlx::query!(
         r#"INSERT INTO context_blocks (id, title, body) VALUES (?1, ?2, ?3)"#,
@@ -1696,7 +1699,7 @@ pub async fn link_context_block(
     work_item_id: &str,
     context_block_id: &str,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     sqlx::query!(
         r#"INSERT INTO work_item_context (work_item_id, context_block_id) VALUES (?1, ?2)"#,
@@ -1721,7 +1724,7 @@ pub async fn unlink_context_block(
     work_item_id: &str,
     context_block_id: &str,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"DELETE FROM work_item_context WHERE work_item_id = ?1 AND context_block_id = ?2"#,
@@ -1756,7 +1759,7 @@ pub async fn update_finding(
 ) -> Result<(), AppError> {
     let severity_str: Option<String> = req.severity.map(enum_to_str);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -1838,7 +1841,7 @@ pub async fn supersede_finding(
         )));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE findings SET superseded_by = ?2 WHERE id = ?1"#,
@@ -1873,7 +1876,7 @@ pub async fn resolve_finding(
 ) -> Result<(), AppError> {
     let disposition_str = enum_to_str(disposition);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -1910,7 +1913,7 @@ pub async fn resolve_finding(
 /// history. Idempotent-ish: a row already deleted (or absent) is `NotFound` via
 /// `rows_affected()==0`. Event `work_item.deleted`.
 pub async fn delete_work_item(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
@@ -1999,7 +2002,7 @@ pub async fn create_finding(
     // (`"low"|"medium"|"high"`) — the type system precludes it.
     let severity_str = finding.severity.map(enum_to_str);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     sqlx::query!(
         r#"
@@ -2087,7 +2090,7 @@ pub async fn add_research_note(
     // State defaults to `proposed` on create.
     let state = enum_to_str(ResearchState::Proposed);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let seq = sqlx::query!(
         r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM research_notes WHERE work_item_id = ?1"#,
@@ -2151,7 +2154,7 @@ pub async fn update_research_note(
     let work_item_id = research_note_work_item(pool, id).await?;
     let state_str: Option<String> = req.state.map(enum_to_str);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -2223,7 +2226,7 @@ pub async fn supersede_research_note(
         )));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE research_notes SET superseded_by = ?2 WHERE id = ?1"#,
@@ -2279,7 +2282,7 @@ pub async fn add_open_question(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let seq = sqlx::query!(
         r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM open_questions WHERE story_id = ?1"#,
@@ -2337,7 +2340,7 @@ pub async fn add_question_option(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let seq = sqlx::query!(
         r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM question_options WHERE question_id = ?1"#,
@@ -2421,7 +2424,7 @@ pub async fn block_task_on_question(
         )));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -2482,7 +2485,7 @@ pub async fn set_enabling_option(
         )));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -2566,7 +2569,7 @@ pub async fn resolve_open_question(
         )));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     // 1. Mark the question answered.
     sqlx::query!(
@@ -2748,7 +2751,7 @@ pub async fn add_repo_link(
     let id_str = id.to_string();
     let is_primary_int: i64 = if is_primary { 1 } else { 0 };
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     // Allocate position = MAX(position)+1 per project, inside the tx so a
     // concurrent insert under SQLite's single-writer lock is serialised.
@@ -2848,7 +2851,7 @@ pub async fn remove_repo_link(pool: &SqlitePool, id: &str) -> Result<(), AppErro
     .await?
     .ok_or_else(|| AppError::NotFound(format!("repo_link '{id}' not found")))?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(r#"DELETE FROM repo_links WHERE id = ?1"#, id)
         .execute(&mut *tx)
@@ -2879,7 +2882,7 @@ pub async fn remove_repo_link(pool: &SqlitePool, id: &str) -> Result<(), AppErro
 }
 
 /// Promote `repo_link_id` to the project's primary repo. Critical ordering:
-/// inside one `pool.begin()` tx, FIRST clear any existing primary on the same
+/// inside one [`crate::db::begin_write`] tx, FIRST clear any existing primary on the same
 /// project, THEN set the target to primary. SQLite checks the partial UNIQUE
 /// index `idx_repo_links_one_primary` per-statement, so the clear MUST precede
 /// the set or the second UPDATE fails with `SQLITE_CONSTRAINT_UNIQUE`.
@@ -2898,7 +2901,7 @@ pub async fn set_primary_repo(
     project_id: &str,
     repo_link_id: &str,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     // Step 1: capture the previous primary's id (for the event payload) BEFORE
     // we clear it. NULL if no current primary.
@@ -3024,7 +3027,7 @@ pub async fn set_finding_repo(
         }
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE findings SET repo_id = ?2 WHERE id = ?1"#,
@@ -3063,7 +3066,7 @@ pub async fn set_finding_repo(
 //
 // Three new child tables (`risks`, `rejected_alternatives`, `task_dependencies`)
 // and one new column (`work_items.task_kind`). Every mutation in this section
-// follows the single-mutation-path discipline: open one `pool.begin()` tx,
+// follows the single-mutation-path discipline: open one `crate::db::begin_write` tx,
 // write to exactly ONE domain table, call `record_event` for ONE outbox row,
 // commit. Events are routed to the owning work-item's `work_item` aggregate
 // (NOT a fresh `risk` / `rejected_alternative` / `task_dependency` aggregate),
@@ -3155,7 +3158,7 @@ pub async fn add_risk(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let seq = sqlx::query!(
         r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM risks WHERE work_item_id = ?1"#,
@@ -3221,7 +3224,7 @@ pub async fn update_risk(
     let work_item_id = risk_work_item(pool, id).await?;
     let severity_str: Option<String> = patch.severity.map(risk_severity_str);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -3287,7 +3290,7 @@ pub async fn supersede_risk(
     let new_id = Uuid::now_v7();
     let new_id_str = new_id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let seq = sqlx::query!(
         r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM risks WHERE work_item_id = ?1"#,
@@ -3349,7 +3352,7 @@ pub async fn supersede_risk(
 pub async fn remove_risk(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
     let work_item_id = risk_work_item(pool, id).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(r#"DELETE FROM risks WHERE id = ?1"#, id)
         .execute(&mut *tx)
@@ -3422,7 +3425,7 @@ pub async fn add_rejected_alternative(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let seq = sqlx::query!(
         r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM rejected_alternatives WHERE work_item_id = ?1"#,
@@ -3492,7 +3495,7 @@ pub async fn update_rejected_alternative(
 ) -> Result<(), AppError> {
     let work_item_id = rejected_alternative_work_item(pool, id).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -3555,7 +3558,7 @@ pub async fn supersede_rejected_alternative(
     let new_id = Uuid::now_v7();
     let new_id_str = new_id.to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let seq = sqlx::query!(
         r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM rejected_alternatives WHERE work_item_id = ?1"#,
@@ -3620,7 +3623,7 @@ pub async fn supersede_rejected_alternative(
 pub async fn remove_rejected_alternative(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
     let work_item_id = rejected_alternative_work_item(pool, id).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(r#"DELETE FROM rejected_alternatives WHERE id = ?1"#, id)
         .execute(&mut *tx)
@@ -3742,7 +3745,7 @@ pub async fn add_task_dependency(
         )));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let insert = sqlx::query!(
         r#"
@@ -3801,7 +3804,7 @@ pub async fn remove_task_dependency(
     task_id: &str,
     depends_on_id: &str,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"DELETE FROM task_dependencies WHERE task_id = ?1 AND depends_on_id = ?2"#,
@@ -3856,7 +3859,7 @@ pub async fn set_task_kind(
 
     let value: Option<String> = task_kind.map(enum_to_str);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET task_kind = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
@@ -4226,7 +4229,7 @@ pub async fn set_task_tier(
 
     let value: Option<String> = tier.map(enum_to_str);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET tier = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
