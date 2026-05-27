@@ -31,6 +31,10 @@ cargo install cargo-insta                  # snapshot review CLI (optional but r
 `lumina/.config/nextest.toml` defines two profiles: `default` (no retries) and `ci` (one retry, JUnit XML emit, immediate failure output).
 <!-- TEST-BOOTSTRAP:STACK END -->
 
+## Transactions
+
+Repo-layer mutations call `db::begin_write(pool)` (which issues `BEGIN IMMEDIATE`), NOT `pool.begin()`. IMMEDIATE acquires the SQLite RESERVED lock at begin-time, so writer contention surfaces before any statements execute — combined with WAL + a 5s `busy_timeout` set in `db::init` on on-disk databases (in-memory pools skip WAL), concurrent MCP tool writes serialise without `SQLITE_BUSY` flake. The export drain in `export.rs` deliberately stays on auto-commit reads + a single auto-commit `UPDATE events SET exported_at` per event; it does NOT open a transaction, because a long read transaction in the drain would defeat WAL's reader/writer concurrency. The single-mutation-path invariant ("one domain write ⇒ one event row, atomically, or neither") is enforced by every `repo::*` mutator opening exactly one `begin_write` tx and committing both rows together. The `tests/concurrency.rs` smoke test exercises N=8 concurrent `create_work_item` calls against an on-disk pool to keep this discipline honest.
+
 ## MCP tool surface
 
 The lumina MCP server exposes a domain-shaped tool surface for managing the work-item hierarchy and the planning/decision lifecycle. The authoritative catalogue lives at `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md` — that doc enumerates every `mcp__lumina__*` tool, the parameter shapes, and the planning-tools section that the story-block plugin's skills reference. Skim it before invoking the plugin skills below; the plugin's skills compose those MCP tools and assume the reader has the catalogue's terminology in hand.
