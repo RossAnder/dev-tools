@@ -93,6 +93,8 @@ Tools are grouped definition / execution / read. Read tools are annotated
 `transition_status` are `idempotent_hint`; all are `open_world_hint = false` (local
 store only).
 
+> HTTP equivalents for the same write surface (one `/api` route per family, each delegating to the same `repo::*` mutation the MCP tool calls): see [`lumina/CLAUDE.md` § HTTP routes](../../../../../lumina/CLAUDE.md#http-routes).
+
 ### Definition tools
 
 | Tool | When to use |

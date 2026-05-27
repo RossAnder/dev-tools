@@ -335,3 +335,45 @@ original_intent = "Plan T9/T10 specified moving AcceptanceCriterion/ResearchNote
 rationale = "Wave-1 parallelism required nobody touch work-items.ts (single-file contention across T8a/T9/T10). Each per-family file re-exports the schema rather than moving it; consumers resolve identically through the @/api barrel. Move is a future cleanup; no consumer-facing impact."
 commits = ["753d32f"]
 dedup_id = "abd8c617c14a30ae"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "bun-tests-scalars-ac-research-open-questions-risks-rejected"
+status = "done"
+files = [
+    "lumina/web/src/__tests__/scalars.test.ts",
+    "lumina/web/src/__tests__/acceptance-criteria.test.ts",
+    "lumina/web/src/__tests__/research-notes.test.ts",
+    "lumina/web/src/__tests__/open-questions.test.ts",
+    "lumina/web/src/__tests__/risks.test.ts",
+    "lumina/web/src/__tests__/rejected-alternatives.test.ts",
+    "lumina/web/tsconfig.json",
+]
+commits = ["af84c4e"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T12a: 6 bun-test files, 55 new tests. Added compilerOptions.paths to root tsconfig.json so bun's resolver honours @/api alias."
+dedup_id = "99e20ba88d5d06ab"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "bun-tests-task-deps-findings-activity-context-blocks-readiness"
+status = "done"
+files = [
+    "lumina/web/src/__tests__/task-deps.test.ts",
+    "lumina/web/src/__tests__/findings.test.ts",
+    "lumina/web/src/__tests__/activity.test.ts",
+    "lumina/web/src/__tests__/context-blocks.test.ts",
+    "lumina/web/src/__tests__/readiness.test.ts",
+]
+commits = ["af84c4e"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T12b: 5 bun-test files, 86 new tests. Cycle-422 parse showcase for task-deps. NextAction enum exhaustiveness via test.each over 16 variants."
+dedup_id = "e5f7c1a8974fd0f1"

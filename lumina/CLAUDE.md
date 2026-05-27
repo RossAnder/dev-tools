@@ -52,6 +52,105 @@ The migration-0006 story-planning-round-3 pass added the following:
 - **Tightened `set_task_spec`** — the round-2 free-form `dispatch: Option<serde_json::Value>` field was renamed to `tier: Option<Tier>` (typed). When `tier` is present, the tool also makes a SECOND mutation through `set_task_tier`. Legacy callers passing `dispatch:` have their value silently dropped at deserialise (the field is gone from the struct).
 - **Finding-severity typing**: `AddFindingParams.severity` / `UpdateFindingParams.severity` already accepted typed `Severity::{Critical, Major, Minor, Suggestion}` (the review-finding categorisation vocabulary). Round-3 documents this in the catalogue; the wire shape is unchanged. NOTE the deliberate vocab split — `RiskSeverity::{Low, Medium, High, Critical}` (CHECK-enforced on `risks.severity`) is a distinct enum for risk severity. The two vocabularies are not unified.
 
+## HTTP routes
+
+The axum API mirrors the MCP write surface so a browser/SPA client (or any HTTP-capable tool) can drive the same store the MCP server drives. Every HTTP write delegates to a single `repo::*` mutation — the single-mutation-path invariant (+1 work_items / +1 events per call) is preserved alongside the MCP layer, and the per-family sub-routers in `lumina/src/http/*.rs` are mounted under `/api` by `app::build_router`. Routes below are listed with their final path (relative to `/api`) and the `repo::*` function each handler calls. The two structured PATCHes (`/story-plan`, `/task-spec`) compose via `repo::set_work_item_attributes` (read-modify-merge JSON-merge) and — for `/task-spec` — a second `repo::set_task_tier` mutation when `tier` is present, exactly mirroring the MCP `set_story_plan` / `set_task_spec` tools. Task-graph cycles surface via the envelope `{"error":{"kind":"cycle","message":...,"edges":[{"task_id":...,"depends_on_id":...},...]}}` (422), produced by `AppError::Cycle`'s `IntoResponse` impl on `POST /work-items/{task_id}/depends-on/{depends_on_id}` and `GET /work-items/{story_id}/task-batches`.
+
+### Work-items CRUD (`http/work_items.rs`)
+
+- `GET    /health`                          → liveness probe (no DB hit).
+- `GET    /work-items`                      → `repo::list_work_items` (default: full nested tree of roots; with `?parent_id=`/`?kind=`: flat filtered list).
+- `GET    /work-items/{id}`                 → `repo::get_work_item_detail`.
+- `POST   /work-items`                      → `repo::create_work_item_with_origin`.
+- `PATCH  /work-items/{id}`                 → `repo::update_work_item`.
+- `DELETE /work-items/{id}`                 → `repo::delete_work_item` (soft-delete; round-4 T1 closed the "full mirror" gap against the MCP `delete_work_item` tool).
+
+### Project↔repo-links (`http/repo_links.rs`, migration 0004)
+
+- `POST   /work-items/{project_id}/repo-links`        → `repo::add_repo_link`.
+- `DELETE /work-items/{project_id}/repo-links/{id}`   → `repo::remove_repo_link`.
+- `PATCH  /work-items/{project_id}/repo-links/{id}`   → `repo::set_primary_repo` (body must be `{"is_primary": true}`; demotion happens implicitly via promoting another link).
+
+### Structured patches (`http/structured_patches.rs`, round-4 T2)
+
+Six scalar PATCHes — body shape `{ "value": <enum> }`. The four non-nullable scalars reject `{"value": null}` with 422; the two nullable scalars (`task-kind`, `tier`) accept `null` as a clear signal.
+
+- `PATCH /work-items/{id}/relevance`      → `repo::set_relevance`.
+- `PATCH /work-items/{id}/effort`         → `repo::set_effort`.
+- `PATCH /work-items/{id}/complexity`     → `repo::set_complexity`.
+- `PATCH /work-items/{id}/closure-gate`   → `repo::set_closure_gate`.
+- `PATCH /work-items/{id}/task-kind`      → `repo::set_task_kind` (nullable).
+- `PATCH /work-items/{id}/tier`           → `repo::set_task_tier` (nullable).
+
+Two structured PATCHes — JSON-merge bodies via `repo::set_work_item_attributes`; `task-spec` additionally calls `repo::set_task_tier` when `tier` is present (two mutations per call, mirroring the MCP `set_task_spec` tool).
+
+- `PATCH /work-items/{id}/story-plan`     → composes `repo::set_work_item_attributes` (fields: `problem_statement`/`research_notes`/`execution_strategy`/`not_doing`/`verification_commands`).
+- `PATCH /work-items/{id}/task-spec`      → composes `repo::set_work_item_attributes` (+ `repo::set_task_tier` when `tier` present; fields: `execution_detail`/`files_touched`/`outcome`/`tier`).
+
+### Acceptance criteria (`http/acceptance_criteria.rs`, migration 0003, round-4 T3)
+
+- `POST   /work-items/{id}/acceptance-criteria`  → `repo::add_acceptance_criterion`.
+- `POST   /acceptance-criteria/{id}/check`       → `repo::check_acceptance_criterion` (appends a `verification` activity row inside the same txn).
+- `POST   /acceptance-criteria/{id}/uncheck`     → `repo::uncheck_acceptance_criterion`.
+- `DELETE /acceptance-criteria/{id}`             → `repo::remove_acceptance_criterion`.
+
+### Research notes (`http/research_notes.rs`, migration 0003, round-4 T3)
+
+- `POST  /work-items/{id}/research-notes`              → `repo::add_research_note`.
+- `PATCH /research-notes/{id}`                         → `repo::update_research_note` (partial set-or-leave).
+- `POST  /research-notes/{old_id}/supersede/{new_id}`  → `repo::supersede_research_note`.
+
+### Risks (`http/risks.rs`, migration 0005, round-4 T4)
+
+- `POST   /work-items/{id}/risks`              → `repo::add_risk` (typed `RiskSeverity`).
+- `PATCH  /risks/{id}`                         → `repo::update_risk`.
+- `POST   /risks/{old_id}/supersede/{new_id}`  → `repo::supersede_risk` (new id is path documentation only; repo mints a fresh `now_v7` uuid).
+- `DELETE /risks/{id}`                         → `repo::remove_risk`.
+
+### Rejected alternatives (`http/rejected_alternatives.rs`, migration 0005, round-4 T4)
+
+- `POST   /work-items/{id}/rejected-alternatives`              → `repo::add_rejected_alternative`.
+- `PATCH  /rejected-alternatives/{id}`                         → `repo::update_rejected_alternative`.
+- `POST   /rejected-alternatives/{old_id}/supersede/{new_id}`  → `repo::supersede_rejected_alternative`.
+- `DELETE /rejected-alternatives/{id}`                         → `repo::remove_rejected_alternative`.
+
+### Task dependencies (`http/task_dependencies.rs`, migration 0005, round-4 T4)
+
+- `POST   /work-items/{task_id}/depends-on/{depends_on_id}`  → `repo::add_task_dependency` (MCP tool name: `block_task_on_task`).
+- `DELETE /work-items/{task_id}/depends-on/{depends_on_id}`  → `repo::remove_task_dependency` (MCP tool name: `unblock_task_from_task`).
+- `GET    /work-items/{story_id}/task-dependencies`          → `repo::list_task_dependencies`.
+- `GET    /work-items/{story_id}/task-batches`               → `repo::compute_task_batches` (Kahn's-algorithm per-phase batches; cycle → 422 envelope).
+
+### Open questions (`http/open_questions.rs`, migration 0003, round-4 T5)
+
+- `POST  /work-items/{story_id}/open-questions`               → `repo::add_open_question`.
+- `POST  /open-questions/{id}/options`                        → `repo::add_question_option`.
+- `POST  /work-items/{task_id}/block-on-question/{question_id}` → `repo::block_task_on_question`.
+- `PATCH /work-items/{task_id}/enabling-option/{option_id}`   → `repo::set_enabling_option`.
+- `POST  /open-questions/{id}/resolve`                        → `repo::resolve_open_question` (one event for the whole branch-unblock + sibling-cancel resolution).
+
+### Findings (`http/findings.rs`, round-4 T5)
+
+- `POST  /work-items/{id}/findings`                → `repo::create_finding`.
+- `PATCH /findings/{id}`                           → `repo::update_finding` (partial set-or-leave).
+- `POST  /findings/{id}/resolve`                   → `repo::resolve_finding` (terminal disposition).
+- `POST  /findings/{old_id}/supersede/{new_id}`    → `repo::supersede_finding`.
+
+### Activity log (`http/activity.rs`, migration 0002, round-4 T5)
+
+- `POST /work-items/{id}/activity` → `repo::append_activity` (entry-kind validation is delegated to `repo::validate_entry_kind`; `body`/`ref_id` fold into the activity payload object).
+
+### Context blocks (`http/context_blocks.rs`, round-4 T5)
+
+- `POST   /context-blocks`                          → `repo::create_context_block`.
+- `POST   /work-items/{id}/context-blocks/{cb_id}`  → `repo::link_context_block`.
+- `DELETE /work-items/{id}/context-blocks/{cb_id}`  → `repo::unlink_context_block`.
+
+### Story readiness + dispatch plan (`http/readiness.rs`, migration 0005/0006, round-4 T5)
+
+- `GET /work-items/{story_id}/readiness`      → `repo::get_story_readiness` (the `StoryReadiness` aggregate driving `/lumina:next-block` / `/lumina:plan-story`).
+- `GET /work-items/{story_id}/dispatch-plan`  → `repo::get_task_dispatch_plan` (`Vec<Vec<BatchEntry>>` waves; cycle → 422 envelope).
+
 ## Story-block skills plugin
 
 Lumina's MCP tool surface is driven by the `/lumina:<block>` skills in the plugin at
