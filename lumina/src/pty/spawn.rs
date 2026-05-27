@@ -47,7 +47,7 @@ use uuid::Uuid;
 use crate::app::AppState;
 use crate::domain::PtySession;
 use crate::error::AppError;
-use crate::pty::protocol::{MessageKind, SessionStatus, TypedMessage};
+use crate::pty::protocol::{SessionStatus, TypedMessage};
 use crate::pty::session::Session;
 use crate::pty::supervisor::SessionRegistration;
 use crate::pty::transport::SpawnConfig;
@@ -201,8 +201,21 @@ pub async fn spawn_pty_session_internal(
                             );
                         }
 
-                        // First-Prompt: flip Spawning -> Idle exactly once.
-                        if !idle_flipped && matches!(kind, MessageKind::Prompt) {
+                        // First-message: flip Spawning -> Idle exactly once.
+                        // Originally we gated this on `kind == Prompt`, but
+                        // real `claude.exe` renders its menus/prompts as
+                        // multi-line panels whose cursor-row line carries
+                        // text after the `❯` sigil — `matches_prompt` (which
+                        // expects the line to trim to exactly `>`/`❯`/`›`)
+                        // never matches, so the bridge never flipped Idle
+                        // and the UI's input box stayed disabled. We trade
+                        // strict semantics ("model finished its turn") for
+                        // practical interactivity ("child is producing
+                        // user-visible output, dispatch queued input"). The
+                        // pty_stub e2e path still hits this branch on the
+                        // banner, and real claude hits it on the first
+                        // assistant_text/prompt block.
+                        if !idle_flipped {
                             idle_flipped = true;
                             bridge_session.set_status(SessionStatus::Idle).await;
                             if let Err(e) = repo::pty::update_pty_session_status(
