@@ -214,21 +214,17 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
         .expect("spawn response carries a string id")
         .to_owned();
 
-    // Status starts at `spawning`. v1 has no wiring that transitions a
-    // session forward from `spawning`; the supervisor only dispatches on
-    // `Idle` (see `pty/supervisor.rs::tick_once`). This is a known gap —
-    // the plan's `## Approach §Process lifecycle` calls for "Status
-    // transitions to `active` → `idle` when the parser detects the first
-    // prompt", but the parser-bridge in `pty_transport.rs` (T4) does not
-    // update the in-memory `Session::status` (only broadcasts
-    // `TypedMessage`s). The HTTP spawn handler doesn't set it either.
-    //
-    // The e2e test must therefore drive that transition manually so it
-    // can exercise the supervisor dispatch → input-bridge → write-blocking
-    // path. We reach into the registry directly (same Arc the supervisor
-    // ticks against) and flip status to `Idle`. This is a deliberate test
-    // deviation — flagged in the plan-deviation report so the orchestrator
-    // can surface the parser→status wiring as a follow-up task.
+    // Status starts at `spawning`. The bridge task in `pty/spawn.rs` is
+    // designed to flip `Spawning -> Idle` on the first
+    // `MessageKind::Prompt`, but on Windows ConPTY the stub child's stdout
+    // never reaches our reader (only ConPTY init escape sequences arrive),
+    // so the parser never sees a Prompt and the bridge never flips Idle.
+    // This is an upstream PTY transport / portable-pty plumbing issue
+    // (pre-existing — concealed by the workaround below until /implement
+    // T6 surfaced it). Pending a separate Windows-specific fix, the test
+    // continues to drive the Idle transition manually so the supervisor
+    // dispatch path can be exercised. See deviation E? in the
+    // lumina-pty-followups flow execution-record.
     assert!(
         matches!(
             session_row["status"].as_str(),
@@ -274,11 +270,15 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
         "POST /input returns 201"
     );
 
-    // ---- 4. Poll /messages — wait for the user_input row ---------------
+    // ---- 4. Poll /messages — wait for at least one row ----------------
     // The supervisor ticks every 250 ms, pops the queue, sends to the PTY
-    // writer, and persists a `user_input` `pty_messages` row. v1 does NOT
-    // persist assistant output (see pty_transport.rs §parser-bridge), so
-    // the deterministic signal of progress is the user_input row landing.
+    // writer, and persists a `user_input` `pty_messages` row. The bridge
+    // in `pty/spawn.rs` would persist further parsed messages
+    // (assistant_text, prompt, system) — but on Windows ConPTY the stub
+    // child's stdout never reaches the reader (only ConPTY init escape
+    // sequences arrive), so the bridge inserts nothing in this test. The
+    // deterministic signal of progress on every platform is therefore the
+    // user_input row landing.
     //
     // The loop awaits `oneshot()` REST calls, which are real runtime
     // yield points; no `sleep` is involved.
@@ -310,16 +310,22 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
     .await
     .expect("messages row arrived within 10s (supervisor + PTY round-trip)");
 
-    let first = &messages[0];
-    assert_eq!(
-        first["kind"].as_str(),
-        Some("user_input"),
-        "first persisted pty_messages row is the dispatched user_input"
+    // Forward-looking shape (per plan T6 change (c)): once the upstream
+    // ConPTY/parser plumbing is fixed and the bridge starts persisting
+    // assistant_text/prompt rows before the dispatched user_input, the
+    // user_input row will no longer be at index 0. Assert "any" rather
+    // than "first" so this test survives that future change.
+    assert!(
+        messages
+            .iter()
+            .any(|m| m["kind"].as_str() == Some("user_input")),
+        "expected at least one user_input message; got: {messages:?}"
     );
-    assert_eq!(
-        first["session_id"].as_str(),
-        Some(session_id.as_str()),
-        "message session_id matches the spawned session"
+    assert!(
+        messages
+            .iter()
+            .all(|m| m["session_id"].as_str() == Some(session_id.as_str())),
+        "all message session_id values match the spawned session"
     );
 
     // ---- 5. DELETE /api/pty/sessions/{id} — cancel --------------------
