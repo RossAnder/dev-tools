@@ -119,6 +119,11 @@ describe('fetchTree (mock global fetch)', () => {
         closure_gate: null,
         blocked_by_question_id: null,
         enabling_option_id: null,
+        // Round-4 (T7) additions to WorkItemSchema: every new field is
+        // `.nullable()` per the plan's invariant, so `null` is the canonical
+        // unset value on the wire and the schema rejects an absent key.
+        task_kind: null,
+        tier: null,
         created_at: '2026-05-25T00:00:00Z',
         updated_at: '2026-05-25T00:00:00Z',
         children: [],

@@ -1,133 +1,70 @@
-// Thin fetch wrapper over the lumina axum JSON API.
+// Work-item wire schemas + fetch wrappers.
 //
-// All requests go to `/api/*`; in development Vite proxies that prefix to the
-// axum server on 127.0.0.1:24817 (see vite.config.ts), and in production the
-// SPA is served from the same origin as the API, so a relative base works in
-// both cases. Plain `fetch` is used deliberately — the store layer can be
-// swapped to Pinia Colada later without touching this module's contract.
+// Carved out of the monolithic `lumina/web/src/api.ts` by T7 of the round-4
+// plan (docs/plans/lumina-story-planning-round-4.md). This module owns the
+// `WorkItem` / `WorkItemNode` / `WorkItemDetail` shapes and the four
+// associated CRUD verbs (`fetchTree`, `fetchDetail`, `createWorkItem`,
+// `updateWorkItem`, `updateStatus`).
+//
+// Nullability convention: every `Option<T>` on `domain::WorkItem` (and every
+// other Rust read-aggregate folded into `WorkItemDetail`) uses `.nullable()`
+// here. Verified at T7-implementation time by grepping `lumina/src/` for
+// `skip_serializing_if` and finding zero hits — serde therefore emits `None`
+// as JSON `null` rather than omitting the key. If a future Rust change adds
+// `#[serde(skip_serializing_if = "Option::is_none")]` to any field on these
+// types, the corresponding zod field must switch to `.nullish()` to tolerate
+// the now-absent key.
+//
+// Cross-task note: this file inline-declares `AcceptanceCriterion`,
+// `ResearchNote`, `OpenQuestion`, `QuestionOption`, `Risk`,
+// `RejectedAlternative`, `TaskDependency`, `ContextBlock`, `Finding`,
+// `WorkItemActivity`, `RepoLink` schemas because `WorkItemDetailWireSchema`
+// references them. T9 / T10 / T11 will MOVE the per-family schemas out into
+// their owned files (`acceptance-criteria.ts`, `research-notes.ts`,
+// `risks.ts`, `rejected-alternatives.ts`, `task-deps.ts`, `findings.ts`,
+// `activity.ts`, `open-questions.ts`, `context-blocks.ts`) and re-import them
+// here. `RepoLink` lives in its own `repo-links.ts` (carved by T7); we
+// re-import it from there.
 
 import * as z from 'zod'
 
-// ---------------------------------------------------------------------------
-// Wire-enum string-literal unions.
-//
-// These mirror the closed Rust enums in `lumina/src/domain.rs` (each carrying
-// `#[serde(rename_all = "snake_case")]`). Declared here as string-literal
-// unions so the backend's closed sets surface as types on the frontend:
-// consumers' `===` checks against these constants gain (optional)
-// exhaustiveness, and typo'd comparisons fail at compile time. Each is a
-// SUBTYPE of `string`, so any existing `node.kind === 'feature'` etc. check
-// keeps compiling. Keep these aligned with `domain.rs` — adding a Rust enum
-// variant requires adding it here too.
-//
-// To keep the TS type and the runtime zod schema from drifting, each enum is
-// declared once as a `const` tuple of string literals: the TS type is derived
-// via `(typeof TUPLE)[number]`, and the zod schema via `z.enum(TUPLE)`. A new
-// Rust variant therefore needs ONE edit here.
-// ---------------------------------------------------------------------------
-
-const KIND_VALUES = ['project', 'epic', 'feature', 'story', 'task'] as const
-/** Mirrors `domain::Kind` — the five legal work-item kinds (parent→child). */
-export type Kind = (typeof KIND_VALUES)[number]
-export const KindSchema = z.enum(KIND_VALUES)
-
-// Containers (project/epic/feature/story) use 'open' as their default workflow
-// status; only tasks cycle through the todo/in_progress/blocked/done/cancelled
-// states. The Rust `domain::Status` enum (domain.rs:336) lists only the task
-// states because migration 0001 declares `status` as free-text TEXT with no
-// CHECK — 'open' is real container-level data, not in the enum. Keep both here
-// so the wire schema accepts the actual response shape.
-const STATUS_VALUES = ['open', 'todo', 'in_progress', 'blocked', 'done', 'cancelled'] as const
-/** Mirrors `domain::Status` — the work-item workflow statuses. */
-export type Status = (typeof STATUS_VALUES)[number]
-export const StatusSchema = z.enum(STATUS_VALUES)
-
-const RELEVANCE_VALUES = ['active', 'backlog', 'deferred', 'rejected'] as const
-/** Mirrors `domain::Relevance` — settable only on epic/feature/story. */
-export type Relevance = (typeof RELEVANCE_VALUES)[number]
-export const RelevanceSchema = z.enum(RELEVANCE_VALUES)
-
-const EFFORT_VALUES = ['s', 'm', 'l'] as const
-/** Mirrors `domain::Effort` — wire form is lowercase `s|m|l` (display: S/M/L). */
-export type Effort = (typeof EFFORT_VALUES)[number]
-export const EffortSchema = z.enum(EFFORT_VALUES)
-
-const COMPLEXITY_VALUES = ['low', 'medium', 'high'] as const
-/** Mirrors `domain::Complexity` — drives model-tier assignment. */
-export type Complexity = (typeof COMPLEXITY_VALUES)[number]
-export const ComplexitySchema = z.enum(COMPLEXITY_VALUES)
-
-const ORIGIN_VALUES = [
-  'plan',
-  'implement',
-  'review',
-  'optimise',
-  'tdd',
-  'human',
-  'none',
-] as const
-/** Mirrors `domain::Origin` — provenance; `none` is the long-tail sentinel. */
-export type Origin = (typeof ORIGIN_VALUES)[number]
-export const OriginSchema = z.enum(ORIGIN_VALUES)
-
-const CLOSURE_GATE_VALUES = ['hard', 'soft'] as const
-/** Mirrors `domain::ClosureGate` — per-story task→done gate. */
-export type ClosureGate = (typeof CLOSURE_GATE_VALUES)[number]
-export const ClosureGateSchema = z.enum(CLOSURE_GATE_VALUES)
-
-const SEVERITY_VALUES = ['critical', 'major', 'minor', 'suggestion'] as const
-/** Mirrors `domain::Severity` — finding severities. */
-export type Severity = (typeof SEVERITY_VALUES)[number]
-export const SeveritySchema = z.enum(SEVERITY_VALUES)
-
-const DISPOSITION_VALUES = [
-  'fixed',
-  'wontfix',
-  'verified_clean',
-  'deferred',
-  'duplicate',
-] as const
-/** Mirrors `domain::Disposition` — terminal finding dispositions. */
-export type Disposition = (typeof DISPOSITION_VALUES)[number]
-export const DispositionSchema = z.enum(DISPOSITION_VALUES)
-
-const ACTIVITY_TYPE_VALUES = [
-  'execution',
-  'verification',
-  'deviation',
-  'deferral',
-  'reconcile',
-  'status_transition',
-  'checkpoint',
-  'vet',
-  'comment',
-] as const
-/** Mirrors `domain::ActivityType` — `work_item_activity.entry_kind`. */
-export type ActivityType = (typeof ACTIVITY_TYPE_VALUES)[number]
-export const ActivityTypeSchema = z.enum(ACTIVITY_TYPE_VALUES)
-
-const RESEARCH_STATE_VALUES = ['proposed', 'accepted', 'rejected'] as const
-/** Mirrors `domain::ResearchState` — `proposed → accepted | rejected`. */
-export type ResearchState = (typeof RESEARCH_STATE_VALUES)[number]
-export const ResearchStateSchema = z.enum(RESEARCH_STATE_VALUES)
-
-const QUESTION_STATUS_VALUES = ['open', 'answered', 'cancelled'] as const
-/** Mirrors `domain::QuestionStatus` — `open → answered | cancelled`. */
-export type QuestionStatus = (typeof QUESTION_STATUS_VALUES)[number]
-export const QuestionStatusSchema = z.enum(QUESTION_STATUS_VALUES)
-
-const CONFIDENCE_VALUES = ['high', 'medium', 'low'] as const
-/** Evidence grade for findings and research notes (free TEXT, repo-validated). */
-export type Confidence = (typeof CONFIDENCE_VALUES)[number]
-export const ConfidenceSchema = z.enum(CONFIDENCE_VALUES)
+import { API_BASE, handle } from './http'
+import {
+  type Kind,
+  KindSchema,
+  type Status,
+  StatusSchema,
+  type Relevance,
+  RelevanceSchema,
+  type Effort,
+  EffortSchema,
+  type Complexity,
+  ComplexitySchema,
+  type Origin,
+  OriginSchema,
+  type ClosureGate,
+  ClosureGateSchema,
+  type Severity,
+  SeveritySchema,
+  type ActivityType,
+  ActivityTypeSchema,
+  type ResearchState,
+  ResearchStateSchema,
+  type QuestionStatus,
+  QuestionStatusSchema,
+  type Confidence,
+  ConfidenceSchema,
+  type TaskKind,
+  TaskKindSchema,
+  type Tier,
+  TierSchema,
+  type RiskSeverity,
+  RiskSeveritySchema,
+} from './wire-enums'
+import { type RepoLink, RepoLinkSchema } from './repo-links'
 
 // ---------------------------------------------------------------------------
-// Object-shape schemas.
-//
-// The TS interfaces below are kept for documentation/IDE-hover ergonomics; the
-// zod schemas next to them are the runtime contract guard. Tests pin the two
-// in lock-step by parsing a complete fixture (any drift between interface and
-// schema surfaces as a type-mismatch at fixture-construction time).
+// WorkItem (the row-level read aggregate) + nested-tree variant.
 // ---------------------------------------------------------------------------
 
 /** A node in the `work_items` adjacency-list hierarchy. */
@@ -147,6 +84,9 @@ export interface WorkItem {
   closure_gate: ClosureGate | null
   blocked_by_question_id: string | null
   enabling_option_id: string | null
+  // Round-4 additions (T7): the round-2/3 dispatch columns.
+  task_kind: TaskKind | null
+  tier: Tier | null
   created_at: string
   updated_at: string
 }
@@ -170,6 +110,11 @@ export const WorkItemSchema = z.object({
   closure_gate: ClosureGateSchema.nullable(),
   blocked_by_question_id: z.string().nullable(),
   enabling_option_id: z.string().nullable(),
+  // Round-4 additions (T7). `.nullable()` is correct: domain.rs has zero
+  // `skip_serializing_if` attributes (grep-verified during T7), so an unset
+  // column is emitted as JSON `null` rather than as an absent key.
+  task_kind: TaskKindSchema.nullable(),
+  tier: TierSchema.nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -192,6 +137,14 @@ export const WorkItemNodeSchema: z.ZodType<WorkItemNode> = WorkItemSchema.extend
     return z.array(WorkItemNodeSchema)
   },
 })
+
+// ---------------------------------------------------------------------------
+// Aggregate row types referenced by WorkItemDetail.
+//
+// T9/T10/T11 will MOVE each of these blocks to its own per-family file under
+// `lumina/web/src/api/`; they live here for now so `WorkItemDetailWireSchema`
+// has its dependencies in-scope without a forward-import chain.
+// ---------------------------------------------------------------------------
 
 export interface Finding {
   id: string
@@ -256,29 +209,6 @@ export const FindingSchema = z.object({
   // file lives in the project's primary repo); `optional()` tolerates absent
   // fields from any pre-deploy caches that wouldn't yet emit the key.
   repo_id: z.string().nullable().optional(),
-})
-
-/**
- * A row of `repo_links` (migration 0004): a GitHub repo linked to a `kind='project'`
- * work item. `is_primary` is mirrored from the SQLite INTEGER column as 0/1 to
- * match the Rust wire shape — callers compare `=== 1` to test primacy.
- */
-export interface RepoLink {
-  id: string
-  project_id: string
-  slug: string
-  position: number
-  is_primary: number
-  created_at: string
-}
-
-export const RepoLinkSchema = z.object({
-  id: z.string(),
-  project_id: z.string(),
-  slug: z.string(),
-  position: z.number(),
-  is_primary: z.number(),
-  created_at: z.string(),
 })
 
 export interface ContextBlock {
@@ -436,6 +366,99 @@ export const WorkItemActivitySchema = z.object({
   created_at: z.string(),
 })
 
+// ---------------------------------------------------------------------------
+// Round-4 additions (T7): risks, rejected alternatives, task dependencies.
+//
+// Mirrors `domain::Risk` / `domain::RejectedAlternative` / `domain::TaskDependency`.
+// T10 will move these to per-family files (`risks.ts`, `rejected-alternatives.ts`,
+// `task-deps.ts`) and re-import from here.
+// ---------------------------------------------------------------------------
+
+/** A row of `risks` (migration 0005): a per-work-item risk register entry. */
+export interface Risk {
+  id: string
+  work_item_id: string
+  seq: number
+  summary: string
+  body: string | null
+  rationale: string | null
+  /**
+   * CHECK-enforced `low|medium|high|critical`. Carried as `Option<String>` on
+   * the Rust row to match the codebase's "row stores plain string, MCP-param
+   * layer carries the typed enum" idiom; we mirror that here as a
+   * `RiskSeverity | null`. In practice NOT NULL on the column, so it should
+   * always be set on read — but we accept null to mirror the Rust shape.
+   */
+  severity: RiskSeverity | null
+  mitigation: string | null
+  superseded_by: string | null
+  created_at: string
+}
+
+export const RiskSchema = z.object({
+  id: z.string(),
+  work_item_id: z.string(),
+  seq: z.number(),
+  summary: z.string(),
+  body: z.string().nullable(),
+  rationale: z.string().nullable(),
+  severity: RiskSeveritySchema.nullable(),
+  mitigation: z.string().nullable(),
+  superseded_by: z.string().nullable(),
+  created_at: z.string(),
+})
+
+/** A row of `rejected_alternatives` (migration 0005): a discarded planning option. */
+export interface RejectedAlternative {
+  id: string
+  work_item_id: string
+  seq: number
+  summary: string
+  body: string | null
+  rationale: string | null
+  /**
+   * Free-text confidence grade (`high|medium|low` validated in the repo,
+   * mirroring `research_notes.confidence`). Free TEXT on the Rust side, so we
+   * type it as `Confidence | null` to surface the closed enum at the wire
+   * while still tolerating any historical free-text values.
+   */
+  confidence: Confidence | null
+  superseded_by: string | null
+  created_at: string
+}
+
+export const RejectedAlternativeSchema = z.object({
+  id: z.string(),
+  work_item_id: z.string(),
+  seq: z.number(),
+  summary: z.string(),
+  body: z.string().nullable(),
+  rationale: z.string().nullable(),
+  confidence: ConfidenceSchema.nullable(),
+  superseded_by: z.string().nullable(),
+  created_at: z.string(),
+})
+
+/** A row of `task_dependencies` (migration 0005): a task→task prerequisite edge. */
+export interface TaskDependency {
+  task_id: string
+  depends_on_id: string
+  /** Edge category — `data|sequence|…`; free TEXT, default `'data'`. */
+  kind: string
+  created_at: string
+}
+
+export const TaskDependencySchema = z.object({
+  task_id: z.string(),
+  depends_on_id: z.string(),
+  kind: z.string(),
+  created_at: z.string(),
+})
+
+// ---------------------------------------------------------------------------
+// WorkItemDetail (the GET /work-items/{id} response).
+// ---------------------------------------------------------------------------
+
 /** Response shape of `GET /api/work-items/{id}` (WorkItemDetail). */
 export interface WorkItemDetail {
   item: WorkItem
@@ -450,6 +473,11 @@ export interface WorkItemDetail {
   // [] for every other kind. Rust side uses `#[serde(default)]`, so the field
   // may also be absent from any pre-deploy cached responses.
   repo_links: RepoLink[]
+  // Migration 0005 (round-4 T7): risks, rejected alternatives, task
+  // dependencies. Same `#[serde(default)]` semantics → `.default([])`.
+  risks: Risk[]
+  rejected_alternatives: RejectedAlternative[]
+  task_dependencies: TaskDependency[]
 }
 
 // Wire-shape schema for the detail endpoint: identical to the consumer-facing
@@ -469,7 +497,16 @@ export const WorkItemDetailWireSchema = z.object({
   // the schema accepts both responses that omit the field (non-project items
   // and pre-deploy cached responses) and explicit empty arrays.
   repo_links: z.array(RepoLinkSchema).optional().default([]),
+  // Round-4 (T7): the three new aggregates. Same `optional().default([])`
+  // contract as `repo_links` — backend stamps `#[serde(default)]` on each.
+  risks: z.array(RiskSchema).optional().default([]),
+  rejected_alternatives: z.array(RejectedAlternativeSchema).optional().default([]),
+  task_dependencies: z.array(TaskDependencySchema).optional().default([]),
 })
+
+// ---------------------------------------------------------------------------
+// Fetch wrappers.
+// ---------------------------------------------------------------------------
 
 /** Body accepted by `POST /api/work-items`. */
 export interface CreateWorkItemRequest {
@@ -477,71 +514,6 @@ export interface CreateWorkItemRequest {
   parent_id?: string | null
   title: string
   body?: string | null
-}
-
-/**
- * Shape of the server's error envelope: `{"error":{"kind":...,"message":...}}`.
- * `handle` parses the success body against a caller-supplied schema; the error
- * envelope is parsed loosely (best-effort message extraction) because failure
- * paths must still produce a useful diagnostic when the server is itself
- * broken enough to drift on the error format.
- */
-export const ApiErrorEnvelopeSchema = z.object({
-  error: z
-    .object({
-      kind: z.string().optional(),
-      message: z.string().optional(),
-    })
-    .optional(),
-})
-
-const API_BASE = '/api'
-
-/**
- * Parse a fetch Response as JSON, raising on a non-2xx status.
- *
- * When `schema` is provided the success-path JSON is validated against it and
- * the parsed value is returned (a `ZodError` is wrapped as a contract-violation
- * Error so callers see a single recognisable failure mode at the wire
- * boundary). When `schema` is omitted the legacy untyped cast is used; new
- * call sites should always pass a schema.
- */
-async function handle<T>(res: Response, schema?: z.ZodType<T>): Promise<T> {
-  if (!res.ok) {
-    // Best-effort error-message extraction. The success-path is strict; the
-    // failure-path stays lenient because a broken server might also drift on
-    // its error envelope and we'd rather surface SOMETHING than mask it
-    // behind a second schema-violation.
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const raw: unknown = await res.json()
-      const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
-      if (parsed.success && parsed.data.error?.message) {
-        // Clamp to 200 chars so a misbehaving server cannot overflow the
-        // error panel (HierarchySpine.vue renders `{{ error }}` directly).
-        // Vue interpolation already prevents XSS; this is denial-of-readability
-        // defence only.
-        const message = parsed.data.error.message
-        detail = message.length > 200 ? message.slice(0, 197) + '…' : message
-      }
-    } catch {
-      // non-JSON error body — keep the status line
-    }
-    throw new Error(`API request failed: ${detail}`)
-  }
-  const payload: unknown = await res.json()
-  if (schema === undefined) {
-    return payload as T
-  }
-  const parsed = schema.safeParse(payload)
-  if (!parsed.success) {
-    throw new Error(
-      `API contract violation: ${parsed.error.issues
-        .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
-        .join('; ')}`,
-    )
-  }
-  return parsed.data
 }
 
 /**
@@ -628,88 +600,4 @@ export async function updateWorkItem(
  */
 export async function updateStatus(id: string, status: string): Promise<WorkItem> {
   return updateWorkItem(id, { status: status as Status })
-}
-
-// ---------------------------------------------------------------------------
-// Repo-link client (migration 0004).
-//
-// Three thin wrappers over the axum router's repo-link routes. Each goes
-// through `handle<T>()` for the JSON-returning verbs (POST/PATCH) so contract
-// violations surface as a single recognisable failure mode; the DELETE route
-// returns 204 No Content (no JSON body) and so resolves to void without a
-// schema parse — bypassing `handle<T>()` deliberately rather than papering
-// over an empty body.
-// ---------------------------------------------------------------------------
-
-/** Response shape of `POST /api/work-items/{project_id}/repo-links`. */
-const AddRepoLinkResponseSchema = z.object({ id: z.string() })
-
-/** Response shape of `PATCH /api/work-items/{project_id}/repo-links/{id}`. */
-const OkResponseSchema = z.object({ ok: z.boolean() })
-
-/**
- * `POST /api/work-items/{project_id}/repo-links` — link a GitHub repo to a
- * project. `slug` is canonicalised server-side (lowercased; validated against
- * the GitHub owner/name rules). Returns the new `repo_links.id`.
- */
-export async function addRepoLink(
-  projectId: string,
-  slug: string,
-  isPrimary?: boolean,
-): Promise<{ id: string }> {
-  return handle(
-    await fetch(`${API_BASE}/work-items/${encodeURIComponent(projectId)}/repo-links`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug, is_primary: isPrimary }),
-    }),
-    AddRepoLinkResponseSchema,
-  )
-}
-
-/**
- * `DELETE /api/work-items/{project_id}/repo-links/{id}` — unlink a repo from a
- * project. Returns 204 No Content on success, hence the bare `res.ok` check
- * rather than the `handle<T>()` JSON-parsing path. The path's `project_id`
- * segment is purely structural REST clarity — the server looks the owning
- * project up from the row itself.
- */
-export async function removeRepoLink(projectId: string, id: string): Promise<void> {
-  const res = await fetch(
-    `${API_BASE}/work-items/${encodeURIComponent(projectId)}/repo-links/${encodeURIComponent(id)}`,
-    { method: 'DELETE' },
-  )
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const raw: unknown = await res.json()
-      const parsed = ApiErrorEnvelopeSchema.safeParse(raw)
-      if (parsed.success && parsed.data.error?.message) {
-        const message = parsed.data.error.message
-        detail = message.length > 200 ? message.slice(0, 197) + '…' : message
-      }
-    } catch {
-      // non-JSON error body — keep the status line
-    }
-    throw new Error(`API request failed: ${detail}`)
-  }
-}
-
-/**
- * `PATCH /api/work-items/{project_id}/repo-links/{id}` — promote a repo link
- * to primary. The body is fixed at `{ is_primary: true }` per the server
- * contract; demotion happens implicitly via promoting another link.
- */
-export async function setPrimaryRepo(projectId: string, id: string): Promise<{ ok: boolean }> {
-  return handle(
-    await fetch(
-      `${API_BASE}/work-items/${encodeURIComponent(projectId)}/repo-links/${encodeURIComponent(id)}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_primary: true }),
-      },
-    ),
-    OkResponseSchema,
-  )
 }
