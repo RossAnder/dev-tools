@@ -380,3 +380,77 @@ dispatch_tier = "deep"
 dispatch_agent = "flow-implement-deep"
 summary = "View union widened to focus|tree|pty; CenterToolbar's viewModes loop auto-renders new button; PtyConsole mounted in both focused + portfolio branches of App.vue. 188 bun tests still pass."
 dedup_id = "1c324ad059688f0f"
+
+[[items]]
+id = "E24"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "run-full-verification-docs-refresh"
+status = "done"
+files = ["lumina/CLAUDE.md"]
+commits = ["88a169d"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "All 6 verification gates green (build/nextest/clippy/sqlx-check/bun-test/cargo-audit). Web build deferred (pre-existing RepoLinksPanel.vue break, not PTY). lumina/CLAUDE.md updated with PTY HTTP routes subsection + migration-0008 MCP tool paragraph. Root CLAUDE.md tool count (39) left unchanged per dispatch conservatism."
+dedup_id = "75231de0db0bd1b0"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-05-27
+agent = "implement"
+summary = "cargo build (LUMINA_SKIP_WEB_BUILD=1)"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "7bd07971d4a4e229"
+
+[[items]]
+id = "E26"
+type = "verification"
+date = 2026-05-27
+agent = "implement"
+summary = "cargo nextest 146/146 pass incl. pty_e2e"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "dd8f96b774873af4"
+
+[[items]]
+id = "E27"
+type = "verification"
+date = 2026-05-27
+agent = "implement"
+summary = "cargo clippy all-targets no warnings"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets --no-deps"
+outcome = "pass"
+dedup_id = "82bb9af01aee5b4c"
+
+[[items]]
+id = "E28"
+type = "verification"
+date = 2026-05-27
+agent = "implement"
+summary = "sqlx offline cache clean"
+command = "cargo sqlx prepare --check -- --all-targets"
+outcome = "pass"
+dedup_id = "f0cff77542c85540"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-05-27
+agent = "implement"
+summary = "bun test 188/188 pass"
+command = "bun test"
+outcome = "pass"
+dedup_id = "1806f110c1244a46"
+
+[[items]]
+id = "E30"
+type = "verification"
+date = 2026-05-27
+agent = "implement"
+summary = "cargo audit no advisories"
+command = "cargo audit --file lumina/Cargo.lock"
+outcome = "pass"
+dedup_id = "44d0eb9bf2f1ea0b"

@@ -1,6 +1,6 @@
 slug = "lumina-pty-service"
 plan_path = "docs/plans/lumina-pty-service.md"
-status = "in-progress"
+status = "review"
 created = 2026-05-27
 updated = 2026-05-27
 branch = "main"
@@ -11,8 +11,8 @@ scope = [
 
 [tasks]
 total = 17
-completed = 0
-in_progress = 1
+completed = 17
+in_progress = 0
 
 [artifacts]
 review_ledger = ".claude/flows/lumina-pty-service/review-ledger.toml"
