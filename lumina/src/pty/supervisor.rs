@@ -241,16 +241,19 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
         return;
     }
 
-    // Persist a `pty_messages` row for the user_input. v1 uses
-    // `entry.sequence` directly — queue and message sequence diverge
-    // slightly here, but it's acceptable for v1 (see plan note).
+    // Persist a `pty_messages` row for the user_input. The per-session
+    // message-row sequence is allocated by `Session::next_sequence()` so
+    // that user_input rows and bridge-emitted assistant rows share one
+    // monotone namespace (required by UNIQUE(session_id, sequence) on
+    // pty_messages from migration 0008); `entry.sequence` is the
+    // queue-row ordering, a separate namespace.
     let message_id = uuid::Uuid::now_v7().to_string();
     let content_json = serde_json::json!({ "text": entry.payload }).to_string();
     if let Err(err) = repo::pty::insert_pty_message(
         pool,
         &message_id,
         &session_id_str,
-        entry.sequence,
+        session.next_sequence(),
         "user_input",
         &content_json,
         Some(&entry.payload),

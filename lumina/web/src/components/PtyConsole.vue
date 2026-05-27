@@ -43,15 +43,40 @@ const {
   loadSessions,
   cancel: cancelSession,
   delete: deleteSession,
+  spawn: spawnSession,
+  error: listError,
 } = usePtySessions()
 const {
   currentId,
   messages,
   status: wsStatus,
   submit,
+  select,
+  disconnect,
+  error: focusError,
 } = usePtySession()
 
 const input = ref('')
+const newCwd = ref('')
+
+async function handleSpawn(): Promise<void> {
+  const cwd = newCwd.value.trim() || '.'
+  const result = await spawnSession({
+    cwd,
+    claude_args: [],
+    agent_json: null,
+    model: null,
+    env_passthrough_otel: false,
+    label: null,
+    project_id: null,
+    settings_json: null,
+    prompt_pattern: null,
+  })
+  if (result) {
+    await select(result.id)
+    newCwd.value = ''
+  }
+}
 const listEl = ref<HTMLElement | null>(null)
 const sentinelEl = ref<HTMLElement | null>(null)
 const autoScroll = ref(true)
@@ -132,13 +157,26 @@ function handleKey(e: KeyboardEvent): void {
 }
 
 async function handleCancel(): Promise<void> {
-  if (currentId.value === null) return
-  await cancelSession(currentId.value)
+  const id = currentId.value
+  if (id === null) return
+  await cancelSession(id)
+  // If the cancelled session is still the focused one, disconnect the WS
+  // and clear focus so the empty-state re-renders and the WS does not
+  // retry a tombstoned session.
+  if (currentId.value === id) {
+    disconnect()
+    currentId.value = null
+  }
 }
 
 async function handleDelete(): Promise<void> {
-  if (currentId.value === null) return
-  await deleteSession(currentId.value)
+  const id = currentId.value
+  if (id === null) return
+  await deleteSession(id)
+  if (currentId.value === id) {
+    disconnect()
+    currentId.value = null
+  }
 }
 
 // Auto-scroll via an IntersectionObserver on a 1px sentinel pinned to the
@@ -189,6 +227,90 @@ onMounted(() => {
   <div
     class="pty-console flex flex-col h-full bg-[var(--surface)] border border-[var(--border)] rounded-md overflow-hidden"
   >
+    <!-- Empty-state: no session focused. Two sections — pick an existing
+         session, or spawn a new one. Surfaced above (replacing) the
+         header/list/input branch via v-if/v-else so the active-session
+         layout stays byte-identical when a session is selected. -->
+    <div
+      v-if="currentId === null"
+      class="flex-1 overflow-y-auto px-4 py-4 space-y-6 bg-[var(--bg)]"
+    >
+      <section>
+        <h2
+          class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--muted)] uppercase mb-2"
+        >
+          Select a session
+        </h2>
+        <div
+          v-if="sessions.length === 0"
+          class="font-mono text-[12.5px] text-[var(--faint)] italic"
+        >
+          No sessions yet. Spawn one below.
+        </div>
+        <ul
+          v-else
+          class="space-y-1"
+        >
+          <li
+            v-for="s in sessions"
+            :key="s.id"
+            class="flex items-center gap-3 px-2 py-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] font-mono text-[12px] text-[var(--ink-2)] cursor-pointer hover:border-[var(--accent)] hover:bg-[var(--surface)]"
+            @click="() => select(s.id)"
+          >
+            <span class="text-[var(--faint)] text-[10.5px] shrink-0">
+              {{ s.id.slice(0, 8) }}
+            </span>
+            <span class="truncate min-w-0 flex-1">
+              {{ s.label ?? '—' }}
+            </span>
+            <span
+              class="text-[10.5px] tracking-wider uppercase text-[var(--muted)] shrink-0"
+            >
+              {{ s.status }}
+            </span>
+            <span class="text-[10.5px] text-[var(--faint)] shrink-0">
+              {{ s.started_at }}
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2
+          class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--muted)] uppercase mb-2"
+        >
+          Spawn new session
+        </h2>
+        <div class="flex gap-2">
+          <input
+            v-model="newCwd"
+            type="text"
+            placeholder="cwd (default: worktree root)"
+            class="flex-1 font-mono text-[12.5px] bg-[var(--surface)] border border-[var(--border)] rounded-md px-2 py-1 text-[var(--ink)] placeholder:text-[var(--ghost)] focus:outline-none focus:border-[var(--accent)]"
+            @keydown.enter.prevent="handleSpawn"
+          />
+          <button
+            type="button"
+            class="font-mono text-[10.5px] tracking-[0.16em] px-3 py-1 rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink-2)] uppercase shrink-0 hover:border-[var(--accent)]"
+            @click="handleSpawn"
+          >
+            Spawn
+          </button>
+        </div>
+        <div
+          v-if="listError"
+          class="mt-2 font-mono text-[11.5px] text-blocked"
+          role="alert"
+        >
+          {{ listError }}
+        </div>
+      </section>
+    </div>
+
+    <!-- Active-session branch: header strip + scrolling transcript + input
+         area. v-else of the empty-state above; existing behaviour preserved
+         verbatim. -->
+    <template v-else>
     <!-- Header strip: label + project-missing tombstone + status pill +
          destructive actions. Mirrors the header treatment in
          RepoLinksPanel.vue / CenterToolbar.vue (border-bottom, muted
@@ -259,6 +381,17 @@ onMounted(() => {
       />
     </div>
 
+    <!-- Focused-session error banner: surfaces history-fetch failures, WS
+         stream errors, and skipped-output notices that the empty-state's
+         `listError` (spawn-side) doesn't cover. -->
+    <div
+      v-if="focusError"
+      class="px-3 py-1.5 border-t border-[var(--border)] bg-[var(--surface-2)] font-mono text-[11.5px] text-blocked"
+      role="alert"
+    >
+      {{ focusError }}
+    </div>
+
     <!-- Input area: textarea + Send. Enter inserts newline; Cmd/Ctrl+Enter
          submits. Disabled when no session is focused. -->
     <footer
@@ -281,5 +414,6 @@ onMounted(() => {
         Send
       </button>
     </footer>
+    </template>
   </div>
 </template>

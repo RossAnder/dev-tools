@@ -119,7 +119,7 @@ pub enum MessageKind {
 }
 
 impl MessageKind {
-    fn as_wire(self) -> &'static str {
+    pub fn as_wire(self) -> &'static str {
         match self {
             Self::UserInput => "user_input",
             Self::AssistantText => "assistant_text",

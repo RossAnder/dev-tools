@@ -8,6 +8,7 @@
 //! supervisor's per-session write task.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use tokio::sync::{Mutex, broadcast, mpsc};
 
@@ -23,6 +24,7 @@ pub struct Session {
     pub broadcast_tx: broadcast::Sender<TypedMessage>,
     pub input_tx: mpsc::Sender<InputFrame>,
     pub parser: Mutex<Parser>,
+    pub sequence_counter: AtomicI64,
 }
 
 impl Session {
@@ -40,7 +42,18 @@ impl Session {
             broadcast_tx,
             input_tx,
             parser: Mutex::new(Parser::new()),
+            sequence_counter: AtomicI64::new(1),
         })
+    }
+
+    /// Allocate the next monotone message-row sequence for this session.
+    ///
+    /// `Relaxed` ordering is intentional: this is a single-allocator-per-session
+    /// counter and no other atomic state on `Session` is read together with it.
+    /// Do NOT promote to `SeqCst` without a measurable need — fetch_add is
+    /// atomic and produces a monotone sequence regardless of ordering.
+    pub fn next_sequence(&self) -> i64 {
+        self.sequence_counter.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Snapshot the current lifecycle status.
