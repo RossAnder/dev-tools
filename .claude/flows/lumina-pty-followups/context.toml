@@ -1,0 +1,21 @@
+slug = "lumina-pty-followups"
+plan_path = "docs/plans/lumina-pty-followups.md"
+status = "draft"
+created = 2026-05-27
+updated = 2026-05-27
+branch = "main"
+scope = [
+    "lumina/**",
+    "docs/plans/lumina-pty-followups.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-pty-followups/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-pty-followups/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-pty-followups/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-pty-followups/plan-review-findings.toml"

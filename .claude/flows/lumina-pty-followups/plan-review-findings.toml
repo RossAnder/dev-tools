@@ -1,0 +1,123 @@
+schema_version = 1
+last_updated = 2026-05-27
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### Session sequence counter"
+summary = "Deterministic UNIQUE collision: bridge counter and supervisor's entry.sequence both start at 1, trip pty_messages.UNIQUE(session_id,sequence) on first prompt"
+dedup_id = "92de6086d437c244"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### Frontend empty-state"
+summary = "PtyConsole destructure at lines 47-52 omits select; T2 calls select(...) — must widen destructure"
+dedup_id = "35f86b385a5e80a7"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### Integration-test update"
+summary = "Existing pty_e2e.rs:313 user_input assertion is index-0-positional; bridge now persists assistant rows before user_input — rewrite to iter().any(...)"
+dedup_id = "7199d1fe68d879ee"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Session sequence counter"
+summary = "Plan misdescribes supervisor allocator: uses entry.sequence at dispatch (not Queue::list().len()+1 at dispatch site)"
+dedup_id = "ee42f4b06334a2c6"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Broadcast Lagged(_) => continue silently drops persistence AND can wedge Idle flip if first Prompt is in lagged batch"
+dedup_id = "c0dc8c3c5350357c"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Dependency Graph"
+summary = "T2 piecemeal merge ships a broken intermediate UI state; constrain all-or-nothing PR"
+dedup_id = "6eddbffbe87159c5"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Spawn helper module"
+summary = "Helper drop-handle step elides explicit drop(handle.completed); drop(handle.shutdown) — existing handlers do this deliberately"
+dedup_id = "c691b9ca69c90d48"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Spawn helper module"
+summary = "Helper signature cwd_display semantics underspecified; callers pass canonical to_string_lossy form, helper does not re-canonicalise"
+dedup_id = "d2e359a118fe6410"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Spawn-handler refactors"
+summary = "cwd validation duplicated in both shells — extract to shared free function to prevent drift"
+dedup_id = "826aab6ebb62705e"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Frontend empty-state"
+summary = "Dual error sources usePtySession.error vs usePtySessions.error; empty-state surfaces one, active branch must surface the other"
+dedup_id = "76df29bab18c966a"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Spawn helper module"
+summary = "MessageKind::as_wire is private; promote to pub fn to avoid per-message String allocation"
+dedup_id = "f49d5b16192b45c1"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### Spawn helper module"
+summary = "Pseudocode block elides Arc<Session>/pool.clone() before tokio::spawn — show explicit let-bindings"
+dedup_id = "af9a080e5e042275"
