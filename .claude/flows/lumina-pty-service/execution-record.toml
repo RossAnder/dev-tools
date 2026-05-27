@@ -285,3 +285,63 @@ dispatch_tier = "lite"
 dispatch_agent = "flow-implement-lite"
 summary = "zod schemas (PtySession/PtyMessage/PtyQueueEntry/InputFrame/WsFrame) + 9 fetch wrappers + openSessionStream WS opener with exponential backoff reconnect. cancelSession + deleteSession are aliases (same DELETE route in v1). 175/175 bun tests pass."
 dedup_id = "e35beb31e31e9fa3"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "composables-useptysessions-useptysession"
+status = "done"
+files = [
+    "lumina/web/src/composables/usePtySession.ts",
+    "lumina/web/src/composables/usePtySessions.ts",
+    "lumina/web/src/__tests__/pty-session.test.ts",
+]
+commits = ["0fcc7c6"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Module-singleton composables with request-id token cancellation, onScopeDispose-guarded cleanup, test seams. 13 new bun tests pass; 188/188 total."
+dedup_id = "fd929bbe2672d8db"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "integration-test-pty-e2e"
+status = "done"
+files = [
+    "lumina/tests/pty_e2e.rs",
+    "lumina/tests/fixtures/pty_stub.rs",
+    "lumina/Cargo.toml",
+]
+commits = ["0fcc7c6"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "In-process e2e test with PATH-override claude substitution + RAII tempdir guard. Deterministic spawn->input->message->cancel lifecycle. 1/1 passes; grep for sleep returns empty."
+dedup_id = "a5e5842f9b8e80ce"
+
+[[items]]
+id = "E20"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "integration-test-pty-e2e"
+summary = "Production gap: Spawning -> Idle transition is never written by parser-bridge"
+original_intent = "Plan Approach says 'status transitions to active -> idle when the parser detects the first prompt'"
+rationale = "Neither pty_transport parser-bridge nor http spawn handler calls Session::set_status(Idle) on first-prompt detection. Test works around by reaching into pty_registry and calling set_status(Idle) directly after spawn. A follow-up task should wire the parser-bridge in pty_transport to push the Idle transition when the parser emits its first Prompt-kind TypedMessage."
+commits = ["0fcc7c6"]
+dedup_id = "bfcc97a5db9e7cae"
+
+[[items]]
+id = "E21"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "integration-test-pty-e2e"
+summary = "v1 only persists user_input pty_messages; assistant blocks are broadcast but not persisted"
+original_intent = "Plan implies every TypedMessage emitted by parser persists to pty_messages"
+rationale = "pty_transport parser-bridge currently broadcasts TypedMessage but does not call repo::pty::insert_pty_message. Only supervisor::dispatch_one persists messages (user_input only). Follow-up: extend the parser-bridge to persist assistant_text/tool_call/prompt/error blocks as well, with a per-session sequence allocator that doesn't race the queue's sequence counter."
+commits = ["0fcc7c6"]
+dedup_id = "3c7bb6acbdd30720"

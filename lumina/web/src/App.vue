@@ -9,6 +9,7 @@ import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import FocusLens from '@/components/FocusLens.vue'
 import ChildGrid from '@/components/ChildGrid.vue'
 import PortfolioEmpty from '@/components/PortfolioEmpty.vue'
+import PtyConsole from '@/components/PtyConsole.vue'
 
 const { focusId, view, loading, focusedNode, loadTree } = useHierarchy()
 
@@ -51,11 +52,12 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
         </template>
         <template v-else-if="focusId !== null">
           <Breadcrumbs />
-          <!-- view toggle: focus shows lens + child grid; tree shows deferred placeholder -->
+          <!-- view toggle: focus shows lens + child grid; tree shows deferred placeholder; pty mounts the supervisor console -->
           <template v-if="view === 'focus'">
             <FocusLens />
             <ChildGrid v-if="focusedChildren.length > 0" :children="focusedChildren" />
           </template>
+          <PtyConsole v-else-if="view === 'pty'" />
           <div
             v-else
             class="mx-4 my-6 p-6 border border-[var(--border)] rounded-xl text-[var(--faint)] font-mono text-[12px] italic"
@@ -63,6 +65,7 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
             TREE VIEW — DEFERRED
           </div>
         </template>
+        <PtyConsole v-else-if="view === 'pty'" />
         <PortfolioEmpty v-else />
       </div>
 

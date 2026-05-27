@@ -44,7 +44,7 @@ const focusId = ref<string | null>(null)
 const detail = ref<WorkItemDetail | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const view = ref<'focus' | 'tree'>('focus')
+const view = ref<'focus' | 'tree' | 'pty'>('focus')
 
 // Swappable API adapter for test isolation. Production code calls the real
 // helpers from `@/api`; tests can override individual entries via

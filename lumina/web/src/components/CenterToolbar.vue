@@ -22,11 +22,11 @@ const contextTag: ComputedRef<string | null> = computed(() => {
 // the template handler: refs auto-unwrap on READ in templates, but writing to
 // the unwrapped identifier would shadow the binding rather than mutate the
 // ref. A function call sidesteps the ambiguity entirely.
-function setView(next: 'focus' | 'tree'): void {
+function setView(next: 'focus' | 'tree' | 'pty'): void {
   view.value = next
 }
 
-const viewModes = ['focus', 'tree'] as const
+const viewModes = ['focus', 'tree', 'pty'] as const
 </script>
 
 <template>
