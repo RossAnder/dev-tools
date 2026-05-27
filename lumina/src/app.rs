@@ -117,11 +117,16 @@ pub async fn serve() -> anyhow::Result<()> {
         .with_context(|| format!("initialising database at {database_url}"))?;
     let pool = Arc::new(pool);
 
-    // PTY fields: registry is fresh (the supervisor — T11 — will share this
-    // same `Arc` clone once it lands); transport is the unit-struct
-    // `PtyTransport`. `pty_register_tx` is None in T9 — T11 will mutate the
-    // state to flip it to `Some(...)` after spawning the supervisor.
-    let state = AppState::new(pool.clone());
+    // Construct AppState (registry, transport, and pool defaults are set by
+    // AppState::new). The supervisor shares the same registry Arc so it can
+    // insert/remove sessions on spawn/reap.
+    let mut state = AppState::new(pool.clone());
+
+    // Spawn the PTY supervisor, wiring it to the registry that AppState owns.
+    // The supervisor's register_tx is stored so HTTP/MCP spawn handlers can
+    // hand off freshly-created sessions to the supervisor's exit-reap loop.
+    let supervisor = crate::pty::supervisor::spawn(pool.clone(), state.pty_registry.clone());
+    state.pty_register_tx = Some(supervisor.register_tx());
 
     // Kick off the background git-export materialiser before serving so no
     // mutation's outbox row goes undrained while the server is up. Retain the
@@ -145,9 +150,14 @@ pub async fn serve() -> anyhow::Result<()> {
         .await
         .context("axum server error");
 
-    // Stop the export loop and await its join regardless of whether the server
-    // exited cleanly — keeps the runtime free of orphaned background tasks at
-    // exit.
+    // Shutdown ordering: HTTP server has already drained above.
+    // 1. Stop the PTY supervisor (cancels the loop, awaits join) before the
+    //    export drain so any final `pty_sessions` updates the supervisor may
+    //    flush are picked up by the drain while the pool is still live.
+    supervisor.shutdown().await;
+
+    // 2. Stop the export loop and await its join regardless of whether the
+    //    server exited cleanly — keeps the runtime free of orphaned tasks.
     export_handle.shutdown().await;
 
     serve_result?;
@@ -203,7 +213,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api", crate::http::router())
         // `/mcp` MCP service (Task 5 returns the real StreamableHttpService;
         // app.rs only `.nest_service`s it, so the concrete type may change).
-        .nest_service("/mcp", crate::mcp::service(pool.clone()))
+        .nest_service("/mcp", crate::mcp::service_with_state(state.clone()))
         // SPA fallback last (Task 4 wires rust-embed / ServeDir).
         .fallback_service(crate::assets::spa_fallback())
         // The MCP tools (Task 5) read the pool via an `Extension` layer through

@@ -182,3 +182,58 @@ dispatch_tier = "deep"
 dispatch_agent = "flow-implement-deep"
 summary = "Supervisor loop with 4-branch select (cancel/tick/registration/exit-reap), per-session error swallowing, 3 inline tests pass. Added futures = 0.3 dep for FuturesUnordered. InputKind matched manually (no FromStr impl)."
 dedup_id = "9594314aa6d931dc"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "http-family-websocket-pty-sessions"
+status = "done"
+files = [
+    "lumina/src/http/pty_sessions.rs",
+    "lumina/src/http/mod.rs",
+    "lumina/src/app.rs",
+    "lumina/src/http/acceptance_criteria.rs",
+    "lumina/src/http/activity.rs",
+    "lumina/src/http/context_blocks.rs",
+    "lumina/src/http/findings.rs",
+    "lumina/src/http/open_questions.rs",
+    "lumina/src/http/readiness.rs",
+    "lumina/src/http/rejected_alternatives.rs",
+    "lumina/src/http/research_notes.rs",
+    "lumina/src/http/risks.rs",
+    "lumina/src/http/structured_patches.rs",
+    "lumina/src/http/task_dependencies.rs",
+    "lumina/src/http/work_items.rs",
+    "lumina/tests/e2e.rs",
+]
+commits = ["df2fa18"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "10 PTY HTTP routes + WS upgrade; AppState widened; AppState::new constructor; 4 smoke tests pass. AppState migration cross-cut to 13 files (mechanical)."
+dedup_id = "7e4a3c0fef4ced26"
+
+[[items]]
+id = "E13"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "http-family-websocket-pty-sessions"
+summary = "AppState migration cross-cut to 13 files (16 sites)"
+original_intent = "T9 declared Files limited to http/pty_sessions.rs, http/mod.rs, app.rs, error.rs (4 files)"
+rationale = "Widening AppState required converting every AppState{pool: ...} literal to AppState::new(...). 13 files in lumina/src/http/ + lumina/tests/e2e.rs touched mechanically — no semantic change. Cross-cut documented in agent's own report."
+commits = ["df2fa18"]
+dedup_id = "f5d38bbc91f022f7"
+
+[[items]]
+id = "E14"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "http-family-websocket-pty-sessions"
+summary = "PATCH /api/pty/sessions/{id} returns 501 Not Implemented for v1"
+original_intent = "Plan says PATCH updates label/project_id"
+rationale = "No repo::pty::update_pty_session_meta helper exists; adding one was out of T9 scope. Stub returns 501; follow-up PR can add the helper + handler."
+commits = ["df2fa18"]
+dedup_id = "bc80f11bb6aea99a"

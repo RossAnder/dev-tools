@@ -235,7 +235,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
 
     // 4. Read the same item back over HTTP, against the SAME router the server
     //    builds — no listener bind. Assert 200 and that the JSON item.id matches.
-    let state = AppState { pool: pool.clone() };
+    let state = AppState::new(pool.clone());
     let resp = build_router(state)
         .oneshot(
             Request::builder()
@@ -412,7 +412,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     );
 
     // 4. Read both items back over HTTP against the SAME router (no socket bind).
-    let state = AppState { pool: pool.clone() };
+    let state = AppState::new(pool.clone());
 
     // 4a. The story detail's `item.attributes` carries the plan keys.
     let story_resp = build_router(state.clone())
@@ -731,7 +731,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     );
 
     // 8. Read both items back over HTTP against the SAME router (no socket bind).
-    let state = AppState { pool: pool.clone() };
+    let state = AppState::new(pool.clone());
 
     // 8a. The story detail surfaces the new column + the live child collections.
     let story_resp = build_router(state.clone())
@@ -965,7 +965,7 @@ async fn repo_links_flow() {
 
     // 6. HTTP GET /api/work-items/{project_id} — the detail surfaces the
     //    `repo_links` array for project-kind items.
-    let state = AppState { pool: pool.clone() };
+    let state = AppState::new(pool.clone());
     let project_resp = build_router(state.clone())
         .oneshot(
             Request::builder()
