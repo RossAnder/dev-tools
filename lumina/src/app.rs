@@ -80,8 +80,10 @@ pub async fn serve() -> anyhow::Result<()> {
     let state = AppState { pool: pool.clone() };
 
     // Kick off the background git-export materialiser before serving so no
-    // mutation's outbox row goes undrained while the server is up.
-    crate::export::spawn(pool.clone());
+    // mutation's outbox row goes undrained while the server is up. Retain the
+    // handle so shutdown can stop the loop cleanly instead of relying on a
+    // process-exit kill.
+    let export_handle = crate::export::spawn(pool.clone());
 
     let app = build_router(state);
 
@@ -94,10 +96,56 @@ pub async fn serve() -> anyhow::Result<()> {
         .with_context(|| format!("binding listener on {addr}"))?;
     println!("lumina listening on http://{addr}");
 
-    axum::serve(listener, app)
+    let serve_result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
         .await
-        .context("axum server error")?;
+        .context("axum server error");
+
+    // Stop the export loop and await its join regardless of whether the server
+    // exited cleanly — keeps the runtime free of orphaned background tasks at
+    // exit.
+    export_handle.shutdown().await;
+
+    serve_result?;
+    eprintln!("lumina shutdown complete");
     Ok(())
+}
+
+/// Resolve when the process receives a shutdown signal: Ctrl+C on every
+/// platform, plus SIGTERM on Unix (so `systemctl stop` / `docker stop` exit
+/// gracefully too). Returning from this future drives `axum::serve`'s graceful
+/// shutdown — without it, Ctrl+C tears the tokio runtime down mid-accept and
+/// the OS reports the process as terminated via STATUS_CONTROL_C_EXIT
+/// (0xC000013A) on Windows.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            eprintln!("lumina: failed to install Ctrl+C handler: {e}");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(e) => {
+                eprintln!("lumina: failed to install SIGTERM handler: {e}");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
+    }
+
+    eprintln!("lumina: shutdown signal received, draining…");
 }
 
 /// Assemble the full router from the three builder seams. Pulled out of `serve`
