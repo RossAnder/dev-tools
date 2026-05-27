@@ -188,7 +188,7 @@ mod tests {
     async fn rejected_alternatives_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let story = seed_story(&pool).await;
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         // POST add → 201 + { id }.

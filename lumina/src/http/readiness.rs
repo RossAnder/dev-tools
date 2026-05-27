@@ -107,9 +107,7 @@ mod tests {
         repo::add_acceptance_criterion(&pool, &story_id, "ships green")
             .await
             .expect("add acceptance criterion");
-        let state = AppState {
-            pool: Arc::new(pool),
-        };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         // GET /work-items/{story_id}/readiness

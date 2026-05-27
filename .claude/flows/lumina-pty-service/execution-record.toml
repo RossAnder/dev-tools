@@ -164,3 +164,21 @@ dispatch_tier = "deep"
 dispatch_agent = "flow-implement-deep"
 summary = "Session container with status Mutex + broadcast/mpsc/parser; SessionRegistry as Arc<RwLock<HashMap>>; Queue facade over repo::pty::*. 5 new unit tests (3 registry + 2 queue) pass."
 dedup_id = "0faac767d089c089"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "supervisor-task-spawn"
+status = "done"
+files = [
+    "lumina/src/pty/supervisor.rs",
+    "lumina/src/pty/mod.rs",
+    "lumina/Cargo.toml",
+]
+commits = ["142907a"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Supervisor loop with 4-branch select (cancel/tick/registration/exit-reap), per-session error swallowing, 3 inline tests pass. Added futures = 0.3 dep for FuturesUnordered. InputKind matched manually (no FromStr impl)."
+dedup_id = "9594314aa6d931dc"

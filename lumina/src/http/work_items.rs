@@ -249,7 +249,7 @@ mod tests {
     async fn get_work_items_returns_nested_tree() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story, task_id) = seed_chain(&pool).await;
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
 
         let resp = build_router(state)
             .oneshot(
@@ -287,7 +287,7 @@ mod tests {
     async fn get_work_items_filtered_is_flat() {
         let pool = connect_in_memory().await.expect("pool");
         seed_chain(&pool).await;
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
 
         let resp = build_router(state)
             .oneshot(
@@ -312,7 +312,7 @@ mod tests {
     #[tokio::test]
     async fn get_unknown_work_item_is_404() {
         let pool = connect_in_memory().await.expect("pool");
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
 
         let resp = build_router(state)
             .oneshot(
@@ -334,7 +334,7 @@ mod tests {
     #[tokio::test]
     async fn post_work_item_creates_and_validates() {
         let pool = connect_in_memory().await.expect("pool");
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         // Legal project create → 201 + id.
@@ -394,7 +394,7 @@ mod tests {
         repo::append_activity(&pool, &story_id, "comment", Some("alice"), "noted", None, None)
             .await
             .expect("append activity");
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
 
         let resp = build_router(state)
             .oneshot(
@@ -429,7 +429,7 @@ mod tests {
             .await
             .expect("project")
             .to_string();
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         let resp = router
@@ -476,7 +476,7 @@ mod tests {
             .await
             .expect("project")
             .to_string();
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         let resp = router
@@ -563,7 +563,7 @@ mod tests {
             .await
             .expect("add question option");
 
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
 
         // Detail of the STORY: carries relevance + all three child collections.
         let resp = build_router(state.clone())
@@ -648,7 +648,7 @@ mod tests {
             .await
             .expect("project")
             .to_string();
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         // First DELETE → 204 No Content.
@@ -705,7 +705,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_path_serves_index_200() {
         let pool = connect_in_memory().await.expect("pool");
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
 
         let resp = build_router(state)
             .oneshot(

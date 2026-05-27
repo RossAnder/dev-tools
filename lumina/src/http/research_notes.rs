@@ -218,7 +218,7 @@ mod tests {
     async fn research_notes_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         // POST add (the OLD note) → 201 + { id }.

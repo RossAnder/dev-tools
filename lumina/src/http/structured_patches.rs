@@ -369,7 +369,7 @@ mod tests {
     async fn scalars_round_trip() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         // -- relevance (story-scoped) -----------------------------------
@@ -515,7 +515,7 @@ mod tests {
     async fn scalar_null_value_is_422() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         // (path, work-item-id) pairs — relevance + closure-gate are
@@ -561,7 +561,7 @@ mod tests {
     async fn story_plan_merges_attributes() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         let resp = router
@@ -612,7 +612,7 @@ mod tests {
     async fn task_spec_writes_attributes_and_tier() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         let resp = router
@@ -668,7 +668,7 @@ mod tests {
             .await
             .expect("seed repo_link");
 
-        let state = AppState { pool: Arc::new(pool) };
+        let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         let resp = router

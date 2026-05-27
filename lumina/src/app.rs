@@ -17,9 +17,49 @@ use sqlx::SqlitePool;
 /// Shared application state. Cheap to clone — the pool is `Arc`-wrapped and
 /// sqlx pools are themselves ref-counted, so handlers and the MCP layer all
 /// share one connection pool.
+///
+/// The PTY fields below thread the lumina-pty-service (`docs/plans/lumina-pty-service.md`)
+/// dependencies through the composition root. `pty_register_tx` is `Option` in v1: T9
+/// constructs `AppState` with `None` (so spawn handlers do everything *except*
+/// the supervisor-registration step); T11 will spawn the supervisor and swap the
+/// `Option` to `Some(supervisor.register_tx())` from `serve`. Handler-side reads
+/// gate on `if let Some(tx)` so the surface is forward-compatible.
 #[derive(Clone)]
 pub struct AppState {
     pub pool: Arc<SqlitePool>,
+    /// Keyed lookup of in-memory PTY sessions (T9 spawn → insert; T8 supervisor
+    /// reap → remove). Shared between the HTTP / MCP layers and the supervisor.
+    pub pty_registry: Arc<crate::pty::registry::SessionRegistry>,
+    /// Pluggable transport seam. v1 stores `Arc::new(PtyTransport)`; reserved
+    /// for future ACP / remote backends.
+    pub pty_transport: Arc<dyn crate::pty::transport::Transport + Send + Sync>,
+    /// Supervisor registration channel — `None` until T11 wires the supervisor
+    /// from `serve`. Handlers that need to register a freshly-spawned session
+    /// gate on `if let Some(tx) = state.pty_register_tx.as_ref()` and skip
+    /// silently when absent. **Not a placeholder receiver hidden in
+    /// AppState** — keeping the option None makes the un-wired state
+    /// observable rather than silently dispatching to a dropped channel.
+    pub pty_register_tx:
+        Option<tokio::sync::mpsc::Sender<crate::pty::supervisor::SessionRegistration>>,
+}
+
+impl AppState {
+    /// Construct an `AppState` with default PTY plumbing: a fresh empty
+    /// `SessionRegistry`, the unit-struct `PtyTransport`, and `None` for
+    /// `pty_register_tx`. The PTY supervisor wire-up (T11) replaces the
+    /// last field via direct mutation after spawning the supervisor.
+    ///
+    /// Provided so per-family HTTP tests, the e2e test, and the composition
+    /// root can construct `AppState` without each having to know the
+    /// per-field defaults — drift-killer for the new fields added in T9.
+    pub fn new(pool: Arc<SqlitePool>) -> Self {
+        Self {
+            pool,
+            pty_registry: crate::pty::registry::SessionRegistry::new(),
+            pty_transport: Arc::new(crate::pty::pty_transport::PtyTransport),
+            pty_register_tx: None,
+        }
+    }
 }
 
 /// Default port when `PORT` is unset. Picked to be uncommon (no well-known
@@ -77,7 +117,11 @@ pub async fn serve() -> anyhow::Result<()> {
         .with_context(|| format!("initialising database at {database_url}"))?;
     let pool = Arc::new(pool);
 
-    let state = AppState { pool: pool.clone() };
+    // PTY fields: registry is fresh (the supervisor — T11 — will share this
+    // same `Arc` clone once it lands); transport is the unit-struct
+    // `PtyTransport`. `pty_register_tx` is None in T9 — T11 will mutate the
+    // state to flip it to `Some(...)` after spawning the supervisor.
+    let state = AppState::new(pool.clone());
 
     // Kick off the background git-export materialiser before serving so no
     // mutation's outbox row goes undrained while the server is up. Retain the
@@ -184,9 +228,7 @@ mod tests {
         let pool = SqlitePool::connect("sqlite::memory:")
             .await
             .expect("in-memory sqlite pool");
-        let state = AppState {
-            pool: Arc::new(pool),
-        };
+        let state = AppState::new(Arc::new(pool));
         let response = build_router(state)
             .oneshot(
                 Request::builder()
