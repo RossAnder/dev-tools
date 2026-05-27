@@ -24,6 +24,7 @@ tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs"] }
 tokio-util = "0.7"                                  # CancellationToken for the export-loop shutdown seam (Task 6)
+futures = "0.3"                                     # FuturesUnordered for the PTY supervisor's exit-reap branch (T8)
 
 # --- PTY supervisor (interactive `claude` REPL sessions, migration 0008) ---
 # portable-pty gives cross-platform PTY (Unix98 + Windows ConPTY) with a

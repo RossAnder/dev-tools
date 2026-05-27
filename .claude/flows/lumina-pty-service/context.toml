@@ -12,7 +12,7 @@ scope = [
 [tasks]
 total = 17
 completed = 0
-in_progress = 2
+in_progress = 1
 
 [artifacts]
 review_ledger = ".claude/flows/lumina-pty-service/review-ledger.toml"

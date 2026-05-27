@@ -128,3 +128,39 @@ original_intent = "Dispatch spec listed derive(Debug, Clone, Serialize, Deserial
 rationale = "Established domain.rs convention is Debug+Clone+Serialize only (no Deserialize/FromRow/rename-all) for read-only row structs; query_as! works without FromRow via macro-generated field-by-name assignment, and column names are already snake_case. The spec said to match conventions over the literal derive list. If T9/T10 need wire-Deserialize for HTTP request bodies they will define their own request structs."
 commits = ["d5468ea"]
 dedup_id = "fd4331efed94d689"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "implement-ptytransport-via-portable-pty"
+status = "done"
+files = [
+    "lumina/src/pty/pty_transport.rs",
+    "lumina/src/pty/mod.rs",
+]
+commits = ["6d319ee"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "PtyTransport wires portable-pty 0.9 native_pty_system + 6 worker tasks (reader-blocking + writer-blocking + parser-bridge + input-bridge + child-wait-blocking + cancel-async). Used clone_killer (kill_child not on portable-pty 0.9 MasterPty). exit_code u32 widened to i32; SessionExit.signal left as None for v1."
+dedup_id = "8fee2387ac31c0c7"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "session-sessionregistry-queue"
+status = "done"
+files = [
+    "lumina/src/pty/session.rs",
+    "lumina/src/pty/registry.rs",
+    "lumina/src/pty/queue.rs",
+    "lumina/src/pty/mod.rs",
+]
+commits = ["6d319ee"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "Session container with status Mutex + broadcast/mpsc/parser; SessionRegistry as Arc<RwLock<HashMap>>; Queue facade over repo::pty::*. 5 new unit tests (3 registry + 2 queue) pass."
+dedup_id = "0faac767d089c089"

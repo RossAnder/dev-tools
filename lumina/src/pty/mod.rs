@@ -23,3 +23,4 @@ pub use pty_transport::PtyTransport;
 pub use session::Session;
 pub use registry::SessionRegistry;
 pub use queue::Queue;
+pub use supervisor::{SessionRegistration, SupervisorHandle};
