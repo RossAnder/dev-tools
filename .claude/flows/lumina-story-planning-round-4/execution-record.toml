@@ -207,3 +207,131 @@ dispatch_tier = "deep"
 dispatch_agent = "flow-implement-deep"
 summary = "Split api.ts into api/ directory (4 impl + 12 stubs + 1 barrel). Added TaskKind/Tier/RiskSeverity wire enums. Extended WorkItemSchema and WorkItemDetailWireSchema. Empirically picked .nullable() over .nullish(). bun test 18/18, vue-tsc + vite build clean."
 dedup_id = "6a6f304b14cb996d"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "fe-scalars-task-kind-tier-composables"
+status = "done"
+files = [
+    "lumina/web/src/api/scalars.ts",
+    "lumina/web/src/composables/useScalars.ts",
+]
+commits = ["753d32f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T8a: 6 scalar PATCH wrappers + useScalars composable; module-singleton pattern."
+dedup_id = "ba5e2f26599507fb"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "fe-story-plan-task-spec-readiness-dispatch-composables"
+status = "done"
+files = [
+    "lumina/web/src/api/structured-patches.ts",
+    "lumina/web/src/api/readiness.ts",
+    "lumina/web/src/composables/useStoryPlan.ts",
+    "lumina/web/src/composables/useTaskSpec.ts",
+    "lumina/web/src/composables/useReadiness.ts",
+    "lumina/web/src/composables/useDispatchPlan.ts",
+]
+commits = ["753d32f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T8b: setStoryPlan + setTaskSpec + fetchReadiness + fetchDispatchPlan; 4 composables; NextActionSchema mirrors all 16 variants."
+dedup_id = "f0bf35c09a14b26e"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "fe-acceptance-criteria-research-notes-composables"
+status = "done"
+files = [
+    "lumina/web/src/api/acceptance-criteria.ts",
+    "lumina/web/src/api/research-notes.ts",
+    "lumina/web/src/composables/useAcceptanceCriteria.ts",
+    "lumina/web/src/composables/useResearchNotes.ts",
+]
+commits = ["753d32f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T9: 4 AC + 3 RN wrappers + 2 composables. Fixed AcceptanceCriterionSchema -> AcceptanceCriterionWireSchema re-export name."
+dedup_id = "81b169b30da680a1"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "fe-risks-rejected-task-deps-composables"
+status = "done"
+files = [
+    "lumina/web/src/api/risks.ts",
+    "lumina/web/src/api/rejected-alternatives.ts",
+    "lumina/web/src/api/task-deps.ts",
+    "lumina/web/src/composables/useRisks.ts",
+    "lumina/web/src/composables/useRejectedAlternatives.ts",
+    "lumina/web/src/composables/useTaskDependencies.ts",
+]
+commits = ["753d32f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T10: 4+4+4 wrappers + 3 composables; cycle-422 envelope parsed and surfaced via useTaskDependencies.cycleError."
+dedup_id = "9a0b042994ab1c5a"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "fe-open-questions-findings-composables"
+status = "done"
+files = [
+    "lumina/web/src/api/open-questions.ts",
+    "lumina/web/src/api/findings.ts",
+    "lumina/web/src/composables/useOpenQuestions.ts",
+    "lumina/web/src/composables/useFindings.ts",
+]
+commits = ["753d32f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T11a: 5+4 wrappers + 2 composables."
+dedup_id = "9f19cb568ac540fa"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "fe-activity-context-blocks-composables"
+status = "done"
+files = [
+    "lumina/web/src/api/activity.ts",
+    "lumina/web/src/api/context-blocks.ts",
+    "lumina/web/src/composables/useActivity.ts",
+    "lumina/web/src/composables/useContextBlocks.ts",
+]
+commits = ["753d32f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T11b: 1+3 wrappers + 2 composables."
+dedup_id = "233dbfea18df58dc"
+
+[[items]]
+id = "E20"
+type = "deviation"
+date = 2026-05-27
+agent = "implement"
+task_ref = "fe-per-family-schemas-deferred-move-from-work-items-ts"
+summary = "Per-family files re-export schemas from work-items.ts rather than moving them out"
+original_intent = "Plan T9/T10 specified moving AcceptanceCriterion/ResearchNote/Risk/RejectedAlternative/TaskDependency schemas out of work-items.ts into their per-family files; T7 declared them inline only because work-items.ts had to ship first."
+rationale = "Wave-1 parallelism required nobody touch work-items.ts (single-file contention across T8a/T9/T10). Each per-family file re-exports the schema rather than moving it; consumers resolve identically through the @/api barrel. Move is a future cleanup; no consumer-facing impact."
+commits = ["753d32f"]
+dedup_id = "abd8c617c14a30ae"
