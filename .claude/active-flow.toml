@@ -175,3 +175,15 @@ scope = [
     "lumina/**",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "lumina-story-planning-round-4"
+last_used = "2026-05-27T07:51:09.2034518Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/**",
+    "docs/plans/lumina-story-planning-round-4.md",
+]

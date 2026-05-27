@@ -1,0 +1,21 @@
+slug = "lumina-story-planning-round-4"
+plan_path = "docs/plans/lumina-story-planning-round-4.md"
+status = "draft"
+created = 2026-05-27
+updated = 2026-05-27
+branch = "main"
+scope = [
+    "lumina/**",
+    "docs/plans/lumina-story-planning-round-4.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-story-planning-round-4/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-story-planning-round-4/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-story-planning-round-4/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-story-planning-round-4/plan-review-findings.toml"

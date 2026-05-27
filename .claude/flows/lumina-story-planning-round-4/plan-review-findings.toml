@@ -1,0 +1,230 @@
+schema_version = 1
+last_updated = 2026-05-27
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "Phase 2 + Risk #1"
+summary = "Phase 2's four 'parallel' tasks all edit lumina/src/http/mod.rs; same pattern in Phase 5 with api/index.ts -- contradicts Risk #1's file-disjoint claim"
+description = "T2/T3/T4/T5 each list `lumina/src/http/mod.rs (extend router)` in their Files. Four parallel agents inserting `.merge(family::router())` lines collide. Same defect in Phase 5: six parallel agents update `lumina/web/src/api/index.ts` re-exports. Fix: T1 (and T7) pre-declares one merge/re-export line per family up front with empty per-family bodies; Phase-2/Phase-5 agents then only fill in their owned bodies."
+anchor_old = "Mitigation: tasks are file-disjoint (no two parallel tasks touch the same file)"
+anchor_new = "Mitigation: T1 pre-declares one `.merge(<family>::router())` line per Phase-2 family in `http/mod.rs`, and T7 pre-declares one `export * from './<family>'` line per Phase-5 family in `api/index.ts`. Each parallel agent then edits only its owned file body; the router-composition and re-export files are touched once (by T1/T7), not by every parallel task."
+dedup_id = "3be8c472bb17c697"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "executability"
+plan_section = "T2-T5 Acceptance"
+summary = "T2-T5 acceptance criteria depend on T6 tests that don't exist yet and are blocked-by T2-T5"
+description = "T2 says 'Every new route round-trips a tower::ServiceExt::oneshot test (added in T6)'; T3/T4/T5 say 'T6 smoke tests pass'. T6 is `Blocked-by: T2, T3, T4, T5`. Each Phase-2 agent has no mechanically verifiable acceptance -- cargo build clean is necessary but not sufficient. Fix: fold per-family smoke into each owning task (T2 writes scalars_round_trip_http, etc.); collapse T6 into a sweep/dedup pass or remove it."
+dedup_id = "d0a7819661bea68e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "completeness"
+plan_section = "Scope / T2-T5"
+summary = "Plan claims 'Full mirror' of MCP write surface but omits delete_work_item (and arguably move_work_item / transition_status)"
+description = "`delete_work_item` (soft-delete, repo.rs:1912) has no HTTP equivalent. `move_work_item` and `transition_status` are arguably redundant with existing PATCH /work-items/{id} body's position/status -- but soft-delete is not. Fix: add DELETE /work-items/{id} (or POST .../delete) to T2 or new sub-task; explicitly disclaim move/transition redundancy in Scope."
+dedup_id = "7b6096f909a90c73"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "completeness"
+plan_section = "Risk #5 / T5 activity handler"
+summary = "Risk #5's HTTP-layer entry_kind allowlist {vet, comment} contradicts repo layer which accepts all 9 ActivityType variants"
+description = "repo::append_activity (repo.rs:1474) calls validate_entry_kind (repo.rs:72) which permits all 9 ActivityType variants. Restricting HTTP to {vet, comment} introduces a tier mismatch and divides the surface vs MCP. Either drop the restriction (keep transport thin per Approach Sec.2) OR move the rationale + constraint into T5 Action + a parallel FE-composable enforcement, not buried in Risks."
+dedup_id = "aa267f32fb0f4075"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "feasibility"
+plan_section = "T2 (structured patches)"
+summary = "set_task_tier accepts Option<Tier> (nullable to clear); Patch<EnumName>Body { value: EnumName } cannot express clear-to-NULL"
+description = "repo::set_task_tier is `pub async fn set_task_tier(pool, task_id, tier: Option<Tier>)` at repo.rs:4218. Plan's T2 PATCH body shape can only set, not clear. Same applies to other scalar setters IF the repo signatures are Option-accepting. Fix: (a) Patch<EnumName>Body { value: Option<EnumName> }; (b) add separate DELETE route; OR (c) explicitly declare HTTP-clear is MCP-only."
+dedup_id = "57d99c6c9419afa4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "feasibility"
+plan_section = "T1"
+summary = "T1's 'Re-export AppState from mod.rs' instruction is unnecessary -- AppState lives in app.rs, no crate::http::AppState consumers exist"
+description = "AppState is defined at lumina/src/app.rs:21 and used via `use crate::app::AppState;` (http.rs:27). Grep for crate::http::AppState returns zero hits. The only public symbol mod.rs must preserve is `pub fn router() -> Router<AppState>` (consumed at app.rs:159)."
+anchor_old = "Re-export `AppState` from `mod.rs` so existing imports (`crate::http::AppState`) still work."
+anchor_new = "`AppState` lives in `crate::app::AppState`; grep shows zero `crate::http::AppState` consumers. The only public symbol `mod.rs` must continue to expose is `pub fn router() -> Router<AppState>` (consumed at `app.rs:159`)."
+dedup_id = "d5e5b2bfb421c749"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "executability"
+plan_section = "T5"
+summary = "Critical activity entry_kind constraint lives only in Risks #5, not in T5's Action"
+description = "If P4 (Risk #5) is resolved in favour of keeping the allowlist, the constraint must move from Risks into T5's Action paragraph so it isn't lost during /implement dispatch. Currently T5 Action lists `POST /work-items/{id}/activity` with no mention of the entry_kind restriction."
+dedup_id = "77301b47e2e0ddfe"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "executability"
+plan_section = "T12"
+summary = "T12 file count (11 test files) exceeds 6-file cap without explicit split -- defers split to /implement"
+description = "T8 and T11 were split (T8a/T8b, T11a/T11b) for the same reason. T12 should be split: e.g., T12a (scalars/AC/research/open-questions/risks/rejected -- 6 files), T12b (task-deps/findings/activity/context-blocks/readiness -- 5 files). Current ambiguity means /implement may dispatch one Effort-L agent for an 11-file task."
+dedup_id = "bd18a74e29af91b9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "completeness"
+plan_section = "T13"
+summary = "T13 misses the canonical MCP catalogue at claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md and the repo-root CLAUDE.md MCP paragraph"
+description = "lumina/CLAUDE.md defers to claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md as authoritative. When HTTP routes mirror MCP tools, that skill should carry a one-line backlink ('HTTP equivalents: lumina/CLAUDE.md#routes'). The repo-root CLAUDE.md also documents MCP tool families and should mention the HTTP mirror landed in round-4."
+dedup_id = "ac7614e4fc4eb0f8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "executability"
+plan_section = "Header"
+summary = "Plan body line 2 still says encapsulated-crafting-bumblebee.md (stale after rename); Risk #7 retire-eligible"
+description = "The file is at docs/plans/lumina-story-planning-round-4.md but line 2 reads `**Plan path**: docs/plans/encapsulated-crafting-bumblebee.md`. tomlctl flow init reads the slug from filename so the actual init is safe -- but a human reader is misled. Risk #7's mitigation is complete; the line should be updated and the risk removed."
+anchor_old = "**Plan path**: docs/plans/encapsulated-crafting-bumblebee.md"
+anchor_new = "**Plan path**: docs/plans/lumina-story-planning-round-4.md"
+dedup_id = "02a2b360e31f73dc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "risk"
+plan_section = "T2 / T5"
+summary = "axum 0.8 Json<T> default body limit is 2 MiB -- large set_story_plan / set_task_spec payloads may 413 silently"
+description = "axum's DefaultBodyLimit (2 MiB) applies to Json<T>. set_story_plan accepts problem_statement + research_notes + verification_commands; set_task_spec carries files_touched (potentially many cross-repo entries). A story with several paragraphs is well under 2 MB but the plan should either document the cap (deliberate guard) or override via DefaultBodyLimit::max(...) for the two structured endpoints."
+dedup_id = "2565415c2381bceb"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "risk"
+plan_section = "T5 / Readiness"
+summary = "GET /work-items/{story_id}/dispatch-plan is N+1 by design -- no caching, no ETag"
+description = "compute_task_batches runs Kahn's (O(V+E)) plus per-task spec reads (~N SELECTs). For current single-user posture this is fine; for a sprint-composer UI polling on every status change it may become hot. Record as documented characteristic for future 'why is dispatch-plan slow' investigation."
+dedup_id = "5b25835d29fd52ff"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "suggestion"
+category = "risk"
+plan_section = "T7"
+summary = "zod 4 .nullable() vs .nullish() -- verify backend serialises unset Option as null (not absent) before locking choice"
+description = "zod 4 .nullable() accepts null but rejects missing/undefined. Rust serde + Option without skip_serializing_if emits None as JSON null. lumina/src/domain.rs has zero skip_serializing_if attributes, so .nullable() should work -- but verify with an actual `curl /api/work-items/<id>` on an unset enum field during T7 implementation. Switch to .nullish() if any field comes back missing."
+dedup_id = "87f1285f8a4bd450"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "completeness"
+plan_section = "T7"
+summary = "T7 doesn't enumerate the eleven .vue / composable consumers of WorkItem; add invariant 'additions MUST be nullable to preserve component compile'"
+description = "Files importing WorkItem from @/api: ChildCard.vue, ChildGrid.vue, FocusLens.vue, HierarchySpine.vue, SpineNode.vue, RepoLinksPanel.vue, plus treeUtils.ts, useHierarchy.ts, useRepoLinks.ts, repoTag.ts. New fields (task_kind, tier) are nullable so existing components keep compiling -- but the plan should state this as the safety invariant rather than rely on accidental compatibility."
+dedup_id = "3a925ae1679fc1ca"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "completeness"
+plan_section = "T6"
+summary = "T6 doesn't leverage rstest/insta/proptest -- testing stack underused"
+description = "lumina/CLAUDE.md declares cargo-nextest + rstest 0.26 + insta 1.47 + proptest 1.9. T6's 11 near-identical PATCH-then-GET round-trips are a natural #[rstest] table; cycle detection (T4) is a proptest candidate; WorkItemDetailWireSchema shape is an insta snapshot candidate. Plan should at minimum cite the stack and explicitly opt-out where parameterisation isn't used."
+dedup_id = "549205f96d2a05d9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "executability"
+plan_section = "T7 / Verification Commands"
+summary = "T7 acceptance should explicitly verify @/api path alias resolves under both bun test and vite build"
+description = """Eleven downstream files import from @/api. tsconfig + vite.config alias resolution may diverge from bun test's module resolver. Add T7 acceptance: 'verify existing `from "@/api"` imports continue resolving under both `bun test` and `vite build`'. Otherwise discovered at /implement-time as a surprise rerun loop."""
+dedup_id = "150841d90d797170"
+
+[[vet_events]]
+timestamp = "2026-05-27T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 6 findings verified against codebase. Confirmed: mod.rs/index.ts contention (T2-T5 file lists), AppState in app.rs:21 (zero crate::http::AppState consumers), set_task_tier accepts Option<Tier> at repo.rs:4218, TaskKind kebab-case foundation|main|polish at domain.rs:688 (matches migration 0007 cull). Two suggestions were positive confirmations (TaskKind, namespace imports) and emitted only as context, not as defects to merge."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-27T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 7 findings verified. delete_work_item confirmed absent from T2-T5 (file list grep); activity entry_kind tier mismatch confirmed against repo.rs:72-83 validate_entry_kind accepting all 9 ActivityType variants; T7 component enumeration verified against grep for @/api consumers (11 files). Suggestions about plugin SKILL.md and rstest/insta/proptest verified against lumina/CLAUDE.md testing-stack and MCP-catalogue paragraphs."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-27T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 7
+dropped_count = 1
+downgraded_count = 0
+dropped_ids = ["F3.7"]
+rationale = "F3.7 (TaskKind vocabulary mismatch claim) DROPPED: agent claimed CLAUDE.md says TaskKind=foundation|vertical-slice|pattern-replacement|polish (4 values) but plan T7 uses 3 values. Verified via lumina/CLAUDE.md, lumina/migrations/0007_task_kind_narrow.sql, and domain.rs:688 -- migration 0007 explicitly culled to 3 values (foundation|main|polish), plan T7 is CORRECT. Agent read the historical-context paragraph in CLAUDE.md without reading the cull note that follows. Remaining 6 findings verified: T2-T5/T6 chicken-and-egg confirmed by Blocked-by graph; T12 11-file count exceeds 6-file cap confirmed; smoke key absent from Verification Commands block confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-27T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 1
+rationale = "F4.5 (zod .nullable vs .nullish) DOWNGRADED to suggestion-grade: agent flagged risk that backend serialises None as absent rather than null, but verification shows lumina/src/domain.rs has ZERO skip_serializing_if attributes -- so serde defaults to emitting null for None. zod .nullable() should work; F4.5 reduced to verify-during-implementation note. Remaining findings verified: axum 2 MiB Json default body limit confirmed via Context7 axum docs; mod.rs merge conflicts duplicate of P1; plan path line 2 stale verified by direct read."
+dedup_id = "45ca31c3315a5978"
