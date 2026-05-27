@@ -345,3 +345,38 @@ original_intent = "Plan implies every TypedMessage emitted by parser persists to
 rationale = "pty_transport parser-bridge currently broadcasts TypedMessage but does not call repo::pty::insert_pty_message. Only supervisor::dispatch_one persists messages (user_input only). Follow-up: extend the parser-bridge to persist assistant_text/tool_call/prompt/error blocks as well, with a per-session sequence allocator that doesn't race the queue's sequence counter."
 commits = ["0fcc7c6"]
 dedup_id = "3c7bb6acbdd30720"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "ptyconsole-ptymessage-vapor-components"
+status = "done"
+files = [
+    "lumina/web/src/components/PtyConsole.vue",
+    "lumina/web/src/components/PtyMessage.vue",
+]
+commits = ["5366534"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "PtyConsole + PtyMessage Vapor SFCs with all 8 message-kind renderers, Cmd/Ctrl+Enter submit, IntersectionObserver auto-scroll, null-project affordance, statusPillClass colour mapping. 188 bun tests pass."
+dedup_id = "ea0e7c5a0518dd10"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-05-27
+agent = "implement"
+task_ref = "wire-pty-view-into-app-vue"
+status = "done"
+files = [
+    "lumina/web/src/App.vue",
+    "lumina/web/src/composables/useHierarchy.ts",
+    "lumina/web/src/components/CenterToolbar.vue",
+]
+commits = ["5366534"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "View union widened to focus|tree|pty; CenterToolbar's viewModes loop auto-renders new button; PtyConsole mounted in both focused + portfolio branches of App.vue. 188 bun tests still pass."
+dedup_id = "1c324ad059688f0f"

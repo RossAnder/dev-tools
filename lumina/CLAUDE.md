@@ -52,6 +52,8 @@ The migration-0006 story-planning-round-3 pass added the following:
 - **Tightened `set_task_spec`** — the round-2 free-form `dispatch: Option<serde_json::Value>` field was renamed to `tier: Option<Tier>` (typed). When `tier` is present, the tool also makes a SECOND mutation through `set_task_tier`. Legacy callers passing `dispatch:` have their value silently dropped at deserialise (the field is gone from the struct).
 - **Finding-severity typing**: `AddFindingParams.severity` / `UpdateFindingParams.severity` already accepted typed `Severity::{Critical, Major, Minor, Suggestion}` (the review-finding categorisation vocabulary). Round-3 documents this in the catalogue; the wire shape is unchanged. NOTE the deliberate vocab split — `RiskSeverity::{Low, Medium, High, Critical}` (CHECK-enforced on `risks.severity`) is a distinct enum for risk severity. The two vocabularies are not unified.
 
+The migration-0008 PTY supervisor pass added six tools for managing interactive `claude` REPL sessions: `list_pty_sessions` (read-only) and `get_pty_session` (read-only) for inspection; `spawn_pty_session` to launch a session via `PtyTransport` (portable-pty 0.9, ConPTY on Windows / Unix98 elsewhere) under a validated `cwd`; `send_pty_input` to enqueue a typed `InputFrame` against the per-session FIFO; `cancel_pty_session` to push a Cancel control frame; `delete_pty_session` to tombstone the row. Tool surface is now 61 (bumped from 55). PTY tables (`pty_sessions`, `pty_messages`, `pty_queue`) deliberately stay outside the `+1 work_items / +1 events` invariant — runtime PTY state is not a domain entity.
+
 ## HTTP routes
 
 The axum API mirrors the MCP write surface so a browser/SPA client (or any HTTP-capable tool) can drive the same store the MCP server drives. Every HTTP write delegates to a single `repo::*` mutation — the single-mutation-path invariant (+1 work_items / +1 events per call) is preserved alongside the MCP layer, and the per-family sub-routers in `lumina/src/http/*.rs` are mounted under `/api` by `app::build_router`. Routes below are listed with their final path (relative to `/api`) and the `repo::*` function each handler calls. The two structured PATCHes (`/story-plan`, `/task-spec`) compose via `repo::set_work_item_attributes` (read-modify-merge JSON-merge) and — for `/task-spec` — a second `repo::set_task_tier` mutation when `tier` is present, exactly mirroring the MCP `set_story_plan` / `set_task_spec` tools. Task-graph cycles surface via the envelope `{"error":{"kind":"cycle","message":...,"edges":[{"task_id":...,"depends_on_id":...},...]}}` (422), produced by `AppError::Cycle`'s `IntoResponse` impl on `POST /work-items/{task_id}/depends-on/{depends_on_id}` and `GET /work-items/{story_id}/task-batches`.
@@ -150,6 +152,19 @@ Two structured PATCHes — JSON-merge bodies via `repo::set_work_item_attributes
 
 - `GET /work-items/{story_id}/readiness`      → `repo::get_story_readiness` (the `StoryReadiness` aggregate driving `/lumina:next-block` / `/lumina:plan-story`).
 - `GET /work-items/{story_id}/dispatch-plan`  → `repo::get_task_dispatch_plan` (`Vec<Vec<BatchEntry>>` waves; cycle → 422 envelope).
+
+### PTY sessions (`http/pty_sessions.rs`, migration 0008, T9)
+
+- `GET    /api/pty/sessions`               → `repo::pty::list_pty_sessions`.
+- `POST   /api/pty/sessions`               → composes `PtyTransport::spawn` + `repo::pty::create_pty_session` + registry insert + supervisor registration.
+- `GET    /api/pty/sessions/{id}`          → `repo::pty::get_pty_session`.
+- `GET    /api/pty/sessions/{id}/messages` → `repo::pty::list_pty_messages` (paginated via `?since=&limit=`).
+- `GET    /api/pty/sessions/{id}/queue`    → `Queue::list` (per-session inbound FIFO inspection).
+- `POST   /api/pty/sessions/{id}/input`    → `Queue::enqueue`.
+- `POST   /api/pty/sessions/{id}/inputs/batch` → batched `Queue::enqueue` (atomic per call site).
+- `PATCH  /api/pty/sessions/{id}`          → currently returns 501 (no `update_pty_session_meta` helper in v1; future work).
+- `DELETE /api/pty/sessions/{id}`          → soft cancel via Cancel InputFrame + `repo::pty::delete_pty_session`.
+- `GET    /api/pty/sessions/{id}/ws`       → WebSocket upgrade; Origin-allowlist (localhost variants + `LUMINA_DEV_ORIGIN`), broadcast subscriber → JSON frame stream (Message/Status/Skipped/Error/Pong out; Input/Resize/Ping in).
 
 ## Story-block skills plugin
 
