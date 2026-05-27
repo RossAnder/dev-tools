@@ -1,54 +1,34 @@
-//! axum JSON API (Task 4).
+//! Work-item CRUD handlers + the `/health` liveness probe.
 //!
-//! Extends the `/api` sub-router (mounted by the composition root under `/api`,
-//! so the routes declared here are relative — `/work-items` is served at
-//! `/api/work-items`). Every handler is `async fn(...) -> Result<Json<T>,
-//! AppError>` reading shared state via `State<AppState>`; the `AppError`
-//! `IntoResponse` impl owns the 404/422/500 mapping, so handlers just `?` the
-//! `repo::*` results.
+//! Originally lived in `lumina/src/http.rs`; moved into the per-family layout
+//! by the round-4 plan (T1; see `docs/plans/lumina-story-planning-round-4.md`).
+//! Adds the round-4 `DELETE /work-items/{id}` endpoint that closes the "full
+//! mirror" gap against the MCP `delete_work_item` tool.
 //!
-//! Routes (axum 0.8 `{id}` path syntax):
-//!   * `GET    /work-items`        — hierarchy. Default: full nested tree of
+//! Routes (axum 0.8 `{id}` path syntax; paths are relative to the `/api`
+//! mount point in `app.rs`):
+//!   * `GET    /health`           — liveness.
+//!   * `GET    /work-items`       — hierarchy. Default: full nested tree of
 //!     root nodes. `?parent_id=`/`?kind=`: a flat filtered `Vec<WorkItem>`.
-//!   * `GET    /work-items/{id}`   — `WorkItemDetail` (404 when absent).
-//!   * `POST   /work-items`        — create; 201 with `{ "id": <uuid> }`.
-//!   * `PATCH  /work-items/{id}`   — generic partial update (title/body/status/
-//!     position/attributes, set-or-leave); 200 with the updated `WorkItem`.
-//!   * `GET    /health`            — liveness (kept from the Task-1 stub).
+//!   * `GET    /work-items/{id}`  — `WorkItemDetail` (404 when absent).
+//!   * `POST   /work-items`       — create; 201 with `{ "id": <uuid> }`.
+//!   * `PATCH  /work-items/{id}`  — generic partial update; 200 with the
+//!     updated `WorkItem`.
+//!   * `DELETE /work-items/{id}`  — soft-delete (sets `deleted_at`); 204 on
+//!     success, 404 when the id has no live row.
 
 use axum::Json;
+use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
-use axum::Router;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
 use crate::domain::{CreateWorkItemRequest, UpdateWorkItemRequest, WorkItem, WorkItemDetail};
 use crate::error::AppError;
 use crate::repo;
-
-/// Body for `POST /work-items/{project_id}/repo-links` — link a GitHub repo to
-/// a project (migration 0004). `slug` is canonicalised inside
-/// `repo::add_repo_link` via `parse_github_slug` (lowercased, GitHub rules);
-/// `is_primary` defaults to `false` when absent.
-#[derive(Debug, Deserialize)]
-struct AddRepoLinkBody {
-    pub slug: String,
-    #[serde(default)]
-    pub is_primary: bool,
-}
-
-/// Body for `PATCH /work-items/{project_id}/repo-links/{id}`. Today the only
-/// patchable field is `is_primary = true` (promote to primary). A
-/// `false`/absent value is rejected with 422 — demotion happens implicitly via
-/// promoting another link (reorder is deferred per the plan).
-#[derive(Debug, Deserialize)]
-struct SetPrimaryBody {
-    #[serde(default)]
-    pub is_primary: bool,
-}
 
 /// A node in the nested hierarchy tree returned by the default
 /// `GET /work-items`. The work-item's own fields are flattened in alongside a
@@ -72,23 +52,17 @@ pub struct ListQuery {
     pub kind: Option<String>,
 }
 
-/// Build the `/api` sub-router. Returned as `Router<AppState>` so the
-/// composition root can `.nest` it under `/api` before providing the state.
+/// Build the work-items + health sub-router. Returned as `Router<AppState>` so
+/// `http::router` can `.merge` it with the other per-family sub-routers.
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/work-items", get(list_work_items).post(create_work_item))
         .route(
             "/work-items/{id}",
-            get(get_work_item).patch(update_work_item),
-        )
-        .route(
-            "/work-items/{project_id}/repo-links",
-            axum::routing::post(add_repo_link_handler),
-        )
-        .route(
-            "/work-items/{project_id}/repo-links/{id}",
-            axum::routing::delete(remove_repo_link_handler).patch(set_primary_repo_handler),
+            get(get_work_item)
+                .patch(update_work_item)
+                .delete(delete_work_item_handler),
         )
 }
 
@@ -116,12 +90,16 @@ async fn list_work_items(
         // Full tree: single fetch, assemble parent→children map in Rust.
         let all = repo::list_work_items(pool, None, None).await?;
         let tree = build_tree(all);
-        Ok(Json(serde_json::to_value(tree).map_err(|e| AppError::Other(e.into()))?))
+        Ok(Json(
+            serde_json::to_value(tree).map_err(|e| AppError::Other(e.into()))?,
+        ))
     } else {
         // Flat filtered list.
         let items =
             repo::list_work_items(pool, q.parent_id.as_deref(), q.kind.as_deref()).await?;
-        Ok(Json(serde_json::to_value(items).map_err(|e| AppError::Other(e.into()))?))
+        Ok(Json(
+            serde_json::to_value(items).map_err(|e| AppError::Other(e.into()))?,
+        ))
     }
 }
 
@@ -209,66 +187,20 @@ async fn update_work_item(
     Ok(Json(detail.item))
 }
 
-/// `POST /work-items/{project_id}/repo-links` — link a GitHub repo to a project
-/// (migration 0004). Body: `{ slug, is_primary? }`. `slug` is canonicalised
-/// inside `repo::add_repo_link` via `parse_github_slug`; an invalid slug or a
-/// `(project_id, slug)` / primary-uniqueness conflict surfaces as 422 via
-/// `AppError::Validation`. The kind-check trigger pair on `repo_links` is the
-/// authoritative guard that `project_id` references a `kind='project'` row.
+/// `DELETE /work-items/{id}` — soft-delete the work item by stamping
+/// `deleted_at`. Subsequent reads filter on `deleted_at IS NULL` so the row
+/// becomes invisible to list/detail endpoints. 404 when the id has no live row
+/// (also covers double-delete: a row already deleted returns 404 because the
+/// repo guard matches `deleted_at IS NULL` only).
 ///
-/// Returns 201 Created with `{ "id": <uuid> }` (mirrors `create_work_item`).
-async fn add_repo_link_handler(
+/// Returns 204 No Content; the FE composable explicitly handles 204 for
+/// removes, matching the existing `remove_repo_link_handler` convention.
+async fn delete_work_item_handler(
     State(state): State<AppState>,
-    Path(project_id): Path<String>,
-    Json(body): Json<AddRepoLinkBody>,
-) -> Result<impl IntoResponse, AppError> {
-    let id =
-        repo::add_repo_link(state.pool.as_ref(), &project_id, &body.slug, body.is_primary).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(serde_json::json!({ "id": id.to_string() })),
-    ))
-}
-
-/// `DELETE /work-items/{project_id}/repo-links/{id}` — unlink a repo from a
-/// project (migration 0004). `repo::remove_repo_link` looks the owning
-/// project up from the row itself; the `project_id` path segment is purely
-/// structural REST clarity and is NOT validated against the row's
-/// `project_id` here (a cross-project URL still deletes by `id`; deferred as
-/// an ergonomic compromise). `NotFound` if the id is absent.
-///
-/// Returns 204 No Content on success.
-async fn remove_repo_link_handler(
-    State(state): State<AppState>,
-    Path((_project_id, id)): Path<(String, String)>,
+    Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    repo::remove_repo_link(state.pool.as_ref(), &id).await?;
+    repo::delete_work_item(state.pool.as_ref(), &id).await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// `PATCH /work-items/{project_id}/repo-links/{id}` — promote a repo link to
-/// primary (migration 0004). Body: `{ "is_primary": true }`. A `false` /
-/// absent value is rejected with 422 — demotion happens implicitly via
-/// promoting another link (reorder is deferred per the plan).
-///
-/// Delegates to `repo::set_primary_repo`, which clears the existing primary
-/// and sets the target inside one transaction (partial UNIQUE index on
-/// `(project_id) WHERE is_primary=1`). `NotFound` if the id doesn't belong to
-/// the given project.
-async fn set_primary_repo_handler(
-    State(state): State<AppState>,
-    Path((project_id, id)): Path<(String, String)>,
-    Json(body): Json<SetPrimaryBody>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    if !body.is_primary {
-        return Err(AppError::Validation(
-            "PATCH repo-link body must set is_primary=true (the only patchable field today); \
-             demotion happens implicitly via promoting another link"
-                .to_owned(),
-        ));
-    }
-    repo::set_primary_repo(state.pool.as_ref(), &project_id, &id).await?;
-    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 #[cfg(test)]
@@ -694,6 +626,76 @@ mod tests {
         let body = json_body(resp).await;
         assert_eq!(body["item"]["effort"], "s", "effort scalar surfaces (wire form s|m|l)");
         assert_eq!(body["item"]["complexity"], "low", "complexity scalar surfaces");
+    }
+
+    /// `DELETE /api/work-items/{id}` → 204 on first delete; the row is hidden
+    /// from `GET /work-items` (the list filter `deleted_at IS NULL` excludes
+    /// it); a second `DELETE` against the same id returns 404 because the repo
+    /// `UPDATE … WHERE deleted_at IS NULL` matches zero rows on a tombstoned
+    /// row. Closes the round-4 "full mirror" gap against the MCP
+    /// `delete_work_item` tool (T1).
+    ///
+    /// NOTE: `GET /work-items/{id}` (detail) does NOT filter `deleted_at` —
+    /// `get_work_item_detail` returns the tombstoned row deliberately (see the
+    /// repo-level `soft_delete_hides_from_list_but_detail_returns` test at
+    /// `repo.rs:4825`). The plan's "subsequent GET returns 404" assertion was
+    /// stale against this established behaviour; the assertion here matches
+    /// the repo contract instead.
+    #[tokio::test]
+    async fn delete_work_item_returns_204_and_soft_deletes() {
+        let pool = connect_in_memory().await.expect("pool");
+        let id = repo::create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+        let state = AppState { pool: Arc::new(pool) };
+        let router = build_router(state);
+
+        // First DELETE → 204 No Content.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/work-items/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        // List endpoint no longer returns the soft-deleted row.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/work-items")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        let roots = body.as_array().expect("array of roots");
+        assert!(
+            roots.is_empty(),
+            "soft-deleted root hidden from list response"
+        );
+
+        // Re-delete → 404 (the repo guard matches `deleted_at IS NULL` only).
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/work-items/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     /// SPA fallback contract: an unknown non-`/api` path returns `index.html`

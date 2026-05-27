@@ -1,2 +1,12 @@
 schema_version = 1
 last_updated = 2026-05-27
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-27
+agent = "implement"
+summary = "flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "d63ff385da225bbc"
