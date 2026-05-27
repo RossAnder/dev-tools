@@ -92,18 +92,23 @@ struct PatchStoryPlanBody {
 /// Body for `PATCH /work-items/{id}/task-spec`. Mirrors the MCP
 /// `SetTaskSpecParams` shape (minus the `id` field, which is path-bound).
 ///
-/// `files_touched` is accepted as raw `serde_json::Value` here rather than
-/// `Vec<FileRef>`: the MCP tool's repo-link validation is path-specific to
-/// the structured `Qualified` form; the HTTP slice in T2 accepts only the
-/// bare-path form to keep the surface narrow. A future widening can mirror
-/// the MCP validator verbatim — at that point the field becomes
-/// `Option<Vec<FileRef>>` and shares the validation block in mcp.rs.
+/// `files_touched` accepts a heterogeneous array whose entries are either a
+/// bare-path string (legacy form, resolves to the project's primary linked
+/// repo) OR a `{repo: "<owner>/<name>", path: "<repo-relative path>"}`
+/// object (qualified form). Mixed arrays are permitted in a single request.
+/// Each entry is passed through to `repo::set_work_item_attributes` whose
+/// `want_files_touched` validator (in `repo.rs`) enforces the union shape;
+/// any other JSON shape becomes a 422 `Validation` error at that boundary.
+/// Repo-link existence (i.e. that a `{repo, path}` object's slug references
+/// a `repo_links` row on the task's project ancestor) is enforced upstream
+/// of this handler by the MCP tool's validation path — direct HTTP callers
+/// must ensure the linked repo exists before submitting qualified entries.
 #[derive(Debug, Deserialize)]
 struct PatchTaskSpecBody {
     #[serde(default)]
     pub execution_detail: Option<String>,
     #[serde(default)]
-    pub files_touched: Option<Vec<String>>,
+    pub files_touched: Option<Vec<serde_json::Value>>,
     #[serde(default)]
     pub outcome: Option<String>,
     #[serde(default)]
@@ -285,11 +290,12 @@ async fn patch_task_spec(
         obj.insert("execution_detail".into(), serde_json::Value::String(v));
     }
     if let Some(files) = body.files_touched {
-        // Bare-path form only — the MCP `Qualified` validation path is
-        // deferred for the HTTP slice (see PatchTaskSpecBody doc).
-        let arr: Vec<serde_json::Value> =
-            files.into_iter().map(serde_json::Value::String).collect();
-        obj.insert("files_touched".into(), serde_json::Value::Array(arr));
+        // Pass `Value` entries through unchanged — bare-string and
+        // `{repo, path}` object forms are both legal per the union doc on
+        // `PatchTaskSpecBody`. The downstream `want_files_touched` validator
+        // in `repo::set_work_item_attributes` enforces the shape and emits
+        // a 422 on any other JSON entry.
+        obj.insert("files_touched".into(), serde_json::Value::Array(files));
     }
     if let Some(v) = body.outcome {
         obj.insert("outcome".into(), serde_json::Value::String(v));
@@ -329,6 +335,16 @@ mod tests {
 
     /// Seed project→epic→feature→story→task and return the story id and task id.
     async fn seed_chain(pool: &sqlx::SqlitePool) -> (String, String) {
+        let (_project, story, task) = seed_chain_with_project(pool).await;
+        (story, task)
+    }
+
+    /// Like [`seed_chain`] but ALSO returns the project id (needed by tests
+    /// that wire up a `repo_links` row to exercise the qualified
+    /// `{repo, path}` entry form of `files_touched`).
+    async fn seed_chain_with_project(
+        pool: &sqlx::SqlitePool,
+    ) -> (String, String, String) {
         let project = repo::create_work_item(pool, "project", None, "P", None)
             .await
             .expect("project");
@@ -344,26 +360,16 @@ mod tests {
         let task = repo::create_work_item(pool, "task", Some(&story.to_string()), "T", None)
             .await
             .expect("task");
-        (story.to_string(), task.to_string())
+        (project.to_string(), story.to_string(), task.to_string())
     }
 
     /// One round-trip per scalar PATCH, all in one #[tokio::test] to avoid
     /// re-paying the seed cost six times.
-    ///
-    /// Note: `repo::get_work_item_detail` currently hardcodes `tier: None`
-    /// in its row→struct mapping (the SELECT does not project the `tier`
-    /// column; see `repo.rs:414`/`repo.rs:481`). That is a pre-existing
-    /// reader-path defect — the WRITE path correctly persists the column.
-    /// This test therefore verifies the `tier` PATCH by issuing a direct
-    /// `query_scalar` against the column, rather than the (broken)
-    /// re-fetched body. The same workaround applies to
-    /// `task_spec_writes_attributes_and_tier` below.
     #[tokio::test]
     async fn scalars_round_trip() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, task_id) = seed_chain(&pool).await;
-        let pool_arc = Arc::new(pool);
-        let state = AppState { pool: pool_arc.clone() };
+        let state = AppState { pool: Arc::new(pool) };
         let router = build_router(state);
 
         // -- relevance (story-scoped) -----------------------------------
@@ -496,43 +502,57 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        // The re-fetched body's `tier` is `null` due to the reader-path
-        // defect noted in this fn's docstring; verify the WRITE landed by
-        // querying the `tier` column directly.
-        let stored_tier: Option<String> =
-            sqlx::query_scalar("SELECT tier FROM work_items WHERE id = ?1")
-                .bind(&task_id)
-                .fetch_one(pool_arc.as_ref())
-                .await
-                .expect("query tier column");
-        assert_eq!(stored_tier.as_deref(), Some("deep"));
+        let body = json_body(resp).await;
+        assert_eq!(body["tier"], "deep");
     }
 
-    /// `{"value": null}` is rejected with 422 on the non-nullable scalars
-    /// (the four whose repo fns take a non-Option enum).
+    /// `{"value": null}` is rejected with 422 on each of the four
+    /// non-nullable scalars (whose repo fns take a non-Option enum):
+    /// `relevance`, `effort`, `complexity`, `closure-gate`. The two
+    /// nullable scalars (`task-kind`, `tier`) accept `value: null` and
+    /// are exercised in `scalars_round_trip` above.
     #[tokio::test]
     async fn scalar_null_value_is_422() {
         let pool = connect_in_memory().await.expect("pool");
-        let (story_id, _task_id) = seed_chain(&pool).await;
+        let (story_id, task_id) = seed_chain(&pool).await;
         let state = AppState { pool: Arc::new(pool) };
         let router = build_router(state);
 
-        let resp = router
-            .oneshot(
-                Request::builder()
-                    .method("PATCH")
-                    .uri(format!("/api/work-items/{story_id}/relevance"))
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        serde_json::json!({ "value": null }).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        let body = json_body(resp).await;
-        assert_eq!(body["error"]["kind"], "validation");
+        // (path, work-item-id) pairs — relevance + closure-gate are
+        // story-scoped; effort + complexity are task-scoped.
+        let cases = [
+            ("relevance", story_id.as_str()),
+            ("effort", task_id.as_str()),
+            ("complexity", task_id.as_str()),
+            ("closure-gate", story_id.as_str()),
+        ];
+
+        for (field, id) in cases {
+            let resp = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PATCH")
+                        .uri(format!("/api/work-items/{id}/{field}"))
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({ "value": null }).to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "field `{field}` expected 422 on null value",
+            );
+            let body = json_body(resp).await;
+            assert_eq!(
+                body["error"]["kind"], "validation",
+                "field `{field}` expected validation error envelope",
+            );
+        }
     }
 
     /// `PATCH /work-items/{id}/story-plan` writes all five JSON-merge fields
@@ -588,16 +608,11 @@ mod tests {
 
     /// `PATCH /work-items/{id}/task-spec` writes attributes AND (when `tier`
     /// is present) the typed `work_items.tier` column via `set_task_tier`.
-    ///
-    /// As with `scalars_round_trip`, the `tier` side-effect is verified by a
-    /// direct `query_scalar` against the column (the reader path's
-    /// `tier: None` hardcoding obscures it on the re-fetched body).
     #[tokio::test]
     async fn task_spec_writes_attributes_and_tier() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let pool_arc = Arc::new(pool);
-        let state = AppState { pool: pool_arc.clone() };
+        let state = AppState { pool: Arc::new(pool) };
         let router = build_router(state);
 
         let resp = router
@@ -629,19 +644,60 @@ mod tests {
         assert_eq!(attrs["files_touched"][1], "src/bar.rs");
         assert_eq!(attrs["outcome"], "green");
 
-        // The typed `tier` COLUMN (not an attribute) was also written. The
-        // re-fetched body shows `null` due to the reader-path defect (see
-        // `scalars_round_trip`'s docstring); query the column directly.
-        let stored_tier: Option<String> =
-            sqlx::query_scalar("SELECT tier FROM work_items WHERE id = ?1")
-                .bind(&task_id)
-                .fetch_one(pool_arc.as_ref())
-                .await
-                .expect("query tier column");
-        assert_eq!(
-            stored_tier.as_deref(),
-            Some("lite"),
-            "tier column written by second mutation"
-        );
+        // The typed `tier` COLUMN (not an attribute) was also written by the
+        // second mutation; the reader-path projects it onto `item.tier`.
+        assert_eq!(body["item"]["tier"], "lite");
+    }
+
+    /// R14 widening: `PATCH /task-spec` accepts a mixed `files_touched` array
+    /// containing both bare-path strings AND `{repo, path}` objects in the
+    /// same request. The wire shape round-trips unchanged onto
+    /// `item.attributes.files_touched` (the repo layer stores the heterogeneous
+    /// array verbatim once `want_files_touched` accepts the union).
+    #[tokio::test]
+    async fn task_spec_files_touched_accepts_mixed_union() {
+        let pool = connect_in_memory().await.expect("pool");
+        let (project_id, _story_id, task_id) = seed_chain_with_project(&pool).await;
+
+        // Seed a `repo_links` row on the project ancestor so the qualified
+        // `{repo, path}` entry references an extant linked repo. (The HTTP
+        // boundary itself only enforces JSON shape, not link existence, but
+        // wiring the row keeps the fixture honest with how real callers
+        // would have constructed the request.)
+        repo::add_repo_link(&pool, &project_id, "acme/widget", true)
+            .await
+            .expect("seed repo_link");
+
+        let state = AppState { pool: Arc::new(pool) };
+        let router = build_router(state);
+
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{task_id}/task-spec"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "files_touched": [
+                                "src/foo.rs",
+                                { "repo": "acme/widget", "path": "lib/qualified.rs" },
+                            ],
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+
+        let files = &body["item"]["attributes"]["files_touched"];
+        // Bare-string entry round-trips as a JSON string.
+        assert_eq!(files[0], "src/foo.rs");
+        // Object entry round-trips as an object with the same two keys.
+        assert_eq!(files[1]["repo"], "acme/widget");
+        assert_eq!(files[1]["path"], "lib/qualified.rs");
     }
 }
