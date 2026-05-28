@@ -97,7 +97,21 @@ pub fn resolve_and_validate_cwd(raw: &Path) -> Result<PathBuf, AppError> {
         )));
     }
 
-    Ok(canonical_cwd)
+    // Strip the Windows verbatim-path prefix (`\\?\`) for the returned
+    // cwd. The validation above ran against the canonical (verbatim) form,
+    // but the returned path flows into BOTH `cmd.cwd()` (passed to the
+    // child claude.exe) AND `sanitise_cwd` (computes the watched JSONL
+    // directory). claude.exe sanitises whatever cwd it's given to derive
+    // its own `~/.claude/projects/<sanitised>/` write target — leaving
+    // the verbatim prefix on yields a `----C--…` directory, while
+    // stripping yields the user-visible `C--…` form that matches all
+    // other Claude Code sessions. The fix is symmetric: lumina now both
+    // watches and tells claude to write to the same path.
+    let user_visible = match canonical_cwd.to_string_lossy().strip_prefix(r"\\?\") {
+        Some(rest) => PathBuf::from(rest),
+        None => canonical_cwd,
+    };
+    Ok(user_visible)
 }
 
 /// Internal shared spawn pipeline. Called by the HTTP and MCP spawn entry
@@ -158,70 +172,103 @@ pub async fn spawn_pty_session_internal(
     // ---- 5. Spawn the JSONL-driven bridge (T5 / lumina-pty-jsonl-tail) ----
     //
     // Replaces the former transport.outbound consumer. The canonical
-    // transcript source is now the session JSONL Claude Code writes to
-    // ~/.claude/projects/<sanitised-cwd>/<uuid>.jsonl — we bind that path,
-    // spawn the tail watcher, then run the JSONL→TypedMessage→pty_messages
-    // bridge below.
+    // transcript source is the session JSONL Claude Code writes to
+    // ~/.claude/projects/<sanitised-cwd>/<uuid>.jsonl. Real claude.exe
+    // creates that file LAZILY — only after the user sends a first
+    // prompt and the model emits its first record. We therefore:
     //
-    // The transport's `outbound` broadcast is now unused at this layer
-    // (kept on the handle for trait compatibility only); we drop our
-    // receiver explicitly so a future maintainer doesn't expect data to
-    // flow through it.
+    //   * Flip Spawning -> Idle synchronously here so the user can
+    //     immediately type into a fresh session (the queue dispatch
+    //     gate is `status == Idle`).
+    //   * Spawn ALL bind+tail+bridge work in a background task with
+    //     an unbounded bind timeout. The JSONL path is persisted on
+    //     `pty_sessions.jsonl_path` once it materialises.
+    //
+    // The transport's `outbound` broadcast is unused at this layer
+    // (kept on the handle for trait compatibility); drop our receiver
+    // explicitly so a future maintainer doesn't expect data to flow
+    // through it.
     drop(handle.outbound);
 
-    // 5a. Bind the JSONL path (snapshot-then-poll up to 5s).
-    let jsonl_path = jsonl_tail::bind_jsonl_path(
-        config.cwd.as_path(),
-        std::time::SystemTime::now(),
-    )
-    .await?;
-    let jsonl_path_str = jsonl_path.to_string_lossy().into_owned();
-
-    // 5b. Persist the bound path on the session row.
-    repo::pty::set_pty_jsonl_path(
+    // 5a. Flip Spawning -> Idle now that the transport is alive.
+    //
+    // Pre-refactor this transition fired on the first JSONL record,
+    // but interactive claude doesn't write JSONL until the user
+    // submits a prompt, so deferring the transition leaves the
+    // supervisor unable to dispatch the very prompt that would
+    // produce the first record. The PTY child is alive once
+    // `Transport::spawn` returned, so flipping here is sound; if
+    // claude crashes during startup, the supervisor's exit-reap path
+    // overrides Idle with Failed/Completed when the wait future fires.
+    bridge_session.set_status(SessionStatus::Idle).await;
+    if let Err(e) = repo::pty::update_pty_session_status(
         state.pool.as_ref(),
         &session_id_str,
-        &jsonl_path_str,
+        "idle",
+        None,
     )
-    .await?;
+    .await
+    {
+        eprintln!("pty bridge: status -> idle persist failed for {session_id_str}: {e}");
+    }
 
-    // 5c. Spawn the jsonl_tail::tail task producing JsonlRecordParsed
-    //     onto a fresh broadcast.
-    let (jsonl_tx, mut jsonl_rx) =
-        broadcast::channel::<JsonlRecordParsed>(BROADCAST_CAPACITY);
-    tokio::spawn(jsonl_tail::tail(jsonl_path.clone(), jsonl_tx));
-
-    // 5d. The JSONL → TypedMessage → pty_messages → broadcast bridge.
-    // Per-session policy: error-swallowing only (matches
-    // supervisor::dispatch_one).
+    // 5b. Spawn the background bind+tail+bridge task. Bind is
+    //     unbounded (`None` timeout) — it waits as long as it takes
+    //     for claude to create the JSONL file. Per-session error
+    //     policy: log and swallow, matching `supervisor::dispatch_one`.
     {
         let pool = state.pool.clone();
         let bridge_tx = broadcast_tx.clone();
         let session_id_str = session_id_str.clone();
-        // Local guard ensures the Spawning -> Idle flip fires exactly once
-        // per session. NEVER read `session.status()` to gate this — that
-        // races against concurrent set_status calls (e.g. cancel path).
-        let mut idle_flipped = false;
+        let cwd = config.cwd.clone();
 
         tokio::spawn(async move {
+            let jsonl_path = match jsonl_tail::bind_jsonl_path(cwd.as_path(), None).await {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!(
+                        "pty bridge: bind_jsonl_path failed for {session_id_str}: {e}"
+                    );
+                    return;
+                }
+            };
+            let jsonl_path_str = jsonl_path.to_string_lossy().into_owned();
+
+            if let Err(e) = repo::pty::set_pty_jsonl_path(
+                &pool,
+                &session_id_str,
+                &jsonl_path_str,
+            )
+            .await
+            {
+                eprintln!(
+                    "pty bridge: set_pty_jsonl_path failed for {session_id_str}: {e}"
+                );
+                return;
+            }
+
+            let (jsonl_tx, mut jsonl_rx) =
+                broadcast::channel::<JsonlRecordParsed>(BROADCAST_CAPACITY);
+            tokio::spawn(jsonl_tail::tail(jsonl_path.clone(), jsonl_tx));
+
             loop {
                 match jsonl_rx.recv().await {
                     Ok(parsed) => {
-                        // 1. Update Session bookkeeping FIRST so the
-                        //    supervisor's quiescence check on the next
-                        //    250ms tick sees a fresh `last_record_at` and
-                        //    a consistent outstanding-tool-use set.
+                        // Update Session bookkeeping FIRST so the
+                        // supervisor's quiescence check on the next
+                        // 250ms tick sees a fresh `last_record_at` and
+                        // a consistent outstanding-tool-use set.
                         bridge_session.last_record_at.store(
                             jiff::Timestamp::now().as_millisecond(),
                             std::sync::atomic::Ordering::Relaxed,
                         );
 
-                        // 2. Map the record to zero-or-more TypedMessage rows.
+                        // Map the record to zero-or-more TypedMessage rows.
                         let typed_msgs = jsonl_tail::map_record_to_typed(&parsed);
 
-                        // 3. Update the outstanding-tool-uses set:
-                        //    + insert tool_use_id for every ToolUse
-                        //    - remove tool_use_id for every ToolResult
+                        // Update the outstanding-tool-uses set:
+                        //   + insert tool_use_id for every ToolUse
+                        //   - remove tool_use_id for every ToolResult
                         {
                             let mut outstanding =
                                 bridge_session.outstanding_tool_uses.lock().await;
@@ -242,7 +289,7 @@ pub async fn spawn_pty_session_internal(
                             }
                         }
 
-                        // 4. Persist + broadcast each typed message.
+                        // Persist + broadcast each typed message.
                         for tm in typed_msgs {
                             let kind_wire = tm.kind.as_wire(); // &'static str
                             let content_json = serde_json::to_string(&tm.content)
@@ -272,30 +319,6 @@ pub async fn spawn_pty_session_internal(
                                 eprintln!(
                                     "pty bridge: insert_pty_message failed for {session_id_str}: {e}"
                                 );
-                            }
-
-                            // First-record gate: flip Spawning -> Idle
-                            // exactly once on the first JSONL record of
-                            // ANY variant (the strict "first prompt"
-                            // semantics from the vt100 era are gone —
-                            // any record on the JSONL means the child is
-                            // alive and producing output, dispatch the
-                            // queued input).
-                            if !idle_flipped {
-                                idle_flipped = true;
-                                bridge_session.set_status(SessionStatus::Idle).await;
-                                if let Err(e) = repo::pty::update_pty_session_status(
-                                    &pool,
-                                    &session_id_str,
-                                    "idle",
-                                    None,
-                                )
-                                .await
-                                {
-                                    eprintln!(
-                                        "pty bridge: status -> idle persist failed for {session_id_str}: {e}"
-                                    );
-                                }
                             }
 
                             let _ = bridge_tx.send(tm);

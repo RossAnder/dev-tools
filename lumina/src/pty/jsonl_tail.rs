@@ -44,7 +44,7 @@
 //! module standalone; `mod.rs` adds `pub mod jsonl_tail;` but no `pub use`.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use notify::{
     EventKind, RecursiveMode, Watcher,
@@ -214,7 +214,14 @@ pub fn parse_line(line: &str) -> JsonlRecordParsed {
 /// under `~/.claude/projects/` where the directory name is always ASCII
 /// after the substitution.
 pub fn sanitise_cwd(p: &Path) -> String {
-    let s = p.to_string_lossy();
+    let raw = p.to_string_lossy();
+    // Strip the Windows verbatim-path prefix `\\?\` if present. `std::fs::canonicalize`
+    // returns this form on Windows for any path, but Claude Code sanitises the bare
+    // user-visible cwd (`C:\Users\rossa\dev\dev-tools` → `C--Users-rossa-dev-dev-tools`),
+    // NOT the canonicalised verbatim form (which would sanitise to a four-leading-dash
+    // `----C--…`). Without this strip, lumina's bind_jsonl_path watches a directory
+    // claude.exe never writes to, and the spawn 5s-timeouts.
+    let s: &str = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b == b'-' {
@@ -284,22 +291,25 @@ pub fn resolve_projects_root() -> PathBuf {
 /// make wall-clock filtering racy).
 pub async fn bind_jsonl_path(
     cwd: &Path,
-    _spawn_started: SystemTime,
+    timeout: Option<Duration>,
 ) -> Result<PathBuf, AppError> {
     let dir = resolve_projects_root().join(sanitise_cwd(cwd));
 
     let snapshot = read_jsonl_filenames(&dir).await;
 
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = timeout.map(|t| std::time::Instant::now() + t);
     let mut interval = tokio::time::interval(Duration::from_millis(100));
     // First tick fires immediately — skip it so we don't double-read.
     interval.tick().await;
 
     loop {
-        if std::time::Instant::now() >= deadline {
+        if let Some(d) = deadline
+            && std::time::Instant::now() >= d
+        {
             return Err(AppError::Validation(format!(
-                "jsonl_tail::bind_jsonl_path: no new .jsonl file appeared in {} within 5s timeout",
-                dir.display()
+                "jsonl_tail::bind_jsonl_path: no new .jsonl file appeared in {} within {}s timeout",
+                dir.display(),
+                timeout.unwrap().as_secs(),
             )));
         }
 
@@ -690,6 +700,11 @@ mod tests {
     #[case("/var/log/app.test", "-var-log-app-test")]
     #[case("abc-def-123", "abc-def-123")]
     #[case("/tmp/with space/file", "-tmp-with-space-file")]
+    // Windows verbatim-prefix forms (\\?\…) — std::fs::canonicalize emits these on
+    // Windows, but Claude Code sanitises the bare user-visible cwd. The prefix MUST
+    // be stripped to keep lumina's watched directory aligned with claude's writes.
+    #[case(r"\\?\C:\Users\rossa\dev\dev-tools", "C--Users-rossa-dev-dev-tools")]
+    #[case(r"\\?\C:\Users\rossa\dev\dev-tools\lumina", "C--Users-rossa-dev-dev-tools-lumina")]
     fn sanitise_cwd_cases(#[case] input: &str, #[case] expected: &str) {
         let got = sanitise_cwd(Path::new(input));
         assert_eq!(got, expected);
@@ -845,7 +860,7 @@ mod tests {
             tokio::fs::write(&target, b"").await.unwrap();
         });
 
-        let got = bind_jsonl_path(&cwd, SystemTime::now()).await;
+        let got = bind_jsonl_path(&cwd, Some(Duration::from_secs(5))).await;
         write_task.await.unwrap();
 
         let path = got.expect("bind_jsonl_path should resolve");
@@ -949,7 +964,7 @@ mod tests {
         let _dir = arm_env(temp.path(), &cwd);
 
         let start = std::time::Instant::now();
-        let got = bind_jsonl_path(&cwd, SystemTime::now()).await;
+        let got = bind_jsonl_path(&cwd, Some(Duration::from_secs(5))).await;
         let elapsed = start.elapsed();
 
         match got {

@@ -271,15 +271,27 @@ impl Transport for PtyTransport {
 
         // ---- 9. Input-bridge async task ------------------------------------
         // Translates `InputFrame` values from the supervisor into raw `Bytes`
-        // for the writer-blocking worker. The supervisor (T8) is responsible
-        // for newline framing on `Prompt` payloads — this task just shovels
-        // bytes.
+        // for the writer-blocking worker. Claude's TUI (Ink/React on raw-mode
+        // stdin) recognises `\r` (0x0D, carriage return) as the Enter key —
+        // NOT `\n` (0x0A, line feed). Terminal emulators send `\r` when the
+        // user presses Enter; lumina is the terminal emulator here, so we
+        // translate every `\n` in the payload to `\r` to match. Without this,
+        // the user's typed text appears in claude's input box but is never
+        // submitted.
         {
             let writer_tx = writer_tx.clone();
             tokio::spawn(async move {
                 while let Some(frame) = inbound_rx.recv().await {
                     let bytes = match frame.kind {
-                        InputKind::Prompt => Bytes::from(frame.payload.into_bytes()),
+                        InputKind::Prompt => {
+                            let translated: Vec<u8> = frame
+                                .payload
+                                .into_bytes()
+                                .into_iter()
+                                .map(|b| if b == b'\n' { b'\r' } else { b })
+                                .collect();
+                            Bytes::from(translated)
+                        }
                         InputKind::Cancel => Bytes::from_static(b"\x03"),
                         InputKind::Control => {
                             // v1: only CTRL_C is supported; anything else is
