@@ -6,8 +6,11 @@
 //! it satisfies is the [`Transport`] trait's single `spawn` method: given a
 //! [`SpawnConfig`], return a [`TransportHandle`] whose:
 //!
-//! * `outbound`  — a `broadcast::Receiver<TypedMessage>` carrying parser-emitted
-//!   typed message blocks (assistant text, tool calls, prompts, etc.).
+//! * `outbound`  — a `broadcast::Receiver<TypedMessage>` retained for trait
+//!   compatibility but **unused** after the lumina-pty-jsonl-tail cut (T5):
+//!   the canonical transcript source is now [`crate::pty::jsonl_tail::tail`].
+//!   No producer feeds this channel; the bridge in `pty::spawn` consumes the
+//!   JSONL-tail broadcast directly and ignores `handle.outbound`.
 //! * `inbound`   — a `mpsc::Sender<InputFrame>` the supervisor (T8) pushes
 //!   user prompts / control frames into.
 //! * `shutdown`  — a [`CancellationToken`] that, when cancelled, kills the
@@ -20,16 +23,19 @@
 //! 1. **reader-blocking** — `spawn_blocking` task owning the `Box<dyn Read>`
 //!    obtained from `master.try_clone_reader()`. Reads up to 4 KiB at a time
 //!    and pushes `Bytes` chunks down `reader_tx: mpsc::Sender<Bytes>`. Exits on
-//!    EOF (`Ok(0)`) or any I/O error.
+//!    EOF (`Ok(0)`) or any I/O error. The child MUST NOT block on PTY
+//!    backpressure, so this task continues to drain regardless of downstream
+//!    interest.
 //! 2. **writer-blocking** — `spawn_blocking` task owning the `Box<dyn Write>`
 //!    obtained from `master.take_writer()`. Receives `Bytes` from
 //!    `writer_rx: mpsc::Receiver<Bytes>` via `blocking_recv()` and
 //!    `write_all` + `flush`. Exits on channel close.
-//! 3. **parser-bridge** — `tokio::spawn` async task. Owns a [`Parser`], pulls
-//!    chunks off `reader_rx`, calls `parser.feed(&chunk)`, and broadcasts each
-//!    emitted [`TypedMessage`] on `outbound_tx`. NOTE: idle / end-of-turn
-//!    handling (`parser.check_idle`) is T8's responsibility; the parser-bridge
-//!    here does not act on it.
+//! 3. **drain-and-discard reader bridge** — `tokio::spawn` async task that
+//!    consumes byte chunks from `reader_rx` and drops them. Replaced the
+//!    former vt100 `Parser`-bridge as part of T5: the transcript is read
+//!    from the session JSONL by `jsonl_tail::tail`, not from PTY bytes. The
+//!    bridge still must exist so the reader-blocking worker's `mpsc` never
+//!    fills (which would back-pressure the PTY read and block the child).
 //! 4. **input-bridge** — `tokio::spawn` async task converting `InputFrame`
 //!    values received on `inbound_rx` into raw `Bytes` and forwarding them to
 //!    `writer_tx`. `Prompt` payloads pass through verbatim (the supervisor is
@@ -72,7 +78,6 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::AppError;
-use crate::pty::parser::Parser;
 use crate::pty::protocol::{InputFrame, InputKind, SessionId, TypedMessage};
 use crate::pty::transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
 
@@ -118,6 +123,26 @@ impl Transport for PtyTransport {
             cmd.arg(arg);
         }
         cmd.cwd(config.cwd.clone());
+
+        // Disable the fullscreen alternate-screen renderer so the conversation
+        // stays in the terminal's native scrollback (Claude Code v2.1.132+
+        // env var; keeps PTY observable for debugging even though the JSONL
+        // is the canonical message source). See plan Research Notes
+        // "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1".
+        cmd.env("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1");
+
+        // --session-id aligns API telemetry only; the JSONL filename is bound
+        // separately by jsonl_tail::bind_jsonl_path because interactive mode
+        // mints its own UUID (see plan Research Notes
+        // "--session-id in interactive mode" — GitHub #44607).
+        let session_id_str = uuid::Uuid::now_v7().to_string();
+        cmd.arg("--session-id");
+        cmd.arg(&session_id_str);
+        // v1 deferral of permission prompts — every spawn opts into the
+        // acceptEdits permission mode so the interactive REPL doesn't stall
+        // on confirmation overlays the SPA cannot drive.
+        cmd.arg("--permission-mode");
+        cmd.arg("acceptEdits");
 
         if config.env_passthrough_otel {
             cmd.env("CLAUDE_CODE_ENABLE_TELEMETRY", "1");
@@ -193,7 +218,7 @@ impl Transport for PtyTransport {
                         Ok(n) => {
                             let chunk = Bytes::copy_from_slice(&buf[..n]);
                             if reader_tx.blocking_send(chunk).is_err() {
-                                // Parser bridge has gone — nothing left to read for.
+                                // Drain-and-discard bridge has gone — nothing left to read for.
                                 break;
                             }
                         }
@@ -205,8 +230,8 @@ impl Transport for PtyTransport {
                 }
             });
         }
-        // Drop our local clone of reader_tx so the parser-bridge sees `None`
-        // when the reader worker exits.
+        // Drop our local clone of reader_tx so the drain-and-discard bridge
+        // sees `None` when the reader worker exits.
         drop(reader_tx);
 
         // ---- 7. Writer-blocking worker -------------------------------------
@@ -227,26 +252,22 @@ impl Transport for PtyTransport {
             }
         });
 
-        // ---- 8. Parser-bridge async task -----------------------------------
-        // Owns a `Parser`. Consumes byte chunks from the reader, feeds them to
-        // the parser, and broadcasts every emitted `TypedMessage` on
-        // `outbound_tx`. NOTE: idle / end-of-turn handling lives in T8 — this
-        // task does NOT poll `parser.check_idle` itself.
-        {
-            let outbound_tx = outbound_tx.clone();
-            tokio::spawn(async move {
-                let mut parser = Parser::new();
-                while let Some(chunk) = reader_rx.recv().await {
-                    let msgs = parser.feed(&chunk);
-                    for msg in msgs {
-                        // `broadcast::send` returns Err iff there are no live
-                        // receivers. That's not an error here — subscribers can
-                        // re-attach later via the broadcast::Sender held by T8.
-                        let _ = outbound_tx.send(msg);
-                    }
-                }
-            });
-        }
+        // ---- 8. Drain-and-discard reader bridge async task -----------------
+        // Replaces the former vt100 parser-bridge (T5 / lumina-pty-jsonl-tail):
+        // the canonical transcript now flows out of `jsonl_tail::tail`, so we
+        // do NOT parse PTY bytes. We still must drain `reader_rx` so the
+        // reader-blocking worker's mpsc never fills — backpressure on the
+        // mpsc would propagate to the blocking `read()` and stall the child
+        // on PTY output (the PTY itself has a small kernel-side buffer).
+        // `outbound_tx` is kept alive by the handle field below but never
+        // produced into (the JSONL bridge in spawn.rs owns the production
+        // path now).
+        let _outbound_tx_keepalive = outbound_tx.clone();
+        tokio::spawn(async move {
+            while let Some(_chunk) = reader_rx.recv().await {
+                // Drop. The chunk's bytes are released as the binding ends.
+            }
+        });
 
         // ---- 9. Input-bridge async task ------------------------------------
         // Translates `InputFrame` values from the supervisor into raw `Bytes`
@@ -340,8 +361,14 @@ impl Transport for PtyTransport {
         }
 
         // ---- 12. Hand back the handle --------------------------------------
+        // The session id MUST be the same uuid we passed to claude via
+        // `--session-id` above so the supervisor's bookkeeping aligns with
+        // the API/telemetry id the child reports (the JSONL filename is a
+        // separately-minted internal UUID — see plan Research Notes).
+        let session_uuid = uuid::Uuid::parse_str(&session_id_str)
+            .expect("just-minted v7 uuid parses");
         Ok(TransportHandle {
-            session_id: SessionId::new(),
+            session_id: SessionId(session_uuid),
             outbound: outbound_rx,
             inbound: inbound_tx,
             shutdown,

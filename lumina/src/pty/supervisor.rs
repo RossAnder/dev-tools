@@ -3,8 +3,8 @@
 //!
 //! The supervisor runs as one background tokio task. It owns:
 //! - a 250 ms periodic tick that walks the registry, dispatches one queued
-//!   input per `Idle` session, and checks the parser for end-of-turn on
-//!   each `Awaiting` session;
+//!   input per `Idle` session, and checks the JSONL-tail bridge's quiescence
+//!   state for end-of-turn on each `Awaiting` session;
 //! - a `FuturesUnordered` over `oneshot::Receiver<SessionExit>` futures
 //!   (one per live session) that fires when a transport's child process
 //!   exits, at which point the supervisor records the terminal status on
@@ -22,7 +22,8 @@
 //! `repo::pty::update_pty_session_status(id, "failed", Some(msg))`.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use futures::stream::{FuturesUnordered, StreamExt};
 use sqlx::SqlitePool;
@@ -37,8 +38,9 @@ use crate::repo;
 
 /// Tick cadence for the periodic dispatch / idle-check pass.
 const TICK_PERIOD: Duration = Duration::from_millis(250);
-/// Idle threshold the parser must satisfy before we treat the session as
-/// "model has finished its turn".
+/// Idle threshold the JSONL-tail bridge must satisfy before we treat the
+/// session as "model has finished its turn". The check additionally requires
+/// every outstanding `tool_use` to have been answered by a `tool_result`.
 const IDLE_THRESHOLD: Duration = Duration::from_millis(750);
 /// Capacity of the registration mpsc. 64 is comfortably above any plausible
 /// burst of session spawns (HTTP `POST /pty/sessions` is single-shot per
@@ -155,8 +157,8 @@ fn make_exit_future(
 }
 
 /// One periodic-tick pass over the registry. For each session: if `Idle`,
-/// pop a queued input and dispatch it; if `Awaiting`, check parser idle and
-/// transition back to `Idle` on end-of-turn.
+/// pop a queued input and dispatch it; if `Awaiting`, check JSONL quiescence
+/// and transition back to `Idle` on end-of-turn.
 async fn tick_once(pool: &SqlitePool, registry: &SessionRegistry) {
     let sessions = registry.list().await;
     for session in sessions {
@@ -274,19 +276,33 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
     }
 
     // NOTE: the queue entry stays in `dispatched` state. It is marked
-    // completed in `maybe_finalise_turn` when the parser detects
-    // end-of-turn.
+    // completed in `maybe_finalise_turn` when the JSONL-tail bridge has
+    // gone quiet AND no outstanding `tool_use` is waiting for a result.
 }
 
-/// If the parser says the session is idle (end-of-turn), mark the most
-/// recent dispatched queue entry completed and transition back to `Idle`.
+/// If the JSONL-tail bridge has gone quiet and no `tool_use` is outstanding,
+/// treat the turn as finished: mark the most recent dispatched queue entry
+/// completed and transition back to `Idle`.
+///
+/// Two-part check (see plan User Decision 1):
+/// 1. `outstanding_tool_uses` is empty — every `tool_use` block the bridge
+///    saw on `assistant` records has been matched by a corresponding
+///    `tool_result` on a subsequent `user` record.
+/// 2. ≥ `IDLE_THRESHOLD` has passed since the last JSONL record arrived
+///    (`last_record_at`). The `last_record_at == 0` sentinel guards against
+///    firing before the bridge has emitted anything at all (which would
+///    otherwise close the turn on a freshly-dispatched prompt).
 async fn maybe_finalise_turn(pool: &SqlitePool, session: &Arc<crate::pty::session::Session>) {
-    let now = Instant::now();
-    let idle = {
-        let mut parser = session.parser.lock().await;
-        parser.check_idle(now, IDLE_THRESHOLD)
-    };
-    if !idle {
+    let outstanding_empty = session.outstanding_tool_uses.lock().await.is_empty();
+    if !outstanding_empty {
+        return;
+    }
+    let last_ms = session.last_record_at.load(Ordering::Relaxed);
+    if last_ms == 0 {
+        return;
+    }
+    let now_ms = jiff::Timestamp::now().as_millisecond();
+    if now_ms.saturating_sub(last_ms) < IDLE_THRESHOLD.as_millis() as i64 {
         return;
     }
 

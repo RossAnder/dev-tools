@@ -316,11 +316,14 @@ pub struct PtySession {
 
 /// A row of `pty_messages` (migration 0008): one ordered transcript entry on
 /// a PTY session, with `sequence` monotone within the session and `kind`
-/// drawn from `user_input|assistant_text|tool_call|tool_result|prompt|system|
-/// error|parser_unknown` (free TEXT on the column — typed at the wire layer
-/// via `pty::protocol::MessageKind`). `content_json` carries the per-kind
-/// payload; `raw_text` is the ansi-stripped fallback retained for replay /
-/// debugging.
+/// drawn from `user_input|assistant_text|tool_use|tool_result|system|error`
+/// (free TEXT on the column — typed at the wire layer via
+/// `pty::protocol::MessageKind`). The pre-jsonl-tail vocab carried
+/// `tool_call|prompt|parser_unknown` as well; those three were retired in T5
+/// of `lumina-pty-jsonl-tail` when the vt100 row-finalisation parser was
+/// replaced by JSONL-tail message extraction. `content_json` carries the
+/// per-kind payload; `raw_text` is the ansi-stripped fallback retained for
+/// replay / debugging.
 #[derive(Debug, Clone, Serialize)]
 pub struct PtyMessage {
     pub id: String,

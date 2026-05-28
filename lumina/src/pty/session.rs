@@ -1,29 +1,42 @@
 //! `Session` — per-PTY runtime state container. The supervisor (T8) drives
 //! status transitions; this module just owns the in-memory state.
 //!
-//! `status` and `parser` use [`tokio::sync::Mutex`] (not `std`) so locks can be
-//! held across `.await` points without blocking the runtime. The
+//! `status` uses [`tokio::sync::Mutex`] (not `std`) so locks can be held
+//! across `.await` points without blocking the runtime. The
 //! [`broadcast::Sender`] fan-outs parsed [`TypedMessage`]s to every connected
 //! WS client; the [`mpsc::Sender`] funnels inbound [`InputFrame`]s back to the
-//! supervisor's per-session write task.
+//! supervisor's per-session write task. The `outstanding_tool_uses` set and
+//! `last_record_at` timestamp drive the JSONL quiescence check used by
+//! `supervisor::maybe_finalise_turn` (post lumina-pty-jsonl-tail / T5: the
+//! prior vt100 parser FSM has been replaced by JSONL-tail message extraction).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use tokio::sync::{Mutex, broadcast, mpsc};
 
-use crate::pty::parser::Parser;
 use crate::pty::protocol::{InputFrame, SessionId, SessionStatus, TypedMessage};
 
 /// Per-process runtime state. Holds the broadcast fan-out, the input intake,
-/// the current lifecycle status, and the parser FSM. Wrapped in `Arc` because
-/// every consumer (registry, supervisor tasks, WS handlers) holds a clone.
+/// the current lifecycle status, and the outstanding-tool-use set and
+/// last-record timestamp used by the JSONL quiescence check. Wrapped in
+/// `Arc` because every consumer (registry, supervisor tasks, WS handlers,
+/// JSONL bridge task) holds a clone.
 pub struct Session {
     pub id: SessionId,
     pub status: Mutex<SessionStatus>,
     pub broadcast_tx: broadcast::Sender<TypedMessage>,
     pub input_tx: mpsc::Sender<InputFrame>,
-    pub parser: Mutex<Parser>,
+    /// Tool-use ids the bridge has observed as `ToolUse` rows but has NOT
+    /// yet seen a matching `ToolResult` for. Empties when every outstanding
+    /// tool call has been answered — a precondition for the
+    /// `Awaiting → Idle` quiescence transition in `supervisor::maybe_finalise_turn`.
+    pub outstanding_tool_uses: Mutex<HashSet<String>>,
+    /// Wall-clock millisecond stamp of the most recent JSONL record the
+    /// bridge has observed (or `0` if none yet). Compared against
+    /// `IDLE_THRESHOLD` for the JSONL-tail quiescence check.
+    pub last_record_at: AtomicI64,
     pub sequence_counter: AtomicI64,
 }
 
@@ -41,7 +54,8 @@ impl Session {
             status: Mutex::new(SessionStatus::Spawning),
             broadcast_tx,
             input_tx,
-            parser: Mutex::new(Parser::new()),
+            outstanding_tool_uses: Mutex::new(HashSet::new()),
+            last_record_at: AtomicI64::new(0),
             sequence_counter: AtomicI64::new(1),
         })
     }

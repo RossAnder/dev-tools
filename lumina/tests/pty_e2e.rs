@@ -215,18 +215,13 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
         .to_owned();
 
     // Freshly spawned session status is non-terminal. The bridge task in
-    // `pty/spawn.rs` is designed to flip `Spawning -> Idle` on the first
-    // parsed `MessageKind::Prompt`. With the production ConPTY fix
-    // (portable-pty 0.8.1 + slave-keep-alive on Windows), child stdout
-    // reaches the parser correctly, but this test's PATH shim that was
-    // intended to substitute `claude.exe` with the deterministic
-    // `pty_stub` binary appears to not bind under portable-pty 0.8.1 (the
-    // ConPTY title-set escape shows the executable as the real `claude`,
-    // not `pty_stub.exe`). Diagnosing the PATH shim is out of scope for
-    // the ConPTY fix; the test continues to drive the Idle transition
-    // manually so the supervisor dispatch path is still exercised.
-    // The bare-API `conpty_minimal_repro` test acts as the proper
-    // regression test for the ConPTY child-stdout path.
+    // `pty/spawn.rs` is now JSONL-driven (T5 of lumina-pty-jsonl-tail):
+    // `Spawning -> Idle` flips on the first JSONL record of ANY variant.
+    // T6 reshapes this test to point `jsonl_tail::resolve_projects_root`
+    // at a tempdir and have `pty_stub` write synthetic JSONL records; the
+    // PATH-shim concern from the vt100 era is gone with the parser. The
+    // bare-API `conpty_minimal_repro` test remains the proper regression
+    // test for the ConPTY child-stdout path.
     assert!(
         matches!(
             session_row["status"].as_str(),

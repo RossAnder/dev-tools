@@ -104,18 +104,20 @@ impl FromStr for SessionStatus {
 }
 
 /// Classification of a [`TypedMessage`] — drives per-kind rendering and the
-/// per-kind `content` payload shape on the SPA.
+/// per-kind `content` payload shape on the SPA. Six variants matching the
+/// JSONL-tail taxonomy (post lumina-pty-jsonl-tail, T5): the prior eight-
+/// variant set carrying `ToolCall|Prompt|ParserUnknown` was removed when the
+/// vt100 parser was deleted in favour of reading the canonical structured
+/// transcript from Claude Code's session JSONL.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageKind {
     UserInput,
     AssistantText,
-    ToolCall,
+    ToolUse,
     ToolResult,
-    Prompt,
     System,
     Error,
-    ParserUnknown,
 }
 
 impl MessageKind {
@@ -123,12 +125,10 @@ impl MessageKind {
         match self {
             Self::UserInput => "user_input",
             Self::AssistantText => "assistant_text",
-            Self::ToolCall => "tool_call",
+            Self::ToolUse => "tool_use",
             Self::ToolResult => "tool_result",
-            Self::Prompt => "prompt",
             Self::System => "system",
             Self::Error => "error",
-            Self::ParserUnknown => "parser_unknown",
         }
     }
 }
@@ -146,12 +146,10 @@ impl FromStr for MessageKind {
         match s {
             "user_input" => Ok(Self::UserInput),
             "assistant_text" => Ok(Self::AssistantText),
-            "tool_call" => Ok(Self::ToolCall),
+            "tool_use" => Ok(Self::ToolUse),
             "tool_result" => Ok(Self::ToolResult),
-            "prompt" => Ok(Self::Prompt),
             "system" => Ok(Self::System),
             "error" => Ok(Self::Error),
-            "parser_unknown" => Ok(Self::ParserUnknown),
             other => Err(format!("unknown message kind: {other}")),
         }
     }
@@ -170,6 +168,12 @@ pub struct TypedMessage {
     pub content: serde_json::Value,
     pub raw_text: Option<String>,
     pub created_at: String,
+    /// Tool-use correlation id. Populated on `ToolUse` (the id from the JSONL
+    /// `assistant.content.tool_use` block) AND on `ToolResult` (the id from
+    /// the JSONL `user.content.tool_result.tool_use_id` field). The web SPA
+    /// pairs `ToolResult` rows back to their `ToolUse` parent via this field.
+    /// `None` on every other kind.
+    pub tool_use_id: Option<String>,
 }
 
 /// Classification of an [`InputFrame`] coming from a client.

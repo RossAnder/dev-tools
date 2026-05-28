@@ -54,6 +54,7 @@ use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::error::AppError;
+use crate::pty::protocol::{MessageKind, TypedMessage};
 
 // ---------------------------------------------------------------------------
 // JSONL record envelope (tolerant deserialise)
@@ -532,6 +533,144 @@ async fn drain_and_broadcast(
 }
 
 // ---------------------------------------------------------------------------
+// JSONL record → TypedMessage mapping
+// ---------------------------------------------------------------------------
+
+/// Map one parsed JSONL record to zero-or-more [`TypedMessage`] rows.
+///
+/// A single `assistant` record carrying `N` content blocks emits `N` rows
+/// (one per block, preserving order). A `user` record whose content is a
+/// `Vec` of `tool_result` blocks emits one row per result. Bare-string
+/// `user` content emits one `UserInput` row; `summary` emits one `System`
+/// row; unknowns of any flavour fall through to a `System` row that carries
+/// enough metadata for the SPA / replay to reason about what was lost.
+///
+/// `sequence` is always `0` on the returned rows — the bridge task in
+/// `pty::spawn` mints the per-session monotone sequence via
+/// `Session::next_sequence()` immediately before persistence. `created_at`
+/// is stamped here with the wall-clock `jiff::Timestamp::now().to_string()`
+/// (matches the convention in `export.rs` and `domain.rs`).
+pub fn map_record_to_typed(parsed: &JsonlRecordParsed) -> Vec<TypedMessage> {
+    let now = jiff::Timestamp::now().to_string();
+    match parsed {
+        JsonlRecordParsed::Known(rec) => match rec {
+            JsonlRecord::Assistant { message, .. } => message
+                .content
+                .iter()
+                .map(|block| match block {
+                    AssistantContentBlock::Text { text } => TypedMessage {
+                        sequence: 0,
+                        kind: MessageKind::AssistantText,
+                        content: serde_json::json!({ "text": text }),
+                        raw_text: Some(text.clone()),
+                        created_at: now.clone(),
+                        tool_use_id: None,
+                    },
+                    AssistantContentBlock::ToolUse { id, name, input } => TypedMessage {
+                        sequence: 0,
+                        kind: MessageKind::ToolUse,
+                        content: serde_json::json!({
+                            "name": name,
+                            "input": input,
+                            "tool_use_id": id,
+                        }),
+                        raw_text: None,
+                        created_at: now.clone(),
+                        tool_use_id: Some(id.clone()),
+                    },
+                    AssistantContentBlock::Thinking { thinking, signature } => TypedMessage {
+                        sequence: 0,
+                        kind: MessageKind::System,
+                        content: serde_json::json!({
+                            "subtype": "thinking",
+                            "text": thinking,
+                            "signature": signature,
+                        }),
+                        raw_text: Some(thinking.clone()),
+                        created_at: now.clone(),
+                        tool_use_id: None,
+                    },
+                    AssistantContentBlock::Unknown => TypedMessage {
+                        sequence: 0,
+                        kind: MessageKind::System,
+                        content: serde_json::json!({
+                            "subtype": "unknown_assistant_block",
+                        }),
+                        raw_text: None,
+                        created_at: now.clone(),
+                        tool_use_id: None,
+                    },
+                })
+                .collect(),
+            JsonlRecord::User { message, .. } => match &message.content {
+                UserContent::Text(s) => vec![TypedMessage {
+                    sequence: 0,
+                    kind: MessageKind::UserInput,
+                    content: serde_json::json!({ "text": s }),
+                    raw_text: Some(s.clone()),
+                    created_at: now,
+                    tool_use_id: None,
+                }],
+                UserContent::Blocks(blocks) => blocks
+                    .iter()
+                    .map(|block| match block {
+                        UserContentBlock::ToolResult {
+                            tool_use_id,
+                            content,
+                            is_error,
+                        } => TypedMessage {
+                            sequence: 0,
+                            kind: MessageKind::ToolResult,
+                            content: serde_json::json!({
+                                "tool_use_id": tool_use_id,
+                                "output": content,
+                                "is_error": is_error,
+                            }),
+                            raw_text: None,
+                            created_at: now.clone(),
+                            tool_use_id: Some(tool_use_id.clone()),
+                        },
+                        UserContentBlock::Unknown => TypedMessage {
+                            sequence: 0,
+                            kind: MessageKind::System,
+                            content: serde_json::json!({
+                                "subtype": "unknown_user_block",
+                            }),
+                            raw_text: None,
+                            created_at: now.clone(),
+                            tool_use_id: None,
+                        },
+                    })
+                    .collect(),
+            },
+            JsonlRecord::Summary { summary, .. } => vec![TypedMessage {
+                sequence: 0,
+                kind: MessageKind::System,
+                content: serde_json::json!({
+                    "subtype": "summary",
+                    "text": summary,
+                }),
+                raw_text: Some(summary.clone()),
+                created_at: now,
+                tool_use_id: None,
+            }],
+        },
+        JsonlRecordParsed::UnknownRaw { raw, parsed_type } => vec![TypedMessage {
+            sequence: 0,
+            kind: MessageKind::System,
+            content: serde_json::json!({
+                "subtype": "unknown_raw",
+                "type": parsed_type,
+                "raw": raw,
+            }),
+            raw_text: Some(raw.clone()),
+            created_at: now,
+            tool_use_id: None,
+        }],
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -713,6 +852,93 @@ mod tests {
         assert_eq!(
             path.file_name().and_then(|n| n.to_str()),
             Some("session-abc.jsonl")
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // map_record_to_typed
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn map_assistant_text_emits_one_assistant_text_row() {
+        let line = r#"{"type":"assistant","uuid":"a","message":{"content":[{"type":"text","text":"hello"}]}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].kind, MessageKind::AssistantText);
+        assert_eq!(
+            out[0].content.get("text").and_then(|v| v.as_str()),
+            Some("hello")
+        );
+        assert_eq!(out[0].raw_text.as_deref(), Some("hello"));
+        assert_eq!(out[0].tool_use_id, None);
+    }
+
+    #[test]
+    fn map_assistant_tool_use_sets_tool_use_id() {
+        let line = r#"{"type":"assistant","uuid":"a","message":{"content":[{"type":"tool_use","id":"id1","name":"Read","input":{"file_path":"x"}}]}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].kind, MessageKind::ToolUse);
+        assert_eq!(out[0].tool_use_id.as_deref(), Some("id1"));
+        assert_eq!(
+            out[0].content.get("name").and_then(|v| v.as_str()),
+            Some("Read")
+        );
+        assert_eq!(
+            out[0]
+                .content
+                .get("tool_use_id")
+                .and_then(|v| v.as_str()),
+            Some("id1")
+        );
+    }
+
+    #[test]
+    fn map_user_tool_result_sets_tool_use_id() {
+        let line = r#"{"type":"user","uuid":"u","message":{"content":[{"type":"tool_result","tool_use_id":"id1","content":"ok","is_error":false}]}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].kind, MessageKind::ToolResult);
+        assert_eq!(out[0].tool_use_id.as_deref(), Some("id1"));
+        assert_eq!(
+            out[0]
+                .content
+                .get("is_error")
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn map_assistant_mixed_blocks_preserves_order() {
+        // text block first, then a tool_use block — expect two rows in that order.
+        let line = r#"{"type":"assistant","uuid":"a","message":{"content":[{"type":"text","text":"thinking..."},{"type":"tool_use","id":"id7","name":"Bash","input":{"command":"ls"}}]}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].kind, MessageKind::AssistantText);
+        assert_eq!(out[1].kind, MessageKind::ToolUse);
+        assert_eq!(out[1].tool_use_id.as_deref(), Some("id7"));
+    }
+
+    #[test]
+    fn map_user_string_emits_user_input() {
+        let line = r#"{"type":"user","uuid":"u","message":{"content":"hi there"}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].kind, MessageKind::UserInput);
+        assert_eq!(out[0].raw_text.as_deref(), Some("hi there"));
+        assert_eq!(out[0].tool_use_id, None);
+    }
+
+    #[test]
+    fn map_unknown_raw_emits_system_row_with_subtype() {
+        let line = r#"{"type":"file-history-snapshot","whatever":"data"}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].kind, MessageKind::System);
+        assert_eq!(
+            out[0].content.get("subtype").and_then(|v| v.as_str()),
+            Some("unknown_raw")
         );
     }
 

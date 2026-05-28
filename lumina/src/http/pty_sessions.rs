@@ -151,8 +151,6 @@ struct SpawnSessionBody {
     env_passthrough_otel: bool,
     #[serde(default)]
     settings_json: Option<String>,
-    #[serde(default)]
-    prompt_pattern: Option<String>,
 }
 
 /// `POST /pty/sessions` — spawn a fresh PTY-backed `claude` session.
@@ -180,7 +178,6 @@ async fn spawn_session(
         model: body.model,
         env_passthrough_otel: body.env_passthrough_otel,
         settings_json: body.settings_json,
-        prompt_pattern: body.prompt_pattern,
     };
 
     let row = crate::pty::spawn::spawn_pty_session_internal(

@@ -9,7 +9,7 @@
 //!
 //! ## What the helper owns
 //!
-//! `spawn_pty_session_internal` performs all six pipeline steps:
+//! `spawn_pty_session_internal` performs all seven pipeline steps:
 //!
 //!   1. `Transport::spawn(config)` → `TransportHandle`.
 //!   2. Serialise `SpawnConfig` to JSON for the persisted `config_json` snapshot.
@@ -17,10 +17,14 @@
 //!   4. Construct an `Arc<Session>` over a freshly-built registry-side
 //!      `broadcast` pair and insert it into `state.pty_registry` (the registry
 //!      keeps an `Arc<Session>`; the bridge task below retains its own clone).
-//!   5. Spawn the broadcast-bridge tokio task that (a) persists each
-//!      `TypedMessage` to `pty_messages`, (b) flips the session status from
-//!      `Spawning` to `Idle` on the first `MessageKind::Prompt`, and (c)
-//!      forwards the message into the registry-side broadcast for WS fan-out.
+//!   5. Bind the JSONL transcript path via [`crate::pty::jsonl_tail::bind_jsonl_path`]
+//!      (snapshot-then-poll for up to 5s), persist it onto the session row,
+//!      spawn the [`crate::pty::jsonl_tail::tail`] watcher, then spawn the
+//!      JSONL→TypedMessage bridge that (a) updates the session's
+//!      outstanding-tool-use set + `last_record_at`, (b) persists each
+//!      mapped `TypedMessage` to `pty_messages`, (c) flips the session
+//!      status from `Spawning` to `Idle` on the first record, and (d)
+//!      forwards messages into the registry-side broadcast for WS fan-out.
 //!   6. Best-effort supervisor registration: if `state.pty_register_tx` is
 //!      `Some`, push a `SessionRegistration`; otherwise log and explicitly
 //!      drop `handle.completed` + `handle.shutdown` (the transport handle's
@@ -47,7 +51,8 @@ use uuid::Uuid;
 use crate::app::AppState;
 use crate::domain::PtySession;
 use crate::error::AppError;
-use crate::pty::protocol::{SessionStatus, TypedMessage};
+use crate::pty::jsonl_tail::{self, JsonlRecordParsed};
+use crate::pty::protocol::{MessageKind, SessionStatus, TypedMessage};
 use crate::pty::session::Session;
 use crate::pty::supervisor::SessionRegistration;
 use crate::pty::transport::SpawnConfig;
@@ -150,14 +155,49 @@ pub async fn spawn_pty_session_internal(
     let bridge_session = session.clone();
     state.pty_registry.insert(session).await;
 
-    // ---- 5. Spawn the broadcast-bridge task (E20 + E21 wiring) ----
+    // ---- 5. Spawn the JSONL-driven bridge (T5 / lumina-pty-jsonl-tail) ----
     //
-    // Per-session policy: error-swallowing only (matches supervisor::dispatch_one).
+    // Replaces the former transport.outbound consumer. The canonical
+    // transcript source is now the session JSONL Claude Code writes to
+    // ~/.claude/projects/<sanitised-cwd>/<uuid>.jsonl — we bind that path,
+    // spawn the tail watcher, then run the JSONL→TypedMessage→pty_messages
+    // bridge below.
+    //
+    // The transport's `outbound` broadcast is now unused at this layer
+    // (kept on the handle for trait compatibility only); we drop our
+    // receiver explicitly so a future maintainer doesn't expect data to
+    // flow through it.
+    drop(handle.outbound);
+
+    // 5a. Bind the JSONL path (snapshot-then-poll up to 5s).
+    let jsonl_path = jsonl_tail::bind_jsonl_path(
+        config.cwd.as_path(),
+        std::time::SystemTime::now(),
+    )
+    .await?;
+    let jsonl_path_str = jsonl_path.to_string_lossy().into_owned();
+
+    // 5b. Persist the bound path on the session row.
+    repo::pty::set_pty_jsonl_path(
+        state.pool.as_ref(),
+        &session_id_str,
+        &jsonl_path_str,
+    )
+    .await?;
+
+    // 5c. Spawn the jsonl_tail::tail task producing JsonlRecordParsed
+    //     onto a fresh broadcast.
+    let (jsonl_tx, mut jsonl_rx) =
+        broadcast::channel::<JsonlRecordParsed>(BROADCAST_CAPACITY);
+    tokio::spawn(jsonl_tail::tail(jsonl_path.clone(), jsonl_tx));
+
+    // 5d. The JSONL → TypedMessage → pty_messages → broadcast bridge.
+    // Per-session policy: error-swallowing only (matches
+    // supervisor::dispatch_one).
     {
         let pool = state.pool.clone();
         let bridge_tx = broadcast_tx.clone();
         let session_id_str = session_id_str.clone();
-        let mut transport_rx = handle.outbound;
         // Local guard ensures the Spawning -> Idle flip fires exactly once
         // per session. NEVER read `session.status()` to gate this — that
         // races against concurrent set_status calls (e.g. cancel path).
@@ -165,77 +205,101 @@ pub async fn spawn_pty_session_internal(
 
         tokio::spawn(async move {
             loop {
-                match transport_rx.recv().await {
-                    Ok(msg) => {
-                        // Extract persistence-bound fields BEFORE moving msg
-                        // into the broadcast send below. Rationale: a future
-                        // maintainer who tries to clone via `msg.clone()` and
-                        // borrow from msg afterwards would silently break the
-                        // ordering against the broadcast move; extracting
-                        // first makes the broadcast call the natural last
-                        // user of msg.
-                        let kind = msg.kind; // MessageKind is Copy
-                        let kind_wire = kind.as_wire(); // &'static str
-                        let content_json = serde_json::to_string(&msg.content)
-                            .unwrap_or_else(|_| "{}".to_string());
-                        let raw_text = msg.raw_text.clone();
-                        let seq = bridge_session.next_sequence();
-                        let msg_id = Uuid::now_v7().to_string();
+                match jsonl_rx.recv().await {
+                    Ok(parsed) => {
+                        // 1. Update Session bookkeeping FIRST so the
+                        //    supervisor's quiescence check on the next
+                        //    250ms tick sees a fresh `last_record_at` and
+                        //    a consistent outstanding-tool-use set.
+                        bridge_session.last_record_at.store(
+                            jiff::Timestamp::now().as_millisecond(),
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
 
-                        // Persist the transcript row. Per-session policy:
-                        // error-swallowing only (matches
-                        // supervisor::dispatch_one).
-                        if let Err(e) = repo::pty::insert_pty_message(
-                            &pool,
-                            &msg_id,
-                            &session_id_str,
-                            seq,
-                            kind_wire,
-                            &content_json,
-                            raw_text.as_deref(),
-                        )
-                        .await
+                        // 2. Map the record to zero-or-more TypedMessage rows.
+                        let typed_msgs = jsonl_tail::map_record_to_typed(&parsed);
+
+                        // 3. Update the outstanding-tool-uses set:
+                        //    + insert tool_use_id for every ToolUse
+                        //    - remove tool_use_id for every ToolResult
                         {
-                            eprintln!(
-                                "pty bridge: insert_pty_message failed for {session_id_str}: {e}"
-                            );
+                            let mut outstanding =
+                                bridge_session.outstanding_tool_uses.lock().await;
+                            for tm in &typed_msgs {
+                                match tm.kind {
+                                    MessageKind::ToolUse => {
+                                        if let Some(id) = tm.tool_use_id.as_ref() {
+                                            outstanding.insert(id.clone());
+                                        }
+                                    }
+                                    MessageKind::ToolResult => {
+                                        if let Some(id) = tm.tool_use_id.as_ref() {
+                                            outstanding.remove(id);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
 
-                        // First-message: flip Spawning -> Idle exactly once.
-                        // Originally we gated this on `kind == Prompt`, but
-                        // real `claude.exe` renders its menus/prompts as
-                        // multi-line panels whose cursor-row line carries
-                        // text after the `❯` sigil — `matches_prompt` (which
-                        // expects the line to trim to exactly `>`/`❯`/`›`)
-                        // never matches, so the bridge never flipped Idle
-                        // and the UI's input box stayed disabled. We trade
-                        // strict semantics ("model finished its turn") for
-                        // practical interactivity ("child is producing
-                        // user-visible output, dispatch queued input"). The
-                        // pty_stub e2e path still hits this branch on the
-                        // banner, and real claude hits it on the first
-                        // assistant_text/prompt block.
-                        if !idle_flipped {
-                            idle_flipped = true;
-                            bridge_session.set_status(SessionStatus::Idle).await;
-                            if let Err(e) = repo::pty::update_pty_session_status(
+                        // 4. Persist + broadcast each typed message.
+                        for tm in typed_msgs {
+                            let kind_wire = tm.kind.as_wire(); // &'static str
+                            let content_json = serde_json::to_string(&tm.content)
+                                .unwrap_or_else(|_| "{}".to_string());
+                            let raw_text = tm.raw_text.clone();
+                            let seq = bridge_session.next_sequence();
+                            let msg_id = Uuid::now_v7().to_string();
+
+                            // Stamp the bridge-allocated sequence on the
+                            // outgoing TypedMessage before the broadcast
+                            // send so WS subscribers see the same number
+                            // we persisted.
+                            let mut tm = tm;
+                            tm.sequence = seq;
+
+                            if let Err(e) = repo::pty::insert_pty_message(
                                 &pool,
+                                &msg_id,
                                 &session_id_str,
-                                "idle",
-                                None,
+                                seq,
+                                kind_wire,
+                                &content_json,
+                                raw_text.as_deref(),
                             )
                             .await
                             {
                                 eprintln!(
-                                    "pty bridge: status -> idle persist failed for {session_id_str}: {e}"
+                                    "pty bridge: insert_pty_message failed for {session_id_str}: {e}"
                                 );
                             }
-                        }
 
-                        // Forward to registry broadcast (msg moves; the
-                        // broadcast channel keeps its own per-subscriber
-                        // copies in its internal buffer).
-                        let _ = bridge_tx.send(msg);
+                            // First-record gate: flip Spawning -> Idle
+                            // exactly once on the first JSONL record of
+                            // ANY variant (the strict "first prompt"
+                            // semantics from the vt100 era are gone —
+                            // any record on the JSONL means the child is
+                            // alive and producing output, dispatch the
+                            // queued input).
+                            if !idle_flipped {
+                                idle_flipped = true;
+                                bridge_session.set_status(SessionStatus::Idle).await;
+                                if let Err(e) = repo::pty::update_pty_session_status(
+                                    &pool,
+                                    &session_id_str,
+                                    "idle",
+                                    None,
+                                )
+                                .await
+                                {
+                                    eprintln!(
+                                        "pty bridge: status -> idle persist failed for {session_id_str}: {e}"
+                                    );
+                                }
+                            }
+
+                            let _ = bridge_tx.send(tm);
+                        }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(broadcast::error::RecvError::Closed) => break,

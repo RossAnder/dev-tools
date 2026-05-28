@@ -8,19 +8,17 @@
 pub mod protocol;
 pub mod transport;        // T3
 pub mod pty_transport;    // T4
-pub mod parser;           // T5
 pub mod session;          // T6
 pub mod registry;         // T6
 pub mod queue;            // T6
 pub mod supervisor;       // T8
 pub mod spawn;            // T3 (lumina-pty-followups)
-pub mod jsonl_tail;       // T4 (lumina-pty-jsonl-tail)
+pub mod jsonl_tail;       // T4 (lumina-pty-jsonl-tail) — replaces deleted `parser`
 
 pub use protocol::{
     InputFrame, InputKind, MessageKind, SessionId, SessionStatus, TypedMessage,
 };
 pub use transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
-pub use parser::Parser;
 pub use pty_transport::PtyTransport;
 pub use session::Session;
 pub use registry::SessionRegistry;

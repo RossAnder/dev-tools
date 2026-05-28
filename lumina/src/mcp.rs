@@ -1133,10 +1133,6 @@ pub struct SpawnPtySessionParams {
     /// Optional inline settings JSON, forwarded to `claude`.
     #[serde(default)]
     pub settings_json: Option<String>,
-    /// Optional prompt-detection regex (parser-side; defaults to the parser's
-    /// built-in pattern when absent).
-    #[serde(default)]
-    pub prompt_pattern: Option<String>,
 }
 
 /// Arguments for the `send_pty_input` write tool. Enqueues one input frame
@@ -2553,7 +2549,6 @@ impl LuminaTools {
             model: p.model.clone(),
             env_passthrough_otel: p.env_passthrough_otel,
             settings_json: p.settings_json.clone(),
-            prompt_pattern: p.prompt_pattern.clone(),
         };
 
         // ---- 4. Delegate the 6-step pipeline to the shared helper ----

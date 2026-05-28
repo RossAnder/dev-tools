@@ -17,8 +17,9 @@ use crate::pty::protocol::{InputFrame, SessionId, TypedMessage};
 
 /// Spawn-time configuration for a transport session. Fields cover everything a
 /// `claude` REPL spawn needs to know — working directory, CLI args, optional
-/// agent/model/settings JSON, OTEL env passthrough, and the prompt-detection
-/// pattern owned by the parser (T5).
+/// agent/model/settings JSON, and OTEL env passthrough. The legacy
+/// `prompt_pattern` field was removed when the vt100 parser was retired in
+/// favour of JSONL-tail message extraction (`pty/jsonl_tail.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SpawnConfig {
@@ -28,7 +29,6 @@ pub struct SpawnConfig {
     pub model: Option<String>,
     pub env_passthrough_otel: bool,
     pub settings_json: Option<String>,
-    pub prompt_pattern: Option<String>,
 }
 
 /// Terminal exit summary for a transport session. `code` is the process exit
