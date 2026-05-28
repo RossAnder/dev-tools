@@ -10,6 +10,8 @@
 //!   * `GET    /pty/sessions/{id}/queue`         — queue inspection.
 //!   * `POST   /pty/sessions/{id}/input`         — enqueue one input frame.
 //!   * `POST   /pty/sessions/{id}/inputs/batch`  — enqueue N frames in order.
+//!   * `POST   /pty/sessions/{id}/keystrokes`    — direct-push keystroke frames,
+//!     bypassing the queue/supervisor.
 //!   * `PATCH  /pty/sessions/{id}`               — 501 (label/project metadata update; v1 stub).
 //!   * `DELETE /pty/sessions/{id}`               — cancel and tombstone.
 //!   * `GET    /pty/sessions/{id}/ws`            — WebSocket fan-out.
@@ -88,6 +90,7 @@ pub fn router() -> Router<AppState> {
         .route("/pty/sessions/{id}/queue", get(list_queue))
         .route("/pty/sessions/{id}/input", post(enqueue_input))
         .route("/pty/sessions/{id}/inputs/batch", post(enqueue_inputs_batch))
+        .route("/pty/sessions/{id}/keystrokes", post(enqueue_keystrokes))
         .route("/pty/sessions/{id}/ws", get(ws_handler))
 }
 
@@ -315,6 +318,12 @@ async fn enqueue_inputs_batch(
 
 /// Reject any `kind` value the supervisor doesn't classify as a valid
 /// `InputKind`. Surfaces as 422 so the caller fixes their payload.
+///
+/// Note: deliberately does NOT include `keystroke`. Keystroke frames take
+/// a separate HTTP route (`POST /pty/sessions/{id}/keystrokes`) that bypasses
+/// `Queue::enqueue` and the supervisor's `Idle`-gated dispatch entirely —
+/// pushing direct to `Session::input_tx`. See `enqueue_keystrokes` below and
+/// the plan's "Supervisor bypass for keystroke frames" research note.
 fn validate_input_kind(kind: &str) -> Result<(), AppError> {
     match kind {
         "prompt" | "cancel" | "control" => Ok(()),
@@ -322,6 +331,166 @@ fn validate_input_kind(kind: &str) -> Result<(), AppError> {
             "unknown input kind {other:?}; expected one of prompt|cancel|control"
         ))),
     }
+}
+
+// =====================================================================
+// Keystroke direct-push (queue/supervisor bypass)
+// =====================================================================
+
+/// Per-call cap on the keystroke batch. The AUQ keystroke calculator emits
+/// at most a handful of frames per answer; 256 is a generous safety belt
+/// against a runaway client.
+const KEYSTROKE_BATCH_CAP: usize = 256;
+
+/// One element of the `POST /pty/sessions/{id}/keystrokes` body. Wire shape:
+/// `{"type": "input", "kind": "keystroke", "payload": "<dsl-token>"}`.
+///
+/// `_type` is accepted-but-unused for forward-compat with the SPA's
+/// `InputFrame` discriminated-union wire format (the `type` field discriminates
+/// at the union level; we already know everything in this body is `"input"`).
+#[derive(Debug, Deserialize)]
+struct KeystrokeFrame {
+    #[serde(rename = "type", default)]
+    #[allow(dead_code)]
+    _type: Option<String>,
+    kind: String,
+    payload: String,
+}
+
+/// Render the JSON error envelope used by the manual response-tuple branches
+/// below (413 Payload Too Large, 409 Conflict). Matches the shape produced by
+/// `AppError::into_response` so clients see one envelope shape across the
+/// route.
+fn error_envelope(kind: &str, message: impl Into<String>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "error": {
+            "kind": kind,
+            "message": message.into(),
+        }
+    }))
+}
+
+/// Response of `enqueue_keystrokes`. Returns either:
+///   * `Err(AppError)` — for 404 (unknown session) / 422 (bad kind), routed
+///     through `AppError::IntoResponse`.
+///   * `Ok((StatusCode, Json))` — for 200 (success), 413 (cap), 409 (terminal
+///     state), built manually because `AppError` does not (yet) model
+///     `PayloadTooLarge` / `Conflict`. See PLAN DEVIATION in the report.
+type KeystrokeResponse = Result<(StatusCode, Json<serde_json::Value>), AppError>;
+
+/// `POST /pty/sessions/{id}/keystrokes` — push N keystroke frames direct to
+/// the session's `input_tx`, bypassing the queue and the supervisor entirely.
+///
+/// This route is the only InputKind path that side-steps `Queue::enqueue` and
+/// `validate_input_kind`. The supervisor's `Idle`-only dispatch would deadlock
+/// multi-frame keystroke batches when an `AskUserQuestion` picker is open
+/// (the open AUQ keeps `outstanding_tool_uses` non-empty so the session stays
+/// `Awaiting`); pushing direct mirrors the cancel handler at lines ~371-380.
+///
+/// Status table:
+///   * 200 — every requested frame was delivered (or the channel closed
+///     mid-batch; partial counts surface in `delivered`).
+///   * 404 — uuid parse failure or registry miss.
+///   * 409 — session is in a terminal state (Failed / Cancelled / Completed);
+///     keystrokes are refused.
+///   * 413 — batch size exceeds `KEYSTROKE_BATCH_CAP`.
+///   * 422 — any frame carries `kind != "keystroke"`.
+///
+/// Returns `{"delivered": N}` on 200.
+async fn enqueue_keystrokes(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(items): Json<Vec<KeystrokeFrame>>,
+) -> KeystrokeResponse {
+    tracing::info!(
+        session_id = %id,
+        frame_count = items.len(),
+        "http: POST /keystrokes: direct-push"
+    );
+
+    // (a) Per-call cap → 413.
+    if items.len() > KEYSTROKE_BATCH_CAP {
+        return Ok((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            error_envelope(
+                "payload_too_large",
+                format!(
+                    "keystroke batch size {} exceeds per-call cap of {}",
+                    items.len(),
+                    KEYSTROKE_BATCH_CAP
+                ),
+            ),
+        ));
+    }
+
+    // (b) Validate every frame's kind. Deliberately does NOT call
+    // `validate_input_kind` — that whitelist is prompt/cancel/control-only by
+    // design; `keystroke` is exclusive to this route.
+    for item in &items {
+        if item.kind != "keystroke" {
+            return Err(AppError::Validation(format!(
+                "unexpected input kind {:?} on /keystrokes; expected \"keystroke\"",
+                item.kind
+            )));
+        }
+    }
+
+    // (c) Resolve the session via the registry. Parse the id as a uuid first;
+    // both parse-fail and registry-miss → 404. Mirrors the cancel handler.
+    let Ok(uuid) = Uuid::parse_str(&id) else {
+        return Err(AppError::NotFound(format!("session {id:?} not found")));
+    };
+    let sid = SessionId(uuid);
+    let Some(session) = state.pty_registry.get(&sid).await else {
+        return Err(AppError::NotFound(format!("session {id:?} not found")));
+    };
+
+    // (d) Terminal-state check → 409. The supervisor would still accept the
+    // frames but the PTY child is gone, so the channel send either silently
+    // succeeds into a dropped reader or fails — either way the caller's
+    // mental model ("the session is alive") is wrong.
+    let status = session.status().await;
+    if matches!(
+        status,
+        crate::pty::protocol::SessionStatus::Failed
+            | crate::pty::protocol::SessionStatus::Cancelled
+            | crate::pty::protocol::SessionStatus::Completed
+    ) {
+        return Ok((
+            StatusCode::CONFLICT,
+            error_envelope(
+                "conflict",
+                format!(
+                    "session {id} is in terminal state {status}; keystrokes refused"
+                ),
+            ),
+        ));
+    }
+
+    // (e) Push each frame in order. Do NOT `validate_input_kind`. Do NOT
+    // touch session status. On channel-closed (the writer task has been
+    // reaped), break out — count what was delivered.
+    let mut delivered: usize = 0;
+    for item in items {
+        let frame = InputFrame {
+            kind: InputKind::Keystroke,
+            payload: item.payload,
+        };
+        if session.input_tx.send(frame).await.is_err() {
+            tracing::warn!(
+                session_id = %id,
+                delivered,
+                "pty: keystroke channel closed mid-batch; aborting remaining frames"
+            );
+            break;
+        }
+        delivered += 1;
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "delivered": delivered })),
+    ))
 }
 
 // =====================================================================
@@ -773,7 +942,9 @@ mod tests {
     }
 
     /// `validate_input_kind` accepts the three known kinds and rejects others
-    /// with `Validation`.
+    /// with `Validation`. Crucially, `"keystroke"` is NOT accepted — keystroke
+    /// frames are routed exclusively via `POST /keystrokes` (queue/supervisor
+    /// bypass) and never go through this whitelist.
     #[test]
     fn input_kind_validator() {
         assert!(validate_input_kind("prompt").is_ok());
@@ -783,5 +954,207 @@ mod tests {
             Err(AppError::Validation(_)) => {}
             _ => panic!("expected Validation"),
         }
+        // `keystroke` is deliberately excluded from this whitelist.
+        match validate_input_kind("keystroke") {
+            Err(AppError::Validation(_)) => {}
+            _ => panic!("expected Validation: keystroke must not be queue-routable"),
+        }
+    }
+
+    // ===================================================================
+    // POST /pty/sessions/{id}/keystrokes — direct-push queue bypass
+    // ===================================================================
+
+    use tokio::sync::{broadcast, mpsc};
+
+    use crate::pty::protocol::{InputKind, SessionId, SessionStatus};
+    use crate::pty::session::Session;
+
+    /// Install a fresh `Session` into the app state's registry and return
+    /// its id plus the receiver half of its `input_tx` channel. Tests drain
+    /// the receiver to assert which `InputFrame`s the handler pushed.
+    async fn install_test_session(
+        state: &AppState,
+    ) -> (SessionId, mpsc::Receiver<InputFrame>) {
+        let (bcast_tx, _bcast_rx) = broadcast::channel(16);
+        let (input_tx, input_rx) = mpsc::channel(32);
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx);
+        let id = session.id;
+        state.pty_registry.insert(session).await;
+        (id, input_rx)
+    }
+
+    /// Build a JSON body for `POST /keystrokes` from a slice of (kind, payload)
+    /// pairs. The wire shape is `[{"type":"input","kind":"<k>","payload":"<p>"}]`.
+    fn build_body(frames: &[(&str, &str)]) -> Body {
+        let arr: Vec<serde_json::Value> = frames
+            .iter()
+            .map(|(k, p)| serde_json::json!({"type":"input","kind":k,"payload":p}))
+            .collect();
+        Body::from(serde_json::to_vec(&serde_json::Value::Array(arr)).unwrap())
+    }
+
+    /// Happy path: three frames POSTed in order; receiver yields the same
+    /// three `InputFrame`s with `kind = Keystroke` and payloads in order.
+    #[tokio::test]
+    async fn keystrokes_happy_path_preserves_order() {
+        let pool = connect_in_memory().await.expect("pool");
+        let state = empty_state(pool);
+        let (sid, mut rx) = install_test_session(&state).await;
+
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/pty/sessions/{}/keystrokes", sid.as_uuid()))
+                    .header("content-type", "application/json")
+                    .body(build_body(&[
+                        ("keystroke", "down"),
+                        ("keystroke", "down"),
+                        ("keystroke", "enter"),
+                    ]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(body["delivered"].as_u64().unwrap(), 3);
+
+        // Drain the three frames from the channel; assert kind + ordered payload.
+        let f1 = rx.recv().await.expect("frame 1");
+        let f2 = rx.recv().await.expect("frame 2");
+        let f3 = rx.recv().await.expect("frame 3");
+        assert!(matches!(f1.kind, InputKind::Keystroke));
+        assert!(matches!(f2.kind, InputKind::Keystroke));
+        assert!(matches!(f3.kind, InputKind::Keystroke));
+        assert_eq!(f1.payload, "down");
+        assert_eq!(f2.payload, "down");
+        assert_eq!(f3.payload, "enter");
+    }
+
+    /// 413 Payload Too Large when the batch exceeds the per-call cap (256).
+    #[tokio::test]
+    async fn keystrokes_cap_returns_413() {
+        let pool = connect_in_memory().await.expect("pool");
+        let state = empty_state(pool);
+        let (sid, _rx) = install_test_session(&state).await;
+
+        let frames = vec![("keystroke", "down"); KEYSTROKE_BATCH_CAP + 1];
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/pty/sessions/{}/keystrokes", sid.as_uuid()))
+                    .header("content-type", "application/json")
+                    .body(build_body(&frames))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(body["error"]["kind"], "payload_too_large");
+    }
+
+    /// 409 Conflict when the session is in a terminal state.
+    #[tokio::test]
+    async fn keystrokes_terminal_state_returns_409() {
+        let pool = connect_in_memory().await.expect("pool");
+        let state = empty_state(pool);
+        let (bcast_tx, _bcast_rx) = broadcast::channel(16);
+        let (input_tx, _input_rx) = mpsc::channel(8);
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx);
+        let sid = session.id;
+        session.set_status(SessionStatus::Cancelled).await;
+        state.pty_registry.insert(session).await;
+
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/pty/sessions/{}/keystrokes", sid.as_uuid()))
+                    .header("content-type", "application/json")
+                    .body(build_body(&[("keystroke", "down")]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(body["error"]["kind"], "conflict");
+    }
+
+    /// 422 Unprocessable Entity when any frame carries a non-keystroke kind.
+    #[tokio::test]
+    async fn keystrokes_wrong_kind_returns_422() {
+        let pool = connect_in_memory().await.expect("pool");
+        let state = empty_state(pool);
+        let (sid, _rx) = install_test_session(&state).await;
+
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/pty/sessions/{}/keystrokes", sid.as_uuid()))
+                    .header("content-type", "application/json")
+                    .body(build_body(&[("prompt", "x")]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(body["error"]["kind"], "validation");
+    }
+
+    /// 404 Not Found when the session id is unknown to the registry. Covers
+    /// both the well-formed-but-missing case and the uuid-parse-fail case.
+    #[tokio::test]
+    async fn keystrokes_unknown_session_returns_404() {
+        let pool = connect_in_memory().await.expect("pool");
+        let state = empty_state(pool);
+
+        // Well-formed but never-registered uuid.
+        let unknown = uuid::Uuid::now_v7();
+        let resp = build_router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/pty/sessions/{unknown}/keystrokes"))
+                    .header("content-type", "application/json")
+                    .body(build_body(&[("keystroke", "down")]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        // Malformed uuid: also 404 (mirrors cancel-handler behaviour).
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/pty/sessions/not-a-uuid/keystrokes")
+                    .header("content-type", "application/json")
+                    .body(build_body(&[("keystroke", "down")]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }
