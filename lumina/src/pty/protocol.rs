@@ -183,6 +183,7 @@ pub enum InputKind {
     Prompt,
     Cancel,
     Control,
+    Keystroke,
 }
 
 impl InputKind {
@@ -191,6 +192,7 @@ impl InputKind {
             Self::Prompt => "prompt",
             Self::Cancel => "cancel",
             Self::Control => "control",
+            Self::Keystroke => "keystroke",
         }
     }
 }
