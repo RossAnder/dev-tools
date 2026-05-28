@@ -147,11 +147,16 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
     let (echo_trigger_tx, echo_trigger_rx) = tokio::sync::oneshot::channel::<String>();
     let jsonl_path_for_writer = jsonl_file_path.clone();
     let side_writer = tokio::spawn(async move {
-        // Brief delay so the supervisor's `bind_jsonl_path` snapshots
-        // an empty dir before the banner appears. Without this, the file
-        // can be in the snapshot already and the bind will time out at
-        // 5s waiting for a "new" file.
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Delay so the supervisor's background bind task has a chance to
+        // snapshot the (empty) projects subdir before the banner appears.
+        // Without the delay, the banner can land in the snapshot and bind
+        // would never see it as "new" (now polls indefinitely — the 5s
+        // timeout was removed in f1d0da9 because real claude.exe writes
+        // the JSONL only after the user's first prompt). 2s is generous
+        // enough to absorb Transport::spawn startup latency for real
+        // claude.exe + tokio task-scheduling jitter under nextest's
+        // parallel workers.
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
         let banner = "{\"type\":\"assistant\",\"uuid\":\"banner-1\",\"parentUuid\":null,\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Lumina PTY stub ready.\"}]}}\n";
         tokio::fs::write(&jsonl_path_for_writer, banner)

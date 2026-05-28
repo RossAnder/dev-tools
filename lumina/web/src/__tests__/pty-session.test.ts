@@ -236,6 +236,7 @@ describe('usePtySession', () => {
     const mock = makeMockStream()
 
     __setSessionApi({
+      getSession: async () => makeSession('s1'),
       getMessages: async () => history,
       openSessionStream: () => mock,
     })
@@ -273,6 +274,7 @@ describe('usePtySession', () => {
     const mock = makeMockStream()
 
     __setSessionApi({
+      getSession: async () => makeSession('s1'),
       getMessages: async () => [],
       openSessionStream: () => mock,
     })
@@ -296,6 +298,7 @@ describe('usePtySession', () => {
     const mock = makeMockStream()
 
     __setSessionApi({
+      getSession: async () => makeSession('s1'),
       getMessages: async () => [],
       openSessionStream: () => mock,
     })
@@ -316,6 +319,7 @@ describe('usePtySession', () => {
     const mock = makeMockStream()
 
     __setSessionApi({
+      getSession: async () => makeSession('s1'),
       getMessages: async () => [],
       openSessionStream: () => mock,
     })
@@ -337,6 +341,7 @@ describe('usePtySession', () => {
     let batched: Array<{ kind: string; payload: string }> | null = null
 
     __setSessionApi({
+      getSession: async () => makeSession('s1'),
       getMessages: async () => [],
       openSessionStream: () => mock,
       sendInputsBatch: async (id, frames) => {
@@ -360,6 +365,7 @@ describe('usePtySession', () => {
     const mock = makeMockStream()
 
     __setSessionApi({
+      getSession: async () => makeSession('s1'),
       getMessages: async () => [],
       openSessionStream: () => mock,
     })
@@ -371,6 +377,101 @@ describe('usePtySession', () => {
     composable.disconnect()
     expect(mock.closed).toBe(true)
     expect(composable.status.value).toBe('closed')
+  })
+
+  // -------------------------------------------------------------------------
+  // sessionStatus — live WS-driven lifecycle status (distinct from `status`
+  // which tracks the socket). Seeded on select from the persisted row, then
+  // updated on every `status` frame the server broadcasts. The late-frame
+  // guard (currentId !== id) drops frames from a previous focus after the
+  // user switches sessions.
+  // -------------------------------------------------------------------------
+
+  test('on status frame updates sessionStatus', async () => {
+    const mock = makeMockStream()
+
+    __setSessionApi({
+      getSession: async () => makeSession('s1', { status: 'active' }),
+      getMessages: async () => [],
+      openSessionStream: () => mock,
+    })
+
+    const composable = usePtySession()
+    await composable.select('s1')
+
+    // Seeded from the persisted row on select.
+    expect(composable.sessionStatus.value).toBe('active')
+
+    // Server broadcasts a status transition → ref updates.
+    mock.emit({ type: 'status', status: 'idle', at: '2026-05-28T12:00:00Z' })
+    expect(composable.sessionStatus.value).toBe('idle')
+
+    // Subsequent transitions propagate.
+    mock.emit({ type: 'status', status: 'awaiting', at: '2026-05-28T12:00:01Z' })
+    expect(composable.sessionStatus.value).toBe('awaiting')
+  })
+
+  test('status frame for stale session is dropped after switch', async () => {
+    const mock1 = makeMockStream()
+    const mock2 = makeMockStream()
+
+    // Per-session getSession + openSessionStream so we can interleave two
+    // selects and prove the on('status') guard drops late frames from
+    // a previously-focused session.
+    __setSessionApi({
+      getSession: async (id) =>
+        makeSession(id, { status: id === 's1' ? 'active' : 'idle' }),
+      getMessages: async () => [],
+      openSessionStream: (id) => (id === 's1' ? mock1 : mock2),
+    })
+
+    const composable = usePtySession()
+    await composable.select('s1')
+    expect(composable.sessionStatus.value).toBe('active')
+
+    await composable.select('s2')
+    expect(composable.sessionStatus.value).toBe('idle')
+
+    // A late status frame from s1's now-stale stream must NOT mutate the
+    // ref — the on('status') guard checks `currentId !== id` before write.
+    mock1.emit({ type: 'status', status: 'failed', at: '2026-05-28T12:00:02Z' })
+    expect(composable.sessionStatus.value).toBe('idle')
+  })
+
+  test('select clears sessionStatus before history fetch resolves', async () => {
+    // First select resolves synchronously and seeds sessionStatus=active.
+    const mock1 = makeMockStream()
+    __setSessionApi({
+      getSession: async () => makeSession('s1', { status: 'active' }),
+      getMessages: async () => [],
+      openSessionStream: () => mock1,
+    })
+
+    const composable = usePtySession()
+    await composable.select('s1')
+    expect(composable.sessionStatus.value).toBe('active')
+
+    // Second select uses a slow getMessages so we can observe the
+    // synchronous reset at the top of select().
+    let releaseHistory: (msgs: PtyMessage[]) => void = () => {}
+    __setSessionApi({
+      getSession: async () => makeSession('s2', { status: 'idle' }),
+      getMessages: () =>
+        new Promise<PtyMessage[]>((resolve) => {
+          releaseHistory = resolve
+        }),
+      openSessionStream: () => makeMockStream(),
+    })
+
+    const pending = composable.select('s2')
+    // Synchronous post-call observation: the reset at the top of select()
+    // has already fired, but neither the history fetch nor the getSession
+    // seed has resolved yet.
+    expect(composable.sessionStatus.value).toBeNull()
+
+    // Drain the in-flight select to keep the singleton clean for the next test.
+    releaseHistory([])
+    await pending
   })
 
   // -------------------------------------------------------------------------
@@ -389,6 +490,7 @@ describe('usePtySession', () => {
       const mock = makeMockStream()
 
       __setSessionApi({
+        getSession: async () => makeSession('s1'),
         getMessages: async () => history,
         openSessionStream: () => mock,
       })
@@ -418,6 +520,7 @@ describe('usePtySession', () => {
       const mock = makeMockStream()
 
       __setSessionApi({
+        getSession: async () => makeSession('s1'),
         getMessages: async () => history,
         openSessionStream: () => mock,
       })
@@ -457,6 +560,7 @@ describe('usePtySession', () => {
       const mock = makeMockStream()
 
       __setSessionApi({
+        getSession: async () => makeSession('s1'),
         getMessages: async () => history,
         openSessionStream: () => mock,
       })
@@ -484,6 +588,7 @@ describe('usePtySession', () => {
       const mock = makeMockStream()
 
       __setSessionApi({
+        getSession: async () => makeSession('s1'),
         getMessages: async () => history,
         openSessionStream: () => mock,
       })
@@ -502,6 +607,7 @@ describe('usePtySession', () => {
       const mock = makeMockStream()
 
       __setSessionApi({
+        getSession: async () => makeSession('s1'),
         getMessages: async () => [],
         openSessionStream: () => mock,
       })
@@ -579,6 +685,7 @@ describe('usePtySession token cancellation', () => {
     const pending = new Map<string, (msgs: PtyMessage[]) => void>()
 
     __setSessionApi({
+      getSession: async (id: string) => makeSession(id),
       getMessages: (id: string) =>
         new Promise<PtyMessage[]>((resolve) => {
           pending.set(id, resolve)

@@ -129,6 +129,15 @@ const messages: Ref<PtyMessage[]> = shallowRef([])
 const wsStatus: Ref<'idle' | 'connecting' | 'open' | 'closed' | 'error'> =
   ref('idle')
 
+/**
+ * Lifecycle status of the focused session — server-reported via the WS
+ * `status` frame on every transition. Distinct from `wsStatus` (which
+ * tracks the socket itself). `null` until either the history fetch
+ * resolves (we synthesise from the session row on select) or the first
+ * `status` frame lands.
+ */
+const sessionStatus: Ref<string | null> = ref(null)
+
 const error: Ref<string | null> = ref(null)
 
 // ---------------------------------------------------------------------------
@@ -168,6 +177,7 @@ export function __resetForTests(): void {
   currentId.value = null
   messages.value = []
   wsStatus.value = 'idle'
+  sessionStatus.value = null
   error.value = null
   loadToken = 0
   api = {
@@ -350,6 +360,7 @@ export function usePtySession() {
     }
 
     messages.value = []
+    sessionStatus.value = null
     error.value = null
     currentId.value = id
     wsStatus.value = 'connecting'
@@ -369,6 +380,20 @@ export function usePtySession() {
     if (token !== loadToken) return
 
     messages.value = history
+
+    // Seed `sessionStatus` from the persisted row BEFORE the WS opens —
+    // otherwise the pill stays null until the first status transition
+    // arrives, which may be a long time (e.g., session is already Idle
+    // and stays there). Honours the token-cancellation pattern: a faster
+    // sibling `select` while this fetch is in flight discards the result.
+    try {
+      const row = await api.getSession(id)
+      if (token !== loadToken) return
+      sessionStatus.value = row.status
+    } catch (e) {
+      if (token !== loadToken) return
+      error.value = toMessage(e)
+    }
 
     // Open the live stream.  `openSessionStream` returns immediately with a
     // handle whose `send` is buffered until the socket reaches OPEN — there
@@ -392,12 +417,16 @@ export function usePtySession() {
         messages.value = [...messages.value, row]
       })
 
-      fresh.on('status', () => {
-        // The session-level status (`spawning|active|idle|...`) is logged
-        // server-side but is not propagated to wsStatus here — wsStatus
-        // tracks the socket, not the session.  Components that want the
-        // session status should subscribe to the session row via
-        // `usePtySessions().sessions`.
+      fresh.on('status', (frame) => {
+        // Session-level lifecycle status — distinct from `wsStatus` (which
+        // tracks the socket). Propagated into the module-singleton
+        // `sessionStatus` ref so the SPA's status pill can react live to
+        // server-side transitions (e.g., spawning → active → idle). The
+        // `currentId.value !== id` guard mirrors the `message` handler:
+        // late-arriving frames after the user switches sessions are dropped.
+        if (frame.type !== 'status') return
+        if (currentId.value !== id) return
+        sessionStatus.value = frame.status
       })
 
       fresh.on('skipped', (frame) => {
@@ -491,6 +520,7 @@ export function usePtySession() {
     messages,
     pairedMessages,
     status: wsStatus,
+    sessionStatus,
     error,
     select,
     submit,

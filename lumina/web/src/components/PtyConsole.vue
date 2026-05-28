@@ -50,6 +50,7 @@ const {
   currentId,
   pairedMessages,
   status: wsStatus,
+  sessionStatus,
   submit,
   select,
   disconnect,
@@ -96,11 +97,13 @@ const projectMissing = computed(
   () => currentSession.value !== null && currentSession.value.project_id === null,
 )
 
-// Status to render on the pill: prefer the server-reported session status
-// (spawning|active|idle|awaiting|completed|failed|cancelled), fall back to
-// the local WS status if the session row hasn't loaded yet.
+// Status to render on the pill: prefer the live WS-driven `sessionStatus`
+// (updated on every server-side transition via the on('status') handler in
+// usePtySession), fall back to the cached list-row status (snapshot from
+// `usePtySessions().sessions`, populated once on mount via loadSessions),
+// then fall back to the local WS socket status if neither is available.
 const displayStatus = computed<string>(
-  () => currentSession.value?.status ?? wsStatus.value,
+  () => sessionStatus.value ?? currentSession.value?.status ?? wsStatus.value,
 )
 
 // Map session-level + ws-level statuses onto a single colour-token class.

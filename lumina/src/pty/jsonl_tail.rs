@@ -97,7 +97,34 @@ pub enum JsonlRecord {
         leaf_uuid: Option<String>,
         summary: String,
     },
+    /// Claude-internal metadata records (e.g. `{"type":"system","subtype":"turn_duration",...}`).
+    ///
+    /// We recognise the discriminator explicitly so they don't fall through
+    /// the `UnknownRaw` path and get loud-rendered. All subtypes are dropped
+    /// in [`map_record_to_typed`] today; if a user-facing subtype emerges,
+    /// route it via the per-subtype filter table there.
+    #[serde(rename = "system")]
+    SystemMeta {
+        #[serde(default)]
+        subtype: Option<String>,
+    },
 }
+
+/// Discriminator strings for records that are claude-internal and must NOT
+/// be rendered in the conversation transcript. These reach
+/// [`map_record_to_typed`] via the [`JsonlRecordParsed::UnknownRaw`] arm
+/// (no matching [`JsonlRecord`] variant) and are silently dropped there.
+///
+/// Keep this list narrow: only types we have OBSERVED in the wild from
+/// real `claude` sessions. Truly novel discriminators surface as a
+/// compact `unknown_record_type` System row so maintainers spot drift.
+const NOISY_INTERNAL_TYPES: &[&str] = &[
+    "mode",
+    "permission-mode",
+    "file-history-snapshot",
+    "attachment",
+    "ai-title",
+];
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct UserMessage {
@@ -664,19 +691,49 @@ pub fn map_record_to_typed(parsed: &JsonlRecordParsed) -> Vec<TypedMessage> {
                 created_at: now,
                 tool_use_id: None,
             }],
+            JsonlRecord::SystemMeta { subtype: _ } => {
+                // Claude-internal metadata (turn_duration, etc.). Drop all
+                // subtypes today; if a user-facing subtype emerges, add a
+                // match arm here that returns a curated TypedMessage row.
+                Vec::new()
+            }
         },
-        JsonlRecordParsed::UnknownRaw { raw, parsed_type } => vec![TypedMessage {
-            sequence: 0,
-            kind: MessageKind::System,
-            content: serde_json::json!({
-                "subtype": "unknown_raw",
-                "type": parsed_type,
-                "raw": raw,
-            }),
-            raw_text: Some(raw.clone()),
-            created_at: now,
-            tool_use_id: None,
-        }],
+        JsonlRecordParsed::UnknownRaw { raw, parsed_type } => match parsed_type {
+            Some(t) if NOISY_INTERNAL_TYPES.contains(&t.as_str()) => {
+                // Known-noisy claude-internal record type — drop silently.
+                Vec::new()
+            }
+            Some(t) => {
+                // Previously-unseen discriminator. Emit a COMPACT marker so
+                // maintainers spot it in the transcript without flooding it
+                // with raw JSON. raw_text intentionally None.
+                vec![TypedMessage {
+                    sequence: 0,
+                    kind: MessageKind::System,
+                    content: serde_json::json!({
+                        "subtype": "unknown_record_type",
+                        "type": t,
+                    }),
+                    raw_text: None,
+                    created_at: now,
+                    tool_use_id: None,
+                }]
+            }
+            None => {
+                // Truly malformed JSON (no parseable `type` discriminator).
+                // Preserve the raw line in raw_text for forensic debugging.
+                vec![TypedMessage {
+                    sequence: 0,
+                    kind: MessageKind::System,
+                    content: serde_json::json!({
+                        "subtype": "malformed_jsonl",
+                    }),
+                    raw_text: Some(raw.clone()),
+                    created_at: now,
+                    tool_use_id: None,
+                }]
+            }
+        },
     }
 }
 
@@ -945,16 +1002,87 @@ mod tests {
         assert_eq!(out[0].tool_use_id, None);
     }
 
+    // -----------------------------------------------------------------
+    // Noise-filter: claude-internal record types must NOT reach the
+    // SPA transcript. See NOISY_INTERNAL_TYPES + the SystemMeta variant.
+    // -----------------------------------------------------------------
+
     #[test]
-    fn map_unknown_raw_emits_system_row_with_subtype() {
-        let line = r#"{"type":"file-history-snapshot","whatever":"data"}"#;
+    fn map_drops_mode_record() {
+        let line = r#"{"type":"mode","mode":"normal","sessionId":"s1"}"#;
         let out = map_record_to_typed(&parse_line(line));
-        assert_eq!(out.len(), 1);
+        assert!(out.is_empty(), "mode records must be dropped; got {out:?}");
+    }
+
+    #[test]
+    fn map_drops_permission_mode_record() {
+        let line = r#"{"type":"permission-mode","permissionMode":"acceptEdits","sessionId":"s1"}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert!(out.is_empty(), "permission-mode records must be dropped; got {out:?}");
+    }
+
+    #[test]
+    fn map_drops_file_history_snapshot_record() {
+        let line = r#"{"type":"file-history-snapshot","messageId":"m1","snapshot":{"files":[]}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert!(out.is_empty(), "file-history-snapshot records must be dropped; got {out:?}");
+    }
+
+    #[test]
+    fn map_drops_attachment_record() {
+        // Representative `attachment` shape — skill_listing variant with a tiny payload.
+        let line = r#"{"type":"attachment","attachment":{"type":"skill_listing","skills":[]}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert!(out.is_empty(), "attachment records must be dropped; got {out:?}");
+    }
+
+    #[test]
+    fn map_drops_ai_title_record() {
+        let line = r#"{"type":"ai-title","aiTitle":"My Convo","sessionId":"s1"}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert!(out.is_empty(), "ai-title records must be dropped; got {out:?}");
+    }
+
+    #[test]
+    fn map_drops_system_turn_duration_record() {
+        let line = r#"{"type":"system","subtype":"turn_duration","durationMs":1234,"sessionId":"s1"}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert!(out.is_empty(), "system/turn_duration records must be dropped; got {out:?}");
+    }
+
+    #[test]
+    fn map_unknown_type_emits_compact_system_row() {
+        let line = r#"{"type":"some-future-type","data":"big-payload-that-must-not-leak"}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 1, "expected exactly one row for an unknown type");
         assert_eq!(out[0].kind, MessageKind::System);
         assert_eq!(
             out[0].content.get("subtype").and_then(|v| v.as_str()),
-            Some("unknown_raw")
+            Some("unknown_record_type")
         );
+        assert_eq!(
+            out[0].content.get("type").and_then(|v| v.as_str()),
+            Some("some-future-type")
+        );
+        // The raw payload must NOT leak into raw_text or content.
+        assert!(out[0].raw_text.is_none(), "raw_text must be None for compact marker");
+        assert!(
+            out[0].content.get("raw").is_none(),
+            "content must not carry the raw line"
+        );
+    }
+
+    #[test]
+    fn map_malformed_json_emits_one_forensic_system_row() {
+        let line = "not-valid-json-at-all";
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 1, "expected exactly one forensic row");
+        assert_eq!(out[0].kind, MessageKind::System);
+        assert_eq!(
+            out[0].content.get("subtype").and_then(|v| v.as_str()),
+            Some("malformed_jsonl")
+        );
+        assert_eq!(out[0].raw_text.as_deref(), Some("not-valid-json-at-all"));
     }
 
     #[tokio::test(flavor = "current_thread")]
