@@ -48,7 +48,7 @@ const {
 } = usePtySessions()
 const {
   currentId,
-  messages,
+  pairedMessages,
   status: wsStatus,
   submit,
   select,
@@ -208,7 +208,7 @@ onBeforeUnmount(() => {
 // the sentinel into view. nextTick() lets the v-for render the new row
 // before we measure.
 watch(
-  () => messages.value.length,
+  () => pairedMessages.value.length,
   async () => {
     if (!autoScroll.value) return
     await nextTick()
@@ -361,19 +361,35 @@ onMounted(() => {
       </span>
     </header>
 
-    <!-- Scrolling transcript. `space-y-1` separates rows; the sentinel sits
-         at the bottom of the list to drive auto-scroll. -->
+    <!-- Scrolling chat transcript. Each row is a flex container that aligns
+         its bubble left (assistant / system / tool_use / tool_result / error)
+         or right (user_input). Per-row typography is picked inside
+         PtyMessage.vue (assistant_text is sans-serif). `space-y-2` separates
+         rows; the sentinel at the bottom of the list drives the
+         IntersectionObserver auto-scroll. -->
     <div
       ref="listEl"
-      class="flex-1 overflow-y-auto px-3 py-2 space-y-1 bg-[var(--bg)]"
+      class="flex-1 overflow-y-auto px-3 py-2 space-y-2 bg-[var(--bg)]"
       role="log"
       aria-live="polite"
     >
-      <PtyMessage
-        v-for="m in messages"
+      <div
+        v-for="m in pairedMessages"
         :key="m.id"
-        :message="m"
-      />
+        class="flex w-full py-1"
+        :class="m.kind === 'user_input' ? 'justify-end' : 'justify-start'"
+      >
+        <div
+          class="max-w-3xl min-w-0 rounded-md border border-[var(--border)] px-3 py-2"
+          :class="
+            m.kind === 'user_input'
+              ? 'bg-[var(--surface-2)] border-l-2 border-l-[var(--accent)]'
+              : 'bg-[var(--surface)]'
+          "
+        >
+          <PtyMessage :message="m" />
+        </div>
+      </div>
       <div
         ref="sentinelEl"
         class="h-px"

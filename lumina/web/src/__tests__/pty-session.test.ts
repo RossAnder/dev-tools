@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type {
   InputFrame,
   PtyMessage,
+  PtyMessageKind,
   PtySession,
   SessionStream,
   WsFrame,
@@ -50,15 +51,28 @@ function makeSession(id: string, overrides: Partial<PtySession> = {}): PtySessio
   }
 }
 
-function makeMessage(sessionId: string, sequence: number): PtyMessage {
+function makeMessage(
+  sessionId: string,
+  sequence: number,
+  kind: PtyMessageKind = 'assistant_text',
+  content: unknown = { text: `m${sequence}` },
+  raw_text: string | null = null,
+): PtyMessage {
+  const defaultRaw =
+    typeof content === 'object' &&
+    content !== null &&
+    'text' in content &&
+    typeof (content as Record<string, unknown>).text === 'string'
+      ? (content as Record<string, string>).text
+      : null
   return {
     id: `${sessionId}-msg-${sequence}`,
     session_id: sessionId,
     sequence,
     created_at: '2026-05-27T12:00:01Z',
-    kind: 'assistant_text',
-    content_json: JSON.stringify({ text: `m${sequence}` }),
-    raw_text: `m${sequence}`,
+    kind,
+    content_json: JSON.stringify(content),
+    raw_text: raw_text ?? defaultRaw,
   }
 }
 
@@ -357,6 +371,194 @@ describe('usePtySession', () => {
     composable.disconnect()
     expect(mock.closed).toBe(true)
     expect(composable.status.value).toBe('closed')
+  })
+
+  // -------------------------------------------------------------------------
+  // pairedMessages — two-pass tool_use/tool_result pairing view (T7 algorithm,
+  // covered here by T9 tests). See `usePtySession.ts` `pairedMessages`
+  // computed: tool_use rows attach matching tool_result as `matchedResult`;
+  // consumed tool_results are omitted from the top level; orphan rows of
+  // either kind render standalone with `matchedResult` undefined.
+  // -------------------------------------------------------------------------
+
+  describe('pairedMessages', () => {
+    test('single-message history passes through verbatim', async () => {
+      const history: PtyMessage[] = [
+        makeMessage('s1', 1, 'assistant_text', { text: 'hello' }),
+      ]
+      const mock = makeMockStream()
+
+      __setSessionApi({
+        getMessages: async () => history,
+        openSessionStream: () => mock,
+      })
+
+      const composable = usePtySession()
+      await composable.select('s1')
+
+      expect(composable.pairedMessages.value).toHaveLength(1)
+      expect(composable.pairedMessages.value[0]?.kind).toBe('assistant_text')
+      expect(composable.pairedMessages.value[0]?.matchedResult).toBeUndefined()
+    })
+
+    test('paired tool_use + tool_result collapses into one card, drops orphan', async () => {
+      const history: PtyMessage[] = [
+        makeMessage('s1', 1, 'assistant_text', { text: 'hello' }),
+        makeMessage('s1', 2, 'tool_use', {
+          name: 'Read',
+          input: { path: '/tmp/foo' },
+          tool_use_id: 'x',
+        }),
+        makeMessage('s1', 3, 'tool_result', {
+          tool_use_id: 'x',
+          output: 'file contents',
+          is_error: false,
+        }),
+      ]
+      const mock = makeMockStream()
+
+      __setSessionApi({
+        getMessages: async () => history,
+        openSessionStream: () => mock,
+      })
+
+      const composable = usePtySession()
+      await composable.select('s1')
+
+      const paired = composable.pairedMessages.value
+      // Two top-level cards: assistant_text + (tool_use with matched result).
+      expect(paired).toHaveLength(2)
+      expect(paired[0]?.kind).toBe('assistant_text')
+      expect(paired[1]?.kind).toBe('tool_use')
+
+      const matched = paired[1]?.matchedResult
+      expect(matched).toBeDefined()
+      expect(matched?.kind).toBe('tool_result')
+      expect(JSON.parse(matched?.content_json ?? 'null')).toEqual({
+        tool_use_id: 'x',
+        output: 'file contents',
+        is_error: false,
+      })
+
+      // The standalone tool_result row must NOT appear at the top level.
+      const topLevelToolResults = paired.filter((r) => r.kind === 'tool_result')
+      expect(topLevelToolResults).toHaveLength(0)
+    })
+
+    test('orphan tool_result (no parent tool_use) renders standalone', async () => {
+      const history: PtyMessage[] = [
+        makeMessage('s1', 1, 'user_input', { text: 'do the thing' }),
+        makeMessage('s1', 2, 'tool_result', {
+          tool_use_id: 'orphan-z',
+          output: 'detached output',
+          is_error: false,
+        }),
+      ]
+      const mock = makeMockStream()
+
+      __setSessionApi({
+        getMessages: async () => history,
+        openSessionStream: () => mock,
+      })
+
+      const composable = usePtySession()
+      await composable.select('s1')
+
+      const paired = composable.pairedMessages.value
+      expect(paired).toHaveLength(2)
+      expect(paired[0]?.kind).toBe('user_input')
+      expect(paired[1]?.kind).toBe('tool_result')
+      // Orphan tool_result carries no matchedResult.
+      expect(paired[1]?.matchedResult).toBeUndefined()
+    })
+
+    test('orphan tool_use (no matching tool_result) renders standalone', async () => {
+      const history: PtyMessage[] = [
+        makeMessage('s1', 1, 'assistant_text', { text: 'pondering' }),
+        makeMessage('s1', 2, 'tool_use', {
+          name: 'Bash',
+          input: { command: 'ls' },
+          tool_use_id: 'y',
+        }),
+      ]
+      const mock = makeMockStream()
+
+      __setSessionApi({
+        getMessages: async () => history,
+        openSessionStream: () => mock,
+      })
+
+      const composable = usePtySession()
+      await composable.select('s1')
+
+      const paired = composable.pairedMessages.value
+      expect(paired).toHaveLength(2)
+      expect(paired[1]?.kind).toBe('tool_use')
+      // No matching result yet — matchedResult undefined.
+      expect(paired[1]?.matchedResult).toBeUndefined()
+    })
+
+    test('WS-frame round-trip: live emit of tool_use+tool_result collapses', async () => {
+      const mock = makeMockStream()
+
+      __setSessionApi({
+        getMessages: async () => [],
+        openSessionStream: () => mock,
+      })
+
+      const composable = usePtySession()
+      await composable.select('s1')
+
+      // Empty start.
+      expect(composable.pairedMessages.value).toHaveLength(0)
+
+      // Emit banner assistant_text + a tool_use/tool_result pair via WS.
+      mock.emit({
+        type: 'message',
+        sequence: 1,
+        kind: 'assistant_text',
+        content: { text: 'starting' },
+        raw_text: 'starting',
+        created_at: '2026-05-27T12:00:01Z',
+      })
+      mock.emit({
+        type: 'message',
+        sequence: 2,
+        kind: 'tool_use',
+        content: {
+          name: 'Read',
+          input: { path: '/tmp/foo' },
+          tool_use_id: 'live-x',
+        },
+        raw_text: null,
+        created_at: '2026-05-27T12:00:02Z',
+      })
+      mock.emit({
+        type: 'message',
+        sequence: 3,
+        kind: 'tool_result',
+        content: {
+          tool_use_id: 'live-x',
+          output: 'streamed contents',
+          is_error: false,
+        },
+        raw_text: null,
+        created_at: '2026-05-27T12:00:03Z',
+      })
+
+      // Raw transcript has all 3 rows; paired view collapses to 2.
+      expect(composable.messages.value).toHaveLength(3)
+      const paired = composable.pairedMessages.value
+      expect(paired).toHaveLength(2)
+      expect(paired[0]?.kind).toBe('assistant_text')
+      expect(paired[1]?.kind).toBe('tool_use')
+      expect(paired[1]?.matchedResult?.kind).toBe('tool_result')
+      expect(JSON.parse(paired[1]?.matchedResult?.content_json ?? 'null')).toEqual({
+        tool_use_id: 'live-x',
+        output: 'streamed contents',
+        is_error: false,
+      })
+    })
   })
 })
 

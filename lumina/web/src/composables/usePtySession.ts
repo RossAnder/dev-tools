@@ -31,6 +31,7 @@
 import {
   ref,
   shallowRef,
+  computed,
   onScopeDispose,
   getCurrentScope,
   type Ref,
@@ -39,10 +40,72 @@ import {
 import * as productionApi from '../api/pty'
 import type {
   PtyMessage,
+  PtyMessageKind,
   PtySession,
   SessionStream,
   WsFrame,
 } from '../api/pty'
+
+// ---------------------------------------------------------------------------
+// Narrow kind validator — the WS frame schema (`WsFrameSchema` in api/pty.ts)
+// leaves the inbound `message.kind` as `z.string()` for forward-compat, while
+// the row schema (`PtyMessageSchema`) tightens it to a six-value enum after
+// the JSONL-tail pass. Per the file-header "Frame-to-message conversion"
+// comment, we synthesize the row at the boundary — that means we must
+// validate the wider wire `kind` down to the narrower row `kind` here, and
+// silently drop frames whose kind isn't recognised (the next post-handshake
+// build would have surfaced the gap anyway).
+//
+// Kept in sync with `PTY_MESSAGE_KIND_VALUES` in api/pty.ts; that constant
+// stays unexported because it's a wire-schema implementation detail, so we
+// duplicate the six members here (the only place outside api/pty.ts that
+// needs to discriminate them at runtime).
+// ---------------------------------------------------------------------------
+
+const KNOWN_PTY_MESSAGE_KINDS = new Set<string>([
+  'user_input',
+  'assistant_text',
+  'tool_use',
+  'tool_result',
+  'system',
+  'error',
+])
+
+function asPtyMessageKind(kind: string): PtyMessageKind | null {
+  return KNOWN_PTY_MESSAGE_KINDS.has(kind) ? (kind as PtyMessageKind) : null
+}
+
+// ---------------------------------------------------------------------------
+// Renderable view type — `PtyMessage` plus an optional `matchedResult` field
+// that the `pairedMessages` derived view attaches to `tool_use` rows whose
+// matching `tool_result` was found in the transcript.
+//
+// Cardinality:
+//   - For non-`tool_use` rows: `matchedResult` is always `undefined`.
+//   - For `tool_use` rows: `matchedResult` is either the `PtyMessage` row of
+//     the matching `tool_result`, or `undefined` if no match was found in the
+//     current transcript (e.g. the result has not yet arrived, or the JSONL
+//     tail dropped it).
+//   - Orphan `tool_result` rows (no matching parent `tool_use`) are emitted
+//     standalone with `matchedResult: undefined`; the renderer is expected to
+//     surface a "no matched call" badge on them.
+//
+// Designed as an interface extension (rather than a discriminated union on
+// `kind`) so that the existing `PtyMessage` consumers — `PtyConsole.vue`
+// passes `messages: PtyMessage[]` straight into `<PtyMessage :message="m" />`
+// — remain structurally compatible: any `PtyMessage` is a `RenderableMessage`
+// with `matchedResult` left undefined.
+// ---------------------------------------------------------------------------
+
+export interface RenderableMessage extends PtyMessage {
+  /**
+   * Populated only for `tool_use` rows that the `pairedMessages` view managed
+   * to match against a later `tool_result` in the same transcript. Undefined
+   * for non-`tool_use` rows AND for `tool_use` rows whose result has not yet
+   * arrived (or was dropped).
+   */
+  matchedResult?: PtyMessage
+}
 
 // ---------------------------------------------------------------------------
 // Module-singleton state.
@@ -154,17 +217,100 @@ function toMessage(e: unknown): string {
 function messageFromFrame(
   sessionId: string,
   frame: Extract<WsFrame, { type: 'message' }>,
-): PtyMessage {
+): PtyMessage | null {
+  const narrowedKind = asPtyMessageKind(frame.kind)
+  if (narrowedKind === null) return null
   return {
     id: `${sessionId}-${frame.sequence}`,
     session_id: sessionId,
     sequence: frame.sequence,
     created_at: frame.created_at,
-    kind: frame.kind,
+    kind: narrowedKind,
     content_json: JSON.stringify(frame.content),
     raw_text: frame.raw_text,
   }
 }
+
+/**
+ * Extract the `tool_use_id` from a `PtyMessage` row's `content_json`. Returns
+ * `null` if the JSON is malformed, the parsed value isn't a JSON object, or
+ * the `tool_use_id` field is absent / not a string. The Rust-side
+ * `TypedMessage::ToolUse` / `TypedMessage::ToolResult` serialisation
+ * (`lumina/src/pty/jsonl_tail.rs::map_record_to_typed`) embeds `tool_use_id`
+ * inside the `content` JSON on both kinds; the field is NOT promoted to a
+ * row-level column on `pty_messages`, so the wire schema in `api/pty.ts` does
+ * not expose it either — pairing has to JSON-parse.
+ */
+function extractToolUseId(row: PtyMessage): string | null {
+  try {
+    const parsed: unknown = JSON.parse(row.content_json)
+    if (parsed === null || typeof parsed !== 'object') return null
+    const id = (parsed as Record<string, unknown>)['tool_use_id']
+    return typeof id === 'string' ? id : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Two-pass pairing over the transcript:
+ *
+ *   1. Build a `Map<tool_use_id, PtyMessage>` from all `tool_result` rows.
+ *   2. Walk rows in order; for each `tool_use` row attach the matching result
+ *      (if any) as `matchedResult` and mark it consumed so step-3 omits it.
+ *      For each `tool_result` row, drop it if it was just consumed; otherwise
+ *      emit standalone as an orphan with `matchedResult` undefined. Every
+ *      other kind passes through verbatim.
+ *
+ * Worked example:
+ *   in:  [assistant_text, tool_use(x), tool_result(x)]
+ *   out: [assistant_text, tool_use(x)+matchedResult]
+ */
+const pairedMessages: Ref<RenderableMessage[]> = computed(() => {
+  const rows = messages.value
+
+  // Pass 1: index tool_result rows by tool_use_id.
+  const resultsByToolUseId = new Map<string, PtyMessage>()
+  for (const row of rows) {
+    if (row.kind !== 'tool_result') continue
+    const id = extractToolUseId(row)
+    if (id === null) continue
+    // First-write-wins: if a duplicate tool_use_id appears, keep the earliest.
+    // The Rust side guarantees uniqueness per (session, tool_use_id) in
+    // practice; defensive guard kept for malformed history.
+    if (!resultsByToolUseId.has(id)) {
+      resultsByToolUseId.set(id, row)
+    }
+  }
+
+  // Pass 2: walk rows, consuming matched results.
+  const consumedIds = new Set<string>()
+  const out: RenderableMessage[] = []
+  for (const row of rows) {
+    if (row.kind === 'tool_use') {
+      const id = extractToolUseId(row)
+      const matched = id !== null ? resultsByToolUseId.get(id) : undefined
+      if (id !== null && matched !== undefined) {
+        consumedIds.add(id)
+      }
+      out.push({ ...row, matchedResult: matched })
+      continue
+    }
+    if (row.kind === 'tool_result') {
+      const id = extractToolUseId(row)
+      // If this exact result was attached to a parent tool_use above, omit it
+      // from the top-level output (it's already represented inside the parent
+      // card). Otherwise it's an orphan and renders standalone.
+      if (id !== null && consumedIds.has(id) && resultsByToolUseId.get(id) === row) {
+        continue
+      }
+      out.push({ ...row })
+      continue
+    }
+    out.push({ ...row })
+  }
+  return out
+})
 
 /** Safe `onScopeDispose` — no-ops outside a Vue effect scope. */
 function safeOnScopeDispose(fn: () => void): void {
@@ -238,7 +384,12 @@ export function usePtySession() {
         // currentId may have shifted by the time a message arrives — only
         // append while this session is still focused.
         if (currentId.value !== id) return
-        messages.value = [...messages.value, messageFromFrame(id, frame)]
+        const row = messageFromFrame(id, frame)
+        // Drop frames whose `kind` isn't one of the six known JSONL-tail
+        // values — the wire schema is intentionally wider than the row
+        // schema for forward-compat, so unknown kinds are not an error.
+        if (row === null) return
+        messages.value = [...messages.value, row]
       })
 
       fresh.on('status', () => {
@@ -338,6 +489,7 @@ export function usePtySession() {
   return {
     currentId,
     messages,
+    pairedMessages,
     status: wsStatus,
     error,
     select,
