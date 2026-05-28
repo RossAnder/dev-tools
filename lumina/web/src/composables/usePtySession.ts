@@ -32,19 +32,27 @@ import {
   ref,
   shallowRef,
   computed,
+  watch,
   onScopeDispose,
   getCurrentScope,
   type Ref,
 } from 'vue'
 
 import * as productionApi from '../api/pty'
-import type {
-  PtyMessage,
-  PtyMessageKind,
-  PtySession,
-  SessionStream,
-  WsFrame,
+import {
+  isAuqToolUse,
+  type AuqAnswer,
+  type AuqInput,
+  type AuqQuestion,
+  type InputFrame,
+  type PtyMessage,
+  type PtyMessageKind,
+  type PtySession,
+  type SessionStream,
+  type ToolUseContent,
+  type WsFrame,
 } from '../api/pty'
+import { computeAuqKeystrokes } from './auqKeystrokes'
 
 // ---------------------------------------------------------------------------
 // Narrow kind validator — the WS frame schema (`WsFrameSchema` in api/pty.ts)
@@ -148,12 +156,14 @@ type Api = {
   getSession: typeof productionApi.getSession
   getMessages: typeof productionApi.getMessages
   sendInputsBatch: typeof productionApi.sendInputsBatch
+  sendKeystrokes: typeof productionApi.sendKeystrokes
   openSessionStream: typeof productionApi.openSessionStream
 }
 let api: Api = {
   getSession: productionApi.getSession,
   getMessages: productionApi.getMessages,
   sendInputsBatch: productionApi.sendInputsBatch,
+  sendKeystrokes: productionApi.sendKeystrokes,
   openSessionStream: productionApi.openSessionStream,
 }
 
@@ -179,11 +189,13 @@ export function __resetForTests(): void {
   wsStatus.value = 'idle'
   sessionStatus.value = null
   error.value = null
+  inflightAuqToolUseId.value = null
   loadToken = 0
   api = {
     getSession: productionApi.getSession,
     getMessages: productionApi.getMessages,
     sendInputsBatch: productionApi.sendInputsBatch,
+    sendKeystrokes: productionApi.sendKeystrokes,
     openSessionStream: productionApi.openSessionStream,
   }
 }
@@ -320,6 +332,118 @@ const pairedMessages: Ref<RenderableMessage[]> = computed(() => {
     out.push({ ...row })
   }
   return out
+})
+
+// ---------------------------------------------------------------------------
+// AskUserQuestion (AUQ) picker plumbing — T9 of the
+// `lumina-interactive-prompts` plan.
+//
+// `pendingAuq` derives the currently-unanswered AUQ tool_use (if any) from
+// `pairedMessages`. The picker SFC binds against this; while non-null, the
+// prompt textarea is disabled and the picker renders inline. When claude
+// emits the matching tool_result the row's `matchedResult` populates,
+// `pairedMessages` re-derives, and `pendingAuq` transitions to null.
+//
+// `submitAuqAnswer` + `cancelAuq` post keystroke frames directly to
+// `/api/pty/sessions/{id}/keystrokes` (queue-bypass; see plan §Supervisor
+// bypass). Both are debounced per `pendingAuq.toolUseId` — a double-click
+// on Submit/Cancel within the same picker yields exactly one POST. The
+// debounce key clears when `pendingAuq` transitions to null.
+// ---------------------------------------------------------------------------
+
+/**
+ * Identifier of the AUQ whose answer is currently being submitted (or has
+ * just been submitted). Used as the debounce key for `submitAuqAnswer` /
+ * `cancelAuq`. Cleared when `pendingAuq` transitions to null (the matching
+ * tool_result arrived) so a follow-on AUQ can be answered without manual
+ * reset.
+ */
+const inflightAuqToolUseId: Ref<string | null> = ref(null)
+
+/**
+ * Shape returned by the `pendingAuq` computed.
+ */
+export interface PendingAuq {
+  toolUseId: string
+  questions: AuqQuestion[]
+}
+
+/**
+ * Derived view: the first (oldest) unmatched AskUserQuestion `tool_use` in
+ * the current transcript, or `null` if none. Emits a `console.warn` when
+ * more than one unmatched AUQ is observed (stuck-conversation signal —
+ * claude can only have one open AUQ at a time, so multiple unmatched rows
+ * mean something earlier in the conversation went unanswered).
+ *
+ * Walks `pairedMessages` (not the raw `messages`) so the `matchedResult`
+ * field already reflects tool_use→tool_result pairing — an unmatched AUQ
+ * is exactly `m.kind === 'tool_use' && m.matchedResult === undefined`.
+ *
+ * The content is stored as a JSON STRING in `m.content_json`, not the
+ * pre-parsed value the original plan spec assumed; this computed
+ * JSON-parses each candidate row's content_json once, narrowing via the
+ * `isAuqToolUse` predicate before reaching into `input.questions`.
+ */
+const pendingAuq: Ref<PendingAuq | null> = computed(() => {
+  const rows = pairedMessages.value
+  const unmatched: Array<{ toolUseId: string; questions: AuqQuestion[] }> = []
+
+  for (const row of rows) {
+    if (row.kind !== 'tool_use') continue
+    if (row.matchedResult !== undefined) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(row.content_json)
+    } catch {
+      continue
+    }
+    if (parsed === null || typeof parsed !== 'object') continue
+    const candidate = parsed as Partial<ToolUseContent>
+    if (
+      typeof candidate.name !== 'string' ||
+      typeof candidate.tool_use_id !== 'string' ||
+      candidate.input === undefined
+    ) {
+      continue
+    }
+    const narrowable: ToolUseContent = {
+      name: candidate.name,
+      tool_use_id: candidate.tool_use_id,
+      input: candidate.input,
+    }
+    if (!isAuqToolUse(narrowable)) continue
+    const auqInput = narrowable.input as AuqInput
+    if (!auqInput || !Array.isArray(auqInput.questions)) continue
+    unmatched.push({
+      toolUseId: narrowable.tool_use_id,
+      questions: auqInput.questions,
+    })
+  }
+
+  if (unmatched.length === 0) return null
+
+  if (unmatched.length > 1) {
+    // eslint-disable-next-line no-console -- stuck-conversation signal worth surfacing
+    console.warn(
+      `lumina: ${unmatched.length} unmatched AUQ detected — picker bound to oldest (toolUseId=${unmatched[0]!.toolUseId})`,
+    )
+  }
+
+  const first = unmatched[0]!
+  return { toolUseId: first.toolUseId, questions: first.questions }
+})
+
+/**
+ * Clear the debounce key when the picker disappears. The watcher fires on
+ * every transition to `null` — both first-time (no AUQ ever opened) and
+ * post-answer (the matching tool_result arrived after a Submit). The
+ * latter is the load-bearing case: with the key cleared, a follow-on AUQ
+ * in the same session can be answered without manual reset.
+ */
+watch(pendingAuq, (next) => {
+  if (next === null) {
+    inflightAuqToolUseId.value = null
+  }
 })
 
 /** Safe `onScopeDispose` — no-ops outside a Vue effect scope. */
@@ -510,6 +634,68 @@ export function usePtySession() {
     error.value = null
   }
 
+  /**
+   * Submit the user's answers to the current pending AUQ. Translates the
+   * answer array into a keystroke-frame sequence via `computeAuqKeystrokes`
+   * and POSTs them to `/api/pty/sessions/{id}/keystrokes` (queue-bypass).
+   *
+   * Debounced per `pendingAuq.toolUseId`: a double-click on Submit while a
+   * previous call for the same AUQ is in flight (or has completed but the
+   * matching tool_result has not yet arrived) is silently dropped. The
+   * debounce key clears when `pendingAuq` transitions to null — see the
+   * watcher above.
+   *
+   * No-op when no AUQ is pending (defensive — the picker SFC shouldn't be
+   * visible without `pendingAuq`) or no session is focused. On POST failure
+   * the debounce key is cleared so the user can retry.
+   */
+  async function submitAuqAnswer(answers: AuqAnswer[]): Promise<void> {
+    const current = pendingAuq.value
+    if (current === null) return
+    if (inflightAuqToolUseId.value === current.toolUseId) return
+    const sid = currentId.value
+    if (sid === null) return
+
+    inflightAuqToolUseId.value = current.toolUseId
+
+    try {
+      const frames: InputFrame[] = computeAuqKeystrokes(current.questions, answers)
+      await api.sendKeystrokes(sid, frames)
+    } catch (e) {
+      // Failed — clear the debounce key so the user can retry.
+      inflightAuqToolUseId.value = null
+      throw e
+    }
+    // Success path: leave inflightAuqToolUseId set until pendingAuq
+    // transitions to null (the watch above clears it when claude emits the
+    // matching tool_result and pairedMessages re-derives).
+  }
+
+  /**
+   * Cancel the current pending AUQ by sending a single Escape keystroke.
+   * Debounce semantics mirror `submitAuqAnswer` — a double-click on Cancel
+   * yields exactly one POST.
+   */
+  async function cancelAuq(): Promise<void> {
+    const current = pendingAuq.value
+    if (current === null) return
+    if (inflightAuqToolUseId.value === current.toolUseId) return
+    const sid = currentId.value
+    if (sid === null) return
+
+    inflightAuqToolUseId.value = current.toolUseId
+
+    try {
+      const frames: InputFrame[] = [
+        { type: 'input', kind: 'keystroke', payload: 'escape' },
+      ]
+      await api.sendKeystrokes(sid, frames)
+    } catch (e) {
+      inflightAuqToolUseId.value = null
+      throw e
+    }
+  }
+
   // Auto-disconnect when the consuming scope tears down. No-op outside a
   // setup scope (the bun tests have no scope), so the test path manages the
   // lifecycle explicitly via `__resetForTests`.
@@ -519,6 +705,7 @@ export function usePtySession() {
     currentId,
     messages,
     pairedMessages,
+    pendingAuq,
     status: wsStatus,
     sessionStatus,
     error,
@@ -528,6 +715,8 @@ export function usePtySession() {
     cancel,
     disconnect,
     clearError,
+    submitAuqAnswer,
+    cancelAuq,
   }
 }
 
