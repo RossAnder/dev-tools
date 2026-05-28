@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE pty_sessions\n            SET jsonl_path = ?2,\n                updated_at = ?3\n            WHERE id = ?1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a0b4bc2fa18df7f35eaaac593dc6fd7e165267c55807f0c7b3971540523323a5"
+}

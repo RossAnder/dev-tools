@@ -53,6 +53,13 @@ vt100 = "0.16.2"
 async-trait = "0.1"
 bytes = "1"
 
+# --- file-watcher (T4 of lumina-pty-jsonl-tail) ---
+# notify is the cross-platform file-watcher; T4 uses it to tail the per-session
+# JSONL transcript Claude Code writes under ~/.claude/projects/<sanitised-cwd>/.
+# Pinned 8.2.0 (MSRV 1.95 compatible; 9.0.0-rc skipped). No `serde` feature —
+# we don't serialise notify::Event values.
+notify = "8.2.0"
+
 # --- persistence ---
 # PINNED to 0.9, NOT the plan's 0.8: the installed sqlx-cli is 0.9.0 and the
 # .sqlx offline-cache format must match between the CLI (`cargo sqlx prepare`)
@@ -133,7 +140,7 @@ insta = "1.47"
 # endpoint as a client. Both are dev-only — neither is reachable from the
 # library or binary crate.
 assert_cmd = "2"
-tokio-tungstenite = "0.24"
+tokio-tungstenite = "0.29"
 
 [profile.release]
 opt-level = 3

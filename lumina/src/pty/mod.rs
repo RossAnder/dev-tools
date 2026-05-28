@@ -14,6 +14,7 @@ pub mod registry;         // T6
 pub mod queue;            // T6
 pub mod supervisor;       // T8
 pub mod spawn;            // T3 (lumina-pty-followups)
+pub mod jsonl_tail;       // T4 (lumina-pty-jsonl-tail)
 
 pub use protocol::{
     InputFrame, InputKind, MessageKind, SessionId, SessionStatus, TypedMessage,

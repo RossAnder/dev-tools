@@ -1,0 +1,748 @@
+//! JSONL-tail watcher: the canonical source of conversation messages.
+//!
+//! T4 of the `lumina-pty-jsonl-tail` flow. This module replaces the v1 vt100
+//! row-finalisation parser (`pty/parser.rs`) — fullscreen TUI mode redraws by
+//! absolute cursor positioning, so a 2D virtual screen cannot yield a coherent
+//! transcript. Instead we drive `claude` interactively in the PTY (preserves
+//! the subscription billing posture) and read the canonical structured
+//! transcript Claude Code writes to:
+//!
+//! ```text
+//! ~/.claude/projects/<sanitised-cwd>/<uuid>.jsonl
+//! ```
+//!
+//! Each JSONL line is a typed, finalised, immutable event (`user`,
+//! `assistant`, `summary`, etc.) — no streaming-delta assembly. We map those
+//! records 1:1 onto `pty_messages` rows in the bridge task (T5).
+//!
+//! ## Schema stability
+//!
+//! Anthropic has not committed to a stable JSONL schema (see GitHub issue
+//! #53516). The deserialise here is therefore deliberately tolerant: any
+//! record whose top-level `type` is not in our known set, OR which fails to
+//! parse against our known-variant shape, is captured as
+//! [`JsonlRecordParsed::UnknownRaw`] with the raw line preserved — the
+//! supervisor persists it as a `system` row and the bridge still flips the
+//! Spawning → Idle gate on it.
+//!
+//! ## Concerns owned by this module
+//!
+//! 1. [`sanitise_cwd`] — reproduce Claude Code's per-cwd directory algorithm.
+//! 2. [`resolve_projects_root`] — locate `~/.claude/projects` (overridable in
+//!    tests via `LUMINA_PTY_PROJECTS_ROOT`, mirroring the
+//!    `LUMINA_WORKTREE_ROOT` precedent in [`crate::pty::spawn`]).
+//! 3. [`JsonlRecord`] + [`parse_line`] — tolerant deserialise with raw-line
+//!    capture on unknown types.
+//! 4. [`tail`] — the watcher task: `notify::recommended_watcher` on the
+//!    parent dir, BufReader on the file, broadcast on each parsed line.
+//! 5. [`bind_jsonl_path`] — snapshot-then-poll: at spawn-start we snapshot
+//!    the `*.jsonl` filenames in the cwd's projects dir; then we poll for
+//!    up to 5 s for the first new entry. Path-set diff (not mtime — wall
+//!    clock is non-monotonic and FAT/exFAT mtime granularity is 2 s).
+//!
+//! Consumers (the bridge task in T5) are NOT wired here — T4 lands the
+//! module standalone; `mod.rs` adds `pub mod jsonl_tail;` but no `pub use`.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
+
+use notify::{
+    EventKind, RecursiveMode, Watcher,
+    event::{CreateKind, ModifyKind},
+};
+use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
+use tokio::sync::{broadcast, mpsc};
+
+use crate::error::AppError;
+
+// ---------------------------------------------------------------------------
+// JSONL record envelope (tolerant deserialise)
+// ---------------------------------------------------------------------------
+
+/// One row of a Claude Code session JSONL file.
+///
+/// Known variants are tagged on the top-level `"type"` field. An incoming
+/// record whose `type` is unrecognised — or which is recognised but fails
+/// to match the known shape — is captured by [`parse_line`] as
+/// [`JsonlRecordParsed::UnknownRaw`] (preserving the raw line) rather than
+/// trying to fit it here, so callers never lose data on a schema drift.
+///
+/// Per the JSONL schema research:
+/// - `user.message.content` may be either a bare string OR a `Vec` of
+///   content blocks (currently only `tool_result` is meaningful).
+/// - `assistant.message.content` is always a `Vec` of blocks: `text`,
+///   `tool_use`, `thinking`, or any future variant (absorbed via the
+///   `Unknown` arm on [`AssistantContentBlock`]).
+/// - `summary` records carry both `uuid` and `leafUuid`; either may be
+///   absent on some emitter versions.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum JsonlRecord {
+    User {
+        uuid: String,
+        #[serde(rename = "parentUuid")]
+        parent_uuid: Option<String>,
+        message: UserMessage,
+    },
+    Assistant {
+        uuid: String,
+        #[serde(rename = "parentUuid")]
+        parent_uuid: Option<String>,
+        message: AssistantMessage,
+    },
+    Summary {
+        uuid: Option<String>,
+        #[serde(rename = "leafUuid")]
+        leaf_uuid: Option<String>,
+        summary: String,
+    },
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct UserMessage {
+    pub content: UserContent,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged)]
+pub enum UserContent {
+    /// `"hello"` — first-turn user input is a bare string.
+    Text(String),
+    /// `[{type:"tool_result", ...}, ...]` — turn-2+ tool responses.
+    Blocks(Vec<UserContentBlock>),
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UserContentBlock {
+    ToolResult {
+        #[serde(rename = "tool_use_id")]
+        tool_use_id: String,
+        content: serde_json::Value,
+        #[serde(default)]
+        is_error: bool,
+    },
+    /// Any future user-content-block type — opaque to us.
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AssistantMessage {
+    pub content: Vec<AssistantContentBlock>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AssistantContentBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    Thinking {
+        thinking: String,
+        #[serde(default)]
+        signature: Option<String>,
+    },
+    /// Any future assistant-content-block type — opaque to us.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Result of [`parse_line`].
+///
+/// We can't use `#[serde(other)]` directly on [`JsonlRecord`] because the
+/// `other` arm cannot carry data — so a custom two-stage parse runs the
+/// strict known-variant deserialise first, and falls back to raw-capture
+/// on any failure (unknown `type` discriminator, missing required field,
+/// malformed JSON).
+#[derive(Debug, Clone)]
+pub enum JsonlRecordParsed {
+    /// Parsed into one of the known [`JsonlRecord`] variants.
+    Known(JsonlRecord),
+    /// Couldn't parse — raw line preserved, plus a best-effort attempt to
+    /// pull the `type` discriminator out (None when the JSON itself is
+    /// malformed).
+    UnknownRaw {
+        raw: String,
+        parsed_type: Option<String>,
+    },
+}
+
+/// Parse one JSONL line into a [`JsonlRecordParsed`].
+///
+/// On any deserialise failure (unknown `type`, missing field, etc.) returns
+/// `UnknownRaw` carrying the original line so the supervisor can persist
+/// it as a `system` row without losing the data.
+pub fn parse_line(line: &str) -> JsonlRecordParsed {
+    match serde_json::from_str::<JsonlRecord>(line) {
+        Ok(rec) => JsonlRecordParsed::Known(rec),
+        Err(_) => {
+            // Best-effort: pull out the `type` field for diagnostics. If the
+            // line isn't valid JSON at all, parsed_type stays None.
+            let parsed_type = serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(String::from));
+            JsonlRecordParsed::UnknownRaw {
+                raw: line.to_string(),
+                parsed_type,
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// cwd → projects-dirname transformation
+// ---------------------------------------------------------------------------
+
+/// Reproduce the Claude Code projects-dirname algorithm.
+///
+/// Replaces each byte that is NOT in `[A-Za-z0-9-]` with `-`. No
+/// consecutive-`-` collapsing; no leading-dash special-case; no lowercasing.
+/// On Windows, `C:\Users\rossa\dev\dev-tools` becomes
+/// `C--Users-rossa-dev-dev-tools` — verified against the on-disk directory
+/// in this repository.
+///
+/// Operates on the path's lossy-UTF8 string representation, which matches
+/// how Claude Code itself behaves on non-UTF8 path bytes. The result is a
+/// `String` rather than an `OsString` because it's used to compose paths
+/// under `~/.claude/projects/` where the directory name is always ASCII
+/// after the substitution.
+pub fn sanitise_cwd(p: &Path) -> String {
+    let s = p.to_string_lossy();
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b == b'-' {
+            out.push(b as char);
+        } else {
+            out.push('-');
+        }
+    }
+    out
+}
+
+/// Resolve the base directory that contains per-cwd projects subdirectories.
+///
+/// Precedence:
+/// 1. `LUMINA_PTY_PROJECTS_ROOT` env var (used by tests; precedent:
+///    `LUMINA_WORKTREE_ROOT` in [`crate::pty::spawn::resolve_and_validate_cwd`]).
+/// 2. Platform default: `%USERPROFILE%\.claude\projects` on Windows;
+///    `$HOME/.claude/projects` on Unix.
+/// 3. If neither is set, fall back to the current working directory and
+///    emit a diagnostic — this is a "should not happen in practice" path,
+///    but we don't panic.
+pub fn resolve_projects_root() -> PathBuf {
+    if let Ok(v) = std::env::var("LUMINA_PTY_PROJECTS_ROOT") {
+        return PathBuf::from(v);
+    }
+
+    #[cfg(target_os = "windows")]
+    let home_var = "USERPROFILE";
+    #[cfg(not(target_os = "windows"))]
+    let home_var = "HOME";
+
+    match std::env::var(home_var) {
+        Ok(home) => PathBuf::from(home).join(".claude").join("projects"),
+        Err(_) => {
+            eprintln!(
+                "jsonl_tail: {home_var} unset; falling back to CWD for projects root"
+            );
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File binding: snapshot-then-poll
+// ---------------------------------------------------------------------------
+
+/// Bind to the JSONL transcript Claude Code creates for an interactive
+/// session.
+///
+/// Per research note "`--session-id` in interactive mode" (GH #44607),
+/// the CLI flag does NOT control the filename in interactive (non-`-p`)
+/// mode — Claude Code mints an internal UUID for the filename. We
+/// therefore cannot precompute the path; instead:
+///
+/// 1. Compose the per-cwd projects dir from [`resolve_projects_root`] +
+///    [`sanitise_cwd`].
+/// 2. Snapshot the set of `*.jsonl` filenames currently in that dir (empty
+///    set if the dir doesn't exist yet — Claude Code creates it on first
+///    spawn).
+/// 3. Poll every 100 ms for up to 5 s. The first `*.jsonl` whose path was
+///    NOT in the snapshot wins — return its absolute path.
+/// 4. On timeout: [`AppError::Validation`].
+///
+/// `_spawn_started` is retained on the signature for future logging hooks
+/// (it is NOT used as a filter — `SystemTime` is non-monotonic and the
+/// on-disk mtime granularity on FAT/exFAT is 2 s, both of which would
+/// make wall-clock filtering racy).
+pub async fn bind_jsonl_path(
+    cwd: &Path,
+    _spawn_started: SystemTime,
+) -> Result<PathBuf, AppError> {
+    let dir = resolve_projects_root().join(sanitise_cwd(cwd));
+
+    let snapshot = read_jsonl_filenames(&dir).await;
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut interval = tokio::time::interval(Duration::from_millis(100));
+    // First tick fires immediately — skip it so we don't double-read.
+    interval.tick().await;
+
+    loop {
+        if std::time::Instant::now() >= deadline {
+            return Err(AppError::Validation(format!(
+                "jsonl_tail::bind_jsonl_path: no new .jsonl file appeared in {} within 5s timeout",
+                dir.display()
+            )));
+        }
+
+        let current = read_jsonl_filenames(&dir).await;
+        for name in &current {
+            if !snapshot.contains(name) {
+                return Ok(dir.join(name));
+            }
+        }
+
+        interval.tick().await;
+    }
+}
+
+/// Return the set of `*.jsonl` filenames in `dir` (NOT full paths).
+///
+/// Returns an empty set if the dir doesn't exist — Claude Code creates
+/// the projects subdir on first spawn in a given cwd, so an absent dir
+/// is the expected state at spawn-start, not an error.
+async fn read_jsonl_filenames(dir: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    let mut rd = match tokio::fs::read_dir(dir).await {
+        Ok(rd) => rd,
+        Err(_) => return out,
+    };
+    while let Ok(Some(entry)) = rd.next_entry().await {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".jsonl") {
+            out.insert(name);
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Watcher task: tail a JSONL file with notify + broadcast its records
+// ---------------------------------------------------------------------------
+
+/// Tail `jsonl_path` and broadcast each parsed record on `tx`.
+///
+/// Lifecycle:
+/// 1. Watch the file's parent directory non-recursively via
+///    `notify::recommended_watcher` (the file may not exist yet when this
+///    task starts — see `bind_jsonl_path`'s race window).
+/// 2. If the file already exists, skip the create-wait and open immediately;
+///    otherwise wait for `EventKind::Create(File)` whose path matches
+///    `jsonl_path`.
+/// 3. Open + `BufReader` and read-to-EOF on every event poke. The reader
+///    advances naturally on subsequent reads (tokio's `BufReader::lines`
+///    returns `None` at EOF but the underlying file handle remembers its
+///    offset; we just keep calling `next_line()` on a fresh `lines()` each
+///    pass).
+/// 4. On `event.need_rescan() == true` (Windows ReadDirectoryChangesW buffer
+///    overflow signal): seek to 0 and re-read the whole file. The bridge
+///    consumer is responsible for any record dedup if that becomes a
+///    concern (deferred per plan Risks §8).
+/// 5. Loop exits on `tx.send` returning `SendError` (zero receivers — the
+///    supervisor has dropped the session) OR on a fatal IO error opening
+///    the file. All other errors are logged via `eprintln!` and swallowed
+///    (matches the supervisor's per-session error policy at
+///    `pty/spawn.rs`).
+///
+/// The `notify` watcher closure runs on its own OS thread that `notify`
+/// spawns internally. We bridge it to async by:
+/// - allocating a bounded `tokio::sync::mpsc` channel between the closure
+///   and the async loop;
+/// - using `tx.blocking_send(...)` from inside the sync closure (the
+///   documented tokio pattern for sync→async hops).
+///
+/// The watcher is moved into the task's local state so its lifetime
+/// tracks the task — dropping the watcher unsubscribes.
+pub async fn tail(
+    jsonl_path: PathBuf,
+    tx: broadcast::Sender<JsonlRecordParsed>,
+) {
+    let parent = match jsonl_path.parent() {
+        Some(p) => p.to_path_buf(),
+        None => {
+            eprintln!(
+                "jsonl_tail: refusing to tail {} — has no parent directory",
+                jsonl_path.display()
+            );
+            return;
+        }
+    };
+
+    // Channel from the notify (sync) callback to this (async) task.
+    // Capacity 256 is generous for single-file conversational append rates
+    // (low-Hz); overflow surfaces by dropping events, which `need_rescan`
+    // does not fire for, but our read-to-EOF on every event still catches
+    // up.
+    let (evt_tx, mut evt_rx) = mpsc::channel::<notify::Event>(256);
+
+    let watcher_result = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        match res {
+            Ok(event) => {
+                // blocking_send is the documented pattern for sync→async
+                // hops; failure means the receiver is gone and the task is
+                // shutting down — nothing to do.
+                let _ = evt_tx.blocking_send(event);
+            }
+            Err(e) => {
+                eprintln!("jsonl_tail: notify error: {e}");
+            }
+        }
+    });
+    let mut watcher = match watcher_result {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("jsonl_tail: failed to create watcher: {e}");
+            return;
+        }
+    };
+
+    if let Err(e) = watcher.watch(&parent, RecursiveMode::NonRecursive) {
+        eprintln!(
+            "jsonl_tail: failed to watch {}: {e}",
+            parent.display()
+        );
+        return;
+    }
+
+    // If the file already exists at task start, skip the create-wait.
+    // Otherwise loop until the matching Create(File) event arrives.
+    if !jsonl_path.exists() {
+        loop {
+            let event = match evt_rx.recv().await {
+                Some(e) => e,
+                None => {
+                    eprintln!("jsonl_tail: watcher channel closed before file appeared");
+                    return;
+                }
+            };
+            if matches!(event.kind, EventKind::Create(CreateKind::File) | EventKind::Create(CreateKind::Any))
+                && event.paths.iter().any(|p| p == &jsonl_path)
+            {
+                break;
+            }
+            // Any other event before the create — ignore.
+        }
+    }
+
+    let file = match tokio::fs::File::open(&jsonl_path).await {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!(
+                "jsonl_tail: failed to open {}: {e}",
+                jsonl_path.display()
+            );
+            return;
+        }
+    };
+    let mut reader = BufReader::new(file);
+
+    // Initial drain — Claude Code may have written records between the
+    // Create event firing and our open call.
+    if !drain_and_broadcast(&mut reader, &tx, &jsonl_path).await {
+        return;
+    }
+
+    while let Some(event) = evt_rx.recv().await {
+        if event.need_rescan() {
+            // Buffer overflow on the OS side: re-seek to 0 and re-read.
+            // The consumer must tolerate duplicate records on rescan (or
+            // dedup on JSONL uuid — see plan Risks §8).
+            if let Err(e) = reader.get_mut().seek(std::io::SeekFrom::Start(0)).await {
+                eprintln!("jsonl_tail: rescan seek failed: {e}");
+                return;
+            }
+        }
+
+        // Trigger a drain on any event whose path matches our file (Create
+        // re-fires on truncate-and-rewrite on some platforms; Modify(Any)
+        // on Windows is the common case; data-write Modify on Unix).
+        let touches_us = event.paths.is_empty()
+            || event.paths.iter().any(|p| p == &jsonl_path);
+        let interesting = matches!(
+            event.kind,
+            EventKind::Modify(_) | EventKind::Create(_) | EventKind::Any
+        );
+        if !touches_us || !interesting {
+            // Skip events for other files in the same dir (notify
+            // NonRecursive still reports siblings) and access-only events.
+            // We intentionally ignore Modify(ModifyKind::Metadata)? No —
+            // on Windows ReadDirectoryChangesW collapses data + metadata
+            // into Modify(Any), so we read on any Modify variant.
+            let _: Option<ModifyKind> = None;
+            continue;
+        }
+
+        if !drain_and_broadcast(&mut reader, &tx, &jsonl_path).await {
+            return;
+        }
+    }
+}
+
+/// Read from `reader` to EOF; parse each non-empty line and broadcast it.
+///
+/// Returns `false` if the broadcast channel is dead (no receivers) — the
+/// caller should then exit the watcher task. Returns `true` on any other
+/// outcome (including IO errors, which are logged and swallowed).
+async fn drain_and_broadcast(
+    reader: &mut BufReader<tokio::fs::File>,
+    tx: &broadcast::Sender<JsonlRecordParsed>,
+    path: &Path,
+) -> bool {
+    let mut lines = reader.lines();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if line.is_empty() {
+                    continue;
+                }
+                let parsed = parse_line(&line);
+                if tx.send(parsed).is_err() {
+                    // No subscribers — the bridge task has been dropped.
+                    // This is terminal for the watcher.
+                    return false;
+                }
+            }
+            Ok(None) => return true, // EOF, normal
+            Err(e) => {
+                eprintln!(
+                    "jsonl_tail: read error on {}: {e}",
+                    path.display()
+                );
+                return true; // non-fatal: keep watching
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+    use std::path::Path;
+
+    // -----------------------------------------------------------------
+    // sanitise_cwd — table-driven
+    // -----------------------------------------------------------------
+    #[rstest]
+    #[case(r"C:\Users\rossa\dev\dev-tools", "C--Users-rossa-dev-dev-tools")]
+    #[case("/home/ross/work/dev-tools", "-home-ross-work-dev-tools")]
+    #[case("/var/log/app.test", "-var-log-app-test")]
+    #[case("abc-def-123", "abc-def-123")]
+    #[case("/tmp/with space/file", "-tmp-with-space-file")]
+    fn sanitise_cwd_cases(#[case] input: &str, #[case] expected: &str) {
+        let got = sanitise_cwd(Path::new(input));
+        assert_eq!(got, expected);
+    }
+
+    // -----------------------------------------------------------------
+    // JsonlRecord deserialise — known + unknown
+    // -----------------------------------------------------------------
+    #[test]
+    fn parse_assistant_text() {
+        let line = r#"{"type":"assistant","uuid":"a","parentUuid":"b","message":{"content":[{"type":"text","text":"hi"}]}}"#;
+        match parse_line(line) {
+            JsonlRecordParsed::Known(JsonlRecord::Assistant { uuid, parent_uuid, message }) => {
+                assert_eq!(uuid, "a");
+                assert_eq!(parent_uuid.as_deref(), Some("b"));
+                assert_eq!(message.content.len(), 1);
+                match &message.content[0] {
+                    AssistantContentBlock::Text { text } => assert_eq!(text, "hi"),
+                    other => panic!("expected Text, got {other:?}"),
+                }
+            }
+            other => panic!("expected Known(Assistant), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_assistant_tool_use() {
+        let line = r#"{"type":"assistant","uuid":"a","message":{"content":[{"type":"tool_use","id":"id1","name":"Read","input":{"file_path":"x"}}]}}"#;
+        match parse_line(line) {
+            JsonlRecordParsed::Known(JsonlRecord::Assistant { message, .. }) => {
+                match &message.content[0] {
+                    AssistantContentBlock::ToolUse { id, name, input } => {
+                        assert_eq!(id, "id1");
+                        assert_eq!(name, "Read");
+                        assert_eq!(input.get("file_path").and_then(|v| v.as_str()), Some("x"));
+                    }
+                    other => panic!("expected ToolUse, got {other:?}"),
+                }
+            }
+            other => panic!("expected Known(Assistant), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_user_string_content() {
+        let line = r#"{"type":"user","uuid":"u","parentUuid":null,"message":{"content":"hello"}}"#;
+        match parse_line(line) {
+            JsonlRecordParsed::Known(JsonlRecord::User { uuid, parent_uuid, message }) => {
+                assert_eq!(uuid, "u");
+                assert_eq!(parent_uuid, None);
+                match message.content {
+                    UserContent::Text(s) => assert_eq!(s, "hello"),
+                    other => panic!("expected Text, got {other:?}"),
+                }
+            }
+            other => panic!("expected Known(User), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_user_tool_result_block() {
+        let line = r#"{"type":"user","uuid":"u","message":{"content":[{"type":"tool_result","tool_use_id":"id1","content":"ok","is_error":false}]}}"#;
+        match parse_line(line) {
+            JsonlRecordParsed::Known(JsonlRecord::User { message, .. }) => {
+                match &message.content {
+                    UserContent::Blocks(blocks) => {
+                        assert_eq!(blocks.len(), 1);
+                        match &blocks[0] {
+                            UserContentBlock::ToolResult { tool_use_id, content, is_error } => {
+                                assert_eq!(tool_use_id, "id1");
+                                assert_eq!(content.as_str(), Some("ok"));
+                                assert!(!*is_error);
+                            }
+                            other => panic!("expected ToolResult, got {other:?}"),
+                        }
+                    }
+                    other => panic!("expected Blocks, got {other:?}"),
+                }
+            }
+            other => panic!("expected Known(User), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_summary() {
+        let line = r#"{"type":"summary","summary":"compacted","leafUuid":"x"}"#;
+        match parse_line(line) {
+            JsonlRecordParsed::Known(JsonlRecord::Summary { summary, leaf_uuid, .. }) => {
+                assert_eq!(summary, "compacted");
+                assert_eq!(leaf_uuid.as_deref(), Some("x"));
+            }
+            other => panic!("expected Known(Summary), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_unknown_type_captures_raw() {
+        let line = r#"{"type":"file-history-snapshot","whatever":"data"}"#;
+        match parse_line(line) {
+            JsonlRecordParsed::UnknownRaw { raw, parsed_type } => {
+                assert_eq!(parsed_type.as_deref(), Some("file-history-snapshot"));
+                assert_eq!(raw, line);
+            }
+            other => panic!("expected UnknownRaw, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_malformed_json_captures_raw_with_no_type() {
+        let line = "not-json-at-all";
+        match parse_line(line) {
+            JsonlRecordParsed::UnknownRaw { raw, parsed_type } => {
+                assert_eq!(parsed_type, None);
+                assert_eq!(raw, line);
+            }
+            other => panic!("expected UnknownRaw, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // bind_jsonl_path — async, uses LUMINA_PTY_PROJECTS_ROOT
+    // -----------------------------------------------------------------
+
+    /// Helper: configure the projects root + create the per-cwd dir.
+    /// Returns the dir path so the test can write a synthetic JSONL into it.
+    ///
+    /// Note: nextest runs each `#[test]` in a separate process, so setting
+    /// `LUMINA_PTY_PROJECTS_ROOT` here cannot race with other tests in this
+    /// module (per `lumina/CLAUDE.md` process-per-test isolation).
+    fn arm_env(tempdir: &Path, cwd: &Path) -> PathBuf {
+        // SAFETY: nextest runs each test in its own process, so this mutation
+        // is observable only by this test. set_var requires unsafe in
+        // Rust 2024 edition because of the global-state hazard.
+        unsafe {
+            std::env::set_var("LUMINA_PTY_PROJECTS_ROOT", tempdir);
+        }
+        let dir = tempdir.join(sanitise_cwd(cwd));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn bind_jsonl_path_appears_within_window() {
+        let temp = tempfile::tempdir().unwrap();
+        let cwd = std::path::PathBuf::from("/test/cwd/binds-fast");
+        let dir = arm_env(temp.path(), &cwd);
+
+        // Spawn a delayed writer.
+        let dir_clone = dir.clone();
+        let write_task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let target = dir_clone.join("session-abc.jsonl");
+            tokio::fs::write(&target, b"").await.unwrap();
+        });
+
+        let got = bind_jsonl_path(&cwd, SystemTime::now()).await;
+        write_task.await.unwrap();
+
+        let path = got.expect("bind_jsonl_path should resolve");
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("session-abc.jsonl")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn bind_jsonl_path_times_out_when_no_file_appears() {
+        let temp = tempfile::tempdir().unwrap();
+        let cwd = std::path::PathBuf::from("/test/cwd/never-binds");
+        let _dir = arm_env(temp.path(), &cwd);
+
+        let start = std::time::Instant::now();
+        let got = bind_jsonl_path(&cwd, SystemTime::now()).await;
+        let elapsed = start.elapsed();
+
+        match got {
+            Err(AppError::Validation(msg)) => {
+                assert!(
+                    msg.contains("no new .jsonl file appeared"),
+                    "unexpected validation msg: {msg}"
+                );
+            }
+            other => panic!("expected Err(Validation), got {other:?}"),
+        }
+        // Should have run for ~5s; allow a wide window for CI jitter.
+        assert!(
+            elapsed >= Duration::from_secs(4),
+            "expected ≥4s wait, got {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(7),
+            "expected <7s wait, got {elapsed:?}"
+        );
+    }
+}

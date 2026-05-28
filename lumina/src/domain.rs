@@ -311,6 +311,7 @@ pub struct PtySession {
     pub exit_code: Option<i64>,
     pub last_error: Option<String>,
     pub previous_session_id: Option<String>,
+    pub jsonl_path: Option<String>,
 }
 
 /// A row of `pty_messages` (migration 0008): one ordered transcript entry on

@@ -70,20 +70,61 @@ export const PtySessionSchema = z.object({
 export type PtySession = z.infer<typeof PtySessionSchema>
 
 /**
- * Mirrors `domain::PtyMessage` (migration 0008). `kind` is one of
- * `user_input|assistant_text|tool_call|tool_result|prompt|system|error|
- * parser_unknown` — free TEXT on the Rust side; exposed as a plain string.
+ * Mirrors `domain::PtyMessage` (migration 0008). `kind` is one of the six
+ * JSONL-tail message kinds:
+ * `user_input|assistant_text|tool_use|tool_result|system|error`.
+ *
+ * The pre-JSONL-tail vt100-parser pipeline emitted two additional kinds
+ * (`prompt`, `parser_unknown`) which are now dead and not modelled here.
  */
+const PTY_MESSAGE_KIND_VALUES = [
+  'user_input',
+  'assistant_text',
+  'tool_use',
+  'tool_result',
+  'system',
+  'error',
+] as const
+export type PtyMessageKind = (typeof PTY_MESSAGE_KIND_VALUES)[number]
+const PtyMessageKindSchema = z.enum(PTY_MESSAGE_KIND_VALUES)
+
 export const PtyMessageSchema = z.object({
   id: z.string(),
   session_id: z.string(),
   sequence: z.number(),
   created_at: z.string(),
-  kind: z.string(),
+  kind: PtyMessageKindSchema,
   content_json: z.string(),
   raw_text: z.string().nullable(),
 })
 export type PtyMessage = z.infer<typeof PtyMessageSchema>
+
+/**
+ * TS-only content shapes per `PtyMessageKind`. These are NOT zod-parsed — the
+ * wire-side `PtyMessageSchema.content_json` stays a string and the
+ * `WsFrameSchema` `message` variant keeps `content: z.unknown()` to avoid
+ * rejecting forward-compat payloads. The interfaces below are an ergonomic
+ * narrowing surface for callers writing `if (msg.kind === 'tool_use')`-style
+ * helpers.
+ *
+ * `user_input`, `system`, and `error` carry freeform payloads — leave them
+ * untyped (`unknown`) at this layer.
+ */
+export interface AssistantTextContent {
+  text: string
+}
+
+export interface ToolUseContent {
+  name: string
+  input: unknown
+  tool_use_id: string
+}
+
+export interface ToolResultContent {
+  tool_use_id: string
+  output: unknown
+  is_error: boolean
+}
 
 /**
  * Mirrors `domain::PtyQueueEntry` (migration 0008). `input_kind` is one of

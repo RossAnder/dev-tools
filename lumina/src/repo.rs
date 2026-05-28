@@ -4557,7 +4557,8 @@ pub mod pty {
                 ended_at               AS "ended_at?",
                 exit_code              AS "exit_code?",
                 last_error             AS "last_error?",
-                previous_session_id    AS "previous_session_id?"
+                previous_session_id    AS "previous_session_id?",
+                jsonl_path             AS "jsonl_path?"
             FROM pty_sessions
             WHERE id = ?1
             "#,
@@ -4596,6 +4597,42 @@ pub mod pty {
             id,
             status,
             last_error,
+            now,
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("pty_session '{id}' not found")));
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Bind the discovered Claude Code session JSONL file path to the
+    /// `pty_sessions` row after spawn-time `bind_jsonl_path` resolution.
+    /// Updates `updated_at` in the same statement (mirrors
+    /// `update_pty_session_status`'s shape). `NotFound` via
+    /// `rows_affected()==0`.
+    pub async fn set_pty_jsonl_path(
+        pool: &SqlitePool,
+        id: &str,
+        path: &str,
+    ) -> Result<(), AppError> {
+        let now = now_string();
+        let mut tx = db::begin_write(pool).await?;
+
+        let affected = sqlx::query!(
+            r#"
+            UPDATE pty_sessions
+            SET jsonl_path = ?2,
+                updated_at = ?3
+            WHERE id = ?1
+            "#,
+            id,
+            path,
             now,
         )
         .execute(&mut *tx)
@@ -4677,7 +4714,8 @@ pub mod pty {
                 ended_at               AS "ended_at?",
                 exit_code              AS "exit_code?",
                 last_error             AS "last_error?",
-                previous_session_id    AS "previous_session_id?"
+                previous_session_id    AS "previous_session_id?",
+                jsonl_path             AS "jsonl_path?"
             FROM pty_sessions
             WHERE (?1 IS NULL OR status = ?1)
               AND (?2 IS NULL OR project_id = ?2)
@@ -4714,7 +4752,8 @@ pub mod pty {
                 ended_at               AS "ended_at?",
                 exit_code              AS "exit_code?",
                 last_error             AS "last_error?",
-                previous_session_id    AS "previous_session_id?"
+                previous_session_id    AS "previous_session_id?",
+                jsonl_path             AS "jsonl_path?"
             FROM pty_sessions
             WHERE id = ?1
             "#,
