@@ -73,6 +73,11 @@ async fn block_task_on_task_handler(
     Path((task_id, depends_on_id)): Path<(String, String)>,
     Json(body): Json<BlockBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(
+        task_id = %task_id,
+        depends_on_id = %depends_on_id,
+        "http: POST /work-items/{{task_id}}/depends-on/{{depends_on_id}}"
+    );
     let edge_kind = body.kind.as_deref().unwrap_or("data");
     repo::add_task_dependency(state.pool.as_ref(), &task_id, &depends_on_id, edge_kind).await?;
     Ok((
@@ -87,6 +92,11 @@ async fn unblock_task_from_task_handler(
     State(state): State<AppState>,
     Path((task_id, depends_on_id)): Path<(String, String)>,
 ) -> Result<StatusCode, AppError> {
+    tracing::debug!(
+        task_id = %task_id,
+        depends_on_id = %depends_on_id,
+        "http: DELETE /work-items/{{task_id}}/depends-on/{{depends_on_id}}"
+    );
     repo::remove_task_dependency(state.pool.as_ref(), &task_id, &depends_on_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -98,6 +108,7 @@ async fn list_task_dependencies_handler(
     State(state): State<AppState>,
     Path(story_id): Path<String>,
 ) -> Result<Json<Vec<TaskDependency>>, AppError> {
+    tracing::debug!(story_id = %story_id, "http: GET /work-items/{{story_id}}/task-dependencies");
     let edges = repo::list_task_dependencies(state.pool.as_ref(), &story_id).await?;
     Ok(Json(edges))
 }
@@ -110,6 +121,7 @@ async fn compute_task_batches_handler(
     State(state): State<AppState>,
     Path(story_id): Path<String>,
 ) -> Result<Json<Vec<Vec<String>>>, AppError> {
+    tracing::debug!(story_id = %story_id, "http: GET /work-items/{{story_id}}/task-batches");
     let batches = repo::compute_task_batches(state.pool.as_ref(), &story_id).await?;
     Ok(Json(batches))
 }

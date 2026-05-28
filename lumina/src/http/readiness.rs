@@ -41,6 +41,7 @@ async fn get_story_readiness_handler(
     State(state): State<AppState>,
     Path(story_id): Path<String>,
 ) -> Result<Json<StoryReadiness>, AppError> {
+    tracing::debug!(story_id = %story_id, "http: GET /work-items/{{story_id}}/readiness");
     let readiness = repo::get_story_readiness(state.pool.as_ref(), &story_id).await?;
     Ok(Json(readiness))
 }
@@ -53,6 +54,7 @@ async fn get_dispatch_plan_handler(
     State(state): State<AppState>,
     Path(story_id): Path<String>,
 ) -> Result<Json<Vec<Vec<BatchEntry>>>, AppError> {
+    tracing::debug!(story_id = %story_id, "http: GET /work-items/{{story_id}}/dispatch-plan");
     let plan = repo::get_task_dispatch_plan(state.pool.as_ref(), &story_id).await?;
     Ok(Json(plan))
 }

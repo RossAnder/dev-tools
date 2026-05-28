@@ -55,6 +55,7 @@ async fn create_context_block_handler(
     State(state): State<AppState>,
     Json(body): Json<CreateContextBlockBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!("http: POST /context-blocks");
     let _ = body.kind; // reserved; intentionally unused.
     let id = repo::create_context_block(
         state.pool.as_ref(),
@@ -74,6 +75,11 @@ async fn link_context_block_handler(
     State(state): State<AppState>,
     Path((id, cb_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(
+        work_item_id = %id,
+        cb_id = %cb_id,
+        "http: POST /work-items/{{id}}/context-blocks/{{cb_id}}"
+    );
     repo::link_context_block(state.pool.as_ref(), &id, &cb_id).await?;
     Ok((
         StatusCode::CREATED,
@@ -88,6 +94,11 @@ async fn unlink_context_block_handler(
     State(state): State<AppState>,
     Path((id, cb_id)): Path<(String, String)>,
 ) -> Result<StatusCode, AppError> {
+    tracing::debug!(
+        work_item_id = %id,
+        cb_id = %cb_id,
+        "http: DELETE /work-items/{{id}}/context-blocks/{{cb_id}}"
+    );
     repo::unlink_context_block(state.pool.as_ref(), &id, &cb_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

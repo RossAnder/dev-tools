@@ -126,6 +126,7 @@ async fn add_finding_handler(
     Path(work_item_id): Path<String>,
     Json(body): Json<AddFindingBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(work_item_id = %work_item_id, "http: POST /work-items/{{id}}/findings");
     let origin_str = body.origin.map(origin_to_str);
     let finding = NewFinding {
         kind: body.kind.as_deref(),
@@ -157,6 +158,7 @@ async fn update_finding_handler(
     Path(id): Path<String>,
     Json(body): Json<UpdateFindingBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(finding_id = %id, "http: PATCH /findings/{{id}}");
     let req = UpdateFindingRequest {
         severity: body.severity,
         effort: body.effort,
@@ -181,6 +183,7 @@ async fn resolve_finding_handler(
     Path(id): Path<String>,
     Json(body): Json<ResolveFindingBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(finding_id = %id, "http: POST /findings/{{id}}/resolve");
     repo::resolve_finding(
         state.pool.as_ref(),
         &id,
@@ -199,6 +202,11 @@ async fn supersede_finding_handler(
     State(state): State<AppState>,
     Path((old_id, new_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(
+        old_id = %old_id,
+        new_id = %new_id,
+        "http: POST /findings/{{old_id}}/supersede/{{new_id}}"
+    );
     repo::supersede_finding(state.pool.as_ref(), &old_id, &new_id).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

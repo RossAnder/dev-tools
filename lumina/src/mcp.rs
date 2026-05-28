@@ -1225,6 +1225,7 @@ impl LuminaTools {
         &self,
         Parameters(ListWorkItemsParams { parent_id, kind, status }): Parameters<ListWorkItemsParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "list_work_items", "mcp tool invoked");
         let kind_str = kind.map(enum_to_str);
         let mut items =
             repo::list_work_items(&self.pool, parent_id.as_deref(), kind_str.as_deref())
@@ -1247,6 +1248,7 @@ impl LuminaTools {
         &self,
         Parameters(GetWorkItemParams { id }): Parameters<GetWorkItemParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_work_item", "mcp tool invoked");
         let detail = repo::get_work_item_detail(&self.pool, &id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1264,6 +1266,7 @@ impl LuminaTools {
         &self,
         Parameters(GetTreeParams { root, max_depth }): Parameters<GetTreeParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_tree", "mcp tool invoked");
         // Collect the starting items: either the single named root (via detail
         // fetch, which 404s a missing id) or every top-level item.
         let roots = match &root {
@@ -1301,6 +1304,7 @@ impl LuminaTools {
         &self,
         Parameters(GetSprintViewParams { story_id }): Parameters<GetSprintViewParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_sprint_view", "mcp tool invoked");
         // The story detail (404s a missing story id).
         let story = repo::get_work_item_detail(&self.pool, &story_id)
             .await
@@ -1341,6 +1345,7 @@ impl LuminaTools {
         &self,
         Parameters(req): Parameters<CreateWorkItemRequest>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "create_work_item", "mcp tool invoked");
         let id = repo::create_work_item_with_origin(
             &self.pool,
             &req.kind,
@@ -1364,6 +1369,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<UpdateWorkItemParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "update_work_item", "mcp tool invoked");
         let req = crate::domain::UpdateWorkItemRequest {
             title: p.title,
             body: p.body,
@@ -1387,6 +1393,7 @@ impl LuminaTools {
         &self,
         Parameters(MoveWorkItemParams { id, position }): Parameters<MoveWorkItemParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "move_work_item", "mcp tool invoked");
         repo::reorder_work_item(&self.pool, &id, position)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1403,6 +1410,7 @@ impl LuminaTools {
         &self,
         Parameters(DeleteWorkItemParams { id }): Parameters<DeleteWorkItemParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "delete_work_item", "mcp tool invoked");
         repo::delete_work_item(&self.pool, &id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1421,6 +1429,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<SetStoryPlanParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_story_plan", "mcp tool invoked");
         let mut obj = serde_json::Map::new();
         if let Some(v) = p.problem_statement {
             obj.insert("problem_statement".into(), serde_json::Value::String(v));
@@ -1473,6 +1482,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<SetTaskSpecParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_task_spec", "mcp tool invoked");
         let mut obj = serde_json::Map::new();
         if let Some(v) = p.execution_detail {
             obj.insert("execution_detail".into(), serde_json::Value::String(v));
@@ -1557,6 +1567,7 @@ impl LuminaTools {
             CreateContextBlockParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "create_context_block", "mcp tool invoked");
         let id = repo::create_context_block(&self.pool, title.as_deref(), body.as_deref())
             .await
             .map_err(app_error_to_mcp)?;
@@ -1580,6 +1591,7 @@ impl LuminaTools {
             LinkContextBlockParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "link_context_block", "mcp tool invoked");
         repo::link_context_block(&self.pool, &work_item_id, &context_block_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1601,6 +1613,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<RecordTaskActivityParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "record_task_activity", "mcp tool invoked");
         // Fold body/outcome into a payload object; None ⇒ no payload.
         let mut payload = serde_json::Map::new();
         if let Some(body) = p.body {
@@ -1640,6 +1653,7 @@ impl LuminaTools {
         &self,
         Parameters(TransitionStatusParams { id, status }): Parameters<TransitionStatusParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "transition_status", "mcp tool invoked");
         let status_str = enum_to_str(status);
         repo::update_work_item_status(&self.pool, &id, &status_str)
             .await
@@ -1656,6 +1670,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<AddFindingParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_finding", "mcp tool invoked");
         let origin_str = p.origin.map(enum_to_str);
         let finding = NewFinding {
             kind: p.kind.as_deref(),
@@ -1688,6 +1703,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<UpdateFindingParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "update_finding", "mcp tool invoked");
         let req = crate::domain::UpdateFindingRequest {
             severity: p.severity,
             effort: p.effort,
@@ -1719,6 +1735,7 @@ impl LuminaTools {
             ResolveFindingParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "resolve_finding", "mcp tool invoked");
         repo::resolve_finding(
             &self.pool,
             &id,
@@ -1743,6 +1760,7 @@ impl LuminaTools {
         &self,
         Parameters(SetRelevanceParams { id, relevance }): Parameters<SetRelevanceParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_relevance", "mcp tool invoked");
         repo::set_relevance(&self.pool, &id, relevance)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1758,6 +1776,7 @@ impl LuminaTools {
         &self,
         Parameters(SetEffortParams { id, effort }): Parameters<SetEffortParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_effort", "mcp tool invoked");
         repo::set_effort(&self.pool, &id, effort)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1773,6 +1792,7 @@ impl LuminaTools {
         &self,
         Parameters(SetComplexityParams { id, complexity }): Parameters<SetComplexityParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_complexity", "mcp tool invoked");
         repo::set_complexity(&self.pool, &id, complexity)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1788,6 +1808,7 @@ impl LuminaTools {
         &self,
         Parameters(SetClosureGateParams { id, closure_gate }): Parameters<SetClosureGateParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_closure_gate", "mcp tool invoked");
         repo::set_closure_gate(&self.pool, &id, closure_gate)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1806,6 +1827,7 @@ impl LuminaTools {
             AddAcceptanceCriterionParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_acceptance_criterion", "mcp tool invoked");
         let id = repo::add_acceptance_criterion(&self.pool, &work_item_id, &text)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1824,6 +1846,7 @@ impl LuminaTools {
             CheckAcceptanceCriterionParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "check_acceptance_criterion", "mcp tool invoked");
         repo::check_acceptance_criterion(&self.pool, &id, by.as_deref())
             .await
             .map_err(app_error_to_mcp)?;
@@ -1842,6 +1865,7 @@ impl LuminaTools {
             UncheckAcceptanceCriterionParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "uncheck_acceptance_criterion", "mcp tool invoked");
         repo::uncheck_acceptance_criterion(&self.pool, &id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1861,6 +1885,7 @@ impl LuminaTools {
             RemoveAcceptanceCriterionParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "remove_acceptance_criterion", "mcp tool invoked");
         repo::remove_acceptance_criterion(&self.pool, &id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1877,6 +1902,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<AddResearchNoteParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_research_note", "mcp tool invoked");
         let origin_str = p.origin.map(enum_to_str);
         let id = repo::add_research_note(
             &self.pool,
@@ -1902,6 +1928,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<UpdateResearchNoteParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "update_research_note", "mcp tool invoked");
         let req = UpdateResearchNoteRequest {
             confidence: p.confidence,
             state: p.state,
@@ -1926,6 +1953,7 @@ impl LuminaTools {
             SupersedeResearchNoteParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "supersede_research_note", "mcp tool invoked");
         repo::supersede_research_note(&self.pool, &old_id, &new_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1942,6 +1970,7 @@ impl LuminaTools {
         &self,
         Parameters(SupersedeFindingParams { old_id, new_id }): Parameters<SupersedeFindingParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "supersede_finding", "mcp tool invoked");
         repo::supersede_finding(&self.pool, &old_id, &new_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1958,6 +1987,7 @@ impl LuminaTools {
         &self,
         Parameters(AddOpenQuestionParams { story_id, question }): Parameters<AddOpenQuestionParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_open_question", "mcp tool invoked");
         let id = repo::add_open_question(&self.pool, &story_id, &question)
             .await
             .map_err(app_error_to_mcp)?;
@@ -1976,6 +2006,7 @@ impl LuminaTools {
             AddQuestionOptionParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_question_option", "mcp tool invoked");
         let id = repo::add_question_option(&self.pool, &question_id, &label, detail.as_deref())
             .await
             .map_err(app_error_to_mcp)?;
@@ -1994,6 +2025,7 @@ impl LuminaTools {
             BlockTaskOnQuestionParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "block_task_on_question", "mcp tool invoked");
         repo::block_task_on_question(&self.pool, &task_id, &question_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2012,6 +2044,7 @@ impl LuminaTools {
             SetEnablingOptionParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_enabling_option", "mcp tool invoked");
         repo::set_enabling_option(&self.pool, &task_id, &option_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2032,6 +2065,7 @@ impl LuminaTools {
             ResolveOpenQuestionParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "resolve_open_question", "mcp tool invoked");
         repo::resolve_open_question(&self.pool, &question_id, &chosen_option_id, by.as_deref())
             .await
             .map_err(app_error_to_mcp)?;
@@ -2054,6 +2088,7 @@ impl LuminaTools {
             AddRepoLinkParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_repo_link", "mcp tool invoked");
         let id = repo::add_repo_link(&self.pool, &project_id, &slug, is_primary.unwrap_or(false))
             .await
             .map_err(app_error_to_mcp)?;
@@ -2071,6 +2106,7 @@ impl LuminaTools {
         &self,
         Parameters(RemoveRepoLinkParams { id }): Parameters<RemoveRepoLinkParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "remove_repo_link", "mcp tool invoked");
         repo::remove_repo_link(&self.pool, &id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2090,6 +2126,7 @@ impl LuminaTools {
             SetPrimaryRepoParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_primary_repo", "mcp tool invoked");
         repo::set_primary_repo(&self.pool, &project_id, &repo_link_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2109,6 +2146,7 @@ impl LuminaTools {
         &self,
         Parameters(ListRepoLinksParams { project_id }): Parameters<ListRepoLinksParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "list_repo_links", "mcp tool invoked");
         let links = repo::list_repo_links(&self.pool, &project_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2126,6 +2164,7 @@ impl LuminaTools {
         &self,
         Parameters(SetFindingRepoParams { finding_id, repo_id }): Parameters<SetFindingRepoParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_finding_repo", "mcp tool invoked");
         repo::set_finding_repo(&self.pool, &finding_id, repo_id.as_deref())
             .await
             .map_err(app_error_to_mcp)?;
@@ -2145,6 +2184,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<AddRiskParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_risk", "mcp tool invoked");
         let severity_str = enum_to_str(p.severity);
         let id = repo::add_risk(
             &self.pool,
@@ -2170,6 +2210,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<UpdateRiskParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "update_risk", "mcp tool invoked");
         let patch = RiskPatch {
             summary: p.summary,
             body: p.body,
@@ -2195,6 +2236,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<SupersedeRiskParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "supersede_risk", "mcp tool invoked");
         let severity_str = enum_to_str(p.severity);
         let new_id = repo::supersede_risk(
             &self.pool,
@@ -2224,6 +2266,7 @@ impl LuminaTools {
         &self,
         Parameters(RemoveRiskParams { id }): Parameters<RemoveRiskParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "remove_risk", "mcp tool invoked");
         repo::remove_risk(&self.pool, &id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2242,6 +2285,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<AddRejectedAlternativeParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_rejected_alternative", "mcp tool invoked");
         let id = repo::add_rejected_alternative(
             &self.pool,
             &p.work_item_id,
@@ -2265,6 +2309,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<UpdateRejectedAlternativeParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "update_rejected_alternative", "mcp tool invoked");
         let patch = AlternativePatch {
             summary: p.summary,
             body: p.body,
@@ -2287,6 +2332,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<SupersedeRejectedAlternativeParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "supersede_rejected_alternative", "mcp tool invoked");
         let new_id = repo::supersede_rejected_alternative(
             &self.pool,
             &p.work_item_id,
@@ -2315,6 +2361,7 @@ impl LuminaTools {
             RemoveRejectedAlternativeParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "remove_rejected_alternative", "mcp tool invoked");
         repo::remove_rejected_alternative(&self.pool, &id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2337,6 +2384,7 @@ impl LuminaTools {
             BlockTaskOnTaskParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "block_task_on_task", "mcp tool invoked");
         let edge_kind = kind.unwrap_or_else(|| "data".to_owned());
         let edge = repo::add_task_dependency(&self.pool, &task_id, &depends_on_id, &edge_kind)
             .await
@@ -2356,6 +2404,7 @@ impl LuminaTools {
             UnblockTaskFromTaskParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "unblock_task_from_task", "mcp tool invoked");
         repo::remove_task_dependency(&self.pool, &task_id, &depends_on_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2374,6 +2423,7 @@ impl LuminaTools {
         &self,
         Parameters(ListTaskDependenciesParams { story_id }): Parameters<ListTaskDependenciesParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "list_task_dependencies", "mcp tool invoked");
         let edges = repo::list_task_dependencies(&self.pool, &story_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2392,6 +2442,7 @@ impl LuminaTools {
         &self,
         Parameters(ComputeTaskBatchesParams { story_id }): Parameters<ComputeTaskBatchesParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "compute_task_batches", "mcp tool invoked");
         let phases = repo::compute_task_batches(&self.pool, &story_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2410,6 +2461,7 @@ impl LuminaTools {
         &self,
         Parameters(GetStoryReadinessParams { story_id }): Parameters<GetStoryReadinessParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_story_readiness", "mcp tool invoked");
         let readiness = repo::get_story_readiness(&self.pool, &story_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2429,6 +2481,7 @@ impl LuminaTools {
         &self,
         Parameters(SetTaskKindParams { id, task_kind }): Parameters<SetTaskKindParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_task_kind", "mcp tool invoked");
         repo::set_task_kind(&self.pool, &id, task_kind)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2453,6 +2506,7 @@ impl LuminaTools {
         &self,
         Parameters(GetTaskDispatchPlanParams { story_id }): Parameters<GetTaskDispatchPlanParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_task_dispatch_plan", "mcp tool invoked");
         let plan = repo::get_task_dispatch_plan(&self.pool, &story_id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2472,6 +2526,7 @@ impl LuminaTools {
         &self,
         Parameters(SetTaskTierParams { id, tier }): Parameters<SetTaskTierParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_task_tier", "mcp tool invoked");
         repo::set_task_tier(&self.pool, &id, tier)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2491,6 +2546,7 @@ impl LuminaTools {
         &self,
         Parameters(ListPtySessionsParams { status, project_id }): Parameters<ListPtySessionsParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "list_pty_sessions", "mcp tool invoked");
         let rows = repo::pty::list_pty_sessions(
             self.state.pool.as_ref(),
             status.as_deref(),
@@ -2511,6 +2567,7 @@ impl LuminaTools {
         &self,
         Parameters(GetPtySessionParams { id }): Parameters<GetPtySessionParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_pty_session", "mcp tool invoked");
         let row = repo::pty::get_pty_session(self.state.pool.as_ref(), &id)
             .await
             .map_err(app_error_to_mcp)?;
@@ -2537,6 +2594,7 @@ impl LuminaTools {
         &self,
         Parameters(p): Parameters<SpawnPtySessionParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "spawn_pty_session", "mcp tool invoked");
         // ---- 1+2. Resolve worktree root + validate cwd (shared helper) ----
         let canonical_cwd =
             crate::pty::spawn::resolve_and_validate_cwd(&p.cwd).map_err(app_error_to_mcp)?;
@@ -2581,6 +2639,7 @@ impl LuminaTools {
             SendPtyInputParams,
         >,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "send_pty_input", "mcp tool invoked");
         // Validate kind against the InputKind wire vocab (matches T9's HTTP
         // `validate_input_kind`).
         match kind.as_str() {
@@ -2617,6 +2676,7 @@ impl LuminaTools {
         &self,
         Parameters(CancelPtySessionParams { id }): Parameters<CancelPtySessionParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "cancel_pty_session", "mcp tool invoked");
         // Registry-side cancel (best-effort; uuid parse miss falls through).
         if let Ok(uuid) = uuid::Uuid::parse_str(&id) {
             let sid = SessionId(uuid);
@@ -2653,6 +2713,7 @@ impl LuminaTools {
         &self,
         Parameters(DeletePtySessionParams { id }): Parameters<DeletePtySessionParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "delete_pty_session", "mcp tool invoked");
         repo::pty::delete_pty_session(self.state.pool.as_ref(), &id)
             .await
             .map_err(app_error_to_mcp)?;

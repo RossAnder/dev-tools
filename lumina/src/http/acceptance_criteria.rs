@@ -96,6 +96,7 @@ async fn add_acceptance_criterion_handler(
     Path(work_item_id): Path<String>,
     Json(body): Json<AddAcceptanceCriterionBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(work_item_id = %work_item_id, "http: POST /work-items/{{id}}/acceptance-criteria");
     let id =
         repo::add_acceptance_criterion(state.pool.as_ref(), &work_item_id, &body.text).await?;
     Ok((
@@ -116,6 +117,7 @@ async fn check_acceptance_criterion_handler(
     Path(id): Path<String>,
     Json(body): Json<CheckAcceptanceCriterionBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
+    tracing::debug!(ac_id = %id, "http: POST /acceptance-criteria/{{id}}/check");
     let pool = state.pool.as_ref();
     let work_item_id = parent_work_item(pool, &id).await?;
     repo::check_acceptance_criterion(pool, &id, body.by.as_deref()).await?;
@@ -133,6 +135,7 @@ async fn uncheck_acceptance_criterion_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
+    tracing::debug!(ac_id = %id, "http: POST /acceptance-criteria/{{id}}/uncheck");
     let pool = state.pool.as_ref();
     let work_item_id = parent_work_item(pool, &id).await?;
     repo::uncheck_acceptance_criterion(pool, &id).await?;
@@ -150,6 +153,7 @@ async fn remove_acceptance_criterion_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
+    tracing::debug!(ac_id = %id, "http: DELETE /acceptance-criteria/{{id}}");
     repo::remove_acceptance_criterion(state.pool.as_ref(), &id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

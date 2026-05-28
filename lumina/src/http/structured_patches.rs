@@ -175,6 +175,7 @@ async fn patch_relevance(
     Path(id): Path<String>,
     Json(body): Json<PatchScalarBody<Relevance>>,
 ) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/relevance");
     let pool = state.pool.as_ref();
     let value = require_value(body.value, "relevance")?;
     repo::set_relevance(pool, &id, value).await?;
@@ -186,6 +187,7 @@ async fn patch_effort(
     Path(id): Path<String>,
     Json(body): Json<PatchScalarBody<Effort>>,
 ) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/effort");
     let pool = state.pool.as_ref();
     let value = require_value(body.value, "effort")?;
     repo::set_effort(pool, &id, value).await?;
@@ -197,6 +199,7 @@ async fn patch_complexity(
     Path(id): Path<String>,
     Json(body): Json<PatchScalarBody<Complexity>>,
 ) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/complexity");
     let pool = state.pool.as_ref();
     let value = require_value(body.value, "complexity")?;
     repo::set_complexity(pool, &id, value).await?;
@@ -208,6 +211,7 @@ async fn patch_closure_gate(
     Path(id): Path<String>,
     Json(body): Json<PatchScalarBody<ClosureGate>>,
 ) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/closure-gate");
     let pool = state.pool.as_ref();
     let value = require_value(body.value, "closure_gate")?;
     repo::set_closure_gate(pool, &id, value).await?;
@@ -219,6 +223,7 @@ async fn patch_task_kind(
     Path(id): Path<String>,
     Json(body): Json<PatchScalarBody<TaskKind>>,
 ) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/task-kind");
     // `task_kind` is nullable at the repo layer — `value: null` clears the
     // column; `value` absent ALSO clears (both deserialise to `None`).
     let pool = state.pool.as_ref();
@@ -231,6 +236,7 @@ async fn patch_tier(
     Path(id): Path<String>,
     Json(body): Json<PatchScalarBody<Tier>>,
 ) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/tier");
     // `tier` is nullable at the repo layer — `value: null` clears the column.
     let pool = state.pool.as_ref();
     repo::set_task_tier(pool, &id, body.value).await?;
@@ -250,6 +256,7 @@ async fn patch_story_plan(
     Path(id): Path<String>,
     Json(body): Json<PatchStoryPlanBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/story-plan");
     let pool = state.pool.as_ref();
     let mut obj = serde_json::Map::new();
     if let Some(v) = body.problem_statement {
@@ -284,6 +291,7 @@ async fn patch_task_spec(
     Path(id): Path<String>,
     Json(body): Json<PatchTaskSpecBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/task-spec");
     let pool = state.pool.as_ref();
     let mut obj = serde_json::Map::new();
     if let Some(v) = body.execution_detail {

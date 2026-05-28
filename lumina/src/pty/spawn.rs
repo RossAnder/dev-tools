@@ -36,7 +36,7 @@
 //!
 //! ## Error policy in the bridge task
 //!
-//! Every error inside the spawned bridge task is logged via `eprintln!` and
+//! Every error inside the spawned bridge task is logged via `tracing::warn!` and
 //! swallowed — never propagated, never breaks the loop except on
 //! `broadcast::error::RecvError::Closed`. This matches the supervisor's
 //! per-session error-swallowing policy (`pty/supervisor.rs::dispatch_one`):
@@ -133,12 +133,17 @@ pub async fn spawn_pty_session_internal(
     cwd_display: String,
 ) -> Result<PtySession, AppError> {
     // ---- 1. Spawn the transport ----
+    tracing::info!(
+        cwd = %config.cwd.display(),
+        "pty spawn: pipeline starting"
+    );
     let handle = state
         .pty_transport
         .spawn(config.clone())
         .await?;
     let session_id = handle.session_id;
     let session_id_str = session_id.to_string();
+    tracing::info!(session_id = %session_id_str, "pty spawn: transport spawned");
 
     // ---- 2. Serialise SpawnConfig for the persisted snapshot ----
     let config_json = serde_json::to_string(&config)
@@ -209,8 +214,16 @@ pub async fn spawn_pty_session_internal(
     )
     .await
     {
-        eprintln!("pty bridge: status -> idle persist failed for {session_id_str}: {e}");
+        tracing::warn!(
+            session_id = %session_id_str,
+            error = %e,
+            "pty bridge: status -> idle persist failed"
+        );
     }
+    tracing::info!(
+        session_id = %session_id_str,
+        "pty spawn: session registered, status -> Idle"
+    );
 
     // 5b. Spawn the background bind+tail+bridge task. Bind is
     //     unbounded (`None` timeout) — it waits as long as it takes
@@ -223,15 +236,26 @@ pub async fn spawn_pty_session_internal(
         let cwd = config.cwd.clone();
 
         tokio::spawn(async move {
+            tracing::debug!(
+                session_id = %session_id_str,
+                "pty bridge: waiting for JSONL file to appear"
+            );
             let jsonl_path = match jsonl_tail::bind_jsonl_path(cwd.as_path(), None).await {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!(
-                        "pty bridge: bind_jsonl_path failed for {session_id_str}: {e}"
+                    tracing::warn!(
+                        session_id = %session_id_str,
+                        error = %e,
+                        "pty bridge: bind_jsonl_path failed; bridge exiting"
                     );
                     return;
                 }
             };
+            tracing::info!(
+                session_id = %session_id_str,
+                jsonl_path = %jsonl_path.display(),
+                "pty bridge: JSONL path bound"
+            );
             let jsonl_path_str = jsonl_path.to_string_lossy().into_owned();
 
             if let Err(e) = repo::pty::set_pty_jsonl_path(
@@ -241,8 +265,10 @@ pub async fn spawn_pty_session_internal(
             )
             .await
             {
-                eprintln!(
-                    "pty bridge: set_pty_jsonl_path failed for {session_id_str}: {e}"
+                tracing::warn!(
+                    session_id = %session_id_str,
+                    error = %e,
+                    "pty bridge: set_pty_jsonl_path failed"
                 );
                 return;
             }
@@ -316,11 +342,19 @@ pub async fn spawn_pty_session_internal(
                             )
                             .await
                             {
-                                eprintln!(
-                                    "pty bridge: insert_pty_message failed for {session_id_str}: {e}"
+                                tracing::warn!(
+                                    session_id = %session_id_str,
+                                    error = %e,
+                                    "pty bridge: insert_pty_message failed"
                                 );
                             }
 
+                            tracing::debug!(
+                                session_id = %session_id_str,
+                                kind = ?tm.kind,
+                                sequence = seq,
+                                "pty bridge: broadcasting typed message"
+                            );
                             let _ = bridge_tx.send(tm);
                         }
                     }
@@ -331,6 +365,11 @@ pub async fn spawn_pty_session_internal(
         });
     }
 
+    tracing::info!(
+        session_id = %session_id_str,
+        "pty spawn: bridge task launched (lazy bind pending user input)"
+    );
+
     // ---- 6. Best-effort supervisor registration ----
     if let Some(tx) = state.pty_register_tx.as_ref() {
         let registration = SessionRegistration {
@@ -338,13 +377,16 @@ pub async fn spawn_pty_session_internal(
             completed: handle.completed,
         };
         if let Err(e) = tx.send(registration).await {
-            eprintln!(
-                "pty spawn: supervisor register_tx send failed for {session_id_str}: {e}"
+            tracing::warn!(
+                session_id = %session_id_str,
+                error = %e,
+                "pty spawn: supervisor register_tx send failed"
             );
         }
     } else {
-        eprintln!(
-            "pty spawn: no supervisor register channel attached for {session_id_str}"
+        tracing::warn!(
+            session_id = %session_id_str,
+            "pty spawn: no supervisor register channel attached"
         );
         // TransportHandle's Drop does not chain these — drop explicitly so
         // the child-wait worker is released and the cancel task unblocks.

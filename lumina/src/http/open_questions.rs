@@ -84,6 +84,7 @@ async fn add_open_question_handler(
     Path(story_id): Path<String>,
     Json(body): Json<AddOpenQuestionBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(story_id = %story_id, "http: POST /work-items/{{story_id}}/open-questions");
     let id = repo::add_open_question(state.pool.as_ref(), &story_id, &body.question).await?;
     Ok((
         StatusCode::CREATED,
@@ -98,6 +99,7 @@ async fn add_question_option_handler(
     Path(question_id): Path<String>,
     Json(body): Json<AddQuestionOptionBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(question_id = %question_id, "http: POST /open-questions/{{id}}/options");
     let id = repo::add_question_option(
         state.pool.as_ref(),
         &question_id,
@@ -118,6 +120,11 @@ async fn block_task_on_question_handler(
     State(state): State<AppState>,
     Path((task_id, question_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(
+        task_id = %task_id,
+        question_id = %question_id,
+        "http: POST /work-items/{{task_id}}/block-on-question/{{question_id}}"
+    );
     repo::block_task_on_question(state.pool.as_ref(), &task_id, &question_id).await?;
     Ok((
         StatusCode::CREATED,
@@ -132,6 +139,11 @@ async fn set_enabling_option_handler(
     State(state): State<AppState>,
     Path((task_id, option_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(
+        task_id = %task_id,
+        option_id = %option_id,
+        "http: PUT /work-items/{{task_id}}/enabling-option/{{option_id}}"
+    );
     repo::set_enabling_option(state.pool.as_ref(), &task_id, &option_id).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -145,6 +157,7 @@ async fn resolve_open_question_handler(
     Path(question_id): Path<String>,
     Json(body): Json<ResolveOpenQuestionBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(question_id = %question_id, "http: POST /open-questions/{{id}}/resolve");
     repo::resolve_open_question(
         state.pool.as_ref(),
         &question_id,

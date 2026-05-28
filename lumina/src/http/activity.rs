@@ -60,6 +60,11 @@ async fn append_activity_handler(
     Path(id): Path<String>,
     Json(body): Json<AppendActivityBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(
+        work_item_id = %id,
+        entry_kind = %body.entry_kind,
+        "http: POST /work-items/{{id}}/activity"
+    );
     // Fold body/ref_id into the activity payload; None ⇒ no payload.
     let mut payload = serde_json::Map::new();
     if let Some(b) = body.body {

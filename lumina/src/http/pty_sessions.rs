@@ -110,6 +110,11 @@ async fn list_sessions(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<PtySession>>, AppError> {
+    tracing::debug!(
+        status = q.status.as_deref().unwrap_or(""),
+        project_id = q.project_id.as_deref().unwrap_or(""),
+        "http: GET /pty/sessions"
+    );
     let rows = repo::pty::list_pty_sessions(
         state.pool.as_ref(),
         q.status.as_deref(),
@@ -124,6 +129,7 @@ async fn get_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<PtySession>, AppError> {
+    tracing::debug!(session_id = %id, "http: GET /pty/sessions/{{id}}");
     let row = repo::pty::get_pty_session(state.pool.as_ref(), &id).await?;
     Ok(Json(row))
 }
@@ -168,6 +174,7 @@ async fn spawn_session(
     State(state): State<AppState>,
     Json(body): Json<SpawnSessionBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::info!(cwd = %body.cwd, "http: POST /pty/sessions: spawn requested");
     let canonical_cwd =
         crate::pty::spawn::resolve_and_validate_cwd(&PathBuf::from(&body.cwd))?;
 
@@ -189,6 +196,7 @@ async fn spawn_session(
     )
     .await?;
 
+    tracing::info!(session_id = %row.id, "http: POST /pty/sessions: 201 returned");
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -210,6 +218,7 @@ async fn list_messages(
     Path(id): Path<String>,
     Query(q): Query<MessagesQuery>,
 ) -> Result<Json<Vec<PtyMessage>>, AppError> {
+    tracing::debug!(session_id = %id, "http: GET /messages");
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
     let rows = repo::pty::list_pty_messages(state.pool.as_ref(), &id, q.since, limit).await?;
     Ok(Json(rows))
@@ -225,6 +234,7 @@ async fn list_queue(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<PtyQueueEntry>>, AppError> {
+    tracing::debug!(session_id = %id, "http: GET /queue");
     let rows = Queue::list(state.pool.as_ref(), &id).await?;
     Ok(Json(rows))
 }
@@ -249,6 +259,12 @@ async fn enqueue_input(
     Path(id): Path<String>,
     Json(body): Json<InputBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::info!(
+        session_id = %id,
+        kind = %body.kind,
+        payload_len = body.payload.len(),
+        "http: POST /input: enqueue"
+    );
     validate_input_kind(&body.kind)?;
     let pool = state.pool.as_ref();
     let existing = Queue::list(pool, &id).await?;
@@ -269,6 +285,11 @@ async fn enqueue_inputs_batch(
     Path(id): Path<String>,
     Json(items): Json<Vec<InputBody>>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::info!(
+        session_id = %id,
+        frame_count = items.len(),
+        "http: POST /inputs/batch: enqueue"
+    );
     if items.is_empty() {
         return Err(AppError::Validation(
             "inputs batch must contain at least one entry".into(),
@@ -339,6 +360,7 @@ async fn cancel_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
+    tracing::info!(session_id = %id, "http: DELETE /pty/sessions: cancelling");
     // Parse the id into a `SessionId` for the registry lookup. A malformed
     // uuid → registry-miss, fall through to repo for a 404 with the row's
     // `id` shape rather than a uuid-parse error.
@@ -440,6 +462,7 @@ async fn ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<axum::response::Response, AppError> {
+    tracing::info!(session_id = %id, "ws: upgrade requested");
     // Origin-header allowlist. Browser-CSRF defence only; any local process
     // can forge it. Trust model is "localhost-only" — same as the rest of
     // the /api surface.
@@ -448,6 +471,7 @@ async fn ws_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     if !is_origin_allowed(origin) {
+        tracing::warn!(session_id = %id, origin = %origin, "ws: upgrade rejected — origin not allowed");
         return Err(AppError::Validation(format!(
             "websocket Origin {origin:?} is not allowed; expected a localhost variant"
         )));
@@ -502,6 +526,7 @@ async fn ws_session_loop(
         Ok(uuid) => registry.get(&SessionId(uuid)).await,
         Err(_) => None,
     }) else {
+        tracing::warn!(session_id = %id, "ws: session not found in registry; closing");
         // Send an error frame and close.
         let mut socket = socket;
         let frame = FrameOut::Error {
@@ -514,6 +539,8 @@ async fn ws_session_loop(
         let _ = socket.close().await;
         return;
     };
+
+    tracing::info!(session_id = %id, "ws: client connected");
 
     let (mut ws_tx, mut ws_rx) = socket.split();
     let token = CancellationToken::new();
@@ -578,8 +605,19 @@ async fn ws_session_loop(
                             let parsed: Result<FrameIn, _> = serde_json::from_str(&text);
                             match parsed {
                                 Ok(FrameIn::Input { kind, payload }) => {
+                                    tracing::debug!(
+                                        session_id = %receiver_id,
+                                        kind = %kind,
+                                        payload_len = payload.len(),
+                                        "ws: input frame received, enqueueing"
+                                    );
                                     // Per-input enqueue (sequence = list.len()+1).
                                     if validate_input_kind(&kind).is_err() {
+                                        tracing::debug!(
+                                            session_id = %receiver_id,
+                                            kind = %kind,
+                                            "ws: ignored invalid input kind"
+                                        );
                                         // Skip silently; a client could spam invalid kinds.
                                         continue;
                                     }
@@ -596,16 +634,18 @@ async fn ws_session_loop(
                                             )
                                             .await
                                             {
-                                                eprintln!(
-                                                    "ws enqueue failed for session {}: {e}",
-                                                    receiver_id
+                                                tracing::warn!(
+                                                    session_id = %receiver_id,
+                                                    error = %e,
+                                                    "ws enqueue failed"
                                                 );
                                             }
                                         }
                                         Err(e) => {
-                                            eprintln!(
-                                                "ws Queue::list failed for session {}: {e}",
-                                                receiver_id
+                                            tracing::warn!(
+                                                session_id = %receiver_id,
+                                                error = %e,
+                                                "ws Queue::list failed"
                                             );
                                         }
                                     }
@@ -630,9 +670,10 @@ async fn ws_session_loop(
                                     // emit `FrameOut::Pong` properly.
                                 }
                                 Err(e) => {
-                                    eprintln!(
-                                        "ws frame parse error for session {}: {e}",
-                                        receiver_id
+                                    tracing::warn!(
+                                        session_id = %receiver_id,
+                                        error = %e,
+                                        "ws frame parse error"
                                     );
                                 }
                             }
@@ -655,6 +696,7 @@ async fn ws_session_loop(
         _ = receiver_handle => {}
     }
     token.cancel();
+    tracing::info!(session_id = %id, "ws: client disconnected");
 }
 
 #[cfg(test)]

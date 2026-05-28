@@ -84,6 +84,11 @@ async fn list_work_items(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(
+        parent_id = q.parent_id.as_deref().unwrap_or(""),
+        kind = q.kind.as_deref().unwrap_or(""),
+        "http: GET /work-items"
+    );
     let pool = state.pool.as_ref();
 
     if q.parent_id.is_none() && q.kind.is_none() {
@@ -141,6 +146,7 @@ async fn get_work_item(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
+    tracing::debug!(id = %id, "http: GET /work-items/{{id}}");
     let detail = repo::get_work_item_detail(state.pool.as_ref(), &id).await?;
     Ok(Json(detail))
 }
@@ -152,6 +158,12 @@ async fn create_work_item(
     State(state): State<AppState>,
     Json(req): Json<CreateWorkItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(
+        kind = %req.kind,
+        parent_id = req.parent_id.as_deref().unwrap_or(""),
+        title = %req.title,
+        "http: POST /work-items"
+    );
     let id = repo::create_work_item_with_origin(
         state.pool.as_ref(),
         &req.kind,
@@ -180,6 +192,7 @@ async fn update_work_item(
     Path(id): Path<String>,
     Json(req): Json<UpdateWorkItemRequest>,
 ) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}");
     let pool = state.pool.as_ref();
     repo::update_work_item(pool, &id, &req).await?;
     // Re-fetch via the detail getter (no new query) and return the updated item.
@@ -199,6 +212,7 @@ async fn delete_work_item_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
+    tracing::debug!(id = %id, "http: DELETE /work-items/{{id}}");
     repo::delete_work_item(state.pool.as_ref(), &id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -283,8 +283,9 @@ pub fn resolve_projects_root() -> PathBuf {
     match std::env::var(home_var) {
         Ok(home) => PathBuf::from(home).join(".claude").join("projects"),
         Err(_) => {
-            eprintln!(
-                "jsonl_tail: {home_var} unset; falling back to CWD for projects root"
+            tracing::warn!(
+                home_var = %home_var,
+                "jsonl_tail: home env var unset; falling back to CWD for projects root"
             );
             std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
         }
@@ -323,12 +324,18 @@ pub async fn bind_jsonl_path(
     let dir = resolve_projects_root().join(sanitise_cwd(cwd));
 
     let snapshot = read_jsonl_filenames(&dir).await;
+    tracing::debug!(
+        dir = %dir.display(),
+        snapshot_count = snapshot.len(),
+        "jsonl_tail: bind_jsonl_path snapshot taken"
+    );
 
     let deadline = timeout.map(|t| std::time::Instant::now() + t);
     let mut interval = tokio::time::interval(Duration::from_millis(100));
     // First tick fires immediately — skip it so we don't double-read.
     interval.tick().await;
 
+    let mut tick_counter: u64 = 0;
     loop {
         if let Some(d) = deadline
             && std::time::Instant::now() >= d
@@ -343,8 +350,23 @@ pub async fn bind_jsonl_path(
         let current = read_jsonl_filenames(&dir).await;
         for name in &current {
             if !snapshot.contains(name) {
-                return Ok(dir.join(name));
+                let resolved = dir.join(name);
+                tracing::info!(
+                    path = %resolved.display(),
+                    "jsonl_tail: bind_jsonl_path resolved"
+                );
+                return Ok(resolved);
             }
+        }
+
+        // Emit a polling heartbeat once every ~5s (50 ticks * 100ms) so a
+        // long bind wait shows up in debug-level traces without flooding.
+        tick_counter += 1;
+        if tick_counter.is_multiple_of(50) {
+            tracing::debug!(
+                dir = %dir.display(),
+                "jsonl_tail: bind_jsonl_path polling (no candidate yet)"
+            );
         }
 
         interval.tick().await;
@@ -395,7 +417,7 @@ async fn read_jsonl_filenames(dir: &Path) -> std::collections::HashSet<String> {
 ///    concern (deferred per plan Risks §8).
 /// 5. Loop exits on `tx.send` returning `SendError` (zero receivers — the
 ///    supervisor has dropped the session) OR on a fatal IO error opening
-///    the file. All other errors are logged via `eprintln!` and swallowed
+///    the file. All other errors are logged via `tracing::warn!` and swallowed
 ///    (matches the supervisor's per-session error policy at
 ///    `pty/spawn.rs`).
 ///
@@ -412,12 +434,16 @@ pub async fn tail(
     jsonl_path: PathBuf,
     tx: broadcast::Sender<JsonlRecordParsed>,
 ) {
+    tracing::info!(
+        path = %jsonl_path.display(),
+        "jsonl_tail: tail task started"
+    );
     let parent = match jsonl_path.parent() {
         Some(p) => p.to_path_buf(),
         None => {
-            eprintln!(
-                "jsonl_tail: refusing to tail {} — has no parent directory",
-                jsonl_path.display()
+            tracing::warn!(
+                path = %jsonl_path.display(),
+                "jsonl_tail: refusing to tail — path has no parent directory"
             );
             return;
         }
@@ -439,22 +465,23 @@ pub async fn tail(
                 let _ = evt_tx.blocking_send(event);
             }
             Err(e) => {
-                eprintln!("jsonl_tail: notify error: {e}");
+                tracing::warn!(error = %e, "jsonl_tail: notify error");
             }
         }
     });
     let mut watcher = match watcher_result {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("jsonl_tail: failed to create watcher: {e}");
+            tracing::error!(error = %e, "jsonl_tail: failed to create watcher");
             return;
         }
     };
 
     if let Err(e) = watcher.watch(&parent, RecursiveMode::NonRecursive) {
-        eprintln!(
-            "jsonl_tail: failed to watch {}: {e}",
-            parent.display()
+        tracing::error!(
+            parent = %parent.display(),
+            error = %e,
+            "jsonl_tail: failed to watch parent directory"
         );
         return;
     }
@@ -466,7 +493,7 @@ pub async fn tail(
             let event = match evt_rx.recv().await {
                 Some(e) => e,
                 None => {
-                    eprintln!("jsonl_tail: watcher channel closed before file appeared");
+                    tracing::warn!("jsonl_tail: watcher channel closed before file appeared");
                     return;
                 }
             };
@@ -482,9 +509,10 @@ pub async fn tail(
     let file = match tokio::fs::File::open(&jsonl_path).await {
         Ok(f) => f,
         Err(e) => {
-            eprintln!(
-                "jsonl_tail: failed to open {}: {e}",
-                jsonl_path.display()
+            tracing::error!(
+                path = %jsonl_path.display(),
+                error = %e,
+                "jsonl_tail: failed to open file"
             );
             return;
         }
@@ -499,11 +527,15 @@ pub async fn tail(
 
     while let Some(event) = evt_rx.recv().await {
         if event.need_rescan() {
+            tracing::warn!(
+                path = %jsonl_path.display(),
+                "jsonl_tail: need_rescan triggered, seeking back to 0"
+            );
             // Buffer overflow on the OS side: re-seek to 0 and re-read.
             // The consumer must tolerate duplicate records on rescan (or
             // dedup on JSONL uuid — see plan Risks §8).
             if let Err(e) = reader.get_mut().seek(std::io::SeekFrom::Start(0)).await {
-                eprintln!("jsonl_tail: rescan seek failed: {e}");
+                tracing::error!(error = %e, "jsonl_tail: rescan seek failed");
                 return;
             }
         }
@@ -544,12 +576,16 @@ async fn drain_and_broadcast(
     path: &Path,
 ) -> bool {
     let mut lines = reader.lines();
+    let mut bytes_read: usize = 0;
+    let mut lines_read: usize = 0;
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
                 if line.is_empty() {
                     continue;
                 }
+                bytes_read += line.len();
+                lines_read += 1;
                 let parsed = parse_line(&line);
                 if tx.send(parsed).is_err() {
                     // No subscribers — the bridge task has been dropped.
@@ -557,11 +593,22 @@ async fn drain_and_broadcast(
                     return false;
                 }
             }
-            Ok(None) => return true, // EOF, normal
+            Ok(None) => {
+                if lines_read > 0 {
+                    tracing::debug!(
+                        path = %path.display(),
+                        bytes_read,
+                        lines_read,
+                        "jsonl_tail: drained line(s) after notify event"
+                    );
+                }
+                return true; // EOF, normal
+            }
             Err(e) => {
-                eprintln!(
-                    "jsonl_tail: read error on {}: {e}",
-                    path.display()
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "jsonl_tail: read error"
                 );
                 return true; // non-fatal: keep watching
             }

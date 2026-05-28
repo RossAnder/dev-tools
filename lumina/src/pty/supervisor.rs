@@ -16,7 +16,7 @@
 //!   exit-reap branch can poll it.
 //!
 //! Per-session errors (queue pop failures, channel sends, DB updates) are
-//! logged via `eprintln!` and SWALLOWED — the supervisor MUST NOT die
+//! logged via `tracing` (warn/error) and SWALLOWED — the supervisor MUST NOT die
 //! because one session misbehaved. A failure that should round-trip to the
 //! UI is recorded on `pty_sessions.last_error` via
 //! `repo::pty::update_pty_session_status(id, "failed", Some(msg))`.
@@ -101,6 +101,7 @@ async fn supervisor_loop(
     token: CancellationToken,
     mut register_rx: mpsc::Receiver<SessionRegistration>,
 ) {
+    tracing::info!("supervisor: loop starting");
     let mut ticker = tokio::time::interval(TICK_PERIOD);
     // The first `tick()` fires immediately by default — that's fine; the
     // first pass is just a no-op when the registry is empty.
@@ -109,6 +110,7 @@ async fn supervisor_loop(
     loop {
         tokio::select! {
             _ = token.cancelled() => {
+                tracing::info!("supervisor: loop shutting down (token cancelled)");
                 break;
             }
             _ = ticker.tick() => {
@@ -161,6 +163,7 @@ fn make_exit_future(
 /// and transition back to `Idle` on end-of-turn.
 async fn tick_once(pool: &SqlitePool, registry: &SessionRegistry) {
     let sessions = registry.list().await;
+    tracing::debug!(session_count = sessions.len(), "supervisor: tick");
     for session in sessions {
         let status = session.status().await;
         match status {
@@ -190,8 +193,10 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
         Ok(Some(e)) => e,
         Ok(None) => return,
         Err(err) => {
-            eprintln!(
-                "supervisor: pop_next_pending failed for session {session_id_str}: {err}"
+            tracing::warn!(
+                session_id = %session_id_str,
+                error = %err,
+                "supervisor: pop_next_pending failed"
             );
             return;
         }
@@ -206,12 +211,14 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
         "cancel" => InputKind::Cancel,
         "control" => InputKind::Control,
         other => {
-            eprintln!(
-                "supervisor: unknown input_kind {other:?} on queue entry {}: marking failed",
-                entry.id
+            tracing::warn!(
+                session_id = %session_id_str,
+                input_kind = %other,
+                entry_id = %entry.id,
+                "supervisor: unknown input_kind on queue entry: marking failed"
             );
             if let Err(err) = Queue::mark_failed(pool, &entry.id, "unknown input_kind").await {
-                eprintln!("supervisor: mark_failed cascade error: {err}");
+                tracing::warn!(error = %err, "supervisor: mark_failed cascade error");
             }
             return;
         }
@@ -222,22 +229,32 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
         payload: entry.payload.clone(),
     };
 
+    tracing::debug!(
+        session_id = %session_id_str,
+        kind = ?kind,
+        "supervisor: dispatching queued input"
+    );
     if let Err(send_err) = session.input_tx.send(frame).await {
         // Receiver gone — the PTY writer task has died. Mark the entry
         // failed and surface the failure on the session row so the UI
         // sees it.
         let msg = "input channel closed";
-        eprintln!(
-            "supervisor: input_tx.send failed for session {session_id_str}: {send_err}; marking entry {} failed",
-            entry.id
+        tracing::error!(
+            session_id = %session_id_str,
+            entry_id = %entry.id,
+            error = %send_err,
+            "supervisor: input_tx.send failed; marking entry failed"
         );
         if let Err(err) = Queue::mark_failed(pool, &entry.id, msg).await {
-            eprintln!("supervisor: mark_failed cascade error: {err}");
+            tracing::warn!(error = %err, "supervisor: mark_failed cascade error");
         }
         if let Err(err) =
             repo::pty::update_pty_session_status(pool, &session_id_str, "failed", Some(msg)).await
         {
-            eprintln!("supervisor: update_pty_session_status(failed) cascade error: {err}");
+            tracing::warn!(
+                error = %err,
+                "supervisor: update_pty_session_status(failed) cascade error"
+            );
         }
         session.set_status(SessionStatus::Failed).await;
         return;
@@ -251,29 +268,57 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
     // queue-row ordering, a separate namespace.
     let message_id = uuid::Uuid::now_v7().to_string();
     let content_json = serde_json::json!({ "text": entry.payload }).to_string();
+    let seq = session.next_sequence();
     if let Err(err) = repo::pty::insert_pty_message(
         pool,
         &message_id,
         &session_id_str,
-        session.next_sequence(),
+        seq,
         "user_input",
         &content_json,
         Some(&entry.payload),
     )
     .await
     {
-        eprintln!("supervisor: insert_pty_message failed: {err}");
+        tracing::warn!(error = %err, "supervisor: insert_pty_message failed");
         // Continue — the input was already sent to the PTY; status update
         // still matters more than the audit row.
     }
+
+    // Broadcast the user_input row to WS subscribers so the SPA sees the
+    // user's own typed message live (without this, the message only shows
+    // up after re-entering the session and re-fetching the message list).
+    // `send` returns Err only when there are zero subscribers, which is
+    // benign during a no-WS test/spawn — discard.
+    let typed = crate::pty::protocol::TypedMessage {
+        sequence: seq,
+        kind: crate::pty::protocol::MessageKind::UserInput,
+        content: serde_json::json!({ "text": entry.payload }),
+        raw_text: Some(entry.payload.clone()),
+        created_at: jiff::Timestamp::now().to_string(),
+        tool_use_id: None,
+    };
+    let _ = session.broadcast_tx.send(typed);
+    tracing::debug!(
+        session_id = %session_id_str,
+        sequence = seq,
+        "supervisor: broadcasting user_input row"
+    );
 
     // Transition to Awaiting (model is now expected to respond).
     session.set_status(SessionStatus::Awaiting).await;
     if let Err(err) =
         repo::pty::update_pty_session_status(pool, &session_id_str, "awaiting", None).await
     {
-        eprintln!("supervisor: update_pty_session_status(awaiting) failed: {err}");
+        tracing::warn!(
+            error = %err,
+            "supervisor: update_pty_session_status(awaiting) failed"
+        );
     }
+    tracing::info!(
+        session_id = %session_id_str,
+        "supervisor: status -> Awaiting"
+    );
 
     // NOTE: the queue entry stays in `dispatched` state. It is marked
     // completed in `maybe_finalise_turn` when the JSONL-tail bridge has
@@ -293,20 +338,27 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
 ///    firing before the bridge has emitted anything at all (which would
 ///    otherwise close the turn on a freshly-dispatched prompt).
 async fn maybe_finalise_turn(pool: &SqlitePool, session: &Arc<crate::pty::session::Session>) {
-    let outstanding_empty = session.outstanding_tool_uses.lock().await.is_empty();
-    if !outstanding_empty {
+    let session_id_str = session.id.to_string();
+    let outstanding_count = session.outstanding_tool_uses.lock().await.len();
+    let last_ms = session.last_record_at.load(Ordering::Relaxed);
+    let now_ms = jiff::Timestamp::now().as_millisecond();
+    let ms_since_last = if last_ms == 0 { 0 } else { now_ms.saturating_sub(last_ms) };
+    tracing::debug!(
+        session_id = %session_id_str,
+        outstanding_tool_uses = outstanding_count,
+        ms_since_last,
+        "supervisor: quiescence check"
+    );
+
+    if outstanding_count > 0 {
         return;
     }
-    let last_ms = session.last_record_at.load(Ordering::Relaxed);
     if last_ms == 0 {
         return;
     }
-    let now_ms = jiff::Timestamp::now().as_millisecond();
-    if now_ms.saturating_sub(last_ms) < IDLE_THRESHOLD.as_millis() as i64 {
+    if ms_since_last < IDLE_THRESHOLD.as_millis() as i64 {
         return;
     }
-
-    let session_id_str = session.id.to_string();
 
     // Find the most recent dispatched queue entry for this session. v1
     // path: list everything and scan; a future revision can add a
@@ -316,14 +368,19 @@ async fn maybe_finalise_turn(pool: &SqlitePool, session: &Arc<crate::pty::sessio
             if let Some(entry) = rows.iter().rev().find(|r| r.status == "dispatched")
                 && let Err(err) = Queue::mark_completed(pool, &entry.id).await
             {
-                eprintln!(
-                    "supervisor: mark_completed failed for entry {}: {err}",
-                    entry.id
+                tracing::warn!(
+                    entry_id = %entry.id,
+                    error = %err,
+                    "supervisor: mark_completed failed"
                 );
             }
         }
         Err(err) => {
-            eprintln!("supervisor: Queue::list failed for {session_id_str}: {err}");
+            tracing::warn!(
+                session_id = %session_id_str,
+                error = %err,
+                "supervisor: Queue::list failed"
+            );
         }
     }
 
@@ -331,8 +388,15 @@ async fn maybe_finalise_turn(pool: &SqlitePool, session: &Arc<crate::pty::sessio
     if let Err(err) =
         repo::pty::update_pty_session_status(pool, &session_id_str, "idle", None).await
     {
-        eprintln!("supervisor: update_pty_session_status(idle) failed: {err}");
+        tracing::warn!(
+            error = %err,
+            "supervisor: update_pty_session_status(idle) failed"
+        );
     }
+    tracing::info!(
+        session_id = %session_id_str,
+        "supervisor: status -> Idle (turn finalised)"
+    );
 }
 
 /// Handle a terminal exit from a session's transport. Updates
@@ -377,10 +441,19 @@ async fn reap_exit(
     )
     .await
     {
-        eprintln!(
-            "supervisor: update_pty_session_ended failed for {session_id_str}: {err}"
+        tracing::warn!(
+            session_id = %session_id_str,
+            error = %err,
+            "supervisor: update_pty_session_ended failed"
         );
     }
+
+    tracing::info!(
+        session_id = %session_id_str,
+        terminal_status = %terminal_status,
+        exit_code = ?exit_code,
+        "supervisor: session reaped"
+    );
 
     let _ = registry.remove(&session_id).await;
 }
@@ -415,7 +488,7 @@ mod tests {
         // FuturesUnordered, then observe RecvError on the next poll —
         // and try to update pty_sessions.last_error for a row that
         // doesn't exist. That UPDATE returns 0 affected rows, which is
-        // surfaced as an AppError and logged via eprintln!; the
+        // surfaced as an AppError and logged via tracing::warn!; the
         // supervisor does NOT die. After shutdown completes cleanly we
         // know the loop survived the per-session error.
         let session_id = SessionId::new();

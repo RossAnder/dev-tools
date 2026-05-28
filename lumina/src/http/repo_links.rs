@@ -66,6 +66,12 @@ async fn add_repo_link_handler(
     Path(project_id): Path<String>,
     Json(body): Json<AddRepoLinkBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(
+        project_id = %project_id,
+        slug = %body.slug,
+        is_primary = body.is_primary,
+        "http: POST /work-items/{{project_id}}/repo-links"
+    );
     let id =
         repo::add_repo_link(state.pool.as_ref(), &project_id, &body.slug, body.is_primary).await?;
     Ok((
@@ -86,6 +92,7 @@ async fn remove_repo_link_handler(
     State(state): State<AppState>,
     Path((_project_id, id)): Path<(String, String)>,
 ) -> Result<StatusCode, AppError> {
+    tracing::debug!(repo_link_id = %id, "http: DELETE /work-items/{{project_id}}/repo-links/{{id}}");
     repo::remove_repo_link(state.pool.as_ref(), &id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -104,6 +111,12 @@ async fn set_primary_repo_handler(
     Path((project_id, id)): Path<(String, String)>,
     Json(body): Json<SetPrimaryBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(
+        project_id = %project_id,
+        repo_link_id = %id,
+        is_primary = body.is_primary,
+        "http: PATCH /work-items/{{project_id}}/repo-links/{{id}}"
+    );
     if !body.is_primary {
         return Err(AppError::Validation(
             "PATCH repo-link body must set is_primary=true (the only patchable field today); \

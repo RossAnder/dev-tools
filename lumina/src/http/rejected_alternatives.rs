@@ -67,6 +67,7 @@ async fn add_alternative_handler(
     Path(id): Path<String>,
     Json(body): Json<AddAlternativeBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(work_item_id = %id, "http: POST /work-items/{{id}}/rejected-alternatives");
     let new_id = repo::add_rejected_alternative(
         state.pool.as_ref(),
         &id,
@@ -89,6 +90,7 @@ async fn update_alternative_handler(
     Path(id): Path<String>,
     Json(patch): Json<AlternativePatch>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(alt_id = %id, "http: PATCH /rejected-alternatives/{{id}}");
     repo::update_rejected_alternative(state.pool.as_ref(), &id, &patch).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -102,6 +104,7 @@ async fn supersede_alternative_handler(
     Path((old_id, _new_id)): Path<(String, String)>,
     Json(body): Json<AddAlternativeBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(old_id = %old_id, "http: POST /rejected-alternatives/{{old_id}}/supersede");
     let pool = state.pool.as_ref();
     let owner = alternative_owner_work_item(pool, &old_id).await?;
     let minted = repo::supersede_rejected_alternative(
@@ -125,6 +128,7 @@ async fn remove_alternative_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
+    tracing::debug!(alt_id = %id, "http: DELETE /rejected-alternatives/{{id}}");
     repo::remove_rejected_alternative(state.pool.as_ref(), &id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

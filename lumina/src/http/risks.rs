@@ -73,6 +73,7 @@ async fn add_risk_handler(
     Path(id): Path<String>,
     Json(body): Json<AddRiskBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(work_item_id = %id, "http: POST /work-items/{{id}}/risks");
     let severity = risk_severity_str(body.severity);
     let new_id = repo::add_risk(
         state.pool.as_ref(),
@@ -98,6 +99,7 @@ async fn update_risk_handler(
     Path(id): Path<String>,
     Json(patch): Json<RiskPatch>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(risk_id = %id, "http: PATCH /risks/{{id}}");
     repo::update_risk(state.pool.as_ref(), &id, &patch).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -113,6 +115,7 @@ async fn supersede_risk_handler(
     Path((old_id, _new_id)): Path<(String, String)>,
     Json(body): Json<AddRiskBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(old_id = %old_id, "http: POST /risks/{{old_id}}/supersede");
     let pool = state.pool.as_ref();
     // Resolve the owning work-item from the old row so the caller does not
     // have to thread it through the URL.
@@ -139,6 +142,7 @@ async fn remove_risk_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
+    tracing::debug!(risk_id = %id, "http: DELETE /risks/{{id}}");
     repo::remove_risk(state.pool.as_ref(), &id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

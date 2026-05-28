@@ -114,6 +114,7 @@ async fn add_research_note_handler(
     Path(work_item_id): Path<String>,
     Json(body): Json<AddResearchNoteBody>,
 ) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(work_item_id = %work_item_id, "http: POST /work-items/{{id}}/research-notes");
     let origin_str = body.origin.map(enum_to_wire);
     let id = repo::add_research_note(
         state.pool.as_ref(),
@@ -143,6 +144,7 @@ async fn update_research_note_handler(
     Path(id): Path<String>,
     Json(body): Json<UpdateResearchNoteBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
+    tracing::debug!(note_id = %id, "http: PATCH /research-notes/{{id}}");
     let pool = state.pool.as_ref();
     let work_item_id = parent_work_item(pool, &id).await?;
     let req = UpdateResearchNoteRequest {
@@ -167,6 +169,11 @@ async fn supersede_research_note_handler(
     State(state): State<AppState>,
     Path((old_id, new_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(
+        old_id = %old_id,
+        new_id = %new_id,
+        "http: POST /research-notes/{{old_id}}/supersede/{{new_id}}"
+    );
     repo::supersede_research_note(state.pool.as_ref(), &old_id, &new_id).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

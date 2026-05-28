@@ -155,10 +155,16 @@ impl Transport for PtyTransport {
         }
 
         // ---- 3. Spawn the child --------------------------------------------
+        tracing::info!(
+            cwd = %config.cwd.display(),
+            claude_args = ?config.claude_args,
+            "pty transport: spawning claude.exe"
+        );
         let mut child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| AppError::Validation(format!("spawn_command(claude) failed: {e}")))?;
+        tracing::info!(session_id = %session_id_str, "pty transport: child spawned");
 
         // Obtain a cloneable killer BEFORE moving `child` into the wait task.
         let mut killer = child.clone_killer();
@@ -217,13 +223,14 @@ impl Transport for PtyTransport {
                         }
                         Ok(n) => {
                             let chunk = Bytes::copy_from_slice(&buf[..n]);
+                            tracing::trace!(bytes = n, "pty reader: chunk drained");
                             if reader_tx.blocking_send(chunk).is_err() {
                                 // Drain-and-discard bridge has gone — nothing left to read for.
                                 break;
                             }
                         }
                         Err(e) => {
-                            eprintln!("pty_transport: reader-blocking read error: {e}");
+                            tracing::warn!(error = %e, "pty_transport: reader-blocking read error");
                             break;
                         }
                     }
@@ -242,11 +249,11 @@ impl Transport for PtyTransport {
             let mut writer = writer;
             while let Some(chunk) = writer_rx.blocking_recv() {
                 if let Err(e) = writer.write_all(&chunk) {
-                    eprintln!("pty_transport: writer-blocking write_all error: {e}");
+                    tracing::warn!(error = %e, "pty_transport: writer-blocking write_all error");
                     break;
                 }
                 if let Err(e) = writer.flush() {
-                    eprintln!("pty_transport: writer-blocking flush error: {e}");
+                    tracing::warn!(error = %e, "pty_transport: writer-blocking flush error");
                     break;
                 }
             }
@@ -282,6 +289,7 @@ impl Transport for PtyTransport {
             let writer_tx = writer_tx.clone();
             tokio::spawn(async move {
                 while let Some(frame) = inbound_rx.recv().await {
+                    let frame_kind = frame.kind;
                     let bytes = match frame.kind {
                         InputKind::Prompt => {
                             let translated: Vec<u8> = frame
@@ -300,14 +308,19 @@ impl Transport for PtyTransport {
                             if frame.payload == "CTRL_C" {
                                 Bytes::from_static(b"\x03")
                             } else {
-                                eprintln!(
-                                    "pty_transport: unsupported Control payload: {:?}",
-                                    frame.payload
+                                tracing::warn!(
+                                    payload = ?frame.payload,
+                                    "pty_transport: unsupported Control payload"
                                 );
                                 continue;
                             }
                         }
                     };
+                    tracing::debug!(
+                        payload_len = bytes.len(),
+                        kind = ?frame_kind,
+                        "pty input bridge: forwarding to writer"
+                    );
                     if writer_tx.send(bytes).await.is_err() {
                         // Writer worker is gone — nothing more to do.
                         break;
@@ -335,7 +348,7 @@ impl Transport for PtyTransport {
                     success: status.success(),
                 },
                 Err(e) => {
-                    eprintln!("pty_transport: child.wait() error: {e}");
+                    tracing::error!(error = %e, "pty_transport: child.wait() error");
                     SessionExit {
                         code: None,
                         signal: None,
@@ -343,6 +356,11 @@ impl Transport for PtyTransport {
                     }
                 }
             };
+            tracing::info!(
+                success = exit.success,
+                code = ?exit.code,
+                "pty wait: child exited"
+            );
             // Receiver may be gone if the handle was dropped before the child
             // exited; that's a benign teardown race.
             let _ = completed_tx.send(exit);
@@ -361,8 +379,9 @@ impl Transport for PtyTransport {
             let windows_slave_in_task = windows_slave;
             tokio::spawn(async move {
                 shutdown_child.cancelled().await;
+                tracing::info!("pty cancel: shutdown signalled, killing child");
                 if let Err(e) = killer.kill() {
-                    eprintln!("pty_transport: child kill on shutdown failed: {e}");
+                    tracing::warn!(error = %e, "pty_transport: child kill on shutdown failed");
                 }
                 // `master` is dropped here when the task returns; doing it via
                 // an explicit `drop` documents the intent.
