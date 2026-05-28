@@ -26,10 +26,13 @@
 -->
 <script setup vapor lang="ts">
 import { computed } from 'vue'
-import type { PtyMessage } from '@/api/pty'
-import type { RenderableMessage } from '@/composables/usePtySession'
+import { isAuqToolUse, type AuqInput, type AuqAnswer, type AuqQuestion, type PtyMessage, type ToolUseContent } from '@/api/pty'
+import { usePtySession, type RenderableMessage } from '@/composables/usePtySession'
+import PtyAuqPicker from './PtyAuqPicker.vue'
 
 const props = defineProps<{ message: RenderableMessage }>()
+
+const { submitAuqAnswer, cancelAuq } = usePtySession()
 
 // Parse the row's content_json into an object once; returns null on parse
 // failure or non-object payloads.
@@ -159,6 +162,57 @@ const orphanResultIsError = computed<boolean>(() => {
   const flag = content.value?.['is_error']
   return flag === true
 })
+
+// AUQ-picker integration (plan T10): when this row is a tool_use whose
+// matching tool_result has NOT yet arrived AND its content_json names
+// `AskUserQuestion`, swap the default tool_use card for the interactive
+// PtyAuqPicker. Matched-AUQ rows fall through to the existing tool_use
+// rendering branch (showing the completed paired card).
+const isUnmatchedAuq = computed<boolean>(() => {
+  if (props.message.kind !== 'tool_use') return false
+  if (props.message.matchedResult !== undefined) return false
+  const parsed = content.value
+  if (parsed === null) return false
+  const candidate = parsed as Partial<ToolUseContent>
+  if (
+    typeof candidate.name !== 'string' ||
+    typeof candidate.tool_use_id !== 'string' ||
+    candidate.input === undefined
+  ) {
+    return false
+  }
+  const narrowable: ToolUseContent = {
+    name: candidate.name,
+    tool_use_id: candidate.tool_use_id,
+    input: candidate.input,
+  }
+  return isAuqToolUse(narrowable)
+})
+
+const auqQuestions = computed<AuqQuestion[] | null>(() => {
+  if (!isUnmatchedAuq.value) return null
+  const parsed = content.value as { input?: AuqInput } | null
+  const input = parsed?.input
+  if (!input || !Array.isArray(input.questions)) return null
+  return input.questions
+})
+
+const auqToolUseId = computed<string | null>(() => {
+  if (!isUnmatchedAuq.value) return null
+  const parsed = content.value as { tool_use_id?: unknown } | null
+  const id = parsed?.tool_use_id
+  return typeof id === 'string' ? id : null
+})
+
+function onAuqSubmit(answers: AuqAnswer[]): void {
+  // Errors are surfaced via usePtySession's `error` ref; discard the Promise
+  // here so the event handler stays sync-typed.
+  void submitAuqAnswer(answers)
+}
+
+function onAuqCancel(): void {
+  void cancelAuq()
+}
 </script>
 
 <template>
@@ -179,6 +233,23 @@ const orphanResultIsError = computed<boolean>(() => {
       class="font-sans text-[13px] text-[var(--ink)] whitespace-pre-wrap break-words m-0"
       >{{ text }}</pre
     >
+
+    <!-- Unmatched AUQ tool_use: render the interactive picker in place of
+         the default tool_use card. Matched AUQ rows (matchedResult set)
+         fall through to the existing tool_use branch and render their
+         paired card as usual. -->
+    <PtyAuqPicker
+      v-else-if="
+        message.kind === 'tool_use' &&
+        isUnmatchedAuq &&
+        auqQuestions !== null &&
+        auqToolUseId !== null
+      "
+      :tool-use-id="auqToolUseId"
+      :questions="auqQuestions"
+      @submit="onAuqSubmit"
+      @cancel="onAuqCancel"
+    />
 
     <!-- Tool use (paired card): collapsed by default. Summary names the
          tool; body shows the pretty-printed argument JSON. When a matching

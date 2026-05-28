@@ -49,6 +49,7 @@ const {
 const {
   currentId,
   pairedMessages,
+  pendingAuq,
   status: wsStatus,
   sessionStatus,
   submit,
@@ -412,26 +413,44 @@ onMounted(() => {
     </div>
 
     <!-- Input area: textarea + Send. Enter inserts newline; Cmd/Ctrl+Enter
-         submits. Disabled when no session is focused. -->
+         submits. Disabled when no session is focused OR while an AUQ picker
+         is awaiting an answer (the picker has its own Submit/Cancel; the
+         prompt textarea is locked to avoid the user typing a prompt that
+         claude can't consume mid-AUQ). -->
     <footer
-      class="flex gap-2 px-3 py-2 border-t border-[var(--border)] bg-[var(--surface-2)]"
+      class="flex flex-col gap-2 px-3 py-2 border-t border-[var(--border)] bg-[var(--surface-2)]"
     >
-      <textarea
-        v-model="input"
-        rows="3"
-        :disabled="currentId === null"
-        placeholder="Type a prompt. Cmd/Ctrl+Enter to submit; Enter inserts a newline."
-        class="flex-1 font-mono text-[12.5px] leading-relaxed bg-[var(--surface)] border border-[var(--border)] rounded-md px-2 py-1 text-[var(--ink)] placeholder:text-[var(--ghost)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50 disabled:cursor-not-allowed"
-        @keydown="handleKey"
-      />
-      <button
-        type="button"
-        :disabled="currentId === null || input.trim().length === 0"
-        class="font-mono text-[10.5px] tracking-[0.16em] px-3 py-1 self-end rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink-2)] uppercase shrink-0 hover:border-[var(--accent)] disabled:text-[var(--ghost)] disabled:cursor-not-allowed disabled:hover:border-[var(--border)]"
-        @click="handleSubmit"
+      <!-- "Awaiting answer" pill — surfaces only while an AUQ picker is
+           open in the transcript above. Mirrors the in-flight/queued status
+           pill treatment used in the header so the user reads the input
+           lock as a deliberate UI state, not a frozen UI. -->
+      <div
+        v-if="pendingAuq !== null"
+        class="font-mono text-[10.5px] tracking-[0.16em] uppercase text-queued flex items-center gap-2"
+        role="status"
+        aria-live="polite"
       >
-        Send
-      </button>
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+        Awaiting your answer in the picker above
+      </div>
+      <div class="flex gap-2">
+        <textarea
+          v-model="input"
+          rows="3"
+          :disabled="pendingAuq !== null || currentId === null"
+          placeholder="Type a prompt. Cmd/Ctrl+Enter to submit; Enter inserts a newline."
+          class="flex-1 font-mono text-[12.5px] leading-relaxed bg-[var(--surface)] border border-[var(--border)] rounded-md px-2 py-1 text-[var(--ink)] placeholder:text-[var(--ghost)] focus:outline-none focus:border-[var(--accent)] resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+          @keydown="handleKey"
+        />
+        <button
+          type="button"
+          :disabled="pendingAuq !== null || currentId === null || input.trim().length === 0"
+          class="font-mono text-[10.5px] tracking-[0.16em] px-3 py-1 self-end rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-[var(--ink-2)] uppercase shrink-0 hover:border-[var(--accent)] disabled:text-[var(--ghost)] disabled:cursor-not-allowed disabled:hover:border-[var(--border)]"
+          @click="handleSubmit"
+        >
+          Send
+        </button>
+      </div>
     </footer>
     </template>
   </div>
