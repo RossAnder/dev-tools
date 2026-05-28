@@ -299,40 +299,42 @@ pub fn resolve_projects_root() -> PathBuf {
 /// Bind to the JSONL transcript Claude Code creates for an interactive
 /// session.
 ///
-/// Per research note "`--session-id` in interactive mode" (GH #44607),
-/// the CLI flag does NOT control the filename in interactive (non-`-p`)
-/// mode — Claude Code mints an internal UUID for the filename. We
-/// therefore cannot precompute the path; instead:
+/// Modern Claude Code (verified 2.1.153) HONOURS `--session-id` for the
+/// JSONL filename in interactive mode too — the file is named
+/// `<session_id>.jsonl` under `~/.claude/projects/<sanitised-cwd>/`. We
+/// pass our v7 UUID to claude via `--session-id` in `pty_transport::spawn`,
+/// so we can precompute the exact path and just wait for THAT file to
+/// exist. (The earlier plan research notes citing GH #44607 — "the CLI
+/// flag does not control the filename in interactive mode" — described
+/// older Claude Code behaviour; the current version is fixed.)
 ///
-/// 1. Compose the per-cwd projects dir from [`resolve_projects_root`] +
-///    [`sanitise_cwd`].
-/// 2. Snapshot the set of `*.jsonl` filenames currently in that dir (empty
-///    set if the dir doesn't exist yet — Claude Code creates it on first
-///    spawn).
-/// 3. Poll every 100 ms for up to 5 s. The first `*.jsonl` whose path was
-///    NOT in the snapshot wins — return its absolute path.
-/// 4. On timeout: [`AppError::Validation`].
+/// The previous snapshot-then-diff approach had a critical correctness
+/// bug: when N sessions share a cwd, every fresh `.jsonl` file appearing
+/// in the dir would be claimed by EVERY waiting bind task, causing
+/// cross-session record contamination (one session's bridge tailing
+/// another session's JSONL). Predicting the filename eliminates the
+/// race entirely.
 ///
-/// `_spawn_started` is retained on the signature for future logging hooks
-/// (it is NOT used as a filter — `SystemTime` is non-monotonic and the
-/// on-disk mtime granularity on FAT/exFAT is 2 s, both of which would
-/// make wall-clock filtering racy).
+/// Polling cadence: 100 ms. `timeout = None` polls indefinitely; that
+/// is the default for production (real claude only writes the JSONL
+/// after the user's first prompt produces a response, which can be
+/// minutes for an idle session). Tests pass `Some(Duration::from_secs(5))`
+/// for fast failure on truly broken setups.
 pub async fn bind_jsonl_path(
     cwd: &Path,
+    session_id: &str,
     timeout: Option<Duration>,
 ) -> Result<PathBuf, AppError> {
     let dir = resolve_projects_root().join(sanitise_cwd(cwd));
-
-    let snapshot = read_jsonl_filenames(&dir).await;
+    let target = dir.join(format!("{session_id}.jsonl"));
     tracing::debug!(
-        dir = %dir.display(),
-        snapshot_count = snapshot.len(),
-        "jsonl_tail: bind_jsonl_path snapshot taken"
+        target = %target.display(),
+        "jsonl_tail: bind_jsonl_path waiting for session JSONL"
     );
 
     let deadline = timeout.map(|t| std::time::Instant::now() + t);
     let mut interval = tokio::time::interval(Duration::from_millis(100));
-    // First tick fires immediately — skip it so we don't double-read.
+    // First tick fires immediately — skip it so we don't double-check.
     interval.tick().await;
 
     let mut tick_counter: u64 = 0;
@@ -341,22 +343,18 @@ pub async fn bind_jsonl_path(
             && std::time::Instant::now() >= d
         {
             return Err(AppError::Validation(format!(
-                "jsonl_tail::bind_jsonl_path: no new .jsonl file appeared in {} within {}s timeout",
-                dir.display(),
+                "jsonl_tail::bind_jsonl_path: target file {} did not appear within {}s timeout",
+                target.display(),
                 timeout.unwrap().as_secs(),
             )));
         }
 
-        let current = read_jsonl_filenames(&dir).await;
-        for name in &current {
-            if !snapshot.contains(name) {
-                let resolved = dir.join(name);
-                tracing::info!(
-                    path = %resolved.display(),
-                    "jsonl_tail: bind_jsonl_path resolved"
-                );
-                return Ok(resolved);
-            }
+        if tokio::fs::metadata(&target).await.is_ok() {
+            tracing::info!(
+                path = %target.display(),
+                "jsonl_tail: bind_jsonl_path resolved"
+            );
+            return Ok(target);
         }
 
         // Emit a polling heartbeat once every ~5s (50 ticks * 100ms) so a
@@ -364,33 +362,13 @@ pub async fn bind_jsonl_path(
         tick_counter += 1;
         if tick_counter.is_multiple_of(50) {
             tracing::debug!(
-                dir = %dir.display(),
-                "jsonl_tail: bind_jsonl_path polling (no candidate yet)"
+                target = %target.display(),
+                "jsonl_tail: bind_jsonl_path polling (target not present yet)"
             );
         }
 
         interval.tick().await;
     }
-}
-
-/// Return the set of `*.jsonl` filenames in `dir` (NOT full paths).
-///
-/// Returns an empty set if the dir doesn't exist — Claude Code creates
-/// the projects subdir on first spawn in a given cwd, so an absent dir
-/// is the expected state at spawn-start, not an error.
-async fn read_jsonl_filenames(dir: &Path) -> std::collections::HashSet<String> {
-    let mut out = std::collections::HashSet::new();
-    let mut rd = match tokio::fs::read_dir(dir).await {
-        Ok(rd) => rd,
-        Err(_) => return out,
-    };
-    while let Ok(Some(entry)) = rd.next_entry().await {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.ends_with(".jsonl") {
-            out.insert(name);
-        }
-    }
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -956,7 +934,8 @@ mod tests {
         let cwd = std::path::PathBuf::from("/test/cwd/binds-fast");
         let dir = arm_env(temp.path(), &cwd);
 
-        // Spawn a delayed writer.
+        // Spawn a delayed writer that materialises the session's predicted file.
+        let session_id = "session-abc";
         let dir_clone = dir.clone();
         let write_task = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(200)).await;
@@ -964,7 +943,7 @@ mod tests {
             tokio::fs::write(&target, b"").await.unwrap();
         });
 
-        let got = bind_jsonl_path(&cwd, Some(Duration::from_secs(5))).await;
+        let got = bind_jsonl_path(&cwd, session_id, Some(Duration::from_secs(5))).await;
         write_task.await.unwrap();
 
         let path = got.expect("bind_jsonl_path should resolve");
@@ -972,6 +951,34 @@ mod tests {
             path.file_name().and_then(|n| n.to_str()),
             Some("session-abc.jsonl")
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn bind_jsonl_path_ignores_other_sessions_files() {
+        // Regression for the cross-session-binding bug: when N sessions share
+        // a cwd, a fresh file appearing for one session must NOT bind another
+        // session's bridge task. With the predicted-filename approach, a file
+        // whose name doesn't match the bound session_id is simply not the
+        // target — the wait continues until the right file materialises.
+        let temp = tempfile::tempdir().unwrap();
+        let cwd = std::path::PathBuf::from("/test/cwd/no-crosstalk");
+        let dir = arm_env(temp.path(), &cwd);
+
+        // Drop an unrelated session's file into the dir BEFORE our bind starts.
+        tokio::fs::write(dir.join("other-session.jsonl"), b"").await.unwrap();
+
+        // Schedule the bound session's file to appear later.
+        let dir_clone = dir.clone();
+        let write_task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::fs::write(dir_clone.join("ours.jsonl"), b"").await.unwrap();
+        });
+
+        let got = bind_jsonl_path(&cwd, "ours", Some(Duration::from_secs(5))).await;
+        write_task.await.unwrap();
+
+        let path = got.expect("bind_jsonl_path should resolve to OUR file, not other-session.jsonl");
+        assert_eq!(path.file_name().and_then(|n| n.to_str()), Some("ours.jsonl"));
     }
 
     // -----------------------------------------------------------------
@@ -1139,13 +1146,13 @@ mod tests {
         let _dir = arm_env(temp.path(), &cwd);
 
         let start = std::time::Instant::now();
-        let got = bind_jsonl_path(&cwd, Some(Duration::from_secs(5))).await;
+        let got = bind_jsonl_path(&cwd, "missing-session", Some(Duration::from_secs(5))).await;
         let elapsed = start.elapsed();
 
         match got {
             Err(AppError::Validation(msg)) => {
                 assert!(
-                    msg.contains("no new .jsonl file appeared"),
+                    msg.contains("did not appear within"),
                     "unexpected validation msg: {msg}"
                 );
             }

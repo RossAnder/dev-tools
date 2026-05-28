@@ -240,7 +240,13 @@ pub async fn spawn_pty_session_internal(
                 session_id = %session_id_str,
                 "pty bridge: waiting for JSONL file to appear"
             );
-            let jsonl_path = match jsonl_tail::bind_jsonl_path(cwd.as_path(), None).await {
+            let jsonl_path = match jsonl_tail::bind_jsonl_path(
+                cwd.as_path(),
+                &session_id_str,
+                None,
+            )
+            .await
+            {
                 Ok(p) => p,
                 Err(e) => {
                     tracing::warn!(

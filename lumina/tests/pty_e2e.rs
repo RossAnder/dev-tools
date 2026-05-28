@@ -124,8 +124,6 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
         .path()
         .join(jsonl_tail::sanitise_cwd(&canonical_cwd));
     std::fs::create_dir_all(&projects_subdir).expect("create projects subdir");
-    let session_uuid = uuid::Uuid::now_v7().to_string();
-    let jsonl_file_path = projects_subdir.join(format!("{session_uuid}.jsonl"));
 
     // SAFETY: nextest runs each test in its own process by default
     // (`lumina/.config/nextest.toml::default`), so this mutation is
@@ -138,25 +136,22 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
 
     // ---- 3. Side-writer task -------------------------------------------
     //
-    // Writes a banner `assistant` record once `bind_jsonl_path` has had a
-    // chance to snapshot the (empty) projects subdir, then waits to be
-    // told (via the `echo_trigger` channel) to write an echo record once
-    // the test's POST /input has been processed. Both records are JSONL
-    // lines mappable through `map_record_to_typed` to `assistant_text`
-    // rows in the bridge.
+    // bind_jsonl_path now predicts the filename as `<session_id>.jsonl`,
+    // so we can only construct the path after the spawn-POST returns the
+    // freshly-minted session_id. A oneshot channel hands the path to the
+    // side-writer; a second oneshot triggers the echo append once the
+    // test has seen the user_input row land.
+    //
+    // The banner write happens immediately on receiving the path — no
+    // sleep is needed (bind polls for the specific file and doesn't care
+    // whether the file pre-existed or appears mid-poll).
+    let (path_tx, path_rx) = tokio::sync::oneshot::channel::<std::path::PathBuf>();
     let (echo_trigger_tx, echo_trigger_rx) = tokio::sync::oneshot::channel::<String>();
-    let jsonl_path_for_writer = jsonl_file_path.clone();
     let side_writer = tokio::spawn(async move {
-        // Delay so the supervisor's background bind task has a chance to
-        // snapshot the (empty) projects subdir before the banner appears.
-        // Without the delay, the banner can land in the snapshot and bind
-        // would never see it as "new" (now polls indefinitely — the 5s
-        // timeout was removed in f1d0da9 because real claude.exe writes
-        // the JSONL only after the user's first prompt). 2s is generous
-        // enough to absorb Transport::spawn startup latency for real
-        // claude.exe + tokio task-scheduling jitter under nextest's
-        // parallel workers.
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let jsonl_path_for_writer = match path_rx.await {
+            Ok(p) => p,
+            Err(_) => return,
+        };
 
         let banner = "{\"type\":\"assistant\",\"uuid\":\"banner-1\",\"parentUuid\":null,\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Lumina PTY stub ready.\"}]}}\n";
         tokio::fs::write(&jsonl_path_for_writer, banner)
@@ -164,10 +159,7 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
             .expect("write banner JSONL");
 
         // Wait for the test to signal that POST /input has been
-        // processed; on receipt, append an echo record. This serialises
-        // the test's "user_input row appears" gate from the supervisor's
-        // queue dispatch against our "assistant_text row appears" gate
-        // from the bridge.
+        // processed; on receipt, append an echo record.
         if let Ok(line) = echo_trigger_rx.await {
             let echo = format!(
                 "{{\"type\":\"assistant\",\"uuid\":\"echo-1\",\"parentUuid\":\"banner-1\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"echo: {line}\"}}]}}}}\n"
@@ -217,6 +209,15 @@ async fn pty_e2e_spawn_input_message_lifecycle() {
         .as_str()
         .expect("spawn response carries a string id")
         .to_owned();
+
+    // Hand the predicted JSONL path to the side-writer now that the
+    // session_id is known. bind_jsonl_path computes the same path
+    // (`<projects_root>/<sanitised-cwd>/<session_id>.jsonl`) in the
+    // supervisor's background bridge task.
+    let predicted_jsonl_path = projects_subdir.join(format!("{session_id}.jsonl"));
+    path_tx
+        .send(predicted_jsonl_path)
+        .expect("side_writer accepts the predicted path");
 
     // The bridge task in `pty/spawn.rs` is JSONL-driven (T5 of
     // `lumina-pty-jsonl-tail`): `Spawning -> Idle` flips on the first
