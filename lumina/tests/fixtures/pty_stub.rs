@@ -49,31 +49,51 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
-    // ---- Environment-driven JSONL path -------------------------------------
-    let projects_dir = std::env::var("PTY_STUB_PROJECTS_DIR").unwrap_or_else(|_| {
-        panic!("PTY_STUB_PROJECTS_DIR not set; pty_stub requires this from the e2e test")
-    });
-    let session_uuid = std::env::var("PTY_STUB_SESSION_UUID").unwrap_or_else(|_| {
-        panic!("PTY_STUB_SESSION_UUID not set; pty_stub requires this from the e2e test")
-    });
-
-    let dir = PathBuf::from(&projects_dir);
-    std::fs::create_dir_all(&dir).unwrap_or_else(|e| {
-        panic!("pty_stub: failed to create {}: {e}", dir.display())
-    });
-
-    let jsonl_path = dir.join(format!("{session_uuid}.jsonl"));
-
-    // ---- Banner record -----------------------------------------------------
-    let banner_uuid = mint_uuid(0);
-    let banner_text = "Lumina PTY stub ready.";
-    append_assistant_record(&jsonl_path, &banner_uuid, None, banner_text);
-
-    // ---- Stdin loop: emit one assistant record per input line --------------
+    // ---- Stdout banner (required by tests/conpty_minimal_repro.rs) ---------
     //
-    // The stub MUST drain stdin even though it ignores the bytes — the
-    // supervisor pipes input via the PTY writer worker, which can block on
-    // a full buffer if nothing reads the other end.
+    // The ConPTY regression test asserts that the bytes `Lumina PTY stub
+    // ready.` reach the master reader within 5 s — that test exercises the
+    // bare `portable-pty` API with no env vars set, so the stdout write MUST
+    // happen unconditionally before any env-var check that could panic.
+    {
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+        let _ = writeln!(out, "Lumina PTY stub ready.");
+        let _ = out.flush();
+    }
+
+    // ---- Environment-driven JSONL path (optional) --------------------------
+    //
+    // When `PTY_STUB_PROJECTS_DIR` + `PTY_STUB_SESSION_UUID` are set we ALSO
+    // mirror the banner + per-input echoes into a JSONL file the
+    // jsonl_tail-driven e2e flow can consume. When EITHER is absent the
+    // stub still runs (drains stdin so the writer worker doesn't block on
+    // a full buffer) — this keeps the bare ConPTY regression test, which
+    // sets neither env var, working.
+    let jsonl_path: Option<PathBuf> =
+        match (std::env::var("PTY_STUB_PROJECTS_DIR"), std::env::var("PTY_STUB_SESSION_UUID")) {
+            (Ok(projects_dir), Ok(session_uuid)) => {
+                let dir = PathBuf::from(&projects_dir);
+                std::fs::create_dir_all(&dir).unwrap_or_else(|e| {
+                    panic!("pty_stub: failed to create {}: {e}", dir.display())
+                });
+                Some(dir.join(format!("{session_uuid}.jsonl")))
+            }
+            _ => None,
+        };
+
+    // ---- Banner JSONL record (if JSONL path was supplied) ------------------
+    let banner_uuid = mint_uuid(0);
+    if let Some(path) = jsonl_path.as_ref() {
+        append_assistant_record(path, &banner_uuid, None, "Lumina PTY stub ready.");
+    }
+
+    // ---- Stdin loop --------------------------------------------------------
+    //
+    // The stub MUST drain stdin regardless of JSONL config — the supervisor
+    // pipes input via the PTY writer worker, which can block on a full
+    // buffer if nothing reads the other end. When JSONL path is set, each
+    // non-empty input line also produces one synthetic assistant record.
     let stdin = io::stdin();
     let mut last_uuid = banner_uuid;
     let mut counter: u64 = 1;
@@ -82,11 +102,13 @@ fn main() {
         if line.is_empty() {
             continue;
         }
-        let next_uuid = mint_uuid(counter);
-        counter += 1;
-        let text = format!("echo: {line}");
-        append_assistant_record(&jsonl_path, &next_uuid, Some(&last_uuid), &text);
-        last_uuid = next_uuid;
+        if let Some(path) = jsonl_path.as_ref() {
+            let next_uuid = mint_uuid(counter);
+            counter += 1;
+            let text = format!("echo: {line}");
+            append_assistant_record(path, &next_uuid, Some(&last_uuid), &text);
+            last_uuid = next_uuid;
+        }
     }
 }
 
