@@ -75,13 +75,10 @@ use sqlx::SqlitePool;
 use crate::app::AppState;
 use crate::domain::{
     AlternativePatch, ClosureGate, Complexity, CreateWorkItemRequest, Disposition, Effort, Kind,
-    Origin, PtySession, Relevance, RiskPatch, RiskSeverity, Severity, Status, TaskKind, Tier,
+    Origin, Relevance, RiskPatch, RiskSeverity, Severity, Status, TaskKind, Tier,
     UpdateResearchNoteRequest,
 };
 use crate::error::AppError;
-use crate::pty::protocol::{InputFrame, InputKind, SessionId, SessionStatus};
-use crate::pty::queue::Queue;
-use crate::pty::transport::SpawnConfig;
 use crate::repo;
 use crate::repo::NewFinding;
 
@@ -1075,101 +1072,6 @@ pub struct SetTaskTierParams {
     pub tier: Option<Tier>,
 }
 
-// ---- PTY-session params (lumina-pty-service T10) ------------------------
-
-/// Arguments for the `list_pty_sessions` read tool → `repo::pty::list_pty_sessions`.
-/// Both filters are optional; absent ⇒ no filter (every row).
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct ListPtySessionsParams {
-    /// Optional lifecycle-status filter (e.g. `spawning|running|completed|cancelled|failed`).
-    #[serde(default)]
-    pub status: Option<String>,
-    /// Optional `project_id` filter (a work-item id of `kind='project'`).
-    #[serde(default)]
-    pub project_id: Option<String>,
-}
-
-/// Arguments for the `get_pty_session` read tool → `repo::pty::get_pty_session`.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetPtySessionParams {
-    /// The PTY-session id to fetch.
-    pub id: String,
-}
-
-/// Arguments for the `spawn_pty_session` write tool. Mirrors the HTTP
-/// `POST /api/pty/sessions` body shape (see `http::pty_sessions::spawn_session`).
-/// The handler validates `cwd` is under the worktree root (resolved from
-/// `LUMINA_WORKTREE_ROOT` or `std::env::current_dir()`), spawns the
-/// transport, persists the row, inserts into the registry, and best-effort
-/// registers with the supervisor (skipping the registration step silently
-/// when `pty_register_tx` is `None`).
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SpawnPtySessionParams {
-    /// The working directory to spawn the `claude` REPL in. Must canonicalise
-    /// under the worktree root; an outside-tree path is rejected as
-    /// `invalid_params`.
-    pub cwd: std::path::PathBuf,
-    /// Optional human-readable label for the session.
-    #[serde(default)]
-    pub label: Option<String>,
-    /// Optional `project_id` (a work-item id of `kind='project'`) to bind the
-    /// session to.
-    #[serde(default)]
-    pub project_id: Option<String>,
-    /// Extra `claude` CLI args, joined as-is.
-    #[serde(default)]
-    pub claude_args: Vec<String>,
-    /// Optional inline agent-definition JSON, forwarded to `claude` via
-    /// `--agent-json` if non-empty.
-    #[serde(default)]
-    pub agent_json: Option<String>,
-    /// Optional model identifier override.
-    #[serde(default)]
-    pub model: Option<String>,
-    /// Whether to propagate the parent's OTEL environment variables into the
-    /// child `claude` process.
-    #[serde(default)]
-    pub env_passthrough_otel: bool,
-    /// Optional inline settings JSON, forwarded to `claude`.
-    #[serde(default)]
-    pub settings_json: Option<String>,
-}
-
-/// Arguments for the `send_pty_input` write tool. Enqueues one input frame
-/// onto a session's `pty_queue`. `kind` MUST be one of `prompt|cancel|control`
-/// (matches the wire `InputKind` enum); the v1 sequence allocation uses
-/// `Queue::list().len() + 1` and is therefore subject to the same race
-/// documented by T9's HTTP handler.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SendPtyInputParams {
-    /// The PTY-session id whose queue to push onto.
-    pub session_id: String,
-    /// The input kind; one of `prompt|cancel|control`. An out-of-set value
-    /// surfaces as `invalid_params`.
-    pub kind: String,
-    /// The frame payload (prompt text, control bytes, …); semantics depend
-    /// on `kind`.
-    pub payload: String,
-}
-
-/// Arguments for the `cancel_pty_session` write tool. Best-effort cancel:
-/// looks the session up in the registry, sends an [`InputFrame`] with
-/// [`InputKind::Cancel`], transitions the registry entry's status to
-/// [`SessionStatus::Cancelled`], then stamps the DB row.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct CancelPtySessionParams {
-    /// The PTY-session id to cancel.
-    pub id: String,
-}
-
-/// Arguments for the (DESTRUCTIVE, soft) `delete_pty_session` write tool —
-/// stamps `status='cancelled'` + `ended_at=now` via `repo::pty::delete_pty_session`.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct DeletePtySessionParams {
-    /// The PTY-session id to delete (soft).
-    pub id: String,
-}
-
 /// The MCP tool-handler. Holds an [`AppState`] clone (whose `pool` mirrors
 /// the legacy `pool` field on this struct for back-compat with the 60+
 /// existing `&self.pool` call sites) plus the generated `ToolRouter` (the
@@ -1177,13 +1079,21 @@ pub struct DeletePtySessionParams {
 /// the `tool_router` field so `#[tool_handler]` can route through it).
 ///
 /// The state carries the PTY plumbing (`pty_registry`, `pty_transport`,
-/// `pty_register_tx`) the round-4 PTY MCP tools (`list_pty_sessions`,
-/// `spawn_pty_session`, …) reach via `self.state.*`. Pre-PTY tools continue
-/// to use `&self.pool` (the Arc clone is cheap and the field is a mirror of
-/// `self.state.pool`).
+/// `pty_register_tx`) used by the HTTP PTY routes. The MCP layer no longer
+/// exposes PTY tools (removed in the lumina-interactive-prompts plan,
+/// 2026-05-28): the PTY service is driven exclusively via the HTTP API +
+/// the SPA. `AppState` is still cloned onto `LuminaTools` so the field
+/// shape matches the composition root, but no tool in this module reaches
+/// into `self.state.pty_*`.
 #[derive(Clone)]
 pub struct LuminaTools {
     pool: Arc<SqlitePool>,
+    // Held for shape parity with the composition root (`service_with_state`):
+    // the field is currently unread because the MCP layer no longer exposes
+    // PTY tools, but `AppState` is still threaded through both transports so
+    // a future tool that needs cross-cutting state can reach for it without
+    // a constructor churn.
+    #[allow(dead_code)]
     state: AppState,
     tool_router: ToolRouter<Self>,
 }
@@ -1192,18 +1102,19 @@ pub struct LuminaTools {
 impl LuminaTools {
     /// Construct a tool-handler over the given pool. Convenience constructor
     /// that wraps the pool in a default-PTY [`AppState`] (`pty_register_tx`
-    /// stays `None`, matching T9's HTTP behaviour — PTY tools work end-to-end
-    /// except no exit-reaper is wired until T11). Used by the existing test
-    /// suite and by the legacy [`service(pool)`] entry point.
+    /// stays `None`). Used by the existing test suite and by the legacy
+    /// [`service(pool)`] entry point. The MCP tool surface no longer touches
+    /// the PTY plumbing — the field is carried for shape parity with the
+    /// composition root.
     pub fn new(pool: Arc<SqlitePool>) -> Self {
         Self::with_state(AppState::new(pool))
     }
 
-    /// Construct a tool-handler over a fully-populated [`AppState`]. This is
-    /// the entry point [`service_with_state`] uses so the PTY MCP tools see
-    /// the composition root's `pty_registry`/`pty_transport`/
-    /// `pty_register_tx` (instead of the unit-default registry the
-    /// pool-only constructor synthesises).
+    /// Construct a tool-handler over a fully-populated [`AppState`]. The MCP
+    /// tools no longer reach into the state's PTY plumbing (the PTY service
+    /// is driven via the HTTP layer only); the `AppState`-shaped constructor
+    /// is retained so the composition root can wire one type through both
+    /// the HTTP and MCP services.
     pub fn with_state(state: AppState) -> Self {
         Self {
             pool: state.pool.clone(),
@@ -2533,192 +2444,6 @@ impl LuminaTools {
         structured_result(serde_json::json!({ "id": id }))
     }
 
-    // ---- PTY-session tools (lumina-pty-service T10) ---------------------
-
-    /// List PTY sessions, optionally filtered by lifecycle status and/or
-    /// project (single repo call → `repo::pty::list_pty_sessions`). Read-only;
-    /// the same data is exposed at HTTP `GET /api/pty/sessions`.
-    #[tool(
-        description = "List PTY sessions, optionally filtered by lifecycle status (spawning/running/completed/cancelled/failed) and/or project_id. Read-only; mirrors the HTTP GET /api/pty/sessions surface.",
-        annotations(read_only_hint = true, open_world_hint = false)
-    )]
-    async fn list_pty_sessions(
-        &self,
-        Parameters(ListPtySessionsParams { status, project_id }): Parameters<ListPtySessionsParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        tracing::debug!(tool = "list_pty_sessions", "mcp tool invoked");
-        let rows = repo::pty::list_pty_sessions(
-            self.state.pool.as_ref(),
-            status.as_deref(),
-            project_id.as_deref(),
-        )
-        .await
-        .map_err(app_error_to_mcp)?;
-        json_result(&rows)
-    }
-
-    /// Fetch one PTY session by id (single repo call → `repo::pty::get_pty_session`).
-    /// Read-only; 404 (resource_not_found) when the id has no row.
-    #[tool(
-        description = "Fetch one PTY session by id. Read-only; missing ids surface as resource_not_found.",
-        annotations(read_only_hint = true, open_world_hint = false)
-    )]
-    async fn get_pty_session(
-        &self,
-        Parameters(GetPtySessionParams { id }): Parameters<GetPtySessionParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        tracing::debug!(tool = "get_pty_session", "mcp tool invoked");
-        let row = repo::pty::get_pty_session(self.state.pool.as_ref(), &id)
-            .await
-            .map_err(app_error_to_mcp)?;
-        json_result(&row)
-    }
-
-    /// Spawn a fresh PTY-backed `claude` session. Pipeline mirrors the HTTP
-    /// `POST /api/pty/sessions` handler (see `http::pty_sessions::spawn_session`):
-    ///
-    ///   1. Resolve worktree root from `LUMINA_WORKTREE_ROOT` env or `std::env::current_dir()`.
-    ///   2. Canonicalise `cwd` and reject if not under the worktree root.
-    ///   3. Build a [`SpawnConfig`] and call [`crate::pty::transport::Transport::spawn`].
-    ///   4. Persist the `pty_sessions` row via `repo::pty::create_pty_session`.
-    ///   5. Insert a [`Session`] into the registry (bridging the transport
-    ///      broadcast tail into a fresh sender owned by the registry session).
-    ///   6. Best-effort register with the supervisor via `pty_register_tx` if
-    ///      set; otherwise log and drop the `completed`/`shutdown` handles
-    ///      (the session runs but no exit-reaper until T11 wires the supervisor).
-    #[tool(
-        description = "Spawn a fresh PTY-backed `claude` session. Validates cwd is under the worktree root, spawns the transport, persists the session row, and registers it with the in-memory registry. Returns the freshly-stamped PtySession row.",
-        annotations(open_world_hint = false)
-    )]
-    async fn spawn_pty_session(
-        &self,
-        Parameters(p): Parameters<SpawnPtySessionParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        tracing::debug!(tool = "spawn_pty_session", "mcp tool invoked");
-        // ---- 1+2. Resolve worktree root + validate cwd (shared helper) ----
-        let canonical_cwd =
-            crate::pty::spawn::resolve_and_validate_cwd(&p.cwd).map_err(app_error_to_mcp)?;
-
-        // ---- 3. Build SpawnConfig (helper clones internally for transport spawn) ----
-        let config = SpawnConfig {
-            cwd: canonical_cwd.clone(),
-            claude_args: p.claude_args.clone(),
-            agent_json: p.agent_json.clone(),
-            model: p.model.clone(),
-            env_passthrough_otel: p.env_passthrough_otel,
-            settings_json: p.settings_json.clone(),
-        };
-
-        // ---- 4. Delegate the 6-step pipeline to the shared helper ----
-        let row: PtySession = crate::pty::spawn::spawn_pty_session_internal(
-            &self.state,
-            config,
-            p.label,
-            p.project_id,
-            canonical_cwd.to_string_lossy().into_owned(),
-        )
-        .await
-        .map_err(app_error_to_mcp)?;
-
-        json_result(&row)
-    }
-
-    /// Enqueue one input frame onto a session's `pty_queue`. The v1 sequence
-    /// allocation is `Queue::list().len() + 1` (matches T9's HTTP handler;
-    /// concurrent writes against the same session may collide on the
-    /// `UNIQUE(session_id, sequence)` constraint and surface as internal_error
-    /// — a known v1 race that a future revision should move into the
-    /// `repo::pty::enqueue_pty_input` transaction).
-    #[tool(
-        description = "Enqueue one input frame onto a PTY session's queue. `kind` is one of prompt|cancel|control. Sequence is allocated as Queue::list().len()+1 (v1 race: concurrent writes may collide on UNIQUE(session_id, sequence)).",
-        annotations(open_world_hint = false)
-    )]
-    async fn send_pty_input(
-        &self,
-        Parameters(SendPtyInputParams { session_id, kind, payload }): Parameters<
-            SendPtyInputParams,
-        >,
-    ) -> Result<CallToolResult, ErrorData> {
-        tracing::debug!(tool = "send_pty_input", "mcp tool invoked");
-        // Validate kind against the InputKind wire vocab (matches T9's HTTP
-        // `validate_input_kind`).
-        match kind.as_str() {
-            "prompt" | "cancel" | "control" => {}
-            other => {
-                return Err(app_error_to_mcp(AppError::Validation(format!(
-                    "unknown input kind {other:?}; expected one of prompt|cancel|control"
-                ))));
-            }
-        }
-        let pool = self.state.pool.as_ref();
-        let existing = Queue::list(pool, &session_id).await.map_err(app_error_to_mcp)?;
-        let next_seq = existing.len() as i64 + 1;
-        Queue::enqueue(pool, &session_id, next_seq, &kind, &payload)
-            .await
-            .map_err(app_error_to_mcp)?;
-        structured_result(
-            serde_json::json!({ "session_id": session_id, "sequence": next_seq }),
-        )
-    }
-
-    /// Cancel a PTY session. Best-effort: look the session up in the
-    /// registry; if present, push an [`InputFrame`] with
-    /// [`InputKind::Cancel`] (the PTY writer task sends ETX to the child)
-    /// and transition the in-memory status to [`SessionStatus::Cancelled`].
-    /// Then persist via `repo::pty::delete_pty_session` (stamps
-    /// `status='cancelled'`, `ended_at=now`). Returns the updated
-    /// [`PtySession`] row.
-    #[tool(
-        description = "Cancel a PTY session: send a Cancel input frame to the running PTY (if registered), transition status to Cancelled in-memory, and stamp status='cancelled' + ended_at=now on the persisted row. Returns the updated PtySession.",
-        annotations(idempotent_hint = true, open_world_hint = false)
-    )]
-    async fn cancel_pty_session(
-        &self,
-        Parameters(CancelPtySessionParams { id }): Parameters<CancelPtySessionParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        tracing::debug!(tool = "cancel_pty_session", "mcp tool invoked");
-        // Registry-side cancel (best-effort; uuid parse miss falls through).
-        if let Ok(uuid) = uuid::Uuid::parse_str(&id) {
-            let sid = SessionId(uuid);
-            if let Some(session) = self.state.pty_registry.get(&sid).await {
-                let _ = session
-                    .input_tx
-                    .send(InputFrame {
-                        kind: InputKind::Cancel,
-                        payload: String::new(),
-                    })
-                    .await;
-                session.set_status(SessionStatus::Cancelled).await;
-            }
-        }
-
-        // Persist the cancel (404 if the row is gone).
-        repo::pty::delete_pty_session(self.state.pool.as_ref(), &id)
-            .await
-            .map_err(app_error_to_mcp)?;
-        let row = repo::pty::get_pty_session(self.state.pool.as_ref(), &id)
-            .await
-            .map_err(app_error_to_mcp)?;
-        json_result(&row)
-    }
-
-    /// Soft-delete a PTY session (single repo call → `repo::pty::delete_pty_session`;
-    /// stamps `status='cancelled'`, `ended_at=now`). Returns an empty object.
-    /// Annotated `destructive_hint` so MCP clients can confirm.
-    #[tool(
-        description = "Soft-delete a PTY session (stamps status='cancelled', ended_at=now). Returns an empty object on success; 404 when the id has no row.",
-        annotations(destructive_hint = true, open_world_hint = false)
-    )]
-    async fn delete_pty_session(
-        &self,
-        Parameters(DeletePtySessionParams { id }): Parameters<DeletePtySessionParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        tracing::debug!(tool = "delete_pty_session", "mcp tool invoked");
-        repo::pty::delete_pty_session(self.state.pool.as_ref(), &id)
-            .await
-            .map_err(app_error_to_mcp)?;
-        structured_result(serde_json::json!({}))
-    }
 }
 
 impl LuminaTools {
@@ -2778,11 +2503,11 @@ impl ServerHandler for LuminaTools {
 /// left at the rmcp 1.7 loopback default (safe per GHSA-89vp-x53w-74fx).
 ///
 /// **PTY note**: this constructor synthesises a default-PTY [`AppState`] per
-/// request (`pty_register_tx == None`). The PTY MCP tools work end-to-end
-/// (spawn/list/get/send_input/cancel/delete) but spawned sessions have no
-/// supervisor-side exit reaper, matching T9's HTTP behaviour. To fully wire
-/// the PTY surface through MCP, call [`service_with_state`] from the
-/// composition root instead.
+/// request (`pty_register_tx == None`). The MCP layer no longer exposes any
+/// PTY tools (the PTY service is driven via the HTTP API only), so the
+/// synthesised `AppState`'s PTY fields are unused on this path. The
+/// [`service_with_state`] variant remains so the composition root can wire
+/// one `AppState` shape through both the HTTP and MCP services.
 pub fn service(
     pool: Arc<SqlitePool>,
 ) -> StreamableHttpService<LuminaTools, LocalSessionManager> {
@@ -2794,10 +2519,12 @@ pub fn service(
 }
 
 /// Build the MCP service from a fully-populated [`AppState`]. The
-/// composition root (`app::build_router`) should call this variant so the
-/// PTY MCP tools (`spawn_pty_session`, `cancel_pty_session`, …) reach the
-/// shared `pty_registry` / `pty_transport` / `pty_register_tx` instead of
-/// the per-request default-PTY synthesis done by [`service(pool)`].
+/// composition root (`app::build_router`) calls this variant so a single
+/// `AppState` shape threads through both the HTTP and MCP services. The
+/// MCP tool surface itself no longer reaches into the state's PTY plumbing
+/// (the PTY MCP tools were removed in the lumina-interactive-prompts plan,
+/// 2026-05-28 — see the `## Security: claude PTY auto-approve scope` block
+/// in `lumina/CLAUDE.md`).
 ///
 /// The factory closure clones the entire `AppState` per request; `AppState`
 /// is `Clone` and its fields are `Arc`-wrapped, so the clone is cheap.
@@ -2922,13 +2649,6 @@ mod tests {
             // task dispatch-plan + tier (migration 0006, round-3 T4)
             "get_task_dispatch_plan",
             "set_task_tier",
-            // PTY-session tools (lumina-pty-service T10)
-            "list_pty_sessions",
-            "get_pty_session",
-            "spawn_pty_session",
-            "send_pty_input",
-            "cancel_pty_session",
-            "delete_pty_session",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -2938,13 +2658,14 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 61 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
-        //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
-        //    + 6 lumina-pty-service T10 PTY tools (list/get/spawn/send/cancel/delete).
+        // 55 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier).
+        // The six lumina-pty-service T10 PTY tools were removed in the
+        // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            61,
-            "advertised tool count must be exactly 61, got {}: {names:?}",
+            55,
+            "advertised tool count must be exactly 55, got {}: {names:?}",
             names.len()
         );
 
@@ -3051,9 +2772,6 @@ mod tests {
             "get_story_readiness",
             // migration 0006 / round-3 T4 read tool.
             "get_task_dispatch_plan",
-            // lumina-pty-service T10 read tools.
-            "list_pty_sessions",
-            "get_pty_session",
         ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,
@@ -3070,8 +2788,6 @@ mod tests {
             // work-item's TOML export — no independent identity).
             "remove_risk",
             "remove_rejected_alternative",
-            // lumina-pty-service T10 soft-delete tool.
-            "delete_pty_session",
         ] {
             assert_eq!(
                 annotations_of(&tools, destructive).destructive_hint,
@@ -3114,8 +2830,6 @@ mod tests {
             "set_task_kind",
             // migration 0006 / round-3 T4 tier setter.
             "set_task_tier",
-            // lumina-pty-service T10 idempotent cancel.
-            "cancel_pty_session",
         ] {
             assert_eq!(
                 annotations_of(&tools, idem).idempotent_hint,

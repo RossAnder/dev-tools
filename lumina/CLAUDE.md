@@ -1,5 +1,15 @@
 <!-- This CLAUDE.md was initialised by /test-bootstrap. -->
 
+<!-- LUMINA-SECURITY START -->
+## Security: claude PTY auto-approve scope
+
+Every PTY session lumina spawns runs `claude --permission-mode bypassPermissions` (set in `lumina/src/pty/pty_transport.rs`). claude inside that session auto-approves every tool call: Bash, Read, Edit, Write, WebFetch, network access, glob/grep — NOT just file edits as the prior `acceptEdits` baseline.
+
+Rationale: claude emits permission prompts only inside its TUI, never in JSONL; the SPA has no way to render or answer them. v1 ships with auto-approve; the v2 hardening target is exposing a per-session `permission_mode` override on `SpawnConfig`.
+
+Interaction risk: lumina binds to `127.0.0.1` by default. If a deployment binds to `0.0.0.0` (or sits behind a reverse proxy reachable from a hostile network), any caller hitting the HTTP API can drive arbitrary tool execution on the host — file writes, shell commands, network egress. Do not expose lumina externally without a permission wrapper.
+<!-- LUMINA-SECURITY END -->
+
 <!-- TEST-BOOTSTRAP:STACK START -->
 ## Testing Stack (Rust crate)
 
@@ -52,7 +62,7 @@ The migration-0006 story-planning-round-3 pass added the following:
 - **Tightened `set_task_spec`** — the round-2 free-form `dispatch: Option<serde_json::Value>` field was renamed to `tier: Option<Tier>` (typed). When `tier` is present, the tool also makes a SECOND mutation through `set_task_tier`. Legacy callers passing `dispatch:` have their value silently dropped at deserialise (the field is gone from the struct).
 - **Finding-severity typing**: `AddFindingParams.severity` / `UpdateFindingParams.severity` already accepted typed `Severity::{Critical, Major, Minor, Suggestion}` (the review-finding categorisation vocabulary). Round-3 documents this in the catalogue; the wire shape is unchanged. NOTE the deliberate vocab split — `RiskSeverity::{Low, Medium, High, Critical}` (CHECK-enforced on `risks.severity`) is a distinct enum for risk severity. The two vocabularies are not unified.
 
-The migration-0008 PTY supervisor pass added six tools for managing interactive `claude` REPL sessions: `list_pty_sessions` (read-only) and `get_pty_session` (read-only) for inspection; `spawn_pty_session` to launch a session via `PtyTransport` (portable-pty 0.9, ConPTY on Windows / Unix98 elsewhere) under a validated `cwd`; `send_pty_input` to enqueue a typed `InputFrame` against the per-session FIFO; `cancel_pty_session` to push a Cancel control frame; `delete_pty_session` to tombstone the row. Tool surface is now 61 (bumped from 55). PTY tables (`pty_sessions`, `pty_messages`, `pty_queue`) deliberately stay outside the `+1 work_items / +1 events` invariant — runtime PTY state is not a domain entity.
+The migration-0008 PTY supervisor pass originally added six tools for managing interactive `claude` REPL sessions: `list_pty_sessions` (read-only) and `get_pty_session` (read-only) for inspection; `spawn_pty_session` to launch a session via `PtyTransport` (portable-pty 0.9, ConPTY on Windows / Unix98 elsewhere) under a validated `cwd`; `send_pty_input` to enqueue a typed `InputFrame` against the per-session FIFO; `cancel_pty_session` to push a Cancel control frame; `delete_pty_session` to tombstone the row. The lumina-interactive-prompts plan (2026-05-28) removed all six MCP tools: the PTY service is now driven exclusively via the HTTP API + the SPA, not MCP. The underlying transport (`PtyTransport`) and the HTTP routes in `lumina/src/http/pty_sessions.rs` remain. PTY tables (`pty_sessions`, `pty_messages`, `pty_queue`) deliberately stay outside the `+1 work_items / +1 events` invariant — runtime PTY state is not a domain entity. Tool surface is now 55.
 
 ## HTTP routes
 

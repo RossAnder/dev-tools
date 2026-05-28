@@ -14,6 +14,7 @@
 //   GET    /api/pty/sessions/{id}/queue          → getQueue
 //   POST   /api/pty/sessions/{id}/input          → sendInput
 //   POST   /api/pty/sessions/{id}/inputs/batch   → sendInputsBatch
+//   POST   /api/pty/sessions/{id}/keystrokes     → sendKeystrokes
 //   PATCH  /api/pty/sessions/{id}                → updateSession (501 stub in v1)
 //   DELETE /api/pty/sessions/{id}                → cancelSession / deleteSession
 //   GET    /api/pty/sessions/{id}/ws             → openSessionStream
@@ -127,6 +128,64 @@ export interface ToolResultContent {
 }
 
 /**
+ * AskUserQuestion (AUQ) tool-use `input` shape. Captured from real session
+ * JSONLs (see `docs/plans/lumina-interactive-prompts.md` → Research Notes →
+ * AUQ wire format). claude's AUQ tool can ask one or more questions; each
+ * question carries a list of options that the user picks via a TUI picker.
+ * lumina's SPA replaces that TUI picker by rendering its own picker SFC and
+ * translating the user's answer back into the keystroke sequence the TUI
+ * expects.
+ *
+ * These are TS-only interfaces — the wire-side `ToolUseContent.input` stays
+ * `unknown`; callers narrow via `isAuqToolUse(content)` below.
+ */
+export interface AuqOption {
+  label: string
+  description: string
+  preview?: string
+}
+
+export interface AuqQuestion {
+  question: string
+  header: string
+  multiSelect: boolean
+  options: AuqOption[]
+}
+
+export interface AuqInput {
+  questions: AuqQuestion[]
+}
+
+/**
+ * One user-supplied answer to one AUQ question.
+ *
+ * - `questionIndex`: 0-based index into the AUQ's `questions` array.
+ * - `selectedLabels`: labels picked (single-select → exactly one entry;
+ *   multi-select → 0+ entries; "Other" appears as a normal entry whose label
+ *   is the user-typed text).
+ * - `otherText`: free-text "Other" answer when the user picks the Other row.
+ * - `notes`: optional per-question notes annotation.
+ */
+export interface AuqAnswer {
+  questionIndex: number
+  selectedLabels: string[]
+  otherText?: string
+  notes?: string
+}
+
+/**
+ * Type-narrowing helper: a `ToolUseContent` is an AUQ tool call iff its
+ * `name === "AskUserQuestion"`. The structural type of `input` is asserted
+ * by the predicate's return type — callers should treat the narrowed `input`
+ * as authoritative.
+ */
+export function isAuqToolUse(
+  content: ToolUseContent,
+): content is ToolUseContent & { input: AuqInput } {
+  return content.name === 'AskUserQuestion'
+}
+
+/**
  * Mirrors `domain::PtyQueueEntry` (migration 0008). `input_kind` is one of
  * `prompt|cancel|control` (free TEXT). `status` walks
  * `pending → dispatched → completed|failed|cancelled`.
@@ -157,7 +216,7 @@ export type PtyQueueEntry = z.infer<typeof PtyQueueEntrySchema>
 export const InputFrameSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('input'),
-    kind: z.enum(['prompt', 'cancel', 'control']),
+    kind: z.enum(['prompt', 'cancel', 'control', 'keystroke']),
     payload: z.string(),
   }),
   z.object({
@@ -319,6 +378,36 @@ export async function sendInputsBatch(
     body: JSON.stringify(frames),
   })
   return handleVoid(res)
+}
+
+/**
+ * `POST /api/pty/sessions/{id}/keystrokes` — push N keystroke frames directly
+ * onto the session's `input_tx` channel, bypassing the queue and supervisor.
+ *
+ * Used by the AUQ picker flow: the calculator emits a sequence of
+ * `{type: "input", kind: "keystroke", payload: "<dsl-token>"}` frames that
+ * navigate, select, and submit the picker in claude's TUI. The queue-bypass
+ * is load-bearing — an open AUQ keeps the session `Awaiting`, so a queued
+ * multi-frame batch would deadlock after the first frame (see
+ * `docs/plans/lumina-interactive-prompts.md` → Research Notes → Supervisor
+ * bypass for keystroke frames).
+ *
+ * Server caps per-call at 256 frames (returns 413 beyond) and rejects when
+ * the session is in a terminal state (returns 409). Returns the count of
+ * frames the server accepted onto `input_tx`.
+ */
+export async function sendKeystrokes(
+  id: string,
+  frames: InputFrame[],
+): Promise<{ delivered: number }> {
+  return handle(
+    await fetch(`${API_BASE}/pty/sessions/${encodeURIComponent(id)}/keystrokes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(frames),
+    }),
+    z.object({ delivered: z.number() }),
+  )
 }
 
 /**

@@ -138,11 +138,14 @@ impl Transport for PtyTransport {
         let session_id_str = uuid::Uuid::now_v7().to_string();
         cmd.arg("--session-id");
         cmd.arg(&session_id_str);
-        // v1 deferral of permission prompts — every spawn opts into the
-        // acceptEdits permission mode so the interactive REPL doesn't stall
-        // on confirmation overlays the SPA cannot drive.
+        // v1 auto-approve — `bypassPermissions` greenlights ALL tool calls
+        // (Bash/Read/Write/Edit/WebFetch/network), not just file edits. The
+        // SPA cannot render claude's permission-prompt overlays (they are
+        // TUI-only, never surfaced over JSONL), so auto-approve is the only
+        // honest v1 posture. Security trade-off documented in lumina/CLAUDE.md
+        // (LUMINA-SECURITY); v2 will add per-session SpawnConfig override.
         cmd.arg("--permission-mode");
-        cmd.arg("acceptEdits");
+        cmd.arg("bypassPermissions");
 
         if config.env_passthrough_otel {
             cmd.env("CLAUDE_CODE_ENABLE_TELEMETRY", "1");
