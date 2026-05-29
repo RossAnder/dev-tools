@@ -619,16 +619,20 @@ pub fn map_record_to_typed(parsed: &JsonlRecordParsed) -> Vec<TypedMessage> {
             JsonlRecord::Assistant { message, .. } => message
                 .content
                 .iter()
-                .map(|block| match block {
-                    AssistantContentBlock::Text { text } => TypedMessage {
+                .filter_map(|block| match block {
+                    // Skip empty / whitespace-only text blocks. claude commonly
+                    // emits a blank text block alongside a `tool_use` block;
+                    // mapping it would render an empty bubble in the transcript.
+                    AssistantContentBlock::Text { text } if text.trim().is_empty() => None,
+                    AssistantContentBlock::Text { text } => Some(TypedMessage {
                         sequence: 0,
                         kind: MessageKind::AssistantText,
                         content: serde_json::json!({ "text": text }),
                         raw_text: Some(text.clone()),
                         created_at: now.clone(),
                         tool_use_id: None,
-                    },
-                    AssistantContentBlock::ToolUse { id, name, input } => TypedMessage {
+                    }),
+                    AssistantContentBlock::ToolUse { id, name, input } => Some(TypedMessage {
                         sequence: 0,
                         kind: MessageKind::ToolUse,
                         content: serde_json::json!({
@@ -639,8 +643,8 @@ pub fn map_record_to_typed(parsed: &JsonlRecordParsed) -> Vec<TypedMessage> {
                         raw_text: None,
                         created_at: now.clone(),
                         tool_use_id: Some(id.clone()),
-                    },
-                    AssistantContentBlock::Thinking { thinking, signature } => TypedMessage {
+                    }),
+                    AssistantContentBlock::Thinking { thinking, signature } => Some(TypedMessage {
                         sequence: 0,
                         kind: MessageKind::System,
                         content: serde_json::json!({
@@ -651,8 +655,8 @@ pub fn map_record_to_typed(parsed: &JsonlRecordParsed) -> Vec<TypedMessage> {
                         raw_text: Some(thinking.clone()),
                         created_at: now.clone(),
                         tool_use_id: None,
-                    },
-                    AssistantContentBlock::Unknown => TypedMessage {
+                    }),
+                    AssistantContentBlock::Unknown => Some(TypedMessage {
                         sequence: 0,
                         kind: MessageKind::System,
                         content: serde_json::json!({
@@ -661,7 +665,7 @@ pub fn map_record_to_typed(parsed: &JsonlRecordParsed) -> Vec<TypedMessage> {
                         raw_text: None,
                         created_at: now.clone(),
                         tool_use_id: None,
-                    },
+                    }),
                 })
                 .collect(),
             JsonlRecord::User { message, .. } => match &message.content {
@@ -1044,6 +1048,25 @@ mod tests {
         assert_eq!(out[0].kind, MessageKind::AssistantText);
         assert_eq!(out[1].kind, MessageKind::ToolUse);
         assert_eq!(out[1].tool_use_id.as_deref(), Some("id7"));
+    }
+
+    #[test]
+    fn map_assistant_skips_empty_text_block_keeps_tool_use() {
+        // claude often emits a blank text block right before a tool_use; only
+        // the tool_use should produce a row (the blank text would otherwise
+        // render as an empty bubble).
+        let line = r#"{"type":"assistant","uuid":"a","message":{"content":[{"type":"text","text":"  \n "},{"type":"tool_use","id":"id9","name":"Bash","input":{"command":"ls"}}]}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert_eq!(out.len(), 1, "empty text block must be dropped; got {out:?}");
+        assert_eq!(out[0].kind, MessageKind::ToolUse);
+        assert_eq!(out[0].tool_use_id.as_deref(), Some("id9"));
+    }
+
+    #[test]
+    fn map_assistant_lone_empty_text_emits_nothing() {
+        let line = r#"{"type":"assistant","uuid":"a","message":{"content":[{"type":"text","text":""}]}}"#;
+        let out = map_record_to_typed(&parse_line(line));
+        assert!(out.is_empty(), "a lone empty text block emits no rows; got {out:?}");
     }
 
     #[test]

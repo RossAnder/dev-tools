@@ -14,6 +14,8 @@ pub mod queue;            // T6
 pub mod supervisor;       // T8
 pub mod spawn;            // T3 (lumina-pty-followups)
 pub mod jsonl_tail;       // T4 (lumina-pty-jsonl-tail) — replaces deleted `parser`
+pub mod emit;             // shared persist+broadcast helper (jsonl bridge / ask tool / answer endpoint)
+pub mod ask;              // /mcp-ask single-tool MCP server (ask_user_question — native-AUQ replacement)
 
 pub use protocol::{
     InputFrame, InputKind, MessageKind, SessionId, SessionStatus, TypedMessage,

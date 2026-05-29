@@ -214,6 +214,12 @@ pub fn build_router(state: AppState) -> Router {
         // `/mcp` MCP service (Task 5 returns the real StreamableHttpService;
         // app.rs only `.nest_service`s it, so the concrete type may change).
         .nest_service("/mcp", crate::mcp::service_with_state(state.clone()))
+        // `/mcp-ask` — single-tool MCP server (`ask_user_question`) registered
+        // with spawned `claude` sessions via `--mcp-config` so the agent can ask
+        // the operator structured questions in the SPA (native-AUQ replacement;
+        // see `crate::pty::ask`). Separate mount keeps the 58-tool work-item
+        // surface OUT of spawned sessions.
+        .nest_service("/mcp-ask", crate::pty::ask::service(state.clone()))
         // SPA fallback last (Task 4 wires rust-embed / ServeDir).
         .fallback_service(crate::assets::spa_fallback())
         // The MCP tools (Task 5) read the pool via an `Extension` layer through

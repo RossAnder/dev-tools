@@ -103,24 +103,74 @@ const KEYSTROKE_TEXT_MAX: usize = 4096;
 /// prompt regression. Verified against claude 2.1.156.
 const PROMPT_SUBMIT_SETTLE_MS: u64 = 220;
 
-/// System-prompt addendum appended to every lumina-spawned `claude` session.
+/// MCP server name lumina registers with each spawned `claude` (via
+/// `--mcp-config`) so the agent can drive lumina's structured-question picker.
+/// The model references the tool as `mcp__lumina-ask__ask_user_question`.
+const ASK_MCP_SERVER_NAME: &str = "lumina-ask";
+
+/// Default lumina HTTP port (mirrors `app::DEFAULT_PORT`). Used to compose the
+/// loopback `/mcp-ask` URL when `PORT` is unset.
+const DEFAULT_LUMINA_PORT: u16 = 24817;
+
+/// Tool-call timeout (ms) lumina advertises to the spawned `claude` for the
+/// `lumina-ask` server in its `--mcp-config` entry. Held ABOVE the server-side
+/// `ask::ASK_ANSWER_TIMEOUT` (30 min) so lumina returns its own clean "no
+/// answer" result before claude's MCP client would kill the long-blocking call.
+/// (Claude Code 2.1.x has no per-tool-call timeout env var; the limit lives in
+/// the server's mcp-config `timeout` field — confirmed via claude-code-guide.)
+const ASK_MCP_TOOL_TIMEOUT_MS: u64 = 1_860_000; // 31 min
+
+/// Build the system-prompt addendum appended to every lumina-spawned `claude`
+/// session.
 ///
 /// lumina is headless: it cannot render or answer claude's interactive
 /// `AskUserQuestion` (AUQ) TUI picker, AND claude buffers an open AUQ's
 /// `tool_use` out of the session JSONL until the question is answered (verified
-/// against 2.1.156 — the assistant `tool_use` + its `tool_result` flush
-/// together only after the answer), so a JSONL-tailing consumer can never
-/// surface an *open* AUQ. We therefore instruct claude to ask choices inline as
-/// a numbered list, which flow through the normal assistant-text transcript the
-/// user already sees and can answer by typing a number. A PTY-side AUQ detector
-/// (separate follow-up) remains the fallback for models/skills that call the
-/// tool anyway.
-const NO_AUQ_SYSTEM_PROMPT: &str = "You are running inside lumina, a headless \
-interface that CANNOT display the interactive AskUserQuestion picker. Never call \
-the AskUserQuestion tool. Whenever you need the user to choose between options, \
-instead present the options as a numbered list (1., 2., 3., ...) directly in your \
-text reply and ask the user to answer with the number(s) of their choice plus any \
-notes, then stop and wait for their typed reply.";
+/// against 2.1.156), so a JSONL-tailing consumer can never surface an *open*
+/// AUQ. Instead of the native tool, we register a lumina MCP tool
+/// (`ask_user_question`, see [`crate::pty::ask`]) and steer claude to call it:
+/// it presents the choices in lumina's existing structured picker and blocks
+/// until the operator answers. The session id is baked into the prompt because
+/// the tool correlates the call to this PTY session by that argument.
+fn no_auq_system_prompt(session_id: &str) -> String {
+    format!(
+        "You are running inside lumina, a headless interface that CANNOT display \
+claude's built-in AskUserQuestion picker. NEVER call the built-in AskUserQuestion \
+tool. Whenever you need the operator to choose between options or decide between \
+approaches, call the `mcp__{ASK_MCP_SERVER_NAME}__ask_user_question` tool (provided by \
+the `{ASK_MCP_SERVER_NAME}` MCP server). Always set its `session_id` argument to \
+exactly \"{session_id}\". Provide one or more `questions`, each with a short \
+`header`, the `question` text, an `options` array (each `{{label, description}}`), \
+and `multiSelect` true or false — do NOT add an \"Other\" option yourself (lumina's \
+UI always offers a free-text row). The tool blocks until the operator answers in \
+the lumina UI and returns their selections. Use it instead of asking the operator \
+to type a choice in prose."
+    )
+}
+
+/// Compose the loopback URL the spawned `claude` uses to reach lumina's
+/// `/mcp-ask` server. The child always connects over `127.0.0.1` regardless of
+/// lumina's bind `HOST` (which defaults to loopback; a `0.0.0.0` bind also
+/// accepts loopback). `PORT` mirrors `app::serve`'s env read.
+fn lumina_ask_mcp_url() -> String {
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(DEFAULT_LUMINA_PORT);
+    format!("http://127.0.0.1:{port}/mcp-ask")
+}
+
+/// The `--mcp-config` JSON registering the `lumina-ask` HTTP MCP server for a
+/// spawned session. `--mcp-config` MERGES with the project's configured servers
+/// (it does not replace them) and is session-scoped (no `~/.claude.json`
+/// mutation). Claude Code 2.1.x accepts only a FILE PATH here (not inline JSON),
+/// so the caller writes this to a temp file.
+fn ask_mcp_config_json() -> String {
+    format!(
+        r#"{{"mcpServers":{{"{ASK_MCP_SERVER_NAME}":{{"type":"http","url":"{url}","timeout":{ASK_MCP_TOOL_TIMEOUT_MS}}}}}}}"#,
+        url = lumina_ask_mcp_url()
+    )
+}
 
 /// Translate one Keystroke-kind DSL token into raw PTY bytes, or `None` if
 /// the token is unknown or fails validation (the input bridge logs + skips
@@ -253,11 +303,39 @@ impl Transport for PtyTransport {
         // update that reset the prior stored acceptance.
         cmd.arg("--settings");
         cmd.arg(r#"{"skipDangerousModePermissionPrompt":true}"#);
-        // Steer claude away from the AskUserQuestion picker (which lumina
-        // cannot surface — see NO_AUQ_SYSTEM_PROMPT) toward inline numbered
-        // choices that ride the normal assistant-text transcript.
+        // Steer claude away from the built-in AskUserQuestion picker (which
+        // lumina cannot surface) toward lumina's `ask_user_question` MCP tool,
+        // which renders in the SPA's structured picker. The session id is baked
+        // into the prompt so the tool correlates back to this session.
         cmd.arg("--append-system-prompt");
-        cmd.arg(NO_AUQ_SYSTEM_PROMPT);
+        cmd.arg(no_auq_system_prompt(&session_id_str));
+
+        // Register lumina's `lumina-ask` MCP server (the `ask_user_question`
+        // tool) for this session. Claude Code 2.1.x's `--mcp-config` accepts
+        // only a file path (not inline JSON), so write a per-session temp file
+        // and clean it up when the child exits (see the wait worker). On a
+        // write failure we log and proceed without the tool — the session still
+        // runs; claude just lacks the structured-question affordance.
+        let ask_mcp_config_path: Option<std::path::PathBuf> = {
+            let path = std::env::temp_dir()
+                .join(format!("lumina-ask-mcp-{session_id_str}.json"));
+            match std::fs::write(&path, ask_mcp_config_json()) {
+                Ok(()) => {
+                    cmd.arg("--mcp-config");
+                    cmd.arg(&path);
+                    Some(path)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        path = %path.display(),
+                        "pty transport: failed to write ask mcp-config; \
+                         ask_user_question unavailable this session"
+                    );
+                    None
+                }
+            }
+        };
 
         if config.env_passthrough_otel {
             cmd.env("CLAUDE_CODE_ENABLE_TELEMETRY", "1");
@@ -511,6 +589,11 @@ impl Transport for PtyTransport {
                 code = ?exit.code,
                 "pty wait: child exited"
             );
+            // Clean up the per-session `--mcp-config` temp file now that the
+            // child (which read it at startup) has exited. Best-effort.
+            if let Some(path) = ask_mcp_config_path.as_ref() {
+                let _ = std::fs::remove_file(path);
+            }
             // Receiver may be gone if the handle was dropped before the child
             // exited; that's a benign teardown race.
             let _ = completed_tx.send(exit);

@@ -720,12 +720,14 @@ describe('usePtySession token cancellation', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 4. usePtySession AUQ extensions (T9 of the lumina-interactive-prompts plan).
+// 4. usePtySession AUQ extensions.
 //
 // Covers `pendingAuq` derivation from `pairedMessages`, `submitAuqAnswer` +
-// `cancelAuq` routing through the `/keystrokes` endpoint (NOT `/inputs/batch`),
-// the per-`pendingAuq.toolUseId` debounce, and the watcher-driven debounce
-// reset when `pendingAuq` transitions to null.
+// `cancelAuq` routing through the answer endpoint (`answerQuestion` /
+// `cancelQuestion`, which POST to `/api/pty/sessions/{id}/ask/{qid}/answer` to
+// resolve a blocked `ask_user_question` MCP tool call), the
+// per-`pendingAuq.toolUseId` debounce, and the watcher-driven debounce reset
+// when `pendingAuq` transitions to null.
 //
 // Test seam: rather than reach into the module-singleton `messages` ref
 // (private), AUQ rows are staged either via the history fetch (`getMessages`
@@ -888,18 +890,18 @@ describe('usePtySession AUQ extensions (T9)', () => {
   // submitAuqAnswer routing.
   // -------------------------------------------------------------------------
 
-  test('submitAuqAnswer posts to /keystrokes with computeAuqKeystrokes frames', async () => {
+  test('submitAuqAnswer posts to answerQuestion(sid, toolUseId, answers)', async () => {
     const questions = [makeAuqQuestion(3)]
     const history: PtyMessage[] = [makeAuqToolUseRow('s1', 0, 'toolu_x', questions)]
     const mock = makeMockStream()
 
-    const sendKeystrokesMock = mock_async_result()
+    const answerMock = mockAnswerQuestion()
 
     __setSessionApi({
       getSession: async () => makeSession('s1'),
       getMessages: async () => history,
       openSessionStream: () => mock,
-      sendKeystrokes: sendKeystrokesMock.fn,
+      answerQuestion: answerMock.fn,
     })
 
     const composable = usePtySession()
@@ -914,30 +916,23 @@ describe('usePtySession AUQ extensions (T9)', () => {
     }
     await composable.submitAuqAnswer([answer])
 
-    // Exactly one POST to /keystrokes; sendInputsBatch must NOT have been
-    // called (we left the test seam's default sendInputsBatch alone; if the
-    // composable misrouted to /inputs/batch, the production fetch would fire
-    // and we'd see a network attempt in the test env — but checking the
-    // stub-call count is the cleaner assertion).
-    expect(sendKeystrokesMock.calls).toHaveLength(1)
-    expect(sendKeystrokesMock.calls[0]?.id).toBe('s1')
-    // Frames must match the calculator output exactly: down × 2 + enter.
-    expect(sendKeystrokesMock.calls[0]?.frames).toEqual([
-      { type: 'input', kind: 'keystroke', payload: 'down' },
-      { type: 'input', kind: 'keystroke', payload: 'down' },
-      { type: 'input', kind: 'keystroke', payload: 'enter' },
-    ])
+    // Exactly one POST to the answer endpoint, carrying the session id, the
+    // AUQ tool_use_id (== the question id), and the answers verbatim.
+    expect(answerMock.calls).toHaveLength(1)
+    expect(answerMock.calls[0]?.id).toBe('s1')
+    expect(answerMock.calls[0]?.questionId).toBe('toolu_x')
+    expect(answerMock.calls[0]?.answers).toEqual([answer])
   })
 
   test('submitAuqAnswer is a no-op when no pending AUQ', async () => {
-    const sendKeystrokesMock = mock_async_result()
+    const answerMock = mockAnswerQuestion()
 
     const mock = makeMockStream()
     __setSessionApi({
       getSession: async () => makeSession('s1'),
       getMessages: async () => [],
       openSessionStream: () => mock,
-      sendKeystrokes: sendKeystrokesMock.fn,
+      answerQuestion: answerMock.fn,
     })
 
     const composable = usePtySession()
@@ -948,7 +943,7 @@ describe('usePtySession AUQ extensions (T9)', () => {
       { questionIndex: 0, selectedLabels: ['anything'] },
     ])
 
-    expect(sendKeystrokesMock.calls).toHaveLength(0)
+    expect(answerMock.calls).toHaveLength(0)
   })
 
   test('submitAuqAnswer debounces — second call within same pendingAuq.toolUseId is dropped', async () => {
@@ -956,12 +951,12 @@ describe('usePtySession AUQ extensions (T9)', () => {
     const history: PtyMessage[] = [makeAuqToolUseRow('s1', 0, 'toolu_x', questions)]
     const mock = makeMockStream()
 
-    const sendKeystrokesMock = mock_async_result()
+    const answerMock = mockAnswerQuestion()
     __setSessionApi({
       getSession: async () => makeSession('s1'),
       getMessages: async () => history,
       openSessionStream: () => mock,
-      sendKeystrokes: sendKeystrokesMock.fn,
+      answerQuestion: answerMock.fn,
     })
 
     const composable = usePtySession()
@@ -976,7 +971,7 @@ describe('usePtySession AUQ extensions (T9)', () => {
     await composable.submitAuqAnswer([answer])
     await composable.submitAuqAnswer([answer])
 
-    expect(sendKeystrokesMock.calls).toHaveLength(1)
+    expect(answerMock.calls).toHaveLength(1)
   })
 
   test('submitAuqAnswer clears debounce key on POST failure so the user can retry', async () => {
@@ -985,17 +980,16 @@ describe('usePtySession AUQ extensions (T9)', () => {
     const mock = makeMockStream()
 
     let fail = true
-    const calls: Array<{ id: string; frames: InputFrame[] }> = []
+    const calls: Array<{ id: string; questionId: string; answers: AuqAnswer[] }> = []
     __setSessionApi({
       getSession: async () => makeSession('s1'),
       getMessages: async () => history,
       openSessionStream: () => mock,
-      sendKeystrokes: async (id, frames) => {
-        calls.push({ id, frames })
+      answerQuestion: async (id, questionId, answers) => {
+        calls.push({ id, questionId, answers })
         if (fail) {
           throw new Error('network: ECONNRESET')
         }
-        return { delivered: frames.length }
       },
     })
 
@@ -1020,38 +1014,36 @@ describe('usePtySession AUQ extensions (T9)', () => {
   // cancelAuq routing.
   // -------------------------------------------------------------------------
 
-  test('cancelAuq posts a single escape keystroke frame to /keystrokes', async () => {
+  test('cancelAuq posts to cancelQuestion(sid, toolUseId)', async () => {
     const questions = [makeAuqQuestion(2)]
     const history: PtyMessage[] = [makeAuqToolUseRow('s1', 0, 'toolu_x', questions)]
     const mock = makeMockStream()
 
-    const sendKeystrokesMock = mock_async_result()
+    const cancelMock = mockCancelQuestion()
     __setSessionApi({
       getSession: async () => makeSession('s1'),
       getMessages: async () => history,
       openSessionStream: () => mock,
-      sendKeystrokes: sendKeystrokesMock.fn,
+      cancelQuestion: cancelMock.fn,
     })
 
     const composable = usePtySession()
     await composable.select('s1')
     await composable.cancelAuq()
 
-    expect(sendKeystrokesMock.calls).toHaveLength(1)
-    expect(sendKeystrokesMock.calls[0]?.id).toBe('s1')
-    expect(sendKeystrokesMock.calls[0]?.frames).toEqual([
-      { type: 'input', kind: 'keystroke', payload: 'escape' },
-    ])
+    expect(cancelMock.calls).toHaveLength(1)
+    expect(cancelMock.calls[0]?.id).toBe('s1')
+    expect(cancelMock.calls[0]?.questionId).toBe('toolu_x')
   })
 
   test('cancelAuq is a no-op when no pending AUQ', async () => {
-    const sendKeystrokesMock = mock_async_result()
+    const cancelMock = mockCancelQuestion()
     const mock = makeMockStream()
     __setSessionApi({
       getSession: async () => makeSession('s1'),
       getMessages: async () => [],
       openSessionStream: () => mock,
-      sendKeystrokes: sendKeystrokesMock.fn,
+      cancelQuestion: cancelMock.fn,
     })
 
     const composable = usePtySession()
@@ -1060,7 +1052,7 @@ describe('usePtySession AUQ extensions (T9)', () => {
 
     await composable.cancelAuq()
 
-    expect(sendKeystrokesMock.calls).toHaveLength(0)
+    expect(cancelMock.calls).toHaveLength(0)
   })
 
   // -------------------------------------------------------------------------
@@ -1075,12 +1067,12 @@ describe('usePtySession AUQ extensions (T9)', () => {
     const history: PtyMessage[] = [makeAuqToolUseRow('s1', 0, 'toolu_a', qA)]
     const mock = makeMockStream()
 
-    const sendKeystrokesMock = mock_async_result()
+    const answerMock = mockAnswerQuestion()
     __setSessionApi({
       getSession: async () => makeSession('s1'),
       getMessages: async () => history,
       openSessionStream: () => mock,
-      sendKeystrokes: sendKeystrokesMock.fn,
+      answerQuestion: answerMock.fn,
     })
 
     const composable = usePtySession()
@@ -1092,7 +1084,7 @@ describe('usePtySession AUQ extensions (T9)', () => {
     await composable.submitAuqAnswer([
       { questionIndex: 0, selectedLabels: ['Option 0'] },
     ])
-    expect(sendKeystrokesMock.calls).toHaveLength(1)
+    expect(answerMock.calls).toHaveLength(1)
 
     // 2. Stage the matching tool_result via WS — pendingAuq transitions to
     //    null and the watcher clears the inflight debounce key.
@@ -1132,26 +1124,36 @@ describe('usePtySession AUQ extensions (T9)', () => {
     await composable.submitAuqAnswer([
       { questionIndex: 0, selectedLabels: ['Option 1'] },
     ])
-    expect(sendKeystrokesMock.calls).toHaveLength(2)
-    expect(sendKeystrokesMock.calls[1]?.frames).toEqual([
-      { type: 'input', kind: 'keystroke', payload: 'down' },
-      { type: 'input', kind: 'keystroke', payload: 'enter' },
+    expect(answerMock.calls).toHaveLength(2)
+    expect(answerMock.calls[1]?.questionId).toBe('toolu_b')
+    expect(answerMock.calls[1]?.answers).toEqual([
+      { questionIndex: 0, selectedLabels: ['Option 1'] },
     ])
   })
 })
 
 // ---------------------------------------------------------------------------
-// Small `sendKeystrokes` test stub with call capture.
+// Answer-endpoint test stubs with call capture.
 // ---------------------------------------------------------------------------
 
-function mock_async_result(): {
-  fn: (id: string, frames: InputFrame[]) => Promise<{ delivered: number }>
-  calls: Array<{ id: string; frames: InputFrame[] }>
+function mockAnswerQuestion(): {
+  fn: (id: string, questionId: string, answers: AuqAnswer[]) => Promise<void>
+  calls: Array<{ id: string; questionId: string; answers: AuqAnswer[] }>
 } {
-  const calls: Array<{ id: string; frames: InputFrame[] }> = []
-  const fn = mock(async (id: string, frames: InputFrame[]) => {
-    calls.push({ id, frames })
-    return { delivered: frames.length }
+  const calls: Array<{ id: string; questionId: string; answers: AuqAnswer[] }> = []
+  const fn = mock(async (id: string, questionId: string, answers: AuqAnswer[]) => {
+    calls.push({ id, questionId, answers })
+  })
+  return { fn, calls }
+}
+
+function mockCancelQuestion(): {
+  fn: (id: string, questionId: string) => Promise<void>
+  calls: Array<{ id: string; questionId: string }>
+} {
+  const calls: Array<{ id: string; questionId: string }> = []
+  const fn = mock(async (id: string, questionId: string) => {
+    calls.push({ id, questionId })
   })
   return { fn, calls }
 }

@@ -70,7 +70,7 @@ use uuid::Uuid;
 use crate::app::AppState;
 use crate::domain::{PtyMessage, PtyQueueEntry, PtySession};
 use crate::error::AppError;
-use crate::pty::protocol::{InputFrame, InputKind, SessionId};
+use crate::pty::protocol::{AskOutcome, AuqAnswer, InputFrame, InputKind, SessionId};
 use crate::pty::queue::Queue;
 use crate::pty::transport::SpawnConfig;
 use crate::repo;
@@ -91,6 +91,10 @@ pub fn router() -> Router<AppState> {
         .route("/pty/sessions/{id}/input", post(enqueue_input))
         .route("/pty/sessions/{id}/inputs/batch", post(enqueue_inputs_batch))
         .route("/pty/sessions/{id}/keystrokes", post(enqueue_keystrokes))
+        .route(
+            "/pty/sessions/{id}/ask/{question_id}/answer",
+            post(answer_question),
+        )
         .route("/pty/sessions/{id}/ws", get(ws_handler))
 }
 
@@ -491,6 +495,113 @@ async fn enqueue_keystrokes(
         StatusCode::OK,
         Json(serde_json::json!({ "delivered": delivered })),
     ))
+}
+
+// =====================================================================
+// AUQ answer (resolves a blocked ask_user_question MCP tool call)
+// =====================================================================
+
+/// Body for `POST /pty/sessions/{id}/ask/{question_id}/answer`. `answers`
+/// mirrors the SPA picker's `AuqAnswer[]` (camelCase fields). `cancelled` means
+/// the user dismissed the picker without choosing — `answers` is then ignored.
+#[derive(Debug, Deserialize)]
+struct AnswerQuestionBody {
+    #[serde(default)]
+    answers: Vec<AuqAnswer>,
+    #[serde(default)]
+    cancelled: bool,
+}
+
+/// `POST /pty/sessions/{id}/ask/{question_id}/answer` — deliver the operator's
+/// answer to a blocked `ask_user_question` MCP tool call (`crate::pty::ask`).
+///
+/// Steps (all best-effort after the pending-question lookup):
+///   1. Resolve the session in the registry (404 on miss / bad uuid).
+///   2. Remove the question's `oneshot` sender from `pending_questions`. Absent
+///      ⇒ already answered / timed out / never asked → 409.
+///   3. Clear the question id from `outstanding_tool_uses` (the quiescence
+///      marker the ask tool set when it opened the picker).
+///   4. Broadcast a synthetic `tool_result` so the SPA picker card resolves
+///      (showing the answer summary, or a "dismissed" note on cancel).
+///   5. Send the [`AskOutcome`] through the oneshot to unblock the tool. A
+///      dropped receiver (tool already timed out) is benign — the UI close in
+///      step 4 already happened.
+///
+/// Returns 200 `{"ok": true}` on success.
+async fn answer_question(
+    State(state): State<AppState>,
+    Path((id, question_id)): Path<(String, String)>,
+    Json(body): Json<AnswerQuestionBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    tracing::info!(
+        session_id = %id,
+        question_id = %question_id,
+        cancelled = body.cancelled,
+        answer_count = body.answers.len(),
+        "http: POST /ask/{{qid}}/answer"
+    );
+
+    // (1) Resolve the session. Bad uuid or registry miss → 404.
+    let Ok(uuid) = Uuid::parse_str(&id) else {
+        return Err(AppError::NotFound(format!("session {id:?} not found")));
+    };
+    let Some(session) = state.pty_registry.get(&SessionId(uuid)).await else {
+        return Err(AppError::NotFound(format!("session {id:?} not found")));
+    };
+
+    // (2) Take the pending question's answer channel.
+    let sender = session.pending_questions.lock().await.remove(&question_id);
+    let Some(sender) = sender else {
+        return Ok((
+            StatusCode::CONFLICT,
+            error_envelope(
+                "conflict",
+                format!(
+                    "no pending question {question_id:?} for session {id}; \
+                     it may have been answered already or timed out"
+                ),
+            ),
+        ));
+    };
+
+    // (3) Clear the quiescence marker the ask tool set on open.
+    session
+        .outstanding_tool_uses
+        .lock()
+        .await
+        .remove(&question_id);
+
+    // (4) Build + broadcast the closing tool_result so the picker card resolves.
+    let (outcome, output) = if body.cancelled {
+        (
+            AskOutcome::Cancelled,
+            "Dismissed by the user without an answer.".to_string(),
+        )
+    } else {
+        (
+            AskOutcome::Answered(body.answers.clone()),
+            crate::pty::ask::brief_answer_summary(&body.answers),
+        )
+    };
+    let tm = crate::pty::ask::synthetic_tool_result(
+        &question_id,
+        output,
+        false,
+        jiff::Timestamp::now().to_string(),
+    );
+    crate::pty::emit::persist_and_broadcast(state.pool.as_ref(), &session, tm).await;
+
+    // (5) Unblock the tool. A dropped receiver means it already timed out; the
+    // UI close in (4) already happened, so this is benign.
+    if sender.send(outcome).is_err() {
+        tracing::warn!(
+            session_id = %id,
+            question_id = %question_id,
+            "ask answer: tool receiver gone (timed out?); answer recorded in the UI only"
+        );
+    }
+
+    Ok((StatusCode::OK, Json(serde_json::json!({ "ok": true }))))
 }
 
 // =====================================================================
@@ -1156,5 +1267,141 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ===================================================================
+    // POST /pty/sessions/{id}/ask/{question_id}/answer — resolve a blocked
+    // ask_user_question MCP tool call (crate::pty::ask).
+    // ===================================================================
+
+    /// Happy path: the answer is delivered to the pending question's oneshot,
+    /// the pending + quiescence bookkeeping is cleared, and a closing
+    /// tool_result is broadcast (paired to the question id).
+    #[tokio::test]
+    async fn answer_question_delivers_outcome_and_broadcasts_close() {
+        let pool = connect_in_memory().await.expect("pool");
+        let state = empty_state(pool);
+
+        let (bcast_tx, mut bcast_rx) = broadcast::channel(16);
+        let (input_tx, _input_rx) = mpsc::channel(8);
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx);
+        let sid = session.id;
+        state.pty_registry.insert(session.clone()).await;
+
+        // Register a pending question as the ask tool would.
+        let qid = "lumina-ask-test-q1".to_string();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        session.pending_questions.lock().await.insert(qid.clone(), tx);
+        session.outstanding_tool_uses.lock().await.insert(qid.clone());
+
+        let req_body = serde_json::json!({
+            "answers": [{ "questionIndex": 0, "selectedLabels": ["Beta"] }]
+        });
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/pty/sessions/{}/ask/{}/answer",
+                        sid.as_uuid(),
+                        qid
+                    ))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // The oneshot received the Answered outcome with the picked label.
+        match rx.await.expect("outcome delivered") {
+            crate::pty::protocol::AskOutcome::Answered(answers) => {
+                assert_eq!(answers.len(), 1);
+                assert_eq!(answers[0].selected_labels, vec!["Beta".to_string()]);
+            }
+            other => panic!("expected Answered, got {other:?}"),
+        }
+
+        // Bookkeeping cleared.
+        assert!(session.pending_questions.lock().await.is_empty());
+        assert!(!session.outstanding_tool_uses.lock().await.contains(&qid));
+
+        // A closing tool_result was broadcast, paired to the question id.
+        let msg = bcast_rx.try_recv().expect("tool_result broadcast");
+        assert_eq!(msg.kind, crate::pty::protocol::MessageKind::ToolResult);
+        assert_eq!(msg.tool_use_id.as_deref(), Some(qid.as_str()));
+    }
+
+    /// Cancellation delivers `AskOutcome::Cancelled` to the tool.
+    #[tokio::test]
+    async fn answer_question_cancel_delivers_cancelled() {
+        let pool = connect_in_memory().await.expect("pool");
+        let state = empty_state(pool);
+
+        let (bcast_tx, _bcast_rx) = broadcast::channel(16);
+        let (input_tx, _input_rx) = mpsc::channel(8);
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx);
+        let sid = session.id;
+        state.pty_registry.insert(session.clone()).await;
+
+        let qid = "lumina-ask-test-q2".to_string();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        session.pending_questions.lock().await.insert(qid.clone(), tx);
+
+        let req_body = serde_json::json!({ "cancelled": true });
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/pty/sessions/{}/ask/{}/answer",
+                        sid.as_uuid(),
+                        qid
+                    ))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(matches!(
+            rx.await.expect("outcome"),
+            crate::pty::protocol::AskOutcome::Cancelled
+        ));
+    }
+
+    /// 409 when the question id is not pending (already answered / timed out /
+    /// never asked).
+    #[tokio::test]
+    async fn answer_question_unknown_question_returns_409() {
+        let pool = connect_in_memory().await.expect("pool");
+        let state = empty_state(pool);
+
+        let (bcast_tx, _bcast_rx) = broadcast::channel(16);
+        let (input_tx, _input_rx) = mpsc::channel(8);
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx);
+        let sid = session.id;
+        state.pty_registry.insert(session).await;
+
+        let req_body = serde_json::json!({ "answers": [] });
+        let resp = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/pty/sessions/{}/ask/nope/answer", sid.as_uuid()))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let env: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(env["error"]["kind"], "conflict");
     }
 }

@@ -211,3 +211,41 @@ pub struct InputFrame {
     pub kind: InputKind,
     pub payload: String,
 }
+
+/// One user-supplied answer to one AskUserQuestion (AUQ) question, submitted by
+/// the SPA picker (`PtyAuqPicker.vue`) and delivered to a blocked
+/// `ask_user_question` MCP tool call (`crate::pty::ask`) via the per-session
+/// `pending_questions` oneshot.
+///
+/// The wire form is **camelCase** to match the TS `AuqAnswer` interface in
+/// `web/src/api/pty.ts` (the SPA POSTs this shape verbatim). `selected_labels`
+/// is the authoritative selection list; when the user picks the synthetic
+/// "Other" row its label appears here as `"Other"` and the free text rides in
+/// `other_text`. `notes` is forward-compat (the picker omits it per the E7
+/// deferral) and currently always absent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuqAnswer {
+    /// 0-based index into the originating question list.
+    pub question_index: usize,
+    /// Labels the user selected (single-select ⇒ exactly one; multi-select ⇒
+    /// 0+). `"Other"` here pairs with `other_text`.
+    #[serde(default)]
+    pub selected_labels: Vec<String>,
+    /// Free-text answer when the user picked the "Other" row.
+    #[serde(default)]
+    pub other_text: Option<String>,
+    /// Optional per-question notes (forward-compat; picker omits it today).
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+/// How the user resolved a pending AUQ in the SPA. Delivered to the blocked
+/// `ask_user_question` MCP tool call (`crate::pty::ask`) over the per-session
+/// `pending_questions` oneshot. `Answered` carries the per-question selections;
+/// `Cancelled` means the user dismissed the picker without choosing.
+#[derive(Debug, Clone)]
+pub enum AskOutcome {
+    Answered(Vec<AuqAnswer>),
+    Cancelled,
+}

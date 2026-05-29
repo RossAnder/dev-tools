@@ -44,7 +44,6 @@ import {
   type AuqAnswer,
   type AuqInput,
   type AuqQuestion,
-  type InputFrame,
   type PtyMessage,
   type PtyMessageKind,
   type PtySession,
@@ -52,7 +51,6 @@ import {
   type ToolUseContent,
   type WsFrame,
 } from '../api/pty'
-import { computeAuqKeystrokes } from './auqKeystrokes'
 
 // ---------------------------------------------------------------------------
 // Narrow kind validator — the WS frame schema (`WsFrameSchema` in api/pty.ts)
@@ -156,14 +154,16 @@ type Api = {
   getSession: typeof productionApi.getSession
   getMessages: typeof productionApi.getMessages
   sendInputsBatch: typeof productionApi.sendInputsBatch
-  sendKeystrokes: typeof productionApi.sendKeystrokes
+  answerQuestion: typeof productionApi.answerQuestion
+  cancelQuestion: typeof productionApi.cancelQuestion
   openSessionStream: typeof productionApi.openSessionStream
 }
 let api: Api = {
   getSession: productionApi.getSession,
   getMessages: productionApi.getMessages,
   sendInputsBatch: productionApi.sendInputsBatch,
-  sendKeystrokes: productionApi.sendKeystrokes,
+  answerQuestion: productionApi.answerQuestion,
+  cancelQuestion: productionApi.cancelQuestion,
   openSessionStream: productionApi.openSessionStream,
 }
 
@@ -195,7 +195,8 @@ export function __resetForTests(): void {
     getSession: productionApi.getSession,
     getMessages: productionApi.getMessages,
     sendInputsBatch: productionApi.sendInputsBatch,
-    sendKeystrokes: productionApi.sendKeystrokes,
+    answerQuestion: productionApi.answerQuestion,
+    cancelQuestion: productionApi.cancelQuestion,
     openSessionStream: productionApi.openSessionStream,
   }
 }
@@ -335,20 +336,24 @@ const pairedMessages: Ref<RenderableMessage[]> = computed(() => {
 })
 
 // ---------------------------------------------------------------------------
-// AskUserQuestion (AUQ) picker plumbing — T9 of the
-// `lumina-interactive-prompts` plan.
+// AskUserQuestion (AUQ) picker plumbing.
 //
 // `pendingAuq` derives the currently-unanswered AUQ tool_use (if any) from
 // `pairedMessages`. The picker SFC binds against this; while non-null, the
-// prompt textarea is disabled and the picker renders inline. When claude
-// emits the matching tool_result the row's `matchedResult` populates,
-// `pairedMessages` re-derives, and `pendingAuq` transitions to null.
+// prompt textarea is disabled and the picker renders inline. The AUQ tool_use
+// is broadcast by lumina's `ask_user_question` MCP tool (lumina/src/pty/ask.rs)
+// — the native AskUserQuestion picker is suppressed and never surfaces. When
+// the operator answers, the server broadcasts the matching tool_result, the
+// row's `matchedResult` populates, `pairedMessages` re-derives, and `pendingAuq`
+// transitions to null.
 //
-// `submitAuqAnswer` + `cancelAuq` post keystroke frames directly to
-// `/api/pty/sessions/{id}/keystrokes` (queue-bypass; see plan §Supervisor
-// bypass). Both are debounced per `pendingAuq.toolUseId` — a double-click
-// on Submit/Cancel within the same picker yields exactly one POST. The
-// debounce key clears when `pendingAuq` transitions to null.
+// `submitAuqAnswer` + `cancelAuq` POST to
+// `/api/pty/sessions/{id}/ask/{toolUseId}/answer`, which fulfils the blocked MCP
+// tool call and unblocks the agent (NOT the keystroke path — there is no TUI
+// picker to drive; the question lives entirely in lumina). Both are debounced
+// per `pendingAuq.toolUseId` — a double-click on Submit/Cancel within the same
+// picker yields exactly one POST. The debounce key clears when `pendingAuq`
+// transitions to null.
 // ---------------------------------------------------------------------------
 
 /**
@@ -635,9 +640,9 @@ export function usePtySession() {
   }
 
   /**
-   * Submit the user's answers to the current pending AUQ. Translates the
-   * answer array into a keystroke-frame sequence via `computeAuqKeystrokes`
-   * and POSTs them to `/api/pty/sessions/{id}/keystrokes` (queue-bypass).
+   * Submit the user's answers to the current pending AUQ. POSTs them to
+   * `/api/pty/sessions/{id}/ask/{toolUseId}/answer`, which fulfils the blocked
+   * `ask_user_question` MCP tool call and unblocks the agent.
    *
    * Debounced per `pendingAuq.toolUseId`: a double-click on Submit while a
    * previous call for the same AUQ is in flight (or has completed but the
@@ -659,20 +664,20 @@ export function usePtySession() {
     inflightAuqToolUseId.value = current.toolUseId
 
     try {
-      const frames: InputFrame[] = computeAuqKeystrokes(current.questions, answers)
-      await api.sendKeystrokes(sid, frames)
+      await api.answerQuestion(sid, current.toolUseId, answers)
     } catch (e) {
       // Failed — clear the debounce key so the user can retry.
       inflightAuqToolUseId.value = null
       throw e
     }
     // Success path: leave inflightAuqToolUseId set until pendingAuq
-    // transitions to null (the watch above clears it when claude emits the
-    // matching tool_result and pairedMessages re-derives).
+    // transitions to null (the watch above clears it when the server
+    // broadcasts the matching tool_result and pairedMessages re-derives).
   }
 
   /**
-   * Cancel the current pending AUQ by sending a single Escape keystroke.
+   * Cancel the current pending AUQ — POSTs `cancelled: true` to the answer
+   * endpoint, dismissing the question so the agent proceeds without input.
    * Debounce semantics mirror `submitAuqAnswer` — a double-click on Cancel
    * yields exactly one POST.
    */
@@ -686,10 +691,7 @@ export function usePtySession() {
     inflightAuqToolUseId.value = current.toolUseId
 
     try {
-      const frames: InputFrame[] = [
-        { type: 'input', kind: 'keystroke', payload: 'escape' },
-      ]
-      await api.sendKeystrokes(sid, frames)
+      await api.cancelQuestion(sid, current.toolUseId)
     } catch (e) {
       inflightAuqToolUseId.value = null
       throw e

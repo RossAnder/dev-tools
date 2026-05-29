@@ -411,6 +411,50 @@ export async function sendKeystrokes(
 }
 
 /**
+ * `POST /api/pty/sessions/{id}/ask/{questionId}/answer` — deliver the operator's
+ * answer to a blocked `ask_user_question` MCP tool call (`lumina/src/pty/ask.rs`).
+ *
+ * `questionId` is the AUQ `tool_use_id` carried on the synthetic `tool_use`
+ * message the tool broadcast (== `pendingAuq.toolUseId`). The server fulfils the
+ * tool's `oneshot`, broadcasts a closing `tool_result` (resolving the picker
+ * card), and unblocks the agent. `answers` is the SPA picker's `AuqAnswer[]`
+ * (camelCase — matches the Rust `AuqAnswer` wire shape). 409 if the question is
+ * no longer pending (already answered or timed out).
+ */
+export async function answerQuestion(
+  id: string,
+  questionId: string,
+  answers: AuqAnswer[],
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/pty/sessions/${encodeURIComponent(id)}/ask/${encodeURIComponent(questionId)}/answer`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers }),
+    },
+  )
+  return handleVoid(res)
+}
+
+/**
+ * `POST /api/pty/sessions/{id}/ask/{questionId}/answer` with `cancelled: true` —
+ * dismiss a pending question without answering. Closes the picker and lets the
+ * agent proceed without the operator's input.
+ */
+export async function cancelQuestion(id: string, questionId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/pty/sessions/${encodeURIComponent(id)}/ask/${encodeURIComponent(questionId)}/answer`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cancelled: true }),
+    },
+  )
+  return handleVoid(res)
+}
+
+/**
  * `PATCH /api/pty/sessions/{id}` — metadata update stub.
  *
  * The server returns 501 Not Implemented in v1; this wrapper still exists so

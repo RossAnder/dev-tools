@@ -10,13 +10,13 @@
 //! `supervisor::maybe_finalise_turn` (post lumina-pty-jsonl-tail / T5: the
 //! prior vt100 parser FSM has been replaced by JSONL-tail message extraction).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use tokio::sync::{Mutex, broadcast, mpsc};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
-use crate::pty::protocol::{InputFrame, SessionId, SessionStatus, TypedMessage};
+use crate::pty::protocol::{AskOutcome, InputFrame, SessionId, SessionStatus, TypedMessage};
 
 /// Per-process runtime state. Holds the broadcast fan-out, the input intake,
 /// the current lifecycle status, and the outstanding-tool-use set and
@@ -38,6 +38,14 @@ pub struct Session {
     /// `IDLE_THRESHOLD` for the JSONL-tail quiescence check.
     pub last_record_at: AtomicI64,
     pub sequence_counter: AtomicI64,
+    /// In-flight `ask_user_question` MCP-tool calls (`crate::pty::ask`), keyed
+    /// by the synthetic question id (== the AUQ `tool_use_id` the SPA pairs on).
+    /// The blocked tool handler parks a `oneshot::Sender` here; the answer
+    /// endpoint (`POST /pty/sessions/{id}/ask/{qid}/answer`) takes it and sends
+    /// the user's [`AskOutcome`], unblocking the tool. Per-session, ephemeral —
+    /// an open question dies with the session (chosen over a DB table, since a
+    /// half-asked question has no value across a restart).
+    pub pending_questions: Mutex<HashMap<String, oneshot::Sender<AskOutcome>>>,
 }
 
 impl Session {
@@ -57,6 +65,7 @@ impl Session {
             outstanding_tool_uses: Mutex::new(HashSet::new()),
             last_record_at: AtomicI64::new(0),
             sequence_counter: AtomicI64::new(1),
+            pending_questions: Mutex::new(HashMap::new()),
         })
     }
 

@@ -46,7 +46,6 @@
 use std::path::{Path, PathBuf};
 
 use tokio::sync::broadcast;
-use uuid::Uuid;
 
 use crate::app::AppState;
 use crate::domain::PtySession;
@@ -231,7 +230,6 @@ pub async fn spawn_pty_session_internal(
     //     policy: log and swallow, matching `supervisor::dispatch_one`.
     {
         let pool = state.pool.clone();
-        let bridge_tx = broadcast_tx.clone();
         let session_id_str = session_id_str.clone();
         let cwd = config.cwd.clone();
 
@@ -283,6 +281,17 @@ pub async fn spawn_pty_session_internal(
                 broadcast::channel::<JsonlRecordParsed>(BROADCAST_CAPACITY);
             tokio::spawn(jsonl_tail::tail(jsonl_path.clone(), jsonl_tx));
 
+            // tool_use_ids of raw `lumina-ask` MCP calls to suppress from the
+            // transcript. The `ask_user_question` tool already broadcasts a
+            // synthetic AUQ tool_use/tool_result pair that drives the SPA picker
+            // (see crate::pty::ask), so the raw JSONL tool_use AND its
+            // tool_result for that call must NOT also be surfaced — that would
+            // double-render the question. The two records arrive in separate
+            // JSONL lines, so the id is tracked here across iterations and
+            // dropped once its result is seen.
+            let mut ask_suppressed: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+
             loop {
                 match jsonl_rx.recv().await {
                     Ok(parsed) => {
@@ -301,6 +310,9 @@ pub async fn spawn_pty_session_internal(
                         // Update the outstanding-tool-uses set:
                         //   + insert tool_use_id for every ToolUse
                         //   - remove tool_use_id for every ToolResult
+                        // Raw lumina-ask calls are excluded from the set (they
+                        // are represented by the synthetic question id the ask
+                        // tool registers + the answer endpoint clears).
                         {
                             let mut outstanding =
                                 bridge_session.outstanding_tool_uses.lock().await;
@@ -308,11 +320,17 @@ pub async fn spawn_pty_session_internal(
                                 match tm.kind {
                                     MessageKind::ToolUse => {
                                         if let Some(id) = tm.tool_use_id.as_ref() {
-                                            outstanding.insert(id.clone());
+                                            if crate::pty::ask::is_ask_user_question_tool_use(tm) {
+                                                ask_suppressed.insert(id.clone());
+                                            } else {
+                                                outstanding.insert(id.clone());
+                                            }
                                         }
                                     }
                                     MessageKind::ToolResult => {
-                                        if let Some(id) = tm.tool_use_id.as_ref() {
+                                        if let Some(id) = tm.tool_use_id.as_ref()
+                                            && !ask_suppressed.contains(id)
+                                        {
                                             outstanding.remove(id);
                                         }
                                     }
@@ -321,47 +339,51 @@ pub async fn spawn_pty_session_internal(
                             }
                         }
 
-                        // Persist + broadcast each typed message.
+                        // Persist + broadcast each typed message via the shared
+                        // helper (the single sequence-allocation + insert +
+                        // broadcast path, also used by the ask tool + answer
+                        // endpoint). `bridge_session.broadcast_tx` is a clone of
+                        // the same channel WS subscribers read. Raw lumina-ask
+                        // tool_use rows and their tool_results are skipped (the
+                        // synthetic pair represents them).
                         for tm in typed_msgs {
-                            let kind_wire = tm.kind.as_wire(); // &'static str
-                            let content_json = serde_json::to_string(&tm.content)
-                                .unwrap_or_else(|_| "{}".to_string());
-                            let raw_text = tm.raw_text.clone();
-                            let seq = bridge_session.next_sequence();
-                            let msg_id = Uuid::now_v7().to_string();
-
-                            // Stamp the bridge-allocated sequence on the
-                            // outgoing TypedMessage before the broadcast
-                            // send so WS subscribers see the same number
-                            // we persisted.
-                            let mut tm = tm;
-                            tm.sequence = seq;
-
-                            if let Err(e) = repo::pty::insert_pty_message(
-                                &pool,
-                                &msg_id,
-                                &session_id_str,
-                                seq,
-                                kind_wire,
-                                &content_json,
-                                raw_text.as_deref(),
-                            )
-                            .await
-                            {
-                                tracing::warn!(
-                                    session_id = %session_id_str,
-                                    error = %e,
-                                    "pty bridge: insert_pty_message failed"
-                                );
+                            match tm.kind {
+                                // The supervisor's `dispatch_one` already
+                                // persists + broadcasts a `user_input` echo the
+                                // instant a prompt is dispatched (so the user
+                                // sees their message immediately). claude then
+                                // logs the same prompt as a `user` record, which
+                                // maps back to `UserInput` here — skipping it
+                                // avoids rendering every prompt twice. (In
+                                // lumina every prompt is supervisor-dispatched,
+                                // so the echo is always present.)
+                                MessageKind::UserInput => continue,
+                                MessageKind::ToolUse
+                                    if crate::pty::ask::is_ask_user_question_tool_use(&tm) =>
+                                {
+                                    continue;
+                                }
+                                MessageKind::ToolResult
+                                    if tm
+                                        .tool_use_id
+                                        .as_ref()
+                                        .is_some_and(|id| ask_suppressed.contains(id)) =>
+                                {
+                                    // Drop the suppression entry now its result
+                                    // is seen, keeping the set bounded.
+                                    if let Some(id) = tm.tool_use_id.as_ref() {
+                                        ask_suppressed.remove(id);
+                                    }
+                                    continue;
+                                }
+                                _ => {}
                             }
-
-                            tracing::debug!(
-                                session_id = %session_id_str,
-                                kind = ?tm.kind,
-                                sequence = seq,
-                                "pty bridge: broadcasting typed message"
-                            );
-                            let _ = bridge_tx.send(tm);
+                            crate::pty::emit::persist_and_broadcast(
+                                pool.as_ref(),
+                                &bridge_session,
+                                tm,
+                            )
+                            .await;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
