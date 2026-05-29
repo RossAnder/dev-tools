@@ -186,8 +186,12 @@ fn validate_attributes_for_kind(
                 "dispatch" => want_object(k, v)?,
                 _ => return Err(bad_key(k)),
             },
-            "epic" | "focus" => match k.as_str() {
-                "context" | "grouping_rationale" => want_string(k, v)?,
+            "epic" => match k.as_str() {
+                "outcome" | "context" => want_string(k, v)?,
+                _ => return Err(bad_key(k)),
+            },
+            "focus" => match k.as_str() {
+                "framing" => want_string(k, v)?,
                 _ => return Err(bad_key(k)),
             },
             "project" => return Err(bad_key(k)),
@@ -1093,6 +1097,52 @@ pub async fn set_shape(pool: &SqlitePool, id: &str, shape: Shape) -> Result<(), 
     record_event(&mut tx, "work_item", id, "work_item.shape_set", payload).await?;
     tx.commit().await?;
     Ok(())
+}
+
+/// Revise an epic's plan attributes (migration 0010). Epic-kind-gated; JSON-
+/// merges the present fields via set_work_item_attributes (one event). Sibling
+/// keys are preserved by the merge. Mandatory-outcome-at-create is enforced in
+/// the create path, not here.
+pub async fn set_epic_plan(
+    pool: &SqlitePool,
+    id: &str,
+    outcome: Option<&str>,
+    context: Option<&str>,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, id).await?;
+    if kind != "epic" {
+        return Err(AppError::Validation(format!(
+            "epic-plan attributes are settable only on an epic, not on '{kind}'"
+        )));
+    }
+    let mut patch = serde_json::Map::new();
+    if let Some(v) = outcome {
+        patch.insert("outcome".into(), serde_json::Value::String(v.to_string()));
+    }
+    if let Some(v) = context {
+        patch.insert("context".into(), serde_json::Value::String(v.to_string()));
+    }
+    set_work_item_attributes(pool, id, &serde_json::Value::Object(patch)).await
+}
+
+/// Revise a focus's framing (migration 0010). Focus-kind-gated; JSON-merges
+/// {framing} via set_work_item_attributes (one event).
+pub async fn set_focus_plan(
+    pool: &SqlitePool,
+    id: &str,
+    framing: Option<&str>,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, id).await?;
+    if kind != "focus" {
+        return Err(AppError::Validation(format!(
+            "focus framing is settable only on a focus, not on '{kind}'"
+        )));
+    }
+    let mut patch = serde_json::Map::new();
+    if let Some(v) = framing {
+        patch.insert("framing".into(), serde_json::Value::String(v.to_string()));
+    }
+    set_work_item_attributes(pool, id, &serde_json::Value::Object(patch)).await
 }
 
 /// Set a work item's `effort` grade (migration 0003). Task-scoped: the effort

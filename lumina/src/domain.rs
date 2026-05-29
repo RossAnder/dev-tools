@@ -429,6 +429,31 @@ pub struct CreateWorkItemRequest {
     pub origin: Option<String>,
 }
 
+/// Revise-later plan body for an epic (migration 0010). Both fields are
+/// optional with present-only JSON-merge semantics (an absent field leaves the
+/// stored attribute untouched). Consumed by the HTTP PATCH handler (T7) and the
+/// MCP `set_epic_plan` tool (T6), both delegating to `repo::set_epic_plan`.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct EpicPlanRequest {
+    /// Epic outcome statement; absent leaves the stored value untouched.
+    #[serde(default)]
+    pub outcome: Option<String>,
+    /// Epic context note; absent leaves the stored value untouched.
+    #[serde(default)]
+    pub context: Option<String>,
+}
+
+/// Revise-later plan body for a focus (migration 0010). The single field is
+/// optional with present-only JSON-merge semantics. Consumed by the HTTP PATCH
+/// handler (T7) and the MCP `set_focus_plan` tool (T6), both delegating to
+/// `repo::set_focus_plan`.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct FocusPlanRequest {
+    /// Focus framing statement; absent leaves the stored value untouched.
+    #[serde(default)]
+    pub framing: Option<String>,
+}
+
 /// Update-body for a status transition. Deserialised by the HTTP PATCH handler
 /// (Task 4) and the MCP `update_work_item_status` tool (Task 5).
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
