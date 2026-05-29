@@ -1,0 +1,224 @@
+schema_version = 1
+last_updated = "2026-05-28"
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "T5: Cleanup — remove any T1 ad-hoc test scaffolding; cover toolbar in unit tests"
+summary = "bun test cannot render .vue SFCs — T2/T5/T19 acceptance criteria are unmeetable on the existing test stack"
+status = "merged"
+description = """
+lumina/web/CLAUDE.md TEST-BOOTSTRAP block (verbatim): "Vue SFC (.vue) component rendering is OUT OF SCOPE for this scaffold — Bun has no native Vue compiler. ... If full Vue component-rendering tests are needed later, add Vitest + @vue/test-utils alongside (they coexist with bun test on the same codebase) and re-run /test-bootstrap." All 18 existing tests under lumina/web/src/__tests__/ test pure TS via __setApiForTests; none mount .vue files. T2 (ConfirmAction), T5 (FocusToolbar + WorkItemForm tests), and T19 (~13 panel/form tests for W2-W4) all describe DOM-level assertions ("emits", "renders inline") that require @vue/test-utils.
+"""
+anchor_old = "**Files**: `lumina/web/src/components/__tests__/FocusToolbar.test.ts` (new), `lumina/web/src/components/AppHeader.vue` (modify if T1 used a temporary mount), `lumina/web/src/components/__tests__/WorkItemForm.test.ts` (new)"
+anchor_new = "**Prerequisite (new task T0 — add to Wave 1 before T1)**: Install Vitest + @vue/test-utils alongside bun test (they coexist per lumina/web/CLAUDE.md). Add `vitest.config.ts` (path aliases aligned with vite.config.ts), `bun run test:component` script, and re-run /test-bootstrap to update the marker block. Existing `bun test` keeps gating composable/wire-layer tests; vitest gates SFC tests.\n\n**Files** (T5 retained): `lumina/web/src/__tests__/FocusToolbar.test.ts` (new, vitest), `lumina/web/src/__tests__/WorkItemForm.test.ts` (new, vitest), `lumina/web/src/components/AppHeader.vue` (modify if T1 used a temporary mount)"
+
+[[items]]
+id = "P2"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "T4: Wire FocusLens action toolbar — Edit, Delete, + Add child, status cycle"
+summary = "useHierarchy exposes createNode + changeStatus + refresh — no update/remove/updateStatus method exists; deleteWorkItem wire method also missing from api/work-items.ts"
+status = "merged"
+description = """
+Verified at lumina/web/src/composables/useHierarchy.ts:308-330 (exports: tree, focusId, detail, loading, error, view, focusPath, focusedNode, descendantCounts, treeStatus, loadTree, setFocus, createNode, changeStatus, refresh, clearError, descendantCountFor, getSiblings, countMatching). The plan calls useHierarchy().create / .update / .remove / .updateStatus — none of those names exist. Additionally, lumina/web/src/api/work-items.ts has NO DELETE method (grep for 'DELETE' returns 0 matches in that file) despite the backend route DELETE /work-items/{id} existing per lumina/CLAUDE.md HTTP routes. T3, T4, and T5 each silently smuggle in a wire+composable extension.
+"""
+anchor_old = "Status cycle** → small inline `<Select>` bound to status (todo/in_progress/blocked/done). On change → `useHierarchy().updateStatus(id, value)`. On 422 closure-gate error, the inline error renders directly under the Select"
+anchor_new = "Status cycle** → small inline `<Select>` bound to status. On change → `useHierarchy().changeStatus(id, value)` (existing method, NOT updateStatus). On 422 closure-gate error, the inline error renders directly under the Select.\n\n**Prerequisite (new task T0.5 — Wave 1, before T3)**: Extend the wire+composable layer with: (a) `deleteWorkItem(id)` in `lumina/web/src/api/work-items.ts` (currently no DELETE method exists despite the backend route); (b) `updateWorkItem(id, patch)` in api/work-items.ts already exists — verify; (c) `useHierarchy().updateNode(id, patch)` and `useHierarchy().removeNode(id)` methods (mirror `createNode`'s Result/__setApiForTests pattern). T3's edit/delete calls then become `useHierarchy().updateNode(...)` / `.removeNode(id)`."
+
+[[items]]
+id = "P3"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "Research Notes"
+summary = "Composable method names in plan are wrong for useTaskDependencies (.addEdge/.removeEdge not .add/.remove) and useActivity (.record not .append)"
+status = "merged"
+description = """
+Verified: useTaskDependencies.ts:191,233 exports addEdge(taskId, dependsOnId, kind) and removeEdge(taskId, dependsOnId) — plan T16 calls useTaskDependencies().forTask(id) and implies .add/.remove (neither exists). useActivity.ts:95 exports record(workItemId, payload) — plan T18 calls useActivity().append(workItemId, payload). T16 and T18 will hit type errors immediately.
+"""
+anchor_old = "**Composables already cover every write** — `useAcceptanceCriteria`, `useResearchNotes`, `useRisks`, `useRejectedAlternatives`, `useRepoLinks`, `useOpenQuestions`, `useFindings`, `useTaskDependencies`, `useStoryPlan`, `useTaskSpec`, `useActivity`, `useContextBlocks`, `useScalars` all expose CRUD methods returning `Result<T, string>`."
+anchor_new = "**Composables already cover every write** — but the names diverge from the obvious .add/.update/.remove pattern in several places. Verified signatures: `useAcceptanceCriteria.{add,check,uncheck,remove}`, `useResearchNotes.{add,update,supersede}`, `useRisks.{add,update,supersede,remove}`, `useRejectedAlternatives.{add,update,supersede,remove}`, `useRepoLinks.{add,remove,setPrimary}`, `useOpenQuestions.{add,addOption,blockTaskOnQuestion,setEnablingOption,resolve}`, `useFindings.{add,update,resolve,supersede}`, **`useTaskDependencies.{addEdge,removeEdge}` (NOT .add/.remove)**, `useStoryPlan.set`, `useTaskSpec.set`, **`useActivity.record` (NOT .append)**, `useContextBlocks.{create,link,unlink}`, `useScalars.{setRelevance,setEffort,setComplexity,setClosureGate,setTaskKind,setTier}`. **`useHierarchy` exposes only `createNode` + `changeStatus` + `refresh` — see P2 for the update/remove gap.** All return `Result<T, string>`. Note that `useHierarchy().refresh(id)` is a no-op unless `id === focusId.value` (useHierarchy.ts:189-196), so callers must pass the affected work-item id explicitly."
+
+[[items]]
+id = "P4"
+review_round = 1
+severity = "critical"
+category = "completeness"
+plan_section = "T4: Wire FocusLens action toolbar — Edit, Delete, + Add child, status cycle"
+summary = "Status enum has 6 values (open + cancelled missing from plan); status cycle picker needs kind-aware filtering"
+status = "merged"
+description = """
+Verified at lumina/web/src/api/wire-enums.ts:36: STATUS_VALUES = ['open', 'todo', 'in_progress', 'blocked', 'done', 'cancelled']. Plan T4 lists '(todo/in_progress/blocked/done)' — missing 'open' (container default) and 'cancelled' (resolution-of-question cascade outcome per CLAUDE.md). Without kind-aware filtering: containers' 'open' status disappears; tasks cancelled by open-question resolution can't be manually revived; cascade-effects of T15 become uninspectable.
+"""
+anchor_old = "**Status cycle** → small inline `<Select>` bound to status (todo/in_progress/blocked/done)"
+anchor_new = "**Status cycle** → small inline `<Select>` bound to status, kind-aware: containers (project/epic/feature/story) → ['open'] read-only display; tasks → ['todo','in_progress','blocked','done','cancelled']. Manually setting 'cancelled' is rare but supported as an escape hatch from a stale T15 cascade. Bind values from `StatusSchema` (api/wire-enums.ts) NOT a hard-coded list"
+
+[[items]]
+id = "P5"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "T9: Build `EpicFeatureAttributesEditor` modal — context + grouping_rationale"
+summary = "T9's backend-existence hedge is unfounded — generic PATCH /work-items/{id} accepts an attributes JSON-merge field, so no backend work is needed"
+status = "merged"
+description = """
+Verified at lumina/CLAUDE.md HTTP routes (### Work-items CRUD): PATCH /work-items/{id} → repo::update_work_item exists; per Agent 1's read of api/work-items.ts:580, UpdateWorkItemBody includes `attributes?: Record<string, unknown>`. The repo layer's update_work_item accepts attributes alongside title/body/status/position. T9's 'if it exists, ... or add a small composable wrapper ... verify which path the backend supports' is a runtime decision the orchestrator must resolve BEFORE /implement — the answer is: generic PATCH, no backend addition, route already wired.
+"""
+anchor_old = "Submit → existing `useStoryPlan().set` is not appropriate; use a generic `useScalars().setAttributes(id, payload)` if it exists, or add a small composable wrapper around `PATCH /work-items/{id}` with attributes-only patch (verify which path the backend supports for epic/feature — current exploration shows `set_work_item_attributes` is reachable via story-plan/task-spec endpoints; for epic/feature it may need a generic PATCH)."
+anchor_new = "Submit → call the existing generic update path: `updateWorkItem(id, { attributes: { context, grouping_rationale } })` from `@/api/work-items`. The PATCH /api/work-items/{id} body's `attributes?: Record<string, unknown>` (api/work-items.ts) is JSON-merged via `repo::set_work_item_attributes` at the backend, so the existing route handles epic/feature attributes without any backend work. Consumer should call this through the new `useHierarchy().updateNode(id, patch)` method (added in T0.5 per P2), keeping the refresh + error path consistent with the other panels."
+
+[[items]]
+id = "P6"
+review_round = 1
+severity = "critical"
+category = "executability"
+plan_section = "T17: Build `ContextBlocksPanel` — create + link + unlink"
+summary = "T17's 'link-existing' path is unimplementable — GET /context-blocks does not exist; only create-and-link can ship"
+status = "merged"
+description = """
+Verified in lumina/CLAUDE.md HTTP routes (### Context blocks): exactly three routes exist (POST /context-blocks, POST/DELETE link/unlink) — NO list endpoint. T17's hedge 'backend may or may not exist — if not, skip option 1' is a scope decision the orchestrator must resolve. Resolution: ship create-and-link only; defer the link-existing picker to a follow-up plan that adds the list route + an aggregate-aware picker.
+"""
+anchor_old = "Two ways to add: (1) inline link an existing context block — single Select picker populated by an in-memory list of all context blocks (small ask: backend `GET /context-blocks` may or may not exist — if not, skip option 1 in v1 and only support create+auto-link); (2) \"+ Create + link\" → `ContextBlockForm` modal (title + body kind + optional kind) → creates and immediately links."
+anchor_new = "One add path in v1: \"+ Create + link\" → `ContextBlockForm` modal (title + body + optional kind) → creates via `useContextBlocks().create(...)` and immediately links via `.link(workItemId, contextBlockId)`. The \"link an existing block\" picker is **out of scope** for v1: no `GET /context-blocks` list endpoint exists at the backend (per lumina/CLAUDE.md HTTP routes: only POST /context-blocks, POST/DELETE link/unlink). Split that branch into a follow-up plan that adds the list route + an aggregate-aware picker."
+
+[[items]]
+id = "P7"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "T6: Build enum scalar pickers — `RelevancePicker`, `EffortPicker`, `ComplexityPicker`, `ClosureGatePicker`, `TaskKindPicker`, `TierPicker`"
+summary = "TaskKindPicker must bind to the 3-value vocab (foundation|main|polish) — the legacy 4-value vocab was culled by migration 0007"
+status = "merged"
+description = """
+Verified at wire-enums.ts:131: TASK_KIND_VALUES = ['foundation', 'main', 'polish']. lumina/CLAUDE.md MCP tool surface explicitly documents 'migration 0007 (round-3.5) culled the vocab to the genuinely task-level three-value set ... CHECK-enforced'. The legacy four-value vocab (foundation|vertical-slice|pattern-replacement|polish) is dead — vertical-slice / pattern-replacement are intra-story task GROUPINGS, not task kinds, surfaced only in /lumina:decompose-tasks prose. T6 doesn't currently specify which set to bind to.
+"""
+anchor_old = "**Action**: Each is a small `<Select>` wrapper bound to the matching scalars.ts composable method (`useScalars().setRelevance(id, value)` etc.). Each picker renders only when applicable to the focused item's kind (e.g., `EffortPicker` returns null for non-task)."
+anchor_new = "**Action**: Each is a small `<Select>` wrapper bound to the matching scalars.ts composable method (`useScalars().setRelevance(id, value)` etc.) AND the matching enum schema from `@/api/wire-enums` (RelevanceSchema, EffortSchema, ComplexitySchema, ClosureGateSchema, TaskKindSchema, TierSchema). Each picker renders only when applicable to the focused item's kind (e.g., `EffortPicker` returns null for non-task). **NB**: TaskKindPicker binds to the three-value set ['foundation','main','polish'] (migration 0007 kebab-case-clean) — do NOT include the legacy 'vertical-slice'/'pattern-replacement' values, which are intra-story groupings handled outside the task-kind column."
+
+[[items]]
+id = "P8"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "Approach"
+summary = "FocusLens does NOT render most child-element collections inline today — only AC, context_blocks, and RepoLinksPanel; W3/W4 tasks are mostly insertions, not extractions"
+status = "merged"
+description = """
+Verified by reading lumina/web/src/components/FocusLens.vue (313 lines) in full per Agent 1's exploration: inline-rendered child collections are limited to RepoLinksPanel (project kind, line 211, already a sub-component), acceptance criteria (lines 238-271, task-only, read-only), and context_blocks (read-only grid, lines 281-303). NO inline rendering of research_notes, risks, rejected_alternatives, findings, open_questions, task_dependencies, or activity. The plan's 'extract inline fragment' pattern is fictional for T11-T16 and T18.
+"""
+anchor_old = "Each child-element collection currently rendered inline inside FocusLens is extracted into a dedicated `<*Panel>` component rendered below the hero, reading from the same `useHierarchy().detail` ref so no new fetch path is introduced. The extraction is incremental: a panel ships when its CRUD lands, and FocusLens loses the inline fragment in the same task."
+anchor_new = "Only three child-element views are rendered inline in `FocusLens.vue` today: `RepoLinksPanel` (project-kind, already a sub-component), acceptance criteria (task-only read-only block, FocusLens.vue:238-271), and context_blocks (read-only grid, :281-303). The other child collections (research_notes, risks, rejected_alternatives, findings, open_questions, task_dependencies, activity) are NOT currently rendered in FocusLens — those tasks (T11-T16, T18) are **pure additions** of a new `<*Panel>` mount point, not extractions. Only T10 (AC) and possibly T17 (context blocks) involve removing an existing inline fragment. Each panel reads from the same `useHierarchy().detail` ref — no new fetch path is introduced."
+
+[[items]]
+id = "P9"
+review_round = 1
+severity = "warning"
+category = "risk"
+plan_section = "T1: Build shared UI primitives — `Modal`, `Input`, `Textarea`, `Select`, `Button`"
+summary = "Vue 3.6.0-beta.12 + Vapor mode + <teleport to=body> is a stack with known issues — T1 needs an explicit script-directive decision for Modal.vue"
+status = "merged"
+description = """
+Verified in lumina/web/package.json: 'vue': '3.6.0-beta.12'. RepoLinksPanel.vue:10-12 self-documents Vapor as 'feature-complete but still considered unstable'. Vue's official 3.6.0-beta.1 release notes do NOT list Teleport in Vapor's supported set; 4+ open Teleport issues exist on vuejs/core (#13349, #13710, #14412, #6152). The plan claims '~80-line Modal.vue with <teleport to=body>' but doesn't specify whether Modal.vue uses `<script setup vapor>` (Vapor — Teleport behaviour unverified) or `<script setup>` (VDOM interop — Teleport standard).
+"""
+anchor_old = "**Action**: Create five small SFCs using only existing `var(--*)` tokens and Tailwind utilities. Modal: `<teleport to=\"body\">`, backdrop with click-to-close (opt-out via prop), ESC key listener, focus trap, `<slot name=\"header\">`/`<slot>`/`<slot name=\"footer\">`, width prop (`sm|md|lg` → 420/560/720px)."
+anchor_new = "**Action**: Create five small SFCs using only existing `var(--*)` tokens and Tailwind utilities. **Modal.vue uses `<script setup>` (VDOM interop), NOT `<script setup vapor>`** — Teleport-under-Vapor is unverified at Vue 3.6.0-beta.12 (4+ open vuejs/core Teleport issues; Vapor still self-documented as 'feature-complete but unstable' per RepoLinksPanel.vue:10-12). Modal: `<teleport to=\"body\">`, backdrop with click-to-close (opt-out via prop), ESC key listener, focus trap, `<slot name=\"header\">`/`<slot>`/`<slot name=\"footer\">`, width prop (`sm|md|lg` → 420/560/720px). Acceptance must include: opening Modal from inside a `<script setup vapor>` parent renders without browser-console warnings; ESC closes; focus restores to the trigger element."
+
+[[items]]
+id = "P10"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "T5: Cleanup — remove any T1 ad-hoc test scaffolding; cover toolbar in unit tests"
+summary = "Test directory convention is src/__tests__/ (18 existing files) — plan names src/components/__tests__/ which doesn't exist"
+status = "merged"
+description = """
+Verified by Glob: lumina/web/src/__tests__/ contains 18 *.test.ts files (acceptance-criteria, activity, context-blocks, findings, open-questions, pty-session, readiness, rejected-alternatives, repoTag, research-notes, risks, scalars, showcase, smoke, story-plan, task-deps, task-spec, fixtures). lumina/web/src/components/__tests__/ does NOT exist. T5 and T19 instruct creating tests under the latter — agents will either invent a parallel test root or second-guess.
+"""
+anchor_old = "**Files**: `lumina/web/src/components/__tests__/FocusToolbar.test.ts` (new)"
+anchor_new = "**Files**: `lumina/web/src/__tests__/FocusToolbar.test.ts` (new — matches existing 18-file convention under src/__tests__/, NOT src/components/__tests__/ which doesn't exist)"
+
+[[items]]
+id = "P11"
+review_round = 1
+severity = "warning"
+category = "risk"
+plan_section = "Risks"
+summary = "Expanded /api write surface inherits the existing no-auth posture — operators setting HOST=0.0.0.0 expose all destructive ops to the LAN"
+status = "merged"
+description = """
+Verified at lumina/src/app.rs:72-78 (verbatim): 'The JSON /api/* surface has no auth and no Host-header check (the MCP /mcp surface is separately protected by rmcp 1.7's allowed_hosts default — {localhost, 127.0.0.1, ::1} per GHSA-89vp-x53w-74fx — but that protection does NOT extend to /api/*). Set HOST=0.0.0.0 to opt in to LAN exposure of the REST surface.' Pre-plan, the SPA was ~1 inline form. Post-plan, ~18 modal forms write to the DB via unauthenticated POST/PATCH/DELETE. Two-step confirm mitigates accidental clicks, not remote actors. The default loopback bind keeps this safe; the risk is operator-flipped HOST.
+"""
+anchor_old = "- **Optimistic-update gap** — every mutation refetches the full detail. For frequent actions (check/uncheck AC), this is 1 round-trip per click. Acceptable for v1; optimistic updates are a future optimisation."
+anchor_new = """- **Optimistic-update gap** — every mutation refetches the full detail. For frequent actions (check/uncheck AC), this is 1 round-trip per click. Acceptable for v1; optimistic updates are a future optimisation.
+- **No-auth posture on /api/*** — the SPA's write surface grows ~18× post-plan (from 1 inline form to ~18 modal forms). The /api/* surface has no auth and no Host-header check (per lumina/src/app.rs:72-78). The default loopback bind keeps this safe; operators who set `HOST=0.0.0.0` for LAN access expose all destructive ops (delete work item, supersede risk, resolve open question with cascade) to unauthenticated LAN peers. This is a pre-existing backend concern out of scope for this plan, but the surface-area growth is worth flagging."""
+
+[[items]]
+id = "P12"
+review_round = 1
+severity = "suggestion"
+category = "executability"
+plan_section = "T19: End-to-end verification + unit-test parity"
+summary = "T19 lumps ~13 components' tests into one session — fold tests into each W2-W4 task instead"
+status = "merged"
+description = """
+T19 asks one agent session to author ~13 bun-test files covering happy + 422 + refresh for every panel/form in W2-W4. With P1's fix (Vitest for SFC tests), this becomes ~13 vitest files in one session — 1500-2500 LOC, well outside one focused agent session, prone to shallow padding. Fold each component's tests into its own task's Acceptance (matches the project's 18-file existing pattern of one composable per test file).
+"""
+
+[[items]]
+id = "P13"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "T16: Build `TaskDependencyPanel` — inline add/remove with cycle-error inline display"
+summary = "Cycle error envelope ships raw task UUIDs — T16 must resolve them to titles before display"
+status = "merged"
+description = """
+Verified at lumina/CLAUDE.md (HTTP routes intro): cycle envelope is {error:{kind:'cycle',message:..., edges:[{task_id, depends_on_id}, ...]}} (raw UUIDs). For a story with 12 tasks, a cycle renders as e.g. '01970d29-... → 01970e7a-... → 01970d29-...' — unintelligible. T16 must resolve task_id/depends_on_id to titles via the local useHierarchy() cache before rendering.
+"""
+anchor_old = "On 422 cycle error, render the inline error with the offending cycle edges (`error.edges` array from the envelope)."
+anchor_new = "On 422 cycle error, render the inline error with the offending cycle edges resolved to task TITLES (not UUIDs). The envelope ships `edges: [{task_id, depends_on_id}, ...]` as raw UUIDs (per lumina/CLAUDE.md HTTP-routes cycle-envelope spec); resolve each id via the local `useHierarchy().detail.children` cache (or a small helper like `useHierarchy().nodeById(id)`) before display. If a referenced task is missing from the local cache (cross-story?), fall back to the short UUID prefix `01970d29…`."
+
+[[items]]
+id = "P14"
+review_round = 1
+severity = "suggestion"
+category = "executability"
+plan_section = "Dependency Graph"
+summary = "FocusLens.vue contention across 10+ tasks — propose declarative panel registration to eliminate merge conflicts entirely"
+status = "merged"
+description = """
+T4, T6, T10-T18 all 'modify FocusLens.vue'. The plan mitigates via 'sequential per-wave batches' but two parallel agents touching neighbouring template regions WILL conflict. Alternative pattern: in W1 (or T0.5), add `src/components/work-item/FocusLensPanels.ts` listing `{id, component, when: (kind) => boolean}` — FocusLens.vue iterates over it once. Each subsequent W2-W4 task then adds ONE entry to that array + ships its own SFC, eliminating FocusLens.vue edits entirely from W2 onward.
+"""
+
+[[items]]
+id = "P15"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "Approach"
+summary = "Composables already self-refresh — form components must NOT add a second refresh() call (avoid double-fetch)"
+status = "merged"
+description = """
+Sampled useResearchNotes.add/update/supersede and useAcceptanceCriteria.add — each calls await useHierarchy().refresh(parentId) internally. Plan's 'every form's submit handler ends with await refresh()' phrasing risks implementers adding a second refresh, doubling round-trips per mutation.
+"""
+anchor_old = "On submit, the composable's `Result<T, string>` is unwrapped: `.ok ? close + refresh : setError(result.error)`. The error renders inline; the global singleton remains the fallback for fetch/network exceptions (which already happens automatically since composables set the singleton on `catch`)."
+anchor_new = "On submit, the composable's `Result<T, string>` is unwrapped: `.ok ? close : setError(result.error)`. The error renders inline; the global singleton remains the fallback for fetch/network exceptions (which already happens automatically since composables set the singleton on `catch`). **NB: composables already call `useHierarchy().refresh(parentId)` internally on success — do NOT add a second refresh in form components.** Verified in useResearchNotes.{add,update,supersede}, useAcceptanceCriteria.add, useRisks.{add,update,supersede,remove} (sampled three; pattern is uniform)."
+
+[[items]]
+id = "P16"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "T4: Wire FocusLens action toolbar — Edit, Delete, + Add child, status cycle"
+summary = "PortfolioEmpty's empty-state message still points at the MCP create_work_item tool — needs updating to point at the new '+ New project' header button"
+status = "merged"
+description = """
+PortfolioEmpty.vue (per Agent 2's read, lines 40-42) renders 'No work items yet — create your first epic via the MCP create_work_item tool.' After T4 ships the header '+ New project' button, this copy contradicts the new affordance.
+"""
+anchor_old = "**Top-level** \"+ New project\" button moved into `AppHeader.vue` (separate addition)."
+anchor_new = "**Top-level** \"+ New project\" button moved into `AppHeader.vue` (separate addition). **Also update** `lumina/web/src/components/PortfolioEmpty.vue` empty-state prose: replace the current 'create your first epic via the MCP `create_work_item` tool' line with copy pointing at the new header button."

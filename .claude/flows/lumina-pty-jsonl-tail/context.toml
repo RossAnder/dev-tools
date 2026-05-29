@@ -1,0 +1,21 @@
+slug = "lumina-pty-jsonl-tail"
+plan_path = "docs/plans/lumina-pty-jsonl-tail.md"
+status = "review"
+created = 2026-05-28
+updated = 2026-05-28
+branch = "main"
+scope = [
+    "lumina/**",
+    "docs/plans/lumina-pty-jsonl-tail.md",
+]
+
+[tasks]
+total = 9
+completed = 9
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-pty-jsonl-tail/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-pty-jsonl-tail/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-pty-jsonl-tail/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-pty-jsonl-tail/plan-review-findings.toml"

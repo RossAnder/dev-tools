@@ -1,0 +1,276 @@
+schema_version = 1
+last_updated = 2026-05-28
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-28
+agent = "implement"
+summary = "Status transitioned draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "b8957b5aa34002ba"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "switch-permission-mode-to-bypasspermissions"
+status = "done"
+files = ["lumina/src/pty/pty_transport.rs"]
+commits = ["fa7b285"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T1: switched claude --permission-mode acceptEdits -> bypassPermissions in pty_transport.rs; rewrote rationale comment to document wider auto-approve scope"
+dedup_id = "eaa14038c6fe969f"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "claudemd-security-advisory-pty-tool-count"
+status = "done"
+files = ["lumina/CLAUDE.md"]
+commits = ["fa7b285"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T2: added LUMINA-SECURITY marker block in lumina/CLAUDE.md; rewrote migration-0008 paragraph and decremented tool surface 61 -> 55"
+dedup_id = "39c63bb43ce7d175"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "remove-six-mcp-pty-tools"
+status = "done"
+files = ["lumina/src/mcp.rs"]
+commits = ["fa7b285"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T3: deleted 6 MCP PTY tools (spawn/send/list/get/cancel/delete_pty_session) + Params + validate_input_kind arm + docstrings; agent self-reported skip but file diff shows the deletion was applied"
+dedup_id = "16fdd2a9f6ae79c3"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "frontend-wire-types-auq-content-discrim"
+status = "done"
+files = ["lumina/web/src/api/pty.ts"]
+commits = ["fa7b285"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T4: added keystroke arm to InputFrameSchema, AuqOption/Question/Input/Answer types, isAuqToolUse narrower, sendKeystrokes API client"
+dedup_id = "ff5d7f3d257ea694"
+
+[[items]]
+id = "E6"
+type = "deviation"
+date = 2026-05-28
+agent = "implement"
+task_ref = "auq-keystroke-calculator"
+summary = "Other-option text input is implicitly focused on selection; no Tab focus token needed"
+original_intent = "Plan T7 Approach section called for navigating to the last option then emitting a Tab focus token before text:<literal> to focus the Other textarea"
+rationale = "Empirical pre-flight probe (capture 03-other-text.bin) shows typing flows straight into the implicit textbox once the Other row is highlighted; no focus key required. Documented in docs/plans/lumina-interactive-prompts.preflight.md Scenario 3."
+dedup_id = "daa926147f2bfb2d"
+
+[[items]]
+id = "E7"
+type = "deferral"
+date = 2026-05-28
+agent = "implement"
+task_ref = "auq-notes-annotation"
+summary = "AUQ notes annotation field deferred from v1 — no keyboard sequence focuses the per-question notes textbox in claude-code v2.1.141"
+reason = "Pre-flight probe (capture 04-notes-text.bin) tried Tab, Tab-Tab-Tab, Esc-then-Tab, Alt-Tab and other permutations; none focused the notes field. The annotations.notes wire-format field is real (observed in non-lumina session JSONLs per plan Research Notes) but is populated by a different code path not exposed via the AUQ keystroke layer. T7 calculator emits nothing for AuqAnswer.notes; T8 picker SFC drops the per-question notes textarea. AuqAnswer.notes? type stays declared-but-unused so the wire shape can re-bind notes when claude-code exposes them. Plan Risks Section 3 explicitly anticipated this fallback."
+reevaluate_when = "When claude-code exposes a notes-focus keystroke in the AUQ picker (track via release-notes scan after each minor version bump), OR when lumina migrates to the canUseTool SDK callback path and can attach annotations directly without driving the TUI"
+dedup_id = "c4560db977bc027c"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "keystroke-inputkind-dsl-bridge"
+status = "done"
+files = [
+    "lumina/src/pty/protocol.rs",
+    "lumina/src/pty/pty_transport.rs",
+]
+commits = ["be327fb"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T5: extended InputKind with Keystroke variant + DSL translator with full byte-safety validation; 19 unit tests"
+dedup_id = "0a11886f57b80820"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "auq-keystroke-calculator"
+status = "done"
+files = ["lumina/web/src/composables/auqKeystrokes.ts"]
+commits = ["be327fb"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T7: computeAuqKeystrokes pure function emits InputFrame[] per preflight DSL; applies E6 (Other no Tab) and E7 (notes ignored) corrections"
+dedup_id = "2c21d72126cd7313"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "auq-picker-component"
+status = "done"
+files = ["lumina/web/src/components/PtyAuqPicker.vue"]
+commits = ["be327fb"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T8: Vue 3 Vapor SFC renders per-question radio/checkbox + Other-as-last-option with expanding textarea; no notes textarea per E7 deferral"
+dedup_id = "b4bed43645abebec"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "keystrokes-http-route-queue-bypass"
+status = "done"
+files = ["lumina/src/http/pty_sessions.rs"]
+commits = ["c28b56c"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T6: POST /pty/sessions/{id}/keystrokes bypasses queue + validate_input_kind; 256 frame cap (413); terminal-state 409; wrong-kind 422; 5 new tests"
+dedup_id = "10f216a8d72cc563"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "usepty-session-auq-extensions"
+status = "done"
+files = ["lumina/web/src/composables/usePtySession.ts"]
+commits = ["c49f6d7"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T9: pendingAuq computed + submitAuqAnswer/cancelAuq debounced methods + watch reset hook + Api.sendKeystrokes seam"
+dedup_id = "1fefc7cd3aa89339"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "wire-auq-picker-into-transcript-disable-input"
+status = "done"
+files = [
+    "lumina/web/src/components/PtyMessage.vue",
+    "lumina/web/src/components/PtyConsole.vue",
+]
+commits = ["a22db06"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T10: PtyAuqPicker wired into PtyMessage tool_use branch; PtyConsole prompt disabled + Awaiting answer pill when pendingAuq is set"
+dedup_id = "784e9a7a376eceeb"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "frontend-unit-tests"
+status = "done"
+files = [
+    "lumina/web/src/__tests__/auq-keystrokes.test.ts",
+    "lumina/web/src/__tests__/pty-session.test.ts",
+]
+commits = ["a22db06"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T11: 38 new bun tests (27 calculator + 11 composable AUQ extensions); 100% line/function coverage on auqKeystrokes.ts; bun test 234 pass total"
+dedup_id = "7e039a0fd4af4599"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "rust-auq-e2e-keystroke-roundtrip"
+status = "done"
+files = [
+    "lumina/tests/auq_e2e.rs",
+    "lumina/tests/fixtures/pty_stub.rs",
+]
+commits = ["a22db06"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+summary = "T12: in-process axum + stub e2e; STUB_EMIT_AUQ + STUB_STDIN_DUMP stub extensions + terminal-CR tool_result emit; byte-exact stdin dump and 2s deadline assertion both pass"
+dedup_id = "fd258be5afa97b33"
+
+[[items]]
+id = "E16"
+type = "deviation"
+date = 2026-05-28
+agent = "implement"
+task_ref = "rust-auq-e2e-keystroke-roundtrip"
+summary = "e2e stub uses pipe stdio instead of portable-pty to satisfy the byte-exact stdin-dump assertion on Windows"
+original_intent = "Plan T12 implied the stub spawn should mirror PtyTransport's portable-pty setup so the e2e exercises the production PTY layer end-to-end"
+rationale = "Windows ConPTY's keystroke-translation layer interprets VT100 escape sequences (e.g. the down-arrow CSI sequence) as navigation key events and drops them from the byte stream visible to the child's ReadFile/ReadConsole, making the byte-exact stdin-dump assertion structurally unsatisfiable under a real PTY on Windows. The lumina input bridge, writer worker, JSONL bridge, supervisor quiescence path, keystroke HTTP route, and outstanding_tool_uses tracking are still exercised end-to-end byte-for-byte under pipe stdio; only the byte transport medium differs from production. Trade-off: weaker faithfulness to PTY semantics in exchange for cross-platform byte-exact assertion. Implementation note (StubTransport in lumina/tests/auq_e2e.rs) documents the trade-off inline."
+commits = ["a22db06"]
+dedup_id = "c063cd87fd201336"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "cargo build clean"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "834e94d62539809f"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "cargo clippy clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "4860156a6c648e1f"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "cargo nextest --test auq_e2e env-blocked by running lumina.exe holding the binary; T12 agent ran the same target successfully during implementation (0.233s) so the test itself is sound"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --test auq_e2e"
+outcome = "fail"
+dedup_id = "6073672202340d27"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "bun test 234/234 pass across 18 files in 3.00s"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "27d7be1126fe324a"
+
+[[items]]
+id = "E21"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "cargo sqlx prepare --check exit 0 with the expected benign potentially-unused-queries warning per project CLAUDE.md"
+command = "cd lumina && cargo sqlx prepare --check"
+outcome = "pass"
+dedup_id = "40358bfeb5713c69"

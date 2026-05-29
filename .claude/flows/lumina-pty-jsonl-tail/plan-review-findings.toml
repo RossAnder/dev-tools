@@ -1,0 +1,271 @@
+schema_version = 1
+last_updated = 2026-05-28
+round = 1
+
+[[vet_events]]
+timestamp = "2026-05-28T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 4
+dropped_count = 1
+downgraded_count = 0
+dropped_ids = ["A1-http-path"]
+rationale = "Sampled HTTP-path claim, repo.rs line ranges, MessageKind variant names, spawn.rs:218-233 gate. Dropped the HTTP-path finding (A1 'flagged' lumina/src/pty/http/pty_sessions.rs vs lumina/src/http/pty_sessions.rs as a plan defect — but the plan only ever writes 'http/pty_sessions.rs' at line 62, never the wrong /src/pty/http/ prefix; the agent invented a plan defect from its own search hedge). Remaining findings verified: repo.rs:4659-4693 + :4697-4728 line ranges correct; MessageKind variants currently UserInput|AssistantText|ToolCall|ToolResult|Prompt|System|Error|ParserUnknown at protocol.rs:110-118 — the plan's 'Tool_Use' is indeed a typo (would be invalid Rust); spawn.rs:218-233 is the post-a78cb3e Idle gate inside a broadcast::recv loop reading from transport, confirming it would be deleted by T5."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-28T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled prompt_pattern field-plumbing claim, third sqlx SELECT site in create_pty_session, web test-runner mismatch, and MessageKind taxonomy/spawn.rs:205-217 comment claims. All verified: grep confirms prompt_pattern in 6 files (mcp.rs, http/pty_sessions.rs, PtyConsole.vue, api/pty.ts, parser.rs, transport.rs:31); repo.rs:4544-4567 is a third PtySession SELECT inside create_pty_session post-insert RETURNING-equivalent (T2 misses it); package.json:12 is 'bun test' (no vitest, no --run flag); spawn.rs:205-217 contains the Originally-we-gated-this-on-kind==Prompt comment block that becomes stale after T5 drops the variant."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-28T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled bun-test invocation, Idle-gate relocation claim, MessageKind contract split between T3/T5. All verified: package.json:12 is 'bun test' (--run is a Vitest flag); spawn.rs:218-233 idle-flipped block sits inside transport_rx broadcast::recv loop which T5's drain-and-discard rewrite would eliminate, so 'preserve verbatim' is structurally wrong; protocol.rs:122-133 as_wire returns snake_case strings — must match T3's zod enum exactly, plan does not cross-reference."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-28T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 3
+dropped_count = 1
+downgraded_count = 0
+dropped_ids = ["A4-notify-msrv"]
+rationale = "Sampled notify MSRV claim, --permission-mode source attribution, web test-runner. Dropped notify-MSRV finding: the plan text at line 142 says 'MSRV-compatible with project's 1.95' (i.e. notify 8.2.0 is compatible with the project's MSRV of 1.95) — it does NOT claim 8.2.0's own MSRV is 1.88; agent 4 invented a misattribution. The 'MSRV 1.88' figure in the plan is correctly attached to 9.0.0-rc.4 at line 141. Permission-mode + HOST=0.0.0.0 RCE concern is real (Agent 4 flagged ESCALATE-TO-DEEP; not re-dispatching because the agent was already Opus-class flow-research-deep, but surfacing the concern as a warning-grade finding for plan-author attention). mtime fragility is real per SystemTime non-monotonicity; JSONL unbounded growth is a real v2 concern."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "completeness"
+plan_section = "## Scope"
+summary = "prompt_pattern field plumbing not removed across SpawnConfig/MCP/HTTP/TS/Vue after parser deletion"
+description = "grep prompt_pattern lumina returns transport.rs:31, mcp.rs:1136-1139, http/pty_sessions.rs:155,183, web/src/api/pty.ts:198, PtyConsole.vue:73, plus parser.rs (deleted). After T5 these become dead config exposed on three wire-public surfaces."
+anchor_old = "- `lumina/src/pty/transport.rs`, `protocol.rs`, `mod.rs` — touch-up imports"
+anchor_new = """
+- `lumina/src/pty/transport.rs` — touch-up imports AND drop `prompt_pattern` from `SpawnConfig`
+- `lumina/src/pty/protocol.rs`, `mod.rs` — touch-up imports
+- `lumina/src/mcp.rs` — drop `prompt_pattern` from `SpawnPtySessionParams`
+- `lumina/src/http/pty_sessions.rs` — drop `prompt_pattern` from `SpawnSessionBody`"""
+dedup_id = "9b536987255c3360"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "completeness"
+plan_section = "#### T2: Extend `PtySession` struct + repo SELECT lists + regenerate sqlx cache"
+summary = "T2 misses the third `query_as!(PtySession, ...)` SELECT inside `create_pty_session` (repo.rs:4544-4567)"
+description = "After PtySession gains jsonl_path the macro at 4544 fails compile because the SELECT list omits the new field. Three SELECT lists must be extended, not two."
+anchor_old = 'Extend the `sqlx::query_as!` SELECT lists in `repo::pty::list_pty_sessions` (lumina/src/repo.rs:4659-4693) and `repo::pty::get_pty_session` (4697-4728) to include `jsonl_path AS "jsonl_path?"`.'
+anchor_new = 'Extend the `sqlx::query_as!` SELECT lists in `repo::pty::list_pty_sessions` (lumina/src/repo.rs:4659-4693), `repo::pty::get_pty_session` (4697-4728), AND the post-insert SELECT inside `create_pty_session` (lumina/src/repo.rs:4544-4567) to include `jsonl_path AS "jsonl_path?"`.'
+dedup_id = "3eab72ee1d4df6b0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "executability"
+plan_section = "#### T4: New `jsonl_tail` module + add `notify` dep"
+summary = "`resolve_projects_root` is introduced by T6 across wave boundaries but not enumerated in T4's Action"
+description = "T6 references `jsonl_tail::resolve_projects_root` as the test-override hook reading LUMINA_PTY_PROJECTS_ROOT, but T4's Action lists only sanitise_cwd / JsonlRecord / tail / bind_jsonl_path. Either T4 forgets a public symbol or T6 leaks production-code work into a test task."
+anchor_old = 'Implement `sanitise_cwd`, the `JsonlRecord` tolerant deserialise with `#[serde(tag = "type")]` + `Unknown` variant, the `tail()` watcher task (parent-dir watch, `Create(File)` gate, BufReader-on-File, `lines()` loop, `need_rescan` handler, broadcast emission), and `bind_jsonl_path` (snapshot-then-poll, 5 s timeout).'
+anchor_new = 'Implement `sanitise_cwd`, `resolve_projects_root` (reads `LUMINA_PTY_PROJECTS_ROOT` env if set, else the platform default: `%USERPROFILE%\.claude\projects` on Windows, `~/.claude/projects` elsewhere), the `JsonlRecord` tolerant deserialise with `#[serde(tag = "type")]` + `Unknown` variant, the `tail()` watcher task (parent-dir watch, `Create(File)` gate, BufReader-on-File, `lines()` loop, `need_rescan` handler, broadcast emission), and `bind_jsonl_path(cwd, spawn_started)` which composes `resolve_projects_root()` + `sanitise_cwd(cwd)` + snapshot-then-poll (5 s timeout).'
+dedup_id = "a7f1b95e67e5deea"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "executability"
+plan_section = "#### T5: Delete `parser.rs` + rewire transport / session / supervisor / spawn / protocol against `jsonl_tail`"
+summary = 'Idle-gate "preserved verbatim" instruction is structurally impossible — host loop is deleted by T5'
+description = "spawn.rs:218-233 sits inside the transport_rx broadcast::recv loop reading TypedMessage from the transport. T5's drain-and-discard transport rewrite eliminates that loop. The gate must be relocated into the new JSONL bridge task on first jsonl_rx.recv()."
+anchor_old = "The first-message Spawning → Idle gate in `spawn.rs:218-233` is preserved verbatim (it fires on the first JSONL record now, not the first PTY-derived TypedMessage)."
+anchor_new = 'Relocate the first-message Spawning → Idle gate from `spawn.rs:218-233` (currently inside the deleted `transport_rx.recv()` loop) into the new JSONL bridge task — on first successful `jsonl_rx.recv()` of any `JsonlRecord` variant (including `Unknown`), flip `idle_flipped = true` and call `bridge_session.set_status(SessionStatus::Idle).await` + `repo::pty::update_pty_session_status(..., "idle", None)`. Preserve the `idle_flipped` local-guard pattern verbatim.'
+dedup_id = "01a6b20caf2a0cb6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "critical"
+category = "executability"
+plan_section = "#### T5: Delete `parser.rs` + rewire transport / session / supervisor / spawn / protocol against `jsonl_tail`"
+summary = 'MessageKind rewrite under-specified: "Tool_Use" is invalid Rust and wire-string contract is split across T3/T5 without cross-reference'
+description = "Plan writes `Tool_Use`/`Tool_Result` (must be ToolUse/ToolResult, PascalCase). Current variant set at protocol.rs:110-118 is UserInput|AssistantText|ToolCall|ToolResult|Prompt|System|Error|ParserUnknown with as_wire + FromStr impls at :122-157 that the plan does not mention rewriting. T3 introduces the TS zod enum but T5 never references it."
+anchor_old = "Add `tool_use_id: Option<String>` to `TypedMessage` in `protocol.rs`; extend `MessageKind` to `Tool_Use`/`Tool_Result` (replacing `tool_call`); drop `Prompt` and `ParserUnknown` variants."
+anchor_new = """Add `tool_use_id: Option<String>` to `TypedMessage` in `protocol.rs`. Rewrite `MessageKind` to exactly: `UserInput`, `AssistantText`, `ToolUse`, `ToolResult`, `System`, `Error` (PascalCase Rust idiom). Update `MessageKind::as_wire` and `FromStr` impls at protocol.rs:122-157 to map these six variants to wire strings `"user_input"` | `"assistant_text"` | `"tool_use"` | `"tool_result"` | `"system"` | `"error"` — these MUST match the T3 zod enum `z.enum(['user_input','assistant_text','tool_use','tool_result','system','error'])` exactly; any deviation breaks the WS frame parse on the client. Drop the prior `ToolCall`, `Prompt`, `ParserUnknown` arms from both impls. Verify by grepping `MessageKind::` across `lumina/src/` after the change and confirming every site uses one of the six new variants."""
+dedup_id = "ae897107fc43f782"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "## Verification Commands"
+summary = "`npm test -- --run` is the wrong invocation — package script is `bun test`"
+description = 'lumina/web/package.json:12 is "test": "bun test"; lumina/web/CLAUDE.md is explicit that bun-test is the runner and Vue SFC rendering is OUT OF SCOPE. --run is a Vitest flag that bun-test does not recognise. The literal command may silently match zero tests (false-pass).'
+anchor_old = "(cd lumina/web && npm test -- --run)"
+anchor_new = "(cd lumina/web && bun test)"
+replace_all = true
+dedup_id = "47193010db81660d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T7: PtyMessage + usePtySession pairing logic"
+summary = "PtyMessage.vue retains dead `prompt` and `parser_unknown` template branches"
+description = """PtyMessage.vue:123,145 contain v-else-if='message.kind === "prompt"' and 'parser_unknown'. After T3 narrows the TS kind union and T5 drops the Rust variants, these branches are unreachable. T7's Action is silent on removing them."""
+anchor_old = "- **Action**: In `usePtySession.ts`, add a derived `pairedMessages` computed view"
+anchor_new = """- **Action**: Delete the now-dead `v-else-if="message.kind === 'prompt'"` and `v-else-if="message.kind === 'parser_unknown'"` template branches at `PtyMessage.vue:123,145`. In `usePtySession.ts`, add a derived `pairedMessages` computed view"""
+dedup_id = "35c51220277317db"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T5: Delete `parser.rs` + rewire transport / session / supervisor / spawn / protocol against `jsonl_tail`"
+summary = "`kind` taxonomy comments drift across domain.rs, api/pty.ts, spawn.rs, pty_e2e.rs"
+description = "Old taxonomy enumerated in domain.rs:318-320, web/src/api/pty.ts:73-76, migration 0008:49 (cannot be amended in place — record vocab shift in 0009 header), and stale comments at spawn.rs:205-217 (Originally we gated this on kind==Prompt) and tests/pty_e2e.rs:219 (parsed MessageKind::Prompt). All become misleading SSOTs."
+anchor_old = "- **Acceptance**: `cargo build --manifest-path lumina/Cargo.toml` succeeds; `cargo clippy --all-targets -- -D warnings` clean; `cargo nextest run` of in-module tests (in `supervisor.rs`, `spawn.rs`, etc.) passes. The `lumina/src/pty/parser.rs` file is removed from `git ls-files`."
+anchor_new = "- **Acceptance**: `cargo build --manifest-path lumina/Cargo.toml` succeeds; `cargo clippy --all-targets -- -D warnings` clean; `cargo nextest run` of in-module tests (in `supervisor.rs`, `spawn.rs`, etc.) passes. The `lumina/src/pty/parser.rs` file is removed from `git ls-files`. The kind-vocab comments at `domain.rs:318-320`, `web/src/api/pty.ts:73-76` are updated to the new six-variant taxonomy; the new migration `0009_pty_jsonl_path.sql` carries a header comment recording the vocab shift (the original SSOT comment in 0008:49 cannot be amended in place); the `spawn.rs:205-217` and `tests/pty_e2e.rs:219` comments referencing `MessageKind::Prompt` are rewritten."
+dedup_id = "daddefd7387320da"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "executability"
+plan_section = "## Dependency Graph"
+summary = 'Wave 4 is labelled "parallel" but T8 has a hard TS-symbol dependency on T7'
+description = """T8's body says "tackle them as a tight pair" because T8 imports pairedMessages from T7's usePtySession.ts. Files are disjoint but the symbol dependency forces ordering."""
+anchor_old = "- **Wave 4** (parallel): T7 + T8 — both depend on T3 only (T8 also coordinates with T7's `pairedMessages` export, but can be drafted in parallel)."
+anchor_new = "- **Wave 4** (sequential): T7 then T8 — T8 imports `pairedMessages` from `usePtySession.ts` (the symbol T7 introduces), so T8 cannot type-check until T7 lands. (Files are disjoint but the TS symbol dependency forces ordering.) If parallelism is desired, split T7 into T7a (declare `pairedMessages` signature returning `[]`) and T7b (implement the pairing) so T8 may proceed against the stub."
+dedup_id = "eff3e35f98cce1f5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "executability"
+plan_section = "#### T7: PtyMessage + usePtySession pairing logic"
+summary = 'T7 acceptance "visual confirmation" is not mechanically verifiable'
+description = "A coding sub-agent cannot eyeball a browser. Promote a subset of T9's pairing assertions into T7 as pre-acceptance unit tests."
+anchor_old = "- **Acceptance**: `(cd lumina/web && npm run build)` clean; visual confirmation via the existing component in `App.vue` with a synthetic tool-use + tool-result frame pair."
+anchor_new = "- **Acceptance**: `(cd lumina/web && npm run build)` clean; a new bun test (added to `src/__tests__/pty-session.test.ts` or a sibling) feeds a 3-message fixture (assistant_text, tool_use id=`x`, tool_result tool_use_id=`x`) to `usePtySession().pairedMessages` and asserts: result-list length is 2; the `tool_use` entry has `.matchedResult` populated; the standalone `tool_result` does not appear at the top level."
+dedup_id = "b1643e5aa5bddcfd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "--permission-mode acceptEdits combined with HOST=0.0.0.0 widens lumina to remote auto-edit/RCE"
+description = "acceptEdits auto-approves file edits AND a curated Bash set (rm/mv/cp/sed). lumina HTTP defaults to loopback but documents HOST=0.0.0.0 as a supported opt-in (app.rs:72-82). Origin allowlist gates only the WS route; POST /api/pty/sessions is not gated. Plan's Risks section omits this."
+anchor_old = """6. **`cargo sqlx prepare --check`'s benign warning** is documented in `lumina/CLAUDE.md`; flag this to reviewers so the regen step doesn't get "fixed" by dropping `--all-targets`."""
+anchor_new = """
+6. **`cargo sqlx prepare --check`'s benign warning** is documented in `lumina/CLAUDE.md`; flag this to reviewers so the regen step doesn't get "fixed" by dropping `--all-targets`.
+7. **`--permission-mode acceptEdits` × `HOST=0.0.0.0` widens lumina to remote auto-edit/RCE**: acceptEdits auto-approves file edits plus a curated Bash set (`rm`, `mv`, `cp`, `sed`, etc.); lumina's HTTP server defaults to loopback but supports `HOST=0.0.0.0` opt-in, and the Origin allowlist only gates the WS route — `POST /api/pty/sessions` is reachable on a public bind. *Mitigation*: gate the spawn route behind an explicit env opt-in (e.g. `LUMINA_ALLOW_PTY_ON_PUBLIC_BIND=1`) when bind is non-loopback; document the posture in `lumina/CLAUDE.md` operator notes."""
+dedup_id = "fe1d7a5a82056467"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "JSONL files are unbounded; restart replays from byte 0 risk duplicate pty_messages rows"
+description = "Tail loop seeks-to-zero on every bridge start. For v1's cleared-DB greenfield this is acceptable, but a restart against a long-lived session replays every record and risks duplicate rows. Either persist last-read byte offset alongside jsonl_path, or make insert idempotent on the JSONL record `uuid`."
+dedup_id = "e285cb7ce420765f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "risk"
+plan_section = "## Approach"
+summary = "mtime ≥ spawn_started is wall-clock-fragile under NTP/DST and FAT mtime granularity"
+description = "SystemTime::now() is non-monotonic; FAT/exFAT mtime granularity is 2s. The plan's snapshot-then-poll (§183) is race-free without the mtime comparison — use path-set diff alone."
+anchor_old = "the first new `*.jsonl` whose mtime ≥ `spawn_started` is the bound file"
+anchor_new = "the first `*.jsonl` whose path was NOT in the snapshot taken at spawn-start is the bound file (path-set diff, not mtime comparison); the `Mutex<()>` serialisation around the bind window makes this race-free without needing a wall-clock comparison"
+dedup_id = "a89e1398b5d6e749"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "No rollback section — parser.rs deletion is irreversible without git revert"
+description = "flow-contract-apply-rollback-protocol does not cover plan execution. Acknowledge the atomic-revert path and the deliberate rejection of a feature-flag rollout."
+dedup_id = "964b5a944f15ee50"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T1: Add migration 0009 — `jsonl_path` column on `pty_sessions`"
+summary = "T1 acceptance relies on `sqlite3` CLI which may not be on agent PATH"
+description = "Use `cargo sqlx prepare --check` (after T2 lands) as the primary mechanical acceptance; sqlite3 CLI is optional."
+anchor_old = '`sqlx migrate run` against a fresh DB succeeds; `sqlite3 lumina.db ".schema pty_sessions"` shows the new column at the end.'
+anchor_new = '`sqlx migrate run` against a fresh DB succeeds; subsequent `cargo sqlx prepare --check` (after T2 lands) exits 0. If `sqlite3` CLI is available, `sqlite3 lumina.db ".schema pty_sessions"` may be used to visually confirm; not required.'
+dedup_id = "67d73e5024009ca7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T6: Reshape e2e + pty_stub fixture for JSONL flow"
+summary = 'T6 "no longer depends on real `claude` being on PATH" has no mechanical verifier'
+description = """Add a grep-based check: `rg -n 'Command::new("claude")' lumina/tests/` returns zero hits."""
+anchor_old = "the test no longer depends on real `claude` being on PATH."
+anchor_new = """the test runs green when `claude` (the real CLI) is absent — verified mechanically by `rg -n 'Command::new("claude")' lumina/tests/` returning zero hits, with all spawns routed through the `pty_stub` binary via the existing `pty_transport` override mechanism."""
+dedup_id = "0f9c05ca473a52c0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### T5: Delete `parser.rs` + rewire transport / session / supervisor / spawn / protocol against `jsonl_tail`"
+summary = "T5 should explicitly preserve T4's `pub mod jsonl_tail;` line when editing mod.rs"
+description = "Both T4 (Wave 1b) and T5 (Wave 2) edit lumina/src/pty/mod.rs sequentially. Coordination note for the implementer."
+dedup_id = "222e2083d57d3211"

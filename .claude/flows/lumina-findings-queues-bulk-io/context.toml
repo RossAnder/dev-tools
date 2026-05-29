@@ -1,0 +1,25 @@
+slug = "lumina-findings-queues-bulk-io"
+plan_path = "docs/plans/lumina-findings-queues-bulk-io.md"
+status = "draft"
+created = 2026-05-29
+updated = 2026-05-29
+branch = "main"
+scope = [
+    "lumina/src/**",
+    "lumina/migrations/**",
+    "lumina/tests/**",
+    "lumina/Cargo.toml",
+    "lumina/CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-findings-queues-bulk-io/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-findings-queues-bulk-io/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-findings-queues-bulk-io/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-findings-queues-bulk-io/plan-review-findings.toml"

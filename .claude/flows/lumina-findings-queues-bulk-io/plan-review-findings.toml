@@ -1,0 +1,229 @@
+schema_version = 1
+last_updated = 2026-05-29
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Approach"
+summary = "T3/Approach claim add_task_dependency_tx does a 'cycle check' but the existing fn has none — inline depends_on could persist a cycle that only fails later in compute_task_batches"
+description = "Verified repo.rs:3970-4046: add_task_dependency does self-loop + kind=task checks + INSERT only; cycle detection lives solely in compute_task_batches (Kahn). Either add a post-insert cycle check inside create_work_items' tx (abort on cycle) or document v1 has none; correct the 'cycle check' wording in Approach + T3."
+dedup_id = "70b32595a5cab1cd"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "completeness"
+plan_section = "#### T2: Add domain structs + enums"
+summary = "Adding run_id/triage_state to the Finding struct breaks list_findings query_as! (repo.rs:754, 25-col SELECT); adding spawned_from_finding_id breaks the two hand-built WorkItem sites — no task covers these struct+SELECT edits"
+description = "query_as!(Finding) requires exact column-to-field mapping; WorkItem is hand-constructed at repo.rs:404 and :474 (+ export.rs test). Add explicit sub-steps to T2/T3 to extend the structs AND every SELECT/constructor, then regen .sqlx — or follow the deleted_at column-only precedent and read via a dedicated query."
+dedup_id = "073b3eea52c03b80"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "#### T4: Repo batch write functions"
+summary = "create_work_items inline depends_on referencing model is unspecified — server mints UUIDs, so same-batch deps need a temp-key/positional scheme or an existing-ID-only restriction"
+description = "This decision determines T4 size and the T5 params shape. Pin one: depends_on references already-existing task IDs only (Vec<String>), OR a temp-key/index resolution pass maps batch-local refs to minted UUIDs before calling add_task_dependency_tx."
+dedup_id = "fbf884372ab44514"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## User Decisions"
+summary = "Coarse batch event must use a non-work_item aggregate_type or the export drain re-renders it (export.rs:139 renders only aggregate_type=='work_item')"
+description = "Verified export.rs:139. A work_item-typed batch event triggers render_work_item on the target; a 'run'/'finding'-typed event is inert (drained, no file)."
+anchor_old = "**D8 — coarse batch event**: each batch emits one event (e.g. `findings.batch_added {count, skipped, run_id}`); single-item tools keep per-row events."
+anchor_new = '**D8 — coarse batch event**: each batch emits one event (e.g. `findings.batch_added {count, skipped, run_id}`) stamped with a NON-`work_item` `aggregate_type` (e.g. `"run"`) — the export drain (export.rs:139) re-renders only `aggregate_type="work_item"`, so a `work_item`-typed batch event would force a spurious render. Single-item tools keep per-row events.'
+dedup_id = "1117aecef163354e"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## User Decisions"
+summary = "triage_state (D6) and batch_update_findings.status (D9) both write findings.status — which resolve_finding uses for the terminal Disposition; define the boundary + whether record_finding_decision(resolve) stamps resolved_at"
+description = "Verified repo.rs:2133 (resolve_finding SET status=disposition) + domain.rs:639 (Disposition). Unreconciled clobber risk between the triage axis and the terminal disposition; state that triage_state is orthogonal and bound batch_update_findings.status to non-terminal values."
+dedup_id = "9e9dc2ed033bb27e"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "#### T10: Repo domain functions"
+summary = "create_run target_id is an unvalidated soft pointer — nothing stops target_kind='sprint' pointing at a story/deleted row, producing silently-empty queues; validate target_id exists, is live, and matches target_kind"
+description = "Mirror the add_tasks_to_sprint kind='task' validation the plan already mandates. Reject dangling/wrong-kind/tombstoned targets as invalid_params in create_run."
+dedup_id = "bb7f75e2fb5bf0d1"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Approach"
+summary = "WorkItemDetail folds 10 child collections but the plan adds spawned_from_finding_id/runs/sprints/finding_decisions with no fold — GET /api/work-items/{id} + export silently omit new provenance"
+description = "repo.rs:498-521. Decide: at minimum surface spawned_from_finding_id on WorkItem (or follow the deleted_at column-only precedent), and state explicitly whether finding_decisions/runs/sprints fold into WorkItemDetail or are read-tool-only."
+dedup_id = "660300d68bbe52a0"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "#### T5: MCP batch tools"
+summary = "'manual MCP smoke' (T5/T8/T11) is not an agent-executable acceptance — no MCP test harness exists; rewrite to 'build + params-deserialise unit test (invalid enum -> invalid_params)' and defer behavioural proof to T13"
+description = "The crate's deterministic test path is in-process HTTP oneshot + DB asserts; MCP handlers are thin pass-throughs to repo::*, so repo tests (T4/T7/T10) + e2e (T13) cover behaviour."
+dedup_id = "aec5565170b1adb5"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T14: Documentation"
+summary = "T14 'update tool counts' is under-scoped: root CLAUDE.md says '39 tools', lumina/CLAUDE.md says 'now 58' (pre-existing drift) — enumerate every count string, add the new HTTP route block, and reconcile 39/58"
+description = "Plan adds ~9 tools + a new HTTP route family. Name root CLAUDE.md lumina section, lumina/CLAUDE.md 'Tool surface is now N', and SKILL.md as concrete edit targets."
+dedup_id = "be7e6a2e42e44cae"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Dependency Graph"
+summary = "'http/* parallel within phase' is inconsistent — T6/T9/T12 each edit http/mod.rs and sit in different phases anyway; fix the annotation or pre-declare all pub mod + .merge() stubs in T1/T3 (round-4 precedent)"
+description = "No actual race (phase-gated), but the graph label is misleading; mod.rs is a shared serialization point if http tasks are ever pulled into one wave."
+dedup_id = "7490e5605240da14"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T1: Write migration 0011 + add sha2 dependency"
+summary = "T1 doesn't pin column types/defaults (created_at, runs.status default) and 'schema smoke check' is undefined — add tests/migration_0011.rs mirroring migration_0010.rs and pin defaults in the Approach schema block"
+description = "Follow migration 0010 conventions; the concrete acceptance is a dedicated tests/migration_0011.rs asserting tables/columns/index present + CHECK-reject."
+dedup_id = "06572dceed3c01bd"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T4: Repo batch write functions"
+summary = "T4 (L) bundles 3 batch fns + dedup ON CONFLICT + inline-dep resolution + coarse events + regen — likely oversized; split into T4a (add_findings) / T4b (create_work_items) / T4c (batch_update_findings), sequenced"
+description = "All three live in repo.rs so they serialize regardless; splitting buys session-sizing and smaller rollback, not parallelism."
+dedup_id = "e36f38b4698f388d"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T2: Add domain structs + enums"
+summary = "FindingAxis members + aggregation return shape are unspecified; pin enum FindingAxis { Severity } (v1) + struct AxisCount { key: String, count: i64 } so T7/T8/T9 share one contract"
+description = "Verification says 'grouped counts' but names no struct; two implementers would land divergent shapes."
+dedup_id = "5267ba4df01cd0b0"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Strengthen R3: the ON CONFLICT WHERE predicate must be a literal (no placeholders) and repeat the partial-index predicate verbatim; the dedup test must assert against a COMMITTED prior finding, else a mis-bound index passes silently"
+description = "Verified SQLite semantics: a mis-bound partial index lets the insert proceed (duplicate row, no error). Only a committed-prior-row test catches it; rows_affected()==0 on DO NOTHING is reliable."
+dedup_id = "802cfece8d8e643c"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### T5: MCP batch tools"
+summary = "Batch element structs (NewFinding/NewWorkItem inside the Vec param) must derive schemars::JsonSchema, not just the Parameters wrapper — else the array items schema is empty and clients cannot validate"
+description = "rmcp 1.7 derives inputSchema via schemars; Vec<T> -> array whose items come from T's own JsonSchema."
+dedup_id = "a258f4f4ffcf2d39"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Risks"
+summary = "R6/get_story_finding_queue: confirm whether findings on a tombstoned (deleted_at) story/task should be HIDDEN (R6 assumes yes) or RETAINED for audit — findings have no deleted_at, so the work_items.deleted_at JOIN filter decides this"
+description = "repo.rs:390 list_work_items filters deleted_at IS NULL; the findings table has no deleted_at of its own (liveness is via superseded_by/resolved_at)."
+dedup_id = "6ef9ff3ca19e1f23"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### T5: MCP batch tools"
+summary = "add_findings holds the RESERVED write lock for the whole batch — add an advisory upper bound (e.g. <=500 rows) in the MCP tool description so an agent doesn't pass a 10k-row batch that monopolises writes"
+description = "Fine at tens-to-hundreds (sqlx caches the prepared statement; WAL single fsync at commit); only a concern if batch size is unbounded."
+dedup_id = "aafd4b34229c3f97"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### T3: Extract inner `*_tx` helpers + content-hash helper"
+summary = "T3 is the FIRST task to mutate a committed query! macro (create_finding INSERT gains triage_state/dedup) — make 'cargo sqlx prepare -- --all-targets' explicit in its acceptance, not a bare prepare (which drops test-only entries)"
+description = "R4 covers waves that ADD macros; the mutated EXISTING macro at T3 is the easy miss that breaks the offline test build."
+dedup_id = "286a04ce065afc18"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "R5 overstated — sha2 0.10.9 and 0.11.0 are already in Cargo.lock transitively (sqlx/rmcp), so sha2 = '0.10' adds zero crates; downgrade from a vetoable risk to a no-cost default-accept"
+description = "Verified Cargo.lock:2196 (sha2 0.10.9) + :2207 (0.11.0). No RUSTSEC advisory affects 0.10.x. Use the installed sqlx 0.9 CLI for .sqlx regen."
+anchor_old = "**R5 — `sha2` is a new dependency (D5).** Low risk (ubiquitous, stable); vetoable at approval. If rejected, ship `add_findings` without dedup in v1 and add hashing as a fast-follow (the partial index can land inert)."
+anchor_new = '**R5 — `sha2` is already in the lockfile (D5).** `sha2 0.10.9` (and `0.11.0`) already resolve transitively via sqlx/rmcp (`Cargo.lock:2196`), so `sha2 = "0.10"` as a direct dep adds zero new crates — a no-cost default-accept, not a vetoable risk. No RUSTSEC advisory affects 0.10.x. Use the installed sqlx 0.9 CLI for the `.sqlx` regen.'
+dedup_id = "b476b28c7ac4ba75"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Verification Commands"
+summary = "Soften the sqlx --check exit-0 claim — sqlx is 0.9 and the superset-tolerant exit-0 is project-asserted, not independently version-verified; confirm after the first 0.9 regen"
+description = "Could not confirm from sqlx 0.9.0 release notes that --check exits 0 on a superset cache; CLAUDE.md documents it as observed. Low risk (cache committed), but stated as settled fact."
+anchor_old = '# benign "unused queries" warning is EXPECTED (exit 0)'
+anchor_new = '# benign "unused queries" warning — expected exit 0 (project-observed on sqlx 0.9; confirm after the first 0.9 regen)'
+dedup_id = "b1ab8e6a7c287ea5"

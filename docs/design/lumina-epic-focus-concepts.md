@@ -1,6 +1,6 @@
 # Lumina — Epic / Focus concept resolution (grill checkpoint)
 
-**Status:** in progress — mid-grill checkpoint
+**Status:** resolved — all open questions closed; ready to consolidate into a final spec
 **Last updated:** 2026-05-29
 **Purpose:** Bed down what lumina's `epic` and `feature` work-item levels actually *mean*, what *data* they carry, and how to make that meaning crisp for agents and users. This file checkpoints the resolution so we can resume; several questions are still open (see [Open questions](#open-questions-resume-here)).
 
@@ -53,10 +53,20 @@ Full research sources are in the conversation; the agile-"feature" (releasable i
    - Close-criteria **reuse `acceptance_criteria` + `closure_gate`**, extended up from story to epic — no new mechanism.
    - **Creation gate:** an epic must carry **≥1 close-criterion before its first story can be created** beneath it (since `focus` sits between, the gate fires when the first *story* in the epic's subtree is created). Purpose is to **force reflection** — articulate *a* definition of done before committing work. Criteria are **revisable** thereafter (acceptance-criteria are mutable), so "emergent" = *provisional up front, refined as you go*, not *absent until late*.
    - **Done when:** close-criteria met **AND** all stories **terminal** (`done` *or* `cancelled`/`wontfix` — abandoned work never blocks closure). No early close; rollup is a **gate**, not just info.
-6. **Milestone is NOT a separate entity** — the date lives on the epic. (Pending only the multi-epic-shared-release edge, currently assumed "no".)
-7. **Focus boundary rule:** the agent **proposes** focus boundaries and the human **discusses/confirms** them (not silently auto-carved). Informing signals:
-   - **Story shape** — vertical-slice vs cross-cutting.
-   - **File-footprint overlap** with existing focuses' children — but this is known *late* (at task-spec time), so it's a **re-home / split** signal, not an initial-carve signal.
+6. **Milestone is NOT a separate entity** — the date lives on the epic as an informational `target_date` (never policed). Epics always close **independently**; there is no gating cross-epic shared-release coupling (shared-date edge resolved: NO). If a genuine gating case ever arises it would be an *orthogonal* milestone tag grouping epics (the same cross-cutting shape as the `relevance` axis), **never epic nesting** — deferred under YAGNI until a real instance appears.
+7. **Focus boundary rule:** the agent **proposes** focus boundaries (and any later re-home / split) and the human **discusses/confirms** — never silently auto-carved, never auto-applied. Carving is driven by **intent only**: the focus's `shape` plus the stories' shape / functional grouping. **File-footprint is explicitly NOT a carve or re-home signal** — `files_touched` overlap is orthogonal to the hierarchy and belongs to a separate subsystem (parallel-task-execution collision avoidance + sprint composition); it never triggers a re-home. A re-home/split is suggested on **intent/shape mismatch** (a story that no longer fits its focus's shape), agent-proposed and human-confirmed. (Resolves Q-A.2.)
+8. **Focus carries a mandatory `shape`** — the genuine behavioural payload the level lacked beyond rollup. `shape ∈ {vertical-slice, cross-cutting, foundational}`, three **positive** classifications (no catch-all / "unclassified" value):
+   - **`vertical-slice`** — a coherent end-to-end thread of user-facing value through the layers (e.g. an onboarding flow).
+   - **`cross-cutting`** — one concern threaded across many areas at a single aspect/layer (applying an idiom codebase-wide, codebase-wide docs, observability).
+   - **`foundational`** — the base layer **other focuses' stories depend on** (structural test: cross-focus dependency — NOT "didn't fit the other two").
+   - **Mandatory at carve-time**, forcing the carving reflection — the focus-level twin of decision 5's *"no outcome ⇒ folder, not epic"*: **no shape ⇒ junk-drawer, not focus.**
+   - **Revisable** — provisional up front; amended as analysis/categorisation tooling and sharper intent-understanding refine it (NOT driven by file-footprint — see decision 7 / Q-A.2).
+   - **Fractal axis** — the same vertical/cross-cutting distinction recurs at the intra-story task-subset scale (a thinner thread of tasks). Shared *vocabulary*, separate *storage*: a focus has exactly ONE shape; a story has 0+ task-groups each with their own shape (the deferred `task_groups` table, which gains its own `shape` column when it lands).
+   - **Naming**: `shape`, NOT `focus_kind` — a third `*_kind` column would collide with `work_items.kind` (hierarchy) and `work_items.task_kind` (`foundation|main|polish` phase disposition).
+9. **Data-shape (resolves Q-4).**
+   - **Epic `outcome`** is a single **mandatory free-text prose** field set at epic creation — a deliberately high-level description of the functionality the app will provide at the epic's *end*, **without** implementation specifics (e.g. a "Lumina Foundation" epic describes the end-state capability set, not the schema). It typically needs **teasing out interactively at creation** (an epic-creation prompt that interrogates the user, mirroring the story `problem-statement` 3-axis prompt). Distinct from the close-criteria: `outcome` is the prose north-star; close-criteria (decision 5, reused `acceptance_criteria`) are the testable breakdown.
+   - **Attribute split after the rename**: the old shared `{context, grouping_rationale}` on `epic`|`feature` splits per-kind. Epic = `outcome` (mandatory prose) + optional `context` (background); **drop `grouping_rationale`** (an epic's grouping rationale *is* its outcome). `shape` is a real column (`work_items.shape`, mandatory closed enum), NOT a JSON attribute — like `task_kind`/`tier`/`relevance`.
+   - **Focus framing = Option 2**: a focus carries `shape` (mandatory, decision 8) PLUS an **optional** free-text `framing` note (in/out-of-scope), reached for only when stories risk straying. NOT mandatory — `shape` is the carving gate; framing is elaboration. **Stories do NOT inherit framing as copied data** — it is *ambient context* the agent reads when authoring a story under the focus; denormalising it onto stories would only create drift.
 
 ### Resulting per-level "done" semantics
 
@@ -67,20 +77,16 @@ Full research sources are in the conversation; the agile-"feature" (releasable i
 | **Focus** | **pure rollup** of its stories | **no** |
 | **Epic** | **own close-criteria pass AND all stories terminal** | **yes** (mandatory intent) |
 
-This is the genuine behavioural difference the two levels lacked: **epic = outcome + closure gate; focus = scoping context + rollup only.** Original "two renamed containers" problem resolved.
+This is the genuine behavioural difference the two levels lacked: **epic = outcome + closure gate; focus = scoping context + rollup + mandatory `shape` (decision 8).** Original "two renamed containers" problem resolved.
 
 ---
 
 ## Open questions (resume here)
 
-1. **Q-A.1 — Is "vertical-slice vs cross-cutting" on a *focus* the same axis as the culled intra-story `task_kind` groupings?**
-   The vertical-slice/pattern-replacement axis was removed from `task_kind` in migration 0007 and left as informal intra-story groupings with no schema home. The focus may be that axis's *true level*. If so:
-   - candidate typed attribute **`focus_kind ∈ {vertical-slice, cross-cutting}`** (more distinguishing data; gives the agent a crisp first-cut rule);
-   - possibly retires/relocates the orphaned intra-story grouping concept.
-   - OR they're **distinct concerns**: a focus groups *stories by shape*; an intra-story group bundles *tasks for co-implementation*. Need the user's read.
-2. **Q-A.2 — Confirm file-footprint is a re-home/split signal** (known late), not an initial-carve signal.
-3. **Shared-date edge** — confirm no scenario where several *different* epics must ship as one coordinated dated release (if there is one → a milestone entity is needed after all).
-4. **Epic data-shape detail** — exact form of the outcome/intent field; does a `focus` carry an explicit scope / out-of-scope framing its stories inherit?
+1. **Q-A.1 — RESOLVED (→ Locked decision 8).** Vertical-slice/cross-cutting is **one fractal axis** spanning the focus scale and the intra-story task-subset scale — same vocabulary, separate storage, **not** distinct concerns. Modelled as a mandatory, revisable `shape ∈ {vertical-slice, cross-cutting, foundational}` on the focus. The orphaned intra-story grouping is left where it is (prose, future `task_groups`) and gains a `shape` column when that table lands.
+2. **Q-A.2 — RESOLVED (→ Locked decision 7, revised).** File-footprint is **not** a carve or re-home signal at all. `files_touched` overlap is orthogonal to the hierarchy — it feeds parallel-task-execution collision avoidance + sprint composition. Focus carving (and any re-home/split) is **intent/shape only**, agent-proposed, human-confirmed, never auto-applied.
+3. **Shared-date — RESOLVED (→ Locked decision 6, confirmed).** Epics always close independently; `target_date` is informational only. No milestone entity. A future gating case (if one ever appears) → orthogonal milestone tag, never epic nesting; deferred (YAGNI).
+4. **Epic data-shape — RESOLVED (→ Locked decision 9).** Epic `outcome` = mandatory high-level prose (no specifics; teased out at creation), distinct from testable close-criteria. Focus framing = Option 2: optional prose alongside mandatory `shape`, ambient (not inherited).
 5. Cosmetic: plural "focuses" in tree headers — accepted, noted.
 
 ---
@@ -92,9 +98,12 @@ This is the genuine behavioural difference the two levels lacked: **epic = outco
 - **Extend `acceptance_criteria` + `closure_gate` to epic level** for close-criteria.
 - **Story-creation gate:** reject the first story under an epic that has 0 close-criteria.
 - **Epic done transition:** enforce (criteria met) AND (all stories terminal).
-- **Candidate `focus_kind`** typed attribute — pending Q-A.1.
+- **Mandatory `shape`** on focus — `shape ∈ {vertical-slice, cross-cutting, foundational}`, NOT NULL, CHECK-constrained, revisable. (Resolves the former `focus_kind` candidate, Q-A.1.)
+- **Focus `framing`** — optional free-text attribute on focus (in/out-of-scope); ambient, not inherited by stories (decision 9).
+- **Attribute split (post-rename):** epic = `outcome` (mandatory prose) + optional `context`, drop `grouping_rationale`; focus = optional `framing` + the `shape` column.
+- **Epic-creation prompt:** interactive "tease out the outcome" step at epic creation (mirrors the story `problem-statement` 3-axis prompt) — the outcome is rarely well-formed on first utterance.
 - Define `focus`/`epic` semantics explicitly in `SKILL.md` + `CONVENTIONS.md` so agents don't import agile-"feature" assumptions.
 
 ## Next step when resuming
 
-Answer **Q-A.1, Q-A.2, shared-date** → then consolidate into a final spec and decide the `CONVENTIONS.md` / `SKILL.md` landing + migration plan.
+Answer **epic data-shape** (last open question) → then consolidate into a final spec and decide the `CONVENTIONS.md` / `SKILL.md` landing + migration plan. (Q-A.1 → decision 8; Q-A.2 → decision 7; shared-date → decision 6.)

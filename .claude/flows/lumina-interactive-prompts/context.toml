@@ -1,0 +1,23 @@
+slug = "lumina-interactive-prompts"
+plan_path = "docs/plans/lumina-interactive-prompts.md"
+status = "in-progress"
+created = 2026-05-28
+updated = 2026-05-28
+branch = "main"
+scope = [
+    "lumina/src/pty/**",
+    "lumina/web/src/**",
+    "lumina/tests/**",
+    "docs/plans/lumina-interactive-prompts.md",
+]
+
+[tasks]
+total = 12
+completed = 12
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-interactive-prompts/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-interactive-prompts/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-interactive-prompts/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-interactive-prompts/plan-review-findings.toml"

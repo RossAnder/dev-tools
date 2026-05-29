@@ -1,0 +1,214 @@
+schema_version = 1
+last_updated = 2026-05-28
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Tasks > #### 1. Permission mode + Keystroke input kind [M]"
+summary = "InputKind whitelist hardcoded at 5 sites; T1 Files lists only 2"
+description = "validate_input_kind in http/pty_sessions.rs:320 + unit test :779-781; supervisor.rs:209-225 queue-row classifier; mcp.rs:2646 send_pty_input validator + docstrings :1139,1147,2633; web/src/api/pty.ts zod enum. All must accept keystroke or every frame returns HTTP 422 / MCP rejection / supervisor mark-failed."
+anchor_old = "**Files**: `lumina/src/pty/protocol.rs`, `lumina/src/pty/pty_transport.rs`"
+anchor_new = "**Files**: `lumina/src/pty/protocol.rs`, `lumina/src/pty/pty_transport.rs`, `lumina/src/pty/supervisor.rs`, `lumina/src/http/pty_sessions.rs`, `lumina/src/mcp.rs`, `lumina/web/src/api/pty.ts`"
+dedup_id = "d5c7f93eaba031e4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "risk"
+plan_section = "## Approach"
+summary = "Supervisor Idle-only dispatch deadlocks keystroke batches while AUQ is open"
+description = "supervisor.rs:189-326 dispatch_one pops one entry then flips to Awaiting (:309); maybe_finalise_turn (:340-355) only returns to Idle when outstanding_tool_uses==0, but the open AUQ keeps its tool_use_id in that set until claude writes the matched tool_result, which it does only AFTER the full keystroke sequence is consumed. A 10-frame batch dispatches frame #1 then deadlocks. Wire path must bypass the queue for keystrokes (direct push to Session.input_tx, OR new InputKind dispatched without Idle gating, OR drain-keystrokes-in-tight-loop inside dispatch_one)."
+dedup_id = "860cd408ad63ac7b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "executability"
+plan_section = "## Tasks > #### 3. Empirical AUQ keystroke probe [S]"
+summary = "T3 is not executable by an /implement sub-agent"
+description = "T3 instructs the agent to spawn claude outside lumina and capture human keystrokes. /implement sub-agents (flow-implement-lite/-deep) are code-writing agents and cannot launch interactive TUI processes outside the project. Marked [S] it would dispatch to lite and either stall or fabricate findings. Reframe as a human pre-flight task above ## Tasks, remove from T4 Blocked-by, or convert to a Prerequisite section."
+anchor_old = "#### 3. Empirical AUQ keystroke probe [S]"
+anchor_new = "#### 3. Empirical AUQ keystroke probe [HUMAN - pre-flight, not /implement]"
+dedup_id = "0cc17d05d93c6d9a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "risk"
+plan_section = "## Research Notes > ### Keystroke routing - Ink select picker"
+summary = "ink-select-input is single-select only; claude ships a bespoke multi-select picker with unverified keymap"
+description = "Plan keymap table cites ink-select-input as authoritative but per its README ink-select-input has no multi-select component. claude-code ships a custom AUQ picker; issue #12030 (closed not-planned) reports Enter-acts-as-Tab on multi-select. The calculator design in T4 (space=toggle / Enter=submit) is unverified and may emit garbage. T3 empirical probe is the ONLY source of truth - do not commit to the DSL until T3 results land."
+anchor_old = "ink-select-input / @inkjs/ui Select expects ANSI VT100 sequences via stdin:"
+anchor_new = "claude-code ships a bespoke AUQ picker (NOT ink-select-input - that lib is single-select only). Multi-select keymap unverified; issue #12030 (closed not-planned) reports Enter-acts-as-Tab. T3 empirical probe is the SOLE source of truth - do not commit to the DSL design until T3 lands."
+dedup_id = "917cf7d37c7e4df3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Scope > Affected areas"
+summary = "Scope glob excludes lumina/src/http/ and lumina/src/mcp.rs but T1 must edit both"
+description = "After T1 file-list expansion (per P1), validate_input_kind in http/pty_sessions.rs and send_pty_input in mcp.rs are touched. Both sit outside the listed lumina/src/pty/** glob. Widen affected-areas."
+anchor_old = "`lumina/src/pty/` - protocol, PTY transport, spawn flags"
+anchor_new = "`lumina/src/pty/` - protocol, PTY transport, spawn flags; `lumina/src/http/pty_sessions.rs` - validate_input_kind widening; `lumina/src/mcp.rs` - send_pty_input validator + docstrings"
+dedup_id = "0c2e48dc1797c45d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Tasks > #### 1. Permission mode + Keystroke input kind [M]"
+summary = "bypassPermissions swap site and rationale-comment update not specified"
+description = "pty_transport.rs:144-145 is the cmd.arg pair; the rationale comment at :141-143 currently documents the acceptEdits choice and must be rewritten alongside (else file is self-contradictory). Plan T1 (c) names the flag flip but not the file:line nor the comment."
+anchor_old = "(c) Change the claude CLI arg from `--permission-mode acceptEdits` to `--permission-mode bypassPermissions`."
+anchor_new = "(c) At `lumina/src/pty/pty_transport.rs:144-145` change the CLI flag from `acceptEdits` to `bypassPermissions`; rewrite the rationale comment at :141-143 to document the auto-approve scope (Bash/Read/WebFetch/network) - previous wording is now inaccurate."
+dedup_id = "cc5733b33f995834"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "## Risks"
+summary = "No task writes CLAUDE.md despite Risks saying to document loudly"
+description = "Risks Permission bypass entry says Document loudly in CLAUDE.md but no Task does. Add T1b for lumina/CLAUDE.md (lumina-specific, not root) with the bypassPermissions auto-approve scope + HOST=0.0.0.0 + bypassPermissions remote-exec risk."
+dedup_id = "44bad3321aa0b092"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "## Approach > Backend Section 2"
+summary = "text:<literal> DSL has no control-byte filter; user-typed ESC/CTRL bytes flow verbatim"
+description = "DSL token text:<literal> is described as literal bytes (with newline-to-CR translation) with no whitelist. A user typing ESC+[+B+CR into Other/notes would inject picker-cursor-down + Enter. Same byte (0x1b) is also the cancel keystroke. Specify: reject 0x1b, 0x00-0x1f (sans tab/newline), 0x7f; cap payload length (4 KB); text: must be the terminal token of an InputFrame."
+anchor_old = '`text:<literal>` → literal bytes (with `\n`→`\r` translation as the existing `Prompt` arm does).'
+anchor_new = "`text:<literal>` → bytes of <literal> with these filters: reject 0x1b, 0x00-0x1f (sans tab/newline), 0x7f; cap 4 KB; newline-to-CR translation as in the Prompt arm; text: must be the terminal token of an InputFrame (subsequent DSL tokens emit separate frames)."
+dedup_id = "f7f924879526e8d0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "completeness"
+plan_section = "## Approach > Frontend Section 8"
+summary = "Regular prompt input box state while AUQ is open is unspecified"
+description = "PtyConsole.vue:422-430 textarea + Submit are not gated on pendingAuq. While an AUQ is open, claude TUI is in Ink raw-mode consuming keystrokes - a typed prompt's bytes would be re-interpreted as picker navigation/selection. Specify: input box disabled when pendingAuq !== null."
+anchor_old = 'optionally surface a subtle "awaiting answer" pill near the input box driven by `pendingAuq !== null`'
+anchor_new = "disable the prompt textarea + Submit at PtyConsole.vue:422,429 via :disabled bind on pendingAuq AND surface an awaiting-answer pill. The disabled state is load-bearing: a typed prompt would otherwise inject bytes into claude open Ink picker."
+dedup_id = "a674be9a2b1feba7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "completeness"
+plan_section = "## Tasks > #### 9. Rust e2e for AUQ keystroke routing [M]"
+summary = "T9 stubs the consumption side; round-trip is untested"
+description = "T9 asserts bytes reach the PTY but doesn't model claude consuming them and emitting tool_result. A semantically-wrong calculator passes T9+T8 but fails the live round-trip. Extend the stub to emit a paired tool_result JSONL record on terminal CR so the picker-disappears branch of pendingAuq is exercised."
+anchor_old = "assert the PTY stdin received the exact byte sequence the calculator emits."
+anchor_new = "assert the PTY stdin received the exact byte sequence the calculator emits, AND extend the stub to write a paired tool_result JSONL record (is_error:false) once it sees the terminal CR - exercises the picker-disappears branch of pendingAuq."
+dedup_id = "f26559bf1aa6647e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks > #### 5. AUQ picker component [M]"
+summary = "T5 Other UX misaligns with T4 calculator indexing"
+description = "T4 calculator models Other as option index N+1 (down x M + enter). T5 renders Other as a separate expand-on-click sibling toggle. Indices misalign - calculator targets wrong row. Specify in T5: Other is the LAST option in the radio/checkbox group (matches calculator's option-index model); selecting it expands a textarea below the group."
+anchor_old = 'Optional "Other" row with an expand-on-click textarea.'
+anchor_new = '"Other" rendered as the LAST option in the same radio/checkbox group (matches the calculator option-index model: Other is option index N+1). Selecting it expands a textarea below the group.'
+dedup_id = "392f4782496214c5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks > #### 6. usePtySession AUQ extensions [M]"
+summary = "T6 reuse-if-present fork is dead; sendInputsBatch already exists"
+description = "lumina/web/src/api/pty.ts:308-316 already exports sendInputsBatch. The otherwise-extend branch is dead. Rewrite to a direct use-the-existing-helper instruction."
+anchor_old = "Reuse the existing batch-input HTTP wrapper if present; otherwise extend the API client to expose it."
+anchor_new = "Use the existing `sendInputsBatch` helper in `lumina/web/src/api/pty.ts:308-316`."
+dedup_id = "6c3c00215ac7086b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "bypassPermissions is per-spawn-hardcoded with no SpawnConfig opt-out"
+description = "pty_transport.rs:144 unconditionally appends the flag for every spawn. No SpawnConfig field exposes per-session override; future deployments (CI rigs, shared workstations) inherit the baked-in default. v2 hardening: expose permission_mode on SpawnConfig. Consider --permission-mode auto as a safer prompt-free default if available."
+dedup_id = "c69081758f04cda0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks > #### 8. Frontend unit tests [M]"
+summary = "T8 doesn't cover text: parser edge cases"
+description = "Test case (iv) covers only the simple vanilla literal. Missing: literal containing colon (split-on-first-colon contract), literal containing newline (translation rule), empty literal, literal containing ESC byte (rejection per P8). Add to T8 or to T1 Rust unit tests."
+dedup_id = "614030a853c2a33e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Approach > Frontend Section 7"
+summary = "pendingAuq tie-breaker + submit debounce not specified"
+description = "pendingAuq.find(...) returns the first match - oldest in sequence order. Specify this explicitly. submitAuqAnswer should debounce single-fire so a double-click doesn't race two batches into the queue."
+anchor_old = "Reactive on the message store, so reload triggers re-render automatically."
+anchor_new = "Reactive on the message store, so reload triggers re-render automatically. Tie-breaker: oldest unmatched AUQ wins (sequence order in pairedMessages); console.warn if >1 exists. submitAuqAnswer MUST debounce on in-flight (single-fire per picker instance)."
+dedup_id = "7119ec91473578dd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Tasks > #### 1. Permission mode + Keystroke input kind [M]"
+summary = "Split T1 for independent rollback of permission flip vs Keystroke variant"
+description = "T1 bundles permission-mode + Keystroke variant + DSL parser. If the keystroke path proves fragile, the natural rollback is to revert the SPA-side picker without re-enabling permission prompts (user has already accepted bypassPermissions). Split T1 into T1a (permission flip + CLAUDE.md note) and T1b (Keystroke variant + DSL parser). T1a lands first and soaks; T1b waits on T3."
+dedup_id = "3c87b9befe8bcd01"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Tasks > #### 7. Wire AUQ picker into transcript [M]"
+summary = "T7 optional pill defers a UX decision to the executor"
+description = "For automated agents, optional resolves to skip-if-uncertain - the pill won't ship and the omission isn't caught by Acceptance. Either drop the pill from T7 or specify it concretely. See P9: making the pill non-optional alongside the input-disable change is the natural fix."
+anchor_old = 'optionally surface a subtle "awaiting answer" pill near the input box'
+anchor_new = 'add an "Awaiting answer" pill (text-xs muted token) above the input box when `pendingAuq !== null`'
+dedup_id = "44e243fa83c87edb"

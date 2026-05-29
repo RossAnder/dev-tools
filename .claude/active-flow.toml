@@ -187,3 +187,85 @@ scope = [
     "lumina/**",
     "docs/plans/lumina-story-planning-round-4.md",
 ]
+
+[[active]]
+slug = "lumina-pty-service"
+last_used = "2026-05-27T09:46:45.4655055Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/**",
+    "docs/plans/lumina-pty-service.md",
+]
+
+[[active]]
+slug = "lumina-pty-followups"
+last_used = "2026-05-27T12:56:45.7656117Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/**",
+    "docs/plans/lumina-pty-followups.md",
+]
+
+[[active]]
+slug = "lumina-pty-jsonl-tail"
+last_used = "2026-05-28T08:14:38.6593805Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/**",
+    "docs/plans/lumina-pty-jsonl-tail.md",
+]
+
+[[active]]
+slug = "lumina-spa-crud"
+last_used = "2026-05-28T08:18:11.3054524Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/web/**",
+    "docs/plans/lumina-spa-crud.md",
+]
+
+[[active]]
+slug = "lumina-interactive-prompts"
+last_used = "2026-05-28T12:51:09.5476292Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/src/pty/**",
+    "lumina/web/src/**",
+    "lumina/tests/**",
+    "docs/plans/lumina-interactive-prompts.md",
+]
+
+[[active]]
+slug = "lumina-epic-focus-semantics"
+last_used = "2026-05-29T08:57:48.4717117Z"
+
+[[active]]
+slug = "lumina-findings-queues-bulk-io"
+last_used = "2026-05-29T11:44:36.6470593Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/src/**",
+    "lumina/migrations/**",
+    "lumina/tests/**",
+    "lumina/Cargo.toml",
+    "lumina/CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]

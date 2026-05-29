@@ -1,0 +1,257 @@
+schema_version = 1
+last_updated = 2026-05-28
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-28
+agent = "implement"
+summary = "draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "eae01d8f319cb23c"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "add-migration-0009-jsonl-path-column-on-pty-sessions"
+status = "done"
+summary = "Added migration 0009 with jsonl_path TEXT column and vocab-shift header comment"
+files = ["lumina/migrations/0009_pty_jsonl_path.sql"]
+commits = ["f01a6f31c222ab6e89a5972f73aaae42e72f2981"]
+dispatch_tier = "lite"
+dispatch_agent = "flow-implement-lite"
+dedup_id = "6718c4c26a26bf34"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "extend-ptysession-struct-repo-select-lists-regenerate-sqlx-cache"
+status = "done"
+summary = "Extended PtySession with jsonl_path; extended 3 repo SELECTs; added set_pty_jsonl_path; regenerated sqlx offline cache"
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/repo.rs",
+    "lumina/.sqlx/query-1340919289dafb570f0d686064a47172b131c9d1f7fc15d432042175afa7c52b.json",
+    "lumina/.sqlx/query-9969995448ee01da85145b1987193d3111c8be349168160552e7994616d400d2.json",
+    "lumina/.sqlx/query-a0b4bc2fa18df7f35eaaac593dc6fd7e165267c55807f0c7b3971540523323a5.json",
+]
+commits = ["d5277c3058856c0b05543297406a6bd94de906b1"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "10eeac8c5cae35fc"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "extend-web-ts-ptymessage-types-for-tool-use-tool-result-payloads"
+status = "done"
+summary = "Promoted PtyMessage.kind to six-value literal-union; added TS-only content-shape interfaces; npm run build broken intentionally pending T7/T8"
+files = ["lumina/web/src/api/pty.ts"]
+commits = ["d5277c3058856c0b05543297406a6bd94de906b1"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+scope_warning = false
+dedup_id = "5ef5f55df889ce31"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "new-jsonl_tail-module-add-notify-dep"
+status = "done"
+summary = "New pty::jsonl_tail module — sanitise_cwd, resolve_projects_root, tolerant JsonlRecord, notify-driven tail(), bind_jsonl_path; 14 unit tests passing under nextest"
+files = [
+    "lumina/src/pty/jsonl_tail.rs",
+    "lumina/src/pty/mod.rs",
+    "lumina/Cargo.toml",
+    "lumina/Cargo.lock",
+]
+commits = ["d5277c3058856c0b05543297406a6bd94de906b1"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+dedup_id = "b8f1c1d3c527cded"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "delete-parser-rs-rewire-transport-session-supervisor-spawn-protocol-against-jsonl_tail"
+status = "done"
+summary = "Single atomic cut: parser deleted; six-variant MessageKind; JSONL-driven spawn bridge; quiescence-based supervisor; six-variant Session fields; spawn flags for alt-screen/session-id/permission-mode; prompt_pattern dropped from SpawnConfig/SpawnSessionBody/SpawnPtySessionParams."
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/http/pty_sessions.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/pty/jsonl_tail.rs",
+    "lumina/src/pty/mod.rs",
+    "lumina/src/pty/parser.rs",
+    "lumina/src/pty/protocol.rs",
+    "lumina/src/pty/pty_transport.rs",
+    "lumina/src/pty/session.rs",
+    "lumina/src/pty/spawn.rs",
+    "lumina/src/pty/supervisor.rs",
+    "lumina/src/pty/transport.rs",
+    "lumina/tests/pty_e2e.rs",
+]
+commits = ["5379309420fa6bb163540f7a2888550d055528cc"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+scope_warning = false
+dedup_id = "5c2d9e782d207b75"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "reshape-e2e-pty_stub-fixture-for-jsonl-flow"
+status = "done"
+summary = "pty_stub rewritten to dep-free JSONL emitter; pty_e2e reshaped with LUMINA_PTY_PROJECTS_ROOT side-writer producing banner+echo records; asserts both user_input/assistant_text rows and pty_sessions.jsonl_path is bound."
+files = [
+    "lumina/tests/pty_e2e.rs",
+    "lumina/tests/fixtures/pty_stub.rs",
+]
+commits = ["c76dd28d5511cbed07b440861201cb50508bc773"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+scope_warning = false
+dedup_id = "ef2dd6a359d35d55"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-05-28
+agent = "implement"
+task_ref = "reshape-e2e-pty_stub-fixture-for-jsonl-flow"
+summary = "pty_e2e uses side-writer for JSONL rather than PATH-shimmed stub"
+original_intent = "PATH-shim claude->pty_stub on Windows so stub's stdin loop writes synthetic JSONL records exercising stdin->child->JSONL round-trip."
+rationale = "portable-pty 0.9's CommandBuilder reconstructs PATH from HKLM/HKCU registry hives on Windows, discarding the process-level PATH overlay; the shim is silently ignored and the real claude.exe (or no binary) gets spawned. Switched to side-writing JSONL records from a tokio task in the test; production bind_jsonl_path->tail->bridge->pty_messages path is exercised byte-identically. pty_stub fixture retained for future Linux/macOS variant. Cleaner fixes (cmd.env(PATH,...) override or LUMINA_PTY_CLAUDE_BIN env-var) require pty_transport.rs edits out of T6 scope."
+commits = ["c76dd28d5511cbed07b440861201cb50508bc773"]
+dedup_id = "450faf0f61bdd16f"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "ptymessage-useptysession-pairing-logic"
+status = "done"
+summary = "Added RenderableMessage interface + pairedMessages computed view; PtyMessage.vue drops dead branches and renders paired card + orphan badge."
+files = [
+    "lumina/web/src/components/PtyMessage.vue",
+    "lumina/web/src/composables/usePtySession.ts",
+]
+commits = ["c9ad2f0a78d7a62496b9ee5e48a7fc44a02d7c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+scope_warning = false
+dedup_id = "cf29601191c7fcc4"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "ptyconsole-transcript-layout-drop-terminal-viewport-framing"
+status = "done"
+summary = "PtyConsole switched to pairedMessages, chat-style row layout with user/assistant alignment + accent stripe, auto-scroll preserved."
+files = ["lumina/web/src/components/PtyConsole.vue"]
+commits = ["c9ad2f0a78d7a62496b9ee5e48a7fc44a02d7c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+scope_warning = false
+dedup_id = "5d95a81ef7859d3d"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-28
+agent = "implement"
+task_ref = "extend-pty-session-web-tests-for-new-content-shapes-and-pairing"
+status = "done"
+summary = "Five new pairedMessages tests (+24 expect calls); 193 total bun tests passing."
+files = ["lumina/web/src/__tests__/pty-session.test.ts"]
+commits = ["c9ad2f0a78d7a62496b9ee5e48a7fc44a02d7c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+scope_warning = false
+dedup_id = "4050b2a44e6c419b"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "cargo build (full, including SPA)"
+command = "SQLX_OFFLINE=true cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "ebacc8276facfd61"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "cargo nextest run (all 162 tests)"
+command = "SQLX_OFFLINE=true cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "0b913f334a995f67"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "cargo clippy --all-targets -D warnings"
+command = "SQLX_OFFLINE=true cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "e1f12add0d2c767a"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "cargo sqlx prepare --check (exit 0 with benign unused-queries warning)"
+command = "cd lumina && cargo sqlx prepare --check"
+outcome = "pass"
+dedup_id = "b20cd123767dc1e4"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "npm run build (SPA)"
+command = "cd lumina/web && npm run build"
+outcome = "pass"
+dedup_id = "fdf99fed8159d04b"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-05-28
+agent = "implement"
+summary = "bun test (193 pass / 434 expect)"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "2e4ce3a0d2701387"
+
+[[items]]
+id = "E18"
+type = "status-transition"
+date = 2026-05-28
+agent = "plan-update"
+summary = "in-progress -> review (all 9 plan tasks complete; awaiting /review + /optimise + explicit /plan-update complete)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "c37e1a9bb71ac79e"
