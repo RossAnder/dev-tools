@@ -185,7 +185,7 @@ fn validate_attributes_for_kind(
                 "dispatch" => want_object(k, v)?,
                 _ => return Err(bad_key(k)),
             },
-            "epic" | "feature" => match k.as_str() {
+            "epic" | "focus" => match k.as_str() {
                 "context" | "grouping_rationale" => want_string(k, v)?,
                 _ => return Err(bad_key(k)),
             },
@@ -309,7 +309,7 @@ pub fn parse_github_slug(s: &str) -> Result<String, AppError> {
 /// The five legal work-item kinds, ordered parent→child. A kind's legal parent
 /// kind is the entry immediately before it; `project` (index 0) is the root and
 /// must have a NULL parent.
-const KINDS: [&str; 5] = ["project", "epic", "feature", "story", "task"];
+const KINDS: [&str; 5] = ["project", "epic", "focus", "story", "task"];
 
 /// Validate a `(kind, parent_kind)` edge against the hierarchy rules. Returns
 /// the typed `Validation` error rather than relying on the DB trigger, so a bad
@@ -798,7 +798,7 @@ pub async fn list_findings(
 ///
 /// This is the back-compatible 5-arg entry point (no `origin`, default
 /// provenance NULL). It delegates to [`create_work_item_with_origin`]; the
-/// default `relevance="backlog"` for a new epic/feature/story is applied there.
+/// default `relevance="backlog"` for a new epic/focus/story is applied there.
 pub async fn create_work_item(
     pool: &SqlitePool,
     kind: &str,
@@ -811,8 +811,8 @@ pub async fn create_work_item(
 
 /// Create a work item, stamping the optional `origin` provenance (migration
 /// 0003). Same single-mutation-path discipline as the 5-arg [`create_work_item`]
-/// wrapper. A newly-created `epic`/`feature`/`story` acquires the default
-/// `relevance="backlog"` (epic/feature/story carry the relevance axis;
+/// wrapper. A newly-created `epic`/`focus`/`story` acquires the default
+/// `relevance="backlog"` (epic/focus/story carry the relevance axis;
 /// task/project are left NULL); the relevance default is applied in the INSERT.
 pub async fn create_work_item_with_origin(
     pool: &SqlitePool,
@@ -849,10 +849,10 @@ pub async fn create_work_item_with_origin(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    // epic/feature/story carry the relevance axis and default to "backlog" on
+    // epic/focus/story carry the relevance axis and default to "backlog" on
     // create; task/project are left NULL.
     let default_relevance: Option<&str> = match kind {
-        "epic" | "feature" | "story" => Some("backlog"),
+        "epic" | "focus" | "story" => Some("backlog"),
         _ => None,
     };
 
@@ -1022,7 +1022,7 @@ pub async fn update_work_item_status(
 }
 
 /// Set a work item's `relevance` (migration 0003, User Decision 2). The
-/// relevance axis is structural and carried ONLY by epic/feature/story; a
+/// relevance axis is structural and carried ONLY by epic/focus/story; a
 /// `task`/`project` is rejected with a typed [`AppError::Validation`]. The
 /// kind is read first; `NotFound` if the id has no row; one event on success.
 pub async fn set_relevance(
@@ -1031,9 +1031,9 @@ pub async fn set_relevance(
     relevance: Relevance,
 ) -> Result<(), AppError> {
     let kind = work_item_kind(pool, id).await?;
-    if !matches!(kind.as_str(), "epic" | "feature" | "story") {
+    if !matches!(kind.as_str(), "epic" | "focus" | "story") {
         return Err(AppError::Validation(format!(
-            "relevance is settable only on epic/feature/story, not on '{kind}'"
+            "relevance is settable only on epic/focus/story, not on '{kind}'"
         )));
     }
     let value = enum_to_str(relevance);
@@ -5087,7 +5087,7 @@ mod tests {
         let epic = create_work_item(pool, "epic", Some(&project.to_string()), "E", None)
             .await
             .expect("legal epic");
-        let feature = create_work_item(pool, "feature", Some(&epic.to_string()), "F", None)
+        let feature = create_work_item(pool, "focus", Some(&epic.to_string()), "F", None)
             .await
             .expect("legal feature");
         let story = create_work_item(pool, "story", Some(&feature.to_string()), "S", None)
@@ -5161,7 +5161,7 @@ mod tests {
         assert_eq!((wi_before, ev_before), (1, 1));
 
         // Illegal: feature directly under project (feature's legal parent is epic).
-        let err = create_work_item(&pool, "feature", Some(&project.to_string()), "Bad", None)
+        let err = create_work_item(&pool, "focus", Some(&project.to_string()), "Bad", None)
             .await
             .expect_err("illegal create must error");
         assert!(matches!(err, AppError::Validation(_)), "got {err:?}");

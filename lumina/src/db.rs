@@ -132,7 +132,7 @@ mod tests {
         insert_item(&pool, "e1", "epic", Some("p1"), "Epic")
             .await
             .expect("legal epic under project");
-        insert_item(&pool, "f1", "feature", Some("e1"), "Feature")
+        insert_item(&pool, "f1", "focus", Some("e1"), "Focus")
             .await
             .expect("legal feature under epic");
         insert_item(&pool, "s1", "story", Some("f1"), "Story")
@@ -181,7 +181,7 @@ mod tests {
         insert_item(&pool, "e1", "epic", Some("p1"), "Epic")
             .await
             .expect("legal epic");
-        insert_item(&pool, "f1", "feature", Some("e1"), "Feature")
+        insert_item(&pool, "f1", "focus", Some("e1"), "Focus")
             .await
             .expect("legal feature");
         insert_item(&pool, "s1", "story", Some("f1"), "Story")

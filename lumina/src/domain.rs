@@ -30,7 +30,7 @@ pub struct WorkItem {
     /// means "no kind-specific fields".
     pub attributes: Option<serde_json::Value>,
     /// Relevance axis (migration 0003): `active|backlog|deferred|rejected`. Set
-    /// only on epic/feature/story; NULL on task/project.
+    /// only on epic/focus/story; NULL on task/project.
     pub relevance: Option<String>,
     /// Effort grade (migration 0003): `s|m|l` (task scope); NULL otherwise.
     pub effort: Option<String>,
@@ -514,8 +514,8 @@ pub enum Kind {
     /// Child of a `project`.
     Epic,
     /// Child of an `epic`.
-    Feature,
-    /// Child of a `feature`.
+    Focus,
+    /// Child of a `focus`.
     Story,
     /// Leaf; child of a `story`.
     Task,
@@ -609,8 +609,8 @@ pub enum Disposition {
 
 /// The relevance axis (migration 0003) — structural guidance on what work is in
 /// play, replacing the dropped `active-flow` concept. Settable only on
-/// epic/feature/story (the repo rejects task/project); `create_work_item`
-/// defaults a new epic/feature/story to `backlog`. Serialises snake_case.
+/// epic/focus/story (the repo rejects task/project); `create_work_item`
+/// defaults a new epic/focus/story to `backlog`. Serialises snake_case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Relevance {
@@ -1100,7 +1100,7 @@ mod tests {
         collect_schema_variants(&value, &mut got);
         got.sort_unstable();
         got.dedup();
-        let mut expected = ["project", "epic", "feature", "story", "task"];
+        let mut expected = ["project", "epic", "focus", "story", "task"];
         expected.sort_unstable();
         assert_eq!(got, expected, "Kind schema advertises all five variants");
     }

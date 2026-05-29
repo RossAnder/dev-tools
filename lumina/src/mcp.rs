@@ -561,7 +561,7 @@ pub struct ResolveFindingParams {
 /// task/project target with `Validation`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SetRelevanceParams {
-    /// The epic/feature/story work-item id whose relevance to set.
+    /// The epic/focus/story work-item id whose relevance to set.
     pub id: String,
     /// The new relevance; one of `active`/`backlog`/`deferred`/`rejected`.
     pub relevance: Relevance,
@@ -1661,10 +1661,10 @@ impl LuminaTools {
 
     // ---- Planning / decision tools (migration 0003, Task 5) -------------
 
-    /// Set an epic/feature/story's relevance (single repo call →
+    /// Set an epic/focus/story's relevance (single repo call →
     /// `set_relevance`; the repo rejects a task/project target).
     #[tool(
-        description = "Set an epic/feature/story's relevance (active/backlog/deferred/rejected). Records one event.",
+        description = "Set an epic/focus/story's relevance (active/backlog/deferred/rejected). Records one event.",
         annotations(idempotent_hint = true, open_world_hint = false)
     )]
     async fn set_relevance(
@@ -2564,7 +2564,7 @@ mod tests {
 
         let project = create(tools, "project", None).await;
         let epic = create(tools, "epic", Some(&project)).await;
-        let feature = create(tools, "feature", Some(&epic)).await;
+        let feature = create(tools, "focus", Some(&epic)).await;
         create(tools, "story", Some(&feature)).await
     }
 

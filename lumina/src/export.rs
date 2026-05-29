@@ -513,7 +513,7 @@ mod tests {
             .await
             .unwrap()
             .to_string();
-        let feature = repo::create_work_item(&pool, "feature", Some(&epic), "F", None)
+        let feature = repo::create_work_item(&pool, "focus", Some(&epic), "F", None)
             .await
             .unwrap()
             .to_string();
@@ -563,7 +563,7 @@ mod tests {
             .await
             .unwrap()
             .to_string();
-        let feature = repo::create_work_item(&pool, "feature", Some(&epic), "F", None)
+        let feature = repo::create_work_item(&pool, "focus", Some(&epic), "F", None)
             .await
             .unwrap()
             .to_string();
@@ -717,7 +717,7 @@ mod tests {
             .await
             .unwrap()
             .to_string();
-        let feature = repo::create_work_item(&pool, "feature", Some(&epic), "F", None)
+        let feature = repo::create_work_item(&pool, "focus", Some(&epic), "F", None)
             .await
             .unwrap()
             .to_string();

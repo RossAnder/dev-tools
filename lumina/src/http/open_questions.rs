@@ -196,9 +196,9 @@ mod tests {
         let epic = repo::create_work_item(pool, "epic", Some(&project.to_string()), "E", None)
             .await
             .expect("epic");
-        let feature = repo::create_work_item(pool, "feature", Some(&epic.to_string()), "F", None)
+        let feature = repo::create_work_item(pool, "focus", Some(&epic.to_string()), "F", None)
             .await
-            .expect("feature");
+            .expect("focus");
         let story = repo::create_work_item(pool, "story", Some(&feature.to_string()), "S", None)
             .await
             .expect("story");

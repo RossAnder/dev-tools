@@ -207,7 +207,7 @@ fn resolve_artifact(flow_dir: &Path, rel: &str) -> PathBuf {
 /// returning its id. If a work-item of `kind` already exists under `parent` we
 /// reuse it (idempotent re-import); otherwise we create one and bump
 /// `scaffold_created`. The default scaffold uses fixed titles so re-imports of
-/// different flows share ONE project/epic/feature chain.
+/// different flows share ONE project/epic/focus chain.
 async fn ensure_scaffold(
     pool: &SqlitePool,
     kind: &str,
@@ -246,7 +246,7 @@ pub async fn import_flow(pool: &SqlitePool, flow_dir: &Path) -> anyhow::Result<I
     let epic_id =
         ensure_scaffold(pool, "epic", Some(&project_id), "Imported flows", &mut summary).await?;
     let feature_id =
-        ensure_scaffold(pool, "feature", Some(&epic_id), "Flow imports", &mut summary).await?;
+        ensure_scaffold(pool, "focus", Some(&epic_id), "Flow imports", &mut summary).await?;
 
     // --- 3. The story for THIS flow ----------------------------------------
     // Title = slug; body = a serialised summary (plan_path + scope) so the
@@ -430,7 +430,7 @@ mod tests {
         let epics = repo::list_work_items(pool, Some(&project), Some("epic")).await.unwrap();
         assert_eq!(epics.len(), 1, "exactly one epic");
         let epic = epics[0].id.clone();
-        let features = repo::list_work_items(pool, Some(&epic), Some("feature")).await.unwrap();
+        let features = repo::list_work_items(pool, Some(&epic), Some("focus")).await.unwrap();
         assert_eq!(features.len(), 1, "exactly one feature");
         let feature = features[0].id.clone();
         let stories = repo::list_work_items(pool, Some(&feature), Some("story")).await.unwrap();
@@ -500,7 +500,7 @@ mod tests {
         assert_eq!(files, vec!["sample/Cargo.toml", "sample/src/main.rs"]);
     }
 
-    /// Re-importing the same flow reuses the project/epic/feature scaffold (one
+    /// Re-importing the same flow reuses the project/epic/focus scaffold (one
     /// chain), proving `ensure_scaffold` idempotence. A second import adds a
     /// second story (flows are distinct stories) but does NOT duplicate the
     /// upper three scaffold levels.
@@ -509,11 +509,11 @@ mod tests {
         let pool = connect_in_memory().await.expect("pool");
 
         let first = import_flow(&pool, &fixture_dir()).await.expect("first import");
-        // First import creates project+epic+feature+story = 4 scaffold items.
+        // First import creates project+epic+focus+story = 4 scaffold items.
         assert_eq!(first.scaffold_created, 4);
 
         let second = import_flow(&pool, &fixture_dir()).await.expect("second import");
-        // Second import reuses project/epic/feature, creates only a new story.
+        // Second import reuses project/epic/focus, creates only a new story.
         assert_eq!(second.scaffold_created, 1, "only a new story on re-import");
 
         let projects = repo::list_work_items(&pool, None, Some("project")).await.unwrap();
