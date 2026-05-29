@@ -27,7 +27,7 @@ Round-1 had exactly one forked skill (`research-notes`); round-2 added two (`sto
 - `mcp__lumina__add_finding` — drift findings (`kind: "research-drift"`, typed `Severity::Major` by default; `Severity::Critical` only when the falsified claim invalidates the approach).
 - `mcp__lumina__record_task_activity` — one summary activity entry per skill invocation (§c, `entry_type: "execution"`, `origin: "plan"`).
 
-Within the fork: the `Agent` tool (dispatching `flow-research` for mechanical lookups and `flow-research-deep` for ambiguous claims), `Read`, `Grep`, `WebFetch`, `WebSearch`, `mcp__plugin_context7_context7__query-docs`.
+Within the fork: the `Agent` tool (dispatching `research-lite` for mechanical lookups and `research-deep` for ambiguous claims), `Read`, `Grep`, `WebFetch`, `WebSearch`, `mcp__plugin_context7_context7__query-docs`.
 
 This skill does NOT call `set_story_plan`, `update_work_item`, or any task / acceptance-criterion / open-question tool. The story plan and decision rows are *inputs* here; only research notes, findings, and the one provenance activity row are written.
 
@@ -53,14 +53,14 @@ Build the **decision set**: each answered `open_question` is one decision (the u
 - Version pin: `\b(v?\d+\.\d+(\.\d+)?)\b` near a library mention (proximity ≤ 30 chars).
 - API symbol: `\b(fn|class|struct|interface|enum|trait|impl)\s+\w+` — language-tagged signatures.
 
-**Fallback for sparse decisions**: if the regex extraction yields **< 2 claims** across all decisions combined (i.e. the decision prose is too narrative to mine mechanically), dispatch ONE `flow-research-deep` *extraction* agent to read the decisions + approach text and return a structured list of verifiable claims. This mitigates the R31-related risk of mechanical regex missing semantic claims in prose-heavy approaches.
+**Fallback for sparse decisions**: if the regex extraction yields **< 2 claims** across all decisions combined (i.e. the decision prose is too narrative to mine mechanically), dispatch ONE `research-deep` *extraction* agent to read the decisions + approach text and return a structured list of verifiable claims. This mitigates the R31-related risk of mechanical regex missing semantic claims in prose-heavy approaches.
 
 ### 3. Per-decision verification dispatch
 
 For each extracted claim, choose the dispatch tier by claim shape:
 
-- **Mechanical lookup** → dispatch `flow-research` (Sonnet — fast, cheap). Examples: library version pin (`Context7` query confirms version exists), `file:line` exists check (`Read` that range), single-API-signature confirm.
-- **Ambiguous claim** → dispatch `flow-research-deep` (Opus). Examples: architectural pattern verification, multi-API behavioural confirmation, "is X the idiomatic way" judgement calls.
+- **Mechanical lookup** → dispatch `research-lite` (fetch-and-summarise). Examples: library version pin (`Context7` query confirms version exists), `file:line` exists check (`Read` that range), single-API-signature confirm.
+- **Ambiguous claim** → dispatch `research-deep`. Examples: architectural pattern verification, multi-API behavioural confirmation, "is X the idiomatic way" judgement calls.
 
 Dispatch **PER-CLAIM** (do NOT batch into one mega-prompt — each verification gets a focused mandate with the single claim, its source decision, and the cited research-note id if one matched). Use the `Agent` tool's parallel-`<invoke>` shape. **Cap at 4 concurrent sub-agents per dispatch message per R30** (`docs/plans/lumina-story-planning-round-3.md` line 121 — the `/plan-new` Phase 3 parallel-exploration limit). If the claim count exceeds 4, chunk into successive parallel dispatches of ≤4 each.
 

@@ -409,10 +409,10 @@ For old or unimplemented plans that have fallen behind the codebase. Performs de
 
 **This operation runs in three phases sequentially. Do not skip phases or wait for user input between them.**
 
-**Phase 1: Deep exploration and fresh research** — Launch **three** agents in parallel (Agents 1 + 3: subagent_type: "general-purpose"; Agent 2: subagent_type: "flow-research" — see each agent heading for the explicit declaration):
+**Phase 1: Deep exploration and fresh research** — Launch **three** agents in parallel (Agents 1 + 3: subagent_type: "general-purpose"; Agent 2: subagent_type: "research-lite" — see each agent heading for the explicit declaration):
 
 <!-- Migration note (specialised-flow-agents.md Wave 2 §16):
-     Agent 2 → subagent_type: "flow-research" (Sonnet) — research workload (fetch-and-summarise technology state).
+     Agent 2 → subagent_type: "research-lite" — research workload (fetch-and-summarise technology state).
      Agents 1 + 3 stay on general-purpose — reconcile / synthesis workloads.
      reconcile op (lines ~394) + reformat op (lines ~463) trios stay on general-purpose — out of scope per
      docs/plans/specialised-flow-agents.md audit (workloads too varied per Phase A research). -->
@@ -428,7 +428,7 @@ Thoroughly explore the current state of the codebase in the plan's scope:
 - Check `git log` for the full history of changes in the plan's scope area
 - Return a comprehensive current-state inventory
 
-**Agent 2: Technology and API research** (`subagent_type: "flow-research"` for the default mechanical case; escalate to `subagent_type: "flow-research-deep"` if the plan introduces architectural pattern questions or compares libraries — state the rationale at the top of the prompt as `DISPATCH: flow-research-deep — <reason>`)
+**Agent 2: Technology and API research** (`subagent_type: "research-lite"` for the default mechanical case; escalate to `subagent_type: "research-deep"` if the plan introduces architectural pattern questions or compares libraries — state the rationale at the top of the prompt as `DISPATCH: research-deep — <reason>`)
 Research the current state of every technology, library, and framework version referenced in the plan:
 - Check whether the plan's technical approach is still valid or has been superseded by newer patterns
 - Flag anything in the plan that references deprecated APIs, removed features, or outdated guidance
@@ -437,15 +437,15 @@ Research the current state of every technology, library, and framework version r
 **Agent 3: Content extraction and classification**
 Same as the `reformat` Agent 1 — read every plan document and extract the full classified inventory (tasks, completed items, research notes, deviations, deferrals, verification criteria, dependencies, context).
 
-**Phase 1.5: Vet agent output (orchestrator)** — Before Phase 2 synthesis, the orchestrator (Opus) MUST vet Agent 2's output (the Sonnet `flow-research` tech-research run). The catchup operation is the most expensive op in /plan-update — propagating fabricated tech findings into a rewritten plan corrupts the plan and the user's trust in the catchup.
+**Phase 1.5: Vet agent output (orchestrator)** — Before Phase 2 synthesis, the orchestrator (Opus) MUST vet Agent 2's output (the `research-lite` tech-research run). The catchup operation is the most expensive op in /plan-update — propagating fabricated tech findings into a rewritten plan corrupts the plan and the user's trust in the catchup.
 
-**Scope:** This vet pass applies to Agent 2 (Sonnet `flow-research` tech research) only. Agents 1 + 3 (general-purpose reconcile / synthesis) are vetting-exempt because the orchestrator already cross-references their outputs in Phase 2.
+**Scope:** This vet pass applies to Agent 2 (`research-lite` tech research) only. Agents 1 + 3 (general-purpose reconcile / synthesis) are vetting-exempt because the orchestrator already cross-references their outputs in Phase 2.
 
 **Sample size:** Spot-check at least 3 findings from Agent 2 (or all if fewer).
 
 **Lens-specific verification rules:** Verify every "deprecated" / "removed" / "superseded" claim before sampling: re-query Context7 for the API in question; check the library's official changelog (WebFetch on the changelog URL); confirm the version pin in the project manifest matches Agent 2's claimed version. These are the highest-impact assertions because they drive plan rewrites.
 
-The vet pass follows the universal procedure: triage by source agent + evidence-grade, honour any `ESCALATE-TO-DEEP` flags, drop unverified low-confidence findings, spot-check sampled findings against their cited `file:line` / URLs / version pins (sample size per the **Sample size** rule above), drop-or-downgrade-with-rationale, append a durable `[[vet_events]]` ledger entry per vetted agent, emit the mandatory per-agent console line, and re-dispatch (escalating Sonnet `flow-research` lenses to `flow-research-deep`) on >30% systemic failure.
+The vet pass follows the universal procedure: triage by source agent + evidence-grade, honour any `ESCALATE-TO-DEEP` flags, drop unverified low-confidence findings, spot-check sampled findings against their cited `file:line` / URLs / version pins (sample size per the **Sample size** rule above), drop-or-downgrade-with-rationale, append a durable `[[vet_events]]` ledger entry per vetted agent, emit the mandatory per-agent console line, and re-dispatch (escalating `research-lite` lenses to `research-deep`) on >30% systemic failure.
 
 Invoke the `flow-contract-vet-research` skill to load the universal vet-pass procedure (triage by source+evidence-grade, `ESCALATE-TO-DEEP` honouring, drop-low-confidence rule, spot-check sampling, drop/downgrade-with-rationale, the canonical `[[vet_events]]` append heredoc, the mandatory `vet: Agent-{n} (<lens>) — N sampled, M dropped, K downgraded` console line, and the >30% systemic-failure re-dispatch rule).
 

@@ -131,7 +131,7 @@ Fields:
 
 #### Vet event log
 
-When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-flow-research procedure (see the `flow-contract-vet-research` skill), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root:
+When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-research procedure (see the `flow-contract-vet-research` skill), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root:
 
 ```toml
 [[vet_events]]
@@ -149,7 +149,7 @@ rationale = "R47 cited file:line that does not exist on disk"
 Fields:
 - `timestamp` — ISO 8601 date-time (seconds precision).
 - `command` — one of `"review"`, `"optimise"`, `"review-plan"`, `"plan-new"`, `"plan-update"`, `"test-bootstrap"`.
-- `agent_index` — integer 1..N matching the `Agent-{n}` index in the mandatory console line emitted by step 6 of the `vet-flow-research` block.
+- `agent_index` — integer 1..N matching the `Agent-{n}` index in the mandatory console line emitted by step 6 of the `vet-research` block.
 - `lens` — string. The lens name as printed in the console line (e.g. `"security"`, `"test-runner"`, `"coverage"`).
 - `sampled_count`, `dropped_count`, `downgraded_count` — integers matching the N / M / K values in the console line.
 - `dropped_ids` — array of `R{n}` / `O{n}` ledger IDs that were vetted-out (dropped or downgraded). Empty array when nothing was dropped.

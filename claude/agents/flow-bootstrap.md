@@ -2,7 +2,7 @@
 name: flow-bootstrap
 description: Compose tomlctl flow primitives (resolve + doctor + optional plansDirectory read) into a single JSON envelope for per-command pre-flight. Used by the flow-context shared block in /review, /optimise, /plan-new, /plan-update, /implement, /review-plan, /tdd, /optimise-apply, /review-apply.
 tools: Bash
-model: claude-haiku-4-5
+model: haiku
 color: cyan
 # Envelope contract: see Contract section below; bump on breaking shape changes.
 envelope_version: 1

@@ -316,7 +316,7 @@ compute_tier(effort, complexity, files_touched_count, has_cross_repo):
     else:                             Lite
 ```
 
-Mirrors `/implement`'s deep-vs-lite agent split: cross-file refactors, security-sensitive code, judgement-heavy work go Deep (Opus); mechanical, fully-specified, ≤3-file work goes Lite (Sonnet). The `> 3` ceiling matches the `/optimise-apply` / `/review-apply` 3-file-per-item cap — anything above is cross-file by definition.
+Mirrors `/implement`'s deep-vs-lite agent split: cross-file refactors, security-sensitive code, judgement-heavy work go Deep; mechanical, fully-specified, ≤3-file work goes Lite. The `> 3` ceiling matches the `/optimise-apply` / `/review-apply` 3-file-per-item cap — anything above is cross-file by definition.
 
 The rule is intentionally simple (no weights, no calibration). When real workload data accumulates, retuning happens in one place: `repo::compute_tier` + this §k. Round-3 tests pin every branch (`compute_tier_high_complexity_is_deep`, …); changes to the rule are deliberate.
 

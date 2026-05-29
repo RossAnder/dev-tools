@@ -1397,7 +1397,7 @@ body
         // wave-2 migration (2026-05-20) every command-carried block was
         // externalised to a flow-contract / apply-* skill and deleted from
         // the manifest, leaving exactly one block: `forbidden-working-tree-ops`,
-        // which spans the two flow-implement agent files. Pinning its hash
+        // which spans the two implement agent files. Pinning its hash
         // here keeps the test guarding a real surviving block; a drift surfaces
         // independently with a named hash rather than a confusing "missing"
         // report.
@@ -1553,7 +1553,7 @@ body
         };
 
         // --- 2-file forbidden-working-tree-ops block (the sole surviving
-        //     block after the wave-2 migration; spans the two flow-implement
+        //     block after the wave-2 migration; spans the two implement
         //     agent files) ---
         let report = blocks_verify(
             &forbidden_pair,
@@ -1865,7 +1865,7 @@ body
                     "flow-contract-flow-context",
                     "flow-contract-ledger-schema",
                     "flow-contract-apply-dependency-sort",
-                    "flow-contract-apply-vet-flow-implement-lite",
+                    "flow-contract-apply-vet-implement-lite",
                     "flow-contract-apply-rollback-protocol",
                     "flow-contract-apply-constraints",
                 ],
@@ -1876,7 +1876,7 @@ body
                     "flow-contract-flow-context",
                     "flow-contract-ledger-schema",
                     "flow-contract-apply-dependency-sort",
-                    "flow-contract-apply-vet-flow-implement-lite",
+                    "flow-contract-apply-vet-implement-lite",
                     "flow-contract-apply-rollback-protocol",
                     "flow-contract-apply-constraints",
                 ],

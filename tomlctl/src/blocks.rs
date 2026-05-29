@@ -330,7 +330,7 @@ fn strip_frontmatter(body: &str) -> &str {
 ///   covers both the carrier form ("...embedded verbatim into `review.md`...")
 ///   and the skill form ("...copies remain embedded verbatim in `optimise.md`...")
 ///   which legitimately diverge between standalone-skill and in-carrier context.
-///   Note: lines mentioning `flow-research` / `flow-research-deep` are
+///   Note: lines mentioning `research-lite` / `research-deep` are
 ///   substantive procedure references, NOT contract cross-refs, and are kept
 ///   (pattern (b) requires the literal `` `flow-contract- ``).
 /// - Trims TRAILING whitespace from every surviving line.
@@ -647,14 +647,14 @@ body
         );
     }
 
-    /// A line mentioning `flow-research-deep` (no `` `flow-contract- ``) is a
+    /// A line mentioning `research-deep` (no `` `flow-contract- ``) is a
     /// substantive procedure reference and MUST be retained.
     #[test]
     fn normalise_block_keeps_flow_research_reference() {
-        let body = "re-dispatch that lens to `flow-research-deep` with the reason.\n";
+        let body = "re-dispatch that lens to `research-deep` with the reason.\n";
         assert_eq!(
             normalise_block(body),
-            vec!["re-dispatch that lens to `flow-research-deep` with the reason.".to_string()]
+            vec!["re-dispatch that lens to `research-deep` with the reason.".to_string()]
         );
     }
 

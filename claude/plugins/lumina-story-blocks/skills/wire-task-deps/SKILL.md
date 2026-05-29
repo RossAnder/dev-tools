@@ -102,7 +102,7 @@ Format the rendered schedule one line per batch, plus the agent-budget summary a
 Batch 1 (foundation, 3 tasks): T1 [L/high/deep], T2 [M/low/lite], T3 [S/medium/lite]
 Batch 2 (parallel, 2 tasks):   T4 [M/medium/lite], T5 [M/low/lite]
 Batch 3 (after T4, 1 task):    T6 [L/high/deep]
-Agent budget: 2 deep (Opus) + 4 lite (Sonnet) across 3 batches
+Agent budget: 2 deep + 4 lite across 3 batches
 Apply-flow agent cap: max 4 agents per batch. Largest batch in this schedule: 3 tasks.
 ```
 
@@ -110,7 +110,7 @@ Render rules:
 
 - One line per batch; batch index is 1-based. Phase-label derivation (the parenthetical): `foundation` if every task has `task_kind == "foundation"`; else `parallel` if ≥2 tasks AND none depend on any task in the previous batch; else `after T<dep_id>` if every task shares one common previous-batch prerequisite (most-cited on ties); else `parallel`. The suffix `, <N> tasks` is appended after the label.
 - Per-task annotation `[effort/complexity/tier]` from the dispatch-plan `BatchEntry`: `effort` UPPERCASE (`S`/`M`/`L`) even though wire is lowercase (matches plan-convention casing elsewhere in this plugin); `complexity` wire-form (`low|medium|high`); `tier` wire-form (`lite|deep`). If any axis is `None` (task spec unset), render that slot as `unset` (e.g. `[unset/medium/unset]`).
-- **Agent budget line**: `Agent budget: <D> deep (Opus) + <L> lite (Sonnet) across <K> batches`. `<D>` counts entries with `tier == "deep"` across all batches; `<L>` counts `tier == "lite"`; `<K>` is the batch count. `unset` tiers are NOT counted in either total (and surface via `<U>` in steps 5/6).
+- **Agent budget line**: `Agent budget: <D> deep + <L> lite across <K> batches`. `<D>` counts entries with `tier == "deep"` across all batches; `<L>` counts `tier == "lite"`; `<K>` is the batch count. `unset` tiers are NOT counted in either total (and surface via `<U>` in steps 5/6).
 - **Apply-flow cap-check line**: `Apply-flow agent cap: max 4 agents per batch. Largest batch in this schedule: <N> tasks.` where `<N>` is `max(batch.len())` across all batches.
 - **Cap-overflow WARNING**: for any batch `i` with `>4` tasks, emit immediately after the cap-check: `⚠ batch <i> has <N> tasks — exceeds the 4-agent apply-flow cap. /implement will need to chunk this batch (or split tasks).` One WARNING line per overflowing batch.
 

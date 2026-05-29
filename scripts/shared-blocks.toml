@@ -14,11 +14,11 @@
 #   which emptied and removed every remaining command-block:
 #   flow-context, ledger-schema, execution-record-schema,
 #   apply-dependency-sort, apply-rollback-protocol, apply-constraints,
-#   ledger-disposition-sweep, apply-vet-flow-implement-lite,
-#   vet-flow-research, and plansdirectory-prompt.
+#   ledger-disposition-sweep, apply-vet-implement-lite,
+#   vet-research, and plansdirectory-prompt.
 #
 #   After wave 2 the manifest carries exactly ONE block:
-#   forbidden-working-tree-ops, which spans the two flow-implement agent
+#   forbidden-working-tree-ops, which spans the two implement agent
 #   files (neither is a command carrier, so it was untouched by the
 #   migration). The agent files do not externalise this block to a skill,
 #   so it carries no `skill = "..."` field.
@@ -32,6 +32,6 @@
 [[block]]
 name = "forbidden-working-tree-ops"
 files = [
-  "claude/agents/flow-implement-deep.md",
-  "claude/agents/flow-implement-lite.md",
+  "claude/agents/implement-deep.md",
+  "claude/agents/implement-lite.md",
 ]

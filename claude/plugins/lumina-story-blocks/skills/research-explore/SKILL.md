@@ -10,7 +10,7 @@ agent: general-purpose
 
 # `lumina:research-explore`
 
-Multi-agent parallel research exploration for a story. This skill dispatches N (default 4) `flow-research-deep` sub-agents — one per analytical lens — in a SINGLE Agent-tool message; each agent returns ≥3 findings with verbatim citations and an evidence grade; findings are composed into `add_research_note` rows with `state: "proposed"`. The downstream `/lumina:vet-research` skill triages those proposed notes (sample → spot-check → accept/reject). This is round-3's research-exploration entry point and mirrors `/plan-new` Phase 3's parallel-exploration contract (R30).
+Multi-agent parallel research exploration for a story. This skill dispatches N (default 4) `research-deep` sub-agents — one per analytical lens — in a SINGLE Agent-tool message; each agent returns ≥3 findings with verbatim citations and an evidence grade; findings are composed into `add_research_note` rows with `state: "proposed"`. The downstream `/lumina:vet-research` skill triages those proposed notes (sample → spot-check → accept/reject). This is round-3's research-exploration entry point and mirrors `/plan-new` Phase 3's parallel-exploration contract (R30).
 
 This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape; §d's two-key extension for forked context), §b (5-step check-before-act idempotency, applied per-INVOCATION here — see "5-step idempotency mapping" below), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — `research-explore` is plan-time exploration, NOT a vet skill; only `/lumina:vet-research` carries the `entry_type: "vet"` exception), §d (forked-context rationale — see "§d cardinality note" below), §e (Sentry pattern — skill = instructions, MCP = execution), §h (kind-precondition signpost — this skill is story-only). It ALSO cites the universal vet-pass procedure at [`claude/skills/flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md) for evidence-grade triage that EACH sub-agent runs on its own findings — **do not re-state the contract's procedure inline**.
 
@@ -99,7 +99,7 @@ Render the template once per selected lens, substituting `<lens-name>`, `<siblin
 
 Dispatch ALL lens-agents in ONE Agent-tool message — multiple parallel `<invoke>` blocks in a single tool-call batch. This is verbatim the `/plan-new` Phase 3 contract: per-agent context is the prompt body alone (no shared scratchpad). DO NOT dispatch sequentially or in multiple messages; sequential dispatch defeats the parallelism gain documented in R30 and inflates wall-clock time linearly with lens count.
 
-Each sub-agent is dispatched as `flow-research-deep` (Opus, 1M context, unconstrained per-agent token budget per R35) — the deep variant is correct for the open-ended exploration shape of this skill. Lite (`flow-research`) is reserved for the directed verification pass in `/lumina:research-directed`.
+Each sub-agent is dispatched as `research-deep` (1M context, unconstrained per-agent token budget per R35) — the deep variant is correct for the open-ended exploration shape of this skill. Lite (`research-lite`) is reserved for the directed verification pass in `/lumina:research-directed`.
 
 ### 5. Compose findings into add_research_note calls (per-finding write)
 

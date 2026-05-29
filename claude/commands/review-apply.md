@@ -93,7 +93,7 @@ Implement the review findings produced by `/review`. This command expects a TOML
      - **Bare** (`--file-budget 8` or `--allow-cross-file`): applies to ALL ledger items selected by this invocation.
      - **Scoped** (`--allow-cross-file R4,R19` or `--file-budget 8 R4`): the trailing id list scopes the override to those ids only; other selected items retain the default cap.
 
-     The orchestrator MUST honour the override by emitting one extra header line per affected cluster in the agent prompt, immediately after the existing `DISPATCH:` header: `FILE-BUDGET: <N | unlimited> for <id-list>`. Items without an override are not mentioned in the header and inherit the default 3-file cap from the shared constraints block. The flags do NOT alter the lite-eligibility gate (Step 4); cross-file work continues to route to `flow-implement-deep` regardless.
+     The orchestrator MUST honour the override by emitting one extra header line per affected cluster in the agent prompt, immediately after the existing `DISPATCH:` header: `FILE-BUDGET: <N | unlimited> for <id-list>`. Items without an override are not mentioned in the header and inherit the default 3-file cap from the shared constraints block. The flags do NOT alter the lite-eligibility gate (Step 4); cross-file work continues to route to `implement-deep` regardless.
 4. If $ARGUMENTS is "all", apply every item with `status = "open"` in the ledger, including suggestions.
 5. If $ARGUMENTS is "critical", apply only `status = "open"` items with `severity = "critical"`.
 6. If $ARGUMENTS is "critical,warnings", apply `status = "open"` items with `severity = "critical"` or `severity = "warning"`.
@@ -227,19 +227,19 @@ Before launching each cluster's agent, evaluate the cluster as a whole against A
 3. **No cross-file refactor**: no item requires coordinated edits to call sites, type definitions, or interfaces in files outside the cluster.
 4. **Not security-sensitive**: no item touches auth, crypto, input-validation, sandbox-boundary, or token-storage code.
 
-**Coupling-isolation rule**: if any item in a cluster fails any criterion, the entire cluster goes to `flow-implement-deep`. Trivial items dependency-linked or file-overlapping with complex items ride with the complex items to `-deep` — cluster boundaries are NOT re-drawn for cost savings. Clean cluster isolation outweighs the marginal cost saving from peeling out trivial items.
+**Coupling-isolation rule**: if any item in a cluster fails any criterion, the entire cluster goes to `implement-deep`. Trivial items dependency-linked or file-overlapping with complex items ride with the complex items to `-deep` — cluster boundaries are NOT re-drawn for cost savings. Clean cluster isolation outweighs the marginal cost saving from peeling out trivial items.
 
 Dispatch:
-- Cluster passes ALL criteria → `subagent_type: "flow-implement-lite"` (Sonnet — mechanical, fully-specified work)
-- Cluster fails ANY criterion → `subagent_type: "flow-implement-deep"` (Opus — DEFAULT; cross-file / ambiguous / security-sensitive)
+- Cluster passes ALL criteria → `subagent_type: "implement-lite"` (mechanical, fully-specified work)
+- Cluster fails ANY criterion → `subagent_type: "implement-deep"` (DEFAULT; cross-file / ambiguous / security-sensitive)
 
-Record the lite-vs-deep choice as a one-line `DISPATCH:` header at the top of each agent's prompt with the rationale (e.g. `DISPATCH: flow-implement-lite — cluster passes lite-eligibility (1 file, fully-specified action, no cross-cutting impact, non-security path, no coupled deep items)` or `DISPATCH: flow-implement-deep — coupling-isolation: cluster contains item R5 (severity=critical, category=security) which fails criterion #4`). The header is captured in the execution record for audit.
+Record the lite-vs-deep choice as a one-line `DISPATCH:` header at the top of each agent's prompt with the rationale (e.g. `DISPATCH: implement-lite — cluster passes lite-eligibility (1 file, fully-specified action, no cross-cutting impact, non-security path, no coupled deep items)` or `DISPATCH: implement-deep — coupling-isolation: cluster contains item R5 (severity=critical, category=security) which fails criterion #4`). The header is captured in the execution record for audit.
 
 When the `--file-budget <N>` / `--allow-cross-file` override (per Step 1.3 selector semantics) names any item in the cluster, emit a second one-line header immediately after `DISPATCH:`: `FILE-BUDGET: <N | unlimited> for <comma-sep id-list>`. The header lifts the shared-block 3-file cap for ONLY the listed ids; items not in the list inherit the default cap. Omit the header entirely when no item in the cluster has an override.
 
-**Pre-dispatch summary** (orchestrator console output, before any Agent tool call): emit one line per cluster naming the cluster's items, the four eligibility-criteria results (pass/fail), and the dispatch verdict: `dispatch plan: cluster <files> (R{n}, R{m}) — criterion 1 (≤2 files): pass; criterion 2 (fully-specified): pass; criterion 3 (no cross-file refactor): pass; criterion 4 (not security-sensitive): pass → flow-implement-lite`. This makes the gate auditable from console output alone — no need to read agent prompts to reconstruct routing decisions.
+**Pre-dispatch summary** (orchestrator console output, before any Agent tool call): emit one line per cluster naming the cluster's items, the four eligibility-criteria results (pass/fail), and the dispatch verdict: `dispatch plan: cluster <files> (R{n}, R{m}) — criterion 1 (≤2 files): pass; criterion 2 (fully-specified): pass; criterion 3 (no cross-file refactor): pass; criterion 4 (not security-sensitive): pass → implement-lite`. This makes the gate auditable from console output alone — no need to read agent prompts to reconstruct routing decisions.
 
-Launch implementation agents in parallel using the Agent tool with the chosen subagent_type, one per file cluster. Each agent receives only the findings relevant to its cluster. The `flow-implement-lite` and `flow-implement-deep` agents both absorb the applied/skipped tag form, Tier-2 already-applied protocol, no-overlapping-edits rule, and plan-deviation reporting protocol in their system prompts; the per-call instructions below restate review-specific clarifications (id prefix `R`, `verified-clean` vocabulary, partial-apply form).
+Launch implementation agents in parallel using the Agent tool with the chosen subagent_type, one per file cluster. Each agent receives only the findings relevant to its cluster. The `implement-lite` and `implement-deep` agents both absorb the applied/skipped tag form, Tier-2 already-applied protocol, no-overlapping-edits rule, and plan-deviation reporting protocol in their system prompts; the per-call instructions below restate review-specific clarifications (id prefix `R`, `verified-clean` vocabulary, partial-apply form).
 
 **File cluster grouping is the primary strategy for avoiding conflicts.** Ensure no two agents edit the same file. If findings cannot be cleanly separated into non-overlapping file clusters (e.g., multiple findings targeting the same file from different angles), **sequence those agents rather than parallelize them**. Only use `isolation: "worktree"` as a last resort when overlapping file edits are truly unavoidable — worktree merges are time-consuming and risk losing work.
 
@@ -274,11 +274,11 @@ Every agent MUST:
 - Add a brief inline comment only when the fix would be non-obvious to a reader
 - If a finding cannot be safely applied (would break behaviour, has unclear semantics, or the research doesn't hold up on closer inspection), **skip it** and report why
 
-## Step 4.5: Vet `flow-implement-lite` apply tags (orchestrator)
+## Step 4.5: Vet `implement-lite` apply tags (orchestrator)
 
-After cluster agents return but BEFORE the interim checkpoint, the orchestrator (Opus) MUST vet `applied` tags from `flow-implement-lite` clusters — the Step 5a build/test verification catches compile/regression failures but not the subtle correctness, anti-pattern, style, or `[vet-recommended]`-flagged residual-uncertainty cases this pass exists to catch.
+After cluster agents return but BEFORE the interim checkpoint, the orchestrator (Opus) MUST vet `applied` tags from `implement-lite` clusters — the Step 5a build/test verification catches compile/regression failures but not the subtle correctness, anti-pattern, style, or `[vet-recommended]`-flagged residual-uncertainty cases this pass exists to catch.
 
-Invoke the `flow-contract-apply-vet-flow-implement-lite` skill to load the lite-vet contract (the per-cluster procedure: inspect every `[vet-recommended]` tag, spot-sample ≥ 1 bare `applied` per cluster, expand-to-100%-and-re-dispatch-to-deep on sample failure, skip deep-cluster output, and the mandatory per-cluster `vet:` console line).
+Invoke the `flow-contract-apply-vet-implement-lite` skill to load the lite-vet contract (the per-cluster procedure: inspect every `[vet-recommended]` tag, spot-sample ≥ 1 bare `applied` per cluster, expand-to-100%-and-re-dispatch-to-deep on sample failure, skip deep-cluster output, and the mandatory per-cluster `vet:` console line).
 
 ## Interim checkpoint
 
@@ -307,7 +307,7 @@ Launch the `verification` agent **once** (`subagent_type: "verification"`, pinne
 
 ### Step 5b: Failure handling
 
-If Step 5a's verification reports `outcome: fail`, **reason thoroughly to diagnose** in the main conversation. Read the affected file(s) using the agent-supplied tail for context, determine root cause, then fix directly or launch a targeted fix agent (`flow-implement-deep` for non-trivial fixes, `flow-implement-lite` if the fix is mechanical and the lite-eligibility gate would pass). Re-run Step 5a verification after each fix attempt.
+If Step 5a's verification reports `outcome: fail`, **reason thoroughly to diagnose** in the main conversation. Read the affected file(s) using the agent-supplied tail for context, determine root cause, then fix directly or launch a targeted fix agent (`implement-deep` for non-trivial fixes, `implement-lite` if the fix is mechanical and the lite-eligibility gate would pass). Re-run Step 5a verification after each fix attempt.
 
 ### Category-specific verification
 

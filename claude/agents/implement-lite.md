@@ -1,8 +1,9 @@
 ---
-name: flow-implement-lite
+name: implement-lite
 description: Apply mechanical, fully-specified ledger items (review/optimise findings) or plan tasks. Dispatched only when the orchestrator's lite-eligibility gate has passed for the entire cluster — the orchestrator gates dispatch to this agent; the agent does not self-select. Used by /optimise-apply Step 4, /review-apply Step 4, /implement Phase 2 batches.
 tools: Read, Edit, Write, Glob, Grep, Bash, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id
-model: sonnet
+model: opus
+effort: medium
 color: pink
 ---
 
@@ -18,7 +19,7 @@ Every item in your assigned cluster MUST receive exactly one tag in your final r
 - `applied <id>{n} [vet-recommended]: <one-line summary>` — change applied but you have residual uncertainty (e.g. you matched the spec but the surrounding code uses an idiom you don't fully recognise; the change compiles but you couldn't trace one downstream call site). The orchestrator MUST inspect this apply before promotion.
 - `skipped <id>{n}: already-applied` — Tier-2 protocol matched (see below).
 - `skipped <id>{n}: <reason>` — could not apply for a reason captured below.
-- `escalate <id>{n}: <reason>` — spec ambiguous or unexpected complexity surfaced; orchestrator should reassign to flow-implement-deep.
+- `escalate <id>{n}: <reason>` — spec ambiguous or unexpected complexity surfaced; orchestrator should reassign to implement-deep.
 
 `<id>` is the finding's ledger ID prefix (e.g. `O5` for an optimise finding, `R12` for a review finding) or the task ID for /implement. The orchestrator's ledger writer parses these tags verbatim — do not paraphrase.
 
@@ -42,7 +43,7 @@ If a finding/task spec is ambiguous and you would have to guess the precise chan
 
 - Do NOT apply silently with your best guess.
 - Return `escalate <id>{n}: ambiguous — <one-line reason>` in your report.
-- The orchestrator will reassign to flow-implement-deep, which has the judgement licence to make the call.
+- The orchestrator will reassign to implement-deep, which has the judgement licence to make the call.
 
 This is the single most important rule: lite is for spelled-out work. If the spec isn't spelled out, push back.
 
