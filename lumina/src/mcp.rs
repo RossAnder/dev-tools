@@ -153,7 +153,7 @@ pub struct ListWorkItemsParams {
     /// matching the other filters), NOT roots-only.
     #[serde(default)]
     pub parent_id: Option<String>,
-    /// Optional kind filter; one of `project`/`epic`/`feature`/`story`/`task`.
+    /// Optional kind filter; one of `project`/`epic`/`focus`/`story`/`task`.
     #[serde(default)]
     pub kind: Option<Kind>,
     /// Optional status filter; applied in-process to the listed rows.

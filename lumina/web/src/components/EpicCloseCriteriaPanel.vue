@@ -95,8 +95,8 @@ async function handleRemove(ac: AcceptanceCriterion): Promise<void> {
           @click="handleToggle(ac)"
         ></button>
         <span
-          class="flex-1"
-          :class="ac.checked ? 'text-[var(--ink-2)] line-through' : 'text-[var(--ink-2)]'"
+          class="flex-1 text-[var(--ink-2)]"
+          :class="{ 'line-through': ac.checked }"
         >
           {{ ac.text }}
         </span>

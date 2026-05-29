@@ -1,6 +1,6 @@
 ---
 name: mcp
-description: Use the lumina MCP tools to manage a flow-tracking work-item hierarchy (project → epic → feature → story → task) in lumina's SQLite-canonical store. Reach for these when defining or enriching the hierarchy, attaching a story's "plan" (problem statement / research notes / execution strategy), specifying tasks, recording execution/vet/comment activity onto a task record, raising and resolving findings, or querying a tree / sprint view. Also reach for them to plan and decide: grading tasks by effort (s/m/l) and complexity (low/medium/high), setting an item's relevance (active/backlog/deferred/rejected), managing acceptance criteria under a story's closure gate, recording research notes with a confidence grade and proposed→accepted/rejected lifecycle, and resolving open questions via option→branch resolution. Tools surface as `mcp__lumina__<tool>` once the running lumina server is added as an HTTP MCP server. NOTE: lumina is the data layer of a phased harness reshape — it does NOT yet replace the tomlctl flow-state skill or any flow command.
+description: Use the lumina MCP tools to manage a flow-tracking work-item hierarchy (project → epic → focus → story → task) in lumina's SQLite-canonical store. Reach for these when defining or enriching the hierarchy, attaching a story's "plan" (problem statement / research notes / execution strategy), specifying tasks, recording execution/vet/comment activity onto a task record, raising and resolving findings, or querying a tree / sprint view. Also reach for them to plan and decide: grading tasks by effort (s/m/l) and complexity (low/medium/high), setting an item's relevance (active/backlog/deferred/rejected), managing acceptance criteria under a story's closure gate, recording research notes with a confidence grade and proposed→accepted/rejected lifecycle, and resolving open questions via option→branch resolution. Tools surface as `mcp__lumina__<tool>` once the running lumina server is added as an HTTP MCP server. NOTE: lumina is the data layer of a phased harness reshape — it does NOT yet replace the tomlctl flow-state skill or any flow command.
 arguments: []
 ---
 
@@ -11,7 +11,7 @@ Streamable-HTTP at `/mcp`), an axum JSON API, and a Vue SPA, with a git-export a
 trail. Its domain is a strict work-item hierarchy:
 
 ```
-project → epic → feature → story → task
+project → epic → focus → story → task
 ```
 
 A **story** carries the "plan" — a problem statement, research notes, and a high-level
@@ -23,7 +23,7 @@ referenced side objects). Findings attach to any work item.
 
 Reach for the lumina MCP tools when you are:
 
-- Building or enriching the `epic → feature → story → task` hierarchy.
+- Building or enriching the `epic → focus → story → task` hierarchy.
 - Attaching a story's plan (problem statement / research notes / execution strategy).
 - Specifying a task (execution detail / files touched / outcome / dispatch tier (Tier::{Lite, Deep})).
 - Recording execution, vet, or comment activity onto a task record.
@@ -124,7 +124,7 @@ These set the composer-facing grading axes and drive the decision lifecycle. `re
 
 | Tool | When to use |
 |------|-------------|
-| `set_relevance` | Set an epic/feature/story's `relevance` (`active` / `backlog` / `deferred` / `rejected`). Rejected on task/project. |
+| `set_relevance` | Set an epic/focus/story's `relevance` (`active` / `backlog` / `deferred` / `rejected`). Rejected on task/project. |
 | `set_effort` | Set a task's `effort` grade (`s` / `m` / `l` — drives batch sizing). |
 | `set_complexity` | Set a task's `complexity` grade (`low` / `medium` / `high` — drives model-tier assignment). |
 | `set_closure_gate` | Set a story's OR an epic's `closure_gate` (`hard` / `soft`) — migration 0010 widened it beyond story-only. For a story when `hard`, each child task's →done transition is rejected while THAT task still has any unchecked acceptance criterion (the gate is the parent story's, applied per-task); `soft` allows the transition but flags the unchecked count. For an epic when `hard`, it gates the epic's close against any unchecked close-criterion (see CONVENTIONS.md §m). |
@@ -216,13 +216,14 @@ Fine-grained prerequisite edges between task siblings of a story. Both endpoints
 The top-down build flow:
 
 1. **Create the hierarchy** with `create_work_item`, top-down so each child has a legal
-   parent: a `project`, then an `epic` under it, then a `feature`, then a `story`, then
+   parent: a `project`, then an `epic` under it, then a `focus`, then a `story`, then
    `task`s under the story.
    ```
    create_work_item { kind: "project", title: "…" }            → { id: <project> }
-   create_work_item { kind: "epic",    parent_id: <project>, title: "…" }   → { id: <epic> }
-   create_work_item { kind: "feature", parent_id: <epic>,    title: "…" }   → { id: <feature> }
-   create_work_item { kind: "story",   parent_id: <feature>, title: "…" }   → { id: <story> }
+   create_work_item { kind: "epic",    parent_id: <project>, title: "…", outcome: "…" }   → { id: <epic> }
+   add_acceptance_criterion { work_item_id: <epic>, text: "…" }   # required: a story cannot be created until its ancestor epic has ≥1 close-criterion
+   create_work_item { kind: "focus",   parent_id: <epic>,    title: "…", shape: "vertical-slice" }   → { id: <focus> }
+   create_work_item { kind: "story",   parent_id: <focus>,   title: "…" }   → { id: <story> }
    create_work_item { kind: "task",    parent_id: <story>,   title: "…" }   → { id: <task> }
    ```
 

@@ -26,8 +26,8 @@
 -- shape-mandatory-for-focus rule is enforced in the repo create/update path, not
 -- by this column.
 
-DROP TRIGGER trg_work_items_hierarchy_insert;
-DROP TRIGGER trg_work_items_hierarchy_update;
+DROP TRIGGER IF EXISTS trg_work_items_hierarchy_insert;
+DROP TRIGGER IF EXISTS trg_work_items_hierarchy_update;
 
 CREATE TRIGGER trg_work_items_hierarchy_insert
 BEFORE INSERT ON work_items

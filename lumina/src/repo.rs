@@ -1281,6 +1281,10 @@ pub async fn set_epic_plan(
     if let Some(v) = context {
         patch.insert("context".into(), serde_json::Value::String(v.to_string()));
     }
+    // no fields supplied — skip the no-op write + spurious event
+    if patch.is_empty() {
+        return Ok(());
+    }
     set_work_item_attributes(pool, id, &serde_json::Value::Object(patch)).await
 }
 
@@ -1300,6 +1304,10 @@ pub async fn set_focus_plan(
     let mut patch = serde_json::Map::new();
     if let Some(v) = framing {
         patch.insert("framing".into(), serde_json::Value::String(v.to_string()));
+    }
+    // no fields supplied — skip the no-op write + spurious event
+    if patch.is_empty() {
+        return Ok(());
     }
     set_work_item_attributes(pool, id, &serde_json::Value::Object(patch)).await
 }

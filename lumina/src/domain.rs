@@ -15,7 +15,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// A row of `work_items`. The 5-level hierarchy (`project > epic > feature >
+/// A row of `work_items`. The 5-level hierarchy (`project > epic > focus >
 /// story > task`) is an adjacency list via `parent_id`.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkItem {
