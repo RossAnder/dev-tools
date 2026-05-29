@@ -395,7 +395,7 @@ mod tests {
         serde_json::from_slice(&bytes).expect("parse json body")
     }
 
-    /// Seed project→epic→feature→story→task and return the story id and task id.
+    /// Seed project→epic→focus→story→task and return the story id and task id.
     async fn seed_chain(pool: &sqlx::SqlitePool) -> (String, String) {
         let (_project, story, task) = seed_chain_with_project(pool).await;
         (story, task)
@@ -413,7 +413,8 @@ mod tests {
         // migration-0010 valid chain: epic needs an outcome, focus needs a shape,
         // and a story requires the epic to carry >=1 close-criterion first.
         let epic = repo::create_work_item_full(
-            pool, "epic", Some(&project.to_string()), "E", None, None, Some("the epic outcome"), None,
+            pool, "epic", Some(&project.to_string()), "E", None,
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
         )
         .await
         .expect("epic");
@@ -421,7 +422,8 @@ mod tests {
             .await
             .expect("epic close criterion");
         let focus = repo::create_work_item_full(
-            pool, "focus", Some(&epic.to_string()), "FO", None, None, None, Some("vertical-slice"),
+            pool, "focus", Some(&epic.to_string()), "FO", None,
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
         )
         .await
         .expect("focus");

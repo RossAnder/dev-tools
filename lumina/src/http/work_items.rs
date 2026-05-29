@@ -170,9 +170,11 @@ async fn create_work_item(
         req.parent_id.as_deref(),
         &req.title,
         req.body.as_deref(),
-        req.origin.as_deref(),
-        req.outcome.as_deref(),
-        req.shape.as_deref(),
+        repo::CreateOpts {
+            origin: req.origin.as_deref(),
+            outcome: req.outcome.as_deref(),
+            shape: req.shape.as_deref(),
+        },
     )
     .await?;
 
@@ -239,7 +241,7 @@ mod tests {
         serde_json::from_slice(&bytes).expect("parse json body")
     }
 
-    /// Seed project→epic→feature→story→task and return the story id and task id.
+    /// Seed project→epic→focus→story→task and return the story id and task id.
     async fn seed_chain(pool: &sqlx::SqlitePool) -> (String, String) {
         let project = repo::create_work_item(pool, "project", None, "P", None)
             .await
@@ -247,7 +249,8 @@ mod tests {
         // migration-0010 valid chain: epic needs an outcome, focus needs a shape,
         // and a story requires the epic to carry >=1 close-criterion first.
         let epic = repo::create_work_item_full(
-            pool, "epic", Some(&project.to_string()), "E", None, None, Some("the epic outcome"), None,
+            pool, "epic", Some(&project.to_string()), "E", None,
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
         )
         .await
         .expect("epic");
@@ -255,7 +258,8 @@ mod tests {
             .await
             .expect("epic close criterion");
         let focus = repo::create_work_item_full(
-            pool, "focus", Some(&epic.to_string()), "FO", None, None, None, Some("vertical-slice"),
+            pool, "focus", Some(&epic.to_string()), "FO", None,
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
         )
         .await
         .expect("focus");
@@ -293,13 +297,13 @@ mod tests {
         let project = &roots[0];
         assert_eq!(project["kind"], "project");
 
-        // Descend project → epic → feature → story → task; the flattened item
+        // Descend project → epic → focus → story → task; the flattened item
         // fields sit alongside the recursive `children` array.
         let epic = &project["children"][0];
         assert_eq!(epic["kind"], "epic");
-        let feature = &epic["children"][0];
-        assert_eq!(feature["kind"], "focus");
-        let story = &feature["children"][0];
+        let focus = &epic["children"][0];
+        assert_eq!(focus["kind"], "focus");
+        let story = &focus["children"][0];
         assert_eq!(story["kind"], "story");
         let leaf = &story["children"][0];
         assert_eq!(leaf["kind"], "task");

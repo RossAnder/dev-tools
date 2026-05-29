@@ -45,7 +45,7 @@ use crate::repo::{self, NewFinding};
 /// Counts returned by [`import_flow`] for the CLI summary line and the test.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ImportSummary {
-    /// Work-items created by the default `project → epic → feature → story`
+    /// Work-items created by the default `project → epic → focus → story`
     /// scaffold (0 for each level already present, so a second import reuses
     /// the chain). Always counts the per-flow `story`.
     pub scaffold_created: u32,
@@ -225,8 +225,19 @@ async fn ensure_scaffold(
     }
     // migration 0010: the create-time gates require an epic to carry an outcome
     // and a focus to carry a shape, so the scaffold supplies them here.
-    let id = repo::create_work_item_full(pool, kind, parent_id, title, None, None, outcome, shape)
-        .await
+    let id = repo::create_work_item_full(
+        pool,
+        kind,
+        parent_id,
+        title,
+        None,
+        repo::CreateOpts {
+            origin: None,
+            outcome,
+            shape,
+        },
+    )
+    .await
         .with_context(|| format!("creating scaffold {kind} '{title}'"))?;
     summary.scaffold_created += 1;
     Ok(id.to_string())
@@ -260,7 +271,7 @@ pub async fn import_flow(pool: &SqlitePool, flow_dir: &Path) -> anyhow::Result<I
         &mut summary,
     )
     .await?;
-    let feature_id = ensure_scaffold(
+    let focus_id = ensure_scaffold(
         pool,
         "focus",
         Some(&epic_id),
@@ -299,7 +310,7 @@ pub async fn import_flow(pool: &SqlitePool, flow_dir: &Path) -> anyhow::Result<I
     let story_id = repo::create_work_item(
         pool,
         "story",
-        Some(&feature_id),
+        Some(&focus_id),
         &ctx.slug,
         Some(&story_body),
     )
@@ -469,13 +480,13 @@ mod tests {
         let epics = repo::list_work_items(pool, Some(&project), Some("epic")).await.unwrap();
         assert_eq!(epics.len(), 1, "exactly one epic");
         let epic = epics[0].id.clone();
-        let features = repo::list_work_items(pool, Some(&epic), Some("focus")).await.unwrap();
-        assert_eq!(features.len(), 1, "exactly one feature");
-        let feature = features[0].id.clone();
-        let stories = repo::list_work_items(pool, Some(&feature), Some("story")).await.unwrap();
+        let focuses = repo::list_work_items(pool, Some(&epic), Some("focus")).await.unwrap();
+        assert_eq!(focuses.len(), 1, "exactly one focus");
+        let focus = focuses[0].id.clone();
+        let stories = repo::list_work_items(pool, Some(&focus), Some("story")).await.unwrap();
         assert_eq!(stories.len(), 1, "exactly one story");
         let story = stories[0].id.clone();
-        (project, epic, feature, story)
+        (project, epic, focus, story)
     }
 
     /// Full acceptance: import the committed fixture and assert (a) the 5-level
@@ -489,7 +500,7 @@ mod tests {
             .await
             .expect("import succeeds");
 
-        // (a) 5-level chain project→epic→feature→story exists and is unique.
+        // (a) 5-level chain project→epic→focus→story exists and is unique.
         let (_p, _e, _f, story) = resolve_chain(&pool).await;
 
         // (b) The fixture has 2 task-completion items + 1 deviation + 1

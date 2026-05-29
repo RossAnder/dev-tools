@@ -2302,3 +2302,187 @@ async fn get_task_dispatch_plan_returns_batches_with_tier() {
     assert_eq!(c["complexity"].as_str(), Some("high"));
     let _ = tools;
 }
+
+// =====================================================================
+// Migration-0010 epic/focus-semantics coverage (R8 review follow-up).
+//
+// The three migration-0010 setters — `set_shape` (emits
+// `work_item.shape_set`), `set_epic_plan` and `set_focus_plan` (both emit
+// `work_item.updated` via `set_work_item_attributes`) — had NO e2e/
+// integration coverage, leaving the single-mutation-path invariant (one
+// domain write ⇒ exactly +1 events row, drained to the git-export
+// snapshot) unverified for these paths. The matching MCP `#[tool]` methods
+// (`set_shape`/`set_epic_plan`/`set_focus_plan`) are crate-private, so —
+// exactly like the planning/decisions and round-2 threads above — the
+// writes go through the PUBLIC `repo::*` single-mutation-path fns the MCP
+// tools wrap 1:1.
+//
+// Each setter is followed by an isolated drain (baseline drained first) so
+// the per-call event count is exact: `export_pending` returns the number
+// of events it stamped in that pass, and a baseline drain immediately
+// before each mutation guarantees the next drain sees ONLY that
+// mutation's event. This mirrors the per-call `assert_eq!(drained, 1, …)`
+// discipline already used by
+// `export_trail_picks_up_subtable_mutations_via_work_item_aggregate`.
+// =====================================================================
+
+/// R8: each migration-0010 setter (`set_shape`, `set_epic_plan`,
+/// `set_focus_plan`) emits EXACTLY one event of the expected kind that
+/// drains to the git-export snapshot — proving the single-mutation-path
+/// invariant holds for the epic/focus-semantics write surface, threaded
+/// DB → events outbox → git-export, sleep-free and socket-free.
+#[tokio::test]
+async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
+    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let tools = LuminaTools::new(pool.clone());
+
+    // Build a chain down to a focus: `mcp_create` supplies the mandatory
+    // epic `outcome` + focus `shape` and seeds the epic close-criterion.
+    let project = mcp_create(&tools, "project", None, "Epic-Focus Setters Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "Epic-Focus Setters Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Epic-Focus Setters Focus").await;
+
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+
+    // Baseline drain — flush all the create/criterion events so each setter's
+    // event count is measured in isolation below.
+    lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("baseline drain");
+
+    // ---- (a) set_shape on the focus → exactly one `work_item.shape_set` ----
+    // `mcp_create` created the focus with shape=vertical-slice; revise it to a
+    // DIFFERENT value so the column write is observably distinct.
+    lumina::repo::set_shape(pool.as_ref(), &focus, lumina::domain::Shape::Foundational)
+        .await
+        .expect("set focus shape=foundational");
+
+    // The mutation stamped exactly one event of kind `work_item.shape_set`
+    // against the focus aggregate (counted before the drain so the
+    // event-kind assertion is independent of the drain count).
+    let shape_event_kind: String = sqlx::query_scalar(
+        "SELECT event_type FROM events WHERE aggregate_id = ? AND exported_at IS NULL",
+    )
+    .bind(&focus)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("exactly one unexported event on the focus after set_shape");
+    assert_eq!(
+        shape_event_kind, "work_item.shape_set",
+        "set_shape emits a work_item.shape_set event"
+    );
+    let shape_unexported: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events WHERE aggregate_id = ? AND exported_at IS NULL",
+    )
+    .bind(&focus)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("count unexported focus events after set_shape");
+    assert_eq!(
+        shape_unexported, 1,
+        "set_shape emitted exactly one (single-mutation-path) event"
+    );
+
+    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("drain after set_shape");
+    assert_eq!(
+        drained, 1,
+        "set_shape's single event drained to the git-export snapshot"
+    );
+    // The drained event re-rendered the focus snapshot with the new shape.
+    let focus_snapshot = export_dir.path().join("focus").join(format!("{focus}.toml"));
+    let focus_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&focus_snapshot).expect("read focus snapshot"))
+            .expect("parse focus snapshot TOML");
+    assert_eq!(
+        focus_toml["item"]["shape"].as_str(),
+        Some("foundational"),
+        "the revised shape round-trips into the focus snapshot"
+    );
+
+    // ---- (b) set_epic_plan on the epic → exactly one `work_item.updated` ----
+    lumina::repo::set_epic_plan(
+        pool.as_ref(),
+        &epic,
+        Some("the revised epic outcome"),
+        Some("the epic context"),
+    )
+    .await
+    .expect("set epic plan");
+
+    let epic_event_kind: String = sqlx::query_scalar(
+        "SELECT event_type FROM events WHERE aggregate_id = ? AND exported_at IS NULL",
+    )
+    .bind(&epic)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("exactly one unexported event on the epic after set_epic_plan");
+    assert_eq!(
+        epic_event_kind, "work_item.updated",
+        "set_epic_plan emits a work_item.updated event (via set_work_item_attributes)"
+    );
+
+    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("drain after set_epic_plan");
+    assert_eq!(
+        drained, 1,
+        "set_epic_plan's single event drained to the git-export snapshot"
+    );
+    let epic_snapshot = export_dir.path().join("epic").join(format!("{epic}.toml"));
+    let epic_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&epic_snapshot).expect("read epic snapshot"))
+            .expect("parse epic snapshot TOML");
+    assert_eq!(
+        epic_toml["item"]["attributes"]["outcome"].as_str(),
+        Some("the revised epic outcome"),
+        "the revised outcome round-trips into the epic snapshot via the JSON-merge"
+    );
+    assert_eq!(
+        epic_toml["item"]["attributes"]["context"].as_str(),
+        Some("the epic context"),
+        "the merged context key round-trips into the epic snapshot"
+    );
+
+    // ---- (c) set_focus_plan on the focus → exactly one `work_item.updated` ----
+    lumina::repo::set_focus_plan(pool.as_ref(), &focus, Some("the focus framing"))
+        .await
+        .expect("set focus plan");
+
+    let focus_plan_event_kind: String = sqlx::query_scalar(
+        "SELECT event_type FROM events WHERE aggregate_id = ? AND exported_at IS NULL",
+    )
+    .bind(&focus)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("exactly one unexported event on the focus after set_focus_plan");
+    assert_eq!(
+        focus_plan_event_kind, "work_item.updated",
+        "set_focus_plan emits a work_item.updated event (via set_work_item_attributes)"
+    );
+
+    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+        .await
+        .expect("drain after set_focus_plan");
+    assert_eq!(
+        drained, 1,
+        "set_focus_plan's single event drained to the git-export snapshot"
+    );
+    let focus_toml: toml::Value = toml::from_str(
+        &std::fs::read_to_string(&focus_snapshot).expect("read focus snapshot after focus_plan"),
+    )
+    .expect("parse focus snapshot TOML after focus_plan");
+    assert_eq!(
+        focus_toml["item"]["attributes"]["framing"].as_str(),
+        Some("the focus framing"),
+        "the framing round-trips into the focus snapshot via the JSON-merge"
+    );
+    // The earlier shape write is preserved across the framing merge (sibling
+    // column untouched by an attributes-only mutation).
+    assert_eq!(
+        focus_toml["item"]["shape"].as_str(),
+        Some("foundational"),
+        "set_focus_plan did not clobber the previously-set shape column"
+    );
+}

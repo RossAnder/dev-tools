@@ -102,15 +102,24 @@ mod tests {
         parent_id: Option<&str>,
         title: &str,
     ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+        // migration-0010: a `focus` row must carry a shape (enforced by the
+        // focus-shape DB trigger), so seed a representative shape for focus
+        // rows; other kinds leave `shape` NULL (allowed).
+        let shape: Option<&str> = if kind == "focus" {
+            Some("vertical-slice")
+        } else {
+            None
+        };
         sqlx::query(
-            "INSERT INTO work_items (id, kind, parent_id, title, status) \
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO work_items (id, kind, parent_id, title, status, shape) \
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(id)
         .bind(kind)
         .bind(parent_id)
         .bind(title)
         .bind("open")
+        .bind(shape)
         .execute(pool)
         .await
     }

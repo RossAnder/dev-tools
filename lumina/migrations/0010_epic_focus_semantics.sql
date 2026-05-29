@@ -71,3 +71,32 @@ END;
 
 ALTER TABLE work_items ADD COLUMN shape TEXT
   CHECK (shape IS NULL OR shape IN ('vertical-slice', 'cross-cutting', 'foundational'));
+
+-- ## focus-must-have-shape guard
+-- The `shape` column is nullable (ADD COLUMN cannot be NOT NULL without a
+-- default), and its CHECK deliberately permits NULL for ALL kinds. The rule
+-- that a `focus` MUST carry a shape lived only in the repo create/update path;
+-- these triggers move that invariant to the DB layer so a focus row with NULL
+-- shape is impossible regardless of the writer. They mirror the hierarchy-guard
+-- triggers' SELECT CASE … RAISE(ABORT, …) style and are created AFTER the shape
+-- column ADD (the trigger bodies reference NEW.shape). The INSERT/UPDATE pair is
+-- inlined verbatim so the byte-identical guard cannot drift.
+CREATE TRIGGER trg_work_items_focus_shape_insert
+BEFORE INSERT ON work_items
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN NEW.kind = 'focus' AND NEW.shape IS NULL
+            THEN RAISE(ABORT, 'illegal work_item: focus must have a shape')
+    END;
+END;
+
+CREATE TRIGGER trg_work_items_focus_shape_update
+BEFORE UPDATE ON work_items
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN NEW.kind = 'focus' AND NEW.shape IS NULL
+            THEN RAISE(ABORT, 'illegal work_item: focus must have a shape')
+    END;
+END;

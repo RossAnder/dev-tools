@@ -511,7 +511,8 @@ mod tests {
             .to_string();
         // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
         let epic = repo::create_work_item_full(
-            &pool, "epic", Some(&project), "E", None, None, Some("the epic outcome"), None,
+            &pool, "epic", Some(&project), "E", None,
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
         )
         .await
         .unwrap()
@@ -519,13 +520,14 @@ mod tests {
         repo::add_acceptance_criterion(&pool, &epic, "epic close criterion")
             .await
             .unwrap();
-        let feature = repo::create_work_item_full(
-            &pool, "focus", Some(&epic), "FO", None, None, None, Some("vertical-slice"),
+        let focus = repo::create_work_item_full(
+            &pool, "focus", Some(&epic), "FO", None,
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
         )
         .await
         .unwrap()
         .to_string();
-        let story = repo::create_work_item(&pool, "story", Some(&feature), "S", None)
+        let story = repo::create_work_item(&pool, "story", Some(&focus), "S", None)
             .await
             .unwrap()
             .to_string();
@@ -570,7 +572,8 @@ mod tests {
             .to_string();
         // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
         let epic = repo::create_work_item_full(
-            &pool, "epic", Some(&project), "E", None, None, Some("the epic outcome"), None,
+            &pool, "epic", Some(&project), "E", None,
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
         )
         .await
         .unwrap()
@@ -578,13 +581,14 @@ mod tests {
         repo::add_acceptance_criterion(&pool, &epic, "epic close criterion")
             .await
             .unwrap();
-        let feature = repo::create_work_item_full(
-            &pool, "focus", Some(&epic), "FO", None, None, None, Some("vertical-slice"),
+        let focus = repo::create_work_item_full(
+            &pool, "focus", Some(&epic), "FO", None,
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
         )
         .await
         .unwrap()
         .to_string();
-        let story = repo::create_work_item(&pool, "story", Some(&feature), "S", None)
+        let story = repo::create_work_item(&pool, "story", Some(&focus), "S", None)
             .await
             .unwrap()
             .to_string();
@@ -735,7 +739,8 @@ mod tests {
             .to_string();
         // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
         let epic = repo::create_work_item_full(
-            &pool, "epic", Some(&project), "E", None, None, Some("the epic outcome"), None,
+            &pool, "epic", Some(&project), "E", None,
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
         )
         .await
         .unwrap()
@@ -743,13 +748,14 @@ mod tests {
         repo::add_acceptance_criterion(&pool, &epic, "epic close criterion")
             .await
             .unwrap();
-        let feature = repo::create_work_item_full(
-            &pool, "focus", Some(&epic), "FO", None, None, None, Some("vertical-slice"),
+        let focus = repo::create_work_item_full(
+            &pool, "focus", Some(&epic), "FO", None,
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
         )
         .await
         .unwrap()
         .to_string();
-        let story = repo::create_work_item(&pool, "story", Some(&feature), "S", None)
+        let story = repo::create_work_item(&pool, "story", Some(&focus), "S", None)
             .await
             .unwrap()
             .to_string();

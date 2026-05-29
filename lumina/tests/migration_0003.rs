@@ -26,21 +26,24 @@ use sqlx::SqlitePool;
 /// for both acceptance_criteria/research_notes (we attach to the story here) and
 /// open_questions (story-scoped).
 async fn seed_story(pool: &SqlitePool) -> String {
-    for (id, kind, parent) in [
-        ("p1", "project", None),
-        ("e1", "epic", Some("p1")),
-        ("f1", "focus", Some("e1")),
-        ("s1", "story", Some("f1")),
+    // `shape` is bound for the focus row: migration 0010's focus-shape guard
+    // trigger rejects a focus with NULL shape, so the seed must supply one.
+    for (id, kind, parent, shape) in [
+        ("p1", "project", None, None),
+        ("e1", "epic", Some("p1"), None),
+        ("f1", "focus", Some("e1"), Some("vertical-slice")),
+        ("s1", "story", Some("f1"), None),
     ] {
         sqlx::query(
-            "INSERT INTO work_items (id, kind, parent_id, title, status) \
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO work_items (id, kind, parent_id, title, status, shape) \
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(id)
         .bind(kind)
         .bind(parent)
         .bind(format!("{kind} title"))
         .bind("open")
+        .bind(shape)
         .execute(pool)
         .await
         .unwrap_or_else(|e| panic!("seed {kind} {id}: {e}"));

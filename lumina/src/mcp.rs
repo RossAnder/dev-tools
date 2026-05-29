@@ -1306,9 +1306,11 @@ impl LuminaTools {
             req.parent_id.as_deref(),
             &req.title,
             req.body.as_deref(),
-            req.origin.as_deref(),
-            req.outcome.as_deref(),
-            req.shape.as_deref(),
+            repo::CreateOpts {
+                origin: req.origin.as_deref(),
+                outcome: req.outcome.as_deref(),
+                shape: req.shape.as_deref(),
+            },
         )
         .await
         .map_err(app_error_to_mcp)?;

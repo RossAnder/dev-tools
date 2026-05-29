@@ -831,7 +831,19 @@ pub async fn create_work_item_with_origin(
     body: Option<&str>,
     origin: Option<&str>,
 ) -> Result<Uuid, AppError> {
-    create_work_item_full(pool, kind, parent_id, title, body, origin, None, None).await
+    create_work_item_full(
+        pool,
+        kind,
+        parent_id,
+        title,
+        body,
+        CreateOpts {
+            origin,
+            outcome: None,
+            shape: None,
+        },
+    )
+    .await
 }
 
 /// The create core (migration 0010). The 5-arg [`create_work_item`] and 6-arg
@@ -852,23 +864,40 @@ pub async fn create_work_item_with_origin(
 /// `work_items.shape` column. Otherwise identical to the legacy create path:
 /// `status="open"`, default `relevance="backlog"` for epic/focus/story, and a
 /// single `work_item.created` event.
-#[allow(clippy::too_many_arguments)]
+/// The migration-0010 create-time option channels for [`create_work_item_full`]:
+/// `origin` (provenance stamp), `outcome` (epic-only, folds into `attributes`),
+/// and `shape` (focus-only, binds the `shape` column). Bundled into a struct so
+/// the three same-typed `Option<&str>` tail params are passed by name rather than
+/// position (R16 — they were previously mis-order-prone).
+pub struct CreateOpts<'a> {
+    pub origin: Option<&'a str>,
+    pub outcome: Option<&'a str>,
+    pub shape: Option<&'a str>,
+}
+
 pub async fn create_work_item_full(
     pool: &SqlitePool,
     kind: &str,
     parent_id: Option<&str>,
     title: &str,
     body: Option<&str>,
-    origin: Option<&str>,
-    outcome: Option<&str>,
-    shape: Option<&str>,
+    opts: CreateOpts<'_>,
 ) -> Result<Uuid, AppError> {
+    let CreateOpts {
+        origin,
+        outcome,
+        shape,
+    } = opts;
     // Resolve the parent's kind (if any) for the pre-check. A non-NULL
     // parent_id that does not exist is a Validation error, not a 500.
     let parent_kind: Option<String> = match parent_id {
         Some(pid) => {
+            // R21: liveness filter — a soft-deleted (tombstoned) ancestor must not
+            // serve as a parent. With `AND deleted_at IS NULL`, a create under a
+            // tombstoned epic/focus falls through to the parent-not-found path
+            // below rather than succeeding under a dead ancestor.
             let row = sqlx::query!(
-                r#"SELECT kind AS "kind!" FROM work_items WHERE id = ?1"#,
+                r#"SELECT kind AS "kind!" FROM work_items WHERE id = ?1 AND deleted_at IS NULL"#,
                 pid,
             )
             .fetch_optional(pool)
@@ -904,34 +933,24 @@ pub async fn create_work_item_full(
     if shape.is_some() && kind != "focus" {
         return Err(AppError::Validation("shape is only valid on a focus".into()));
     }
-    // Story-creation close-criterion gate: the validated parent is a focus;
-    // resolve the focus's parent (the epic) and require ≥1 close-criterion.
-    if kind == "story" {
-        let focus_id = parent_id.expect("hierarchy edge guarantees a focus parent for a story");
-        let epic_id: Option<String> = sqlx::query!(
-            r#"SELECT parent_id AS "parent_id?" FROM work_items WHERE id = ?1"#,
-            focus_id,
-        )
-        .fetch_one(pool)
-        .await?
-        .parent_id;
-        let epic_id = epic_id.ok_or_else(|| {
-            AppError::Validation("story's focus parent has no epic ancestor".into())
+    // R2: validate the shape VALUE against the typed `Shape` enum (the single
+    // source of the valid set: vertical-slice|cross-cutting|foundational) so an
+    // invalid string is rejected with a typed Validation here rather than
+    // escaping to the SQL CHECK as a 500. Parsing through serde keeps this in
+    // lockstep with the enum's wire spelling — no hardcoded literal list.
+    if let Some(s) = shape {
+        serde_json::from_value::<Shape>(Value::String(s.to_owned())).map_err(|_| {
+            AppError::Validation(format!(
+                "invalid shape '{s}': expected one of vertical-slice|cross-cutting|foundational"
+            ))
         })?;
-        let crit_count: i64 = sqlx::query!(
-            r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
-            epic_id,
-        )
-        .fetch_one(pool)
-        .await?
-        .n;
-        if crit_count == 0 {
-            return Err(AppError::Validation(format!(
-                "cannot create a story under epic '{epic_id}': the epic has no \
-                 close-criteria; add at least one close-criterion to the epic first"
-            )));
-        }
     }
+    // NOTE (R3): the story-creation close-criterion gate is NOT here — it was a
+    // TOCTOU hazard when read on the autocommit `pool` before begin_write (a
+    // concurrent criterion removal between the count and the INSERT could let a
+    // story be created under a now-criterionless epic). It now runs on the
+    // transaction connection AFTER begin_write, below, so the gate read and the
+    // INSERT share one snapshot under the BEGIN IMMEDIATE writer lock.
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
@@ -959,6 +978,38 @@ pub async fn create_work_item_full(
     };
 
     let mut tx = crate::db::begin_write(pool).await?;
+
+    // R3: story-creation close-criterion gate — runs INSIDE the tx (post
+    // begin_write, pre-INSERT) so the gate read and the write share one snapshot
+    // under the writer lock, closing the TOCTOU window against a concurrent
+    // criterion removal. The validated parent is a focus; resolve the focus's
+    // parent (the epic) and require ≥1 close-criterion.
+    if kind == "story" {
+        let focus_id = parent_id.expect("hierarchy edge guarantees a focus parent for a story");
+        let epic_id: Option<String> = sqlx::query!(
+            r#"SELECT parent_id AS "parent_id?" FROM work_items WHERE id = ?1"#,
+            focus_id,
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .parent_id;
+        let epic_id = epic_id.ok_or_else(|| {
+            AppError::Validation("story's focus parent has no epic ancestor".into())
+        })?;
+        let crit_count: i64 = sqlx::query!(
+            r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
+            epic_id,
+        )
+        .fetch_one(&mut *tx)
+        .await?
+        .n;
+        if crit_count == 0 {
+            return Err(AppError::Validation(format!(
+                "cannot create a story under epic '{epic_id}': the epic has no \
+                 close-criteria; add at least one close-criterion to the epic first"
+            )));
+        }
+    }
 
     sqlx::query!(
         r#"
@@ -1125,6 +1176,14 @@ async fn enforce_epic_done_gate(
             "epic '{id}' cannot transition to 'done': {unchecked} close-criterion(s) remain unchecked"
         )));
     }
+    // R20: FIXED-DEPTH assumption — this subquery hardcodes the epic→focus→story
+    // 2-level descent (stories cannot nest under stories in the schema), so it is
+    // exhaustive WITHOUT a recursive CTE. If the hierarchy ever gains deeper
+    // story nesting this count would miss the grandchildren — a recursive-CTE
+    // refactor is the deliberate follow-up (out of scope here). VACUOUS CASE: an
+    // epic with zero descendant stories counts 0 non-terminal and so passes this
+    // clause and closes (the close-criterion clause above still applies) — a
+    // childless epic→done is intentionally allowed.
     let nonterminal = sqlx::query!(
         r#"SELECT COUNT(*) AS "n!" FROM work_items
            WHERE kind = 'story' AND deleted_at IS NULL
@@ -1258,6 +1317,25 @@ pub async fn set_shape(pool: &SqlitePool, id: &str, shape: Shape) -> Result<(), 
     Ok(())
 }
 
+/// R23: per-field byte cap for free-text plan-attribute blobs
+/// (epic `outcome`/`context`, focus `framing`). Caps storage amplification — an
+/// unbounded blob would let a single PATCH balloon the row arbitrarily. 64 KiB
+/// is far above any legitimate plan-prose length while still bounding abuse.
+const MAX_PLAN_FIELD_BYTES: usize = 64 * 1024;
+
+/// R23: reject a plan-attribute string whose UTF-8 byte length exceeds
+/// [`MAX_PLAN_FIELD_BYTES`]. Called where each plan field's patch value is built
+/// so `outcome`/`context`/`framing` share one cap with no per-field duplication.
+fn check_plan_field_len(field: &str, value: &str) -> Result<(), AppError> {
+    if value.len() > MAX_PLAN_FIELD_BYTES {
+        return Err(AppError::Validation(format!(
+            "{field} exceeds the {MAX_PLAN_FIELD_BYTES}-byte plan-field limit ({} bytes)",
+            value.len()
+        )));
+    }
+    Ok(())
+}
+
 /// Revise an epic's plan attributes (migration 0010). Epic-kind-gated; JSON-
 /// merges the present fields via set_work_item_attributes (one event). Sibling
 /// keys are preserved by the merge. Mandatory-outcome-at-create is enforced in
@@ -1276,9 +1354,18 @@ pub async fn set_epic_plan(
     }
     let mut patch = serde_json::Map::new();
     if let Some(v) = outcome {
+        // R22: mirror create's whitespace-only-outcome rejection — set must not
+        // be a back-door to a blank outcome that create forbids.
+        if v.trim().is_empty() {
+            return Err(AppError::Validation(
+                "an epic requires a non-empty outcome".into(),
+            ));
+        }
+        check_plan_field_len("outcome", v)?; // R23
         patch.insert("outcome".into(), serde_json::Value::String(v.to_string()));
     }
     if let Some(v) = context {
+        check_plan_field_len("context", v)?; // R23
         patch.insert("context".into(), serde_json::Value::String(v.to_string()));
     }
     // no fields supplied — skip the no-op write + spurious event
@@ -1303,6 +1390,7 @@ pub async fn set_focus_plan(
     }
     let mut patch = serde_json::Map::new();
     if let Some(v) = framing {
+        check_plan_field_len("framing", v)?; // R23
         patch.insert("framing".into(), serde_json::Value::String(v.to_string()));
     }
     // no fields supplied — skip the no-op write + spurious event
@@ -5351,9 +5439,11 @@ mod tests {
             Some(&project.to_string()),
             "E",
             None,
-            None,
-            Some("the epic outcome"),
-            None,
+            CreateOpts {
+                origin: None,
+                outcome: Some("the epic outcome"),
+                shape: None,
+            },
         )
         .await
         .expect("legal epic");
@@ -5366,9 +5456,11 @@ mod tests {
             Some(&epic.to_string()),
             "FO",
             None,
-            None,
-            None,
-            Some("vertical-slice"),
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
         )
         .await
         .expect("legal focus");
@@ -6421,9 +6513,11 @@ mod tests {
             Some(&project),
             "E",
             None,
-            None,
-            Some("ship the thing"),
-            None,
+            CreateOpts {
+                origin: None,
+                outcome: Some("ship the thing"),
+                shape: None,
+            },
         )
         .await
         .expect("epic with outcome");
@@ -6449,7 +6543,8 @@ mod tests {
             .expect("project")
             .to_string();
         let epic = create_work_item_full(
-            &pool, "epic", Some(&project), "E", None, None, Some("o"), None,
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
         )
         .await
         .expect("epic")
@@ -6466,9 +6561,11 @@ mod tests {
             Some(&epic),
             "FO",
             None,
-            None,
-            None,
-            Some("cross-cutting"),
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("cross-cutting"),
+            },
         )
         .await
         .expect("focus with shape");
@@ -6493,7 +6590,8 @@ mod tests {
             .expect("project")
             .to_string();
         let epic = create_work_item_full(
-            &pool, "epic", Some(&project), "E", None, None, Some("o"), None,
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
         )
         .await
         .expect("epic")
@@ -6504,9 +6602,11 @@ mod tests {
             Some(&epic),
             "FO",
             None,
-            None,
-            None,
-            Some("vertical-slice"),
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
         )
         .await
         .expect("focus")
@@ -6539,7 +6639,8 @@ mod tests {
             .expect("project")
             .to_string();
         let epic = create_work_item_full(
-            &pool, "epic", Some(&project), "E", None, None, Some("o"), None,
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
         )
         .await
         .expect("epic")
@@ -6554,9 +6655,11 @@ mod tests {
             Some(&epic),
             "FO",
             None,
-            None,
-            None,
-            Some("vertical-slice"),
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
         )
         .await
         .expect("focus")
@@ -6575,28 +6678,32 @@ mod tests {
         };
 
         // (a) unchecked close-criterion + non-terminal story ⇒ both paths reject.
+        // R27: assert on the DISTINCT, stable message substring of the
+        // close-criterion clause (not just the Validation variant) so a future
+        // clause-merge regression that collapses the two gate messages is caught.
         let err = update_work_item_status(&pool, &epic, "done")
             .await
             .expect_err("transition path must reject unchecked-criterion epic");
-        assert!(matches!(err, AppError::Validation(_)), "transition: got {err:?}");
+        assert_close_criterion_gate(&err);
         let err = update_work_item(&pool, &epic, &done_req)
             .await
             .expect_err("PATCH path must reject unchecked-criterion epic");
-        assert!(matches!(err, AppError::Validation(_)), "PATCH: got {err:?}");
+        assert_close_criterion_gate(&err);
 
         // Check the close-criterion; the story is still non-terminal ⇒ still reject
         // (proving the second clause of the gate fires independently).
+        // R27: assert the DISTINCT descendant-story-clause substring here.
         check_acceptance_criterion(&pool, &crit, None)
             .await
             .expect("check criterion");
         let err = update_work_item_status(&pool, &epic, "done")
             .await
             .expect_err("transition path must reject non-terminal-story epic");
-        assert!(matches!(err, AppError::Validation(_)), "transition: got {err:?}");
+        assert_descendant_story_gate(&err);
         let err = update_work_item(&pool, &epic, &done_req)
             .await
             .expect_err("PATCH path must reject non-terminal-story epic");
-        assert!(matches!(err, AppError::Validation(_)), "PATCH: got {err:?}");
+        assert_descendant_story_gate(&err);
 
         // Make the story terminal; now both clauses are satisfied.
         update_work_item_status(&pool, &story, "done")
@@ -6627,7 +6734,8 @@ mod tests {
             .expect("project")
             .to_string();
         let epic = create_work_item_full(
-            &pool, "epic", Some(&project), "E", None, None, Some("o"), None,
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
         )
         .await
         .expect("epic")
@@ -6638,9 +6746,11 @@ mod tests {
             Some(&epic),
             "FO",
             None,
-            None,
-            None,
-            Some("vertical-slice"),
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
         )
         .await
         .expect("focus")
@@ -6674,6 +6784,264 @@ mod tests {
             .expect("set_focus_plan on a focus succeeds");
     }
 
+    /// R27 helper: assert an error is the epic-done CLOSE-CRITERION gate, by its
+    /// distinct stable message substring (not merely the Validation variant).
+    fn assert_close_criterion_gate(err: &AppError) {
+        match err {
+            AppError::Validation(m) => assert!(
+                m.contains("close-criterion(s) remain unchecked"),
+                "expected the close-criterion gate message, got: {m}"
+            ),
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    /// R27 helper: assert an error is the epic-done DESCENDANT-STORY gate, by its
+    /// distinct stable message substring.
+    fn assert_descendant_story_gate(err: &AppError) {
+        match err {
+            AppError::Validation(m) => assert!(
+                m.contains("descendant story(ies) are not terminal"),
+                "expected the descendant-story gate message, got: {m}"
+            ),
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    /// R11: setter-level JSON-merge preservation — `set_epic_plan` with only
+    /// `outcome`, then only `context`, preserves the earlier `outcome` (and vice
+    /// versa). Exercises the epic-plan setter's own key-mapping path on top of
+    /// the lower-level merge that `set_work_item_attributes_merges_without_clobber`
+    /// already covers. (`focus` has only one legal plan key, `framing`, so it
+    /// admits no setter-level sibling-clobber scenario; the epic two-key case is
+    /// the meaningful preservation assertion.)
+    #[tokio::test]
+    async fn epic_plan_setter_merges_without_clobber() {
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+        let epic = create_work_item_full(
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("initial"), shape: None },
+        )
+        .await
+        .expect("epic")
+        .to_string();
+
+        // set outcome only, then context only — outcome must survive the merge.
+        set_epic_plan(&pool, &epic, Some("ship the thing"), None)
+            .await
+            .expect("set outcome");
+        set_epic_plan(&pool, &epic, None, Some("the context"))
+            .await
+            .expect("set context");
+
+        let detail = get_work_item_detail(&pool, &epic).await.expect("detail");
+        let attrs = detail.item.attributes.expect("attributes set");
+        assert_eq!(
+            attrs.get("outcome").and_then(|v| v.as_str()),
+            Some("ship the thing"),
+            "earlier outcome survives a later context-only set"
+        );
+        assert_eq!(
+            attrs.get("context").and_then(|v| v.as_str()),
+            Some("the context")
+        );
+    }
+
+    /// R10: a `shape` supplied on a NON-focus kind (here `epic`) is rejected with
+    /// `Validation` BEFORE begin_write, writing zero rows (the consistency guard
+    /// "shape is only valid on a focus" fires ahead of any INSERT).
+    #[tokio::test]
+    async fn shape_on_non_focus_kind_is_validation_and_writes_nothing() {
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+
+        let before_items = count_work_items(&pool).await;
+        let before_events = count_events(&pool).await;
+
+        // epic create with a shape (epic carries an outcome, so we exercise the
+        // shape-on-non-focus guard, not the missing-outcome one).
+        let err = create_work_item_full(
+            &pool,
+            "epic",
+            Some(&project),
+            "E",
+            None,
+            CreateOpts {
+                origin: None,
+                outcome: Some("the outcome"),
+                shape: Some("vertical-slice"),
+            },
+        )
+        .await
+        .expect_err("shape on an epic must error");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        assert_eq!(
+            count_work_items(&pool).await,
+            before_items,
+            "rejected shape-on-epic create wrote no work_items row"
+        );
+        assert_eq!(
+            count_events(&pool).await,
+            before_events,
+            "rejected shape-on-epic create wrote no events row"
+        );
+    }
+
+    /// R25: epic-done gate edge cases.
+    /// (a) a ZERO-STORY epic (checked close-criterion + a focus, NO stories) →
+    /// `epic→done` SUCCEEDS (the vacuous descendant-story clause passes); and
+    /// (b) a `cancelled` (not `done`) terminal descendant story PASSES the
+    /// descendant-terminal check.
+    #[tokio::test]
+    async fn epic_done_gate_zero_story_and_cancelled_terminal() {
+        // (a) zero-story epic closes once its close-criterion is checked.
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+        let epic = create_work_item_full(
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+        )
+        .await
+        .expect("epic")
+        .to_string();
+        let crit = add_acceptance_criterion(&pool, &epic, "epic close criterion")
+            .await
+            .expect("criterion")
+            .to_string();
+        // a focus but NO stories beneath it.
+        create_work_item_full(
+            &pool,
+            "focus",
+            Some(&epic),
+            "FO",
+            None,
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
+        )
+        .await
+        .expect("focus");
+        check_acceptance_criterion(&pool, &crit, None)
+            .await
+            .expect("check criterion");
+        update_work_item_status(&pool, &epic, "done")
+            .await
+            .expect("zero-story epic → done succeeds once close-criterion checked");
+
+        // (b) a cancelled (not done) descendant story passes the terminal check.
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+        let epic = create_work_item_full(
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+        )
+        .await
+        .expect("epic")
+        .to_string();
+        let crit = add_acceptance_criterion(&pool, &epic, "epic close criterion")
+            .await
+            .expect("criterion")
+            .to_string();
+        let focus = create_work_item_full(
+            &pool,
+            "focus",
+            Some(&epic),
+            "FO",
+            None,
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
+        )
+        .await
+        .expect("focus")
+        .to_string();
+        let story = create_work_item(&pool, "story", Some(&focus), "S", None)
+            .await
+            .expect("story")
+            .to_string();
+        check_acceptance_criterion(&pool, &crit, None)
+            .await
+            .expect("check criterion");
+        // cancelled is terminal for the descendant-story clause.
+        update_work_item_status(&pool, &story, "cancelled")
+            .await
+            .expect("story → cancelled");
+        update_work_item_status(&pool, &epic, "done")
+            .await
+            .expect("epic → done succeeds with a cancelled (terminal) descendant story");
+    }
+
+    /// R26: `set_shape` is idempotent under re-set — setting `vertical-slice` then
+    /// re-setting to `foundational` leaves the column holding the LATEST value.
+    #[tokio::test]
+    async fn set_shape_reset_holds_latest_value() {
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+        let epic = create_work_item_full(
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+        )
+        .await
+        .expect("epic")
+        .to_string();
+        let focus = create_work_item_full(
+            &pool,
+            "focus",
+            Some(&epic),
+            "FO",
+            None,
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
+        )
+        .await
+        .expect("focus")
+        .to_string();
+
+        set_shape(&pool, &focus, Shape::VerticalSlice)
+            .await
+            .expect("set vertical-slice");
+        set_shape(&pool, &focus, Shape::Foundational)
+            .await
+            .expect("re-set foundational");
+
+        let shape = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT shape FROM work_items WHERE id = ?1",
+        )
+        .bind(&focus)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            shape.as_deref(),
+            Some("foundational"),
+            "re-set holds the latest value"
+        );
+    }
+
     /// A `focus` row's `kind` persists and reads back as `focus` (the migration
     /// 0010 rename of `feature`→`focus`): the round-trip proves the create core
     /// writes the renamed kind and the detail fold returns it unchanged.
@@ -6685,7 +7053,8 @@ mod tests {
             .expect("project")
             .to_string();
         let epic = create_work_item_full(
-            &pool, "epic", Some(&project), "E", None, None, Some("o"), None,
+            &pool, "epic", Some(&project), "E", None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
         )
         .await
         .expect("epic")
@@ -6696,9 +7065,11 @@ mod tests {
             Some(&epic),
             "FO",
             None,
-            None,
-            None,
-            Some("vertical-slice"),
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
         )
         .await
         .expect("focus")
