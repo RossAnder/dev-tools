@@ -56,7 +56,7 @@ const executingTasks: ComputedRef<number> = computed(() =>
           Plan. Dispatch. Observe.
         </h1>
         <p class="text-[var(--ink-2)] text-[14px] leading-[1.55] max-w-prose">
-          This is the control surface for the agentic harness. Build out epics and features as the durable structure; let sprints and tasks come and go through them. Drill into any node on the left to focus the lens.
+          This is the control surface for the agentic harness. Build out epics and focuses as the durable structure; let sprints and tasks come and go through them. Drill into any node on the left to focus the lens.
         </p>
       </header>
 
@@ -67,8 +67,8 @@ const executingTasks: ComputedRef<number> = computed(() =>
           <div class="font-mono text-[10px] text-[var(--muted)]">{{ rootsInFlight }} IN FLIGHT</div>
         </div>
         <div class="flex flex-col gap-1">
-          <div class="font-mono text-[16px] text-[var(--ink)]">{{ descendantCounts.features }}</div>
-          <div class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase">Features</div>
+          <div class="font-mono text-[16px] text-[var(--ink)]">{{ descendantCounts.focuses }}</div>
+          <div class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase">Focuses</div>
           <div class="font-mono text-[10px] text-[var(--muted)]">ACROSS PORTFOLIO</div>
         </div>
         <div class="flex flex-col gap-1">

@@ -278,7 +278,7 @@ const descendantCounts: ComputedRef<DescendantCounts> = computed(() => {
   const node = byId.value.get(id)
   if (node === undefined) {
     return {
-      features: 0,
+      focuses: 0,
       stories: 0,
       tasks: 0,
       doneTasks: 0,

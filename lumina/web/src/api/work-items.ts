@@ -60,6 +60,7 @@ import {
   TierSchema,
   type RiskSeverity,
   RiskSeveritySchema,
+  type Shape,
 } from './wire-enums'
 import { type RepoLink, RepoLinkSchema } from './repo-links'
 
@@ -519,6 +520,11 @@ export interface CreateWorkItemBody {
   parent_id?: string | null
   title: string
   body?: string | null
+  // Migration 0010: `outcome` is MANDATORY for an `epic` at create (rejected on
+  // other kinds at the repo layer); `shape` is MANDATORY for a `focus`. Both
+  // optional here — the wire/repo enforces the per-kind requirement.
+  outcome?: string
+  shape?: Shape
 }
 
 /**

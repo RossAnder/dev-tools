@@ -5,7 +5,7 @@
 // Declared here as string-literal unions so the backend's closed sets surface
 // as types on the frontend: consumers' `===` checks against these constants
 // gain (optional) exhaustiveness, and typo'd comparisons fail at compile time.
-// Each is a SUBTYPE of `string`, so any existing `node.kind === 'feature'`
+// Each is a SUBTYPE of `string`, so any existing `node.kind === 'focus'`
 // etc. check keeps compiling. Keep these aligned with `domain.rs` — adding a
 // Rust enum variant requires adding it here too.
 //
@@ -22,12 +22,12 @@
 
 import * as z from 'zod'
 
-const KIND_VALUES = ['project', 'epic', 'feature', 'story', 'task'] as const
+const KIND_VALUES = ['project', 'epic', 'focus', 'story', 'task'] as const
 /** Mirrors `domain::Kind` — the five legal work-item kinds (parent→child). */
 export type Kind = (typeof KIND_VALUES)[number]
 export const KindSchema = z.enum(KIND_VALUES)
 
-// Containers (project/epic/feature/story) use 'open' as their default workflow
+// Containers (project/epic/focus/story) use 'open' as their default workflow
 // status; only tasks cycle through the todo/in_progress/blocked/done/cancelled
 // states. The Rust `domain::Status` enum (domain.rs:336) lists only the task
 // states because migration 0001 declares `status` as free-text TEXT with no
@@ -39,7 +39,7 @@ export type Status = (typeof STATUS_VALUES)[number]
 export const StatusSchema = z.enum(STATUS_VALUES)
 
 const RELEVANCE_VALUES = ['active', 'backlog', 'deferred', 'rejected'] as const
-/** Mirrors `domain::Relevance` — settable only on epic/feature/story. */
+/** Mirrors `domain::Relevance` — settable only on epic/focus/story. */
 export type Relevance = (typeof RELEVANCE_VALUES)[number]
 export const RelevanceSchema = z.enum(RELEVANCE_VALUES)
 
@@ -158,3 +158,17 @@ const RISK_SEVERITY_VALUES = ['low', 'medium', 'high', 'critical'] as const
  */
 export type RiskSeverity = (typeof RISK_SEVERITY_VALUES)[number]
 export const RiskSeveritySchema = z.enum(RISK_SEVERITY_VALUES)
+
+// ---------------------------------------------------------------------------
+// Migration-0010 addition (epic/focus-semantics): Shape.
+// ---------------------------------------------------------------------------
+
+const SHAPE_VALUES = ['vertical-slice', 'cross-cutting', 'foundational'] as const
+/**
+ * Mirrors `domain::Shape` — a focus's shape (migration 0010). MANDATORY for a
+ * `focus` at create (rejected on non-focus kinds), settable later via
+ * `PATCH /work-items/{id}/shape`. Stored on `work_items.shape`, NOT the
+ * hierarchy `kind` column.
+ */
+export type Shape = (typeof SHAPE_VALUES)[number]
+export const ShapeSchema = z.enum(SHAPE_VALUES)

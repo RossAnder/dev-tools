@@ -31,6 +31,7 @@ import type {
   ClosureGate,
   TaskKind,
   Tier,
+  Shape,
 } from '@/api'
 
 import type { Result } from './result'
@@ -61,6 +62,7 @@ type Api = {
   setClosureGate: typeof productionApi.setClosureGate
   setTaskKind: typeof productionApi.setTaskKind
   setTier: typeof productionApi.setTier
+  setShape: typeof productionApi.setShape
 }
 let api: Api = {
   setRelevance: productionApi.setRelevance,
@@ -69,6 +71,7 @@ let api: Api = {
   setClosureGate: productionApi.setClosureGate,
   setTaskKind: productionApi.setTaskKind,
   setTier: productionApi.setTier,
+  setShape: productionApi.setShape,
 }
 
 /** Replace API adapter entries. Test-only — do NOT call from production code. */
@@ -88,6 +91,7 @@ export function __resetForTests(): void {
     setClosureGate: productionApi.setClosureGate,
     setTaskKind: productionApi.setTaskKind,
     setTier: productionApi.setTier,
+    setShape: productionApi.setShape,
   }
 }
 
@@ -128,7 +132,7 @@ async function runSetter(
 // ---------------------------------------------------------------------------
 
 export function useScalars() {
-  /** Set the `relevance` column (non-nullable; epic/feature/story only). */
+  /** Set the `relevance` column (non-nullable; epic/focus/story only). */
   async function setRelevance(id: string, value: Relevance): Promise<Result<WorkItem>> {
     return runSetter(() => api.setRelevance(id, value))
   }
@@ -158,6 +162,11 @@ export function useScalars() {
     return runSetter(() => api.setTier(id, value))
   }
 
+  /** Set the per-focus `shape` column (non-nullable; focus only). */
+  async function setShape(id: string, value: Shape): Promise<Result<WorkItem>> {
+    return runSetter(() => api.setShape(id, value))
+  }
+
   /** Clear `error.value` — for the UI's "dismiss banner" button. */
   function clearError(): void {
     error.value = null
@@ -173,6 +182,7 @@ export function useScalars() {
     setClosureGate,
     setTaskKind,
     setTier,
+    setShape,
     clearError,
   }
 }

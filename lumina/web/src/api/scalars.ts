@@ -30,12 +30,13 @@ import {
   type ClosureGate,
   type TaskKind,
   type Tier,
+  type Shape,
 } from './wire-enums'
 
 /**
  * `PATCH /api/work-items/{id}/relevance` — set the `relevance` column. NOT
  * nullable: passing nothing is rejected at the wire (the handler validates a
- * present `value:` field). Settable only on epic/feature/story per
+ * present `value:` field). Settable only on epic/focus/story per
  * `repo::set_relevance`.
  */
 export async function setRelevance(id: string, value: Relevance): Promise<WorkItem> {
@@ -122,6 +123,24 @@ export async function setTaskKind(id: string, value: TaskKind | null): Promise<W
 export async function setTier(id: string, value: Tier | null): Promise<WorkItem> {
   return handle<WorkItem>(
     await fetch(`${API_BASE}/work-items/${encodeURIComponent(id)}/tier`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    }),
+    WorkItemSchema,
+  )
+}
+
+/**
+ * `PATCH /api/work-items/{id}/shape` — set a focus's `shape` column
+ * (vertical-slice|cross-cutting|foundational; migration 0010). NOT nullable:
+ * `shape` is mandatory for a focus and is never cleared via this route, so the
+ * handler rejects `{"value": null}` with 422 (mirrors `closure-gate`). The repo
+ * setter kind-gates to `focus` (non-focus → 422).
+ */
+export async function setShape(id: string, value: Shape): Promise<WorkItem> {
+  return handle<WorkItem>(
+    await fetch(`${API_BASE}/work-items/${encodeURIComponent(id)}/shape`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value }),

@@ -66,7 +66,7 @@ export function effortWeight(value: string | null | undefined): number {
 }
 
 export interface DescendantCounts {
-  features: number
+  focuses: number
   stories: number
   tasks: number
   doneTasks: number
@@ -81,7 +81,7 @@ export interface DescendantCounts {
  */
 export function collectCounts(children: WorkItemNode[]): DescendantCounts {
   const counts: DescendantCounts = {
-    features: 0,
+    focuses: 0,
     stories: 0,
     tasks: 0,
     doneTasks: 0,
@@ -89,7 +89,7 @@ export function collectCounts(children: WorkItemNode[]): DescendantCounts {
     size: 0,
   }
   const visit = (node: WorkItemNode): void => {
-    if (node.kind === 'feature') counts.features += 1
+    if (node.kind === 'focus') counts.focuses += 1
     else if (node.kind === 'story') counts.stories += 1
     else if (node.kind === 'task') {
       counts.tasks += 1

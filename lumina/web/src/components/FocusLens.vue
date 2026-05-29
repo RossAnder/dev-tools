@@ -50,8 +50,8 @@ const kpis = computed(() => {
   const c = descendantCounts.value
   return [
     {
-      label: 'Features',
-      value: c.features,
+      label: 'Focuses',
+      value: c.focuses,
       pad: 'pr-4',
       border: true,
       sub: null as string | null,
@@ -83,7 +83,7 @@ const kpis = computed(() => {
 /**
  * Planning-domain metadata to display alongside status/progress. Each field is
  * surfaced as a small label + capitalised value only when present on the
- * focused node AND applicable to its kind (relevance: epic/feature/story;
+ * focused node AND applicable to its kind (relevance: epic/focus/story;
  * closure_gate: story; complexity: task; origin: any). Capitalisation is the
  * same lightweight transform used elsewhere — first letter upper, rest as-is.
  */
@@ -92,7 +92,7 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
   const it = item.value
   if (!it) return []
   const fields: { label: string; value: string }[] = []
-  const planningKinds = it.kind === 'epic' || it.kind === 'feature' || it.kind === 'story'
+  const planningKinds = it.kind === 'epic' || it.kind === 'focus' || it.kind === 'story'
   if (planningKinds && it.relevance) {
     fields.push({ label: 'Relevance', value: cap(it.relevance) })
   }
@@ -178,7 +178,7 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
     <!--
       lens-stats: 4-column KPI grid — only rendered at the project (epic)
       level. The root/portfolio view has its own KPI row in PortfolioEmpty;
-      features / stories / tasks suppress KPIs to reduce visual weight.
+      focuses / stories / tasks suppress KPIs to reduce visual weight.
     -->
     <div
       v-if="item.kind === 'epic'"
@@ -273,7 +273,7 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
 
     <!--
       Context blocks (2-column grid). NOT scoped to isTask: WorkItemDetail
-      .context_blocks is not kind-filtered server-side; an epic/feature/story
+      .context_blocks is not kind-filtered server-side; an epic/focus/story
       with attached context blocks (via the MCP `create_context_block` tool)
       should also surface them here. The inner `v-if="contextBlocks.length > 0"`
       keeps the section hidden when there are none.

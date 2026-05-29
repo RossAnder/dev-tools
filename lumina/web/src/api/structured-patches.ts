@@ -205,3 +205,105 @@ export async function setTaskSpec(
     })),
   }
 }
+
+// ---------------------------------------------------------------------------
+// PATCH /work-items/{id}/epic-plan (migration 0010)
+// ---------------------------------------------------------------------------
+
+/**
+ * Body accepted by `PATCH /api/work-items/{id}/epic-plan`.
+ *
+ * Mirrors `domain::EpicPlanRequest` (reused as the Rust body). Both fields are
+ * independently optional with present-only JSON-merge semantics: an absent
+ * field leaves the stored attribute untouched. The repo setter kind-gates to
+ * `epic` (non-epic → 422). Mirrors the MCP `set_epic_plan` tool.
+ */
+export interface SetEpicPlanBody {
+  outcome?: string
+  context?: string
+}
+
+export const SetEpicPlanBodySchema = z.object({
+  outcome: z.string().optional(),
+  context: z.string().optional(),
+})
+
+/**
+ * `PATCH /api/work-items/{id}/epic-plan` — revise an epic's `outcome`/`context`
+ * plan attributes in one round-trip. Returns the re-fetched
+ * {@link WorkItemDetail} (the merged keys live on `item.attributes`, like
+ * story-plan). Normalises `acceptance_criteria[].checked` 0/1 → boolean.
+ */
+export async function setEpicPlan(
+  workItemId: string,
+  body: SetEpicPlanBody,
+): Promise<WorkItemDetail> {
+  const wire = await handle(
+    await fetch(
+      `${API_BASE}/work-items/${encodeURIComponent(workItemId)}/epic-plan`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    ),
+    WorkItemDetailWireSchema,
+  )
+  return {
+    ...wire,
+    acceptance_criteria: wire.acceptance_criteria.map((ac) => ({
+      ...ac,
+      checked: ac.checked === 1,
+    })),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /work-items/{id}/focus-plan (migration 0010)
+// ---------------------------------------------------------------------------
+
+/**
+ * Body accepted by `PATCH /api/work-items/{id}/focus-plan`.
+ *
+ * Mirrors `domain::FocusPlanRequest` (reused as the Rust body). The single
+ * `framing` field is optional with present-only JSON-merge semantics. The repo
+ * setter kind-gates to `focus` (non-focus → 422). Mirrors the MCP
+ * `set_focus_plan` tool.
+ */
+export interface SetFocusPlanBody {
+  framing?: string
+}
+
+export const SetFocusPlanBodySchema = z.object({
+  framing: z.string().optional(),
+})
+
+/**
+ * `PATCH /api/work-items/{id}/focus-plan` — revise a focus's `framing` plan
+ * attribute. Returns the re-fetched {@link WorkItemDetail} (the merged key
+ * lives on `item.attributes`). Normalises `acceptance_criteria[].checked`
+ * 0/1 → boolean.
+ */
+export async function setFocusPlan(
+  workItemId: string,
+  body: SetFocusPlanBody,
+): Promise<WorkItemDetail> {
+  const wire = await handle(
+    await fetch(
+      `${API_BASE}/work-items/${encodeURIComponent(workItemId)}/focus-plan`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    ),
+    WorkItemDetailWireSchema,
+  )
+  return {
+    ...wire,
+    acceptance_criteria: wire.acceptance_criteria.map((ac) => ({
+      ...ac,
+      checked: ac.checked === 1,
+    })),
+  }
+}
