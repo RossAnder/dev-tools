@@ -415,7 +415,7 @@ pub struct WorkItemDetail {
 /// derived for the rmcp `Parameters<T>` tool-argument contract.
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct CreateWorkItemRequest {
-    /// One of `project`/`epic`/`feature`/`story`/`task`.
+    /// One of `project`/`epic`/`focus`/`story`/`task`.
     pub kind: String,
     /// Parent work-item id; `None`/absent only for a `project`.
     #[serde(default)]
@@ -427,6 +427,16 @@ pub struct CreateWorkItemRequest {
     /// (`plan|implement|review|optimise|tdd|human|none`); absent ⇒ NULL.
     #[serde(default)]
     pub origin: Option<String>,
+    /// Epic outcome statement (migration 0010): MANDATORY for an `epic` at
+    /// create (a non-empty value), rejected on any non-epic kind. Folded into
+    /// the new epic's `attributes` JSON by `repo::create_work_item_full`.
+    #[serde(default)]
+    pub outcome: Option<String>,
+    /// Focus shape (migration 0010): MANDATORY for a `focus` at create, rejected
+    /// on any non-focus kind. Bound to `work_items.shape` by
+    /// `repo::create_work_item_full`.
+    #[serde(default)]
+    pub shape: Option<String>,
 }
 
 /// Revise-later plan body for an epic (migration 0010). Both fields are

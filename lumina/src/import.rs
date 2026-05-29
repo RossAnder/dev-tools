@@ -1,8 +1,8 @@
 //! Minimal flow importer — ingest one `.claude/flows/<slug>/` into the DB (Task 7).
 //!
 //! Reads a flow's `context.toml`, resolves its `[artifacts]` paths relative to
-//! the flow directory, scaffolds a default `project → epic → feature` chain (if
-//! absent), creates a `story` under the feature for the flow, then maps the
+//! the flow directory, scaffolds a default `project → epic → focus` chain (if
+//! absent), creates a `story` under the focus for the flow, then maps the
 //! flow's execution-record and findings into the DB. ALL writes go through the
 //! `repo` layer so the events outbox fires and `export` materialises snapshots.
 //!
@@ -213,6 +213,8 @@ async fn ensure_scaffold(
     kind: &str,
     parent_id: Option<&str>,
     title: &str,
+    outcome: Option<&str>,
+    shape: Option<&str>,
     summary: &mut ImportSummary,
 ) -> anyhow::Result<String> {
     let existing = repo::list_work_items(pool, parent_id, Some(kind))
@@ -221,7 +223,9 @@ async fn ensure_scaffold(
     if let Some(item) = existing.into_iter().next() {
         return Ok(item.id);
     }
-    let id = repo::create_work_item(pool, kind, parent_id, title, None)
+    // migration 0010: the create-time gates require an epic to carry an outcome
+    // and a focus to carry a shape, so the scaffold supplies them here.
+    let id = repo::create_work_item_full(pool, kind, parent_id, title, None, None, outcome, shape)
         .await
         .with_context(|| format!("creating scaffold {kind} '{title}'"))?;
     summary.scaffold_created += 1;
@@ -240,13 +244,48 @@ pub async fn import_flow(pool: &SqlitePool, flow_dir: &Path) -> anyhow::Result<I
     let ctx: ContextDoc = toml::from_str(&ctx_raw)
         .with_context(|| format!("parsing {}", ctx_path.display()))?;
 
-    // --- 2. Default scaffold: project → epic → feature ---------------------
+    // --- 2. Default scaffold: project → epic → focus -----------------------
     // Fixed titles so multiple flows share one chain; idempotent on re-import.
-    let project_id = ensure_scaffold(pool, "project", None, "lumina", &mut summary).await?;
-    let epic_id =
-        ensure_scaffold(pool, "epic", Some(&project_id), "Imported flows", &mut summary).await?;
-    let feature_id =
-        ensure_scaffold(pool, "focus", Some(&epic_id), "Flow imports", &mut summary).await?;
+    // migration 0010: the epic carries a mandatory outcome, the focus a
+    // mandatory shape, and (below) the epic gets ≥1 close-criterion so the
+    // story-create gate passes.
+    let project_id = ensure_scaffold(pool, "project", None, "lumina", None, None, &mut summary).await?;
+    let epic_id = ensure_scaffold(
+        pool,
+        "epic",
+        Some(&project_id),
+        "Imported flows",
+        Some("Container for flow histories imported from .claude/flows/"),
+        None,
+        &mut summary,
+    )
+    .await?;
+    let feature_id = ensure_scaffold(
+        pool,
+        "focus",
+        Some(&epic_id),
+        "Flow imports",
+        None,
+        Some("cross-cutting"),
+        &mut summary,
+    )
+    .await?;
+
+    // migration 0010: the story-create gate requires the ancestor epic to have
+    // ≥1 close-criterion. Add one idempotently (re-imports must not accumulate).
+    if repo::list_acceptance_criteria(pool, &epic_id)
+        .await
+        .with_context(|| "listing epic close-criteria")?
+        .is_empty()
+    {
+        repo::add_acceptance_criterion(
+            pool,
+            &epic_id,
+            "All imported flow histories are materialised",
+        )
+        .await
+        .with_context(|| "seeding epic close-criterion for the story-create gate")?;
+    }
 
     // --- 3. The story for THIS flow ----------------------------------------
     // Title = slug; body = a serialised summary (plan_path + scope) so the

@@ -670,7 +670,7 @@ async fn list_open_questions(
 /// monotonic `seq` (migration 0003). `query_as!` straight onto the
 /// [`AcceptanceCriterion`] read struct (all columns map 1:1; `checked` is the
 /// `0/1` INTEGER mirrored as `i64`).
-async fn list_acceptance_criteria(
+pub async fn list_acceptance_criteria(
     pool: &SqlitePool,
     work_item_id: &str,
 ) -> Result<Vec<AcceptanceCriterion>, AppError> {
@@ -831,6 +831,38 @@ pub async fn create_work_item_with_origin(
     body: Option<&str>,
     origin: Option<&str>,
 ) -> Result<Uuid, AppError> {
+    create_work_item_full(pool, kind, parent_id, title, body, origin, None, None).await
+}
+
+/// The create core (migration 0010). The 5-arg [`create_work_item`] and 6-arg
+/// [`create_work_item_with_origin`] wrappers delegate here; this 8-arg form adds
+/// the `outcome` (epic) and `shape` (focus) channels plus the migration-0010
+/// create-time gates. Gates run BEFORE `begin_write` (like the parent pre-check)
+/// so an illegal create writes zero rows.
+///
+/// Create-time gates (User Decisions, ADR lumina epic/focus semantics):
+///   * an `epic` requires a non-empty `outcome`;
+///   * a `focus` requires a `shape`;
+///   * `shape` is valid only on a `focus` (consistency guard);
+///   * a `story` may only be created once its ancestor epic has ≥1 close-criterion.
+///
+/// When `outcome` is supplied (epic only) it is folded into the row's
+/// `attributes` JSON (`{"outcome": ...}`) after the same normalise + per-kind
+/// validate chain the PATCH path uses. `shape` is bound directly to the
+/// `work_items.shape` column. Otherwise identical to the legacy create path:
+/// `status="open"`, default `relevance="backlog"` for epic/focus/story, and a
+/// single `work_item.created` event.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_work_item_full(
+    pool: &SqlitePool,
+    kind: &str,
+    parent_id: Option<&str>,
+    title: &str,
+    body: Option<&str>,
+    origin: Option<&str>,
+    outcome: Option<&str>,
+    shape: Option<&str>,
+) -> Result<Uuid, AppError> {
     // Resolve the parent's kind (if any) for the pre-check. A non-NULL
     // parent_id that does not exist is a Validation error, not a 500.
     let parent_kind: Option<String> = match parent_id {
@@ -855,6 +887,52 @@ pub async fn create_work_item_with_origin(
 
     validate_hierarchy_edge(kind, parent_kind.as_deref())?;
 
+    // --- migration-0010 create-time gates (all BEFORE begin_write) ---------
+    // Epic requires a non-empty outcome at create.
+    if kind == "epic" && outcome.map(|s| s.trim().is_empty()).unwrap_or(true) {
+        return Err(AppError::Validation(
+            "an epic requires a non-empty outcome at create".into(),
+        ));
+    }
+    // Focus requires a shape at create.
+    if kind == "focus" && shape.is_none() {
+        return Err(AppError::Validation(
+            "a focus requires a shape at create".into(),
+        ));
+    }
+    // Shape is only valid on a focus (consistency guard).
+    if shape.is_some() && kind != "focus" {
+        return Err(AppError::Validation("shape is only valid on a focus".into()));
+    }
+    // Story-creation close-criterion gate: the validated parent is a focus;
+    // resolve the focus's parent (the epic) and require ≥1 close-criterion.
+    if kind == "story" {
+        let focus_id = parent_id.expect("hierarchy edge guarantees a focus parent for a story");
+        let epic_id: Option<String> = sqlx::query!(
+            r#"SELECT parent_id AS "parent_id?" FROM work_items WHERE id = ?1"#,
+            focus_id,
+        )
+        .fetch_one(pool)
+        .await?
+        .parent_id;
+        let epic_id = epic_id.ok_or_else(|| {
+            AppError::Validation("story's focus parent has no epic ancestor".into())
+        })?;
+        let crit_count: i64 = sqlx::query!(
+            r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
+            epic_id,
+        )
+        .fetch_one(pool)
+        .await?
+        .n;
+        if crit_count == 0 {
+            return Err(AppError::Validation(format!(
+                "cannot create a story under epic '{epic_id}': the epic has no \
+                 close-criteria; add at least one close-criterion to the epic first"
+            )));
+        }
+    }
+
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
@@ -865,12 +943,27 @@ pub async fn create_work_item_with_origin(
         _ => None,
     };
 
+    // Build the attributes JSON from `outcome` (epic only). A non-epic carrying
+    // `outcome` is rejected by validate_attributes_for_kind, which is correct.
+    let attributes_str: Option<String> = match outcome {
+        Some(o) => {
+            let attrs = serde_json::json!({ "outcome": o });
+            let cleaned = normalise_object(&attrs, "attributes")?;
+            validate_attributes_for_kind(kind, &cleaned)?;
+            Some(
+                serde_json::to_string(&Value::Object(cleaned))
+                    .map_err(|e| AppError::Other(e.into()))?,
+            )
+        }
+        None => None,
+    };
+
     let mut tx = crate::db::begin_write(pool).await?;
 
     sqlx::query!(
         r#"
-        INSERT INTO work_items (id, kind, parent_id, title, body, status, origin, relevance)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        INSERT INTO work_items (id, kind, parent_id, title, body, status, origin, relevance, shape, attributes)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
         "#,
         id_str,
         kind,
@@ -880,6 +973,8 @@ pub async fn create_work_item_with_origin(
         "open",
         origin,
         default_relevance,
+        shape,
+        attributes_str,
     )
     .execute(&mut *tx)
     .await?;
@@ -988,6 +1083,66 @@ async fn enforce_closure_gate(
     Ok(())
 }
 
+/// Epic-done transition gate (migration 0010, ADR lumina epic/focus semantics).
+/// Runs INSIDE the caller's transaction, immediately after [`enforce_closure_gate`]
+/// at every `→done` entry point. UNCONDITIONAL — it does NOT read `closure_gate`
+/// (an epic's `closure_gate` flag, allowed for SPA/parity, has no bearing here):
+/// an `epic→done` requires BOTH
+///   (a) all of the epic's OWN close-criteria checked, AND
+///   (b) all descendant stories terminal (`done`/`cancelled`).
+///
+/// The fixed hierarchy epic→focus→story makes the 2-level `parent_id IN (focus
+/// children)` subquery exhaustive (stories cannot nest under stories), so the
+/// "recursive descendant" rule is satisfied without a CTE. Inert unless the
+/// target is `done` and the row is an `epic`; an absent row is inert (the
+/// caller's `rows_affected()==0` check owns NotFound).
+async fn enforce_epic_done_gate(
+    tx: &mut Transaction<'_, Sqlite>,
+    id: &str,
+    target_status: &str,
+) -> Result<(), AppError> {
+    if target_status != "done" {
+        return Ok(());
+    }
+    let Some(row) = sqlx::query!(r#"SELECT kind AS "kind!" FROM work_items WHERE id = ?1"#, id)
+        .fetch_optional(&mut **tx)
+        .await?
+    else {
+        return Ok(());
+    };
+    if row.kind != "epic" {
+        return Ok(());
+    }
+    let unchecked = sqlx::query!(
+        r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1 AND checked = 0"#,
+        id,
+    )
+    .fetch_one(&mut **tx)
+    .await?
+    .n;
+    if unchecked > 0 {
+        return Err(AppError::Validation(format!(
+            "epic '{id}' cannot transition to 'done': {unchecked} close-criterion(s) remain unchecked"
+        )));
+    }
+    let nonterminal = sqlx::query!(
+        r#"SELECT COUNT(*) AS "n!" FROM work_items
+           WHERE kind = 'story' AND deleted_at IS NULL
+             AND status NOT IN ('done','cancelled')
+             AND parent_id IN (SELECT id FROM work_items WHERE kind = 'focus' AND deleted_at IS NULL AND parent_id = ?1)"#,
+        id,
+    )
+    .fetch_one(&mut **tx)
+    .await?
+    .n;
+    if nonterminal > 0 {
+        return Err(AppError::Validation(format!(
+            "epic '{id}' cannot transition to 'done': {nonterminal} descendant story(ies) are not terminal (done/cancelled)"
+        )));
+    }
+    Ok(())
+}
+
 /// Update a work item's free-text status under the single-mutation-path
 /// discipline (status update + one event in one transaction). `NotFound` if the
 /// id has no row — checked via `rows_affected()` so the missing-row case never
@@ -1003,6 +1158,10 @@ pub async fn update_work_item_status(
     // Closure gate (migration 0003): reject task→done under a `hard` story while
     // any acceptance criterion is unchecked. Runs before the UPDATE in this tx.
     enforce_closure_gate(&mut tx, id, status).await?;
+    // Epic-done gate (migration 0010): reject epic→done unless all close-criteria
+    // are checked and all descendant stories are terminal. Independent of the
+    // closure gate above (task→done vs epic→done); both run.
+    enforce_epic_done_gate(&mut tx, id, status).await?;
 
     let affected = sqlx::query!(
         r#"
@@ -1230,9 +1389,9 @@ pub async fn set_closure_gate(
     gate: ClosureGate,
 ) -> Result<(), AppError> {
     let kind = work_item_kind(pool, story_id).await?;
-    if kind != "story" {
+    if !matches!(kind.as_str(), "story" | "epic") {
         return Err(AppError::Validation(format!(
-            "closure_gate is settable only on a story, not on '{kind}'"
+            "closure_gate is settable only on a story or epic, not on '{kind}'"
         )));
     }
     let value = enum_to_str(gate);
@@ -1512,6 +1671,9 @@ pub async fn update_work_item(
     // criteria is rejected here too. No-op when status is absent / not "done".
     if let Some(s) = status_str.as_deref() {
         enforce_closure_gate(&mut tx, id, s).await?;
+        // Epic-done gate (migration 0010): same UNCONDITIONAL epic→done rule as
+        // the transition_status path; both gates run, they cover disjoint kinds.
+        enforce_epic_done_gate(&mut tx, id, s).await?;
     }
 
     let affected = sqlx::query!(
