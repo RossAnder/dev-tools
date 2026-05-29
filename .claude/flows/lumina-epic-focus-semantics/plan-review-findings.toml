@@ -1,0 +1,207 @@
+schema_version = 1
+last_updated = "2026-05-29"
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "#### T2: Rename `Feature → Focus` in the domain + sweep all `\"feature\"` literals"
+summary = "Rename sweep under-scoped and the acceptance gate is unsatisfiable."
+description = "4-agent consensus. T2's file list omits import.rs:249 (production `ensure_scaffold(pool, \"feature\", ...)`, the default project→epic→feature→story chain every `import-flow` uses), db.rs:135/184, export.rs, and mcp.rs test/doc sites. The acceptance `rg '\"feature\"' lumina/src returns no kind literals` cannot mechanically distinguish kind-literals from test fixtures/prose; also `rg '\"feature\"'` (quoted) misses unquoted `epic/feature/story` doc-comments in mcp.rs:156/564/1664/1667. Verified: import.rs:249, 0007 triggers."
+status = "merged"
+
+[[items]]
+id = "P2"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "#### T1: Write migration 0010 (schema-only)"
+summary = "Live hierarchy triggers are in migration 0007, not 0001 — T1 points at superseded SQL."
+description = "VERIFIED: 0007_task_kind_narrow.sql:149-188 recreated trg_work_items_hierarchy_{insert,update} (with `feature` bodies) during its work_items table-rebuild, superseding 0001:59-97. T1's 'read 0001:59-97 first' would hand the executor the OLD bodies. Migration 0010 must DROP the triggers by name (they exist regardless of creator) and recreate from the 0007:149-188 bodies with `focus`. Inline the exact CREATE TRIGGER blocks into 0010 so the byte-identical pair doesn't drift."
+status = "merged"
+
+[[items]]
+id = "P3"
+review_round = 1
+severity = "critical"
+category = "feasibility"
+plan_section = "#### T5: Create-time + transition gates"
+summary = "Epic-done gate is NEW code (not a relaxation) and must wire into TWO entry points."
+description = "VERIFIED: enforce_closure_gate (repo.rs:920) returns early unless kind=='task' (:940) and has no descendant/rollup walk; its doc (:893-895) states BOTH update_work_item_status AND the generic update_work_item PATCH call it. The epic-done gate (all close-criteria checked AND all DESCENDANT stories terminal) is a new recursive function that must be wired into both →done entry points or a PATCH bypasses it."
+status = "merged"
+
+[[items]]
+id = "P4"
+review_round = 1
+severity = "critical"
+category = "completeness"
+plan_section = "#### T11: SPA rename + full inline editors"
+summary = "SPA KIND_VALUES is a closed zod tuple; `npm run build` will NOT catch the runtime break."
+description = "wire-enums.ts:25 KIND_VALUES=['project','epic','feature','story','task'] is a closed zod schema that rejects every tree response at RUNTIME once the backend emits `focus`, while `npm run build` (TS-only) still passes. T11's acceptance is therefore insufficient. Other named SPA sites: treeUtils.ts:69/84/92 (DescendantCounts.features), useHierarchy.ts:281, FocusLens.vue:53/95, PortfolioEmpty.vue:70-71; api/work-items.ts:517 CreateWorkItemBody needs outcome/shape + a new Shape wire-enum."
+status = "merged"
+
+[[items]]
+id = "P5"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "#### T5: Create-time + transition gates"
+summary = "Create-path signature change unpinned; CreateWorkItemRequest is one shared struct."
+description = "VERIFIED: CreateWorkItemRequest (domain.rs:410) is ONE struct deserialised by both MCP and HTTP create — add outcome/shape with #[serde(default)] there (covers T7 too). create_work_item_with_origin (repo.rs:817) is 6-arg positional called from many sites incl. import.rs:249 — do NOT add positional params (breaks callers); use the request struct or a new create_work_item_full wrapper delegating with None,None. import.rs scaffold must supply a shape once feature→focus or it hits the new shape gate. Pin the signature strategy so T6 executor doesn't decide ad hoc."
+status = "merged"
+
+[[items]]
+id = "P6"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "### Phase 2: Repo-layer semantics & gates (after Phase 1)"
+summary = "Phase 2 is not parallel-safe: T3/T4/T5 all edit repo.rs (T3/T4 also domain.rs)."
+description = "The dependency graph draws T3/T4/T5 as a parallel fan, but T3 (set_shape + WorkItem read), T4 (validate_attributes_for_kind + set_epic_plan + domain structs/Shape enum), and T5 (create path + update_work_item_status + set_closure_gate) all modify repo.rs, and T3/T4 both add to domain.rs. Per the user's own plan rule (parallel tasks must not touch the same file) Phase 2 must be SEQUENTIAL T3→T4→T5; annotate the phase and fix the graph."
+status = "merged"
+
+[[items]]
+id = "P7"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "#### T3: Add the `shape` column plumbing + `Shape` enum + `set_shape`"
+summary = "shape plumbing understated: 3 full-column SELECT macros; T8 (sqlx cache) is a hard dep of T3."
+description = "Adding shape:Option<String> to WorkItem forces `shape AS \"shape?\"` into all THREE full-column SELECT macros (repo.rs:363-383, :437-454, :3994) or the compile-checked query!/query_as! macros fail to build. So T8 (sqlx prepare regen) is a HARD prerequisite coupled to T3, not merely downstream. Enumerate the three SELECT sites in T3."
+status = "merged"
+
+[[items]]
+id = "P8"
+review_round = 1
+severity = "warning"
+category = "feasibility"
+plan_section = "#### T4: Epic/focus attribute split + `set_epic_plan` / focus `framing` setter"
+summary = "Validator change is a one-arm→two-arm split; `outcome` is already a task-kind key."
+description = "VERIFIED: validate_attributes_for_kind (repo.rs:188) has a SINGLE combined `\"epic\" | \"feature\"` arm. T4 must split it into separate `\"epic\" => {outcome,context}` and `\"focus\" => {framing}` arms (drop grouping_rationale from both, context from focus). Note `outcome` is already a legal task-kind key (repo.rs:183) used by set_task_spec — harmless under per-kind matching, but the implementer must not treat `outcome` as globally novel."
+status = "merged"
+
+[[items]]
+id = "P9"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "#### T11: SPA rename + full inline editors"
+summary = "T11 is oversized (L) and its acceptance is partly non-mechanical; split it."
+description = "T11 bundles a codebase-wide feature→focus rename + four inline editors (shape picker, outcome, framing) + full epic close-criteria CRUD across api.ts/composables/components — five UI features plus a rename, and 'detail panel edits and persists' is a manual click-through. Split into T11a (mechanical rename + api.ts fields, gated by `npm run build`) and T11b (editors + close-criteria CRUD, component-test gated), or at minimum tag effort=L."
+status = "merged"
+
+[[items]]
+id = "P10"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "## Verification"
+summary = "Stale test assertions not in T12: e2e event-count and migration `feature` fixtures."
+description = "e2e.rs:343-351 asserts a hardcoded event_count==7; the new e2e thread (epic outcome, add_acceptance_criterion, set_shape, set_epic_plan, transition) each emit an event, so the count assertion + its `2d` comment go stale. migration_0003.rs:32 / migration_0004.rs:36 seed ('f1','feature',...) fixtures that run against the cumulative schema — post-0010 the recreated triggers reject `feature`. T12 must update all three."
+status = "merged"
+
+[[items]]
+id = "P11"
+review_round = 1
+severity = "warning"
+category = "completeness"
+plan_section = "#### T10: Update catalogue + conventions + CLAUDE"
+summary = "Doc-count updates incomplete: tool count 55→58, plugin README skill count, HTTP-routes catalogue."
+description = "lumina/CLAUDE.md states 'Tool surface is now 55' → 58 (set_shape/set_epic_plan/set_focus_plan) and its § HTTP routes catalogue needs the new /shape, /epic-plan, /focus-plan PATCHes. T10 omits claude/plugins/lumina-story-blocks/README.md whose 'twenty-one /lumina:* slash commands' → twenty-five (decision-4's 4 new skills). T6 covers the tool-count comment but not the HTTP catalogue in the same file."
+status = "merged"
+
+[[items]]
+id = "P12"
+review_round = 1
+severity = "warning"
+category = "executability"
+plan_section = "#### T4: Epic/focus attribute split + `set_epic_plan` / focus `framing` setter"
+summary = "T6 names a `set_focus_plan` tool but T4 defines no matching repo mutator."
+description = "T6 lists set_shape/set_epic_plan/set_focus_plan tools; T3 defines set_shape, T4 defines set_epic_plan, but the focus-framing path in T4 is described only as an inline set_work_item_attributes merge. The MCP↔HTTP mirror constraint (every MCP write tool → one repo::* mutator) implies a named repo::set_focus_plan(pool,id,framing) (focus-kind-gated). Pin it in T4 so T6/T7 reference the chosen name."
+status = "merged"
+
+[[items]]
+id = "P13"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "## Constraints"
+summary = "SQLite Constraints prose is muddled — CHECK-on-ADD-COLUMN is legal since 3.37.0 (action is sound)."
+description = "VERIFIED via Context7 + sqlite.org: ALTER TABLE ADD COLUMN ... CHECK is permitted (since 3.37.0, 2021-11-27); the only real restrictions are no PRIMARY KEY/UNIQUE and NOT-NULL-needs-default. The plan's nullable-column-+-CHECK engineering is correct; only the prose ('cannot add a CHECK retroactively to existing columns') risks misleading. Tighten the wording; keep the design."
+status = "merged"
+
+[[items]]
+id = "P14"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "## Constraints"
+summary = "No rollback/recovery note for the forward-only migration in a 12-task single flow."
+description = "Migration 0010 alters live schema; if T1-T8 land then a later task fails review, there is no down-migration. Per decision 1 the DB is disposable, so recovery = `git revert` + `sqlx migrate run` on a fresh DB — but state this explicitly in Constraints so a mid-flow abort path is documented rather than implicit."
+status = "merged"
+
+[[items]]
+id = "P15"
+review_round = 1
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "git-export keys directory on `kind`; rename orphans any committed `feature/` snapshots."
+description = "export.rs:242-243 writes <export_root>/<kind>/<id>.toml. After feature→focus, items re-export under focus/ leaving stale feature/<id>.toml on disk/in git. Decision 1 (no live rows) makes this largely theoretical, but add a one-line risk + optional cleanup (delete any committed feature/ export dir) or state the export root is ephemeral."
+status = "merged"
+
+[[items]]
+id = "P16"
+review_round = 1
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Repo-layer gates (new)"
+summary = "[VET-CONFIRMED SAFE] Epic close-criteria cannot leak into a story's task→done gate."
+description = "Downgraded from A2F4 (warning) after vetting. The existing closure gate (repo.rs:964) counts only the TASK's own criteria (WHERE work_item_id = <task id>), and get_story_readiness (repo.rs:4292) reads story-scoped rows; epic close-criteria are epic-id-scoped, so no leak is possible by current design. Optionally add a one-line note in the plan affirming this rather than treating it as an open risk."
+status = "merged"
+
+[[vet_events]]
+timestamp = "2026-05-29T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Sampled import.rs:249 (production ensure_scaffold confirmed), enforce_closure_gate repo.rs:920 (task-only + dual-entry-point confirmed via doc :893-895), CreateWorkItemRequest domain.rs:410 (shared MCP+HTTP confirmed). All cited file:line accurate. The '118 call sites' count is unverified (Agent 3 said ~20) but the substance (positional callers, don't add positional params) holds."
+
+[[vet_events]]
+timestamp = "2026-05-29T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+dropped_ids = []
+rationale = "Sampled the 0007-trigger claim (VERIFIED: 0007:149-188 recreated the hierarchy triggers with feature bodies, superseding 0001 — refines the plan and is more correct than T1), import.rs/db.rs literals (confirmed), and the epic-criteria-leak claim (A2F4). A2F4 DOWNGRADED to suggestion (P16): the existing gate reads task-scoped criteria (repo.rs:964) so epic close-criteria cannot leak — the concern is already prevented by current design."
+
+[[vet_events]]
+timestamp = "2026-05-29T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Sampled the import.rs:249 sweep gap (confirmed production code), the unpinned create signature (confirmed: create_work_item_with_origin is 6-arg positional with many callers), and the T3/T4/T5 same-file parallel hazard (confirmed all edit repo.rs). All executability findings well-grounded in the actual task text and code."
+
+[[vet_events]]
+timestamp = "2026-05-29T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Sampled the SQLite ADD-COLUMN-CHECK claim (CONFIRMED legal since 3.37.0 via Context7 + sqlite.org — recorded as P13, a prose-clarity suggestion, not a blocker), export.rs:242-243 kind-keyed dir (code quote accurate), and the create blast-radius (consistent with Agent 1's verified CreateWorkItemRequest finding). External version checks (rmcp 1.7, sqlx 0.9, Vue 3.6 Vapor) align with project pins."

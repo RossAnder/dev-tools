@@ -1,0 +1,17 @@
+slug = "lumina-epic-focus-semantics"
+plan_path = "docs/plans/lumina-epic-focus-semantics.md"
+status = "review"
+created = 2026-05-29
+updated = 2026-05-29
+scope = []
+
+[tasks]
+total = 13
+completed = 13
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lumina-epic-focus-semantics/review-ledger.toml"
+optimise_findings = ".claude/flows/lumina-epic-focus-semantics/optimise-findings.toml"
+execution_record = ".claude/flows/lumina-epic-focus-semantics/execution-record.toml"
+plan_review_findings = ".claude/flows/lumina-epic-focus-semantics/plan-review-findings.toml"

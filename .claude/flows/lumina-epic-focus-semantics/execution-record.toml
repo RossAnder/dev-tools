@@ -1,0 +1,380 @@
+schema_version = 1
+last_updated = 2026-05-29
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-29
+agent = "implement"
+summary = "Flow status draft to in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "f3dffc77b6e3f334"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t1-write-migration-0010"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T1: wrote migration 0010 - rewrote hierarchy triggers feature->focus + added nullable shape CHECK column; verified clean apply + trigger/CHECK probes"
+files = ["lumina/migrations/0010_epic_focus_semantics.sql"]
+commits = ["ac63bd9"]
+dedup_id = "4d696237f7a86321"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t2-rename-feature-to-focus"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T2: renamed Kind::Feature to Focus and swept all feature kind literals to focus across 18 src files; cargo build and acceptance greps clean"
+files = [
+    "lumina/src/db.rs",
+    "lumina/src/domain.rs",
+    "lumina/src/export.rs",
+    "lumina/src/import.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/repo.rs",
+    "lumina/src/http/acceptance_criteria.rs",
+    "lumina/src/http/activity.rs",
+    "lumina/src/http/context_blocks.rs",
+    "lumina/src/http/findings.rs",
+    "lumina/src/http/open_questions.rs",
+    "lumina/src/http/readiness.rs",
+    "lumina/src/http/rejected_alternatives.rs",
+    "lumina/src/http/research_notes.rs",
+    "lumina/src/http/risks.rs",
+    "lumina/src/http/structured_patches.rs",
+    "lumina/src/http/task_dependencies.rs",
+    "lumina/src/http/work_items.rs",
+]
+dedup_id = "d50fbfd1f468c360"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t3-shape-plumbing"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T3: added Shape enum (kebab wire) + shape field on WorkItem, wired into both production SELECTs; focus-gated set_shape with one work_item.shape_set event; builds green online"
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/export.rs",
+    "lumina/src/repo.rs",
+]
+commits = ["f30bd26"]
+dedup_id = "6f58108602ccbe19"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t3-shape-plumbing"
+summary = "export.rs has no production WorkItem SELECT; shape reaches export via get_work_item_detail delegation, not a separate export-side full-column SELECT"
+original_intent = "Plan T3 named a third full-column work-item SELECT in export.rs (~:115) plus a WorkItem literal (~:832) as the export carrier for shape"
+rationale = "render_work_item delegates to repo::get_work_item_detail, so shape serialises through the existing toml::Table::try_from(&detail) automatically; export.rs:115 is the events-outbox SELECT and :832 is a test literal (fixed with shape:None). Net coverage matches plan intent - only the mechanism/location differed; no behavioural change."
+commits = ["f30bd26"]
+dedup_id = "1b5a1d76e89ca150"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t4-epic-focus-attr-split"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T4: split epic/focus attribute arms (epic outcome+context, focus framing); added kind-gated set_epic_plan/set_focus_plan delegating to set_work_item_attributes (one event each); added EpicPlanRequest/FocusPlanRequest DTOs; build clean"
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/repo.rs",
+]
+commits = ["7f3b117"]
+dedup_id = "26f76dfbe6ac1a84"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t5-create-transition-gates"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T5: create_work_item_full with 4 create gates (epic-outcome, focus-shape, shape-focus-only, story-needs-epic-close-criterion); unconditional enforce_epic_done_gate wired into both ->done paths; set_closure_gate accepts epic; CreateWorkItemRequest gains outcome/shape; import_flow repaired. Lib+bin build green."
+files = [
+    "lumina/src/domain.rs",
+    "lumina/src/import.rs",
+    "lumina/src/repo.rs",
+]
+commits = ["b5d559d"]
+dedup_id = "883f25a470ef1dbb"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t5-create-transition-gates"
+summary = "create-gate ripple: import.rs needed epic-outcome + a close-criterion (not just the plan-noted shape); broad test-fixture impact deferred to T12 (far wider than the 3 named files); 3 mcp.rs test literals folded into T6; list_acceptance_criteria made pub"
+original_intent = "Plan T5 scoped create gates to repo.rs + domain.rs, noted only that import.rs must supply a shape for the renamed focus scaffold, and assigned T12 to fix the e2e + migration_0003 + migration_0004 fixtures."
+rationale = "The new gates ripple wider: (1) import_flow's synthetic epic also needs an outcome AND >=1 close-criterion or lumina import-flow breaks the story gate - import.rs scope expanded (idempotent close-criterion add). (2) Every fixture building epic/focus/story without outcome/shape/criteria now fails at test-RUNTIME, so the suite is red-by-design until T12; T12's fixture sweep must cover http/*.rs, repo.rs, export.rs, mcp.rs, db.rs - broader than the 3 named files. (3) Adding outcome/shape to CreateWorkItemRequest breaks 3 test-module CreateWorkItemRequest literals in mcp.rs at COMPILE time (mcp.rs:2551/2693/2963) - folded into T6 (owns mcp.rs). (4) list_acceptance_criteria promoted to pub for import.rs. Lib+bin build green; --all-targets compile restored once T6 fixes the mcp.rs literals."
+commits = ["b5d559d"]
+dedup_id = "4a6a02733541217d"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t6-mcp-tools"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T6: registered MCP set_shape/set_epic_plan/set_focus_plan tools, threaded outcome/shape through create_work_item tool, relaxed set_closure_gate description to story-or-epic, bumped CLAUDE.md count + tool-count test assertion to 58; compile-unblocked 4 CreateWorkItemRequest test literals (mcp.rs x3 + e2e.rs x1). Both builds compile."
+files = [
+    "lumina/CLAUDE.md",
+    "lumina/src/mcp.rs",
+    "lumina/tests/e2e.rs",
+]
+commits = ["b63b6d8"]
+dedup_id = "2c6aeb6d3a17bcf3"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t7-http-routes"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T7: added PATCH /work-items/{id}/shape, /epic-plan, /focus-plan (reusing EpicPlanRequest/FocusPlanRequest DTOs) delegating to repo mutators; threaded outcome/shape through POST /work-items create handler (create_work_item_full); app.rs unchanged (sub-router auto-merged). Both builds compile clean."
+files = [
+    "lumina/src/http/structured_patches.rs",
+    "lumina/src/http/work_items.rs",
+]
+commits = ["f61c1b6"]
+dedup_id = "d615b4e91bc90764"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t8-regenerate-sqlx-cache"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "T8: regenerated offline sqlx cache (cargo sqlx prepare -- --all-targets); prepare --check exit 0 with benign unused-queries warning. 6 query files added, 3 removed."
+files = ["lumina/.sqlx/"]
+commits = ["5fad4b2"]
+dedup_id = "d32d29bdfa753f25"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t9-author-plugin-skills"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T9: authored 4 /lumina:* skills (epic-outcome, focus-shape, focus-framing, epic-close-criteria) per CONVENTIONS §a/§b/§c/§e/§g; kind-precondition fail-fast; epic-close-criteria is per-element."
+files = [
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/focus-shape/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/focus-framing/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria/SKILL.md",
+]
+commits = ["bbe18c4"]
+dedup_id = "7e628e076a76f1d5"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t10-update-catalogue-docs"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T10: documented epic/focus surface in mcp/SKILL.md (3 new tools), CONVENTIONS §m + §b-per-element widened, README twenty-five + table rows, lumina/CLAUDE.md HTTP routes + count fixed to twenty-five."
+files = [
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md",
+    "claude/plugins/lumina-story-blocks/README.md",
+    "lumina/CLAUDE.md",
+]
+commits = ["bbe18c4"]
+dedup_id = "b28d635fff635638"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t11a-spa-rename-api-fields"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T11a: SPA feature->focus rename incl. closed zod KIND_VALUES (P4 fix), new Shape wire-enum, /shape scalar + /epic-plan + /focus-plan api fns, CreateWorkItemBody outcome/shape; npm run build passes; rg feature kind-literal = 0."
+files = [
+    "lumina/web/src/api/wire-enums.ts",
+    "lumina/web/src/composables/treeUtils.ts",
+    "lumina/web/src/composables/useHierarchy.ts",
+    "lumina/web/src/components/FocusLens.vue",
+    "lumina/web/src/components/PortfolioEmpty.vue",
+    "lumina/web/src/api/scalars.ts",
+    "lumina/web/src/composables/useScalars.ts",
+    "lumina/web/src/api/work-items.ts",
+    "lumina/web/src/api/structured-patches.ts",
+]
+commits = ["7a7c7e3"]
+dedup_id = "39aa7b6d90ee1f68"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t11b-spa-inline-editors"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T11b: built 4 kind-gated inline editors (ShapeEditor, OutcomeEditor, FramingEditor, EpicCloseCriteriaPanel) into FocusLens.vue; added useEpicPlan/useFocusPlan composables; reused useScalars.setShape + useAcceptanceCriteria. npm run build green; bun test 250 pass."
+files = [
+    "lumina/web/src/components/ShapeEditor.vue",
+    "lumina/web/src/components/OutcomeEditor.vue",
+    "lumina/web/src/components/FramingEditor.vue",
+    "lumina/web/src/components/EpicCloseCriteriaPanel.vue",
+    "lumina/web/src/composables/useEpicPlan.ts",
+    "lumina/web/src/composables/useFocusPlan.ts",
+    "lumina/web/src/components/FocusLens.vue",
+    "lumina/web/src/api/work-items.ts",
+    "lumina/web/src/__tests__/epic-plan.test.ts",
+    "lumina/web/src/__tests__/focus-plan.test.ts",
+    "lumina/web/src/__tests__/scalars.test.ts",
+    "lumina/web/src/__tests__/showcase.test.ts",
+]
+commits = ["f3dba0d"]
+dedup_id = "126399cdc35f968c"
+
+[[items]]
+id = "E16"
+type = "deviation"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t11b-spa-inline-editors"
+summary = "T11a left the TS WorkItem READ interface/schema without a shape field (only CreateWorkItemBody got it); T11b added shape: Shape|null (nullable default) so reads surface item.shape and the editors can reflect it"
+original_intent = "T11a was scoped to add the shape wire-enum + CreateWorkItemBody fields; the WorkItem read schema was expected to be complete."
+rationale = "The Rust domain::WorkItem serialises shape as a top-level column, but the SPA WorkItem interface + WorkItemSchema omitted it, so item.shape would not typecheck and the shape picker could not reflect current state. T11b added shape: Shape|null with ShapeSchema.nullable().default(null) (backward-compatible with pre-migration cached responses) and patched one showcase fixture. No backend change needed."
+commits = ["f3dba0d"]
+dedup_id = "f2589b2e9226c57d"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-05-29
+agent = "implement"
+task_ref = "t12-tests"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T12: greened the lumina suite (204 pass, 0 fail) by sweeping all hierarchy fixtures to the gate-satisfying chain; authored 6 repo gate tests + tests/migration_0010.rs; recomputed e2e event_count 7->8; added pub LuminaTools::pool(); sqlx prepare --check exit 0; clippy --all-targets clean."
+files = [
+    "lumina/src/repo.rs",
+    "lumina/src/export.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/db.rs",
+    "lumina/src/http/work_items.rs",
+    "lumina/src/http/acceptance_criteria.rs",
+    "lumina/src/http/activity.rs",
+    "lumina/src/http/context_blocks.rs",
+    "lumina/src/http/findings.rs",
+    "lumina/src/http/open_questions.rs",
+    "lumina/src/http/readiness.rs",
+    "lumina/src/http/rejected_alternatives.rs",
+    "lumina/src/http/research_notes.rs",
+    "lumina/src/http/risks.rs",
+    "lumina/src/http/structured_patches.rs",
+    "lumina/src/http/task_dependencies.rs",
+    "lumina/tests/e2e.rs",
+    "lumina/tests/migration_0003.rs",
+    "lumina/tests/migration_0004.rs",
+    "lumina/tests/migration_0010.rs",
+]
+commits = ["a5b8687"]
+dedup_id = "2e3160363318e878"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-05-29
+agent = "implement"
+summary = "cargo build (lumina) passed"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "21e2b0491991911f"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-05-29
+agent = "implement"
+summary = "cargo nextest run (lumina) passed 204/204"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "728f82924906229d"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-05-29
+agent = "implement"
+summary = "cargo clippy --all-targets (lumina) clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "2b794863b3e967e7"
+
+[[items]]
+id = "E21"
+type = "verification"
+date = 2026-05-29
+agent = "implement"
+summary = "cargo sqlx prepare --check exit 0 (benign unused-queries warning)"
+command = "cd lumina && cargo sqlx prepare --check"
+outcome = "pass"
+dedup_id = "bddcfdade7d3327d"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-05-29
+agent = "implement"
+summary = "npm run build (lumina SPA bundle) passed"
+command = "cd lumina/web && npm run build"
+outcome = "pass"
+dedup_id = "4e17a3918cde673f"
+
+[[items]]
+id = "E23"
+type = "status-transition"
+date = 2026-05-29
+agent = "plan-update"
+summary = "All 13 tasks complete and verified (build/test/lint/sqlx/web pass); flow in-progress to review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "c09dd862ed2b6363"

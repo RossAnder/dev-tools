@@ -1,0 +1,809 @@
+schema_version = 1
+last_updated = 2026-05-29
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R1"
+file = "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md"
+line = 219
+symbol = "Recommended sequence — build flow"
+severity = "critical"
+effort = "small"
+category = "package-quality"
+summary = "Canonical create_work_item example uses the removed `feature` kind and omits mandatory outcome/shape"
+description = "The model-discoverable build-flow example (SKILL.md:219-226) creates kind 'feature' (removed by migration 0010; KINDS is project/epic/focus/story/task) and omits the now-mandatory outcome on the epic and shape on the focus. An agent copying the primary documented flow hits three Validation/invalid_params failures in a row. Rename feature->focus and add outcome + shape to the example."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md:219",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md:224",
+    "lumina/src/repo.rs:892",
+    "lumina/src/repo.rs:898",
+]
+dedup_id = "cdce6a3a58a0af04"
+resolved = 2026-05-29
+resolution = "Rewrote the canonical build-flow example in mcp/SKILL.md: feature->focus, added the mandatory outcome on the epic create and shape on the focus create, and inserted an add_acceptance_criterion step so the story create clears the epic close-criterion gate (example now executable end-to-end). No commit yet (no-auto-commit)."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R2"
+file = "lumina/src/repo.rs"
+line = 898
+symbol = "create_work_item_full"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Focus shape at create is an unvalidated free string — an invalid value escapes the gate and hits the SQL CHECK as a 500, not a 422"
+description = "CreateWorkItemRequest.shape is Option<String> (domain.rs:439); the create gate only checks presence (shape.is_none) and kind (shape on non-focus) and never validates the value against the Shape enum set. A focus created with shape 'garbage' passes the gate, violates the migration-0010 CHECK, and surfaces as AppError::Db -> 500 rather than the typed 422 that set_shape (typed Shape param) produces. Validate the string via the Shape enum before begin_write, or type the field as Option<Shape>. NOTE: the security lens incorrectly ruled this out; orchestrator verified it against domain.rs:439 + repo.rs:898-906."
+evidence = [
+    "lumina/src/repo.rs:898",
+    "lumina/src/repo.rs:904",
+    "lumina/src/domain.rs:439",
+    "lumina/migrations/0010_epic_focus_semantics.sql:72",
+]
+dedup_id = "877dfac2d8f21ad6"
+resolved = 2026-05-29
+resolution = "create_work_item_full now validates the focus shape value against the typed Shape enum in the create gate (single source of truth); an invalid shape returns Validation (422) instead of reaching the SQL CHECK as a 500. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R3"
+file = "lumina/src/repo.rs"
+line = 921
+symbol = "create_work_item_full"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Story-create close-criterion gate reads on the pool before begin_write — TOCTOU window"
+description = "The epic-ancestor resolution and the close-criterion COUNT (repo.rs:909-934) run on the autocommit pool; the INSERT opens begin_write later. A concurrent removal of the epic's last close-criterion between the count and the insert lets a story be created under a now-criterionless epic. enforce_epic_done_gate by contrast reads inside the tx. Move the count (and parent reads) inside the write tx, or document the accepted TOCTOU. Flagged independently by the quality and security lenses."
+evidence = [
+    "lumina/src/repo.rs:909",
+    "lumina/src/repo.rs:921",
+    "lumina/src/repo.rs:961",
+    "lumina/src/repo.rs:1116",
+]
+dedup_id = "9424b64a11ad3c42"
+resolved = 2026-05-29
+resolution = "Moved the story close-criterion count + epic-ancestor resolution inside the begin_write tx (read via the tx connection) before the INSERT, closing the TOCTOU; error message/variant preserved. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R4"
+file = "lumina/src/repo.rs"
+line = 1284
+symbol = "set_epic_plan / set_focus_plan"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "set_epic_plan/set_focus_plan emit a spurious work_item.updated event when all fields are absent"
+description = "Both build a patch map from optional fields and unconditionally call set_work_item_attributes (repo.rs:1284/1304), which does not short-circuit on an empty patch — so set_epic_plan(id, None, None) performs a no-op write and still emits one outbox event plus a redundant export render. The HTTP composite handlers guard with `if !obj.is_empty()` (structured_patches.rs:299) but the repo functions do not, so the layers disagree. Early-return Ok(()) on an empty patch."
+evidence = [
+    "lumina/src/repo.rs:1277",
+    "lumina/src/repo.rs:1300",
+    "lumina/src/http/structured_patches.rs:299",
+]
+dedup_id = "451f7c539c64bc08"
+resolved = 2026-05-29
+resolution = "Added an empty-patch early-return (return Ok(()) when no fields supplied) to both set_epic_plan and set_focus_plan in repo.rs, suppressing the no-op write + spurious work_item.updated event; kind-validation still runs first. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R5"
+file = "lumina/src/mcp.rs"
+line = 156
+symbol = "ListWorkItemsParams"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "list_work_items kind-filter docstring still advertises `feature` instead of `focus`"
+description = "ListWorkItemsParams.kind doc (mcp.rs:156) reads 'one of project/epic/feature/story/task'; it is emitted into the JsonSchema the MCP client consumes, so an agent is told feature is a legal kind value when the Kind enum only deserialises focus. Functionally harmless (enum rejects feature) but a user-visible contract lie. Flagged by architecture and completeness lenses. Fix: feature->focus."
+evidence = [
+    "lumina/src/mcp.rs:156",
+    "lumina/src/domain.rs:559",
+]
+dedup_id = "862d8abb0b4dc475"
+resolved = 2026-05-29
+resolution = "mcp.rs:156 ListWorkItemsParams.kind doc comment feature->focus. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R6"
+file = "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md"
+line = 14
+symbol = "hierarchy diagram / set_relevance row"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "Multiple stale `feature` references in mcp SKILL.md outside the create example (diagram l14, when-to-use l26, set_relevance row l127)"
+description = "The hierarchy diagram (l14) and when-to-use bullet (l26) still read project->epic->feature->story->task, self-contradicting the doc's own Epic/focus section (l292). The set_relevance catalogue row (l127) documents an epic/feature/story relevance but repo gates on epic/focus/story (repo.rs:1202). Scrub feature->focus across these rows."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md:14",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md:26",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md:127",
+    "lumina/src/repo.rs:1202",
+]
+dedup_id = "336cec7a69c59fad"
+resolved = 2026-05-29
+resolution = "Scrubbed stale feature hierarchy references in mcp/SKILL.md (frontmatter description, hierarchy diagram, when-to-use bullet, set_relevance row) to focus; left the line that documents the rename itself intact. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R7"
+file = "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json"
+line = 5
+symbol = "description / version"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "plugin.json says 'Twenty-one' skills (now 25) and version 0.3.0 not bumped for the 0010 wave"
+description = "The manifest description undercounts the skill set (README.md:101 and lumina/CLAUDE.md both assert twenty-five after the four new 0010 skills) and the version is still 0.3.0 despite README.md:39 directing a bump when CONVENTIONS contracts (new section m) or skill bodies change. Update the count and bump the version."
+evidence = [
+    "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json:5",
+    "claude/plugins/lumina-story-blocks/README.md:101",
+    "claude/plugins/lumina-story-blocks/README.md:39",
+]
+dedup_id = "203e312199993c6d"
+resolved = 2026-05-29
+resolution = "plugin.json: version 0.3.0->0.4.0 and description 'Twenty-one'->'Twenty-five' skills. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R8"
+file = "lumina/tests/e2e.rs"
+line = 410
+symbol = "set_shape/set_epic_plan/set_focus_plan"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "No e2e/event-count coverage for the 3 new setters' +1-events single-mutation-path invariant"
+description = "The three new setters are never invoked in any e2e/integration test; the repo unit tests (shape_and_plan_setters_are_kind_gated, repo.rs:6614) assert only kind-gating, not event counts. The project's single-mutation-path invariant (+1 work_items => exactly +1 events row) is therefore unverified for these write paths. Add an e2e assertion: after set_shape/set_epic_plan/set_focus_plan, assert exactly one corresponding event drained to git-export."
+evidence = [
+    "lumina/tests/e2e.rs:410",
+    "lumina/src/repo.rs:1256",
+    "lumina/src/repo.rs:6614",
+]
+dedup_id = "bfd828a3eb8f73ec"
+resolved = 2026-05-29
+resolution = "Added e2e test epic_focus_setters_emit_exactly_one_event_each_to_export asserting set_shape/set_epic_plan/set_focus_plan each drain exactly one event of the expected kind to the git-export snapshot (single-mutation-path invariant). No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R9"
+file = "lumina/tests/migration_0010.rs"
+line = 78
+symbol = "migration_0010_applies_and_renames_feature_to_focus"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "Migration test exercises only 1 of 3 valid shape CHECK values; cross-cutting/foundational/NULL untested at the CHECK layer"
+description = "The shape CHECK is tested for one valid value (vertical-slice, l78) and one rejected value (l101). cross-cutting and foundational are never inserted via the CHECK path, and NULL shape is only implicitly covered via the create gate. A typo dropping 'foundational' from the CHECK list would pass the suite. Add insert assertions for cross-cutting and foundational (Ok) plus an explicit NULL."
+evidence = [
+    "lumina/tests/migration_0010.rs:78",
+    "lumina/tests/migration_0010.rs:101",
+    "lumina/migrations/0010_epic_focus_semantics.sql:73",
+]
+dedup_id = "9a08570387ad8bb5"
+resolved = 2026-05-29
+resolution = "migration_0010 test now asserts cross-cutting + foundational shapes INSERT Ok and an explicit NULL shape is accepted. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R10"
+file = "lumina/src/repo.rs"
+line = 904
+symbol = "create_work_item_full (shape-on-non-focus gate)"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "The shape-on-non-focus create gate (repo.rs:904) is entirely untested"
+description = "The 'shape is only valid on a focus' gate has no test; the three create-gate tests cover no-outcome-epic, no-shape-focus and story-under-criterionless-epic but none passes a shape to a non-focus kind (only create_work_item_full can carry shape; the 5-arg test wrapper cannot). Add create_work_item_full(kind=epic, shape=Some(...)) -> Validation with zero rows written."
+evidence = [
+    "lumina/src/repo.rs:904",
+    "lumina/src/repo.rs:6437",
+]
+dedup_id = "e2855bee37a37e0c"
+resolved = 2026-05-29
+resolution = "Added test shape_on_non_focus_kind_is_validation_and_writes_nothing: shape on a non-focus kind returns Validation with zero rows written. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R11"
+file = "lumina/src/repo.rs"
+line = 6655
+symbol = "shape_and_plan_setters_are_kind_gated"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "JSON-merge sibling-key preservation for set_epic_plan/set_focus_plan is asserted nowhere"
+description = "set_epic_plan/set_focus_plan are JSON-merge writes but no test proves a partial update preserves previously-set sibling keys (the success calls set both fields at once). Add: set_epic_plan(outcome=Some, context=None) then (outcome=None, context=Some) and assert the original outcome still survives in the stored attributes."
+evidence = [
+    "lumina/src/repo.rs:1277",
+    "lumina/src/repo.rs:6655",
+]
+dedup_id = "3cc56c6b20021bea"
+resolved = 2026-05-29
+resolution = "Added setter-level test epic_plan_setter_merges_without_clobber (outcome-then-context sibling preservation); focus half noted (single key, no sibling-clobber scenario). No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R12"
+file = "lumina/web/src/composables/useFocusPlan.ts"
+line = 1
+symbol = "useFocusPlan / useEpicPlan"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "useEpicPlan.ts and useFocusPlan.ts are ~95% identical — the singleton-state + try/catch/loading/error apply block is copy-pasted"
+description = "The two composables differ only in the API fn name and the body/detail types; the module-singleton refs, test hooks, toMessage, and the entire apply body are duplicated line-for-line. useScalars.ts already demonstrates the shared-runner pattern (useScalars.ts:151). Factor a makePlanComposable(apiFn) factory so a future change to error handling or the refresh contract is made once."
+evidence = [
+    "lumina/web/src/composables/useEpicPlan.ts:85",
+    "lumina/web/src/composables/useFocusPlan.ts:81",
+    "lumina/web/src/composables/useScalars.ts:151",
+]
+dedup_id = "68d230091f6040c0"
+resolved = 2026-05-29
+resolution = "Extracted shared makePlanComposable(apiKey, setterFn) factory (new composables/makePlanComposable.ts); useEpicPlan/useFocusPlan reduced to delegators; public interface + module-singleton-per-composable semantics preserved (vue-tsc clean, web tests green). No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R13"
+file = "lumina/web/src/api/structured-patches.ts"
+line = 127
+symbol = "setStoryPlan/setTaskSpec/setEpicPlan/setFocusPlan"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The acceptance_criteria 0/1->boolean normalisation block is copy-pasted 4x across the structured-patch wrappers"
+description = "Each of the four PATCH wrappers ends with the identical acceptance_criteria.map(ac => checked: ac.checked === 1) block (lines 127/200/252/302) and work-items.ts fetchDetail repeats it. A fifth detail-returning route forgetting the map silently leaves checked an integer and breaks boolean template checks. Extract a normaliseDetail(wire) helper."
+evidence = [
+    "lumina/web/src/api/structured-patches.ts:127",
+    "lumina/web/src/api/structured-patches.ts:200",
+    "lumina/web/src/api/structured-patches.ts:302",
+]
+dedup_id = "b5d8bc7727b8c3e2"
+resolved = 2026-05-29
+resolution = "Extracted normaliseDetail(wire) helper into work-items.ts; fetchDetail + the four structured-patch wrappers now call it (five copies down to one); behaviour and types identical. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R14"
+file = "lumina/web/src/components/EpicCloseCriteriaPanel.vue"
+line = 99
+symbol = "EpicCloseCriteriaPanel template"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Dead ternary: both branches apply text-[var(--ink-2)]; only line-through actually toggles"
+description = "The class binding ac.checked ? 'text-[var(--ink-2)] line-through' : 'text-[var(--ink-2)]' yields the same colour class either way; only line-through is conditional. Use ac.checked && 'line-through' with the colour moved to the static class attribute to make the intent clear."
+evidence = ["lumina/web/src/components/EpicCloseCriteriaPanel.vue:99"]
+dedup_id = "926a5d71994328b5"
+resolved = 2026-05-29
+resolution = "Collapsed the dead colour ternary in EpicCloseCriteriaPanel.vue to a static text-[var(--ink-2)] class plus object binding { 'line-through': ac.checked }; render is identical. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R15"
+file = "lumina/src/import.rs"
+line = 263
+symbol = "test seed chains"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Stale `feature` naming in post-rename test comments and local variables across the changeset"
+description = "Several touched test helpers still carry feature in comments/bindings though the kind literal passed is correctly focus: structured_patches.rs:398, work_items.rs:242/296-301, export.rs:522/581/746, import.rs:48/263/472-492. Cosmetic but undercuts the rename's clarity. Rename the bindings/comments to focus."
+evidence = [
+    "lumina/src/import.rs:263",
+    "lumina/src/http/structured_patches.rs:398",
+    "lumina/src/http/work_items.rs:242",
+    "lumina/src/export.rs:522",
+]
+dedup_id = "7e1bd9e68f0931d8"
+resolved = 2026-05-29
+resolution = "Renamed stale hierarchy-level feature->focus in the four flagged test helpers (import.rs, export.rs, http/work_items.rs, http/structured_patches.rs): feature_id/features/let-feature bindings + seed comments. Other files' stale feature refs are out of R15's scope (a follow-up sweep; see summary). --allow-cross-file authorised. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R16"
+file = "lumina/src/repo.rs"
+line = 855
+symbol = "create_work_item_full"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "create_work_item_full has 8 positional args with three Option<&str> tails — easy to mis-order at call sites"
+description = "The signature ends in origin, outcome, shape — three consecutive Option<&str> the compiler cannot distinguish if swapped, passed positionally at work_items.rs:167, mcp.rs:1303, import.rs:228 and 6 test sites. The allow(clippy::too_many_arguments) acknowledges the smell. Consider a small CreateOpts{origin, outcome, shape} struct param to make call sites self-documenting and swap-proof."
+evidence = [
+    "lumina/src/repo.rs:855",
+    "lumina/src/repo.rs:862",
+    "lumina/src/http/work_items.rs:167",
+]
+dedup_id = "3943fff1b1102001"
+resolved = 2026-05-29
+resolution = "Replaced create_work_item_full's 8-arg signature with a CreateOpts<'_> { origin, outcome, shape } final param; dropped the too_many_arguments allow; updated all call sites (repo.rs wrapper + ~20 test seeds, mcp.rs, import.rs, export.rs, and 12 http/*.rs test-seed chains). Build + clippy + full test suite + sqlx --check clean. --allow-cross-file authorised. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R17"
+file = "lumina/src/domain.rs"
+line = 18
+symbol = "WorkItem"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Stale `feature` in the WorkItem canonical-hierarchy doc-comment post-rename"
+description = "The WorkItem doc (domain.rs:18) still reads project > epic > feature > story > task; the Kind enum and the migration triggers were renamed to focus. domain.rs is the reference doc for the hierarchy, so the old level name here perpetuates the rename ambiguity. feature->focus."
+evidence = [
+    "lumina/src/domain.rs:18",
+    "lumina/migrations/0010_epic_focus_semantics.sql:44",
+]
+dedup_id = "503b5c27679a85ff"
+resolved = 2026-05-29
+resolution = "domain.rs:18 WorkItem canonical-hierarchy doc-comment feature->focus. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R18"
+file = "lumina/migrations/0010_epic_focus_semantics.sql"
+line = 29
+symbol = "DROP TRIGGER"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "DROP TRIGGER without IF EXISTS — a partial-apply or out-of-order rename would hard-fail re-run"
+description = "Lines 29-30 DROP the two hierarchy triggers without IF EXISTS. Forward-only sqlx migrations make a clean run fine, but a half-apply (DROP succeeds then a later statement fails, leaving the migration row unset) aborts the re-run on a missing trigger rather than recovering. DROP TRIGGER IF EXISTS is the cheap belt-and-braces."
+evidence = ["lumina/migrations/0010_epic_focus_semantics.sql:29"]
+dedup_id = "a9be2d6d066771f1"
+resolved = 2026-05-29
+resolution = "Added IF EXISTS to both DROP TRIGGER statements in migration 0010 for re-run safety. NOTE: editing an applied migration invalidates the dev DB sqlx checksum; the gitignored lumina/lumina.db must be recreated (rm lumina/lumina.db*). Fresh-DB test path unaffected. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R19"
+file = "lumina/migrations/0010_epic_focus_semantics.sql"
+line = 72
+symbol = "shape column"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "Nullable shape + repo-only mandatory-on-focus gate leaves a latent DB-level consistency gap"
+description = "shape is added nullable (ADD COLUMN cannot be NOT NULL without a default) and the focus-must-have-shape rule lives only in repo::create_work_item_full; the CHECK permits NULL for all kinds. A non-repo writer (raw SQL, a future importer path, direct edit) can leave a focus with NULL shape undetected. Accepted under no-live-data; if DB-level enforcement is wanted, a trigger raising when NEW.kind=focus AND NEW.shape IS NULL mirrors the file's existing hierarchy-trigger pattern."
+evidence = [
+    "lumina/migrations/0010_epic_focus_semantics.sql:72",
+    "lumina/src/repo.rs:898",
+]
+dedup_id = "2a2f4b9ae73f7265"
+resolved = 2026-05-29
+resolution = "Added BEFORE INSERT/UPDATE triggers trg_work_items_focus_shape_{insert,update} to migration 0010 enforcing focus.shape IS NOT NULL at the DB layer (user-confirmed); added migration_0010 test cases. Fixed shapeless-focus seed inserts in migration_0003.rs, migration_0004.rs and the db.rs insert_item helper (orchestrator Step-5b fix) so the trigger does not reject legitimate seeds. Full suite green. NOTE: re-edits an applied migration -> dev DB lumina.db must be recreated. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R20"
+file = "lumina/src/repo.rs"
+line = 1128
+symbol = "enforce_epic_done_gate"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "Epic-done gate hard-codes the 2-level epic->focus->story depth and lets a zero-story epic close vacuously"
+description = "The non-terminal-story subquery (repo.rs:1128-1137) is a fixed 2-hop walk, not a recursive CTE — correct under the current hierarchy but silently under-counts if a future migration adds a level or allows story-under-epic. Separately, an epic with zero stories satisfies the structural rollup vacuously (count 0), so it is closeable on close-criteria alone; confirm that is intended (CONVENTIONS section m frames it as 'all descendant stories terminal', true of the empty set). Consider an anchored test on the depth assumption."
+evidence = [
+    "lumina/src/repo.rs:1128",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md:405",
+]
+related = ["R25"]
+dedup_id = "8aa1a2371dd6b24c"
+resolved = 2026-05-29
+resolution = "Added a clarifying comment above the non-terminal-story subquery in enforce_epic_done_gate documenting the fixed epic->focus->story depth assumption and the vacuous zero-story behaviour; recursive-CTE refactor left out of scope. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R21"
+file = "lumina/src/repo.rs"
+line = 909
+symbol = "create_work_item_full"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "Story-create gate does not filter parent deleted_at IS NULL — a story is creatable under a tombstoned epic/focus"
+description = "The parent-kind read (868-886) and the close-criterion count (921-927) never check deleted_at, so a story can be created under a soft-deleted epic that still carries >=1 criterion. enforce_epic_done_gate does filter deleted_at IS NULL (1130). Add AND deleted_at IS NULL to the parent resolution so creates under a tombstoned ancestor are rejected."
+evidence = [
+    "lumina/src/repo.rs:868",
+    "lumina/src/repo.rs:921",
+    "lumina/src/repo.rs:1130",
+]
+dedup_id = "70e7ac4485814ab1"
+resolved = 2026-05-29
+resolution = "Added AND deleted_at IS NULL to the parent-kind lookup in create_work_item_full so a story cannot be created under a tombstoned ancestor; regenerated the .sqlx offline cache for the modified query. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R22"
+file = "lumina/src/repo.rs"
+line = 892
+symbol = "create_work_item_full / set_epic_plan"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Create-time epic-outcome gate rejects whitespace-only outcome but set_epic_plan accepts it later"
+description = "create_work_item_full rejects an epic whose outcome trims empty (repo.rs:892), but set_epic_plan performs no trim/non-empty check, so a follow-up PATCH /epic-plan with a whitespace outcome can overwrite the mandatory outcome with whitespace — a state the create gate would have rejected. Mirror the trim guard in set_epic_plan."
+evidence = [
+    "lumina/src/repo.rs:892",
+    "lumina/src/repo.rs:1277",
+]
+dedup_id = "dfa3f8b54c8579fa"
+resolved = 2026-05-29
+resolution = "set_epic_plan now rejects a whitespace-only outcome with Validation, mirroring the create-time guard. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R23"
+file = "lumina/src/repo.rs"
+line = 1265
+symbol = "set_epic_plan / set_focus_plan / set_work_item_attributes"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "Epic/focus plan attribute blobs (outcome/context/framing) are size-unbounded — storage-amplification on an exposed bind"
+description = "normalise_object/set_work_item_attributes validate shape and type but impose no length cap; the SQL CHECK only constrains the shape enum column, not these TEXT attributes. A caller can persist multi-MB strings per item, bloating the store and every get_work_item_detail / git-export snapshot that re-serialises them. Bounded because lumina binds 127.0.0.1 (the documented real risk is the bypassPermissions PTY surface), so this is quick-win hardening: add a per-field byte cap (e.g. reject >64KB) returning Validation."
+evidence = [
+    "lumina/src/repo.rs:1265",
+    "lumina/src/repo.rs:96",
+]
+dedup_id = "57e74ebeb127da4f"
+resolved = 2026-05-29
+resolution = "Added const MAX_PLAN_FIELD_BYTES = 64 KiB + check_plan_field_len helper; outcome/context/framing string values capped before begin_write (storage-amplification hardening). No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R24"
+file = "lumina/web/src/__tests__/epic-plan.test.ts"
+line = 138
+symbol = "useEpicPlan.apply"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The composable's post-success useHierarchy().refresh(id) side-effect is never exercised (tests run the no-op path)"
+description = "epic-plan/focus-plan tests assert the wrapper sends only supplied fields but run with no focused node, so the refresh(id) call on success is a no-op and untested. Add a test with a focused node, stubbing the hierarchy api, to confirm refresh fires after a successful apply."
+evidence = [
+    "lumina/web/src/__tests__/epic-plan.test.ts:8",
+    "lumina/web/src/__tests__/focus-plan.test.ts:5",
+]
+dedup_id = "102608bfa10f4152"
+resolved = 2026-05-29
+resolution = "Added epic-plan.test.ts test exercising the post-success useHierarchy().refresh(id) side-effect with a focused-node stub. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R25"
+file = "lumina/src/repo.rs"
+line = 6594
+symbol = "epic_done_gate_blocks_then_allows"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Epic-done gate edge cases untested: zero-story epic, and 'cancelled' (vs 'done') as a terminal descendant"
+description = "enforce_epic_done_gate is covered for unchecked-criteria-blocked, nonterminal-blocked and fully-satisfied-allowed, but the zero-story epic (subquery returns 0 -> allow) is not isolated, and only 'done' (never 'cancelled') is exercised as a terminal descendant although the check is status IN ('done','cancelled'). Add both edge cases."
+evidence = [
+    "lumina/src/repo.rs:1128",
+    "lumina/src/repo.rs:6594",
+]
+related = ["R20"]
+dedup_id = "83243d2eff0c2f4a"
+resolved = 2026-05-29
+resolution = "Added epic_done_gate_zero_story_and_cancelled_terminal: zero-story epic closes, and a cancelled descendant passes the terminal check. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R26"
+file = "lumina/src/repo.rs"
+line = 6646
+symbol = "set_shape (idempotent re-set)"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Idempotent/repeated set_shape (re-shaping a focus) is untested; only a single set is exercised"
+description = "No test re-sets shape on the same focus (e.g. vertical-slice then foundational) to confirm the column updates to the latest value and each call emits exactly one shape_set event. Add a re-set assertion."
+evidence = [
+    "lumina/src/repo.rs:1235",
+    "lumina/src/repo.rs:6646",
+]
+dedup_id = "a2a20c20e377e492"
+resolved = 2026-05-29
+resolution = "Added set_shape_reset_holds_latest_value re-set idempotency test. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R27"
+file = "lumina/src/repo.rs"
+line = 1124
+symbol = "AppError::Validation (diagnosability)"
+severity = "suggestion"
+effort = "medium"
+category = "testability"
+summary = "Gate errors are all one opaque Validation(String) variant; tests cannot assert WHICH gate fired"
+description = "All migration-0010 gate/setter rejections share AppError::Validation(String) and every test asserts only matches!(err, Validation(_)), so a test cannot distinguish no-outcome-epic from shape-on-non-focus from unchecked-criteria vs nonterminal-descendant. Assert on the distinct, stable message substrings (e.g. 'close-criterion' vs 'descendant story') so a future clause-merge regression is caught."
+evidence = [
+    "lumina/src/repo.rs:1124",
+    "lumina/src/repo.rs:1139",
+    "lumina/src/repo.rs:6573",
+]
+dedup_id = "c349a8acf7303884"
+resolved = 2026-05-29
+resolution = "Strengthened epic-done-gate tests to assert distinct stable Validation message substrings via assert_close_criterion_gate / assert_descendant_story_gate helpers. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R28"
+file = "lumina/tests/migration_0010.rs"
+line = 87
+symbol = "migration_0010_applies_and_renames_feature_to_focus"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Trigger rename only positively tested for focus-under-epic; focus-under-wrong-parent and the UPDATE-trigger twin untested"
+description = "The test accepts focus-under-epic and rejects legacy feature-under-epic but never asserts the renamed trigger still rejects a focus under a NON-epic parent (proving the allow-list narrowed correctly), and only the INSERT trigger is exercised — a divergent edit to the byte-paired UPDATE trigger would pass. Add focus-under-project -> Err and an UPDATE-trigger case."
+evidence = [
+    "lumina/tests/migration_0010.rs:78",
+    "lumina/migrations/0010_epic_focus_semantics.sql:52",
+]
+dedup_id = "0c6419dadd0504d2"
+resolved = 2026-05-29
+resolution = "migration_0010 test now rejects a focus under a non-epic parent and exercises the UPDATE-trigger twin (illegal reparent rejected). No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R29"
+file = "lumina/web/src/__tests__/scalars.test.ts"
+line = 181
+symbol = "useScalars.setShape"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "setShape has no 422/error-path test (only happy path + schema validation), unlike sibling setRelevance"
+description = "scalars.test.ts covers the setShape happy path and enum schema accept/reject but, unlike setRelevance (dedicated 422 test at l131), has no error-path test for the common 'shape not settable on a non-focus' 422. Add a setShape 422 test mirroring setRelevance, asserting the server message propagates."
+evidence = [
+    "lumina/web/src/__tests__/scalars.test.ts:131",
+    "lumina/web/src/__tests__/scalars.test.ts:181",
+]
+dedup_id = "c691a3a624972214"
+resolved = 2026-05-29
+resolution = "Added scalars.test.ts setShape 422 error-path test mirroring setRelevance. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R30"
+file = "claude/plugins/lumina-story-blocks/skills/focus-shape/SKILL.md"
+line = 43
+symbol = "Body step 4 — present and matches"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "focus-shape step-4 no-op string drifts from the section-b canonical template (the other 3 new skills conform)"
+description = "focus-shape returns 'shape already set to <value> — no change.' rather than the section-b canonical 'already matches the value you provided — no change.' (CONVENTIONS.md:114, which explicitly flags the 'already set to' phrasing as drift). epic-outcome and focus-framing use the canonical form, so focus-shape is the lone drifter. Align its step-4 phrasing."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/focus-shape/SKILL.md:43",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md:114",
+]
+dedup_id = "3822b86ce0045019"
+resolved = 2026-05-29
+resolution = "focus-shape SKILL.md step-4 no-op string aligned to the section-b canonical 'already matches the value you provided' form. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R31"
+file = "claude/plugins/lumina-story-blocks/skills/focus-shape/SKILL.md"
+line = 38
+symbol = "Body — step numbering vs section b"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "focus-shape renumbers the section-b 1-5 steps to absorb the kind-guard; epic-outcome/focus-framing keep them intact — sibling drift"
+description = "focus-shape folds the kind-precondition into step 2 and renumbers section b, whereas epic-outcome/focus-framing keep the 1-5 numbering and document the kind-guard as a separate un-numbered Precondition block. The four-skill family aims for uniformity; pick the majority (un-numbered precondition) form and apply it to focus-shape."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/focus-shape/SKILL.md:38",
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome/SKILL.md:50",
+]
+dedup_id = "1d97c4740249f989"
+resolved = 2026-05-29
+resolution = "focus-shape SKILL.md restructured to the epic-outcome majority form: kind-precondition moved to an un-numbered Precondition block, section-b 1-5 numbering restored. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R32"
+file = "claude/plugins/lumina-story-blocks/skills/epic-outcome/SKILL.md"
+line = 13
+symbol = "Convention citations"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "New skills cite sections g/h (story-only taxonomy) for their kind-guard but the on-point authority section m.2 is uncited"
+description = "The four new skills cite sections g/h for the kind-precondition, but section h's taxonomy covers any-kind lens writers and story-only column writers — it has no epic-only/focus-only category. The on-point contract is section m.2 (CONVENTIONS.md:416), which the skills never cite. Cite section m.2, or extend section h's taxonomy to name epic-only/focus-only writers."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome/SKILL.md:13",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md:416",
+]
+dedup_id = "c44a3a8ac06b53ac"
+resolved = 2026-05-29
+resolution = "epic-outcome SKILL.md kind-precondition citation updated from sections g/h to the on-point section m.2 (verified m.2 names epic-outcome and h lacks an epic/focus category). No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R33"
+file = "claude/plugins/lumina-story-blocks/skills/epic-close-criteria/SKILL.md"
+line = 110
+symbol = "Provenance recording"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "epic-close-criteria discusses entry_type twice but never pairs the section-c mandated origin 'plan'"
+description = "The provenance section discusses entry_type 'execution' (l90, l110) without the paired origin 'plan' reminder that section c fixes (CONVENTIONS.md:135). A reader skimming the skill could record the activity with an absent or wrong origin. Add one explicit origin 'plan' reminder alongside the entry_type discussion for symmetry."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria/SKILL.md:110",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md:135",
+]
+dedup_id = "2b9f825f1916508f"
+resolved = 2026-05-29
+resolution = "epic-close-criteria SKILL.md provenance section now pairs the section-c mandated origin 'plan' reminder with the entry_type discussion. No commit yet."
+
+[[vet_events]]
+timestamp = "2026-05-29T12:01:53Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked R2 (shape unvalidated -> 500) against domain.rs:439 + repo.rs:898-906 — confirmed CreateWorkItemRequest.shape is Option<String> and the create gate is presence/kind-only. Q6 (stale-feature test vars) and Q7 (8-arg signature) corroborated independently by the architecture lens. No fabricated file:line refs."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T12:01:53Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "S1 (unbounded plan blobs -> R23) and S2 (story-create TOCTOU) both grounded; S2 merged with the quality/architecture TOCTOU into R3 (dedup, not a drop). IMPORTANT: this agent's prose incorrectly RULED OUT the shape-500 issue, claiming the create path validates via a typed Shape param. Orchestrator verified the create path actually uses Option<String> (domain.rs:439) and re-instated the finding as R2 from the quality lens. No filed finding dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T12:01:53Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 1
+downgraded_count = 0
+rationale = "Spot-checked the TOCTOU (repo.rs:909-934), the empty-patch spurious event (repo.rs:1277-1284) and the stale mcp.rs:156 docstring — all confirmed. Dropped the 'redundant double kind-check' observation (never assigned an R-id, hence empty dropped_ids): the agent itself concluded the code is acceptable and the inner validate is the real integrity guard — not an actionable defect. A1 merged with quality/security into R3."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T12:01:53Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "C1/C2/C3/C4 each duplicated another lens (mcp/SKILL.md example -> R1; mcp.rs:156 doc -> R5; epic-done zero-story -> folded into R20; empty-patch event -> R4) and were merged, not dropped. C5 (whitespace-outcome inconsistency) kept as R22, verified against repo.rs:892 + set_epic_plan (no trim guard). No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T12:01:53Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified the subject gates exist (create gates repo.rs:890-934; enforce_epic_done_gate repo.rs:1094-1140; the three setters) so every untested-path claim targets real code; the agent read the actual test files (e2e.rs, migration_0010.rs, repo.rs test module 6395-6667). All 10 findings kept (R8-R11 warnings; R24-R29 suggestions). No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T12:01:53Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified the lone critical R1 against SKILL.md:219-226 (removed feature kind + omitted mandatory outcome/shape). PQ2/PQ3 merged into R6 (same-file stale-feature cluster). PQ4 (R7) corroborated by lumina/CLAUDE.md asserting twenty-five skills. The four new SKILL.md files confirmed accurate against mcp.rs/repo.rs tool names and kebab shape values; defects are doc-staleness + intra-family drift. No fabrications."
+dedup_id = "45ca31c3315a5978"
