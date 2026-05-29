@@ -115,7 +115,7 @@ mod tests {
         .await
     }
 
-    /// Build the full legal chain project→epic→feature→story→task and assert a
+    /// Build the full legal chain project→epic→focus→story→task and assert a
     /// legal `task` under a `story` succeeds, while an illegal `task` under a
     /// `project` is rejected by the BEFORE INSERT trigger.
     #[tokio::test]
@@ -134,10 +134,10 @@ mod tests {
             .expect("legal epic under project");
         insert_item(&pool, "f1", "focus", Some("e1"), "Focus")
             .await
-            .expect("legal feature under epic");
+            .expect("legal focus under epic");
         insert_item(&pool, "s1", "story", Some("f1"), "Story")
             .await
-            .expect("legal story under feature");
+            .expect("legal story under focus");
 
         // Legal: task under story SUCCEEDS.
         insert_item(&pool, "t1", "task", Some("s1"), "Task")
@@ -183,7 +183,7 @@ mod tests {
             .expect("legal epic");
         insert_item(&pool, "f1", "focus", Some("e1"), "Focus")
             .await
-            .expect("legal feature");
+            .expect("legal focus");
         insert_item(&pool, "s1", "story", Some("f1"), "Story")
             .await
             .expect("legal story");

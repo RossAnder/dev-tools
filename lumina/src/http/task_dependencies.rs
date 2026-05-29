@@ -154,13 +154,22 @@ mod tests {
         let project = repo::create_work_item(pool, "project", None, "P", None)
             .await
             .expect("project");
-        let epic = repo::create_work_item(pool, "epic", Some(&project.to_string()), "E", None)
+        // migration-0010 valid chain: epic needs an outcome, focus needs a shape,
+        // and a story requires the epic to carry >=1 close-criterion first.
+        let epic = repo::create_work_item_full(
+            pool, "epic", Some(&project.to_string()), "E", None, None, Some("the epic outcome"), None,
+        )
+        .await
+        .expect("epic");
+        repo::add_acceptance_criterion(pool, &epic.to_string(), "epic close criterion")
             .await
-            .expect("epic");
-        let feature = repo::create_work_item(pool, "focus", Some(&epic.to_string()), "F", None)
-            .await
-            .expect("focus");
-        let story = repo::create_work_item(pool, "story", Some(&feature.to_string()), "S", None)
+            .expect("epic close criterion");
+        let focus = repo::create_work_item_full(
+            pool, "focus", Some(&epic.to_string()), "FO", None, None, None, Some("vertical-slice"),
+        )
+        .await
+        .expect("focus");
+        let story = repo::create_work_item(pool, "story", Some(&focus.to_string()), "S", None)
             .await
             .expect("story");
         let mut tasks = Vec::with_capacity(n);

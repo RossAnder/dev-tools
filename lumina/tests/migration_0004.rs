@@ -33,7 +33,7 @@ async fn seed_story(pool: &SqlitePool) -> String {
     for (id, kind, parent) in [
         ("p1", "project", None),
         ("e1", "epic", Some("p1")),
-        ("f1", "feature", Some("e1")),
+        ("f1", "focus", Some("e1")),
         ("s1", "story", Some("f1")),
     ] {
         sqlx::query(

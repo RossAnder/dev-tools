@@ -509,14 +509,22 @@ mod tests {
             .await
             .unwrap()
             .to_string();
-        let epic = repo::create_work_item(&pool, "epic", Some(&project), "E", None)
+        // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
+        let epic = repo::create_work_item_full(
+            &pool, "epic", Some(&project), "E", None, None, Some("the epic outcome"), None,
+        )
+        .await
+        .unwrap()
+        .to_string();
+        repo::add_acceptance_criterion(&pool, &epic, "epic close criterion")
             .await
-            .unwrap()
-            .to_string();
-        let feature = repo::create_work_item(&pool, "focus", Some(&epic), "F", None)
-            .await
-            .unwrap()
-            .to_string();
+            .unwrap();
+        let feature = repo::create_work_item_full(
+            &pool, "focus", Some(&epic), "FO", None, None, None, Some("vertical-slice"),
+        )
+        .await
+        .unwrap()
+        .to_string();
         let story = repo::create_work_item(&pool, "story", Some(&feature), "S", None)
             .await
             .unwrap()
@@ -528,9 +536,10 @@ mod tests {
 
         // "Killed before export": the events all sit unexported. Now restart →
         // export_pending drains them and produces every file, including the task.
-        assert_eq!(unexported_count(&pool).await, 5);
+        // 6 events: project/epic/focus/story/task creates + the epic close-criterion.
+        assert_eq!(unexported_count(&pool).await, 6);
         let drained = export_pending(&pool, dir.path()).await.expect("recovery drain");
-        assert_eq!(drained, 5);
+        assert_eq!(drained, 6);
 
         let task_path = dir.path().join("task").join(format!("{task}.toml"));
         assert!(
@@ -559,14 +568,22 @@ mod tests {
             .await
             .unwrap()
             .to_string();
-        let epic = repo::create_work_item(&pool, "epic", Some(&project), "E", None)
+        // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
+        let epic = repo::create_work_item_full(
+            &pool, "epic", Some(&project), "E", None, None, Some("the epic outcome"), None,
+        )
+        .await
+        .unwrap()
+        .to_string();
+        repo::add_acceptance_criterion(&pool, &epic, "epic close criterion")
             .await
-            .unwrap()
-            .to_string();
-        let feature = repo::create_work_item(&pool, "focus", Some(&epic), "F", None)
-            .await
-            .unwrap()
-            .to_string();
+            .unwrap();
+        let feature = repo::create_work_item_full(
+            &pool, "focus", Some(&epic), "FO", None, None, None, Some("vertical-slice"),
+        )
+        .await
+        .unwrap()
+        .to_string();
         let story = repo::create_work_item(&pool, "story", Some(&feature), "S", None)
             .await
             .unwrap()
@@ -591,7 +608,10 @@ mod tests {
             .expect("append activity");
 
         let drained = export_pending(&pool, dir.path()).await.expect("drain");
-        assert_eq!(drained, 7, "5 creates + 1 attr-update + 1 activity event");
+        assert_eq!(
+            drained, 8,
+            "5 creates + 1 epic close-criterion + 1 attr-update + 1 activity event"
+        );
 
         let path = dir.path().join("task").join(format!("{task}.toml"));
         let raw = std::fs::read_to_string(&path).expect("read snapshot");
@@ -713,14 +733,22 @@ mod tests {
             .await
             .unwrap()
             .to_string();
-        let epic = repo::create_work_item(&pool, "epic", Some(&project), "E", None)
+        // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
+        let epic = repo::create_work_item_full(
+            &pool, "epic", Some(&project), "E", None, None, Some("the epic outcome"), None,
+        )
+        .await
+        .unwrap()
+        .to_string();
+        repo::add_acceptance_criterion(&pool, &epic, "epic close criterion")
             .await
-            .unwrap()
-            .to_string();
-        let feature = repo::create_work_item(&pool, "focus", Some(&epic), "F", None)
-            .await
-            .unwrap()
-            .to_string();
+            .unwrap();
+        let feature = repo::create_work_item_full(
+            &pool, "focus", Some(&epic), "FO", None, None, None, Some("vertical-slice"),
+        )
+        .await
+        .unwrap()
+        .to_string();
         let story = repo::create_work_item(&pool, "story", Some(&feature), "S", None)
             .await
             .unwrap()

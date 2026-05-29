@@ -1146,6 +1146,13 @@ impl LuminaTools {
         Self::with_state(AppState::new(pool))
     }
 
+    /// Borrow the underlying pool. Exposed so in-process tests (which drive the
+    /// tool handlers directly) can assert DB state and seed prerequisite rows
+    /// through the `repo::*` layer over the SAME pool the tools mutate.
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
     /// Construct a tool-handler over a fully-populated [`AppState`]. The MCP
     /// tools no longer reach into the state's PTY plumbing (the PTY service
     /// is driven via the HTTP layer only); the `AppState`-shaped constructor
@@ -2636,7 +2643,18 @@ mod tests {
     /// Build a legal project→epic→focus→story chain and return the story id so
     /// the create-tool test can target a legal `task` parent.
     async fn seed_chain_to_story(tools: &LuminaTools) -> String {
-        async fn create(tools: &LuminaTools, kind: &str, parent: Option<&str>) -> String {
+        // Migration-0010 valid chain: an epic must carry an outcome, a focus a
+        // shape, and a story can only be created once its ancestor epic has ≥1
+        // close-criterion — so the create-tool calls supply outcome/shape and the
+        // seed adds the epic close-criterion via the `add_acceptance_criterion`
+        // tool before the story create.
+        async fn create(
+            tools: &LuminaTools,
+            kind: &str,
+            parent: Option<&str>,
+            outcome: Option<&str>,
+            shape: Option<&str>,
+        ) -> String {
             let res = tools
                 .create_work_item(Parameters(CreateWorkItemRequest {
                     kind: kind.to_owned(),
@@ -2644,8 +2662,8 @@ mod tests {
                     title: kind.to_uppercase(),
                     body: None,
                     origin: None,
-                    outcome: None,
-                    shape: None,
+                    outcome: outcome.map(str::to_owned),
+                    shape: shape.map(str::to_owned),
                 }))
                 .await
                 .expect("legal create");
@@ -2654,10 +2672,18 @@ mod tests {
             value["id"].as_str().expect("id string").to_owned()
         }
 
-        let project = create(tools, "project", None).await;
-        let epic = create(tools, "epic", Some(&project)).await;
-        let feature = create(tools, "focus", Some(&epic)).await;
-        create(tools, "story", Some(&feature)).await
+        let project = create(tools, "project", None, None, None).await;
+        let epic = create(tools, "epic", Some(&project), Some("the epic outcome"), None).await;
+        tools
+            .add_acceptance_criterion(Parameters(AddAcceptanceCriterionParams {
+                work_item_id: epic.clone(),
+                text: "epic close criterion".to_owned(),
+            }))
+            .await
+            .expect("epic close criterion");
+        let feature =
+            create(tools, "focus", Some(&epic), None, Some("vertical-slice")).await;
+        create(tools, "story", Some(&feature), None, None).await
     }
 
     /// Driving the `create_work_item` tool handler DIRECTLY writes one

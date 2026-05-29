@@ -64,6 +64,11 @@ async fn mcp_create(
     parent: Option<&str>,
     title: &str,
 ) -> String {
+    // Migration-0010 create-time gates: an `epic` requires a non-empty outcome
+    // and a `focus` requires a shape. Supply defaults by kind so the existing
+    // call sites (which pass only kind/parent/title) keep building a valid chain.
+    let outcome = (kind == "epic").then(|| "the epic outcome".to_owned());
+    let shape = (kind == "focus").then(|| "vertical-slice".to_owned());
     let result = tools
         .create_work_item(Parameters(CreateWorkItemRequest {
             kind: kind.to_owned(),
@@ -71,8 +76,8 @@ async fn mcp_create(
             title: title.to_owned(),
             body: None,
             origin: None,
-            outcome: None,
-            shape: None,
+            outcome,
+            shape,
         }))
         .await
         .expect("create_work_item tool succeeds");
@@ -80,10 +85,21 @@ async fn mcp_create(
     let value = result
         .structured_content
         .expect("create tool returns structured `{ id }` content");
-    value["id"]
+    let id = value["id"]
         .as_str()
         .expect("structured id is a string")
-        .to_owned()
+        .to_owned();
+    // The story-creation gate requires the ancestor epic to carry ≥1 close-
+    // criterion; add one as soon as an epic is created so a later story create
+    // beneath it passes the gate. The `add_acceptance_criterion` tool handler is
+    // crate-private, so seed it through the public `repo::*` layer over the SAME
+    // pool (the tool wraps this 1:1 anyway).
+    if kind == "epic" {
+        lumina::repo::add_acceptance_criterion(tools.pool(), &id, "epic close criterion")
+            .await
+            .expect("seed epic close-criterion for the story-create gate");
+    }
+    id
 }
 
 /// Drive the MCP `set_story_plan` tool handler directly, setting the three plan
@@ -158,13 +174,58 @@ async fn full_thread_mcp_write_export_then_http_read() {
     let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
     let tools = LuminaTools::new(pool.clone());
 
-    // 1. Drive the MCP create tool to build a legal project→epic→feature→story→
-    //    task chain. The leaf `task` is the thread's subject id.
+    // 1. Drive the MCP create tool to build a legal project→epic→focus→story→
+    //    task chain. The leaf `task` is the thread's subject id. `mcp_create`
+    //    supplies the migration-0010 mandatory epic `outcome` + focus `shape`, and
+    //    adds one epic close-criterion (the story-create gate requires it).
     let project = mcp_create(&tools, "project", None, "E2E Project").await;
     let epic = mcp_create(&tools, "epic", Some(&project), "E2E Epic").await;
-    let feature = mcp_create(&tools, "feature", Some(&epic), "E2E Feature").await;
+    let feature = mcp_create(&tools, "focus", Some(&epic), "E2E Feature").await;
     let story = mcp_create(&tools, "story", Some(&feature), "E2E Story").await;
     let task = mcp_create(&tools, "task", Some(&story), "E2E Task").await;
+
+    // 1b. Exercise the migration-0010 epic-done gate end-to-end over the shared
+    //     pool via the public `repo::*` layer (the `transition_status` /
+    //     `check_acceptance_criterion` tool handlers are crate-private and wrap
+    //     these 1:1). The epic has exactly one close-criterion (added by
+    //     `mcp_create`) which is still UNCHECKED and one non-terminal descendant
+    //     story, so `epic→done` MUST be rejected.
+    let denied = lumina::repo::update_work_item_status(pool.as_ref(), &epic, "done").await;
+    assert!(
+        matches!(denied, Err(lumina::error::AppError::Validation(_))),
+        "epic→done rejected while a close-criterion is unchecked and a story is non-terminal, got {denied:?}"
+    );
+    // Read the epic's single close-criterion id, check it, and make the story
+    // terminal; only THEN does `epic→done` succeed.
+    let crit_id: String = sqlx::query_scalar(
+        "SELECT id FROM acceptance_criteria WHERE work_item_id = ?",
+    )
+    .bind(&epic)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("the epic's close-criterion id");
+    lumina::repo::check_acceptance_criterion(pool.as_ref(), &crit_id, Some("e2e"))
+        .await
+        .expect("check the epic close-criterion");
+    // Criterion checked but the story is still non-terminal ⇒ still rejected.
+    let still_denied = lumina::repo::update_work_item_status(pool.as_ref(), &epic, "done").await;
+    assert!(
+        matches!(still_denied, Err(lumina::error::AppError::Validation(_))),
+        "epic→done still rejected while a descendant story is non-terminal, got {still_denied:?}"
+    );
+    lumina::repo::update_work_item_status(pool.as_ref(), &story, "done")
+        .await
+        .expect("story→done");
+    lumina::repo::update_work_item_status(pool.as_ref(), &epic, "done")
+        .await
+        .expect("epic→done succeeds once all close-criteria checked and stories terminal");
+    let epic_status: String =
+        sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
+            .bind(&epic)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("read epic status");
+    assert_eq!(epic_status, "done", "epic transitioned to done");
 
     // 2. The DB holds the leaf work_items row AND its events outbox row. Counted
     //    via the RUNTIME query API (no `query!` macro → no `.sqlx` cache entry).
@@ -280,7 +341,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     //    `task` child and record one activity entry against the task.
     let project = mcp_create(&tools, "project", None, "Attr Project").await;
     let epic = mcp_create(&tools, "epic", Some(&project), "Attr Epic").await;
-    let feature = mcp_create(&tools, "feature", Some(&epic), "Attr Feature").await;
+    let feature = mcp_create(&tools, "focus", Some(&epic), "Attr Feature").await;
     let story = mcp_create(&tools, "story", Some(&feature), "Attr Story").await;
 
     mcp_set_story_plan(
@@ -342,16 +403,17 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     .expect("count the task activity row");
     assert_eq!(activity_rows, 1, "the recorded activity row exists on the task");
 
-    // 2d. An event row fired for each write: 5 creates (project/epic/feature/
-    //     story/task) + 1 set_story_plan (work_item.updated) + 1
-    //     record_task_activity = 7 events total.
+    // 2d. An event row fired for each write: 5 creates (project/epic/focus/
+    //     story/task) + 1 epic close-criterion (the migration-0010 story-create
+    //     gate requires it; `mcp_create` adds it for every epic) + 1
+    //     set_story_plan (work_item.updated) + 1 record_task_activity = 8 events.
     let event_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
         .fetch_one(pool.as_ref())
         .await
         .expect("count all events");
     assert_eq!(
-        event_count, 7,
-        "one event per write: 5 creates + set_story_plan + record_task_activity"
+        event_count, 8,
+        "one event per write: 5 creates + epic close-criterion + set_story_plan + record_task_activity"
     );
     // And specifically: the story has a create + an update event, the task has a
     // create + an activity event (two outbox rows each).
@@ -369,7 +431,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
         .await
         .expect("export drain");
-    assert_eq!(drained, 7, "every event drained in one pass");
+    assert_eq!(drained, 8, "every event drained in one pass");
 
     // 3a. The STORY snapshot carries the plan keys under `item.attributes`.
     let story_snapshot = export_dir.path().join("story").join(format!("{story}.toml"));
@@ -494,7 +556,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     // 1. Build a legal chain to a `story`, then add two branch tasks under it.
     let project = mcp_create(&tools, "project", None, "Plan Project").await;
     let epic = mcp_create(&tools, "epic", Some(&project), "Plan Epic").await;
-    let feature = mcp_create(&tools, "feature", Some(&epic), "Plan Feature").await;
+    let feature = mcp_create(&tools, "focus", Some(&epic), "Plan Feature").await;
     let story = mcp_create(&tools, "story", Some(&feature), "Plan Story").await;
     // A non-branch task that carries the acceptance criteria + closure gate.
     let task = mcp_create(&tools, "task", Some(&story), "Plan Task").await;
@@ -670,7 +732,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
         .await
         .expect("export drain");
-    assert_eq!(drained, 26, "every event drained in one pass: 7 creates + 2 relevance/gate + 2 criteria + 2 checks + 1 status + 2 notes + 1 update_note + 1 supersede + 1 question + 2 options + 4 block/enable + 1 resolve");
+    assert_eq!(drained, 27, "every event drained in one pass: 7 creates + 1 epic close-criterion (migration-0010 story-create gate) + 2 relevance/gate + 2 criteria + 2 checks + 1 status + 2 notes + 1 update_note + 1 supersede + 1 question + 2 options + 4 block/enable + 1 resolve");
 
     // 7a. The STORY snapshot carries the new `relevance` column + closure_gate,
     //     the live research note, and the resolved open question (+ options).
@@ -866,7 +928,7 @@ async fn repo_links_flow() {
     // 4. Build a legal chain under the project down to a task, then create a
     //    finding on the task with `repo_id` referencing the SECONDARY repo.
     let epic = mcp_create(&tools, "epic", Some(&project), "Repo-Links Epic").await;
-    let feature = mcp_create(&tools, "feature", Some(&epic), "Repo-Links Feature").await;
+    let feature = mcp_create(&tools, "focus", Some(&epic), "Repo-Links Feature").await;
     let story = mcp_create(&tools, "story", Some(&feature), "Repo-Links Story").await;
     let task = mcp_create(&tools, "task", Some(&story), "Repo-Links Task").await;
 
@@ -1128,7 +1190,7 @@ async fn repo_links_flow() {
 async fn seed_story(tools: &LuminaTools, label: &str) -> String {
     let project = mcp_create(tools, "project", None, &format!("{label} Project")).await;
     let epic = mcp_create(tools, "epic", Some(&project), &format!("{label} Epic")).await;
-    let feature = mcp_create(tools, "feature", Some(&epic), &format!("{label} Feature")).await;
+    let feature = mcp_create(tools, "focus", Some(&epic), &format!("{label} Feature")).await;
     mcp_create(tools, "story", Some(&feature), &format!("{label} Story")).await
 }
 
