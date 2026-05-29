@@ -95,6 +95,33 @@ const READ_BUF_SIZE: usize = 4096;
 /// Maximum size of the `<literal>` body in a `text:<literal>` DSL token (4 KiB).
 const KEYSTROKE_TEXT_MAX: usize = 4096;
 
+/// Delay between writing a prompt's body and its submitting Enter. Claude
+/// Code's TUI paste-detects a large single write and swallows an inline
+/// trailing CR as a soft newline instead of submitting; sending the Enter as
+/// a SEPARATE write after a brief settle makes long prompts submit reliably.
+/// Short prompts ("say OK\r") submit either way — this only fixes the long-
+/// prompt regression. Verified against claude 2.1.156.
+const PROMPT_SUBMIT_SETTLE_MS: u64 = 220;
+
+/// System-prompt addendum appended to every lumina-spawned `claude` session.
+///
+/// lumina is headless: it cannot render or answer claude's interactive
+/// `AskUserQuestion` (AUQ) TUI picker, AND claude buffers an open AUQ's
+/// `tool_use` out of the session JSONL until the question is answered (verified
+/// against 2.1.156 — the assistant `tool_use` + its `tool_result` flush
+/// together only after the answer), so a JSONL-tailing consumer can never
+/// surface an *open* AUQ. We therefore instruct claude to ask choices inline as
+/// a numbered list, which flow through the normal assistant-text transcript the
+/// user already sees and can answer by typing a number. A PTY-side AUQ detector
+/// (separate follow-up) remains the fallback for models/skills that call the
+/// tool anyway.
+const NO_AUQ_SYSTEM_PROMPT: &str = "You are running inside lumina, a headless \
+interface that CANNOT display the interactive AskUserQuestion picker. Never call \
+the AskUserQuestion tool. Whenever you need the user to choose between options, \
+instead present the options as a numbered list (1., 2., 3., ...) directly in your \
+text reply and ask the user to answer with the number(s) of their choice plus any \
+notes, then stop and wait for their typed reply.";
+
 /// Translate one Keystroke-kind DSL token into raw PTY bytes, or `None` if
 /// the token is unknown or fails validation (the input bridge logs + skips
 /// in that case).
@@ -211,6 +238,26 @@ impl Transport for PtyTransport {
         // (LUMINA-SECURITY); v2 will add per-session SpawnConfig override.
         cmd.arg("--permission-mode");
         cmd.arg("bypassPermissions");
+        // Claude Code 2.1.x gates interactive `bypassPermissions` behind a
+        // one-time full-screen warning dialog (`BypassPermissionsModeDialog`)
+        // whose default selection is "No, exit". That dialog is TUI-only —
+        // never surfaced over JSONL — so lumina cannot render or answer it,
+        // and the first prompt's trailing `\r` confirms the default "No, exit",
+        // killing claude with exit code 1 the instant a session goes Awaiting.
+        // Passing `skipDangerousModePermissionPrompt` through the `--settings`
+        // (flagSettings) layer makes claude's acceptance gate (`kp()`) return
+        // true, so bypassPermissions is applied directly with no dialog —
+        // exactly the state that clicking "Yes, I accept" persists. Contained
+        // to the spawned child (no global ~/.claude.json mutation). Verified
+        // against claude 2.1.156; the gate was introduced by a Claude Code
+        // update that reset the prior stored acceptance.
+        cmd.arg("--settings");
+        cmd.arg(r#"{"skipDangerousModePermissionPrompt":true}"#);
+        // Steer claude away from the AskUserQuestion picker (which lumina
+        // cannot surface — see NO_AUQ_SYSTEM_PROMPT) toward inline numbered
+        // choices that ride the normal assistant-text transcript.
+        cmd.arg("--append-system-prompt");
+        cmd.arg(NO_AUQ_SYSTEM_PROMPT);
 
         if config.env_passthrough_otel {
             cmd.env("CLAUDE_CODE_ENABLE_TELEMETRY", "1");
@@ -366,7 +413,32 @@ impl Transport for PtyTransport {
                                 .into_iter()
                                 .map(|b| if b == b'\n' { b'\r' } else { b })
                                 .collect();
-                            Bytes::from(translated)
+                            // Split off a single trailing CR (the submit marker
+                            // the SPA appends as '\n'): write the body first, let
+                            // it settle, then submit with a SEPARATE Enter below.
+                            // A large body written in one burst is paste-detected
+                            // by claude's TUI, which swallows an inline trailing
+                            // CR as a soft newline instead of submitting — so the
+                            // Enter must arrive as its own write (see
+                            // PROMPT_SUBMIT_SETTLE_MS). Short prompts are
+                            // unaffected. A body-send error is ignored here; the
+                            // trailing-CR send below hits the same dead channel
+                            // and breaks the loop.
+                            if translated.last() == Some(&b'\r') {
+                                let body = &translated[..translated.len() - 1];
+                                if !body.is_empty() {
+                                    let _ = writer_tx
+                                        .send(Bytes::copy_from_slice(body))
+                                        .await;
+                                    tokio::time::sleep(std::time::Duration::from_millis(
+                                        PROMPT_SUBMIT_SETTLE_MS,
+                                    ))
+                                    .await;
+                                }
+                                Bytes::from_static(b"\r")
+                            } else {
+                                Bytes::from(translated)
+                            }
                         }
                         InputKind::Cancel => Bytes::from_static(b"\x03"),
                         InputKind::Control => {

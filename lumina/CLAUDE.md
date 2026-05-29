@@ -3,12 +3,26 @@
 <!-- LUMINA-SECURITY START -->
 ## Security: claude PTY auto-approve scope
 
-Every PTY session lumina spawns runs `claude --permission-mode bypassPermissions` (set in `lumina/src/pty/pty_transport.rs`). claude inside that session auto-approves every tool call: Bash, Read, Edit, Write, WebFetch, network access, glob/grep — NOT just file edits as the prior `acceptEdits` baseline.
+Every PTY session lumina spawns runs `claude --permission-mode bypassPermissions --settings '{"skipDangerousModePermissionPrompt":true}'` (set in `lumina/src/pty/pty_transport.rs`). claude inside that session auto-approves every tool call: Bash, Read, Edit, Write, WebFetch, network access, glob/grep — NOT just file edits as the prior `acceptEdits` baseline.
 
 Rationale: claude emits permission prompts only inside its TUI, never in JSONL; the SPA has no way to render or answer them. v1 ships with auto-approve; the v2 hardening target is exposing a per-session `permission_mode` override on `SpawnConfig`.
 
+The `--settings skipDangerousModePermissionPrompt` flag is load-bearing, not optional. Claude Code 2.1.x gates interactive `bypassPermissions` behind a one-time full-screen warning dialog (`BypassPermissionsModeDialog`, default selection "No, exit") that is TUI-only — never surfaced over JSONL — so lumina cannot answer it; the first prompt's trailing `\r` would otherwise confirm "No, exit" and kill claude with exit code 1 the instant the session goes Awaiting. The flag feeds claude's `flagSettings` layer so its acceptance gate (`kp()`) returns true and bypassPermissions applies with no dialog — equivalent to clicking "Yes, I accept", but scoped to the spawned child rather than mutating `~/.claude.json`. A Claude Code update that resets the stored acceptance (as 2.1.156 did) is therefore a no-op for lumina. If a future Claude Code release renames the settings key or the dialog regresses, sessions die code 1 right after the first prompt — re-derive the current gate by spawning `claude --permission-mode bypassPermissions` under a PTY and reading the startup bytes (lumina discards them; a throwaway reader probe reveals the dialog).
+
 Interaction risk: lumina binds to `127.0.0.1` by default. If a deployment binds to `0.0.0.0` (or sits behind a reverse proxy reachable from a hostile network), any caller hitting the HTTP API can drive arbitrary tool execution on the host — file writes, shell commands, network egress. Do not expose lumina externally without a permission wrapper.
 <!-- LUMINA-SECURITY END -->
+
+## PTY interaction: AskUserQuestion + prompt submission
+
+**AskUserQuestion (AUQ) cannot be driven via the JSONL tail.** Verified against claude 2.1.156: while an AUQ picker is open and waiting, the session JSONL contains only the user prompt — claude buffers the assistant `tool_use(AskUserQuestion)` AND its `tool_result` out of the transcript and flushes them together only *after* the question is answered. So a JSONL-tailing consumer (lumina's bridge) can never observe an *open* AUQ, and the SPA's `pendingAuq` (an *unmatched* AUQ tool_use) can never fire. This is why the `lumina-interactive-prompts` picker "never came through" — not a bug in the picker/`computeAuqKeystrokes`/`/keystrokes` code (all verified correct; `down`+`enter` selecting option 2 was confirmed), but a transport-visibility gap.
+
+Mitigation (primary): `pty_transport.rs` appends `NO_AUQ_SYSTEM_PROMPT` via `--append-system-prompt`, steering claude to present choices as an **inline numbered list** in normal assistant text (which the JSONL tail *does* surface) and to wait for a typed number. Verified: claude replies with a `text` block, not a `tool_use`, and the user answers via ordinary chat.
+
+Fallback (NOT yet built): a PTY-side AUQ detector that reinstates a `vt100` screen over the reader bytes (currently drain-and-discarded), detects an open picker, parses its questions/options, and emits a synthetic `tool_use(AskUserQuestion)` over the broadcast so the existing frontend picker + keystroke path can drive claude's TUI picker (then dedupe against the post-answer JSONL tool_use). Needed only if a model/skill calls the tool despite the system prompt.
+
+**Prompt submission needs a separate Enter.** claude's TUI paste-detects a large single write and swallows an inline trailing CR as a soft newline rather than submitting. The input bridge therefore writes a prompt's body, settles `PROMPT_SUBMIT_SETTLE_MS`, then sends the submitting Enter as its own write. Short prompts submit either way; this fixes long prompts silently not submitting.
+
+To re-verify any of the above after a Claude Code bump, spawn `claude --permission-mode bypassPermissions --settings '{"skipDangerousModePermissionPrompt":true}'` under a PTY and read the startup/JSONL bytes (lumina discards the PTY stream; a throwaway portable-pty reader probe reveals the dialog, the picker layout, and the JSONL flush timing).
 
 <!-- TEST-BOOTSTRAP:STACK START -->
 ## Testing Stack (Rust crate)
