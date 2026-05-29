@@ -58,6 +58,13 @@ pub struct WorkItem {
     /// enum used by the wire / MCP layer.
     #[serde(default)]
     pub tier: Option<String>,
+    /// Focus shape (migration 0010): `vertical-slice|cross-cutting|foundational`.
+    /// Set only on `focus` rows, NULL otherwise; the repo layer is the source of
+    /// truth for the focus-only rule (no DB-level kind coupling). Mirrors the
+    /// `task_kind`/`tier` idiom — stored as `Option<String>` on the row, with the
+    /// typed [`Shape`] enum used by the wire / MCP layer.
+    #[serde(default)]
+    pub shape: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -782,6 +789,24 @@ pub enum Tier {
     Lite,
     /// Deep — Opus-class executor, cross-file / judgement-heavy / security-sensitive work.
     Deep,
+}
+
+/// Focus shape (migration 0010) — CHECK-enforced at the DB layer on the
+/// `work_items.shape` column (`vertical-slice|cross-cutting|foundational`). A
+/// `focus` (renamed from feature) is a per-epic grouping carrying a mandatory
+/// shape. The wire form matches the SQL CHECK literals byte-for-byte
+/// (kebab-case). Used at the MCP-param / HTTP layer; the [`WorkItem`] row struct
+/// carries `shape` as `Option<String>` per the row-struct idiom (see
+/// `task_kind`/`tier`). The repo layer gates this to `focus` rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Shape {
+    /// Vertical slice — a thin end-to-end cut through the stack.
+    VerticalSlice,
+    /// Cross-cutting — concerns spanning multiple features / layers.
+    CrossCutting,
+    /// Foundational — base infrastructure other focuses build upon.
+    Foundational,
 }
 
 /// Plan-time / workflow-time logical grouping — the six canonical phases of

@@ -37,7 +37,8 @@ use crate::domain::{
     AcceptanceCriterion, ActivityType, AlternativePatch, BatchEntry, ClosureGate, Complexity,
     ContextBlock, Disposition, Effort, Finding, NextAction, OpenQuestion, QuestionOption,
     RejectedAlternative, Relevance, RepoLink, ResearchNote, ResearchState, Risk, RiskPatch,
-    RiskSeverity, Severity, StoryReadiness, TaskDependency, TaskKind, Tier, UpdateFindingRequest,
+    RiskSeverity, Severity, Shape, StoryReadiness, TaskDependency, TaskKind, Tier,
+    UpdateFindingRequest,
     UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
 };
 use crate::error::AppError;
@@ -378,6 +379,7 @@ pub async fn list_work_items(
             enabling_option_id     AS "enabling_option_id?",
             task_kind              AS "task_kind?",
             tier                   AS "tier?",
+            shape                  AS "shape?",
             created_at    AS "created_at!",
             updated_at    AS "updated_at!"
         FROM work_items
@@ -413,6 +415,7 @@ pub async fn list_work_items(
                 enabling_option_id: r.enabling_option_id,
                 task_kind: r.task_kind,
                 tier: r.tier,
+                shape: r.shape,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             })
@@ -452,6 +455,7 @@ pub async fn get_work_item_detail(
             enabling_option_id     AS "enabling_option_id?",
             task_kind              AS "task_kind?",
             tier                   AS "tier?",
+            shape                  AS "shape?",
             created_at    AS "created_at!",
             updated_at    AS "updated_at!"
         FROM work_items
@@ -481,6 +485,7 @@ pub async fn get_work_item_detail(
         enabling_option_id: row.enabling_option_id,
         task_kind: row.task_kind,
         tier: row.tier,
+        shape: row.shape,
         created_at: row.created_at,
         updated_at: row.updated_at,
     };
@@ -1056,6 +1061,36 @@ pub async fn set_relevance(
     let payload = serde_json::json!({ "relevance": value });
     record_event(&mut tx, "work_item", id, "work_item.relevance_set", payload).await?;
 
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Set a focus item's `shape` (migration 0010). Focus-scoped: a non-`focus`
+/// kind is rejected with a typed `AppError::Validation`. Kind read first;
+/// `NotFound` via rows_affected()==0; one event. This is the revise-later
+/// path — shape-mandatory-at-create for focus is enforced in the create path.
+pub async fn set_shape(pool: &SqlitePool, id: &str, shape: Shape) -> Result<(), AppError> {
+    let kind = work_item_kind(pool, id).await?;
+    if kind != "focus" {
+        return Err(AppError::Validation(format!(
+            "shape is settable only on a focus, not on '{kind}'"
+        )));
+    }
+    let value = enum_to_str(shape);
+    let mut tx = crate::db::begin_write(pool).await?;
+    let affected = sqlx::query!(
+        r#"UPDATE work_items SET shape = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
+        id,
+        value,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{id}' not found")));
+    }
+    let payload = serde_json::json!({ "shape": value });
+    record_event(&mut tx, "work_item", id, "work_item.shape_set", payload).await?;
     tx.commit().await?;
     Ok(())
 }

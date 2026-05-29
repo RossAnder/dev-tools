@@ -847,6 +847,7 @@ mod tests {
             enabling_option_id: None,
             task_kind: None,
             tier: None,
+            shape: None,
             created_at: "2026-05-22T00:00:00Z".to_owned(),
             updated_at: "2026-05-22T00:00:00Z".to_owned(),
         };
