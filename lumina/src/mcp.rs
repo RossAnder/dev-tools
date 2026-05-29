@@ -75,7 +75,7 @@ use sqlx::SqlitePool;
 use crate::app::AppState;
 use crate::domain::{
     AlternativePatch, ClosureGate, Complexity, CreateWorkItemRequest, Disposition, Effort, Kind,
-    Origin, Relevance, RiskPatch, RiskSeverity, Severity, Status, TaskKind, Tier,
+    Origin, Relevance, RiskPatch, RiskSeverity, Severity, Shape, Status, TaskKind, Tier,
     UpdateResearchNoteRequest,
 };
 use crate::error::AppError;
@@ -595,6 +595,42 @@ pub struct SetClosureGateParams {
     /// The new closure gate; `hard` (reject task→done with unchecked criteria)
     /// or `soft` (allow but flag).
     pub closure_gate: ClosureGate,
+}
+
+/// Arguments for the `set_shape` write tool → `repo::set_shape` (focus scope).
+/// The typed `Shape` enum advertises the legal values; the repo rejects a
+/// non-`focus` target with `Validation`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetShapeParams {
+    /// The focus work-item id whose shape to set.
+    pub id: String,
+    /// The new shape; one of `vertical-slice`/`cross-cutting`/`foundational`.
+    pub shape: Shape,
+}
+
+/// Arguments for the `set_epic_plan` write tool → `repo::set_epic_plan`
+/// (epic scope). Absent fields are left unchanged (JSON-merge).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetEpicPlanParams {
+    /// The epic work-item id whose plan attributes to revise.
+    pub id: String,
+    /// New epic outcome statement; absent leaves the stored value untouched.
+    #[serde(default)]
+    pub outcome: Option<String>,
+    /// New epic context note; absent leaves the stored value untouched.
+    #[serde(default)]
+    pub context: Option<String>,
+}
+
+/// Arguments for the `set_focus_plan` write tool → `repo::set_focus_plan`
+/// (focus scope). The single field is optional (JSON-merge).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetFocusPlanParams {
+    /// The focus work-item id whose framing to revise.
+    pub id: String,
+    /// New focus framing; absent leaves the stored value untouched.
+    #[serde(default)]
+    pub framing: Option<String>,
 }
 
 /// Arguments for the `add_acceptance_criterion` write tool →
@@ -1249,7 +1285,7 @@ impl LuminaTools {
     /// Create a new work item under the single-mutation-path discipline (the
     /// repo opens one transaction and records exactly one events-outbox row).
     #[tool(
-        description = "Create a work item (kind, optional parent_id, title, optional body). Records one event in the same transaction.",
+        description = "Create a work item (kind, optional parent_id, title, optional body, optional outcome/shape). `outcome` is required for an `epic`; `shape` (vertical-slice/cross-cutting/foundational) is required for a `focus`. Records one event in the same transaction.",
         annotations(open_world_hint = false)
     )]
     pub async fn create_work_item(
@@ -1257,13 +1293,15 @@ impl LuminaTools {
         Parameters(req): Parameters<CreateWorkItemRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "create_work_item", "mcp tool invoked");
-        let id = repo::create_work_item_with_origin(
+        let id = repo::create_work_item_full(
             &self.pool,
             &req.kind,
             req.parent_id.as_deref(),
             &req.title,
             req.body.as_deref(),
             req.origin.as_deref(),
+            req.outcome.as_deref(),
+            req.shape.as_deref(),
         )
         .await
         .map_err(app_error_to_mcp)?;
@@ -1710,9 +1748,10 @@ impl LuminaTools {
         structured_result(serde_json::json!({ "id": id }))
     }
 
-    /// Set a story's closure gate (single repo call → `set_closure_gate`).
+    /// Set a story's or epic's closure gate (single repo call →
+    /// `set_closure_gate`).
     #[tool(
-        description = "Set a story's closure gate (hard/soft) governing whether task→done is blocked by unchecked acceptance criteria. Records one event.",
+        description = "Set a story's or epic's closure gate (hard/soft) governing whether task→done is blocked by unchecked acceptance criteria. Records one event.",
         annotations(idempotent_hint = true, open_world_hint = false)
     )]
     async fn set_closure_gate(
@@ -1721,6 +1760,57 @@ impl LuminaTools {
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "set_closure_gate", "mcp tool invoked");
         repo::set_closure_gate(&self.pool, &id, closure_gate)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id }))
+    }
+
+    /// Set a focus's shape (single repo call → `set_shape`; the repo rejects a
+    /// non-`focus` target).
+    #[tool(
+        description = "Set a focus's shape (vertical-slice/cross-cutting/foundational). Records one event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn set_shape(
+        &self,
+        Parameters(SetShapeParams { id, shape }): Parameters<SetShapeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_shape", "mcp tool invoked");
+        repo::set_shape(&self.pool, &id, shape)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id }))
+    }
+
+    /// Revise an epic's plan attributes (single repo call → `set_epic_plan`;
+    /// epic-kind-gated, JSON-merge of present fields).
+    #[tool(
+        description = "Revise an epic's plan attributes (outcome/context); absent fields left unchanged. Records one event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn set_epic_plan(
+        &self,
+        Parameters(SetEpicPlanParams { id, outcome, context }): Parameters<SetEpicPlanParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_epic_plan", "mcp tool invoked");
+        repo::set_epic_plan(&self.pool, &id, outcome.as_deref(), context.as_deref())
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id }))
+    }
+
+    /// Revise a focus's framing (single repo call → `set_focus_plan`;
+    /// focus-kind-gated, JSON-merge of the present field).
+    #[tool(
+        description = "Revise a focus's plan framing; absent field left unchanged. Records one event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn set_focus_plan(
+        &self,
+        Parameters(SetFocusPlanParams { id, framing }): Parameters<SetFocusPlanParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_focus_plan", "mcp tool invoked");
+        repo::set_focus_plan(&self.pool, &id, framing.as_deref())
             .await
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::json!({ "id": id }))
@@ -2543,7 +2633,7 @@ mod tests {
     use super::*;
     use crate::db::connect_in_memory;
 
-    /// Build a legal project→epic→feature→story chain and return the story id so
+    /// Build a legal project→epic→focus→story chain and return the story id so
     /// the create-tool test can target a legal `task` parent.
     async fn seed_chain_to_story(tools: &LuminaTools) -> String {
         async fn create(tools: &LuminaTools, kind: &str, parent: Option<&str>) -> String {
@@ -2554,6 +2644,8 @@ mod tests {
                     title: kind.to_uppercase(),
                     body: None,
                     origin: None,
+                    outcome: None,
+                    shape: None,
                 }))
                 .await
                 .expect("legal create");
@@ -2649,6 +2741,10 @@ mod tests {
             // task dispatch-plan + tier (migration 0006, round-3 T4)
             "get_task_dispatch_plan",
             "set_task_tier",
+            // epic/focus shape + plan setters (migration 0010, T6)
+            "set_shape",
+            "set_epic_plan",
+            "set_focus_plan",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -2658,14 +2754,15 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 55 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
-        //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier).
+        // 58 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
+        //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            55,
-            "advertised tool count must be exactly 55, got {}: {names:?}",
+            58,
+            "advertised tool count must be exactly 58, got {}: {names:?}",
             names.len()
         );
 
@@ -2696,6 +2793,8 @@ mod tests {
                 title: "MCP-created task".to_owned(),
                 body: Some("body".to_owned()),
                 origin: None,
+                outcome: None,
+                shape: None,
             }))
             .await
             .expect("create_work_item tool succeeds");
@@ -2966,6 +3065,8 @@ mod tests {
                 title: format!("{kind} item"),
                 body: None,
                 origin: None,
+                outcome: None,
+                shape: None,
             }))
             .await
             .expect("legal create");

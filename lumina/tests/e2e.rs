@@ -71,6 +71,8 @@ async fn mcp_create(
             title: title.to_owned(),
             body: None,
             origin: None,
+            outcome: None,
+            shape: None,
         }))
         .await
         .expect("create_work_item tool succeeds");
