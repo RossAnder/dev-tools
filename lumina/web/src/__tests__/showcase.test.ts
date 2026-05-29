@@ -124,6 +124,10 @@ describe('fetchTree (mock global fetch)', () => {
         // unset value on the wire and the schema rejects an absent key.
         task_kind: null,
         tier: null,
+        // Migration 0010: `shape` (focus-only column). Schema parses it with
+        // `.nullable().default(null)`, so an absent key resolves to `null` in
+        // the output — include it here so the round-trip `toEqual` matches.
+        shape: null,
         created_at: '2026-05-25T00:00:00Z',
         updated_at: '2026-05-25T00:00:00Z',
         children: [],

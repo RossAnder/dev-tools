@@ -14,6 +14,7 @@ import {
   setClosureGate,
   setTaskKind,
   setTier,
+  setShape,
 } from '../api'
 import { useScalars, __resetForTests, __setApiForTests } from '../composables/useScalars'
 
@@ -73,6 +74,16 @@ test('WorkItemSchema rejects an invalid relevance enum value', () => {
   expect(result.success).toBe(false)
 })
 
+test('WorkItemSchema parses a focus carrying a shape value', () => {
+  const fixture = workItem({ kind: 'focus', shape: 'cross-cutting' })
+  expect(WorkItemSchema.parse(fixture)).toMatchObject({ kind: 'focus', shape: 'cross-cutting' })
+})
+
+test('WorkItemSchema rejects an invalid shape enum value', () => {
+  const bad = workItem({ kind: 'focus', shape: 'sideways' })
+  expect(WorkItemSchema.safeParse(bad).success).toBe(false)
+})
+
 // ---------------------------------------------------------------------------
 // 2. Fetch-wrapper happy paths — parameterised over the six setters.
 // ---------------------------------------------------------------------------
@@ -91,6 +102,10 @@ const SETTERS: SetterEntry[] = [
   ['closure-gate', setClosureGate as never, 'closure_gate', 'hard', { closure_gate: 'hard' }],
   ['task-kind', setTaskKind as never, 'task_kind', 'main', { task_kind: 'main' }],
   ['tier', setTier as never, 'tier', 'lite', { tier: 'lite' }],
+  // Migration 0010: shape (focus-only). The fixture's `shape` rides on the
+  // returned WorkItem; the parameterised assertion just confirms the wrapper
+  // round-trips the value through WorkItemSchema.
+  ['shape', setShape as never, 'shape', 'vertical-slice', { kind: 'focus', shape: 'vertical-slice' }],
 ]
 
 for (const [label, setter, _column, value, overrides] of SETTERS) {
@@ -161,6 +176,24 @@ test('useScalars.setEffort surfaces a thrown error into error ref + Result.err',
     expect(result.error).toBe('wire-422')
   }
   expect(scalars.error.value).toBe('wire-422')
+})
+
+test('useScalars.setShape calls injected api and updates lastUpdated', async () => {
+  const updated = workItem({ kind: 'focus', shape: 'foundational' })
+  const setShapeMock = mock(async () => updated as never)
+  __setApiForTests({ setShape: setShapeMock as never })
+
+  const scalars = useScalars()
+  const result = await scalars.setShape('f-1', 'foundational')
+
+  expect(setShapeMock).toHaveBeenCalledTimes(1)
+  expect(setShapeMock.mock.calls[0]).toEqual(['f-1', 'foundational'])
+  expect(result.ok).toBe(true)
+  if (result.ok) {
+    expect(result.value).toMatchObject({ shape: 'foundational' })
+  }
+  expect(scalars.lastUpdated.value).toMatchObject({ shape: 'foundational' })
+  expect(scalars.error.value).toBeNull()
 })
 
 // ---------------------------------------------------------------------------

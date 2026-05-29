@@ -5,7 +5,11 @@ import { kindLabel } from '@/composables/useDisplay'
 import StatusPill from '@/components/StatusPill.vue'
 import CopyIdButton from '@/components/CopyIdButton.vue'
 import RepoLinksPanel from '@/components/RepoLinksPanel.vue'
-import type { WorkItem, AcceptanceCriterion, ContextBlock } from '@/api'
+import ShapeEditor from '@/components/ShapeEditor.vue'
+import OutcomeEditor from '@/components/OutcomeEditor.vue'
+import FramingEditor from '@/components/FramingEditor.vue'
+import EpicCloseCriteriaPanel from '@/components/EpicCloseCriteriaPanel.vue'
+import type { WorkItem, AcceptanceCriterion, ContextBlock, Shape } from '@/api'
 
 const { detail, descendantCounts } = useHierarchy()
 
@@ -107,6 +111,25 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
   }
   return fields
 })
+
+/**
+ * Plan attributes for the migration-0010 epic/focus editors. `outcome` /
+ * `context` (epic) and `framing` (focus) are JSON-merge `attributes` keys —
+ * NOT top-level columns — so we read them out of `item.attributes` here and
+ * pass them down to the editors as nullable strings. A non-string stored value
+ * (shouldn't happen for these keys, but `attributes` is opaque JSON) coerces to
+ * null so the editor seeds an empty draft rather than rendering `[object …]`.
+ */
+function attrString(key: string): string | null {
+  const v = item.value?.attributes?.[key]
+  return typeof v === 'string' ? v : null
+}
+const epicOutcome: ComputedRef<string | null> = computed(() => attrString('outcome'))
+const epicContext: ComputedRef<string | null> = computed(() => attrString('context'))
+const focusFraming: ComputedRef<string | null> = computed(() => attrString('framing'))
+
+/** A focus's `shape` column (top-level on WorkItem; null on non-focus). */
+const focusShape: ComputedRef<Shape | null> = computed(() => item.value?.shape ?? null)
 </script>
 
 <template>
@@ -212,6 +235,35 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
       v-if="item.kind === 'project'"
       :project-id="item.id"
     />
+
+    <!--
+      epic-kind editors (migration 0010): outcome/context plan + close-criteria.
+      `outcome`/`context` are attribute keys read off item.attributes; the
+      close-criteria CRUD reuses the kind-agnostic acceptance-criteria API.
+    -->
+    <template v-if="item.kind === 'epic'">
+      <OutcomeEditor
+        :item-id="item.id"
+        :outcome="epicOutcome"
+        :context="epicContext"
+      />
+      <EpicCloseCriteriaPanel :epic-id="item.id" />
+    </template>
+
+    <!--
+      focus-kind editors (migration 0010): shape picker (top-level column) +
+      framing plan attribute.
+    -->
+    <template v-if="item.kind === 'focus'">
+      <ShapeEditor
+        :item-id="item.id"
+        :shape="focusShape"
+      />
+      <FramingEditor
+        :item-id="item.id"
+        :framing="focusFraming"
+      />
+    </template>
 
     <!-- task-specific extras -->
     <template v-if="isTask">

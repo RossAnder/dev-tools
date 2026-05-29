@@ -61,6 +61,7 @@ import {
   type RiskSeverity,
   RiskSeveritySchema,
   type Shape,
+  ShapeSchema,
 } from './wire-enums'
 import { type RepoLink, RepoLinkSchema } from './repo-links'
 
@@ -88,6 +89,11 @@ export interface WorkItem {
   // Round-4 additions (T7): the round-2/3 dispatch columns.
   task_kind: TaskKind | null
   tier: Tier | null
+  // Migration 0010 (epic/focus-semantics): a focus's shape
+  // (vertical-slice|cross-cutting|foundational). Top-level serialized column on
+  // the Rust `domain::WorkItem` (domain.rs); NULL on non-focus rows. Mirrors the
+  // `task_kind`/`tier` idiom — typed enum at the wire, nullable column at rest.
+  shape: Shape | null
   created_at: string
   updated_at: string
 }
@@ -119,6 +125,13 @@ export const WorkItemSchema = z.object({
   // column is emitted as JSON `null` rather than as an absent key.
   task_kind: TaskKindSchema.nullable(),
   tier: TierSchema.nullable(),
+  // Migration 0010: `work_items.shape`. `.nullable()` is correct — the column
+  // is NULL on every non-focus row and serde emits `None` as JSON `null` (zero
+  // `skip_serializing_if` on domain.rs). `.default(null)` additionally tolerates
+  // any pre-migration cached response that wouldn't yet emit the key, while
+  // keeping the parsed type `Shape | null` (matching the `WorkItem` interface —
+  // a bare `.optional()` would widen it to `Shape | undefined`).
+  shape: ShapeSchema.nullable().default(null),
   created_at: z.string().max(50),
   updated_at: z.string().max(50),
 })
