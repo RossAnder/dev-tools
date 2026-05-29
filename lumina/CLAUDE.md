@@ -75,7 +75,7 @@ The axum API mirrors the MCP write surface so a browser/SPA client (or any HTTP-
 - `GET    /health`                          → liveness probe (no DB hit).
 - `GET    /work-items`                      → `repo::list_work_items` (default: full nested tree of roots; with `?parent_id=`/`?kind=`: flat filtered list).
 - `GET    /work-items/{id}`                 → `repo::get_work_item_detail`.
-- `POST   /work-items`                      → `repo::create_work_item_with_origin`.
+- `POST   /work-items`                      → `repo::create_work_item_with_origin` (migration 0010: body now carries `outcome` — mandatory for `kind:"epic"` — and `shape` — mandatory for `kind:"focus"`, ∈ `vertical-slice|cross-cutting|foundational`).
 - `PATCH  /work-items/{id}`                 → `repo::update_work_item`.
 - `DELETE /work-items/{id}`                 → `repo::delete_work_item` (soft-delete; round-4 T1 closed the "full mirror" gap against the MCP `delete_work_item` tool).
 
@@ -95,11 +95,14 @@ Six scalar PATCHes — body shape `{ "value": <enum> }`. The four non-nullable s
 - `PATCH /work-items/{id}/closure-gate`   → `repo::set_closure_gate`.
 - `PATCH /work-items/{id}/task-kind`      → `repo::set_task_kind` (nullable).
 - `PATCH /work-items/{id}/tier`           → `repo::set_task_tier` (nullable).
+- `PATCH /work-items/{id}/shape`          → `repo::set_shape` (migration 0010; non-nullable scalar, focus-only; `vertical-slice|cross-cutting|foundational`).
 
 Two structured PATCHes — JSON-merge bodies via `repo::set_work_item_attributes`; `task-spec` additionally calls `repo::set_task_tier` when `tier` is present (two mutations per call, mirroring the MCP `set_task_spec` tool).
 
 - `PATCH /work-items/{id}/story-plan`     → composes `repo::set_work_item_attributes` (fields: `problem_statement`/`research_notes`/`execution_strategy`/`not_doing`/`verification_commands`).
 - `PATCH /work-items/{id}/task-spec`      → composes `repo::set_work_item_attributes` (+ `repo::set_task_tier` when `tier` present; fields: `execution_detail`/`files_touched`/`outcome`/`tier`).
+- `PATCH /work-items/{id}/epic-plan`      → `repo::set_epic_plan` (migration 0010; epic-only JSON-merge; body `{outcome?, context?}`).
+- `PATCH /work-items/{id}/focus-plan`     → `repo::set_focus_plan` (migration 0010; focus-only JSON-merge; body `{framing?}`).
 
 ### Acceptance criteria (`http/acceptance_criteria.rs`, migration 0003, round-4 T3)
 
@@ -181,7 +184,7 @@ Two structured PATCHes — JSON-merge bodies via `repo::set_work_item_attributes
 ## Story-block skills plugin
 
 Lumina's MCP tool surface is driven by the `/lumina:<block>` skills in the plugin at
-`claude/plugins/lumina-story-blocks/`. Round-1 shipped nine per-block writers (problem-statement, research-notes, user-interrogation, acceptance-criteria, approach, not-doing, edge-cases, relevance, closure-gate); round-2 added ten more (risks, alternatives, verification-commands, vet-research, story-review, next-block advisor, plan-story chained runner, decompose-tasks, set-task-spec, wire-task-deps); round-3 added two more research skills (research-explore for multi-agent parallel exploration; research-directed for post-decision verification) and amended four round-2 skills (plan-story now enforces a six-phase canonical sequence with hard gates + override-audit; set-task-spec captures effort+complexity and computes the dispatch tier; wire-task-deps renders the batch dispatch budget; vet-research parallelises spot-checks) — twenty-one `/lumina:*` slash commands total. The prerequisites checklist (server running, MCP registered as `lumina`) and the full skill catalogue live in `claude/plugins/lumina-story-blocks/README.md`; the round-2 and round-3 MCP tool catalogue extensions are in `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`.
+`claude/plugins/lumina-story-blocks/`. Round-1 shipped nine per-block writers (problem-statement, research-notes, user-interrogation, acceptance-criteria, approach, not-doing, edge-cases, relevance, closure-gate); round-2 added ten more (risks, alternatives, verification-commands, vet-research, story-review, next-block advisor, plan-story chained runner, decompose-tasks, set-task-spec, wire-task-deps); round-3 added two more research skills (research-explore for multi-agent parallel exploration; research-directed for post-decision verification) and amended four round-2 skills (plan-story now enforces a six-phase canonical sequence with hard gates + override-audit; set-task-spec captures effort+complexity and computes the dispatch tier; wire-task-deps renders the batch dispatch budget; vet-research parallelises spot-checks) — twenty-one `/lumina:*` slash commands; the migration-0010 epic/focus wave added four more (epic-outcome, focus-shape, focus-framing, epic-close-criteria), for twenty-five total. The prerequisites checklist (server running, MCP registered as `lumina`) and the full skill catalogue live in `claude/plugins/lumina-story-blocks/README.md`; the round-2 and round-3 MCP tool catalogue extensions are in `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`.
 
 Permanent install (persists to `.claude/settings.json`, all clones inherit):
 

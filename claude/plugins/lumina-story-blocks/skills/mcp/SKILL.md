@@ -99,7 +99,7 @@ store only).
 
 | Tool | When to use |
 |------|-------------|
-| `create_work_item` | Create a new item (kind + optional parent_id + title + optional body). The kind/parent edge is validated against the hierarchy. |
+| `create_work_item` | Create a new item (kind + optional parent_id + title + optional body). The kind/parent edge is validated against the hierarchy. Migration 0010 added two kind-conditional mandatory fields: `outcome` (MANDATORY for `kind: "epic"`) and `shape` (MANDATORY for `kind: "focus"`, ∈ `vertical-slice \| cross-cutting \| foundational`) — see the Epic/focus tools (migration 0010) section. |
 | `update_work_item` | Partial set-or-leave update of an item (title / body / status / position / attributes); absent fields are left unchanged. |
 | `move_work_item` | Reposition an item among its siblings (new ordering `position`). |
 | `delete_work_item` | DESTRUCTIVE (soft): stamp `deleted_at`; the row and its history are preserved, but it drops out of lists. |
@@ -127,7 +127,7 @@ These set the composer-facing grading axes and drive the decision lifecycle. `re
 | `set_relevance` | Set an epic/feature/story's `relevance` (`active` / `backlog` / `deferred` / `rejected`). Rejected on task/project. |
 | `set_effort` | Set a task's `effort` grade (`s` / `m` / `l` — drives batch sizing). |
 | `set_complexity` | Set a task's `complexity` grade (`low` / `medium` / `high` — drives model-tier assignment). |
-| `set_closure_gate` | Set a story's `closure_gate` (`hard` / `soft`). When `hard`, each child task's →done transition is rejected while THAT task still has any unchecked acceptance criterion (the gate is the parent story's, applied per-task); `soft` allows the transition but flags the unchecked count. |
+| `set_closure_gate` | Set a story's OR an epic's `closure_gate` (`hard` / `soft`) — migration 0010 widened it beyond story-only. For a story when `hard`, each child task's →done transition is rejected while THAT task still has any unchecked acceptance criterion (the gate is the parent story's, applied per-task); `soft` allows the transition but flags the unchecked count. For an epic when `hard`, it gates the epic's close against any unchecked close-criterion (see CONVENTIONS.md §m). |
 | `add_acceptance_criterion` | Add a checkable acceptance criterion (text) to a work item. |
 | `check_acceptance_criterion` | Mark a criterion checked (optional `by`); also appends a `verification` activity entry. |
 | `uncheck_acceptance_criterion` | Mark a criterion unchecked. |
@@ -286,6 +286,21 @@ Round-3 (migration 0006) added a typed dispatch tier and dispatch-plan composer:
 `set_task_spec` was also tightened: the round-2 free-form `dispatch: Option<serde_json::Value>` field is replaced with `tier: Option<Tier>` (typed wire form `"lite"|"deep"`). Callers passing legacy `dispatch:` are silently dropped at deserialise (the field is gone).
 
 Severity typing was already in place for `add_finding` / `update_finding` (`Severity::{Critical, Major, Minor, Suggestion}`); round-3 documents the deliberate vocab split with `RiskSeverity::{Low, Medium, High, Critical}` in CONVENTIONS.md §k.2. Findings and risks carry distinct severity vocabularies — they are NOT unified.
+
+## Epic/focus tools (migration 0010)
+
+Migration 0010 renamed `feature` → `focus` in the hierarchy (`project → epic → focus → story → task`) and reshaped the two grouping kinds into closeable/rollup deliverables (see CONVENTIONS.md §m for the semantics). It added three setters plus widened `create_work_item` and `set_closure_gate`.
+
+| Tool | When to use |
+|------|-------------|
+| `set_shape` | `{ id, shape } → ()` — focus-only (rejected on non-focus kinds). `shape ∈ vertical-slice \| cross-cutting \| foundational`. Direct write to the non-nullable `work_items.shape` scalar. Records exactly one event. |
+| `set_epic_plan` | `{ id, outcome?, context? } → ()` — epic-only. JSON-merge of the present fields into the epic's plan attributes (absent keys untouched), mirroring `set_story_plan`'s merge semantics via the merge-safe `set_work_item_attributes` path. Records exactly one event. |
+| `set_focus_plan` | `{ id, framing? } → ()` — focus-only. JSON-merge of the present field into the focus's plan attributes (absent keys untouched). Records exactly one event. |
+
+Two existing tools were widened by this pass:
+
+- `create_work_item` now accepts `outcome` (MANDATORY when `kind: "epic"`) and `shape` (MANDATORY when `kind: "focus"`, must be one of `vertical-slice | cross-cutting | foundational`). Both thread through `repo::create_work_item_full`; omitting the mandatory field for the matching kind is rejected as `invalid_params`.
+- `set_closure_gate` now applies to a story OR an epic (previously story-only). For an epic, the gate governs whether the epic may close while it still carries unchecked close-criteria (see CONVENTIONS.md §m).
 
 ## Notes
 

@@ -123,7 +123,7 @@ Skill bodies that currently use a slightly different phrasing (e.g. `closure_gat
 
 ### §b-per-element scope
 
-Three skills in this plugin — `research-notes`, `user-interrogation`, and `acceptance-criteria` — iterate a collection rather than operating on a single scalar field. For these skills, §b applies per-element (per research note, per open-question axis, per task-child's acceptance criteria row) rather than per skill invocation. The verbatim §b-supersession phrasing and the step-4/step-5 branch structure are unchanged within each element iteration; the skill simply runs the 5-step sequence once per element. Each iterating skill cites this subsection to document that its per-element scope is intentional and convention-compliant.
+Four skills in this plugin — `research-notes`, `user-interrogation`, `acceptance-criteria`, and `epic-close-criteria` — iterate a collection rather than operating on a single scalar field. For these skills, §b applies per-element (per research note, per open-question axis, per task-child's acceptance criteria row, per epic close-criterion) rather than per skill invocation. The verbatim §b-supersession phrasing and the step-4/step-5 branch structure are unchanged within each element iteration; the skill simply runs the 5-step sequence once per element. Each iterating skill cites this subsection to document that its per-element scope is intentional and convention-compliant.
 
 ## §c Provenance recording
 
@@ -390,8 +390,44 @@ The six-phase contract binds `/lumina:plan-story` ONLY. Per R6, calling individu
 
 Round-3 does NOT persist `current_phase` to a column. The phase is recomputed every invocation from `get_story_readiness` booleans. A future round-4 may extend `get_story_readiness` with a `current_phase: Phase` field if user telemetry shows resumption churn.
 
+## §m Epic/focus semantics (migration 0010)
+
+Migration 0010 renamed the hierarchy's third level `feature` → `focus` and reshaped the two grouping kinds (`epic`, `focus`) into deliverables with distinct closure semantics. The full design rationale lives in [`docs/adr/0001-epic-focus-semantics.md`](../../../docs/adr/0001-epic-focus-semantics.md); the schema-canonical description is in [`lumina/CONTEXT.md`](../../../lumina/CONTEXT.md). This section is the plugin-side contract for the skills that write these fields.
+
+### §m.0 Epic — a closeable deliverable
+
+An **epic** is a closeable unit of delivered value. It carries:
+
+- A MANDATORY `outcome` (set at `create_work_item` time; revised later via `set_epic_plan`) — the value the epic delivers, stated as an end-state.
+- An optional `context` plan attribute (revised via `set_epic_plan`'s JSON-merge).
+- One or more **close-criteria** — checkable conditions gating the epic's close, governed by the epic's `closure_gate` (migration 0010 widened `set_closure_gate` to accept an epic as well as a story).
+
+**Epic done-rule**: an epic is "done" when ALL of its close-criteria are checked AND ALL descendant stories are in a terminal status (`done` / `cancelled`). The close-criteria are the epic's own deliverable gate; the descendant-story rollup is the structural gate. Both must hold.
+
+### §m.1 Focus — a per-epic grouping (renamed from feature)
+
+A **focus** (formerly `feature`) is a per-epic grouping of stories. It carries:
+
+- A MANDATORY `shape ∈ {vertical-slice, cross-cutting, foundational}` (set at `create_work_item` time via the `shape` param; revised via `set_shape`). Stored as a non-nullable scalar on `work_items.shape`.
+- An optional `framing` plan attribute (revised via `set_focus_plan`'s JSON-merge).
+
+**Focus done-rule**: "done" for a focus is a PURE ROLLUP — a focus is done iff all its descendant stories are terminal. A focus has NO close-criteria and NO independent closure gate; it is a structural grouping, not a separately-gated deliverable. This is the load-bearing asymmetry with an epic (§m.0): an epic gates its own close on close-criteria, a focus does not.
+
+### §m.2 Kind-precondition writers for the new fields
+
+Four new plugin skills are the kind-precondition writers for these fields. Each fails fast on the wrong kind (per §e/§h kind-precondition signposts) and follows the §b check-before-act + §c provenance conventions:
+
+| Skill | Writes | Kind-precondition | MCP tool |
+|---|---|---|---|
+| `epic-outcome` | epic `outcome` | epic-only | `set_epic_plan` (and `create_work_item` at creation) |
+| `epic-close-criteria` | epic close-criteria | epic-only | `add_acceptance_criterion` family under the epic's `closure_gate` |
+| `focus-shape` | focus `shape` | focus-only | `set_shape` |
+| `focus-framing` | focus `framing` | focus-only | `set_focus_plan` |
+
+`outcome` and `shape` are MANDATORY at `create_work_item` time for `epic` and `focus` respectively; the `epic-outcome` / `focus-shape` skills are the post-creation revise path (and the interrogation surface that fills them when an item was created with a placeholder).
+
 ---
 
-> **§-letter allocation history**: §a-§h were the round-1 (`lumina-story-planning-workflow`) allocation. §i and §j were added by round-2 (`lumina-story-planning-round-2`). §k and §l were added by round-3 (`lumina-story-planning-round-3`). Future rounds should append §m, §n, … rather than re-using a freed letter; reserved letters protect cross-references in skill bodies that cite by short letter.
+> **§-letter allocation history**: §a-§h were the round-1 (`lumina-story-planning-workflow`) allocation. §i and §j were added by round-2 (`lumina-story-planning-round-2`). §k and §l were added by round-3 (`lumina-story-planning-round-3`). §m was added by the migration-0010 epic/focus-semantics pass. Future rounds should append §n, §o, … rather than re-using a freed letter; reserved letters protect cross-references in skill bodies that cite by short letter.
 
 Pointer back: the plugin entry point is `claude/plugins/lumina-story-blocks/README.md`; the parent plan is `docs/plans/lumina-story-planning-workflow.md` (round 1), `docs/plans/lumina-story-planning-round-2.md` (round 2), and `docs/plans/lumina-story-planning-round-3.md` (round 3).

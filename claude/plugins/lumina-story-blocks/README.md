@@ -65,6 +65,10 @@ The skills, ordered by typical workflow position (round-1 family + round-2 addit
 | decompose-tasks | `/lumina:decompose-tasks <id>` | Decompose a ready story into task children — proposing vertical-slice and pattern-replacement groupings (units-of-implementation spanning task subsets; not yet modelled in schema) with per-task `task_kind` (foundation/main/polish) and exhaustive Grep-derived `files_touched` for pattern-replacement bundles. *(task_kind vocab narrowed in round-3.5 migration 0007)* |
 | set-task-spec | `/lumina:set-task-spec <id>` | Walk a story's task children and capture per-task spec (execution_detail, files_touched, dual-track outcome, effort, complexity, derived tier). *(amended in round-3)* |
 | wire-task-deps | `/lumina:wire-task-deps <id>` | Wire explicit task→task dependency edges across a story's task children, then surface the Kahn-ordered phase schedule with per-task tier annotations and an agent budget. *(amended in round-3)* |
+| epic-outcome | `/lumina:epic-outcome <id>` | Interrogate + set an epic's `outcome`. *(new in migration 0010 — epic-only)* |
+| epic-close-criteria | `/lumina:epic-close-criteria <id>` | Manage an epic's close-criteria. *(new in migration 0010 — epic-only)* |
+| focus-shape | `/lumina:focus-shape <id>` | Set a focus's `shape` (vertical-slice / cross-cutting / foundational). *(new in migration 0010 — focus-only)* |
+| focus-framing | `/lumina:focus-framing <id>` | Set a focus's `framing`. *(new in migration 0010 — focus-only)* |
 
 The `<id>` placeholder is the lumina work-item UUID. To find one, use the `mcp__lumina__list_work_items` MCP tool (e.g. filter by `kind: "story"` to enumerate available stories), or browse the lumina web SPA and copy the id from a story's detail view.
 
@@ -94,7 +98,7 @@ Every skill follows the check-before-act sequence documented in [CONVENTIONS.md 
 
 After loading the plugin, these quick checks confirm everything is wired up:
 
-- **Skills visible.** Run `/help` in the Claude Code session — the loaded-plugin section should list twenty-one commands prefixed `lumina:` (one per row in the [Skill list](#skill-list) table above).
+- **Skills visible.** Run `/help` in the Claude Code session — the loaded-plugin section should list twenty-five commands prefixed `lumina:` (one per row in the [Skill list](#skill-list) table above).
 
 - **MCP server active.** Run `/mcp` — the output should list `lumina` as an active MCP server. If it isn't listed, the skills will fail at their first tool call; revisit the [Prerequisites](#prerequisites) registration step.
 
