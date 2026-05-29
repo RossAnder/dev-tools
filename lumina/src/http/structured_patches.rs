@@ -40,7 +40,8 @@ use serde::Deserialize;
 
 use crate::app::AppState;
 use crate::domain::{
-    Complexity, ClosureGate, Effort, Relevance, TaskKind, Tier, WorkItem, WorkItemDetail,
+    Complexity, ClosureGate, Effort, EpicPlanRequest, FocusPlanRequest, Relevance, Shape, TaskKind,
+    Tier, WorkItem, WorkItemDetail,
 };
 use crate::error::AppError;
 use crate::mcp::VerificationCommands;
@@ -132,6 +133,9 @@ pub fn router() -> Router<AppState> {
         .route("/work-items/{id}/tier", patch(patch_tier))
         .route("/work-items/{id}/story-plan", patch(patch_story_plan))
         .route("/work-items/{id}/task-spec", patch(patch_task_spec))
+        .route("/work-items/{id}/shape", patch(patch_shape))
+        .route("/work-items/{id}/epic-plan", patch(patch_epic_plan))
+        .route("/work-items/{id}/focus-plan", patch(patch_focus_plan))
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +247,23 @@ async fn patch_tier(
     refetch_item(pool, &id).await
 }
 
+/// `PATCH /work-items/{id}/shape` — set a focus's `shape` (migration 0010).
+/// Non-nullable like `closure-gate`: `shape` is mandatory for a focus and is
+/// never cleared via this route, so `{"value": null}`/absent → 422 through
+/// [`require_value`]. The repo setter kind-gates to `focus` (non-focus → 422
+/// `Validation`).
+async fn patch_shape(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<PatchScalarBody<Shape>>,
+) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/shape");
+    let pool = state.pool.as_ref();
+    let value = require_value(body.value, "shape")?;
+    repo::set_shape(pool, &id, value).await?;
+    refetch_item(pool, &id).await
+}
+
 // ---------------------------------------------------------------------------
 // Structured PATCH handlers
 // ---------------------------------------------------------------------------
@@ -314,6 +335,39 @@ async fn patch_task_spec(
     if let Some(tier) = body.tier {
         repo::set_task_tier(pool, &id, Some(tier)).await?;
     }
+    refetch_detail(pool, &id).await
+}
+
+/// `PATCH /work-items/{id}/epic-plan` — mirrors the MCP `set_epic_plan` tool
+/// (migration 0010). Reuses the [`EpicPlanRequest`] domain DTO as the body and
+/// delegates to `repo::set_epic_plan`, which kind-gates to `epic`, merges the
+/// present `outcome`/`context` keys into the attributes blob, and emits one
+/// event. Returns the refreshed `WorkItemDetail` (the outcome/context live in
+/// `attributes`, like story-plan).
+async fn patch_epic_plan(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<EpicPlanRequest>,
+) -> Result<Json<WorkItemDetail>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/epic-plan");
+    let pool = state.pool.as_ref();
+    repo::set_epic_plan(pool, &id, body.outcome.as_deref(), body.context.as_deref()).await?;
+    refetch_detail(pool, &id).await
+}
+
+/// `PATCH /work-items/{id}/focus-plan` — mirrors the MCP `set_focus_plan` tool
+/// (migration 0010). Reuses the [`FocusPlanRequest`] domain DTO as the body and
+/// delegates to `repo::set_focus_plan`, which kind-gates to `focus`, merges the
+/// present `framing` key into the attributes blob, and emits one event. Returns
+/// the refreshed `WorkItemDetail`.
+async fn patch_focus_plan(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<FocusPlanRequest>,
+) -> Result<Json<WorkItemDetail>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/focus-plan");
+    let pool = state.pool.as_ref();
+    repo::set_focus_plan(pool, &id, body.framing.as_deref()).await?;
     refetch_detail(pool, &id).await
 }
 

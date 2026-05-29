@@ -164,13 +164,15 @@ async fn create_work_item(
         title = %req.title,
         "http: POST /work-items"
     );
-    let id = repo::create_work_item_with_origin(
+    let id = repo::create_work_item_full(
         state.pool.as_ref(),
         &req.kind,
         req.parent_id.as_deref(),
         &req.title,
         req.body.as_deref(),
         req.origin.as_deref(),
+        req.outcome.as_deref(),
+        req.shape.as_deref(),
     )
     .await?;
 
