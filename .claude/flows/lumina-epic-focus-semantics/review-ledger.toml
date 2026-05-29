@@ -742,6 +742,361 @@ dedup_id = "2b9f825f1916508f"
 resolved = 2026-05-29
 resolution = "epic-close-criteria SKILL.md provenance section now pairs the section-c mandated origin 'plan' reminder with the entry_type discussion. No commit yet."
 
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R34"
+file = "lumina/src/repo.rs"
+line = 967
+symbol = "create_work_item_full / update_work_item / set_work_item_attributes"
+severity = "warning"
+effort = "medium"
+category = "security"
+summary = "R23 byte-cap and R22 whitespace guard live only in set_epic_plan/set_focus_plan, not the shared write paths — bypassable via create and the generic PATCH"
+description = "check_plan_field_len (R23, repo.rs:1329) and the whitespace-outcome reject (R22) run ONLY inside set_epic_plan/set_focus_plan (repo.rs:1356-1393). Two other write paths reach the same outcome/context/framing attributes without them: (1) create_work_item_full builds the epic outcome attribute at repo.rs:967-978 with no length check, so a multi-MB outcome at create bypasses the 64KiB cap (the create path keeps its whitespace guard at :921 but not the byte cap); (2) the generic update_work_item PATCH (repo.rs:1750-1758) validates only key+type via validate_attributes_for_kind, so a PATCH with attributes outcome='' or a 70KiB string bypasses BOTH the whitespace guard and the cap. The cap's own doc-comment (repo.rs:1326-1328) claims outcome/context/framing 'share one cap' — they do not on these paths. Hoist both checks into set_work_item_attributes (the chokepoint) plus the create-time attribute build so a new write path cannot silently escape them, and add a boundary test (exactly 64KiB ok, +1 rejected). Regression-class: incomplete R23 fix."
+evidence = [
+    "lumina/src/repo.rs:967",
+    "lumina/src/repo.rs:1329",
+    "lumina/src/repo.rs:1356",
+    "lumina/src/repo.rs:1750",
+]
+related = [
+    "R23",
+    "R22",
+]
+dedup_id = "5a2acce1fc8a506a"
+resolved = 2026-05-29
+resolution = "Hoisted the 64KiB cap + whitespace-outcome/framing reject into a shared validate_plan_field_constraints helper called at all three attribute-write sites (create_work_item_full, update_work_item, set_work_item_attributes); removed the now-redundant inline setter checks; added boundary test (64KiB ok / +1 Validation / whitespace-PATCH Validation). Closes the create-path and generic-PATCH bypass of R23/R22. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R35"
+file = "lumina/src/repo.rs"
+line = 1488
+symbol = "set_closure_gate / enforce_epic_done_gate"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Epic closure_gate is half-wired: the setter accepts epic and CONTEXT.md says it gates epic closure, but enforce_epic_done_gate ignores closure_gate (unconditional) and the SPA/docs treat it as story-only"
+description = "set_closure_gate now accepts story or epic (repo.rs:1488) and CONTEXT.md:65 says the gate is 'reused at the epic level to gate closure on close-criteria'. But enforce_epic_done_gate (repo.rs:1160-1203) enforces unchecked-close-criteria UNCONDITIONALLY and never reads closure_gate, so setting an epic to soft is a silent no-op. Meanwhile the SPA reads closure_gate as story-only (FocusLens.vue:103 + doc-comment :91), so a set epic gate never even displays, and the mcp.rs:589-593 / useScalars.ts:150 / scalars.ts:85 doc-comments still say 'story only'. Decide the intended semantics: either make the epic-done gate honour soft (skip the close-criteria block) or reject epic in set_closure_gate; then align CONTEXT.md:65, the four doc-comments, and the FocusLens display to match. Folds A4 + C1-C5."
+evidence = [
+    "lumina/src/repo.rs:1488",
+    "lumina/src/repo.rs:1160",
+    "lumina/CONTEXT.md:65",
+    "lumina/web/src/components/FocusLens.vue:103",
+]
+related = ["R20"]
+dedup_id = "8a836e67fa99ab7c"
+resolved = 2026-05-29
+resolution = "User decision: reject epic in setter (epic-done gate stays unconditional). Reverted set_closure_gate to story-only and simplified the stale enforce_epic_done_gate doc parenthetical; reverted the epic-support doc claims in mcp.rs tool doc+description, CONTEXT.md glossary, lumina/CLAUDE.md migration-0010 clause, and mcp/SKILL.md. No test set an epic gate so none changed. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R36"
+file = "lumina/src/repo.rs"
+line = 1191
+symbol = "enforce_epic_done_gate"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "Epic-done gate skips non-terminal stories whose focus parent is soft-deleted — an epic can close with live non-terminal descendant stories"
+description = "The non-terminal-story subquery (repo.rs:1187-1196) restricts to stories whose focus parent has deleted_at IS NULL (line 1191). delete_work_item soft-deletes a single row without cascading, so a focus can be tombstoned while it still holds non-terminal child stories; those stories then drop out of the count and the epic transitions to done with live, non-terminal descendants still present in the table. Either cascade-tombstone (or block soft-delete of) a focus that still has non-terminal stories, or count stories under tombstoned focuses too. Distinct edge case from the fixed-depth/zero-story note R20 documented in the same function; low likelihood under the no-live-data assumption but a genuine closure-correctness hole."
+evidence = [
+    "lumina/src/repo.rs:1191",
+    "lumina/src/repo.rs:1187",
+]
+related = [
+    "R20",
+    "R21",
+]
+dedup_id = "8289b0822be5b07f"
+resolved = 2026-05-29
+resolution = "User decision: block delete with live stories. delete_work_item now rejects soft-deleting a focus that still has non-terminal (status not in done/cancelled), non-deleted child stories - read inside the write tx via the runtime sqlx string API (no new query macro, .sqlx cache untouched); missing/already-deleted ids still fall through to the NotFound path. Added unit test delete_focus_blocked_while_child_stories_nonterminal. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R37"
+file = "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md"
+line = 36
+symbol = "Story-block skill family table"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "mcp/SKILL.md skill-family table still says '21 composable skills' and omits all four epic/focus skills — self-contradicting its 'mirrors the README' claim (README/plugin.json say 25)"
+description = "Line 36 reads 'adds 21 composable skills (round-1 9 + round-2 10 + round-3 2)' and the table (lines 38-61) lists exactly 21 rows with no epic-outcome/focus-shape/focus-framing/epic-close-criteria entries, yet the same sentence asserts 'the table below mirrors [the README]' — and README.md:101 / plugin.json:5 say twenty-five. This is the migration-0010 counterpart to the already-fixed R6/R7: the count and four rows were applied to README/plugin.json/CLAUDE.md but not to this catalogue table, so focus-shape's own '../mcp/SKILL.md' cross-reference (focus-shape/SKILL.md:17, the P6 ripple) resolves to a table missing its row. Add the four rows and fix the count + round-breakdown."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md:36",
+    "claude/plugins/lumina-story-blocks/README.md:101",
+    "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json:5",
+]
+related = [
+    "R6",
+    "R7",
+]
+dedup_id = "246c007af1e96a35"
+resolved = 2026-05-29
+resolution = "Updated mcp/SKILL.md skill-family count to 25 (breakdown + migration-0010 4) and added the four epic/focus rows (epic-outcome, focus-shape, focus-framing, epic-close-criteria) matching README descriptions. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R38"
+file = "lumina/src/http/structured_patches.rs"
+line = 136
+symbol = "patch_shape / patch_epic_plan / patch_focus_plan"
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "The three migration-0010 HTTP routes (/shape, /epic-plan, /focus-plan) have zero route-level tests despite the module owning a route-level test suite"
+description = "structured_patches.rs:136-138 register the three new routes, but the in-module test suite (scalars_round_trip, scalar_null_value_is_422, the story-plan/task-spec tests) never sends a request to any of them. The MCP-HTTP single-mutation mirror invariant is asserted for the older routes but unverified here — a handler wired to the wrong repo::* fn, or a renamed body field ({outcome,context}/{framing}), would not be caught at the route layer (only at the repo layer). Add round-trip + kind-mismatch-422 route tests for the three."
+evidence = [
+    "lumina/src/http/structured_patches.rs:136",
+    "lumina/src/http/structured_patches.rs:255",
+    "lumina/src/http/structured_patches.rs:347",
+]
+dedup_id = "0b6f300e53735e18"
+resolved = 2026-05-29
+resolution = "Added three route-level tests (shape/epic-plan/focus-plan: happy-path round-trip + kind-mismatch 422) mirroring scalars_round_trip; introduced a shared seed_chain_full helper returning all five ids so the gate-satisfying chain stays single-sourced. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R39"
+file = "lumina/CONTEXT.md"
+line = 70
+symbol = "Target date glossary / Milestone ambiguity"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "CONTEXT.md asserts an epic target_date field that exists in no migration or domain::WorkItem"
+description = "CONTEXT.md:70-71 defines a 'Target date' glossary term ('An epic's optional ... ship-date target') and line 95 states 'the date is an informational target_date on the epic'. rg target_date lumina matches ONLY CONTEXT.md — domain.rs WorkItem has no such column, no migration adds it, and no MCP/HTTP setter touches it. Either mark it explicitly not-yet-modelled (the way the task_groups table is qualified elsewhere in CONTEXT.md) or drop the concrete field name; as written, a reader/agent is told a field exists when it does not."
+evidence = [
+    "lumina/CONTEXT.md:70",
+    "lumina/CONTEXT.md:95",
+    "lumina/src/domain.rs",
+]
+dedup_id = "1c51ef466eaba8fc"
+resolved = 2026-05-29
+resolution = "Qualified target_date in CONTEXT.md as not yet modelled in schema on both the glossary entry and the milestone relationship note; no real field added. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R40"
+file = "lumina/src/http/structured_patches.rs"
+line = 596
+symbol = "scalar_null_value_is_422"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "shape (a non-nullable scalar) is omitted from the scalar_null_value_is_422 cases array"
+description = "scalar_null_value_is_422 (structured_patches.rs:587) asserts value:null gives 422 for relevance/effort/complexity/closure-gate (cases at 596-601). patch_shape calls require_value(body.value, 'shape') exactly like those four and is documented 'Non-nullable like closure-gate', yet shape is not in the cases. A regression dropping require_value from patch_shape would pass the suite. Add shape (with a focus-scoped id) to the cases."
+evidence = [
+    "lumina/src/http/structured_patches.rs:596",
+    "lumina/src/http/structured_patches.rs:262",
+]
+dedup_id = "5933c99f08b806d7"
+resolved = 2026-05-29
+resolution = "Added a shape case (focus-scoped id) to scalar_null_value_is_422 so value:null on /shape is asserted to 422. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R41"
+file = "claude/plugins/lumina-story-blocks/skills/epic-close-criteria/SKILL.md"
+line = 105
+symbol = "Supersession failure-recovery branch"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "epic-close-criteria failure-recovery branch instructs entry_type comment, which CONVENTIONS §c forbids for plugin skills"
+description = "The partial-failure recovery step (epic-close-criteria/SKILL.md:105) records record_task_activity with entry_type 'comment'. CONVENTIONS.md:144 states the comment value 'is legal but reserved for human commentary and MUST NOT be used by skills in this plugin' — every plugin write must stay entry_type 'execution' (sole exception: vet-research's 'vet'). R33 fixed the entry_type/origin pairing reminder elsewhere in this file but missed this branch. Change it to entry_type 'execution'."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria/SKILL.md:105",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md:144",
+]
+related = ["R33"]
+dedup_id = "eef75386d238089c"
+resolved = 2026-05-29
+resolution = "Changed the failure-recovery branch entry_type from comment to execution in epic-close-criteria/SKILL.md (CONVENTIONS section c forbids comment for plugin skills); verified no other comment entry_type remains. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R42"
+file = "lumina/src/repo.rs"
+line = 1392
+symbol = "set_focus_plan"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "set_focus_plan accepts a whitespace-only/empty framing, unlike the R22 whitespace guard on epic outcome in set_epic_plan"
+description = "set_epic_plan rejects a whitespace-only outcome (repo.rs:1359, R22). set_focus_plan applies only check_plan_field_len to framing (repo.rs:1392-1394) and JSON-merges an all-whitespace string, persisting a blank 'set' framing. Lower-stakes than outcome (framing is not create-mandatory), but the asymmetry means a framing of spaces is silently stored as a set plan field. Either trim-reject or treat a blank value as a clear — pick one and match set_epic_plan's discipline."
+evidence = [
+    "lumina/src/repo.rs:1392",
+    "lumina/src/repo.rs:1359",
+]
+related = ["R22"]
+dedup_id = "6662a421d77269bd"
+resolved = 2026-05-29
+resolution = "User decision: trim-reject (mirror R22). Enforced via the shared R34 validate_plan_field_constraints helper - set_focus_plan JSON-merges through set_work_item_attributes, where a whitespace-only framing is now rejected exactly once. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R43"
+file = "lumina/src/repo.rs"
+line = 1523
+symbol = "add_acceptance_criterion"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "add_acceptance_criterion stores criterion text with no length cap and no non-empty check — and a blank criterion vacuously satisfies the new story-create gate"
+description = "add_acceptance_criterion inserts text verbatim with only a kind existence check — no 64KiB cap (cf. R23 plan fields) and no trim().is_empty() reject. Migration 0010 made epic close-criteria load-bearing: the story-create gate (repo.rs:1006) and the epic-done gate (repo.rs:1167) both count these rows, so a single blank-text criterion satisfies the >=1 gate vacuously, and the field shares the unbounded-TEXT storage-amplification class R23 closed for plan blobs. Pre-existing (migration 0003) but newly gate-relevant; add a non-empty check plus a length cap mirroring check_plan_field_len."
+evidence = [
+    "lumina/src/repo.rs:1523",
+    "lumina/src/repo.rs:1006",
+    "lumina/src/repo.rs:1167",
+]
+related = ["R23"]
+dedup_id = "4d20a81f19d4024a"
+resolved = 2026-05-29
+resolution = "add_acceptance_criterion now rejects whitespace-only text (Validation) and applies a 64KiB cap via check_plan_field_len, after the existing existence check. Closes the unbounded-text + vacuous-gate-satisfaction gap. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R44"
+file = "lumina/src/repo.rs"
+line = 186
+symbol = "validate_attributes_for_kind"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Stale legacy dispatch attribute key still whitelisted for task after round-3 renamed it to the typed tier column"
+description = "validate_attributes_for_kind still accepts 'dispatch' as a want_object key on the task branch (repo.rs:186), but per CLAUDE.md migration-0006 removed the free-form dispatch field in favour of the typed tier column ('legacy callers passing dispatch: have their value silently dropped'). A raw attributes PATCH can still persist a task.attributes.dispatch object no reader consumes — dead surface. Pre-existing / out-of-flow-scope but adjacent to the epic/focus arms this wave edited; drop the key."
+evidence = ["lumina/src/repo.rs:186"]
+dedup_id = "e2b82230d9ea4e19"
+resolved = 2026-05-29
+resolution = "Removed the stale dispatch arm from validate_attributes_for_kind task branch; a task attributes PATCH with dispatch now hits bad_key. Required migrating the export_folds_attributes_and_activity test fixture off the removed dispatch key (now uses verification_commands on the story). No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R45"
+file = "lumina/src/http/activity.rs"
+line = 118
+symbol = "test-helper hierarchy doc-comments"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Residual feature hierarchy prose in ~9 HTTP test-helper docstrings + a repo.rs comment + a migration-0003 comment + e2e.rs — the follow-up sweep R15 deferred"
+description = "R15 fixed four files and explicitly deferred 'other files' stale feature refs ... a follow-up sweep'. The remainder: project-epic-feature-story-task prose in nine http/*.rs test-helper seeders (activity.rs:118, acceptance_criteria.rs:181, context_blocks.rs:126, findings.rs:234, open_questions.rs:191, readiness.rs:82, rejected_alternatives.rs:172, risks.rs:200, task_dependencies.rs:148), a repo.rs:5537 comment, the 0003_planning_and_decisions.sql:38 'epic/feature/story' relevance comment, and e2e.rs:568. All create real focus rows (prose only) but they keep 'epic/feature/story' from reaching zero. Finish the sweep (the 0003 comment is an inert SQL comment, safe to edit)."
+evidence = [
+    "lumina/src/http/activity.rs:118",
+    "lumina/migrations/0003_planning_and_decisions.sql:38",
+    "lumina/tests/e2e.rs:568",
+]
+related = ["R15"]
+dedup_id = "75d93d6c1cfce591"
+resolved = 2026-05-29
+resolution = "Swept residual feature hierarchy prose to focus across the 12 enumerated files (9 http test-helper docstrings + repo.rs test comment + 0003.sql comment + e2e.rs docstrings/bindings); orchestrator completed four same-class follow-on spots the sweep surfaced (research_notes.rs:201, mcp.rs test binding, migration_0003.rs:24, migration_0004.rs:28). rg epic/feature/story lumina = 0; rg feature lumina/src kind-literal = 0. Cosmetic only. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R46"
+file = "lumina/src/http/structured_patches.rs"
+line = 5
+symbol = "module doc header"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "structured_patches.rs module doc says 'Eight routes total' / lists six scalar PATCHes — the router now mounts eleven (added shape/epic-plan/focus-plan)"
+description = "The file-level doc (structured_patches.rs:5 'Eight routes total', the six-item scalar list 7-13, the two-item structured list 15-21) was not updated when migration 0010 added patch_shape/patch_epic_plan/patch_focus_plan to router() (136-138). Same staleness class as the R5/R6 docstring fixes, in a file those did not reach. Update the header to eleven and add the three routes to the lists."
+evidence = [
+    "lumina/src/http/structured_patches.rs:5",
+    "lumina/src/http/structured_patches.rs:136",
+]
+dedup_id = "de132defc79f3ddc"
+resolved = 2026-05-29
+resolution = "Updated structured_patches.rs module doc header Eight->Eleven routes and added shape to the scalar list and epic-plan/focus-plan to the structured list. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R47"
+file = "claude/plugins/lumina-story-blocks/skills/focus-shape/SKILL.md"
+line = 13
+symbol = "kind-precondition convention citation"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "focus-shape, focus-framing, and epic-close-criteria still cite g/h for the kind-precondition; R32 moved epic-outcome to the on-point m.2 — leaving the new family split"
+description = "R32 updated epic-outcome/SKILL.md to cite section m.2 (noting 'g/h's taxonomy has no epic/focus category'). But focus-shape/SKILL.md:13, focus-framing/SKILL.md:13, and epic-close-criteria/SKILL.md:15 still cite g/h — the exact section R32 declared inapplicable to epic/focus writers. Section m.2 (CONVENTIONS.md:416) is the one that enumerates all four as kind-precondition writers. Propagate the m.2 citation to the other three for family consistency."
+evidence = [
+    "claude/plugins/lumina-story-blocks/skills/focus-shape/SKILL.md:13",
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome/SKILL.md:13",
+]
+related = ["R32"]
+dedup_id = "bbddcfbf4f636d21"
+resolved = 2026-05-29
+resolution = "Updated the kind-precondition convention citation from sections g/h to section m.2 in focus-shape, focus-framing, and epic-close-criteria SKILL.md (intro + body restatement), matching the post-R32 epic-outcome form; other section citations left untouched. No commit yet."
+
+[[items]]
+first_flagged = 2026-05-29
+rounds = 1
+status = "fixed"
+flow = "lumina-epic-focus-semantics"
+id = "R48"
+file = "claude/plugins/lumina-story-blocks/README.md"
+line = 3
+symbol = "plugin summary prose"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "README opening prose enumerates round-1/2/3 skill waves but never mentions the migration-0010 epic/focus four-skill wave, though its own table + count are updated to 25"
+description = "README.md:3 and :7 end the skill-wave narrative at round-3 ('adds two new research skills ... and amends four existing skills'), never mentioning epic-outcome/epic-close-criteria/focus-shape/focus-framing, although the skill table (68-71) and the verification count (101 twenty-five) include them. lumina/CLAUDE.md by contrast does mention 'the migration-0010 epic/focus wave added four more ... for twenty-five total'. Add the migration-0010 wave to the README prose so it stops contradicting its own table."
+evidence = [
+    "claude/plugins/lumina-story-blocks/README.md:3",
+    "claude/plugins/lumina-story-blocks/README.md:101",
+]
+related = ["R7"]
+dedup_id = "44773d3f915914d1"
+resolved = 2026-05-29
+resolution = "Extended the README What-this-plugin-does prose (line 7) and the top blurb (line 3) to mention the migration-0010 epic/focus wave adding four skills for twenty-five total, matching lumina/CLAUDE.md. No commit yet."
+
 [[vet_events]]
 timestamp = "2026-05-29T12:01:53Z"
 command = "review"
@@ -806,4 +1161,70 @@ sampled_count = 4
 dropped_count = 0
 downgraded_count = 0
 rationale = "Verified the lone critical R1 against SKILL.md:219-226 (removed feature kind + omitted mandatory outcome/shape). PQ2/PQ3 merged into R6 (same-file stale-feature cluster). PQ4 (R7) corroborated by lumina/CLAUDE.md asserting twenty-five skills. The four new SKILL.md files confirmed accurate against mcp.rs/repo.rs tool names and kebab shape values; defects are doc-staleness + intra-family drift. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T16:45:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked Q1 (outcome uncapped at create) against repo.rs:967-978 (no check_plan_field_len on the create attribute build), Q2 (generic update_work_item PATCH bypass) against repo.rs:1750-1758 (only validate_attributes_for_kind runs), Q5 (set_focus_plan whitespace) against repo.rs:1392, Q3 (stale 'dispatch' task key) against repo.rs:186, Q4 (module doc 'Eight routes') against structured_patches.rs:5 vs routes 136-138. All verified true. Q1/Q2 merged with security S1/S2 and testability T3/T4 into the chokepoint cap-gap finding R34. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T16:45:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Agent returned 3 findings (<5) so all checked. S1 (outcome uncapped at create) and S2 (cap bolted on the two setters, not the set_work_item_attributes chokepoint) confirmed against repo.rs:967 + 1356-1393, merged into R34. S3 (add_acceptance_criterion unbounded + no empty check) kept as R43 — newly gate-relevant since migration 0010 made close-criteria load-bearing (repo.rs:1006/1167). SQLi-in-triggers, shape-injection, and export path-traversal correctly ruled out. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T16:45:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 5
+dropped_count = 2
+downgraded_count = 0
+rationale = "A1 ('focus-shape triggers have zero test coverage') REFUTED: migration_0010.rs:120-141 explicitly tests both the INSERT (f4 NULL-shape focus to err) and the UPDATE focus-shape triggers — dropped. A2 (soft-deleted-focus orphans non-terminal stories) confirmed against repo.rs:1191 → R36. A4 (epic closure_gate inert) confirmed against repo.rs:1488 vs enforce_epic_done_gate 1160-1203 → folded into R35. A6 (stale dispatch key) deduped with Q3 → R44. A7 (stale feature prose) → folded into R45. A5 (handler calls create_work_item_full not _with_origin) dropped as a trivial wrapper-vs-delegate doc nit; A3 was the agent's own ruled-out re-read (not counted). Only A1 is a true refutation (1/7=14%), under the 30% re-dispatch threshold."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T16:45:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 1
+rationale = "C1 (epic closure_gate not surfaced on FocusLens read) confirmed against FocusLens.vue:103 — folded with C2/C3/C4/C5 into the closure_gate-half-wired finding R35. C6 (CONTEXT.md target_date field) confirmed — rg target_date matches only CONTEXT.md, no schema/domain column → R39 (downgraded warning to suggestion: purely informational glossary, no code path depends on it). C7 (stale 'epic/feature/story' in the 0003 migration comment) folded into R45. MCP-HTTP mirror, tool/skill counts, and git-export correctly ruled out. No fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T16:45:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "T1 (3 new HTTP routes untested) confirmed — structured_patches.rs:136-138 routes never exercised in the test module → R38. T2 (shape absent from scalar_null_value_is_422) confirmed against cases at :596-601 → R40. T3/T4 (64KiB cap untested + asymmetric create-vs-setter) confirmed, merged into the cap fix R34. T10's claim that migration_0010.rs:134 tests the UPDATE focus-shape trigger was verified true — and is what refuted Agent-3's A1. T5-T10 were the agent's own 'adequate/covered' observations, not persisted as standalone. No fabrications; the agent cleanly distinguished covered from gap."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-05-29T16:45:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 5
+dropped_count = 2
+downgraded_count = 1
+rationale = "P1 (mcp/SKILL.md skill table says '21', omits the 4 new epic/focus skills) confirmed against SKILL.md:36/38-61 vs README:101 and plugin.json:5 → R37 (P6 cross-ref ripple folded in). P2/P3 (focus-shape/focus-framing/epic-close-criteria still cite g/h vs the post-R32 m.2) confirmed → R47 (downgraded warning to suggestion: doc-citation consistency, low impact). P5 (entry_type comment in the failure-recovery branch) confirmed against epic-close-criteria SKILL.md:105 vs CONVENTIONS.md:144 → R41. P7 (README prose omits the 0010 wave) → R48. DROPPED P4 (created-confirmation-string inconsistency — agent could not pin a canonical form, low-confidence) and P8 (discoverability moot — agent's own ruled-out note). 2/8=25%, under threshold."
 dedup_id = "45ca31c3315a5978"

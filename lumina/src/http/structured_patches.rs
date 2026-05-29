@@ -2,23 +2,28 @@
 //! single-column setters and the two structured composite tools
 //! (`set_story_plan` / `set_task_spec`) exposed by the MCP server.
 //!
-//! Eight routes total, all relative to `/api`:
+//! Eleven routes total, all relative to `/api`:
 //!
-//! Scalar PATCHes (six) — body shape `{ "value": <enum> }`:
+//! Scalar PATCHes (seven) — body shape `{ "value": <enum> }`:
 //!   * `PATCH /work-items/{id}/relevance`      → `repo::set_relevance`
 //!   * `PATCH /work-items/{id}/effort`         → `repo::set_effort`
 //!   * `PATCH /work-items/{id}/complexity`     → `repo::set_complexity`
 //!   * `PATCH /work-items/{id}/closure-gate`   → `repo::set_closure_gate`
 //!   * `PATCH /work-items/{id}/task-kind`      → `repo::set_task_kind`
 //!   * `PATCH /work-items/{id}/tier`           → `repo::set_task_tier`
+//!   * `PATCH /work-items/{id}/shape`          → `repo::set_shape` (migration 0010)
 //!
-//! Structured PATCHes (two) — JSON-merge bodies:
+//! Structured PATCHes (four) — JSON-merge bodies:
 //!   * `PATCH /work-items/{id}/story-plan`     → composes `set_work_item_attributes`
 //!     (mirrors the MCP `set_story_plan` body — `problem_statement`/
 //!     `research_notes`/`execution_strategy`/`not_doing`/`verification_commands`).
 //!   * `PATCH /work-items/{id}/task-spec`      → composes `set_work_item_attributes`
 //!     and (when `tier` is present) ALSO calls `set_task_tier` — mirrors the
 //!     MCP `set_task_spec` write tool, including its two-mutation semantics.
+//!   * `PATCH /work-items/{id}/epic-plan`      → `repo::set_epic_plan` (migration
+//!     0010; epic-only JSON-merge `{outcome?, context?}`).
+//!   * `PATCH /work-items/{id}/focus-plan`     → `repo::set_focus_plan` (migration
+//!     0010; focus-only JSON-merge `{framing?}`).
 //!
 //! Single-mutation-path invariant: each HTTP handler dispatches to the SAME
 //! `repo::*` fn the MCP tool of the same name calls; there is no parallel
@@ -407,6 +412,26 @@ mod tests {
     async fn seed_chain_with_project(
         pool: &sqlx::SqlitePool,
     ) -> (String, String, String) {
+        let chain = seed_chain_full(pool).await;
+        (chain.project, chain.story, chain.task)
+    }
+
+    /// The full seeded chain's ids — projected by the kind-specific helpers
+    /// above. The migration-0010 epic/focus PATCH tests need the `epic` and
+    /// `focus` ids directly (kind-gated routes assert against them).
+    struct SeedChain {
+        project: String,
+        epic: String,
+        focus: String,
+        story: String,
+        task: String,
+    }
+
+    /// Seed a complete migration-0010-valid project→epic→focus→story→task chain
+    /// and return every id. The kind-narrow helpers ([`seed_chain`],
+    /// [`seed_chain_with_project`]) delegate here so the gate-satisfying setup
+    /// lives in exactly one place.
+    async fn seed_chain_full(pool: &sqlx::SqlitePool) -> SeedChain {
         let project = repo::create_work_item(pool, "project", None, "P", None)
             .await
             .expect("project");
@@ -433,7 +458,13 @@ mod tests {
         let task = repo::create_work_item(pool, "task", Some(&story.to_string()), "T", None)
             .await
             .expect("task");
-        (project.to_string(), story.to_string(), task.to_string())
+        SeedChain {
+            project: project.to_string(),
+            epic: epic.to_string(),
+            focus: focus.to_string(),
+            story: story.to_string(),
+            task: task.to_string(),
+        }
     }
 
     /// One round-trip per scalar PATCH, all in one #[tokio::test] to avoid
@@ -579,25 +610,27 @@ mod tests {
         assert_eq!(body["tier"], "deep");
     }
 
-    /// `{"value": null}` is rejected with 422 on each of the four
+    /// `{"value": null}` is rejected with 422 on each of the five
     /// non-nullable scalars (whose repo fns take a non-Option enum):
-    /// `relevance`, `effort`, `complexity`, `closure-gate`. The two
+    /// `relevance`, `effort`, `complexity`, `closure-gate`, `shape`. The two
     /// nullable scalars (`task-kind`, `tier`) accept `value: null` and
     /// are exercised in `scalars_round_trip` above.
     #[tokio::test]
     async fn scalar_null_value_is_422() {
         let pool = connect_in_memory().await.expect("pool");
-        let (story_id, task_id) = seed_chain(&pool).await;
+        let chain = seed_chain_full(&pool).await;
         let state = AppState::new(Arc::new(pool));
         let router = build_router(state);
 
         // (path, work-item-id) pairs — relevance + closure-gate are
-        // story-scoped; effort + complexity are task-scoped.
+        // story-scoped; effort + complexity are task-scoped; shape is
+        // focus-scoped (the focus already carries a shape so the row exists).
         let cases = [
-            ("relevance", story_id.as_str()),
-            ("effort", task_id.as_str()),
-            ("complexity", task_id.as_str()),
-            ("closure-gate", story_id.as_str()),
+            ("relevance", chain.story.as_str()),
+            ("effort", chain.task.as_str()),
+            ("complexity", chain.task.as_str()),
+            ("closure-gate", chain.story.as_str()),
+            ("shape", chain.focus.as_str()),
         ];
 
         for (field, id) in cases {
@@ -772,5 +805,155 @@ mod tests {
         // Object entry round-trips as an object with the same two keys.
         assert_eq!(files[1]["repo"], "acme/widget");
         assert_eq!(files[1]["path"], "lib/qualified.rs");
+    }
+
+    /// `PATCH /work-items/{id}/shape` (migration 0010): a focus accepts a new
+    /// shape (200, value persists on the row); a story is kind-gated → 422.
+    /// `patch_shape` returns `Json<WorkItem>`, so `shape` is a top-level field.
+    #[tokio::test]
+    async fn shape_round_trip_and_kind_gate() {
+        let pool = connect_in_memory().await.expect("pool");
+        let chain = seed_chain_full(&pool).await;
+        let state = AppState::new(Arc::new(pool));
+        let router = build_router(state);
+
+        // Happy path: re-shape the focus (seeded as `vertical-slice`).
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{}/shape", chain.focus))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "value": "cross-cutting" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["shape"], "cross-cutting");
+
+        // Kind gate: a STORY has no shape → 422 validation envelope.
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{}/shape", chain.story))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "value": "cross-cutting" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "validation");
+    }
+
+    /// `PATCH /work-items/{id}/epic-plan` (migration 0010): an epic merges its
+    /// `outcome`/`context` into `attributes` (200); a focus is kind-gated → 422.
+    /// The handler returns `Json<WorkItemDetail>`, so the merged attributes
+    /// surface on `item.attributes`.
+    #[tokio::test]
+    async fn epic_plan_round_trip_and_kind_gate() {
+        let pool = connect_in_memory().await.expect("pool");
+        let chain = seed_chain_full(&pool).await;
+        let state = AppState::new(Arc::new(pool));
+        let router = build_router(state);
+
+        // Happy path: revise the epic's outcome.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{}/epic-plan", chain.epic))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "outcome": "the revised epic outcome" })
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(
+            body["item"]["attributes"]["outcome"],
+            "the revised epic outcome"
+        );
+
+        // Kind gate: a FOCUS cannot carry an epic plan → 422.
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{}/epic-plan", chain.focus))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "outcome": "nope" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "validation");
+    }
+
+    /// `PATCH /work-items/{id}/focus-plan` (migration 0010): a focus merges its
+    /// `framing` into `attributes` (200); an epic is kind-gated → 422. The
+    /// handler returns `Json<WorkItemDetail>`. `framing` is kept non-empty —
+    /// the repo layer rejects whitespace-only framing.
+    #[tokio::test]
+    async fn focus_plan_round_trip_and_kind_gate() {
+        let pool = connect_in_memory().await.expect("pool");
+        let chain = seed_chain_full(&pool).await;
+        let state = AppState::new(Arc::new(pool));
+        let router = build_router(state);
+
+        // Happy path: set the focus's framing.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{}/focus-plan", chain.focus))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "framing": "the focus framing" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["item"]["attributes"]["framing"], "the focus framing");
+
+        // Kind gate: an EPIC cannot carry a focus plan → 422.
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{}/focus-plan", chain.epic))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "framing": "nope" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "validation");
     }
 }

@@ -7,7 +7,7 @@
 //!
 //! 1. Drive the MCP `create_work_item` TOOL handler directly (mirroring the
 //!    in-process drive in `src/mcp.rs`'s own `#[cfg(test)]`) to build a legal
-//!    `project → epic → feature → story → task` chain, capturing the leaf id.
+//!    `project → epic → focus → story → task` chain, capturing the leaf id.
 //! 2. Assert the DB now holds the leaf `work_items` row AND its `events` outbox
 //!    row (counted via the RUNTIME `sqlx::query_scalar` API — no `query!` macro,
 //!    so this test adds nothing to the committed `.sqlx` cache).
@@ -180,8 +180,8 @@ async fn full_thread_mcp_write_export_then_http_read() {
     //    adds one epic close-criterion (the story-create gate requires it).
     let project = mcp_create(&tools, "project", None, "E2E Project").await;
     let epic = mcp_create(&tools, "epic", Some(&project), "E2E Epic").await;
-    let feature = mcp_create(&tools, "focus", Some(&epic), "E2E Feature").await;
-    let story = mcp_create(&tools, "story", Some(&feature), "E2E Story").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "E2E Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "E2E Story").await;
     let task = mcp_create(&tools, "task", Some(&story), "E2E Task").await;
 
     // 1b. Exercise the migration-0010 epic-done gate end-to-end over the shared
@@ -341,8 +341,8 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     //    `task` child and record one activity entry against the task.
     let project = mcp_create(&tools, "project", None, "Attr Project").await;
     let epic = mcp_create(&tools, "epic", Some(&project), "Attr Epic").await;
-    let feature = mcp_create(&tools, "focus", Some(&epic), "Attr Feature").await;
-    let story = mcp_create(&tools, "story", Some(&feature), "Attr Story").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Attr Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Attr Story").await;
 
     mcp_set_story_plan(
         &tools,
@@ -556,8 +556,8 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     // 1. Build a legal chain to a `story`, then add two branch tasks under it.
     let project = mcp_create(&tools, "project", None, "Plan Project").await;
     let epic = mcp_create(&tools, "epic", Some(&project), "Plan Epic").await;
-    let feature = mcp_create(&tools, "focus", Some(&epic), "Plan Feature").await;
-    let story = mcp_create(&tools, "story", Some(&feature), "Plan Story").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Plan Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Plan Story").await;
     // A non-branch task that carries the acceptance criteria + closure gate.
     let task = mcp_create(&tools, "task", Some(&story), "Plan Task").await;
     // Two branch tasks, one exclusive to each option.
@@ -565,7 +565,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     let task_b = mcp_create(&tools, "task", Some(&story), "Branch B Task").await;
 
     // 2. Relevance + closure gate on the story (relevance settable only on
-    //    epic/feature/story; gate is story-scoped).
+    //    epic/focus/story; gate is story-scoped).
     lumina::repo::set_relevance(&pool, &story, Relevance::Active)
         .await
         .expect("set story relevance=active");
@@ -928,8 +928,8 @@ async fn repo_links_flow() {
     // 4. Build a legal chain under the project down to a task, then create a
     //    finding on the task with `repo_id` referencing the SECONDARY repo.
     let epic = mcp_create(&tools, "epic", Some(&project), "Repo-Links Epic").await;
-    let feature = mcp_create(&tools, "focus", Some(&epic), "Repo-Links Feature").await;
-    let story = mcp_create(&tools, "story", Some(&feature), "Repo-Links Story").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Repo-Links Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Repo-Links Story").await;
     let task = mcp_create(&tools, "task", Some(&story), "Repo-Links Task").await;
 
     let finding_id = lumina::repo::create_finding(
@@ -1183,15 +1183,15 @@ async fn repo_links_flow() {
 // pattern of calling through `repo::*` for the new families.
 // =====================================================================
 
-/// Helper: seed a legal project → epic → feature → story chain via the MCP
+/// Helper: seed a legal project → epic → focus → story chain via the MCP
 /// create tool and return the story id. Mirrors `seed_chain_to_story` in
 /// `src/mcp.rs`'s own tests, scoped for these round-2 threads (each thread is
 /// independent so the chain titles can collide across threads).
 async fn seed_story(tools: &LuminaTools, label: &str) -> String {
     let project = mcp_create(tools, "project", None, &format!("{label} Project")).await;
     let epic = mcp_create(tools, "epic", Some(&project), &format!("{label} Epic")).await;
-    let feature = mcp_create(tools, "focus", Some(&epic), &format!("{label} Feature")).await;
-    mcp_create(tools, "story", Some(&feature), &format!("{label} Story")).await
+    let focus = mcp_create(tools, "focus", Some(&epic), &format!("{label} Focus")).await;
+    mcp_create(tools, "story", Some(&focus), &format!("{label} Story")).await
 }
 
 /// (a) Setting `not_doing` AFTER setting `problem_statement` + `execution_strategy`

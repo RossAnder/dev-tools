@@ -62,13 +62,13 @@ A task's role within its story's execution order — `foundation` (prerequisite,
 _Avoid_: kind, shape (three distinct "kind-ish" concepts — see Flagged ambiguities).
 
 **Closure gate**:
-A story's `closure_gate` mode; in `hard` mode it blocks a task reaching `done` while any of the story's acceptance criteria are unchecked. Reused at the epic level to gate closure on close-criteria.
+A story's `closure_gate` mode; in `hard` mode it blocks a task reaching `done` while any of the story's acceptance criteria are unchecked.
 
 **Terminal**:
 A final work-item status — completed (`done`) or abandoned (`cancelled`) — that no longer blocks its parent's closure rollup.
 
-**Target date**:
-An epic's optional, purely informational ship-date target; never policed or enforced.
+**Target date** (not yet modelled in schema):
+An epic's optional, purely informational ship-date target; never policed or enforced. A domain concept only — no migration or `domain::WorkItem` field carries it yet.
 
 ## Relationships
 
@@ -92,4 +92,4 @@ An epic's optional, purely informational ship-date target; never policed or enfo
 - **Three "kind-ish" concepts kept distinct.** `kind` = hierarchy level (project…task); `task_kind` = a task's phase disposition (`foundation|main|polish`); **Shape** = a focus's vertical/cross-cutting/foundational axis. The focus axis is named `shape` precisely to avoid a third `*_kind`.
 - **Vertical-slice/cross-cutting at two scales.** The same axis describes a coarse focus and a fine intra-story task-subset; same vocabulary, separate storage — not distinct concepts, not one shared table.
 - **File overlap is not a carving signal.** `files_touched` overlap drives parallel-execution collision avoidance and sprint composition, not focus boundaries; carving is intent/shape only.
-- **Milestone is not an entity.** A coordinated multi-epic dated release is not modelled — epics close independently and the date is an informational `target_date` on the epic. A genuine gating case would become an orthogonal tag, never a tree level.
+- **Milestone is not an entity.** A coordinated multi-epic dated release is not modelled — epics close independently and the date is an informational `target_date` on the epic (a domain concept not yet modelled in schema). A genuine gating case would become an orthogonal tag, never a tree level.

@@ -183,7 +183,6 @@ fn validate_attributes_for_kind(
             "task" => match k.as_str() {
                 "execution_detail" | "outcome" => want_string(k, v)?,
                 "files_touched" => want_files_touched(k, v)?,
-                "dispatch" => want_object(k, v)?,
                 _ => return Err(bad_key(k)),
             },
             "epic" => match k.as_str() {
@@ -969,6 +968,7 @@ pub async fn create_work_item_full(
             let attrs = serde_json::json!({ "outcome": o });
             let cleaned = normalise_object(&attrs, "attributes")?;
             validate_attributes_for_kind(kind, &cleaned)?;
+            validate_plan_field_constraints(&cleaned)?; // R34
             Some(
                 serde_json::to_string(&Value::Object(cleaned))
                     .map_err(|e| AppError::Other(e.into()))?,
@@ -1137,7 +1137,7 @@ async fn enforce_closure_gate(
 /// Epic-done transition gate (migration 0010, ADR lumina epic/focus semantics).
 /// Runs INSIDE the caller's transaction, immediately after [`enforce_closure_gate`]
 /// at every `→done` entry point. UNCONDITIONAL — it does NOT read `closure_gate`
-/// (an epic's `closure_gate` flag, allowed for SPA/parity, has no bearing here):
+/// (the close-criteria always define the epic deliverable):
 /// an `epic→done` requires BOTH
 ///   (a) all of the epic's OWN close-criteria checked, AND
 ///   (b) all descendant stories terminal (`done`/`cancelled`).
@@ -1336,6 +1336,39 @@ fn check_plan_field_len(field: &str, value: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// R34: single chokepoint for the plan-attribute free-text constraints, applied
+/// at EVERY attribute-write site (`create_work_item_full`, `update_work_item`,
+/// `set_work_item_attributes`) so no path can reach `outcome`/`context`/`framing`
+/// without them. For any of those keys present as a string value it applies the
+/// [`check_plan_field_len`] 64-KiB cap; additionally it rejects a whitespace-only
+/// `outcome` (R22, mirroring create's "non-empty outcome" guard) and a
+/// whitespace-only `framing` (R42). `context` gets the length cap only (a blank
+/// context is allowed). `cleaned` is the already null-stripped object.
+fn validate_plan_field_constraints(
+    cleaned: &serde_json::Map<String, Value>,
+) -> Result<(), AppError> {
+    if let Some(Value::String(v)) = cleaned.get("outcome") {
+        if v.trim().is_empty() {
+            return Err(AppError::Validation(
+                "an epic requires a non-empty outcome".into(),
+            ));
+        }
+        check_plan_field_len("outcome", v)?;
+    }
+    if let Some(Value::String(v)) = cleaned.get("framing") {
+        if v.trim().is_empty() {
+            return Err(AppError::Validation(
+                "framing must be non-empty".into(),
+            ));
+        }
+        check_plan_field_len("framing", v)?;
+    }
+    if let Some(Value::String(v)) = cleaned.get("context") {
+        check_plan_field_len("context", v)?;
+    }
+    Ok(())
+}
+
 /// Revise an epic's plan attributes (migration 0010). Epic-kind-gated; JSON-
 /// merges the present fields via set_work_item_attributes (one event). Sibling
 /// keys are preserved by the merge. Mandatory-outcome-at-create is enforced in
@@ -1352,20 +1385,15 @@ pub async fn set_epic_plan(
             "epic-plan attributes are settable only on an epic, not on '{kind}'"
         )));
     }
+    // R22/R23/R34: the whitespace-only-outcome rejection and the per-field byte
+    // cap are now enforced once in `validate_plan_field_constraints`, called from
+    // inside `set_work_item_attributes` (the JSON-merge path this delegates to),
+    // so they are NOT duplicated here.
     let mut patch = serde_json::Map::new();
     if let Some(v) = outcome {
-        // R22: mirror create's whitespace-only-outcome rejection — set must not
-        // be a back-door to a blank outcome that create forbids.
-        if v.trim().is_empty() {
-            return Err(AppError::Validation(
-                "an epic requires a non-empty outcome".into(),
-            ));
-        }
-        check_plan_field_len("outcome", v)?; // R23
         patch.insert("outcome".into(), serde_json::Value::String(v.to_string()));
     }
     if let Some(v) = context {
-        check_plan_field_len("context", v)?; // R23
         patch.insert("context".into(), serde_json::Value::String(v.to_string()));
     }
     // no fields supplied — skip the no-op write + spurious event
@@ -1388,9 +1416,12 @@ pub async fn set_focus_plan(
             "focus framing is settable only on a focus, not on '{kind}'"
         )));
     }
+    // R23/R34/R42: the per-field byte cap and the whitespace-only-framing
+    // rejection are enforced once in `validate_plan_field_constraints`, called
+    // from inside `set_work_item_attributes` (the JSON-merge path), so they are
+    // NOT duplicated here.
     let mut patch = serde_json::Map::new();
     if let Some(v) = framing {
-        check_plan_field_len("framing", v)?; // R23
         patch.insert("framing".into(), serde_json::Value::String(v.to_string()));
     }
     // no fields supplied — skip the no-op write + spurious event
@@ -1485,9 +1516,9 @@ pub async fn set_closure_gate(
     gate: ClosureGate,
 ) -> Result<(), AppError> {
     let kind = work_item_kind(pool, story_id).await?;
-    if !matches!(kind.as_str(), "story" | "epic") {
+    if kind != "story" {
         return Err(AppError::Validation(format!(
-            "closure_gate is settable only on a story or epic, not on '{kind}'"
+            "closure_gate is settable only on a story, not on '{kind}'"
         )));
     }
     let value = enum_to_str(gate);
@@ -1527,6 +1558,16 @@ pub async fn add_acceptance_criterion(
 ) -> Result<Uuid, AppError> {
     // Verify the work item exists first (NotFound, not a dangling-FK 500).
     let _ = work_item_kind(pool, work_item_id).await?;
+
+    // R43: reject a blank criterion (a whitespace-only close-criterion would
+    // vacuously satisfy the story-create ≥1-criterion gate) and cap storage
+    // amplification at the shared 64-KiB plan-field limit.
+    if text.trim().is_empty() {
+        return Err(AppError::Validation(
+            "acceptance-criterion text must be non-empty".into(),
+        ));
+    }
+    check_plan_field_len("acceptance-criterion text", text)?;
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
@@ -1752,6 +1793,7 @@ pub async fn update_work_item(
             let kind = work_item_kind(pool, id).await?;
             let cleaned = normalise_object(value, "attributes")?;
             validate_attributes_for_kind(&kind, &cleaned)?;
+            validate_plan_field_constraints(&cleaned)?; // R34
             Some(serde_json::to_string(&Value::Object(cleaned)).map_err(|e| AppError::Other(e.into()))?)
         }
         None => None,
@@ -1959,6 +2001,7 @@ pub async fn set_work_item_attributes(
     let merged_value = Value::Object(merged);
     let cleaned = normalise_object(&merged_value, "attributes")?;
     validate_attributes_for_kind(&current.kind, &cleaned)?;
+    validate_plan_field_constraints(&cleaned)?; // R34
 
     let merged_str =
         serde_json::to_string(&Value::Object(cleaned)).map_err(|e| AppError::Other(e.into()))?;
@@ -2259,6 +2302,38 @@ pub async fn resolve_finding(
 /// `rows_affected()==0`. Event `work_item.deleted`.
 pub async fn delete_work_item(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
     let mut tx = crate::db::begin_write(pool).await?;
+
+    // R36: block soft-deleting a `focus` that still has non-terminal, non-deleted
+    // child stories. The epic-done gate's rollup counts only stories whose focus
+    // parent is `deleted_at IS NULL` (enforce_epic_done_gate), so tombstoning a
+    // focus mid-flight would silently drop its live stories from the rollup and
+    // let the epic close with non-terminal descendants. Force explicit story
+    // disposition first. Read inside the tx (runtime string API — no new compile-
+    // checked query, so the committed .sqlx cache is untouched) so the liveness
+    // check and the soft-delete share one snapshot under the writer lock. A
+    // missing/already-deleted id yields kind=None here and falls through to the
+    // UPDATE's `affected == 0` NotFound path below — behaviour preserved.
+    let kind: Option<String> =
+        sqlx::query_scalar("SELECT kind FROM work_items WHERE id = ?1 AND deleted_at IS NULL")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if kind.as_deref() == Some("focus") {
+        let live_stories: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM work_items \
+             WHERE kind = 'story' AND parent_id = ?1 AND deleted_at IS NULL \
+             AND status NOT IN ('done','cancelled')",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if live_stories > 0 {
+            return Err(AppError::Validation(format!(
+                "focus '{id}' cannot be deleted: {live_stories} non-terminal child \
+                 story(ies) remain; resolve or cancel them first"
+            )));
+        }
+    }
 
     let affected = sqlx::query!(
         r#"UPDATE work_items SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
@@ -5534,7 +5609,7 @@ mod tests {
         let ev_before = count_events(&pool).await;
         assert_eq!((wi_before, ev_before), (1, 1));
 
-        // Illegal: feature directly under project (feature's legal parent is epic).
+        // Illegal: focus directly under project (focus's legal parent is epic).
         let err = create_work_item(&pool, "focus", Some(&project.to_string()), "Bad", None)
             .await
             .expect_err("illegal create must error");
@@ -5815,6 +5890,58 @@ mod tests {
         // Re-deleting is NotFound (already tombstoned).
         let err = delete_work_item(&pool, &id).await.expect_err("re-delete");
         assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
+    }
+
+    /// R36: a `focus` with non-terminal child stories cannot be soft-deleted;
+    /// once its stories are terminal (done/cancelled) it deletes cleanly. Guards
+    /// the epic-done rollup against a tombstoned focus silently dropping live
+    /// descendant stories.
+    #[tokio::test]
+    async fn delete_focus_blocked_while_child_stories_nonterminal() {
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project");
+        let epic = create_work_item_full(
+            &pool,
+            "epic",
+            Some(&project.to_string()),
+            "E",
+            None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+        )
+        .await
+        .expect("epic");
+        add_acceptance_criterion(&pool, &epic.to_string(), "c")
+            .await
+            .expect("criterion");
+        let focus = create_work_item_full(
+            &pool,
+            "focus",
+            Some(&epic.to_string()),
+            "FO",
+            None,
+            CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+        )
+        .await
+        .expect("focus");
+        let story = create_work_item(&pool, "story", Some(&focus.to_string()), "S", None)
+            .await
+            .expect("story");
+
+        // Non-terminal (open) story under the focus ⇒ delete blocked.
+        let err = delete_work_item(&pool, &focus.to_string())
+            .await
+            .expect_err("focus delete blocked while a child story is non-terminal");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // Make the story terminal, then the focus deletes cleanly.
+        update_work_item_status(&pool, &story.to_string(), "done")
+            .await
+            .expect("story → done");
+        delete_work_item(&pool, &focus.to_string())
+            .await
+            .expect("focus deletes once its stories are terminal");
     }
 
     /// `set_relevance` is rejected on a task (typed Validation) and accepted on a
@@ -6893,6 +7020,79 @@ mod tests {
             before_events,
             "rejected shape-on-epic create wrote no events row"
         );
+    }
+
+    /// R34: the 64-KiB plan-field cap and the whitespace-only-outcome reject are
+    /// enforced at EVERY attribute-write site, not just `set_epic_plan`. Boundary
+    /// matrix: outcome exactly 64 KiB at create → Ok; 64 KiB+1 at create →
+    /// Validation; 64 KiB+1 outcome via the generic `update_work_item` PATCH →
+    /// Validation; whitespace-only outcome via the PATCH → Validation.
+    #[tokio::test]
+    async fn plan_field_constraints_enforced_at_create_and_patch() {
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+
+        let at_cap = "a".repeat(MAX_PLAN_FIELD_BYTES);
+        let over_cap = "a".repeat(MAX_PLAN_FIELD_BYTES + 1);
+
+        // outcome exactly at the 64-KiB cap → create Ok.
+        let epic = create_work_item_full(
+            &pool,
+            "epic",
+            Some(&project),
+            "E",
+            None,
+            CreateOpts { origin: None, outcome: Some(&at_cap), shape: None },
+        )
+        .await
+        .expect("64-KiB outcome at create is Ok")
+        .to_string();
+
+        // outcome one byte over the cap → create Validation, zero rows.
+        let before_items = count_work_items(&pool).await;
+        let before_events = count_events(&pool).await;
+        let err = create_work_item_full(
+            &pool,
+            "epic",
+            Some(&project),
+            "E2",
+            None,
+            CreateOpts { origin: None, outcome: Some(&over_cap), shape: None },
+        )
+        .await
+        .expect_err("64-KiB+1 outcome at create must error");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+        assert_eq!(count_work_items(&pool).await, before_items, "no row written");
+        assert_eq!(count_events(&pool).await, before_events, "no event written");
+
+        // 64-KiB+1 outcome via the generic PATCH → Validation.
+        let over_patch = UpdateWorkItemRequest {
+            title: None,
+            body: None,
+            status: None,
+            position: None,
+            attributes: Some(serde_json::json!({ "outcome": over_cap })),
+        };
+        let err = update_work_item(&pool, &epic, &over_patch)
+            .await
+            .expect_err("64-KiB+1 outcome via PATCH must error");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // whitespace-only outcome via the generic PATCH → Validation.
+        let blank_patch = UpdateWorkItemRequest {
+            title: None,
+            body: None,
+            status: None,
+            position: None,
+            attributes: Some(serde_json::json!({ "outcome": "   " })),
+        };
+        let err = update_work_item(&pool, &epic, &blank_patch)
+            .await
+            .expect_err("whitespace-only outcome via PATCH must error");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
     }
 
     /// R25: epic-done gate edge cases.

@@ -198,7 +198,7 @@ mod tests {
         serde_json::from_slice(&bytes).expect("parse json body")
     }
 
-    /// Seed project→epic→feature→story→task and return the story id and task id.
+    /// Seed project→epic→focus→story→task and return the story id and task id.
     /// Mirrors `http::work_items::tests::seed_chain` verbatim.
     async fn seed_chain(pool: &sqlx::SqlitePool) -> (String, String) {
         let project = repo::create_work_item(pool, "project", None, "P", None)

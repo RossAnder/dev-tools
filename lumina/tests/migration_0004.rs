@@ -25,7 +25,7 @@
 use lumina::db::connect_in_memory;
 use sqlx::SqlitePool;
 
-/// Seed the project→epic→feature→story chain and return the story id, so we
+/// Seed the project→epic→focus→story chain and return the story id, so we
 /// can attach findings to a real (legal) `task` parent. The hierarchy trigger
 /// rejects findings on stray work_items, but findings have no kind-check —
 /// they reference any work_item — so a story will do.

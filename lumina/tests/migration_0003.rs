@@ -21,7 +21,7 @@
 use lumina::db::connect_in_memory;
 use sqlx::SqlitePool;
 
-/// Build the legal project→epic→feature→story chain and return the story id.
+/// Build the legal project→epic→focus→story chain and return the story id.
 /// The hierarchy trigger (0001) requires legal parentage; a story is the parent
 /// for both acceptance_criteria/research_notes (we attach to the story here) and
 /// open_questions (story-scoped).

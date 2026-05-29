@@ -33,7 +33,7 @@ Reach for the lumina MCP tools when you are:
 
 ## Story-block skill family
 
-The plugin at `claude/plugins/lumina-story-blocks/` adds 21 composable skills (round-1's 9 + round-2's 10 + round-3's 2), one per story block, each independently triggerable via a `/lumina:<block> <id>` slash invocation, each driving the lumina MCP tools catalogued below. The plugin's [`README.md`](../../README.md#skill-list) carries the authoritative skill enumeration; the table below mirrors it.
+The plugin at `claude/plugins/lumina-story-blocks/` adds 25 composable skills (round-1's 9 + round-2's 10 + round-3's 2 + migration-0010's 4), one per story block, each independently triggerable via a `/lumina:<block> <id>` slash invocation, each driving the lumina MCP tools catalogued below. The plugin's [`README.md`](../../README.md#skill-list) carries the authoritative skill enumeration; the table below mirrors it.
 
 | Skill | Slash invocation | One-line summary |
 |---|---|---|
@@ -58,6 +58,10 @@ The plugin at `claude/plugins/lumina-story-blocks/` adds 21 composable skills (r
 | decompose-tasks | `/lumina:decompose-tasks <id>` | Decompose a ready story into task children — proposing vertical-slice and pattern-replacement GROUPINGS over subsets of those tasks (units-of-implementation; not modelled in schema in round-3.5), with each task individually tagged with a task-level `task_kind` (foundation/main/polish) for intra-phase sort ordering. |
 | set-task-spec | `/lumina:set-task-spec <id>` | Walk a story's task children and capture per-task spec (execution_detail, files_touched, dual-track outcome, effort, complexity, derived tier). *(amended in round-3 — captures effort+complexity, derives typed tier)* |
 | wire-task-deps | `/lumina:wire-task-deps <id>` | Wire explicit task→task dependency edges across a story's task children, then surface the Kahn-ordered phase schedule with per-task tier annotations and an agent budget. *(amended in round-3 — renders batch dispatch budget + agent cap check)* |
+| epic-outcome | `/lumina:epic-outcome <id>` | Interrogate + set an epic's `outcome`. *(new in migration 0010 — epic-only)* |
+| focus-shape | `/lumina:focus-shape <id>` | Set a focus's `shape` (vertical-slice / cross-cutting / foundational). *(new in migration 0010 — focus-only)* |
+| focus-framing | `/lumina:focus-framing <id>` | Set a focus's `framing`. *(new in migration 0010 — focus-only)* |
+| epic-close-criteria | `/lumina:epic-close-criteria <id>` | Manage an epic's close-criteria. *(new in migration 0010 — epic-only)* |
 
 Load via `claude --plugin-dir claude/plugins/lumina-story-blocks` — see
 [`../../README.md`](../../README.md)
@@ -127,7 +131,7 @@ These set the composer-facing grading axes and drive the decision lifecycle. `re
 | `set_relevance` | Set an epic/focus/story's `relevance` (`active` / `backlog` / `deferred` / `rejected`). Rejected on task/project. |
 | `set_effort` | Set a task's `effort` grade (`s` / `m` / `l` — drives batch sizing). |
 | `set_complexity` | Set a task's `complexity` grade (`low` / `medium` / `high` — drives model-tier assignment). |
-| `set_closure_gate` | Set a story's OR an epic's `closure_gate` (`hard` / `soft`) — migration 0010 widened it beyond story-only. For a story when `hard`, each child task's →done transition is rejected while THAT task still has any unchecked acceptance criterion (the gate is the parent story's, applied per-task); `soft` allows the transition but flags the unchecked count. For an epic when `hard`, it gates the epic's close against any unchecked close-criterion (see CONVENTIONS.md §m). |
+| `set_closure_gate` | Set a story's `closure_gate` (`hard` / `soft`) — story-only. When `hard`, each child task's →done transition is rejected while THAT task still has any unchecked acceptance criterion (the gate is the parent story's, applied per-task); `soft` allows the transition but flags the unchecked count. (The epic-done gate is unconditional and does NOT read `closure_gate`.) |
 | `add_acceptance_criterion` | Add a checkable acceptance criterion (text) to a work item. |
 | `check_acceptance_criterion` | Mark a criterion checked (optional `by`); also appends a `verification` activity entry. |
 | `uncheck_acceptance_criterion` | Mark a criterion unchecked. |
@@ -290,7 +294,7 @@ Severity typing was already in place for `add_finding` / `update_finding` (`Seve
 
 ## Epic/focus tools (migration 0010)
 
-Migration 0010 renamed `feature` → `focus` in the hierarchy (`project → epic → focus → story → task`) and reshaped the two grouping kinds into closeable/rollup deliverables (see CONVENTIONS.md §m for the semantics). It added three setters plus widened `create_work_item` and `set_closure_gate`.
+Migration 0010 renamed `feature` → `focus` in the hierarchy (`project → epic → focus → story → task`) and reshaped the two grouping kinds into closeable/rollup deliverables (see CONVENTIONS.md §m for the semantics). It added three setters plus widened `create_work_item`.
 
 | Tool | When to use |
 |------|-------------|
@@ -298,10 +302,11 @@ Migration 0010 renamed `feature` → `focus` in the hierarchy (`project → epic
 | `set_epic_plan` | `{ id, outcome?, context? } → ()` — epic-only. JSON-merge of the present fields into the epic's plan attributes (absent keys untouched), mirroring `set_story_plan`'s merge semantics via the merge-safe `set_work_item_attributes` path. Records exactly one event. |
 | `set_focus_plan` | `{ id, framing? } → ()` — focus-only. JSON-merge of the present field into the focus's plan attributes (absent keys untouched). Records exactly one event. |
 
-Two existing tools were widened by this pass:
+One existing tool was widened by this pass:
 
 - `create_work_item` now accepts `outcome` (MANDATORY when `kind: "epic"`) and `shape` (MANDATORY when `kind: "focus"`, must be one of `vertical-slice | cross-cutting | foundational`). Both thread through `repo::create_work_item_full`; omitting the mandatory field for the matching kind is rejected as `invalid_params`.
-- `set_closure_gate` now applies to a story OR an epic (previously story-only). For an epic, the gate governs whether the epic may close while it still carries unchecked close-criteria (see CONVENTIONS.md §m).
+
+`set_closure_gate` is NOT widened: it remains story-only. The epic-done gate is unconditional and does not read `closure_gate`.
 
 ## Notes
 

@@ -1757,10 +1757,10 @@ impl LuminaTools {
         structured_result(serde_json::json!({ "id": id }))
     }
 
-    /// Set a story's or epic's closure gate (single repo call →
+    /// Set a story's closure gate (single repo call →
     /// `set_closure_gate`).
     #[tool(
-        description = "Set a story's or epic's closure gate (hard/soft) governing whether task→done is blocked by unchecked acceptance criteria. Records one event.",
+        description = "Set a story's closure gate (hard/soft) governing whether task→done is blocked by unchecked acceptance criteria. Records one event.",
         annotations(idempotent_hint = true, open_world_hint = false)
     )]
     async fn set_closure_gate(
@@ -2683,9 +2683,9 @@ mod tests {
             }))
             .await
             .expect("epic close criterion");
-        let feature =
+        let focus =
             create(tools, "focus", Some(&epic), None, Some("vertical-slice")).await;
-        create(tools, "story", Some(&feature), None, None).await
+        create(tools, "story", Some(&focus), None, None).await
     }
 
     /// Driving the `create_work_item` tool handler DIRECTLY writes one

@@ -169,7 +169,7 @@ mod tests {
         serde_json::from_slice(&bytes).expect("parse json body")
     }
 
-    /// Seed a project→epic→feature→story chain and return the story id.
+    /// Seed a project→epic→focus→story chain and return the story id.
     async fn seed_story(pool: &sqlx::SqlitePool) -> String {
         let project = repo::create_work_item(pool, "project", None, "P", None)
             .await

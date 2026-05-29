@@ -197,7 +197,7 @@ mod tests {
         serde_json::from_slice(&bytes).expect("parse json body")
     }
 
-    /// Seed project→epic→feature→story and return the story id (risks hang off
+    /// Seed project→epic→focus→story and return the story id (risks hang off
     /// any work-item; we attach to the story for the round-trip).
     async fn seed_story(pool: &sqlx::SqlitePool) -> String {
         let project = repo::create_work_item(pool, "project", None, "P", None)

@@ -145,7 +145,7 @@ mod tests {
         serde_json::from_slice(&bytes).expect("parse json body")
     }
 
-    /// Seed project→epic→feature→story plus `n` task children under the story.
+    /// Seed project→epic→focus→story plus `n` task children under the story.
     /// Returns `(story_id, [task_ids])`.
     async fn seed_story_with_tasks(
         pool: &sqlx::SqlitePool,

@@ -35,7 +35,7 @@ PRAGMA foreign_keys = ON;
 
 -- ---------------------------------------------------------------------------
 -- work_items: additive planning/decision columns (all nullable TEXT).
---   relevance             — active|backlog|deferred|rejected (epic/feature/story
+--   relevance             — active|backlog|deferred|rejected (epic/focus/story
 --                           scope; task/project left NULL); validated in repo.
 --   effort                — s|m|l (batch sizing); validated in repo.
 --   complexity            — low|medium|high (model tier); validated in repo.

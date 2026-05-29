@@ -592,7 +592,7 @@ mod tests {
             .await
             .unwrap()
             .to_string();
-        let task = repo::create_work_item(&pool, "task", Some(&story), "T", None)
+        let _task = repo::create_work_item(&pool, "task", Some(&story), "T", None)
             .await
             .unwrap()
             .to_string();
@@ -600,14 +600,14 @@ mod tests {
         // Nested-object attribute set (the `set_story_plan`-equivalent path).
         repo::set_work_item_attributes(
             &pool,
-            &task,
-            &serde_json::json!({ "dispatch": { "agent": "deep", "level": "L3" } }),
+            &story,
+            &serde_json::json!({ "verification_commands": { "build": "cargo build", "test": "cargo nextest run" } }),
         )
         .await
         .expect("set nested attribute");
 
         // An activity entry.
-        repo::append_activity(&pool, &task, "execution", Some("bob"), "ran the task", None, None)
+        repo::append_activity(&pool, &story, "execution", Some("bob"), "ran the task", None, None)
             .await
             .expect("append activity");
 
@@ -617,14 +617,14 @@ mod tests {
             "5 creates + 1 epic close-criterion + 1 attr-update + 1 activity event"
         );
 
-        let path = dir.path().join("task").join(format!("{task}.toml"));
+        let path = dir.path().join("story").join(format!("{story}.toml"));
         let raw = std::fs::read_to_string(&path).expect("read snapshot");
         let parsed: toml::Value = toml::from_str(&raw).expect("parse snapshot TOML");
 
         // The NESTED attributes object round-trips intact.
-        let dispatch = &parsed["item"]["attributes"]["dispatch"];
-        assert_eq!(dispatch["agent"].as_str(), Some("deep"), "nested attr round-trips");
-        assert_eq!(dispatch["level"].as_str(), Some("L3"));
+        let vc = &parsed["item"]["attributes"]["verification_commands"];
+        assert_eq!(vc["build"].as_str(), Some("cargo build"), "nested attr round-trips");
+        assert_eq!(vc["test"].as_str(), Some("cargo nextest run"));
 
         // The ordered activity entry is present.
         let activity = parsed["activity"].as_array().expect("activity array");

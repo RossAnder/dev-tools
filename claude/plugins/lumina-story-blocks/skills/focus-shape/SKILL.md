@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 Thin wrapper over `mcp__lumina__set_shape`. Sets a focus's `shape` discriminator so downstream planning and the lumina web UI can drive the same skill the user invokes from `/lumina:focus-shape <id>`.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §c (provenance recording via `record_task_activity`), §e (Sentry pattern — skill = instructions, MCP = execution), §f (no per-verb fragmentation), §g/§h (kind-precondition: focus-only writer fails-fast on the wrong kind).
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §c (provenance recording via `record_task_activity`), §e (Sentry pattern — skill = instructions, MCP = execution), §f (no per-verb fragmentation), §m.2 (kind-precondition: focus-only writer fails-fast on the wrong kind; §m.2 is the on-point authority because §g/§h's taxonomy splits skills into any-kind lens writers and story-only column writers and has no epic/focus category).
 
 ## Target
 
@@ -37,7 +37,7 @@ mcp__lumina__set_shape {
 
 ## Body — 5-step check-before-act (per §b)
 
-**Precondition**: this skill applies only to `kind == "focus"` work items (per §e's blessed local kind-check and the §g/§h kind-precondition rule). After step 1's `get_work_item` returns, verify `detail.kind == "focus"`. If not, abort with a one-line error: `"set_shape is focus-only — got kind=<kind>."` Do NOT call any write tool. (This is a kind-guard, not a numbered §b step — the canonical sequence below preserves §b's 1-5 numbering exactly.)
+**Precondition**: this skill applies only to `kind == "focus"` work items (per §e's blessed local kind-check and the §m.2 kind-precondition rule). After step 1's `get_work_item` returns, verify `detail.kind == "focus"`. If not, abort with a one-line error: `"set_shape is focus-only — got kind=<kind>."` Do NOT call any write tool. (This is a kind-guard, not a numbered §b step — the canonical sequence below preserves §b's 1-5 numbering exactly.)
 
 1. **Read**: call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind `detail.kind` (consumed by the Precondition above) and proceed once the Precondition passes.
 2. **Inspect field**: bind `detail.shape` from the returned detail (may be null / absent). This is the value against which the next three steps branch.
