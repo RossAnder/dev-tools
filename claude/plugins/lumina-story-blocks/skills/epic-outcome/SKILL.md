@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 Capture or update an epic's `attributes.outcome` via `mcp__lumina__set_epic_plan`. The skill prompts the user along three axes (what deliverable/intent closing this epic represents, why it matters / who benefits, what observable signal means it's achieved), assembles the answers into a single outcome string, and writes it through lumina's merge-call epic-plan setter.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §c (provenance recording via `record_task_activity`), §e (Sentry pattern — skill = instructions, MCP = execution), §g/§h (kind-precondition: this writes an epic-only field, so it fails-fast on the wrong kind).
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §c (provenance recording via `record_task_activity`), §e (Sentry pattern — skill = instructions, MCP = execution), §m.2 (kind-precondition writers for the epic/focus fields — `epic-outcome` is the epic-only `outcome` writer, so it fails-fast on the wrong kind; §m.2 is the on-point authority because §g/§h's taxonomy splits skills into any-kind lens writers and story-only column writers and has no epic/focus category).
 
 ## Target
 
@@ -47,7 +47,7 @@ The labelled-paragraph layout is deliberate — it makes the resulting prose sel
 
 ## Body — 5-step check-before-act (per §b)
 
-**Precondition**: this skill applies only to `kind == "epic"` work items (per §e's blessed local kind-check and the §g/§h kind-precondition rule for non-lens story-shaped writers). After step 1's `get_work_item` returns, verify `detail.kind == "epic"`. If not, abort with a one-line error: `"epic-outcome requires an epic work item; got kind=<kind>."` Do NOT call any write tool. (This is a kind-guard, not a numbered §b step — the canonical sequence below preserves §b's 1-5 numbering exactly.)
+**Precondition**: this skill applies only to `kind == "epic"` work items (per §e's blessed local kind-check and the §m.2 kind-precondition rule for the epic-only `outcome` writer). After step 1's `get_work_item` returns, verify `detail.kind == "epic"`. If not, abort with a one-line error: `"epic-outcome requires an epic work item; got kind=<kind>."` Do NOT call any write tool. (This is a kind-guard, not a numbered §b step — the canonical sequence below preserves §b's 1-5 numbering exactly.)
 
 1. **Read**: call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind `detail.kind` (consumed by the Precondition above) and proceed once the Precondition passes.
 2. **Inspect field**: bind `detail.attributes.outcome` from the returned detail (may be null / absent / empty). This is the value against which the next three steps branch.
