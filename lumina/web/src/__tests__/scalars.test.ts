@@ -139,6 +139,17 @@ test('setRelevance throws on 422 with server-message in the error', async () => 
   await expect(setRelevance('wi-task', 'active' as never)).rejects.toThrow(/relevance not settable on task/)
 })
 
+test('setShape throws on 422 with server-message in the error', async () => {
+  globalThis.fetch = mock(
+    async () =>
+      new Response(
+        JSON.stringify({ error: { kind: 'validation', message: 'shape not settable on a non-focus' } }),
+        { status: 422, statusText: 'Unprocessable Entity', headers: { 'Content-Type': 'application/json' } },
+      ),
+  ) as typeof globalThis.fetch
+  await expect(setShape('wi-task', 'vertical-slice' as never)).rejects.toThrow(/shape not settable on a non-focus/)
+})
+
 // ---------------------------------------------------------------------------
 // 4. Composable mutation — injected api is invoked with correct args + state
 //    settles to lastUpdated.

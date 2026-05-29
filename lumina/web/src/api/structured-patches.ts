@@ -39,6 +39,7 @@ import {
 import {
   type WorkItemDetail,
   WorkItemDetailWireSchema,
+  normaliseDetail,
 } from './work-items'
 
 // ---------------------------------------------------------------------------
@@ -124,13 +125,7 @@ export async function setStoryPlan(
     ),
     WorkItemDetailWireSchema,
   )
-  return {
-    ...wire,
-    acceptance_criteria: wire.acceptance_criteria.map((ac) => ({
-      ...ac,
-      checked: ac.checked === 1,
-    })),
-  }
+  return normaliseDetail(wire)
 }
 
 // ---------------------------------------------------------------------------
@@ -197,13 +192,7 @@ export async function setTaskSpec(
     ),
     WorkItemDetailWireSchema,
   )
-  return {
-    ...wire,
-    acceptance_criteria: wire.acceptance_criteria.map((ac) => ({
-      ...ac,
-      checked: ac.checked === 1,
-    })),
-  }
+  return normaliseDetail(wire)
 }
 
 // ---------------------------------------------------------------------------
@@ -249,13 +238,7 @@ export async function setEpicPlan(
     ),
     WorkItemDetailWireSchema,
   )
-  return {
-    ...wire,
-    acceptance_criteria: wire.acceptance_criteria.map((ac) => ({
-      ...ac,
-      checked: ac.checked === 1,
-    })),
-  }
+  return normaliseDetail(wire)
 }
 
 // ---------------------------------------------------------------------------
@@ -299,11 +282,5 @@ export async function setFocusPlan(
     ),
     WorkItemDetailWireSchema,
   )
-  return {
-    ...wire,
-    acceptance_criteria: wire.acceptance_criteria.map((ac) => ({
-      ...ac,
-      checked: ac.checked === 1,
-    })),
-  }
+  return normaliseDetail(wire)
 }

@@ -16,6 +16,11 @@ import {
   __resetForTests,
   __setApiForTests,
 } from '../composables/useEpicPlan'
+import {
+  useHierarchy,
+  __resetForTests as __resetHierarchyForTests,
+  __setApiForTests as __setHierarchyApiForTests,
+} from '../composables/useHierarchy'
 import { workItemDetail } from './fixtures'
 
 let originalFetch: typeof globalThis.fetch
@@ -23,6 +28,7 @@ let originalFetch: typeof globalThis.fetch
 beforeEach(() => {
   originalFetch = globalThis.fetch
   __resetForTests()
+  __resetHierarchyForTests()
 })
 
 afterEach(() => {
@@ -167,6 +173,58 @@ test('useEpicPlan.apply — api rejects → error.value set, lastUpdated unchang
   expect(plan.error.value).toBe('wire-500')
   expect(plan.lastUpdated.value).toBeNull()
   expect(plan.loading.value).toBe(false)
+})
+
+// ---------------------------------------------------------------------------
+// 4b. Composable mutation — hierarchy refresh side-effect fires when the
+//     mutated epic is the focused node.
+// ---------------------------------------------------------------------------
+
+test('useEpicPlan.apply — refreshes hierarchy detail when epic is focused', async () => {
+  // Stub the hierarchy api: setFocus('e-1') triggers one fetchDetail to load
+  // the detail panel; the post-apply refresh('e-1') triggers a second, since
+  // refresh fires fetchDetail only when focusId === the mutated id.
+  const refreshed = workItemDetail({
+    item: {
+      id: 'e-1',
+      kind: 'epic',
+      parent_id: null,
+      title: 'an epic',
+      body: null,
+      status: 'open',
+      position: 0,
+      attributes: { outcome: 'refreshed outcome', context: 'c' },
+      relevance: null,
+      effort: null,
+      complexity: null,
+      origin: null,
+      closure_gate: null,
+      blocked_by_question_id: null,
+      enabling_option_id: null,
+      task_kind: null,
+      tier: null,
+      created_at: '2026-05-25T00:00:00Z',
+      updated_at: '2026-05-26T00:00:00Z',
+    },
+  })
+  const fetchDetailMock = mock(async () => refreshed as never)
+  __setHierarchyApiForTests({ fetchDetail: fetchDetailMock as never })
+
+  const hierarchy = useHierarchy()
+  await hierarchy.setFocus('e-1')
+  expect(fetchDetailMock).toHaveBeenCalledTimes(1)
+
+  const updated = workItemDetail({ item: { id: 'e-1', kind: 'epic' } })
+  __setApiForTests({ setEpicPlan: mock(async () => updated as never) as never })
+
+  const plan = useEpicPlan()
+  const result = await plan.apply('e-1', { outcome: 'refreshed outcome' })
+
+  expect(result.ok).toBe(true)
+  // The post-success refresh re-fetched the focused detail (second call).
+  expect(fetchDetailMock).toHaveBeenCalledTimes(2)
+  expect(fetchDetailMock.mock.calls[1][0]).toBe('e-1')
+  expect(hierarchy.detail.value).toMatchObject({ item: { id: 'e-1' } })
 })
 
 // ---------------------------------------------------------------------------

@@ -17,101 +17,26 @@
 // the FocusLens reflects the new `attributes.outcome` / `attributes.context`
 // without a manual reload. The local state is confined to `lastUpdated` plus
 // `loading` / `error`.
+//
+// The error-handling/refresh contract is shared with `useFocusPlan.ts` via the
+// `makePlanComposable` factory; the singleton built here is distinct from the
+// focus one (one factory call ⇒ one private singleton). The PATCH targets the
+// `epic`-kind setter, which kind-gates to `epic` (non-epic → 422 on `error`).
 
-import { ref } from 'vue'
-import * as productionApi from '@/api'
-import type { SetEpicPlanBody, WorkItemDetail } from '@/api'
-import { useHierarchy } from './useHierarchy'
+import { setEpicPlan } from '@/api'
+import type { SetEpicPlanBody } from '@/api'
+import { makePlanComposable } from './makePlanComposable'
 
 import type { Result } from './result'
 export type { Result }
 
-// ---------------------------------------------------------------------------
-// Module-singleton state.
-// ---------------------------------------------------------------------------
+const plan = makePlanComposable<SetEpicPlanBody, 'setEpicPlan'>('setEpicPlan', setEpicPlan)
 
-const lastUpdated = ref<WorkItemDetail | null>(null)
-const loading = ref(false)
-const error = ref<string | null>(null)
-
-// ---------------------------------------------------------------------------
-// Swappable API adapter for test isolation.
-// ---------------------------------------------------------------------------
-
-type Api = {
-  setEpicPlan: typeof productionApi.setEpicPlan
-}
-let api: Api = {
-  setEpicPlan: productionApi.setEpicPlan,
-}
+/** Shared epic/focus return shape; `apply(epicId, { outcome?, context? })`. */
+export const useEpicPlan = plan.use
 
 /** Replace API adapter entries. Test-only — do NOT call from production code. */
-export function __setApiForTests(override: Partial<Api>): void {
-  api = { ...api, ...override }
-}
+export const __setApiForTests = plan.setApiForTests
 
 /** Reset all module-singleton state. Test-only — do NOT call from production code. */
-export function __resetForTests(): void {
-  lastUpdated.value = null
-  loading.value = false
-  error.value = null
-  api = {
-    setEpicPlan: productionApi.setEpicPlan,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers.
-// ---------------------------------------------------------------------------
-
-function toMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e)
-}
-
-// ---------------------------------------------------------------------------
-// Public surface.
-// ---------------------------------------------------------------------------
-
-export function useEpicPlan() {
-  /**
-   * Apply a partial epic-plan patch. Any subset of `outcome` / `context` may
-   * be supplied; absent fields leave the corresponding `attributes` key
-   * unchanged (present-only JSON-merge, mirroring `useStoryPlan.apply`). The
-   * repo setter kind-gates to `epic` (non-epic → 422 surfaced on `error`).
-   *
-   * On success the re-fetched detail is folded into the shared hierarchy
-   * singleton (no-op when the epic isn't the focused node).
-   */
-  async function apply(
-    epicId: string,
-    patch: SetEpicPlanBody,
-  ): Promise<Result<WorkItemDetail>> {
-    loading.value = true
-    error.value = null
-    try {
-      const updated = await api.setEpicPlan(epicId, patch)
-      lastUpdated.value = updated
-      await useHierarchy().refresh(epicId)
-      return { ok: true, value: updated }
-    } catch (e) {
-      const message = toMessage(e)
-      error.value = message
-      return { ok: false, error: message }
-    } finally {
-      loading.value = false
-    }
-  }
-
-  /** Clear `error.value` — for the UI's "dismiss banner" button. */
-  function clearError(): void {
-    error.value = null
-  }
-
-  return {
-    lastUpdated,
-    loading,
-    error,
-    apply,
-    clearError,
-  }
-}
+export const __resetForTests = plan.resetForTests

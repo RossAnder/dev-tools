@@ -524,6 +524,35 @@ export const WorkItemDetailWireSchema = z.object({
 })
 
 // ---------------------------------------------------------------------------
+// Wire → consumer normalisation.
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalise a parsed {@link WorkItemDetailWireSchema} value into the
+ * consumer-facing {@link WorkItemDetail}: maps the wire-level 0/1 integer
+ * `acceptance_criteria[].checked` into a JS boolean so consumers can use
+ * truthy semantics directly (rather than `=== 1`). All other fields pass
+ * through unchanged.
+ *
+ * Shared by {@link fetchDetail} and the structured-patch wrappers in
+ * `structured-patches.ts` (every structured PATCH re-fetches and returns a
+ * `WorkItemDetail`), so the 0/1 → boolean mapping has a single home.
+ */
+export function normaliseDetail(
+  wire: z.infer<typeof WorkItemDetailWireSchema>,
+): WorkItemDetail {
+  return {
+    ...wire,
+    acceptance_criteria: wire.acceptance_criteria.map((ac) => ({
+      ...ac,
+      // Wire is 0/1 (SQLite INTEGER mirrored as Rust i64); strict `=== 1`
+      // rather than truthy so a stray non-1 numeric does not render as ticked.
+      checked: ac.checked === 1,
+    })),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Fetch wrappers.
 // ---------------------------------------------------------------------------
 
@@ -562,15 +591,7 @@ export async function fetchDetail(id: string): Promise<WorkItemDetail> {
     await fetch(`${API_BASE}/work-items/${encodeURIComponent(id)}`),
     WorkItemDetailWireSchema,
   )
-  return {
-    ...wire,
-    acceptance_criteria: wire.acceptance_criteria.map((ac) => ({
-      ...ac,
-      // Wire is 0/1 (SQLite INTEGER mirrored as Rust i64); strict `=== 1`
-      // rather than truthy so a stray non-1 numeric does not render as ticked.
-      checked: ac.checked === 1,
-    })),
-  }
+  return normaliseDetail(wire)
 }
 
 /** `POST /api/work-items` — create a node; returns the created work item. */
