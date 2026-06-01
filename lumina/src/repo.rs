@@ -3131,16 +3131,24 @@ pub async fn find_project_ancestor(
 /// Used by `add_repo_link` / `set_primary_repo` to translate the partial-primary
 /// UNIQUE-index hit into a typed `Validation` rather than a raw 500.
 ///
-/// We match by the SQLite extended-result-code string (which `sqlx` exposes via
-/// `DatabaseError::code()`); both `1555` (PRIMARY KEY) and `2067` (UNIQUE) are
-/// flavours of `SQLITE_CONSTRAINT_UNIQUE`-class violations callers should treat
-/// as conflicts. The conservative match-set is the two unique flavours; other
-/// constraint codes (FK, CHECK, NOT NULL) pass through as `Db` 500.
-fn is_unique_violation(e: &sqlx::Error) -> bool {
+/// We match by the backend's constraint-code string (which `sqlx` exposes via
+/// `DatabaseError::code()`). On SQLite, both `1555` (PRIMARY KEY) and `2067`
+/// (UNIQUE) are flavours of `SQLITE_CONSTRAINT_UNIQUE`-class violations callers
+/// should treat as conflicts; the conservative match-set is those two unique
+/// flavours, while other constraint codes (FK, CHECK, NOT NULL) pass through as
+/// `Db` 500. The `Backend::Pg` arm matches Postgres' SQLSTATE `23505`
+/// (`unique_violation`) and is RESERVED for the future Part C — it is statically
+/// unreachable today (every caller fronts a `SqlitePool`).
+fn is_unique_violation(backend: crate::db::Backend, e: &sqlx::Error) -> bool {
     if let sqlx::Error::Database(db_err) = e
         && let Some(code) = db_err.code()
     {
-        return code == "2067" || code == "1555";
+        return match backend {
+            crate::db::Backend::Sqlite => code == "2067" || code == "1555",
+            // Reserved for Part C (live Postgres); never reached in the
+            // SQLite-only build.
+            crate::db::Backend::Pg => code == "23505",
+        };
     }
     false
 }
@@ -3199,7 +3207,7 @@ pub async fn add_repo_link(
     .await;
 
     if let Err(e) = insert {
-        if is_unique_violation(&e) {
+        if is_unique_violation(crate::db::Backend::Sqlite, &e) {
             // Either the (project_id, slug) UNIQUE or the partial primary UNIQUE
             // index fired. Both are caller-fixable; surface as Validation.
             return Err(AppError::Validation(format!(
@@ -3354,7 +3362,7 @@ pub async fn set_primary_repo(
     let affected = match set_result {
         Ok(r) => r.rows_affected(),
         Err(e) => {
-            if is_unique_violation(&e) {
+            if is_unique_violation(crate::db::Backend::Sqlite, &e) {
                 return Err(AppError::Validation(format!(
                     "primary repo conflict on project '{project_id}': another row already \
                      holds is_primary=1 (concurrent set_primary_repo)"
@@ -4180,7 +4188,7 @@ pub async fn add_task_dependency(
     .await;
 
     if let Err(e) = insert {
-        if is_unique_violation(&e) {
+        if is_unique_violation(crate::db::Backend::Sqlite, &e) {
             return Err(AppError::Validation(format!(
                 "task_dependency '{task_id} -> {depends_on_id}' already exists"
             )));
@@ -4860,11 +4868,15 @@ pub async fn get_story_readiness(
 /// `payload` is serialised to a JSON string; `exported_at` is left NULL so the
 /// git-export materialiser (Task 6) drains it on its next tick.
 ///
-/// Takes `&mut Transaction` (not the pool) precisely so the event row shares the
-/// caller's transaction and is committed/rolled-back atomically with the domain
-/// write.
+/// Takes a `&mut dyn DbTx` (the backend-erased in-flight transaction, not the
+/// pool) precisely so the event row shares the caller's transaction and is
+/// committed/rolled-back atomically with the domain write. Every caller passes
+/// `&mut tx` where `tx: Transaction<'_, Sqlite>` came from
+/// [`crate::db::begin_write`]; that reference unsizes to `&mut dyn DbTx` via the
+/// `impl DbTx for Transaction<'_, Sqlite>` blanket coercion, so the ~100 callers
+/// need no changes.
 async fn record_event(
-    tx: &mut Transaction<'_, Sqlite>,
+    tx: &mut dyn crate::db::DbTx,
     aggregate_type: &str,
     aggregate_id: &str,
     event_type: &str,
@@ -4873,18 +4885,23 @@ async fn record_event(
     let event_id = Uuid::now_v7().to_string();
     let payload_str = serde_json::to_string(&payload).map_err(|e| AppError::Other(e.into()))?;
 
-    sqlx::query!(
+    // Runtime trait call through the object-safe `DbTx::execute` (placeholders
+    // are `$N`, args are owned/`'static`: the borrowed `&str` params are
+    // `.to_owned()`'d before binding; `event_id`/`payload_str` are already
+    // owned `String`). The returned affected-row count is ignored.
+    tx.execute(
         r#"
         INSERT INTO events (id, aggregate_type, aggregate_id, event_type, payload)
-        VALUES (?1, ?2, ?3, ?4, ?5)
+        VALUES ($1, $2, $3, $4, $5)
         "#,
-        event_id,
-        aggregate_type,
-        aggregate_id,
-        event_type,
-        payload_str,
+        crate::args![
+            event_id,
+            aggregate_type.to_owned(),
+            aggregate_id.to_owned(),
+            event_type.to_owned(),
+            payload_str
+        ],
     )
-    .execute(&mut **tx)
     .await?;
 
     Ok(())
