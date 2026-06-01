@@ -65,6 +65,12 @@ pub struct WorkItem {
     /// typed [`Shape`] enum used by the wire / MCP layer.
     #[serde(default)]
     pub shape: Option<String>,
+    /// Provenance back-link (migration 0011): the `findings.id` a triage decision
+    /// spawned this work item from; NULL on items not spawned from a finding. A
+    /// scalar (placed before the timestamp scalars, NOT after any Vec field) so
+    /// the export tables-last ordering gate stays satisfied.
+    #[serde(default)]
+    pub spawned_from_finding_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -116,6 +122,12 @@ pub struct Finding {
     /// Self-FK to the finding that supersedes this one (migration 0003); live
     /// findings are `superseded_by IS NULL`.
     pub superseded_by: Option<String>,
+    /// FK to `runs.id` (migration 0011): the review/optimise run this finding was
+    /// raised under; NULL on legacy findings that predate runs.
+    pub run_id: Option<String>,
+    /// Triage queue state (migration 0011): `'pending'` until triaged. Column
+    /// `DEFAULT 'pending'`.
+    pub triage_state: Option<String>,
     pub resolved_at: Option<String>,
     pub resolution: Option<String>,
     pub defer_reason: Option<String>,

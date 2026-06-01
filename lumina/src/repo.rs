@@ -75,6 +75,7 @@ struct WorkItemRow {
     task_kind: Option<String>,
     tier: Option<String>,
     shape: Option<String>,
+    spawned_from_finding_id: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -108,6 +109,7 @@ where
             task_kind: row.try_get("task_kind")?,
             tier: row.try_get("tier")?,
             shape: row.try_get("shape")?,
+            spawned_from_finding_id: row.try_get("spawned_from_finding_id")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
         })
@@ -136,6 +138,7 @@ fn work_item_from_row(r: WorkItemRow) -> Result<WorkItem, AppError> {
         task_kind: r.task_kind,
         tier: r.tier,
         shape: r.shape,
+        spawned_from_finding_id: r.spawned_from_finding_id,
         created_at: r.created_at,
         updated_at: r.updated_at,
     })
@@ -480,7 +483,7 @@ const LIST_WORK_ITEMS_SQL: &str = r#"
             id, kind, parent_id, title, body, status, position, attributes,
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
-            created_at, updated_at
+            spawned_from_finding_id, created_at, updated_at
         FROM work_items
         WHERE deleted_at IS NULL
           AND ($1 IS NULL OR parent_id = $1)
@@ -556,7 +559,7 @@ const GET_WORK_ITEM_DETAIL_SQL: &str = r#"
             id, kind, parent_id, title, body, status, position, attributes,
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
-            created_at, updated_at
+            spawned_from_finding_id, created_at, updated_at
         FROM work_items
         WHERE id = $1
         "#;
@@ -965,6 +968,8 @@ where
             origin: row.try_get("origin")?,
             confidence: row.try_get("confidence")?,
             superseded_by: row.try_get("superseded_by")?,
+            run_id: row.try_get("run_id")?,
+            triage_state: row.try_get("triage_state")?,
             resolved_at: row.try_get("resolved_at")?,
             resolution: row.try_get("resolution")?,
             defer_reason: row.try_get("defer_reason")?,
@@ -988,6 +993,7 @@ pub async fn list_findings(
             "SELECT id, work_item_id, kind, severity, effort, category, status, \
              file, line, symbol, summary, description, first_flagged, rounds, \
              fingerprint, flow, dedup_id, origin, confidence, superseded_by, \
+             run_id, triage_state, \
              resolved_at, resolution, defer_reason, defer_trigger, \
              wontfix_rationale, repo_id \
              FROM findings \
@@ -1089,12 +1095,58 @@ pub async fn create_work_item_full(
     body: Option<&str>,
     opts: CreateOpts<'_>,
 ) -> Result<Uuid, AppError> {
+    let origin = opts.origin;
+    let mut tx = db.begin().await?;
+    let id = create_work_item_full_tx(tx.as_mut(), kind, parent_id, title, body, opts).await?;
+    let id_str = id.to_string();
+
+    let payload = serde_json::json!({
+        "kind": kind,
+        "parent_id": parent_id,
+        "title": title,
+        "origin": origin,
+    });
+    record_event(tx.as_mut(), "work_item", &id_str, "work_item.created", payload).await?;
+
+    tx.commit().await?;
+
+    Ok(id)
+}
+
+/// Reusable tx helper extracted from [`create_work_item_full`] (B16): perform ALL
+/// create-time validation + the `work_items` INSERT INSIDE the caller's
+/// transaction, returning the new id.
+///
+/// **Does NOT record an event and does NOT commit** — the public
+/// [`create_work_item_full`] wrapper records the single `work_item.created` event
+/// after this returns; the batch spawn path (B17b) calls this under a shared tx
+/// and records ONE coarse batch event.
+///
+/// Every validation read — the parent-kind resolution and the story
+/// close-criterion gate — runs on the passed `tx` (NOT autocommit `db`), so the
+/// batch caller sees a single consistent snapshot under the BEGIN IMMEDIATE
+/// writer lock. Validation order, the `AppError::Validation`/`NotFound` messages,
+/// and the early-return-before-any-write behaviour are PRESERVED byte-identically
+/// (the gate reads were already the last thing before the INSERT; moving the
+/// parent-kind read onto the tx is the only structural change, and it returns the
+/// SAME `parent work_item '{pid}' does not exist` Validation as before). The
+/// `spawned_from_finding_id` column is intentionally NOT set here — it stays NULL
+/// on create (B17b stamps it on the spawn path).
+pub async fn create_work_item_full_tx(
+    tx: &mut dyn crate::db::DbTx,
+    kind: &str,
+    parent_id: Option<&str>,
+    title: &str,
+    body: Option<&str>,
+    opts: CreateOpts<'_>,
+) -> Result<uuid::Uuid, AppError> {
     let CreateOpts {
         origin,
         outcome,
         shape,
     } = opts;
-    // Resolve the parent's kind (if any) for the pre-check. A non-NULL
+    // Resolve the parent's kind (if any) for the pre-check, INSIDE the tx so the
+    // read shares the writer-lock snapshot with the INSERT below. A non-NULL
     // parent_id that does not exist is a Validation error, not a 500.
     let parent_kind: Option<String> = match parent_id {
         Some(pid) => {
@@ -1102,8 +1154,8 @@ pub async fn create_work_item_full(
             // serve as a parent. With `AND deleted_at IS NULL`, a create under a
             // tombstoned epic/focus falls through to the parent-not-found path
             // below rather than succeeding under a dead ancestor.
-            let row = crate::db::scalar_opt::<String>(
-                db,
+            let row = crate::db::tx_scalar_opt::<String>(
+                tx,
                 r#"SELECT kind FROM work_items WHERE id = $1 AND deleted_at IS NULL"#,
                 args![pid.to_owned()],
             )
@@ -1122,7 +1174,7 @@ pub async fn create_work_item_full(
 
     validate_hierarchy_edge(kind, parent_kind.as_deref())?;
 
-    // --- migration-0010 create-time gates (all BEFORE begin_write) ---------
+    // --- migration-0010 create-time gates ---------------------------------
     // Epic requires a non-empty outcome at create.
     if kind == "epic" && outcome.map(|s| s.trim().is_empty()).unwrap_or(true) {
         return Err(AppError::Validation(
@@ -1151,12 +1203,6 @@ pub async fn create_work_item_full(
             ))
         })?;
     }
-    // NOTE (R3): the story-creation close-criterion gate is NOT here — it was a
-    // TOCTOU hazard when read on the autocommit `pool` before begin_write (a
-    // concurrent criterion removal between the count and the INSERT could let a
-    // story be created under a now-criterionless epic). It now runs on the
-    // transaction connection AFTER begin_write, below, so the gate read and the
-    // INSERT share one snapshot under the BEGIN IMMEDIATE writer lock.
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
@@ -1184,17 +1230,15 @@ pub async fn create_work_item_full(
         None => None,
     };
 
-    let mut tx = db.begin().await?;
-
-    // R3: story-creation close-criterion gate — runs INSIDE the tx (post
-    // begin, pre-INSERT) so the gate read and the write share one snapshot
-    // under the writer lock, closing the TOCTOU window against a concurrent
-    // criterion removal. The validated parent is a focus; resolve the focus's
-    // parent (the epic) and require ≥1 close-criterion.
+    // R3: story-creation close-criterion gate — runs INSIDE the tx (pre-INSERT)
+    // so the gate read and the write share one snapshot under the writer lock,
+    // closing the TOCTOU window against a concurrent criterion removal. The
+    // validated parent is a focus; resolve the focus's parent (the epic) and
+    // require ≥1 close-criterion.
     if kind == "story" {
         let focus_id = parent_id.expect("hierarchy edge guarantees a focus parent for a story");
         let epic_id: Option<String> = crate::db::tx_scalar_one::<Option<String>>(
-            tx.as_mut(),
+            tx,
             r#"SELECT parent_id FROM work_items WHERE id = $1"#,
             args![focus_id.to_owned()],
         )
@@ -1203,7 +1247,7 @@ pub async fn create_work_item_full(
             AppError::Validation("story's focus parent has no epic ancestor".into())
         })?;
         let crit_count: i64 = crate::db::tx_scalar_one::<i64>(
-            tx.as_mut(),
+            tx,
             r#"SELECT COUNT(*) FROM acceptance_criteria WHERE work_item_id = $1"#,
             args![epic_id.clone()],
         )
@@ -1232,16 +1276,6 @@ pub async fn create_work_item_full(
         ],
     )
     .await?;
-
-    let payload = serde_json::json!({
-        "kind": kind,
-        "parent_id": parent_id,
-        "title": title,
-        "origin": origin,
-    });
-    record_event(tx.as_mut(), "work_item", &id_str, "work_item.created", payload).await?;
-
-    tx.commit().await?;
 
     Ok(id)
 }
@@ -2583,59 +2617,9 @@ pub async fn create_finding(
     work_item_id: &str,
     finding: &NewFinding<'_>,
 ) -> Result<Uuid, AppError> {
-    let id = Uuid::now_v7();
-    let id_str = id.to_string();
-
-    // Materialise the typed `Severity` into its wire form for the TEXT column
-    // bind. `enum_to_str` round-trips via serde, so a `Severity::Minor` →
-    // `"minor"`. No Severity value can produce a `RiskSeverity` wire literal
-    // (`"low"|"medium"|"high"`) — the type system precludes it.
-    let severity_str = finding.severity.map(enum_to_str);
-
     let mut tx = db.begin().await?;
-
-    tx.execute(
-        "INSERT INTO findings ( \
-            id, work_item_id, kind, severity, effort, category, status, \
-            file, line, symbol, summary, description, first_flagged, rounds, \
-            fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution, \
-            defer_reason, defer_trigger, wontfix_rationale, repo_id \
-        ) \
-        VALUES ( \
-            $1, $2, $3, $4, $5, $6, $7, \
-            $8, $9, $10, $11, $12, $13, $14, \
-            $15, $16, $17, $18, $19, $20, $21, \
-            $22, $23, $24, $25 \
-        )",
-        args![
-            id_str.clone(),
-            work_item_id.to_owned(),
-            finding.kind.map(|s| s.to_owned()),
-            severity_str,
-            finding.effort.map(|s| s.to_owned()),
-            finding.category.map(|s| s.to_owned()),
-            finding.status.map(|s| s.to_owned()),
-            finding.file.map(|s| s.to_owned()),
-            finding.line,
-            finding.symbol.map(|s| s.to_owned()),
-            finding.summary.map(|s| s.to_owned()),
-            finding.description.map(|s| s.to_owned()),
-            finding.first_flagged.map(|s| s.to_owned()),
-            finding.rounds,
-            finding.fingerprint.map(|s| s.to_owned()),
-            finding.flow.map(|s| s.to_owned()),
-            finding.dedup_id.map(|s| s.to_owned()),
-            finding.origin.map(|s| s.to_owned()),
-            finding.confidence.map(|s| s.to_owned()),
-            finding.resolved_at.map(|s| s.to_owned()),
-            finding.resolution.map(|s| s.to_owned()),
-            finding.defer_reason.map(|s| s.to_owned()),
-            finding.defer_trigger.map(|s| s.to_owned()),
-            finding.wontfix_rationale.map(|s| s.to_owned()),
-            finding.repo_id.map(|s| s.to_owned()),
-        ],
-    )
-    .await?;
+    let (id, _affected) = create_finding_tx(tx.as_mut(), work_item_id, finding).await?;
+    let id_str = id.to_string();
 
     let payload = serde_json::json!({
         "work_item_id": work_item_id,
@@ -2648,6 +2632,150 @@ pub async fn create_finding(
     tx.commit().await?;
 
     Ok(id)
+}
+
+/// Reusable tx helper extracted from [`create_finding`] (B16): mint the id, bind
+/// every `findings` column, and INSERT the row INSIDE the caller's transaction.
+///
+/// **Does NOT record an event and does NOT commit** — that is the caller's job.
+/// The public [`create_finding`] wrapper records the single `finding.created`
+/// event after this returns; the batch-triage path (B17a) will call this N times
+/// under one tx and record ONE coarse batch event instead of N.
+///
+/// Returns `(id, rows_affected)`. The INSERT uses the migration-0011 dedup upsert
+/// `ON CONFLICT(work_item_id, dedup_id) WHERE dedup_id IS NOT NULL AND
+/// superseded_by IS NULL DO NOTHING`, whose conflict-target predicate is written
+/// BYTE-IDENTICAL to the `ux_findings_dedup` partial-index predicate (required:
+/// a differing predicate fails to bind the index and silently duplicates). A
+/// deduped insert yields `rows_affected == 0` (1 = a fresh row); B17a reads this
+/// to distinguish added-vs-deduped. `triage_state` is left to the column DEFAULT
+/// (`'pending'`), so it is omitted from the column list.
+pub async fn create_finding_tx(
+    tx: &mut dyn crate::db::DbTx,
+    work_item_id: &str,
+    finding: &NewFinding<'_>,
+) -> Result<(uuid::Uuid, u64), AppError> {
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+
+    // Materialise the typed `Severity` into its wire form for the TEXT column
+    // bind. `enum_to_str` round-trips via serde, so a `Severity::Minor` →
+    // `"minor"`. No Severity value can produce a `RiskSeverity` wire literal
+    // (`"low"|"medium"|"high"`) — the type system precludes it.
+    let severity_str = finding.severity.map(enum_to_str);
+
+    let affected = tx
+        .execute(
+            "INSERT INTO findings ( \
+                id, work_item_id, kind, severity, effort, category, status, \
+                file, line, symbol, summary, description, first_flagged, rounds, \
+                fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution, \
+                defer_reason, defer_trigger, wontfix_rationale, repo_id \
+            ) \
+            VALUES ( \
+                $1, $2, $3, $4, $5, $6, $7, \
+                $8, $9, $10, $11, $12, $13, $14, \
+                $15, $16, $17, $18, $19, $20, $21, \
+                $22, $23, $24, $25 \
+            ) \
+            ON CONFLICT(work_item_id, dedup_id) \
+                WHERE dedup_id IS NOT NULL AND superseded_by IS NULL DO NOTHING",
+            args![
+                id_str.clone(),
+                work_item_id.to_owned(),
+                finding.kind.map(|s| s.to_owned()),
+                severity_str,
+                finding.effort.map(|s| s.to_owned()),
+                finding.category.map(|s| s.to_owned()),
+                finding.status.map(|s| s.to_owned()),
+                finding.file.map(|s| s.to_owned()),
+                finding.line,
+                finding.symbol.map(|s| s.to_owned()),
+                finding.summary.map(|s| s.to_owned()),
+                finding.description.map(|s| s.to_owned()),
+                finding.first_flagged.map(|s| s.to_owned()),
+                finding.rounds,
+                finding.fingerprint.map(|s| s.to_owned()),
+                finding.flow.map(|s| s.to_owned()),
+                finding.dedup_id.map(|s| s.to_owned()),
+                finding.origin.map(|s| s.to_owned()),
+                finding.confidence.map(|s| s.to_owned()),
+                finding.resolved_at.map(|s| s.to_owned()),
+                finding.resolution.map(|s| s.to_owned()),
+                finding.defer_reason.map(|s| s.to_owned()),
+                finding.defer_trigger.map(|s| s.to_owned()),
+                finding.wontfix_rationale.map(|s| s.to_owned()),
+                finding.repo_id.map(|s| s.to_owned()),
+            ],
+        )
+        .await?;
+
+    Ok((id, affected))
+}
+
+/// Compute a stable dedup hash over the identity tuple of a finding
+/// (`work_item_id`, `file`, `line`, `symbol`, `summary`). B17a feeds this into a
+/// finding's `dedup_id` so a re-run that re-raises the same finding collapses onto
+/// the migration-0011 `ux_findings_dedup` partial index (and thus the `DO NOTHING`
+/// upsert in [`create_finding_tx`]) instead of double-inserting.
+///
+/// The components are joined with the ASCII Unit Separator (`\u{1f}`) — a byte
+/// that cannot appear in a file path / symbol / summary in practice — so the
+/// field boundaries are unambiguous and cross-boundary collisions are avoided
+/// (e.g. `file="a", symbol="b"` hashes differently from `file="ab", symbol=""`).
+/// `None` is encoded distinctly from `Some("")` by emitting a literal NUL marker
+/// for the absent case, so a missing field and an empty field never collide.
+/// Returns lowercase hex. No caller until B17a; `pub` keeps clippy's dead_code
+/// lint quiet.
+pub fn finding_dedup_hash(
+    work_item_id: &str,
+    file: Option<&str>,
+    line: Option<i64>,
+    symbol: Option<&str>,
+    summary: Option<&str>,
+) -> String {
+    use sha2::{Digest, Sha256};
+
+    // Encode an optional string component: a NUL byte distinguishes `None` from
+    // any `Some(_)` (a present value is prefixed with a non-NUL `\x01` tag).
+    fn feed_opt_str(hasher: &mut Sha256, value: Option<&str>) {
+        match value {
+            None => hasher.update([0x00]),
+            Some(s) => {
+                hasher.update([0x01]);
+                hasher.update(s.as_bytes());
+            }
+        }
+    }
+
+    const SEP: &[u8] = b"\x1f";
+    let mut hasher = Sha256::new();
+    // work_item_id is always present (non-optional), tag it like a present value.
+    hasher.update([0x01]);
+    hasher.update(work_item_id.as_bytes());
+    hasher.update(SEP);
+    feed_opt_str(&mut hasher, file);
+    hasher.update(SEP);
+    match line {
+        None => hasher.update([0x00]),
+        Some(n) => {
+            hasher.update([0x01]);
+            hasher.update(n.to_le_bytes());
+        }
+    }
+    hasher.update(SEP);
+    feed_opt_str(&mut hasher, symbol);
+    hasher.update(SEP);
+    feed_opt_str(&mut hasher, summary);
+
+    let digest = hasher.finalize();
+    // Lowercase hex render (no extra dep — format each byte).
+    let mut out = String::with_capacity(digest.len() * 2);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{b:02x}");
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -5821,6 +5949,38 @@ mod tests {
     use super::*;
     use crate::db::connect_in_memory;
     use crate::domain::Status;
+
+    /// `finding_dedup_hash` is deterministic (same inputs → same hash) and
+    /// field-sensitive (changing any one component changes the hash, including the
+    /// None-vs-empty distinction). Cheap insurance for B17a's dedup path.
+    #[test]
+    fn finding_dedup_hash_is_deterministic_and_field_sensitive() {
+        let base = finding_dedup_hash("wi-1", Some("src/a.rs"), Some(10), Some("foo"), Some("bug"));
+        // Same inputs → same hash.
+        assert_eq!(
+            base,
+            finding_dedup_hash("wi-1", Some("src/a.rs"), Some(10), Some("foo"), Some("bug")),
+            "identical inputs hash identically"
+        );
+        // Lowercase hex, 64 chars (SHA-256).
+        assert_eq!(base.len(), 64, "sha256 hex is 64 chars");
+        assert!(
+            base.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "lowercase hex only"
+        );
+        // Each differing field perturbs the hash.
+        assert_ne!(base, finding_dedup_hash("wi-2", Some("src/a.rs"), Some(10), Some("foo"), Some("bug")));
+        assert_ne!(base, finding_dedup_hash("wi-1", Some("src/b.rs"), Some(10), Some("foo"), Some("bug")));
+        assert_ne!(base, finding_dedup_hash("wi-1", Some("src/a.rs"), Some(11), Some("foo"), Some("bug")));
+        assert_ne!(base, finding_dedup_hash("wi-1", Some("src/a.rs"), Some(10), Some("bar"), Some("bug")));
+        assert_ne!(base, finding_dedup_hash("wi-1", Some("src/a.rs"), Some(10), Some("foo"), Some("other")));
+        // None is distinct from Some("") for each optional component.
+        assert_ne!(
+            finding_dedup_hash("wi-1", None, None, None, None),
+            finding_dedup_hash("wi-1", Some(""), None, Some(""), Some("")),
+            "None encodes distinctly from empty-string"
+        );
+    }
 
     /// Row count of `work_items` (compile-checked literal — sqlx 0.9's
     /// `SqlSafeStr` bound rejects a dynamically-built table name on the runtime
