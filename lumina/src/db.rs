@@ -454,6 +454,238 @@ where
     rows.into_iter().map(decode_row).collect()
 }
 
+// ===========================================================================
+// Canonical row-mapper recipe + scalar fetch path (Part A, Wave A0 — Task A2)
+// ===========================================================================
+//
+// This block is the *recipe* the macro-eradication waves (A4+) copy mechanically
+// to ~142 conversion sites. It pins two things the A1 seam left open:
+//
+//   1. How to hand-write a multi-column `FromRow` so it flows through A1's
+//      `query_*<T>` / `tx_query_*<T>` helpers (which bound `T: FromRow<'r,
+//      SqliteRow>`) with zero churn AND stays Part-C-ready.
+//   2. How to read a single-column scalar (the `query_scalar!` target) through
+//      the same helpers, for SQLite's `i64` / `String` / `bool` columns.
+
+// --- 1. CANONICAL MULTI-COLUMN ROW-STRUCT MAPPER --------------------------
+//
+// RECIPE (copy this shape verbatim per conversion site):
+//
+//   #[derive(Debug)]                       // + PartialEq/Eq in tests if useful
+//   struct FooRow {
+//       id: String,                        // NOT NULL TEXT  -> String
+//       label: Option<String>,             // nullable TEXT  -> Option<String>
+//       n: i64,                            // NOT NULL INT   -> i64
+//   }
+//
+//   impl<'r, R> sqlx::FromRow<'r, R> for FooRow
+//   where
+//       R: sqlx::Row,
+//       usize: sqlx::ColumnIndex<R>,        // index-by-position support
+//       &'r str: sqlx::ColumnIndex<R>,      // index-by-NAME support (try_get("x"))
+//       String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+//       Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+//       i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+//   {
+//       fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+//           Ok(FooRow {
+//               id: row.try_get("id")?,
+//               label: row.try_get("label")?,   // Option<T> tolerates SQL NULL
+//               n: row.try_get("n")?,
+//           })
+//       }
+//   }
+//
+// Rules:
+//   * GENERIC over `R: sqlx::Row` (NOT bound to `SqliteRow`). A generic-R impl
+//     automatically satisfies A1's `for<'r> FromRow<'r, SqliteRow>` bound, so it
+//     drops straight into `query_all::<FooRow>` / `tx_query_all::<FooRow>` today
+//     AND needs zero edits when Part C adds a Pg arm — the `transparent_row_*`
+//     tests below prove the SQLite flow-through.
+//   * try_get by COLUMN NAME (`row.try_get("col")`), not by position. This is
+//     robust to column reordering in the SELECT and matches what `query_as!`
+//     produced. Add the `&'r str: sqlx::ColumnIndex<R>` bound to enable it.
+//   * Add ONE `T: Decode<'r, R::Database> + Type<R::Database>` bound per DISTINCT
+//     Rust column type the struct reads (String, i64, Option<String>, bool, …).
+//     Repeating a type is harmless but unnecessary.
+//   * Nullable SQL column -> `Option<T>` field. `try_get::<Option<T>>` returns
+//     `Ok(None)` on SQL NULL; a bare `try_get::<T>` on a NULL column errors.
+//   * AS-HINT REMOVAL: the `query_as!`/`query!` macros sometimes carried inline
+//     type-override hints in the SQL, e.g. `SELECT count AS "count: i64"`. Those
+//     hints are a COMPILE-TIME macro affordance only — DROP them when moving the
+//     SQL to a runtime `&'static str`; the hand-written `FromRow` carries the
+//     type decision in Rust now, and `AS "x: T"` is not valid runtime SQL.
+
+/// Canonical compiling exemplar of the multi-column row-mapper recipe above.
+///
+/// Reads three columns from `work_items`: `id` (NOT NULL TEXT -> `String`),
+/// `body` (nullable TEXT -> `Option<String>`), and `position` (nullable INTEGER,
+/// read here as a NOT-NULL-after-COALESCE `i64` in the test SELECT). It is wired
+/// into the `transparent_row_*` tests to prove a generic-R struct flows through
+/// BOTH `query_all` (pool) and `tx_query_all` (`&mut dyn DbTx`) unchanged.
+///
+/// A4+ copies the `impl` shape, not this struct.
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ExemplarRow {
+    pub id: String,
+    /// Nullable column — note the `Option<String>` field + matching bound.
+    pub body: Option<String>,
+    pub position: i64,
+}
+
+#[cfg(test)]
+impl<'r, R> sqlx::FromRow<'r, R> for ExemplarRow
+where
+    R: sqlx::Row,
+    usize: sqlx::ColumnIndex<R>,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(ExemplarRow {
+            id: row.try_get("id")?,
+            body: row.try_get("body")?,
+            position: row.try_get("position")?,
+        })
+    }
+}
+
+// --- 2. SINGLE-COLUMN SCALAR FETCH PATH -----------------------------------
+//
+// CHOSEN IDIOM: a generic `Scalar<T>(pub T)` newtype with a generic-R `FromRow`
+// impl that `try_get(0)`s column 0. Read it through the EXISTING A1 helpers:
+//
+//   let n: i64       = db.query_one::<Scalar<i64>>(SQL, args![…]).await?.0;
+//   let s: String    = tx_query_one::<Scalar<String>>(tx, SQL, args![]).await?.0;
+//   let b: bool      = db.query_one::<Scalar<bool>>(SQL, args![]).await?.0;
+//   let opt: Option<String> =
+//       db.query_opt::<Scalar<Option<String>>>(SQL, args![]).await?.map(|s| s.0);
+//
+// Why a newtype rather than `query_scalar_*` helper methods: the newtype is just
+// another `FromRow`, so it rides A1's `query_*<T>` / `tx_query_*<T>` verbatim —
+// it needs NO new methods on `DbClient`, and crucially NONE on the object-safe
+// `DbTx` (a generic `query_scalar` method there would break object-safety). One
+// fetch path, pool and tx alike. Convenience wrappers `scalar_one`/`opt`/`all`
+// below unwrap the newtype so call sites read clean.
+//
+// bool/SQLite: SQLite has no native boolean — `bool` stores as INTEGER 0/1, and
+// sqlx's `Type<Sqlite>`/`Decode<Sqlite> for bool` round-trips it. So
+// `Scalar<bool>` over an INTEGER column decodes correctly (see the
+// `scalar_bool_*` test).
+
+/// Single-column scalar row adapter — `try_get(0)` wrapped in a newtype so any
+/// `Decode + Type` scalar reads through A1's generic `query_*<T>` /
+/// `tx_query_*<T>` helpers with no new (object-safety-breaking) trait methods.
+/// Generic over `R` for the same Part-C-readiness reason as [`ExemplarRow`].
+#[allow(dead_code)]
+pub struct Scalar<T>(pub T);
+
+impl<'r, R, T> sqlx::FromRow<'r, R> for Scalar<T>
+where
+    R: sqlx::Row,
+    usize: sqlx::ColumnIndex<R>,
+    T: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(Scalar(row.try_get(0)?))
+    }
+}
+
+/// Fetch exactly one single-column scalar through the auto-commit pool.
+/// `RowNotFound` → [`AppError::NotFound`] (via [`DbClient::query_one`]).
+#[allow(dead_code)]
+pub async fn scalar_one<T>(
+    db: &impl DbClient,
+    sql: &'static str,
+    args: Args,
+) -> Result<T, AppError>
+where
+    T: Send + Unpin,
+    for<'r> Scalar<T>: sqlx::FromRow<'r, SqliteRow>,
+{
+    Ok(db.query_one::<Scalar<T>>(sql, args).await?.0)
+}
+
+/// Fetch at most one single-column scalar through the auto-commit pool.
+#[allow(dead_code)]
+pub async fn scalar_opt<T>(
+    db: &impl DbClient,
+    sql: &'static str,
+    args: Args,
+) -> Result<Option<T>, AppError>
+where
+    T: Send + Unpin,
+    for<'r> Scalar<T>: sqlx::FromRow<'r, SqliteRow>,
+{
+    Ok(db.query_opt::<Scalar<T>>(sql, args).await?.map(|s| s.0))
+}
+
+/// Fetch zero or more single-column scalars through the auto-commit pool.
+#[allow(dead_code)]
+pub async fn scalar_all<T>(
+    db: &impl DbClient,
+    sql: &'static str,
+    args: Args,
+) -> Result<Vec<T>, AppError>
+where
+    T: Send + Unpin,
+    for<'r> Scalar<T>: sqlx::FromRow<'r, SqliteRow>,
+{
+    Ok(db
+        .query_all::<Scalar<T>>(sql, args)
+        .await?
+        .into_iter()
+        .map(|s| s.0)
+        .collect())
+}
+
+/// Fetch exactly one single-column scalar inside a transaction
+/// (`&mut dyn DbTx`). `RowNotFound` → [`AppError::NotFound`].
+#[allow(dead_code)]
+pub async fn tx_scalar_one<T>(
+    tx: &mut dyn DbTx,
+    sql: &'static str,
+    args: Args,
+) -> Result<T, AppError>
+where
+    for<'r> Scalar<T>: sqlx::FromRow<'r, SqliteRow>,
+{
+    Ok(tx_query_one::<Scalar<T>>(tx, sql, args).await?.0)
+}
+
+/// Fetch at most one single-column scalar inside a transaction.
+#[allow(dead_code)]
+pub async fn tx_scalar_opt<T>(
+    tx: &mut dyn DbTx,
+    sql: &'static str,
+    args: Args,
+) -> Result<Option<T>, AppError>
+where
+    for<'r> Scalar<T>: sqlx::FromRow<'r, SqliteRow>,
+{
+    Ok(tx_query_opt::<Scalar<T>>(tx, sql, args).await?.map(|s| s.0))
+}
+
+/// Fetch zero or more single-column scalars inside a transaction.
+#[allow(dead_code)]
+pub async fn tx_scalar_all<T>(
+    tx: &mut dyn DbTx,
+    sql: &'static str,
+    args: Args,
+) -> Result<Vec<T>, AppError>
+where
+    for<'r> Scalar<T>: sqlx::FromRow<'r, SqliteRow>,
+{
+    Ok(tx_query_all::<Scalar<T>>(tx, sql, args)
+        .await?
+        .into_iter()
+        .map(|s| s.0)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -786,5 +1018,202 @@ mod tests {
         let boxed: Box<dyn DbTx + '_> = db.begin().await.expect("begin");
         let _: Box<dyn DbTx + '_> = boxed;
         // Also exercise &mut dyn through as_mut already covered above.
+    }
+
+    // -----------------------------------------------------------------------
+    // Recipe tests (Task A2) — the canonical row-mapper + scalar fetch path
+    // that A4+ copies to ~142 sites. Reuses A1's in-memory-pool pattern.
+    // -----------------------------------------------------------------------
+
+    // Seeds with a NON-NULL and a NULL `body`, plus a `position`, so the
+    // exemplar's `Option<String>` column is exercised on both sides of NULL.
+    const INSERT_FULL: &str = "INSERT INTO work_items \
+         (id, kind, parent_id, title, status, shape, body, position) \
+         VALUES ($1, 'project', NULL, $2, 'open', NULL, $3, $4)";
+    // The exemplar SELECT: nullable `body` passes through as-is; `position`
+    // (nullable INTEGER) is COALESCEd to a NOT-NULL i64 for the `i64` field.
+    const SELECT_EXEMPLAR: &str =
+        "SELECT id, body, COALESCE(position, 0) AS position FROM work_items \
+         WHERE id = $1";
+    const SELECT_EXEMPLARS: &str =
+        "SELECT id, body, COALESCE(position, 0) AS position FROM work_items \
+         WHERE kind = 'project' ORDER BY id";
+
+    /// (a) Single-column scalar reads via the `Scalar<T>` path: a COUNT(*) i64
+    /// and a TEXT String, through BOTH the pool helpers and the tx helpers.
+    /// Also proves `bool` decodes from a SQLite INTEGER column.
+    #[tokio::test]
+    async fn scalar_path_reads_i64_string_bool() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        db.execute(INSERT_PROJECT, args!["s1".to_owned(), "Alpha".to_owned()])
+            .await
+            .expect("insert s1");
+        db.execute(INSERT_PROJECT, args!["s2".to_owned(), "Beta".to_owned()])
+            .await
+            .expect("insert s2");
+
+        // i64 COUNT(*) through the pool.
+        let count: i64 = scalar_one(&db, "SELECT COUNT(*) FROM work_items", args![])
+            .await
+            .expect("count");
+        assert_eq!(count, 2);
+
+        // String single column through the pool.
+        let title: String = scalar_one(
+            &db,
+            "SELECT title FROM work_items WHERE id = $1",
+            args!["s1".to_owned()],
+        )
+        .await
+        .expect("title");
+        assert_eq!(title, "Alpha");
+
+        // scalar_opt: present + absent.
+        let some: Option<String> = scalar_opt(
+            &db,
+            "SELECT title FROM work_items WHERE id = $1",
+            args!["s2".to_owned()],
+        )
+        .await
+        .expect("scalar_opt present");
+        assert_eq!(some, Some("Beta".to_owned()));
+        let none: Option<String> = scalar_opt(
+            &db,
+            "SELECT title FROM work_items WHERE id = $1",
+            args!["ghost".to_owned()],
+        )
+        .await
+        .expect("scalar_opt absent");
+        assert!(none.is_none());
+
+        // scalar_all: ordered titles.
+        let titles: Vec<String> = scalar_all(
+            &db,
+            "SELECT title FROM work_items WHERE kind = 'project' ORDER BY id",
+            args![],
+        )
+        .await
+        .expect("scalar_all");
+        assert_eq!(titles, vec!["Alpha".to_owned(), "Beta".to_owned()]);
+
+        // bool decodes from a SQLite INTEGER literal (1 = true, 0 = false).
+        let yes: bool = scalar_one(&db, "SELECT 1", args![]).await.expect("bool 1");
+        let no: bool = scalar_one(&db, "SELECT 0", args![]).await.expect("bool 0");
+        assert!(yes && !no, "bool round-trips through SQLite INTEGER");
+
+        // scalar_one on a missing row → NotFound (mirrors query_one semantics).
+        let missing: Result<String, _> = scalar_one(
+            &db,
+            "SELECT title FROM work_items WHERE id = $1",
+            args!["nope".to_owned()],
+        )
+        .await;
+        assert!(
+            matches!(missing, Err(AppError::NotFound(_))),
+            "missing scalar maps to NotFound, got {missing:?}"
+        );
+
+        // Scalar path through a TRANSACTION (&mut dyn DbTx), proving it rides the
+        // object-safe tx helpers too.
+        let mut tx = db.begin().await.expect("begin");
+        let count_in_tx: i64 = tx_scalar_one(tx.as_mut(), "SELECT COUNT(*) FROM work_items", args![])
+            .await
+            .expect("tx count");
+        assert_eq!(count_in_tx, 2);
+        let tx_titles: Vec<String> = tx_scalar_all(
+            tx.as_mut(),
+            "SELECT title FROM work_items WHERE kind = 'project' ORDER BY id",
+            args![],
+        )
+        .await
+        .expect("tx scalar_all");
+        assert_eq!(tx_titles, vec!["Alpha".to_owned(), "Beta".to_owned()]);
+        tx.commit().await.expect("commit");
+    }
+
+    /// (b) The generic-R [`ExemplarRow`] (≥2 columns incl. a nullable
+    /// `Option<String>`) flows through BOTH `query_all`/`query_one` (pool) and
+    /// `tx_query_all`/`tx_query_one` (`&mut dyn DbTx`) UNCHANGED — proving a
+    /// single generic-over-`R` impl satisfies A1's `FromRow<'r, SqliteRow>`
+    /// bound on every read path.
+    #[tokio::test]
+    async fn transparent_row_flows_through_pool_and_tx() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        // Row with a non-NULL body + explicit position.
+        db.execute(
+            INSERT_FULL,
+            args!["r1".to_owned(), "WithBody".to_owned(), "hello".to_owned(), 7_i64],
+        )
+        .await
+        .expect("insert r1");
+        // Row with a NULL body (Option<String> -> None) and NULL position
+        // (COALESCEd to 0 in the SELECT).
+        db.execute(
+            INSERT_FULL,
+            args![
+                "r2".to_owned(),
+                "NullBody".to_owned(),
+                Option::<String>::None,
+                Option::<i64>::None
+            ],
+        )
+        .await
+        .expect("insert r2");
+
+        // --- POOL: query_one on the non-NULL row.
+        let one: ExemplarRow = db
+            .query_one(SELECT_EXEMPLAR, args!["r1".to_owned()])
+            .await
+            .expect("query_one r1");
+        assert_eq!(
+            one,
+            ExemplarRow {
+                id: "r1".to_owned(),
+                body: Some("hello".to_owned()),
+                position: 7,
+            }
+        );
+
+        // --- POOL: query_all reads both, proving the nullable column decodes
+        // to None for r2.
+        let all: Vec<ExemplarRow> = db
+            .query_all(SELECT_EXEMPLARS, args![])
+            .await
+            .expect("query_all");
+        assert_eq!(
+            all,
+            vec![
+                ExemplarRow {
+                    id: "r1".to_owned(),
+                    body: Some("hello".to_owned()),
+                    position: 7,
+                },
+                ExemplarRow {
+                    id: "r2".to_owned(),
+                    body: None,
+                    position: 0,
+                },
+            ]
+        );
+
+        // --- TX: the SAME struct through tx_query_all / tx_query_one, proving
+        // the generic-R impl rides the object-safe tx path identically.
+        let mut tx = db.begin().await.expect("begin");
+        let tx_all: Vec<ExemplarRow> = tx_query_all(tx.as_mut(), SELECT_EXEMPLARS, args![])
+            .await
+            .expect("tx_query_all");
+        assert_eq!(tx_all, all, "tx read matches pool read for the same rows");
+        let tx_one: ExemplarRow = tx_query_one(tx.as_mut(), SELECT_EXEMPLAR, args!["r2".to_owned()])
+            .await
+            .expect("tx_query_one r2");
+        assert_eq!(
+            tx_one,
+            ExemplarRow {
+                id: "r2".to_owned(),
+                body: None,
+                position: 0,
+            }
+        );
+        tx.commit().await.expect("commit");
     }
 }
