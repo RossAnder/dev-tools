@@ -26,6 +26,8 @@ pub mod task_dependencies;
 pub mod open_questions;
 pub mod findings;
 pub mod queries;
+pub mod runs;
+pub mod sprints;
 pub mod activity;
 pub mod context_blocks;
 pub mod readiness;
@@ -47,6 +49,8 @@ pub fn router() -> Router<AppState> {
         .merge(open_questions::router())
         .merge(findings::router())
         .merge(queries::router())
+        .merge(runs::router())
+        .merge(sprints::router())
         .merge(activity::router())
         .merge(context_blocks::router())
         .merge(readiness::router())
