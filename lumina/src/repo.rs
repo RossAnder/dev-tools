@@ -2516,6 +2516,107 @@ pub async fn update_finding(
     Ok(())
 }
 
+/// One finding-triage update for the bulk [`batch_update_findings`] path (B17c).
+/// Set-or-leave: a `None` field leaves that column unchanged (`COALESCE`).
+pub struct FindingTriageUpdate<'a> {
+    pub finding_id: &'a str,
+    pub triage_state: Option<&'a str>,
+    pub severity: Option<Severity>,
+    pub category: Option<&'a str>,
+    /// NON-terminal status only; a terminal [`Disposition`] value is rejected
+    /// pre-tx (terminal dispositions belong to [`resolve_finding`]).
+    pub status: Option<&'a str>,
+}
+
+/// Bulk non-terminal triage update over many findings under the
+/// single-mutation-path discipline (plan D9). ONE transaction, all-or-nothing,
+/// and exactly ONE coarse `findings.batch_triaged` event keyed to a non-
+/// `work_item` aggregate (R-B4: a `work_item` aggregate would be re-rendered by
+/// the export drain). Mirrors [`update_finding`]'s per-row COALESCE shape but is
+/// restricted to the four mutable triage columns (`triage_state`, `severity`,
+/// `category`, NON-terminal `status`).
+///
+/// Terminal dispositions are NOT this path's job: any input whose `status` parses
+/// as a [`Disposition`] wire value (`fixed`/`wontfix`/`verified_clean`/`deferred`/
+/// `duplicate`) is rejected with [`AppError::Validation`] BEFORE `db.begin()`, so
+/// a terminal value writes nothing — the caller is pointed at [`resolve_finding`].
+/// The terminal set is derived from the enum's serde wire form (no hardcoded
+/// literal list), keeping it in lockstep with [`Disposition`].
+///
+/// A missing `finding_id` (`rows_affected() == 0`) aborts the whole batch with
+/// [`AppError::NotFound`] (mirrors [`update_finding`]). Returns the count of
+/// findings updated.
+pub async fn batch_update_findings(
+    db: &impl DbClient,
+    updates: &[FindingTriageUpdate<'_>],
+) -> Result<u64, AppError> {
+    // Pre-tx validation: reject ANY terminal-disposition status before opening a
+    // transaction, so a terminal value writes zero rows (all-or-nothing also for
+    // the rejection path). "Is this terminal?" is decided by serde-parsing the
+    // value through `Disposition` — exactly as `create_work_item_full_tx`
+    // validates `Shape` — so the terminal set tracks the enum's wire spelling.
+    for u in updates {
+        if let Some(s) = u.status
+            && serde_json::from_value::<Disposition>(Value::String(s.to_owned())).is_ok()
+        {
+            return Err(AppError::Validation(format!(
+                "status '{s}' is a terminal disposition; use resolve_finding for \
+                 terminal dispositions (fixed/wontfix/verified_clean/deferred/duplicate)"
+            )));
+        }
+    }
+
+    let mut tx = db.begin().await?;
+
+    let mut updated: u64 = 0;
+    for u in updates {
+        let severity_str: Option<String> = u.severity.map(enum_to_str);
+        let affected = tx
+            .execute(
+                "UPDATE findings \
+                 SET triage_state = COALESCE($2, triage_state), \
+                     severity     = COALESCE($3, severity), \
+                     category     = COALESCE($4, category), \
+                     status       = COALESCE($5, status) \
+                 WHERE id = $1",
+                args![
+                    u.finding_id.to_owned(),
+                    u.triage_state.map(str::to_owned),
+                    severity_str,
+                    u.category.map(str::to_owned),
+                    u.status.map(str::to_owned),
+                ],
+            )
+            .await?;
+
+        if affected == 0 {
+            // A `?`-propagated error here drops `tx` un-committed → full rollback.
+            return Err(AppError::NotFound(format!(
+                "finding '{}' not found",
+                u.finding_id
+            )));
+        }
+        updated += 1;
+    }
+
+    // Exactly one coarse event for the whole batch (D8/R-B4). aggregate_type MUST
+    // NOT be "work_item" (the export drain renders only `work_item` aggregates) —
+    // these are findings with no run context, so mint a fresh finding-scoped id.
+    let aggregate_id = Uuid::now_v7().to_string();
+    let payload = serde_json::json!({ "updated": updated });
+    record_event(
+        tx.as_mut(),
+        "finding",
+        &aggregate_id,
+        "findings.batch_triaged",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(updated)
+}
+
 /// Supersede a finding (migration 0003): set `findings.superseded_by = new_id` on
 /// the OLD finding so it drops out of the live `get_work_item_detail` fold
 /// (`superseded_by IS NULL`). Single-mutation-path + one event
@@ -8340,6 +8441,224 @@ mod tests {
             count_events(&pool).await - events_before,
             1,
             "exactly one coarse batch event"
+        );
+    }
+
+    /// Read one finding's `triage_state` (NULL-safe to a sentinel) via the runtime
+    /// query API — tests assert DB state with `query_scalar`, never the macros.
+    async fn finding_triage_state(pool: &SqlitePool, id: &str) -> Option<String> {
+        sqlx::query_scalar::<_, Option<String>>("SELECT triage_state FROM findings WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("select triage_state")
+    }
+
+    async fn finding_status(pool: &SqlitePool, id: &str) -> Option<String> {
+        sqlx::query_scalar::<_, Option<String>>("SELECT status FROM findings WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("select status")
+    }
+
+    async fn finding_category(pool: &SqlitePool, id: &str) -> Option<String> {
+        sqlx::query_scalar::<_, Option<String>>("SELECT category FROM findings WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("select category")
+    }
+
+    /// Happy path (D9): a bulk triage sets the non-terminal columns on every row,
+    /// returns the updated count, and records EXACTLY ONE coarse batch event.
+    #[tokio::test]
+    async fn batch_update_findings_sets_triage_fields() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let a = create_finding(
+            &pool,
+            &story,
+            &NewFinding { summary: Some("alpha"), ..NewFinding::default() },
+        )
+        .await
+        .expect("finding a")
+        .to_string();
+        let b = create_finding(
+            &pool,
+            &story,
+            &NewFinding { summary: Some("beta"), ..NewFinding::default() },
+        )
+        .await
+        .expect("finding b")
+        .to_string();
+
+        let events_before = count_events(&pool).await;
+
+        let updated = batch_update_findings(
+            &pool,
+            &[
+                FindingTriageUpdate {
+                    finding_id: &a,
+                    triage_state: Some("accepted"),
+                    severity: None,
+                    category: Some("perf"),
+                    status: None,
+                },
+                FindingTriageUpdate {
+                    finding_id: &b,
+                    triage_state: Some("accepted"),
+                    severity: None,
+                    category: Some("perf"),
+                    status: None,
+                },
+            ],
+        )
+        .await
+        .expect("batch triage");
+
+        assert_eq!(updated, 2, "both findings updated");
+        assert_eq!(finding_triage_state(&pool, &a).await.as_deref(), Some("accepted"));
+        assert_eq!(finding_triage_state(&pool, &b).await.as_deref(), Some("accepted"));
+        assert_eq!(finding_category(&pool, &a).await.as_deref(), Some("perf"));
+        assert_eq!(finding_category(&pool, &b).await.as_deref(), Some("perf"));
+
+        assert_eq!(
+            count_events(&pool).await - events_before,
+            1,
+            "exactly one coarse batch event for the whole triage"
+        );
+    }
+
+    /// A terminal-disposition status is rejected PRE-TX (zero writes); a
+    /// non-terminal status value is accepted.
+    #[tokio::test]
+    async fn batch_update_findings_rejects_terminal_status() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let f = create_finding(
+            &pool,
+            &story,
+            &NewFinding {
+                summary: Some("gamma"),
+                status: Some("open"),
+                ..NewFinding::default()
+            },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+
+        let events_before = count_events(&pool).await;
+
+        // "fixed" is a terminal `Disposition` → rejected before any write.
+        let res = batch_update_findings(
+            &pool,
+            &[FindingTriageUpdate {
+                finding_id: &f,
+                triage_state: Some("accepted"),
+                severity: None,
+                category: None,
+                status: Some("fixed"),
+            }],
+        )
+        .await;
+
+        assert!(
+            matches!(res, Err(AppError::Validation(_))),
+            "terminal status rejected as Validation, got {res:?}"
+        );
+        // Pre-tx rejection wrote nothing: status and triage_state are unchanged.
+        assert_eq!(
+            finding_status(&pool, &f).await.as_deref(),
+            Some("open"),
+            "status unchanged after rejected batch"
+        );
+        assert_eq!(
+            finding_triage_state(&pool, &f).await.as_deref(),
+            Some("pending"),
+            "triage_state unchanged (still column default 'pending') after rejected batch"
+        );
+        assert_eq!(
+            count_events(&pool).await - events_before,
+            0,
+            "no event recorded for a rejected batch"
+        );
+
+        // A NON-terminal status value ("in_review" is not a Disposition variant)
+        // is accepted.
+        let updated = batch_update_findings(
+            &pool,
+            &[FindingTriageUpdate {
+                finding_id: &f,
+                triage_state: None,
+                severity: None,
+                category: None,
+                status: Some("in_review"),
+            }],
+        )
+        .await
+        .expect("non-terminal status accepted");
+        assert_eq!(updated, 1, "the single finding was updated");
+        assert_eq!(finding_status(&pool, &f).await.as_deref(), Some("in_review"));
+    }
+
+    /// A missing finding id in the batch aborts the WHOLE batch (rollback): the
+    /// real finding's triage_state is left unchanged.
+    #[tokio::test]
+    async fn batch_update_findings_missing_finding_aborts() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let real = create_finding(
+            &pool,
+            &story,
+            &NewFinding { summary: Some("delta"), ..NewFinding::default() },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+
+        let events_before = count_events(&pool).await;
+
+        let res = batch_update_findings(
+            &pool,
+            &[
+                FindingTriageUpdate {
+                    finding_id: &real,
+                    triage_state: Some("accepted"),
+                    severity: None,
+                    category: None,
+                    status: None,
+                },
+                FindingTriageUpdate {
+                    finding_id: "01999999-9999-7999-8999-999999999999",
+                    triage_state: Some("accepted"),
+                    severity: None,
+                    category: None,
+                    status: None,
+                },
+            ],
+        )
+        .await;
+
+        assert!(
+            matches!(res, Err(AppError::NotFound(_))),
+            "a missing finding aborts the batch as NotFound, got {res:?}"
+        );
+        // Whole-batch rollback: the real finding's triage_state is untouched
+        // (still the column default 'pending', not the attempted 'accepted').
+        assert_eq!(
+            finding_triage_state(&pool, &real).await.as_deref(),
+            Some("pending"),
+            "real finding's triage_state unchanged after whole-batch rollback"
+        );
+        assert_eq!(
+            count_events(&pool).await - events_before,
+            0,
+            "no event recorded for an aborted batch"
         );
     }
 }
