@@ -81,11 +81,11 @@ async fn json_body(resp: axum::response::Response) -> serde_json::Value {
 /// pool, wired the way `app::serve()` wires them (registry shared between
 /// supervisor and state; `pty_register_tx = Some(supervisor.register_tx())`).
 async fn make_state_with_supervisor() -> (AppState, pty::SupervisorHandle) {
-    let pool = Arc::new(
+    let pool = Arc::new(db::AnyPool::from(
         db::connect_in_memory()
             .await
             .expect("migrated in-memory pool"),
-    );
+    ));
     let registry = SessionRegistry::new();
     let supervisor = pty::supervisor::spawn(pool.clone(), registry.clone());
     let mut state = AppState::new(pool);

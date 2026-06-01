@@ -214,7 +214,7 @@ impl AskTools {
             questions_value,
             jiff::Timestamp::now().to_string(),
         );
-        emit::persist_and_broadcast(self.state.pool.as_ref(), &session, tm).await;
+        emit::persist_and_broadcast(self.state.pool.sqlite(), &session, tm).await;
 
         tracing::info!(
             session_id = %params.session_id,
@@ -259,7 +259,7 @@ impl AskTools {
             false,
             jiff::Timestamp::now().to_string(),
         );
-        emit::persist_and_broadcast(self.state.pool.as_ref(), session, tm).await;
+        emit::persist_and_broadcast(self.state.pool.sqlite(), session, tm).await;
     }
 }
 
@@ -611,13 +611,13 @@ mod tests {
     /// answer is delivered through the oneshot (as the answer endpoint would).
     #[tokio::test]
     async fn ask_tool_broadcasts_blocks_then_returns_on_answer() {
-        use crate::db::connect_in_memory;
+        use crate::db::{AnyPool, connect_in_memory};
         use crate::pty::session::Session;
         use std::sync::Arc;
         use std::time::Duration;
         use tokio::sync::{broadcast, mpsc};
 
-        let pool = Arc::new(connect_in_memory().await.expect("pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
         let state = AppState::new(pool);
 
         let (bcast_tx, mut bcast_rx) = broadcast::channel(16);

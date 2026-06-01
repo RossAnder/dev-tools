@@ -118,7 +118,7 @@ async fn check_acceptance_criterion_handler(
     Json(body): Json<CheckAcceptanceCriterionBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
     tracing::debug!(ac_id = %id, "http: POST /acceptance-criteria/{{id}}/check");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let work_item_id = parent_work_item(pool, &id).await?;
     repo::check_acceptance_criterion(pool, &id, body.by.as_deref()).await?;
     let detail = repo::get_work_item_detail(pool, &work_item_id).await?;
@@ -136,7 +136,7 @@ async fn uncheck_acceptance_criterion_handler(
     Path(id): Path<String>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
     tracing::debug!(ac_id = %id, "http: POST /acceptance-criteria/{{id}}/uncheck");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let work_item_id = parent_work_item(pool, &id).await?;
     repo::uncheck_acceptance_criterion(pool, &id).await?;
     let detail = repo::get_work_item_detail(pool, &work_item_id).await?;
@@ -217,7 +217,7 @@ mod tests {
     async fn acceptance_criteria_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST create → 201 + { id }.

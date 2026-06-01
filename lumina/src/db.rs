@@ -199,10 +199,14 @@ impl From<SqlitePool> for AnyPool {
 }
 
 impl AnyPool {
-    /// Borrow the underlying `SqlitePool`. Panics on a (future) `Pg` arm — used
-    /// only by the not-yet-converted code paths that still need the raw pool
-    /// while the macro-eradication waves are in flight.
-    #[allow(dead_code)]
+    /// Borrow the underlying `SqlitePool`. Panics on a (future) `Pg` arm.
+    ///
+    /// `AppState.pool` is `Arc<AnyPool>` post-A12, so the code paths that still
+    /// run RAW sqlx (`sqlx::query*(…).fetch_*`) against a concrete
+    /// `&SqlitePool` — the PTY subsystem, the export drain, and the inline raw
+    /// reads in a handful of `http/*` helpers — obtain that `&SqlitePool` from
+    /// the erased pool through this accessor. The seam-routed call sites
+    /// (`repo::*` taking `&impl DbClient`) never need it.
     pub fn sqlite(&self) -> &SqlitePool {
         match self {
             AnyPool::Sqlite(p) => p,
@@ -317,19 +321,13 @@ impl DbClient for AnyPool {
     }
 }
 
-/// Transitional / test [`DbClient`] impl for a bare `SqlitePool`.
-///
-/// During the macro-eradication waves (A4–A11) the repo functions flip their
-/// signature from `pool: &SqlitePool` to `db: &impl DbClient`, but every caller
-/// (`mcp.rs`, `http/*`, the repo unit tests) still passes a `&SqlitePool` — and
-/// `AppState.pool` stays `Arc<SqlitePool>` until the A12 handle swap. Without
-/// this impl a bare `&SqlitePool` would NOT satisfy `&impl DbClient` and the
-/// build would break mid-wave. With it, every existing `&SqlitePool` call site
-/// and test compiles UNCHANGED, and `&AnyPool` (post-A12) satisfies the same
-/// generic bound — which is exactly what makes the A12 swap "purely the handle
-/// type". This impl is KEPT permanently: tests construct `SqlitePool` directly
-/// via [`connect_in_memory`]. It mirrors the [`AnyPool`] SQLite arm method for
-/// method (including the `from_sqlx_not_found` mapping in `query_one`).
+/// [`DbClient`] impl for a bare `SqlitePool`. KEPT permanently: the repo unit
+/// tests and the e2e/migration tests construct a `SqlitePool` directly via
+/// [`connect_in_memory`] and pass `&pool` as `&impl DbClient`, and several raw
+/// helpers thread a `&SqlitePool` (obtained via [`AnyPool::sqlite`]) into
+/// `repo::*` calls that take `&impl DbClient`. It mirrors the [`AnyPool`] SQLite
+/// arm method for method (including the `from_sqlx_not_found` mapping in
+/// `query_one`).
 #[async_trait]
 impl DbClient for SqlitePool {
     async fn execute(&self, sql: &'static str, args: Args) -> Result<u64, AppError> {
@@ -380,16 +378,15 @@ impl DbClient for SqlitePool {
     }
 }
 
-/// Transitional [`DbClient`] impl for `Arc<SqlitePool>` (the `AppState.pool`
-/// handle type until the A12 swap). Callers in `mcp.rs` pass `&self.pool` — a
-/// `&Arc<SqlitePool>` — directly as `&impl DbClient`; trait-bound resolution
-/// does NOT auto-deref through `Arc`, so the `Arc` itself must impl `DbClient`.
-/// Every method delegates to the inner [`SqlitePool`] impl via `&**self`. Kept
-/// permanently for the same reason as the bare-`SqlitePool` impl above; dropped
-/// only if A12 changes `AppState.pool` to `Arc<AnyPool>` AND all call sites
-/// switch to `&*self.pool`.
+/// [`DbClient`] impl for `Arc<AnyPool>` — the post-A12 `AppState.pool` /
+/// `LuminaTools.pool` handle type. Callers pass `&state.pool` / `&self.pool` (a
+/// `&Arc<AnyPool>`) directly as `&impl DbClient`; trait-bound resolution does
+/// NOT auto-deref through `Arc`, so the `Arc` itself must impl `DbClient`. Every
+/// method delegates to the inner [`AnyPool`] impl via `&**self`. This is what
+/// lets the ~68 `repo::foo(&self.pool, …)` / `repo::foo(state.pool.as_ref(), …)`
+/// seam call sites keep compiling UNCHANGED across the A12 handle swap.
 #[async_trait]
-impl DbClient for std::sync::Arc<SqlitePool> {
+impl DbClient for std::sync::Arc<AnyPool> {
     async fn execute(&self, sql: &'static str, args: Args) -> Result<u64, AppError> {
         (**self).execute(sql, args).await
     }
@@ -418,11 +415,11 @@ impl DbClient for std::sync::Arc<SqlitePool> {
     async fn begin(&self) -> Result<Box<dyn DbTx + '_>, AppError> {
         // Disambiguate to the `DbClient` trait method on the inner pool — bare
         // `.begin()` would resolve to sqlx's inherent `Pool::begin`.
-        <SqlitePool as DbClient>::begin(&**self).await
+        <AnyPool as DbClient>::begin(&**self).await
     }
 
     fn backend(&self) -> Backend {
-        <SqlitePool as DbClient>::backend(&**self)
+        <AnyPool as DbClient>::backend(&**self)
     }
 }
 

@@ -68,6 +68,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::app::AppState;
+use crate::db::AnyPool;
 use crate::domain::{PtyMessage, PtyQueueEntry, PtySession};
 use crate::error::AppError;
 use crate::pty::protocol::{AskOutcome, AuqAnswer, InputFrame, InputKind, SessionId};
@@ -123,7 +124,7 @@ async fn list_sessions(
         "http: GET /pty/sessions"
     );
     let rows = repo::pty::list_pty_sessions(
-        state.pool.as_ref(),
+        state.pool.sqlite(),
         q.status.as_deref(),
         q.project_id.as_deref(),
     )
@@ -137,7 +138,7 @@ async fn get_session(
     Path(id): Path<String>,
 ) -> Result<Json<PtySession>, AppError> {
     tracing::debug!(session_id = %id, "http: GET /pty/sessions/{{id}}");
-    let row = repo::pty::get_pty_session(state.pool.as_ref(), &id).await?;
+    let row = repo::pty::get_pty_session(state.pool.sqlite(), &id).await?;
     Ok(Json(row))
 }
 
@@ -227,7 +228,7 @@ async fn list_messages(
 ) -> Result<Json<Vec<PtyMessage>>, AppError> {
     tracing::debug!(session_id = %id, "http: GET /messages");
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
-    let rows = repo::pty::list_pty_messages(state.pool.as_ref(), &id, q.since, limit).await?;
+    let rows = repo::pty::list_pty_messages(state.pool.sqlite(), &id, q.since, limit).await?;
     Ok(Json(rows))
 }
 
@@ -242,7 +243,7 @@ async fn list_queue(
     Path(id): Path<String>,
 ) -> Result<Json<Vec<PtyQueueEntry>>, AppError> {
     tracing::debug!(session_id = %id, "http: GET /queue");
-    let rows = Queue::list(state.pool.as_ref(), &id).await?;
+    let rows = Queue::list(state.pool.sqlite(), &id).await?;
     Ok(Json(rows))
 }
 
@@ -273,7 +274,7 @@ async fn enqueue_input(
         "http: POST /input: enqueue"
     );
     validate_input_kind(&body.kind)?;
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let existing = Queue::list(pool, &id).await?;
     let next_seq = existing.len() as i64 + 1;
     Queue::enqueue(pool, &id, next_seq, &body.kind, &body.payload).await?;
@@ -305,7 +306,7 @@ async fn enqueue_inputs_batch(
     for item in &items {
         validate_input_kind(&item.kind)?;
     }
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let existing = Queue::list(pool, &id).await?;
     let base = existing.len() as i64;
     let mut sequences = Vec::with_capacity(items.len());
@@ -589,7 +590,7 @@ async fn answer_question(
         false,
         jiff::Timestamp::now().to_string(),
     );
-    crate::pty::emit::persist_and_broadcast(state.pool.as_ref(), &session, tm).await;
+    crate::pty::emit::persist_and_broadcast(state.pool.sqlite(), &session, tm).await;
 
     // (5) Unblock the tool. A dropped receiver means it already timed out; the
     // UI close in (4) already happened, so this is benign.
@@ -661,7 +662,7 @@ async fn cancel_session(
         }
     }
 
-    repo::pty::delete_pty_session(state.pool.as_ref(), &id).await?;
+    repo::pty::delete_pty_session(state.pool.sqlite(), &id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -799,7 +800,7 @@ async fn ws_session_loop(
     socket: WebSocket,
     id: String,
     registry: Arc<crate::pty::registry::SessionRegistry>,
-    pool: Arc<sqlx::SqlitePool>,
+    pool: Arc<AnyPool>,
 ) {
     // Resolve the session.
     let Some(session) = (match Uuid::parse_str(&id) {
@@ -901,7 +902,7 @@ async fn ws_session_loop(
                                         // Skip silently; a client could spam invalid kinds.
                                         continue;
                                     }
-                                    let pool = receiver_pool.as_ref();
+                                    let pool = receiver_pool.sqlite();
                                     match Queue::list(pool, &receiver_id).await {
                                         Ok(existing) => {
                                             let seq = existing.len() as i64 + 1;
@@ -992,7 +993,7 @@ mod tests {
     use crate::db::connect_in_memory;
 
     fn empty_state(pool: sqlx::SqlitePool) -> AppState {
-        AppState::new(Arc::new(pool))
+        AppState::new(Arc::new(AnyPool::from(pool)))
     }
 
     /// `GET /api/pty/sessions` returns `[]` against an empty DB.

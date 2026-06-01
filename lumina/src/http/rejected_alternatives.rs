@@ -105,7 +105,7 @@ async fn supersede_alternative_handler(
     Json(body): Json<AddAlternativeBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tracing::debug!(old_id = %old_id, "http: POST /rejected-alternatives/{{old_id}}/supersede");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let owner = alternative_owner_work_item(pool, &old_id).await?;
     let minted = repo::supersede_rejected_alternative(
         pool,
@@ -203,7 +203,7 @@ mod tests {
     async fn rejected_alternatives_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let story = seed_story(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST add → 201 + { id }.

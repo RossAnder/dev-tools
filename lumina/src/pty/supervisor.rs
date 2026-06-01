@@ -30,6 +30,7 @@ use sqlx::SqlitePool;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
+use crate::db::AnyPool;
 use crate::pty::protocol::{InputFrame, InputKind, SessionId, SessionStatus};
 use crate::pty::queue::Queue;
 use crate::pty::registry::SessionRegistry;
@@ -81,7 +82,7 @@ impl SupervisorHandle {
 
 /// Spawn the supervisor background task. The returned handle owns the
 /// cancellation token and the join handle.
-pub fn spawn(pool: Arc<SqlitePool>, registry: Arc<SessionRegistry>) -> SupervisorHandle {
+pub fn spawn(pool: Arc<AnyPool>, registry: Arc<SessionRegistry>) -> SupervisorHandle {
     let token = CancellationToken::new();
     let (register_tx, register_rx) = mpsc::channel::<SessionRegistration>(REGISTRATION_CAPACITY);
     let join = tokio::spawn(supervisor_loop(pool, registry, token.clone(), register_rx));
@@ -96,7 +97,7 @@ pub fn spawn(pool: Arc<SqlitePool>, registry: Arc<SessionRegistry>) -> Superviso
 /// exit-reap. Per-iteration errors NEVER propagate — they are logged and
 /// the loop continues.
 async fn supervisor_loop(
-    pool: Arc<SqlitePool>,
+    pool: Arc<AnyPool>,
     registry: Arc<SessionRegistry>,
     token: CancellationToken,
     mut register_rx: mpsc::Receiver<SessionRegistration>,
@@ -114,7 +115,7 @@ async fn supervisor_loop(
                 break;
             }
             _ = ticker.tick() => {
-                tick_once(&pool, &registry).await;
+                tick_once(pool.sqlite(), &registry).await;
             }
             maybe_reg = register_rx.recv() => {
                 match maybe_reg {
@@ -133,7 +134,7 @@ async fn supervisor_loop(
                 }
             }
             Some((session_id, exit_result)) = exit_waits.next(), if !exit_waits.is_empty() => {
-                reap_exit(&pool, &registry, session_id, exit_result).await;
+                reap_exit(pool.sqlite(), &registry, session_id, exit_result).await;
             }
         }
     }
@@ -469,7 +470,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_returns_handle_and_shutdown_returns() {
-        let pool = Arc::new(connect_in_memory().await.expect("in-memory pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
         let registry = SessionRegistry::new();
         let handle = spawn(pool, registry);
         // Give the loop one tick to enter `select!`.
@@ -479,7 +480,7 @@ mod tests {
 
     #[tokio::test]
     async fn registration_channel_round_trip() {
-        let pool = Arc::new(connect_in_memory().await.expect("in-memory pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
         let registry = SessionRegistry::new();
         let handle = spawn(pool, registry);
 
@@ -515,7 +516,7 @@ mod tests {
         // Smoke-test the tick path: an Idle session with no queued
         // entries should not crash, should not change status, should
         // just no-op.
-        let pool = Arc::new(connect_in_memory().await.expect("in-memory pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
         let registry = SessionRegistry::new();
 
         // Seed a pty_sessions row so the UPDATE path (if any) finds
@@ -523,7 +524,7 @@ mod tests {
         // queue is empty.
         let session_id = SessionId::new();
         let session_id_str = session_id.to_string();
-        repo::pty::create_pty_session(&pool, &session_id_str, None, None, "/tmp", "{}")
+        repo::pty::create_pty_session(pool.sqlite(), &session_id_str, None, None, "/tmp", "{}")
             .await
             .expect("seed pty_session");
 

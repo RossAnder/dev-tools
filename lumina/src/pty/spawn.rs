@@ -150,7 +150,7 @@ pub async fn spawn_pty_session_internal(
 
     // ---- 3. Persist the pty_sessions row ----
     let row = repo::pty::create_pty_session(
-        state.pool.as_ref(),
+        state.pool.sqlite(),
         &session_id_str,
         label.as_deref(),
         project_id.as_deref(),
@@ -206,7 +206,7 @@ pub async fn spawn_pty_session_internal(
     // overrides Idle with Failed/Completed when the wait future fires.
     bridge_session.set_status(SessionStatus::Idle).await;
     if let Err(e) = repo::pty::update_pty_session_status(
-        state.pool.as_ref(),
+        state.pool.sqlite(),
         &session_id_str,
         "idle",
         None,
@@ -263,7 +263,7 @@ pub async fn spawn_pty_session_internal(
             let jsonl_path_str = jsonl_path.to_string_lossy().into_owned();
 
             if let Err(e) = repo::pty::set_pty_jsonl_path(
-                &pool,
+                pool.sqlite(),
                 &session_id_str,
                 &jsonl_path_str,
             )
@@ -379,7 +379,7 @@ pub async fn spawn_pty_session_internal(
                                 _ => {}
                             }
                             crate::pty::emit::persist_and_broadcast(
-                                pool.as_ref(),
+                                pool.sqlite(),
                                 &bridge_session,
                                 tm,
                             )

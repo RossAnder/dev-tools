@@ -171,7 +171,7 @@ async fn json_body(resp: axum::response::Response) -> serde_json::Value {
 async fn full_thread_mcp_write_export_then_http_read() {
     // One shared pool: the MCP handler holds an `Arc<SqlitePool>`, export takes
     // `&SqlitePool`, and the router's `AppState` holds the same `Arc`.
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Drive the MCP create tool to build a legal project→epic→focus→story→
@@ -190,7 +190,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
     //     these 1:1). The epic has exactly one close-criterion (added by
     //     `mcp_create`) which is still UNCHECKED and one non-terminal descendant
     //     story, so `epic→done` MUST be rejected.
-    let denied = lumina::repo::update_work_item_status(pool.as_ref(), &epic, "done").await;
+    let denied = lumina::repo::update_work_item_status(pool.sqlite(), &epic, "done").await;
     assert!(
         matches!(denied, Err(lumina::error::AppError::Validation(_))),
         "epic→done rejected while a close-criterion is unchecked and a story is non-terminal, got {denied:?}"
@@ -201,28 +201,28 @@ async fn full_thread_mcp_write_export_then_http_read() {
         "SELECT id FROM acceptance_criteria WHERE work_item_id = ?",
     )
     .bind(&epic)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("the epic's close-criterion id");
-    lumina::repo::check_acceptance_criterion(pool.as_ref(), &crit_id, Some("e2e"))
+    lumina::repo::check_acceptance_criterion(pool.sqlite(), &crit_id, Some("e2e"))
         .await
         .expect("check the epic close-criterion");
     // Criterion checked but the story is still non-terminal ⇒ still rejected.
-    let still_denied = lumina::repo::update_work_item_status(pool.as_ref(), &epic, "done").await;
+    let still_denied = lumina::repo::update_work_item_status(pool.sqlite(), &epic, "done").await;
     assert!(
         matches!(still_denied, Err(lumina::error::AppError::Validation(_))),
         "epic→done still rejected while a descendant story is non-terminal, got {still_denied:?}"
     );
-    lumina::repo::update_work_item_status(pool.as_ref(), &story, "done")
+    lumina::repo::update_work_item_status(pool.sqlite(), &story, "done")
         .await
         .expect("story→done");
-    lumina::repo::update_work_item_status(pool.as_ref(), &epic, "done")
+    lumina::repo::update_work_item_status(pool.sqlite(), &epic, "done")
         .await
         .expect("epic→done succeeds once all close-criteria checked and stories terminal");
     let epic_status: String =
         sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
             .bind(&epic)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read epic status");
     assert_eq!(epic_status, "done", "epic transitioned to done");
@@ -232,7 +232,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
     let work_item_rows: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM work_items WHERE id = ?")
             .bind(&task)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count the leaf work_item row");
     assert_eq!(work_item_rows, 1, "the MCP-created task exists in work_items");
@@ -240,7 +240,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
     let event_rows: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE aggregate_id = ?")
             .bind(&task)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count the leaf's events");
     assert_eq!(
@@ -252,7 +252,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
     let exported_before: Option<String> =
         sqlx::query_scalar("SELECT exported_at FROM events WHERE aggregate_id = ?")
             .bind(&task)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read the task event's exported_at");
     assert!(
@@ -263,7 +263,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
     // 3. Drain the outbox DIRECTLY (no sleep / no background loop) into a temp
     //    export root. Five creates ⇒ five events ⇒ ≥ 1 drained.
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
@@ -288,7 +288,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
     let exported_after: Option<String> =
         sqlx::query_scalar("SELECT exported_at FROM events WHERE aggregate_id = ?")
             .bind(&task)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read the task event's exported_at after drain");
     assert!(
@@ -334,7 +334,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
 #[tokio::test]
 async fn full_thread_attributes_and_activity_db_export_http() {
     // One shared pool across the MCP handler, the export drain, and the router.
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Build a legal chain to a `story`, set its plan attributes, then add a
@@ -366,7 +366,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     for id in [&story, &task] {
         let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM work_items WHERE id = ?")
             .bind(id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count the work_item row");
         assert_eq!(rows, 1, "work_item {id} exists");
@@ -376,7 +376,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     let story_attrs: String =
         sqlx::query_scalar("SELECT attributes FROM work_items WHERE id = ?")
             .bind(&story)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read the story attributes column");
     let story_attrs: serde_json::Value =
@@ -398,7 +398,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     )
     .bind(&activity_id)
     .bind(&task)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("count the task activity row");
     assert_eq!(activity_rows, 1, "the recorded activity row exists on the task");
@@ -408,7 +408,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     //     gate requires it; `mcp_create` adds it for every epic) + 1
     //     set_story_plan (work_item.updated) + 1 record_task_activity = 8 events.
     let event_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("count all events");
     assert_eq!(
@@ -420,7 +420,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
     for id in [&story, &task] {
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE aggregate_id = ?")
             .bind(id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count the aggregate's events");
         assert_eq!(n, 2, "aggregate {id} has two outbox events (create + mutation)");
@@ -428,7 +428,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
 
     // 3. Drain the outbox DIRECTLY (no sleep / no background loop).
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert_eq!(drained, 8, "every event drained in one pass");
@@ -550,7 +550,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
 #[tokio::test]
 async fn full_thread_planning_and_decisions_db_export_http() {
     // One shared pool across the MCP handler, the export drain, and the router.
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Build a legal chain to a `story`, then add two branch tasks under it.
@@ -610,7 +610,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
         .expect("task→done allowed once all criteria are checked");
     let task_status: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
         .bind(&task)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("read task status");
     assert_eq!(task_status, "done", "the gated transition committed once unblocked");
@@ -697,12 +697,12 @@ async fn full_thread_planning_and_decisions_db_export_http() {
         .expect("resolve the open question");
     let status_a: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
         .bind(&task_a)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("status A");
     let status_b: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
         .bind(&task_b)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("status B");
     assert_eq!(status_a, "todo", "chosen branch's task unblocked to todo");
@@ -729,7 +729,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
 
     // 7. Drain the outbox DIRECTLY (no sleep / no background loop).
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert_eq!(drained, 27, "every event drained in one pass: 7 creates + 1 epic close-criterion (migration-0010 story-create gate) + 2 relevance/gate + 2 criteria + 2 checks + 1 status + 2 notes + 1 update_note + 1 supersede + 1 question + 2 options + 4 block/enable + 1 resolve");
@@ -868,7 +868,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
 #[tokio::test]
 async fn repo_links_flow() {
     // One shared pool across the MCP handler, the export drain, and the router.
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Create a project (top of the hierarchy).
@@ -891,7 +891,7 @@ async fn repo_links_flow() {
     let total_links: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM repo_links WHERE project_id = ?")
             .bind(&project)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count repo links");
     assert_eq!(total_links, 2, "the project has exactly two linked repos");
@@ -900,7 +900,7 @@ async fn repo_links_flow() {
         "SELECT COUNT(*) FROM repo_links WHERE project_id = ? AND is_primary = 1",
     )
     .bind(&project)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("count primary repo links");
     assert_eq!(primary_count, 1, "exactly one primary repo link per project");
@@ -909,7 +909,7 @@ async fn repo_links_flow() {
         "SELECT slug FROM repo_links WHERE project_id = ? AND is_primary = 1",
     )
     .bind(&project)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("read primary slug");
     assert_eq!(
@@ -920,7 +920,7 @@ async fn repo_links_flow() {
     let secondary_slug: String =
         sqlx::query_scalar("SELECT slug FROM repo_links WHERE id = ?")
             .bind(&secondary_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read secondary slug");
     assert_eq!(secondary_slug, "octocat/spoon-knife");
@@ -953,7 +953,7 @@ async fn repo_links_flow() {
     let finding_repo_id: Option<String> =
         sqlx::query_scalar("SELECT repo_id FROM findings WHERE id = ?")
             .bind(&finding_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read finding's repo_id");
     assert_eq!(
@@ -966,7 +966,7 @@ async fn repo_links_flow() {
     //    repo-link mutation rides `aggregate_type=work_item` with the project
     //    id, so the project snapshot is re-rendered for each one (T2/T3).
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert!(
@@ -1096,7 +1096,7 @@ async fn repo_links_flow() {
     let count_after_post: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM repo_links WHERE project_id = ?")
             .bind(&project)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count repo links after POST");
     assert_eq!(count_after_post, 3, "POST inserted a third repo link");
@@ -1125,7 +1125,7 @@ async fn repo_links_flow() {
         "SELECT id FROM repo_links WHERE project_id = ? AND is_primary = 1",
     )
     .bind(&project)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("read new primary");
     assert_eq!(
@@ -1136,7 +1136,7 @@ async fn repo_links_flow() {
     let old_primary_flag: i64 =
         sqlx::query_scalar("SELECT is_primary FROM repo_links WHERE id = ?")
             .bind(&primary_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read old primary flag");
     assert_eq!(old_primary_flag, 0, "the previous primary is demoted");
@@ -1160,7 +1160,7 @@ async fn repo_links_flow() {
     let count_after_delete: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM repo_links WHERE project_id = ?")
             .bind(&project)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count repo links after DELETE");
     assert_eq!(
@@ -1201,7 +1201,7 @@ async fn seed_story(tools: &LuminaTools, label: &str) -> String {
 /// JSON object.
 #[tokio::test]
 async fn set_story_plan_with_not_doing_preserves_sibling_keys() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Not-Doing-Preserve").await;
 
@@ -1233,7 +1233,7 @@ async fn set_story_plan_with_not_doing_preserves_sibling_keys() {
 
     let attrs_str: String = sqlx::query_scalar("SELECT attributes FROM work_items WHERE id = ?")
         .bind(&story)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("read story attributes");
     let attrs: serde_json::Value =
@@ -1269,7 +1269,7 @@ async fn set_story_plan_with_not_doing_preserves_sibling_keys() {
 /// asserts the contract end-to-end through the public MCP method.
 #[tokio::test]
 async fn set_story_plan_null_does_not_delete_key() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Null-Delete-Guard").await;
 
@@ -1303,7 +1303,7 @@ async fn set_story_plan_null_does_not_delete_key() {
 
     let attrs_str: String = sqlx::query_scalar("SELECT attributes FROM work_items WHERE id = ?")
         .bind(&story)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("read story attributes");
     let attrs: serde_json::Value =
@@ -1321,7 +1321,7 @@ async fn set_story_plan_null_does_not_delete_key() {
 /// superseded → remove.
 #[tokio::test]
 async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Risks-CRUD").await;
 
@@ -1341,7 +1341,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
 
     let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM risks WHERE id = ?")
         .bind(&risk_id)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("count");
     assert_eq!(row_count, 1, "risk row inserted");
@@ -1363,7 +1363,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
 
     let sev: String = sqlx::query_scalar("SELECT severity FROM risks WHERE id = ?")
         .bind(&risk_id)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("read severity");
     assert_eq!(sev, "high", "severity updated by update_risk");
@@ -1386,7 +1386,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
     let superseded_by: Option<String> =
         sqlx::query_scalar("SELECT superseded_by FROM risks WHERE id = ?")
             .bind(&risk_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read superseded_by");
     assert_eq!(
@@ -1396,7 +1396,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
     );
     let new_sev: String = sqlx::query_scalar("SELECT severity FROM risks WHERE id = ?")
         .bind(&new_id)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("read new severity");
     assert_eq!(new_sev, "critical");
@@ -1422,7 +1422,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
         .expect("remove risk");
     let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM risks WHERE id = ?")
         .bind(&new_id)
-        .fetch_one(pool.as_ref())
+        .fetch_one(pool.sqlite())
         .await
         .expect("count after remove");
     assert_eq!(remaining, 0, "remove_risk hard-deletes the row");
@@ -1434,7 +1434,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
 /// filtering. Mirrors (c) without severity; confidence is free TEXT.
 #[tokio::test]
 async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live_fold() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Alts-CRUD").await;
 
@@ -1453,7 +1453,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
     let row_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM rejected_alternatives WHERE id = ?")
             .bind(&alt_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count");
     assert_eq!(row_count, 1, "alternative row inserted");
@@ -1475,7 +1475,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
     let conf: Option<String> =
         sqlx::query_scalar("SELECT confidence FROM rejected_alternatives WHERE id = ?")
             .bind(&alt_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read confidence");
     assert_eq!(conf.as_deref(), Some("high"));
@@ -1496,7 +1496,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
     let superseded_by: Option<String> =
         sqlx::query_scalar("SELECT superseded_by FROM rejected_alternatives WHERE id = ?")
             .bind(&alt_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read superseded_by");
     assert_eq!(superseded_by.as_deref(), Some(new_id.as_str()));
@@ -1517,7 +1517,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
     let remaining: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM rejected_alternatives WHERE id = ?")
             .bind(&new_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count after remove");
     assert_eq!(remaining, 0);
@@ -1530,7 +1530,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
 /// foundation task floats to the earliest phase via the task_kind sort key.
 #[tokio::test]
 async fn compute_task_batches_happy_path_returns_phased_dag() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Batches-Happy").await;
 
@@ -1589,7 +1589,7 @@ async fn compute_task_batches_happy_path_returns_phased_dag() {
 /// runs Kahn's. The residue edges include both offending pairs.
 #[tokio::test]
 async fn compute_task_batches_cycle_returns_apperror_cycle() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Batches-Cycle").await;
 
@@ -1633,7 +1633,7 @@ async fn compute_task_batches_cycle_returns_apperror_cycle() {
 /// surgically clean.
 #[tokio::test]
 async fn get_story_readiness_cascade_covers_load_bearing_variants() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Empty story → RunProblemStatement.
@@ -1718,13 +1718,11 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         .await
         .expect("vet question")
         .to_string();
-    sqlx::query!(
-        r#"UPDATE open_questions SET status = 'answered' WHERE id = ?1"#,
-        vet_q
-    )
-    .execute(pool.as_ref())
-    .await
-    .expect("mark vet question answered");
+    sqlx::query("UPDATE open_questions SET status = 'answered' WHERE id = ?1")
+        .bind(&vet_q)
+        .execute(pool.sqlite())
+        .await
+        .expect("mark vet question answered");
     let _note = lumina::repo::add_research_note(
         &pool,
         &vet,
@@ -1770,13 +1768,11 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         .await
         .expect("decomp question")
         .to_string();
-    sqlx::query!(
-        r#"UPDATE open_questions SET status = 'answered' WHERE id = ?1"#,
-        decomp_q
-    )
-    .execute(pool.as_ref())
-    .await
-    .expect("mark decomp question answered");
+    sqlx::query("UPDATE open_questions SET status = 'answered' WHERE id = ?1")
+        .bind(&decomp_q)
+        .execute(pool.sqlite())
+        .await
+        .expect("mark decomp question answered");
     let note = lumina::repo::add_research_note(
         &pool,
         &decomp,
@@ -1873,7 +1869,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
 /// CLEARS the column to NULL (per the tool docstring).
 #[tokio::test]
 async fn set_task_kind_sets_then_clears_to_null() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Task-Kind").await;
     let task = mcp_create(&tools, "task", Some(&story), "Kinded Task").await;
@@ -1885,7 +1881,7 @@ async fn set_task_kind_sets_then_clears_to_null() {
     let stored: Option<String> =
         sqlx::query_scalar("SELECT task_kind FROM work_items WHERE id = ?")
             .bind(&task)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read task_kind");
     assert_eq!(
@@ -1901,7 +1897,7 @@ async fn set_task_kind_sets_then_clears_to_null() {
     let stored_after: Option<String> =
         sqlx::query_scalar("SELECT task_kind FROM work_items WHERE id = ?")
             .bind(&task)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read cleared task_kind");
     assert!(
@@ -1922,7 +1918,7 @@ async fn set_task_kind_sets_then_clears_to_null() {
 /// parent's export snapshot.
 #[tokio::test]
 async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Export-Subtables").await;
     // Two tasks so a task→task edge becomes legal.
@@ -1933,7 +1929,7 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
 
     // Baseline drain — all the create events flush; we are about to test that
     // FUTURE sub-table mutations trigger a re-render of their parent.
-    lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("baseline drain");
 
@@ -1941,7 +1937,7 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
     lumina::repo::add_risk(&pool, &story, "exported risk", None, None, "high", None)
         .await
         .expect("add risk");
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after add_risk");
     assert_eq!(
@@ -1974,7 +1970,7 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
     )
     .await
     .expect("add alternative");
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after add_rejected_alternative");
     assert_eq!(
@@ -2002,7 +1998,7 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
     lumina::repo::add_task_dependency(&pool, &task_b, &task_a, "data")
         .await
         .expect("task_b depends on task_a");
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after add_task_dependency");
     assert_eq!(
@@ -2049,7 +2045,7 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
 /// the other private planning tools.
 #[tokio::test]
 async fn set_task_spec_round_trips_typed_tier() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Tier-Round-Trip").await;
     let task = mcp_create(&tools, "task", Some(&story), "Tier Task").await;
@@ -2071,7 +2067,7 @@ async fn set_task_spec_round_trips_typed_tier() {
     let tier: Option<String> =
         sqlx::query_scalar("SELECT tier FROM work_items WHERE id = ?1")
             .bind(&task)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read tier column");
     assert_eq!(
@@ -2084,7 +2080,7 @@ async fn set_task_spec_round_trips_typed_tier() {
     let attrs: Option<String> =
         sqlx::query_scalar("SELECT attributes FROM work_items WHERE id = ?1")
             .bind(&task)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read attributes column");
     let v: serde_json::Value =
@@ -2152,7 +2148,7 @@ fn set_task_spec_rejects_legacy_dispatch_field() {
 /// string.
 #[tokio::test]
 async fn add_finding_round_trips_typed_severity() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Severity-Round-Trip").await;
 
@@ -2187,7 +2183,7 @@ async fn add_finding_round_trips_typed_severity() {
     let row: Option<String> =
         sqlx::query_scalar("SELECT severity FROM findings WHERE work_item_id = ?1")
             .bind(&story)
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("read finding severity");
     assert_eq!(
@@ -2236,7 +2232,7 @@ fn add_finding_rejects_invalid_severity() {
 /// risks/alternatives threads.
 #[tokio::test]
 async fn get_task_dispatch_plan_returns_batches_with_tier() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Dispatch-Plan").await;
     let task_a = mcp_create(&tools, "task", Some(&story), "Plan Task A").await;
@@ -2333,7 +2329,7 @@ async fn get_task_dispatch_plan_returns_batches_with_tier() {
 /// DB → events outbox → git-export, sleep-free and socket-free.
 #[tokio::test]
 async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
-    let pool = Arc::new(connect_in_memory().await.expect("migrated in-memory pool"));
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // Build a chain down to a focus: `mcp_create` supplies the mandatory
@@ -2346,14 +2342,14 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
 
     // Baseline drain — flush all the create/criterion events so each setter's
     // event count is measured in isolation below.
-    lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("baseline drain");
 
     // ---- (a) set_shape on the focus → exactly one `work_item.shape_set` ----
     // `mcp_create` created the focus with shape=vertical-slice; revise it to a
     // DIFFERENT value so the column write is observably distinct.
-    lumina::repo::set_shape(pool.as_ref(), &focus, lumina::domain::Shape::Foundational)
+    lumina::repo::set_shape(pool.sqlite(), &focus, lumina::domain::Shape::Foundational)
         .await
         .expect("set focus shape=foundational");
 
@@ -2364,7 +2360,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "SELECT event_type FROM events WHERE aggregate_id = ? AND exported_at IS NULL",
     )
     .bind(&focus)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("exactly one unexported event on the focus after set_shape");
     assert_eq!(
@@ -2375,7 +2371,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "SELECT COUNT(*) FROM events WHERE aggregate_id = ? AND exported_at IS NULL",
     )
     .bind(&focus)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("count unexported focus events after set_shape");
     assert_eq!(
@@ -2383,7 +2379,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "set_shape emitted exactly one (single-mutation-path) event"
     );
 
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after set_shape");
     assert_eq!(
@@ -2403,7 +2399,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
 
     // ---- (b) set_epic_plan on the epic → exactly one `work_item.updated` ----
     lumina::repo::set_epic_plan(
-        pool.as_ref(),
+        &pool,
         &epic,
         Some("the revised epic outcome"),
         Some("the epic context"),
@@ -2415,7 +2411,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "SELECT event_type FROM events WHERE aggregate_id = ? AND exported_at IS NULL",
     )
     .bind(&epic)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("exactly one unexported event on the epic after set_epic_plan");
     assert_eq!(
@@ -2423,7 +2419,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "set_epic_plan emits a work_item.updated event (via set_work_item_attributes)"
     );
 
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after set_epic_plan");
     assert_eq!(
@@ -2446,7 +2442,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
     );
 
     // ---- (c) set_focus_plan on the focus → exactly one `work_item.updated` ----
-    lumina::repo::set_focus_plan(pool.as_ref(), &focus, Some("the focus framing"))
+    lumina::repo::set_focus_plan(&pool, &focus, Some("the focus framing"))
         .await
         .expect("set focus plan");
 
@@ -2454,7 +2450,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "SELECT event_type FROM events WHERE aggregate_id = ? AND exported_at IS NULL",
     )
     .bind(&focus)
-    .fetch_one(pool.as_ref())
+    .fetch_one(pool.sqlite())
     .await
     .expect("exactly one unexported event on the focus after set_focus_plan");
     assert_eq!(
@@ -2462,7 +2458,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "set_focus_plan emits a work_item.updated event (via set_work_item_attributes)"
     );
 
-    let drained = lumina::export::export_pending(pool.as_ref(), export_dir.path())
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after set_focus_plan");
     assert_eq!(

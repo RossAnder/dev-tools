@@ -116,7 +116,7 @@ async fn supersede_risk_handler(
     Json(body): Json<AddRiskBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tracing::debug!(old_id = %old_id, "http: POST /risks/{{old_id}}/supersede");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     // Resolve the owning work-item from the old row so the caller does not
     // have to thread it through the URL.
     let detail_owner = risk_owner_work_item(pool, &old_id).await?;
@@ -232,7 +232,7 @@ mod tests {
     async fn risks_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let story = seed_story(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST add → 201 + { id }.

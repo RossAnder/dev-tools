@@ -30,6 +30,10 @@
 //! `as "col?"`.
 
 use serde_json::Value;
+// `SqlitePool` is now named only by the `#[cfg(test)]` raw-assertion helpers
+// (the production repo fns front the `DbClient` seam post-A12), so the import is
+// test-gated to avoid an unused-import warning in the lib build.
+#[cfg(test)]
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -488,7 +492,7 @@ const LIST_WORK_ITEMS_SQL: &str = r#"
 /// blocks linked through `work_item_context`. Returns `NotFound` if the id has
 /// no row.
 pub async fn get_work_item_detail(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     id: &str,
 ) -> Result<WorkItemDetail, AppError> {
     // Soft-delete reader policy (pinned): the DETAIL fetch does NOT filter on
@@ -1011,7 +1015,7 @@ pub async fn list_findings(
 /// provenance NULL). It delegates to [`create_work_item_with_origin`]; the
 /// default `relevance="backlog"` for a new epic/focus/story is applied there.
 pub async fn create_work_item(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     kind: &str,
     parent_id: Option<&str>,
     title: &str,
@@ -1026,7 +1030,7 @@ pub async fn create_work_item(
 /// `relevance="backlog"` (epic/focus/story carry the relevance axis;
 /// task/project are left NULL); the relevance default is applied in the INSERT.
 pub async fn create_work_item_with_origin(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     kind: &str,
     parent_id: Option<&str>,
     title: &str,
@@ -1573,7 +1577,7 @@ fn validate_plan_field_constraints(
 /// keys are preserved by the merge. Mandatory-outcome-at-create is enforced in
 /// the create path, not here.
 pub async fn set_epic_plan(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     id: &str,
     outcome: Option<&str>,
     context: Option<&str>,
@@ -1605,7 +1609,7 @@ pub async fn set_epic_plan(
 /// Revise a focus's framing (migration 0010). Focus-kind-gated; JSON-merges
 /// {framing} via set_work_item_attributes (one event).
 pub async fn set_focus_plan(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     id: &str,
     framing: Option<&str>,
 ) -> Result<(), AppError> {
@@ -3221,7 +3225,7 @@ pub async fn resolve_open_question(
 ///     for items created via `create_work_item`, but a partially-loaded test DB
 ///     could expose it).
 pub async fn find_project_ancestor(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     work_item_id: &str,
 ) -> Result<String, AppError> {
     // Recursive CTE: seed with the target row, then repeatedly join to the
@@ -3573,7 +3577,7 @@ pub async fn set_primary_repo(
 /// Event `finding.repo_changed` on the finding's work_item aggregate
 /// (`aggregate_type = "work_item"`, `aggregate_id = <finding.work_item_id>`).
 pub async fn set_finding_repo(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     finding_id: &str,
     repo_id: Option<&str>,
 ) -> Result<(), AppError> {
@@ -3615,10 +3619,10 @@ pub async fn set_finding_repo(
         }
     }
 
-    // Disambiguate to the `DbClient` trait method — bare `pool.begin()` would
-    // resolve to sqlx's inherent `Pool::begin` (returning a `Transaction`, not
-    // the object-safe `Box<dyn DbTx>` this function threads through).
-    let mut tx = <SqlitePool as DbClient>::begin(pool).await?;
+    // `pool` is `&impl DbClient`, so `pool.begin()` resolves unambiguously to
+    // `DbClient::begin` (returning the object-safe `Box<dyn DbTx>` this function
+    // threads through) — there is no inherent `begin` on `impl DbClient`.
+    let mut tx = pool.begin().await?;
 
     let affected = tx
         .execute(
@@ -4642,7 +4646,7 @@ where
 ///
 /// Read-only: no transaction, no events.
 pub async fn compute_task_batches(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     story_id: &str,
 ) -> Result<Vec<Vec<String>>, AppError> {
     // Validate the story exists and IS a story (NotFound vs Validation split).
@@ -4817,7 +4821,7 @@ where
 /// Read-only: no transaction, no events. Cycles bubble out of the inner
 /// `compute_task_batches` call as `AppError::Cycle`.
 pub async fn get_task_dispatch_plan(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     story_id: &str,
 ) -> Result<Vec<Vec<BatchEntry>>, AppError> {
     let batches = compute_task_batches(pool, story_id).await?;
@@ -4978,7 +4982,7 @@ pub async fn set_task_tier(
 ///   * `NotFound` — `story_id` does not exist.
 ///   * `Validation` — `story_id` exists but is not `kind='story'`.
 pub async fn get_story_readiness(
-    pool: &SqlitePool,
+    pool: &impl DbClient,
     story_id: &str,
 ) -> Result<StoryReadiness, AppError> {
     let kind = work_item_kind(pool, story_id).await?;
@@ -5822,20 +5826,18 @@ mod tests {
     /// `SqlSafeStr` bound rejects a dynamically-built table name on the runtime
     /// `query_as`, so the two count helpers are split per table).
     async fn count_work_items(pool: &SqlitePool) -> i64 {
-        sqlx::query!(r#"SELECT COUNT(*) AS "n!" FROM work_items"#)
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items")
             .fetch_one(pool)
             .await
             .unwrap()
-            .n
     }
 
     /// Row count of `events`.
     async fn count_events(pool: &SqlitePool) -> i64 {
-        sqlx::query!(r#"SELECT COUNT(*) AS "n!" FROM events"#)
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
             .fetch_one(pool)
             .await
             .unwrap()
-            .n
     }
 
     /// Build the legal project→epic→focus→story chain and return the story id,
@@ -5904,16 +5906,19 @@ mod tests {
         assert_eq!(count_events(&pool).await, 1, "exactly one event");
 
         // The event references the new work-item and is unexported (outbox).
-        let ev = sqlx::query!(
-            r#"SELECT aggregate_id AS "aggregate_id!", event_type AS "event_type!", exported_at AS "exported_at?"
-               FROM events"#,
+        use sqlx::Row as _;
+        let ev = sqlx::query(
+            r#"SELECT aggregate_id, event_type, exported_at FROM events"#,
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(ev.aggregate_id, id.to_string());
-        assert_eq!(ev.event_type, "work_item.created");
-        assert!(ev.exported_at.is_none(), "new event must be unexported");
+        let aggregate_id: String = ev.try_get("aggregate_id").unwrap();
+        let event_type: String = ev.try_get("event_type").unwrap();
+        let exported_at: Option<String> = ev.try_get("exported_at").unwrap();
+        assert_eq!(aggregate_id, id.to_string());
+        assert_eq!(event_type, "work_item.created");
+        assert!(exported_at.is_none(), "new event must be unexported");
     }
 
     /// (c) `create_work_item` with an illegal parent kind returns
@@ -6012,11 +6017,13 @@ mod tests {
             .expect("status update");
         assert_eq!(count_events(&pool).await, 2, "one new status event");
 
-        let got = sqlx::query!(r#"SELECT status AS "status!" FROM work_items WHERE id = ?1"#, id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(got.status, "in-progress");
+        let got: String =
+            sqlx::query_scalar::<_, String>("SELECT status FROM work_items WHERE id = ?1")
+                .bind(&id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(got, "in-progress");
 
         // Missing id → NotFound, no event emitted.
         let err = update_work_item_status(&pool, "does-not-exist", "x")
@@ -6028,11 +6035,10 @@ mod tests {
 
     /// Row count of `work_item_activity`.
     async fn count_activity(pool: &SqlitePool) -> i64 {
-        sqlx::query!(r#"SELECT COUNT(*) AS "n!" FROM work_item_activity"#)
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_item_activity")
             .fetch_one(pool)
             .await
             .unwrap()
-            .n
     }
 
     /// `update_work_item` writes exactly +1 work_items-row-change and +1 event in
@@ -6222,11 +6228,12 @@ mod tests {
         assert_eq!(detail.item.id, id);
 
         // The row carries deleted_at (verified directly — WorkItem doesn't expose it).
-        let dat = sqlx::query!(r#"SELECT deleted_at AS "deleted_at?" FROM work_items WHERE id = ?1"#, id)
-            .fetch_one(&pool)
-            .await
-            .unwrap()
-            .deleted_at;
+        let dat: Option<String> =
+            sqlx::query_scalar::<_, Option<String>>("SELECT deleted_at FROM work_items WHERE id = ?1")
+                .bind(&id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert!(dat.is_some(), "deleted_at stamped");
 
         // Re-deleting is NotFound (already tombstoned).
@@ -6319,11 +6326,10 @@ mod tests {
 
     /// Row count of `acceptance_criteria`.
     async fn count_criteria(pool: &SqlitePool) -> i64 {
-        sqlx::query!(r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria"#)
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM acceptance_criteria")
             .fetch_one(pool)
             .await
             .unwrap()
-            .n
     }
 
     /// `get_work_item_detail` folds the acceptance_criteria; an add emits +1
@@ -6544,24 +6550,21 @@ mod tests {
 
     /// Read a single work item's status (test helper).
     async fn item_status(pool: &SqlitePool, id: &str) -> String {
-        sqlx::query!(r#"SELECT status AS "status!" FROM work_items WHERE id = ?1"#, id)
+        sqlx::query_scalar::<_, String>("SELECT status FROM work_items WHERE id = ?1")
+            .bind(id)
             .fetch_one(pool)
             .await
             .unwrap()
-            .status
     }
 
     /// Count events of a given `event_type` (test helper — proves the
     /// exactly-one-event-per-logical-write invariant for the multi-write resolve).
     async fn count_events_of_type(pool: &SqlitePool, event_type: &str) -> i64 {
-        sqlx::query!(
-            r#"SELECT COUNT(*) AS "n!" FROM events WHERE event_type = ?1"#,
-            event_type,
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap()
-        .n
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events WHERE event_type = ?1")
+            .bind(event_type)
+            .fetch_one(pool)
+            .await
+            .unwrap()
     }
 
     /// `add_open_question` on a non-story (here: a task) returns a typed

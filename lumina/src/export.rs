@@ -40,6 +40,7 @@ use anyhow::Context as _;
 use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 
+use crate::db::AnyPool;
 use crate::repo;
 
 /// Default export root, used by the background [`spawn`] loop when
@@ -87,6 +88,37 @@ impl ExportHandle {
     }
 }
 
+/// One unexported `events` row, as read by [`export_pending`]'s outbox SELECT.
+/// `payload` is the only nullable column (events without a JSON payload). The
+/// generic-over-`R` `FromRow` impl follows the canonical recipe in `db.rs` so it
+/// flows through the runtime `query_as` path unchanged.
+struct PendingEvent {
+    id: String,
+    aggregate_type: String,
+    aggregate_id: String,
+    event_type: String,
+    payload: Option<String>,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for PendingEvent
+where
+    R: sqlx::Row,
+    usize: sqlx::ColumnIndex<R>,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(PendingEvent {
+            id: row.try_get("id")?,
+            aggregate_type: row.try_get("aggregate_type")?,
+            aggregate_id: row.try_get("aggregate_id")?,
+            event_type: row.try_get("event_type")?,
+            payload: row.try_get("payload")?,
+        })
+    }
+}
+
 /// Drain the outbox once: render every unexported event's aggregate to a TOML
 /// snapshot under `export_root`, then stamp `exported_at`. Returns the number of
 /// events drained (stamped).
@@ -109,14 +141,14 @@ impl ExportHandle {
 /// drain (the recovery invariant). A second call with no new events is a no-op
 /// returning 0 and leaves every snapshot byte-identical.
 pub async fn export_pending(pool: &SqlitePool, export_root: &Path) -> anyhow::Result<usize> {
-    let pending = sqlx::query!(
+    let pending: Vec<PendingEvent> = sqlx::query_as::<_, PendingEvent>(
         r#"
         SELECT
-            id             AS "id!",
-            aggregate_type AS "aggregate_type!",
-            aggregate_id   AS "aggregate_id!",
-            event_type     AS "event_type!",
-            payload        AS "payload?"
+            id,
+            aggregate_type,
+            aggregate_id,
+            event_type,
+            payload
         FROM events
         WHERE exported_at IS NULL
         ORDER BY created_at, id
@@ -182,14 +214,12 @@ pub async fn export_pending(pool: &SqlitePool, export_root: &Path) -> anyhow::Re
         // unexported for the next drain (recovery invariant P12). An RFC3339
         // timestamp via jiff matches the TEXT `exported_at` column.
         let now = jiff::Timestamp::now().to_string();
-        sqlx::query!(
-            r#"UPDATE events SET exported_at = ?2 WHERE id = ?1"#,
-            ev.id,
-            now,
-        )
-        .execute(pool)
-        .await
-        .with_context(|| format!("stamping exported_at for event '{}'", ev.id))?;
+        sqlx::query(r#"UPDATE events SET exported_at = ?2 WHERE id = ?1"#)
+            .bind(&ev.id)
+            .bind(&now)
+            .execute(pool)
+            .await
+            .with_context(|| format!("stamping exported_at for event '{}'", ev.id))?;
 
         drained += 1;
     }
@@ -280,15 +310,17 @@ async fn soft_delete_marker(
     pool: &SqlitePool,
     aggregate_id: &str,
 ) -> anyhow::Result<Option<String>> {
-    let row = sqlx::query!(
-        r#"SELECT deleted_at AS "deleted_at?" FROM work_items WHERE id = ?1"#,
-        aggregate_id,
-    )
-    .fetch_optional(pool)
-    .await
-    .with_context(|| format!("reading deleted_at for work_item '{aggregate_id}'"))?;
+    let deleted_at: Option<String> =
+        sqlx::query_scalar::<_, Option<String>>(
+            r#"SELECT deleted_at FROM work_items WHERE id = ?1"#,
+        )
+        .bind(aggregate_id)
+        .fetch_optional(pool)
+        .await
+        .with_context(|| format!("reading deleted_at for work_item '{aggregate_id}'"))?
+        .flatten();
 
-    Ok(row.and_then(|r| r.deleted_at))
+    Ok(deleted_at)
 }
 
 /// Atomic tempfile → fsync → rename write, porting the proven `tomlctl/io.rs`
@@ -344,7 +376,7 @@ fn loop_export_root() -> PathBuf {
 /// error is logged to stderr and the loop continues — a transient render or DB
 /// hiccup must not silently kill the materialiser, and the failing events stay
 /// in the outbox for the next tick (recovery invariant).
-pub fn spawn(pool: Arc<SqlitePool>) -> ExportHandle {
+pub fn spawn(pool: Arc<AnyPool>) -> ExportHandle {
     let token = CancellationToken::new();
     let loop_token = token.clone();
     let root = loop_export_root();
@@ -358,7 +390,7 @@ pub fn spawn(pool: Arc<SqlitePool>) -> ExportHandle {
                 // next start, so a torn shutdown loses no events.
                 () = loop_token.cancelled() => break,
                 _ = ticker.tick() => {
-                    if let Err(e) = export_pending(&pool, &root).await {
+                    if let Err(e) = export_pending(pool.sqlite(), &root).await {
                         eprintln!("lumina export: drain failed (events stay in outbox): {e:#}");
                     }
                 }
@@ -376,23 +408,21 @@ mod tests {
 
     /// Read an event's `exported_at` (NULL → None).
     async fn exported_at(pool: &SqlitePool, aggregate_id: &str) -> Option<String> {
-        sqlx::query!(
-            r#"SELECT exported_at AS "exported_at?" FROM events WHERE aggregate_id = ?1"#,
-            aggregate_id,
+        sqlx::query_scalar::<_, Option<String>>(
+            r#"SELECT exported_at FROM events WHERE aggregate_id = ?1"#,
         )
+        .bind(aggregate_id)
         .fetch_one(pool)
         .await
         .unwrap()
-        .exported_at
     }
 
     /// Count unexported events.
     async fn unexported_count(pool: &SqlitePool) -> i64 {
-        sqlx::query!(r#"SELECT COUNT(*) AS "n!" FROM events WHERE exported_at IS NULL"#)
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events WHERE exported_at IS NULL")
             .fetch_one(pool)
             .await
             .unwrap()
-            .n
     }
 
     /// (a) After a `create_work_item`, `export_pending` writes a matching
@@ -693,7 +723,7 @@ mod tests {
     /// brief real wait lets the loop drain once before we shut it down.
     #[tokio::test]
     async fn spawn_loop_drains_then_shuts_down() {
-        let pool = Arc::new(connect_in_memory().await.expect("pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
         let dir = tempfile::tempdir().expect("tempdir");
         // Point the loop at an isolated root via the env var.
         // SAFETY: single-threaded test runtime, no concurrent env access.

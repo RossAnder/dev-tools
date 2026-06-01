@@ -151,7 +151,7 @@ mod tests {
     async fn activity_log_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST /work-items/{id}/activity

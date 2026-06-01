@@ -12,7 +12,8 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use axum::Extension;
 use axum::Router;
-use sqlx::SqlitePool;
+
+use crate::db::AnyPool;
 
 /// Shared application state. Cheap to clone — the pool is `Arc`-wrapped and
 /// sqlx pools are themselves ref-counted, so handlers and the MCP layer all
@@ -26,7 +27,7 @@ use sqlx::SqlitePool;
 /// gate on `if let Some(tx)` so the surface is forward-compatible.
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: Arc<SqlitePool>,
+    pub pool: Arc<AnyPool>,
     /// Keyed lookup of in-memory PTY sessions (T9 spawn → insert; T8 supervisor
     /// reap → remove). Shared between the HTTP / MCP layers and the supervisor.
     pub pty_registry: Arc<crate::pty::registry::SessionRegistry>,
@@ -52,7 +53,7 @@ impl AppState {
     /// Provided so per-family HTTP tests, the e2e test, and the composition
     /// root can construct `AppState` without each having to know the
     /// per-field defaults — drift-killer for the new fields added in T9.
-    pub fn new(pool: Arc<SqlitePool>) -> Self {
+    pub fn new(pool: Arc<AnyPool>) -> Self {
         Self {
             pool,
             pty_registry: crate::pty::registry::SessionRegistry::new(),
@@ -115,7 +116,7 @@ pub async fn serve() -> anyhow::Result<()> {
     let pool = crate::db::init(&database_url)
         .await
         .with_context(|| format!("initialising database at {database_url}"))?;
-    let pool = Arc::new(pool);
+    let pool = Arc::new(AnyPool::from(pool));
 
     // Construct AppState (registry, transport, and pool defaults are set by
     // AppState::new). The supervisor shares the same registry Arc so it can
@@ -241,10 +242,10 @@ mod tests {
     /// Driven in-process via `oneshot` (no socket bind) so it runs anywhere.
     #[tokio::test]
     async fn health_returns_200() {
-        let pool = SqlitePool::connect("sqlite::memory:")
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("in-memory sqlite pool");
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(AnyPool::from(pool)));
         let response = build_router(state)
             .oneshot(
                 Request::builder()

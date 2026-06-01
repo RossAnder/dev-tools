@@ -51,7 +51,10 @@ async fn concurrent_create_work_item_serialises_without_busy_error() {
         let pool = Arc::clone(&pool);
         tasks.spawn(async move {
             let title = format!("Concurrent Project {i}");
-            repo::create_work_item(&pool, "project", None, &title, None).await
+            // `pool` is `Arc<SqlitePool>`; deref to `&SqlitePool` (which impls
+            // `DbClient`) — trait-bound resolution does NOT auto-deref the `Arc`,
+            // so `&pool` (a `&Arc<SqlitePool>`) would not satisfy `&impl DbClient`.
+            repo::create_work_item(&*pool, "project", None, &title, None).await
         });
     }
 

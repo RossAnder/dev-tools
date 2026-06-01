@@ -185,7 +185,7 @@ async fn patch_relevance(
     Json(body): Json<PatchScalarBody<Relevance>>,
 ) -> Result<Json<WorkItem>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/relevance");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let value = require_value(body.value, "relevance")?;
     repo::set_relevance(pool, &id, value).await?;
     refetch_item(pool, &id).await
@@ -197,7 +197,7 @@ async fn patch_effort(
     Json(body): Json<PatchScalarBody<Effort>>,
 ) -> Result<Json<WorkItem>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/effort");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let value = require_value(body.value, "effort")?;
     repo::set_effort(pool, &id, value).await?;
     refetch_item(pool, &id).await
@@ -209,7 +209,7 @@ async fn patch_complexity(
     Json(body): Json<PatchScalarBody<Complexity>>,
 ) -> Result<Json<WorkItem>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/complexity");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let value = require_value(body.value, "complexity")?;
     repo::set_complexity(pool, &id, value).await?;
     refetch_item(pool, &id).await
@@ -221,7 +221,7 @@ async fn patch_closure_gate(
     Json(body): Json<PatchScalarBody<ClosureGate>>,
 ) -> Result<Json<WorkItem>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/closure-gate");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let value = require_value(body.value, "closure_gate")?;
     repo::set_closure_gate(pool, &id, value).await?;
     refetch_item(pool, &id).await
@@ -235,7 +235,7 @@ async fn patch_task_kind(
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/task-kind");
     // `task_kind` is nullable at the repo layer — `value: null` clears the
     // column; `value` absent ALSO clears (both deserialise to `None`).
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     repo::set_task_kind(pool, &id, body.value).await?;
     refetch_item(pool, &id).await
 }
@@ -247,7 +247,7 @@ async fn patch_tier(
 ) -> Result<Json<WorkItem>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/tier");
     // `tier` is nullable at the repo layer — `value: null` clears the column.
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     repo::set_task_tier(pool, &id, body.value).await?;
     refetch_item(pool, &id).await
 }
@@ -263,7 +263,7 @@ async fn patch_shape(
     Json(body): Json<PatchScalarBody<Shape>>,
 ) -> Result<Json<WorkItem>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/shape");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let value = require_value(body.value, "shape")?;
     repo::set_shape(pool, &id, value).await?;
     refetch_item(pool, &id).await
@@ -283,7 +283,7 @@ async fn patch_story_plan(
     Json(body): Json<PatchStoryPlanBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/story-plan");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let mut obj = serde_json::Map::new();
     if let Some(v) = body.problem_statement {
         obj.insert("problem_statement".into(), serde_json::Value::String(v));
@@ -318,7 +318,7 @@ async fn patch_task_spec(
     Json(body): Json<PatchTaskSpecBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/task-spec");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let mut obj = serde_json::Map::new();
     if let Some(v) = body.execution_detail {
         obj.insert("execution_detail".into(), serde_json::Value::String(v));
@@ -355,7 +355,7 @@ async fn patch_epic_plan(
     Json(body): Json<EpicPlanRequest>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/epic-plan");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     repo::set_epic_plan(pool, &id, body.outcome.as_deref(), body.context.as_deref()).await?;
     refetch_detail(pool, &id).await
 }
@@ -371,7 +371,7 @@ async fn patch_focus_plan(
     Json(body): Json<FocusPlanRequest>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
     tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/focus-plan");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     repo::set_focus_plan(pool, &id, body.framing.as_deref()).await?;
     refetch_detail(pool, &id).await
 }
@@ -473,7 +473,7 @@ mod tests {
     async fn scalars_round_trip() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // -- relevance (story-scoped) -----------------------------------
@@ -619,7 +619,7 @@ mod tests {
     async fn scalar_null_value_is_422() {
         let pool = connect_in_memory().await.expect("pool");
         let chain = seed_chain_full(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // (path, work-item-id) pairs — relevance + closure-gate are
@@ -667,7 +667,7 @@ mod tests {
     async fn story_plan_merges_attributes() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -718,7 +718,7 @@ mod tests {
     async fn task_spec_writes_attributes_and_tier() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -774,7 +774,7 @@ mod tests {
             .await
             .expect("seed repo_link");
 
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -814,7 +814,7 @@ mod tests {
     async fn shape_round_trip_and_kind_gate() {
         let pool = connect_in_memory().await.expect("pool");
         let chain = seed_chain_full(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Happy path: re-shape the focus (seeded as `vertical-slice`).
@@ -863,7 +863,7 @@ mod tests {
     async fn epic_plan_round_trip_and_kind_gate() {
         let pool = connect_in_memory().await.expect("pool");
         let chain = seed_chain_full(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Happy path: revise the epic's outcome.
@@ -916,7 +916,7 @@ mod tests {
     async fn focus_plan_round_trip_and_kind_gate() {
         let pool = connect_in_memory().await.expect("pool");
         let chain = seed_chain_full(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Happy path: set the focus's framing.

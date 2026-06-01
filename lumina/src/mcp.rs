@@ -73,6 +73,7 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::app::AppState;
+use crate::db::AnyPool;
 use crate::domain::{
     AlternativePatch, ClosureGate, Complexity, CreateWorkItemRequest, Disposition, Effort, Kind,
     Origin, Relevance, RiskPatch, RiskSeverity, Severity, Shape, Status, TaskKind, Tier,
@@ -1123,7 +1124,7 @@ pub struct SetTaskTierParams {
 /// into `self.state.pty_*`.
 #[derive(Clone)]
 pub struct LuminaTools {
-    pool: Arc<SqlitePool>,
+    pool: Arc<AnyPool>,
     // Held for shape parity with the composition root (`service_with_state`):
     // the field is currently unread because the MCP layer no longer exposes
     // PTY tools, but `AppState` is still threaded through both transports so
@@ -1142,15 +1143,18 @@ impl LuminaTools {
     /// [`service(pool)`] entry point. The MCP tool surface no longer touches
     /// the PTY plumbing — the field is carried for shape parity with the
     /// composition root.
-    pub fn new(pool: Arc<SqlitePool>) -> Self {
+    pub fn new(pool: Arc<AnyPool>) -> Self {
         Self::with_state(AppState::new(pool))
     }
 
-    /// Borrow the underlying pool. Exposed so in-process tests (which drive the
-    /// tool handlers directly) can assert DB state and seed prerequisite rows
-    /// through the `repo::*` layer over the SAME pool the tools mutate.
+    /// Borrow the underlying concrete `SqlitePool`. Exposed so in-process tests
+    /// (which drive the tool handlers directly) can assert DB state and seed
+    /// prerequisite rows over the SAME pool the tools mutate — several of those
+    /// assertions run RAW `sqlx::query_scalar(…).fetch_one(tools.pool())`, which
+    /// needs a concrete `&SqlitePool` (a `&AnyPool` is not an sqlx Executor), so
+    /// this reaches through the erased pool via [`AnyPool::sqlite`].
     pub fn pool(&self) -> &SqlitePool {
-        &self.pool
+        self.pool.sqlite()
     }
 
     /// Construct a tool-handler over a fully-populated [`AppState`]. The MCP
@@ -2608,7 +2612,7 @@ impl ServerHandler for LuminaTools {
 /// [`service_with_state`] variant remains so the composition root can wire
 /// one `AppState` shape through both the HTTP and MCP services.
 pub fn service(
-    pool: Arc<SqlitePool>,
+    pool: Arc<AnyPool>,
 ) -> StreamableHttpService<LuminaTools, LocalSessionManager> {
     StreamableHttpService::new(
         move || Ok(LuminaTools::new(pool.clone())),
@@ -2693,7 +2697,7 @@ mod tests {
     /// invariant), and the advertised tool list contains every domain tool name.
     #[tokio::test]
     async fn create_tool_writes_rows_and_lists_domain_tools() {
-        let pool = Arc::new(connect_in_memory().await.expect("pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
         let tools = LuminaTools::new(pool.clone());
 
         // (a) the advertised tool list contains EVERY domain tool name.
@@ -2806,11 +2810,11 @@ mod tests {
 
         let work_items_before: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM work_items")
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("count work_items");
         let events_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count events");
 
@@ -2830,11 +2834,11 @@ mod tests {
 
         let work_items_after: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM work_items")
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("count work_items");
         let events_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count events");
 
@@ -2870,7 +2874,7 @@ mod tests {
     /// setters + `transition_status` carry `idempotent_hint`.
     #[tokio::test]
     async fn tool_annotations_match_the_spec() {
-        let pool = Arc::new(connect_in_memory().await.expect("pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
         let tools = LuminaTools::new(pool.clone());
 
         // open_world_hint = false on ALL tools.
@@ -2969,17 +2973,17 @@ mod tests {
     /// A `record_task_activity` call writes exactly +1 activity row and +1 event.
     #[tokio::test]
     async fn record_task_activity_writes_one_activity_and_one_event() {
-        let pool = Arc::new(connect_in_memory().await.expect("pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
         let tools = LuminaTools::new(pool.clone());
         let story = seed_chain_to_story(&tools).await;
 
         let activity_before: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM work_item_activity")
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("count activity");
         let events_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count events");
 
@@ -2999,11 +3003,11 @@ mod tests {
 
         let activity_after: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM work_item_activity")
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("count activity");
         let events_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count events");
 
@@ -3023,12 +3027,12 @@ mod tests {
     /// transaction (one merge call → one `work_item.updated` event).
     #[tokio::test]
     async fn set_story_plan_writes_three_keys_in_one_call() {
-        let pool = Arc::new(connect_in_memory().await.expect("pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
         let tools = LuminaTools::new(pool.clone());
         let story = seed_chain_to_story(&tools).await;
 
         let events_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count events");
 
@@ -3045,7 +3049,7 @@ mod tests {
             .expect("set_story_plan succeeds");
 
         let events_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count events");
         assert_eq!(events_after - events_before, 1, "exactly one event (one merge call)");
@@ -3120,7 +3124,7 @@ mod tests {
     /// other branch's exclusive task → `cancelled`.
     #[tokio::test]
     async fn resolve_open_question_tool_unblocks_and_cancels_branches() {
-        let pool = Arc::new(connect_in_memory().await.expect("pool"));
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
         let tools = LuminaTools::new(pool.clone());
         let story = seed_chain_to_story(&tools).await;
 
@@ -3193,7 +3197,7 @@ mod tests {
 
         // Count events before the resolve so we can assert the +1 invariant.
         let events_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count events");
 
@@ -3209,7 +3213,7 @@ mod tests {
         assert_eq!(res.is_error, Some(false), "resolve is not an error");
 
         let events_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
-            .fetch_one(pool.as_ref())
+            .fetch_one(pool.sqlite())
             .await
             .expect("count events");
         assert_eq!(
@@ -3222,13 +3226,13 @@ mod tests {
         let status_a: String =
             sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
                 .bind(&task_a)
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("status A");
         let status_b: String =
             sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
                 .bind(&task_b)
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("status B");
         assert_eq!(status_a, "todo", "chosen branch's task is unblocked to todo");
@@ -3239,7 +3243,7 @@ mod tests {
         let status_c: String =
             sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
                 .bind(&task_c)
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("status C");
         assert_eq!(
@@ -3251,13 +3255,13 @@ mod tests {
         let oq_status: String =
             sqlx::query_scalar("SELECT status FROM open_questions WHERE id = ?1")
                 .bind(&q)
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("open_question status");
         let oq_chosen: String =
             sqlx::query_scalar("SELECT chosen_option_id FROM open_questions WHERE id = ?1")
                 .bind(&q)
-                .fetch_one(pool.as_ref())
+                .fetch_one(pool.sqlite())
                 .await
                 .expect("open_question chosen_option_id");
         assert_eq!(oq_status, "answered", "resolved question's status is 'answered'");

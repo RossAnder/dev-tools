@@ -145,7 +145,7 @@ async fn update_research_note_handler(
     Json(body): Json<UpdateResearchNoteBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
     tracing::debug!(note_id = %id, "http: PATCH /research-notes/{{id}}");
-    let pool = state.pool.as_ref();
+    let pool = state.pool.sqlite();
     let work_item_id = parent_work_item(pool, &id).await?;
     let req = UpdateResearchNoteRequest {
         confidence: body.confidence,
@@ -236,7 +236,7 @@ mod tests {
     async fn research_notes_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST add (the OLD note) → 201 + { id }.

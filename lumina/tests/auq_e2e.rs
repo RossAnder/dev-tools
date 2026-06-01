@@ -386,11 +386,11 @@ async fn make_state_with_stub_transport(
     projects_dir: PathBuf,
     stdin_dump_path: PathBuf,
 ) -> (AppState, pty::SupervisorHandle) {
-    let pool = Arc::new(
+    let pool = Arc::new(db::AnyPool::from(
         db::connect_in_memory()
             .await
             .expect("migrated in-memory pool"),
-    );
+    ));
     let registry = SessionRegistry::new();
     let supervisor = pty::supervisor::spawn(pool.clone(), registry.clone());
     let mut state = AppState::new(pool);

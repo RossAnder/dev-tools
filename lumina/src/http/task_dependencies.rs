@@ -194,7 +194,7 @@ mod tests {
         let (story_id, tasks) = seed_story_with_tasks(&pool, 3).await;
         let (t0, t1, _t2) = (&tasks[0], &tasks[1], &tasks[2]);
 
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST edge: t1 depends on t0.
@@ -277,7 +277,7 @@ mod tests {
         let (story_id, tasks) = seed_story_with_tasks(&pool, 2).await;
         let (t0, t1) = (&tasks[0], &tasks[1]);
 
-        let state = AppState::new(Arc::new(pool));
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // First edge: t1 depends on t0 (legal in isolation).
