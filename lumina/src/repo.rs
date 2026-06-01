@@ -657,95 +657,194 @@ where
     }
 }
 
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`ResearchNote`] aggregate
+/// (canonical recipe, A7 wave). Column→field nullability is carried by the field
+/// types (`String`/`i64` for NOT-NULL columns, `Option<String>` for the nullable
+/// `body`/`confidence`/`state`/`rationale`/`lens`/`origin`/`superseded_by`),
+/// replacing the old `AS "col!"`/`"col?"` macro hints.
+impl<'r, R> sqlx::FromRow<'r, R> for ResearchNote
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(ResearchNote {
+            id: row.try_get("id")?,
+            work_item_id: row.try_get("work_item_id")?,
+            seq: row.try_get("seq")?,
+            summary: row.try_get("summary")?,
+            body: row.try_get("body")?,
+            confidence: row.try_get("confidence")?,
+            state: row.try_get("state")?,
+            rationale: row.try_get("rationale")?,
+            lens: row.try_get("lens")?,
+            origin: row.try_get("origin")?,
+            superseded_by: row.try_get("superseded_by")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`QuestionOption`] aggregate
+/// (canonical recipe, A7 wave). Used by `list_open_questions`'s per-question
+/// options fold; the nullable `detail` carries its nullability via `Option<String>`.
+impl<'r, R> sqlx::FromRow<'r, R> for QuestionOption
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(QuestionOption {
+            id: row.try_get("id")?,
+            question_id: row.try_get("question_id")?,
+            seq: row.try_get("seq")?,
+            label: row.try_get("label")?,
+            detail: row.try_get("detail")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
+/// Raw scalar columns of an `open_questions` row as they come off the database,
+/// WITHOUT the nested `options` array-of-tables (those are folded in a second
+/// query by `list_open_questions`). Generic over `R: Row` per the canonical
+/// [`crate::db`] FromRow recipe; mirrors the [`ActivityRow`] private-row-struct
+/// precedent. The `list_open_questions` loop builds each public [`OpenQuestion`]
+/// from one of these rows plus its `seq`-ordered `options`.
+#[derive(Debug)]
+struct OpenQuestionRow {
+    id: String,
+    story_id: String,
+    seq: i64,
+    question: String,
+    status: Option<String>,
+    answer: Option<String>,
+    chosen_option_id: Option<String>,
+    decided_at: Option<String>,
+    decided_by: Option<String>,
+    prompting_finding_id: Option<String>,
+    prompting_note_id: Option<String>,
+    created_at: String,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for OpenQuestionRow
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(OpenQuestionRow {
+            id: row.try_get("id")?,
+            story_id: row.try_get("story_id")?,
+            seq: row.try_get("seq")?,
+            question: row.try_get("question")?,
+            status: row.try_get("status")?,
+            answer: row.try_get("answer")?,
+            chosen_option_id: row.try_get("chosen_option_id")?,
+            decided_at: row.try_get("decided_at")?,
+            decided_by: row.try_get("decided_by")?,
+            prompting_finding_id: row.try_get("prompting_finding_id")?,
+            prompting_note_id: row.try_get("prompting_note_id")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
 /// List the LIVE research-note rows for a work item (migration 0003), ordered by
 /// the per-item monotonic `seq`. "Live" = `superseded_by IS NULL`: a note
-/// superseded by a newer one drops out of this fold. `query_as!` straight onto
-/// the [`ResearchNote`] read struct (all columns map 1:1).
+/// superseded by a newer one drops out of this fold. Runtime seam: `query_all`
+/// onto the [`ResearchNote`] read struct (all columns map 1:1 via its FromRow).
 async fn list_research_notes(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
 ) -> Result<Vec<ResearchNote>, AppError> {
-    let rows = sqlx::query_as!(
-        ResearchNote,
+    db.query_all::<ResearchNote>(
         r#"
         SELECT
-            id            AS "id!",
-            work_item_id  AS "work_item_id!",
-            seq           AS "seq!",
-            summary       AS "summary!",
-            body          AS "body?",
-            confidence    AS "confidence?",
-            state         AS "state?",
-            rationale     AS "rationale?",
-            lens          AS "lens?",
-            origin        AS "origin?",
-            superseded_by AS "superseded_by?",
-            created_at    AS "created_at!"
+            id,
+            work_item_id,
+            seq,
+            summary,
+            body,
+            confidence,
+            state,
+            rationale,
+            lens,
+            origin,
+            superseded_by,
+            created_at
         FROM research_notes
-        WHERE work_item_id = ?1
+        WHERE work_item_id = $1
           AND superseded_by IS NULL
         ORDER BY seq
         "#,
-        work_item_id,
+        args![work_item_id.to_owned()],
     )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows)
+    .await
 }
 
 /// List the open-question rows for a story (migration 0003), ordered by the
 /// per-story monotonic `seq`, EACH with its `question_options` (also `seq`-
 /// ordered) folded into the nested `options` Vec. Two queries (questions, then
-/// per-question options) keep the `.sqlx` cache simple and the read shape exact.
+/// per-question options) keep the read shape exact: the questions query reads the
+/// scalar columns into [`OpenQuestionRow`], the options query reads
+/// [`QuestionOption`], and the loop assembles the public [`OpenQuestion`].
 async fn list_open_questions(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     story_id: &str,
 ) -> Result<Vec<OpenQuestion>, AppError> {
-    let questions = sqlx::query!(
-        r#"
+    let questions = db
+        .query_all::<OpenQuestionRow>(
+            r#"
         SELECT
-            id                   AS "id!",
-            story_id             AS "story_id!",
-            seq                  AS "seq!",
-            question             AS "question!",
-            status               AS "status?",
-            answer               AS "answer?",
-            chosen_option_id     AS "chosen_option_id?",
-            decided_at           AS "decided_at?",
-            decided_by           AS "decided_by?",
-            prompting_finding_id AS "prompting_finding_id?",
-            prompting_note_id    AS "prompting_note_id?",
-            created_at           AS "created_at!"
+            id,
+            story_id,
+            seq,
+            question,
+            status,
+            answer,
+            chosen_option_id,
+            decided_at,
+            decided_by,
+            prompting_finding_id,
+            prompting_note_id,
+            created_at
         FROM open_questions
-        WHERE story_id = ?1
+        WHERE story_id = $1
         ORDER BY seq
         "#,
-        story_id,
-    )
-    .fetch_all(pool)
-    .await?;
+            args![story_id.to_owned()],
+        )
+        .await?;
 
     let mut out = Vec::with_capacity(questions.len());
     for q in questions {
-        let options = sqlx::query_as!(
-            QuestionOption,
-            r#"
+        let options = db
+            .query_all::<QuestionOption>(
+                r#"
             SELECT
-                id          AS "id!",
-                question_id AS "question_id!",
-                seq         AS "seq!",
-                label       AS "label!",
-                detail      AS "detail?",
-                created_at  AS "created_at!"
+                id,
+                question_id,
+                seq,
+                label,
+                detail,
+                created_at
             FROM question_options
-            WHERE question_id = ?1
+            WHERE question_id = $1
             ORDER BY seq
             "#,
-            q.id,
-        )
-        .fetch_all(pool)
-        .await?;
+                args![q.id.clone()],
+            )
+            .await?;
 
         // Scalars first, the `options` array-of-tables last (tables-last rule).
         out.push(OpenQuestion {
@@ -2560,7 +2659,7 @@ pub async fn create_finding(
 /// otherwise). Event `work_item.research_note_added`. Returns the new note id.
 #[allow(clippy::too_many_arguments)]
 pub async fn add_research_note(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     summary: &str,
     body: Option<&str>,
@@ -2569,44 +2668,44 @@ pub async fn add_research_note(
     origin: Option<&str>,
 ) -> Result<Uuid, AppError> {
     // Verify the work item exists first (NotFound, not a dangling-FK 500).
-    let _ = work_item_kind(pool, work_item_id).await?;
+    let _ = work_item_kind(db, work_item_id).await?;
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
     // State defaults to `proposed` on create.
     let state = enum_to_str(ResearchState::Proposed);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM research_notes WHERE work_item_id = ?1"#,
-        work_item_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM research_notes WHERE work_item_id = $1",
+        args![work_item_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
+    tx.execute(
         r#"
         INSERT INTO research_notes
             (id, work_item_id, seq, summary, body, confidence, state, lens, origin)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
-        id_str,
-        work_item_id,
-        seq,
-        summary,
-        body,
-        confidence,
-        state,
-        lens,
-        origin,
+        args![
+            id_str.clone(),
+            work_item_id.to_owned(),
+            seq,
+            summary.to_owned(),
+            body.map(str::to_owned),
+            confidence.map(str::to_owned),
+            state,
+            lens.map(str::to_owned),
+            origin.map(str::to_owned),
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({ "note_id": id_str, "seq": seq });
-    record_event(&mut tx, "work_item", work_item_id, "work_item.research_note_added", payload)
+    record_event(tx.as_mut(), "work_item", work_item_id, "work_item.research_note_added", payload)
         .await?;
 
     tx.commit().await?;
@@ -2616,14 +2715,13 @@ pub async fn add_research_note(
 /// Read a research note's owning `work_item_id`, erroring `NotFound` if the note
 /// id has no row. Used by the update/supersede paths to attribute the owning item
 /// for the event aggregate.
-async fn research_note_work_item(pool: &SqlitePool, id: &str) -> Result<String, AppError> {
-    sqlx::query!(
-        r#"SELECT work_item_id AS "work_item_id!" FROM research_notes WHERE id = ?1"#,
-        id,
+async fn research_note_work_item(db: &impl DbClient, id: &str) -> Result<String, AppError> {
+    crate::db::scalar_opt::<String>(
+        db,
+        "SELECT work_item_id FROM research_notes WHERE id = $1",
+        args![id.to_owned()],
     )
-    .fetch_optional(pool)
     .await?
-    .map(|r| r.work_item_id)
     .ok_or_else(|| AppError::NotFound(format!("research_note '{id}' not found")))
 }
 
@@ -2633,40 +2731,41 @@ async fn research_note_work_item(pool: &SqlitePool, id: &str) -> Result<String, 
 /// work_item_id is read first (`NotFound` if the note is absent). One event
 /// `work_item.research_note_updated`.
 pub async fn update_research_note(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     req: &UpdateResearchNoteRequest,
 ) -> Result<(), AppError> {
-    let work_item_id = research_note_work_item(pool, id).await?;
+    let work_item_id = research_note_work_item(db, id).await?;
     let state_str: Option<String> = req.state.map(enum_to_str);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
+    let affected = tx
+        .execute(
+            r#"
         UPDATE research_notes
-        SET confidence = COALESCE(?2, confidence),
-            state      = COALESCE(?3, state),
-            rationale  = COALESCE(?4, rationale),
-            lens       = COALESCE(?5, lens)
-        WHERE id = ?1
+        SET confidence = COALESCE($2, confidence),
+            state      = COALESCE($3, state),
+            rationale  = COALESCE($4, rationale),
+            lens       = COALESCE($5, lens)
+        WHERE id = $1
         "#,
-        id,
-        req.confidence,
-        state_str,
-        req.rationale,
-        req.lens,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+            args![
+                id.to_owned(),
+                req.confidence.clone(),
+                state_str.clone(),
+                req.rationale.clone(),
+                req.lens.clone(),
+            ],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("research_note '{id}' not found")));
     }
 
     let payload = serde_json::json!({ "note_id": id, "state": state_str });
-    record_event(&mut tx, "work_item", &work_item_id, "work_item.research_note_updated", payload)
+    record_event(tx.as_mut(), "work_item", &work_item_id, "work_item.research_note_updated", payload)
         .await?;
 
     tx.commit().await?;
@@ -2692,36 +2791,34 @@ pub async fn update_research_note(
 /// edit the committed `0003_*.sql` to change this: that would alter its sqlx
 /// migration checksum and break already-applied DBs (a new migration is the path).
 pub async fn supersede_research_note(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     old_id: &str,
     new_id: &str,
 ) -> Result<(), AppError> {
-    let work_item_id = research_note_work_item(pool, old_id).await?;
+    let work_item_id = research_note_work_item(db, old_id).await?;
 
     // Validate the superseding note exists (R7): clean 422 over a dangling-FK 500.
-    let new_exists = sqlx::query!(
-        r#"SELECT 1 AS "one!" FROM research_notes WHERE id = ?1"#,
-        new_id,
-    )
-    .fetch_optional(pool)
-    .await?
-    .is_some();
+    let new_exists = db
+        .query_opt::<Scalar<i64>>(
+            "SELECT 1 FROM research_notes WHERE id = $1",
+            args![new_id.to_owned()],
+        )
+        .await?
+        .is_some();
     if !new_exists {
         return Err(AppError::Validation(format!(
             "superseding research_note '{new_id}' does not exist"
         )));
     }
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE research_notes SET superseded_by = ?2 WHERE id = ?1"#,
-        old_id,
-        new_id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE research_notes SET superseded_by = $2 WHERE id = $1",
+            args![old_id.to_owned(), new_id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("research_note '{old_id}' not found")));
@@ -2729,7 +2826,7 @@ pub async fn supersede_research_note(
 
     let payload = serde_json::json!({ "superseded_by": new_id });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         &work_item_id,
         "work_item.research_note_superseded",
@@ -2754,11 +2851,11 @@ pub async fn supersede_research_note(
 /// id is absent). `seq` = `MAX(seq)+1` per story; `status` defaults to `open`.
 /// Event `open_question.added`. Returns the new question id.
 pub async fn add_open_question(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     story_id: &str,
     question: &str,
 ) -> Result<Uuid, AppError> {
-    let kind = work_item_kind(pool, story_id).await?;
+    let kind = work_item_kind(db, story_id).await?;
     if kind != "story" {
         return Err(AppError::Validation(format!(
             "open questions are settable only on a story, not on '{kind}'"
@@ -2768,24 +2865,19 @@ pub async fn add_open_question(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM open_questions WHERE story_id = ?1"#,
-        story_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM open_questions WHERE story_id = $1",
+        args![story_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
-        r#"INSERT INTO open_questions (id, story_id, seq, question, status) VALUES (?1, ?2, ?3, ?4, 'open')"#,
-        id_str,
-        story_id,
-        seq,
-        question,
+    tx.execute(
+        "INSERT INTO open_questions (id, story_id, seq, question, status) VALUES ($1, $2, $3, $4, 'open')",
+        args![id_str.clone(), story_id.to_owned(), seq, question.to_owned()],
     )
-    .execute(&mut *tx)
     .await?;
 
     // Route the event to the owning STORY's work_item aggregate (R1): export only
@@ -2793,7 +2885,7 @@ pub async fn add_open_question(
     // reach the git-export snapshot. event_type/payload are otherwise unchanged,
     // so the "exactly one event" invariant holds.
     let payload = serde_json::json!({ "question_id": id_str, "seq": seq });
-    record_event(&mut tx, "work_item", story_id, "open_question.added", payload).await?;
+    record_event(tx.as_mut(), "work_item", story_id, "open_question.added", payload).await?;
 
     tx.commit().await?;
     Ok(id)
@@ -2801,12 +2893,14 @@ pub async fn add_open_question(
 
 /// Read an open question's owning `story_id`, erroring `NotFound` if the question
 /// id has no row. Used by the option-add and resolve paths.
-async fn open_question_story(pool: &SqlitePool, id: &str) -> Result<String, AppError> {
-    sqlx::query!(r#"SELECT story_id AS "story_id!" FROM open_questions WHERE id = ?1"#, id)
-        .fetch_optional(pool)
-        .await?
-        .map(|r| r.story_id)
-        .ok_or_else(|| AppError::NotFound(format!("open_question '{id}' not found")))
+async fn open_question_story(db: &impl DbClient, id: &str) -> Result<String, AppError> {
+    crate::db::scalar_opt::<String>(
+        db,
+        "SELECT story_id FROM open_questions WHERE id = $1",
+        args![id.to_owned()],
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("open_question '{id}' not found")))
 }
 
 /// Append ONE `question_options` row under the single-mutation-path discipline
@@ -2814,42 +2908,42 @@ async fn open_question_story(pool: &SqlitePool, id: &str) -> Result<String, AppE
 /// (`NotFound` otherwise). Event `open_question.option_added`. Returns the new
 /// option id.
 pub async fn add_question_option(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     question_id: &str,
     label: &str,
     detail: Option<&str>,
 ) -> Result<Uuid, AppError> {
     // Verify the question exists first (NotFound, not a dangling-FK 500) AND
     // capture its owning story for the event aggregate (R1).
-    let story_id = open_question_story(pool, question_id).await?;
+    let story_id = open_question_story(db, question_id).await?;
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM question_options WHERE question_id = ?1"#,
-        question_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM question_options WHERE question_id = $1",
+        args![question_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
-        r#"INSERT INTO question_options (id, question_id, seq, label, detail) VALUES (?1, ?2, ?3, ?4, ?5)"#,
-        id_str,
-        question_id,
-        seq,
-        label,
-        detail,
+    tx.execute(
+        "INSERT INTO question_options (id, question_id, seq, label, detail) VALUES ($1, $2, $3, $4, $5)",
+        args![
+            id_str.clone(),
+            question_id.to_owned(),
+            seq,
+            label.to_owned(),
+            detail.map(str::to_owned),
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
     // Route to the owning STORY's work_item aggregate (R1) so export renders it.
     let payload = serde_json::json!({ "option_id": id_str, "seq": seq });
-    record_event(&mut tx, "work_item", &story_id, "open_question.option_added", payload)
+    record_event(tx.as_mut(), "work_item", &story_id, "open_question.option_added", payload)
         .await?;
 
     tx.commit().await?;
@@ -2868,12 +2962,12 @@ pub async fn add_question_option(
 /// `in_progress`/`done` task would silently lose its state — that is rejected
 /// with `Validation` rather than clobbered.
 pub async fn block_task_on_question(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     task_id: &str,
     question_id: &str,
 ) -> Result<(), AppError> {
     // Task-scoped guard (R3); also yields NotFound if the id is absent.
-    let kind = work_item_kind(pool, task_id).await?;
+    let kind = work_item_kind(db, task_id).await?;
     if kind != "task" {
         return Err(AppError::Validation(format!(
             "block_task_on_question is settable only on a task, not on '{kind}'"
@@ -2881,13 +2975,13 @@ pub async fn block_task_on_question(
     }
 
     // The referenced question must exist (R3): clean 422 over a dangling-FK 500.
-    let q_exists = sqlx::query!(
-        r#"SELECT 1 AS "one!" FROM open_questions WHERE id = ?1"#,
-        question_id,
-    )
-    .fetch_optional(pool)
-    .await?
-    .is_some();
+    let q_exists = db
+        .query_opt::<Scalar<i64>>(
+            "SELECT 1 FROM open_questions WHERE id = $1",
+            args![question_id.to_owned()],
+        )
+        .await?
+        .is_some();
     if !q_exists {
         return Err(AppError::Validation(format!(
             "open_question '{question_id}' does not exist"
@@ -2896,13 +2990,12 @@ pub async fn block_task_on_question(
 
     // R12: only block a pre-todo task. Blocking an in_progress/done task would be
     // silently downgraded to `todo` on unblock, losing state — reject instead.
-    let current = sqlx::query!(
-        r#"SELECT status AS "status!" FROM work_items WHERE id = ?1"#,
-        task_id,
+    let current = crate::db::scalar_one::<String>(
+        db,
+        "SELECT status FROM work_items WHERE id = $1",
+        args![task_id.to_owned()],
     )
-    .fetch_one(pool)
-    .await?
-    .status;
+    .await?;
     if !matches!(current.as_str(), "todo" | "open") {
         return Err(AppError::Validation(format!(
             "task '{task_id}' cannot be blocked from status '{current}': only a 'todo'/'open' \
@@ -2910,27 +3003,25 @@ pub async fn block_task_on_question(
         )));
     }
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
+    let affected = tx
+        .execute(
+            r#"
         UPDATE work_items
-        SET blocked_by_question_id = ?2, status = 'blocked', updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?1
+        SET blocked_by_question_id = $2, status = 'blocked', updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
         "#,
-        task_id,
-        question_id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+            args![task_id.to_owned(), question_id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
     }
 
     let payload = serde_json::json!({ "blocked_by_question_id": question_id });
-    record_event(&mut tx, "work_item", task_id, "work_item.blocked_on_question", payload).await?;
+    record_event(tx.as_mut(), "work_item", task_id, "work_item.blocked_on_question", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -2945,12 +3036,12 @@ pub async fn block_task_on_question(
 /// [`AppError::Validation`] (mirrors [`set_effort`]), and the referenced
 /// `option_id` must exist (else `Validation`, not a dangling-FK 500).
 pub async fn set_enabling_option(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     task_id: &str,
     option_id: &str,
 ) -> Result<(), AppError> {
     // Task-scoped guard (R3); also yields NotFound if the id is absent.
-    let kind = work_item_kind(pool, task_id).await?;
+    let kind = work_item_kind(db, task_id).await?;
     if kind != "task" {
         return Err(AppError::Validation(format!(
             "set_enabling_option is settable only on a task, not on '{kind}'"
@@ -2958,40 +3049,38 @@ pub async fn set_enabling_option(
     }
 
     // The referenced option must exist (R3): clean 422 over a dangling-FK 500.
-    let opt_exists = sqlx::query!(
-        r#"SELECT 1 AS "one!" FROM question_options WHERE id = ?1"#,
-        option_id,
-    )
-    .fetch_optional(pool)
-    .await?
-    .is_some();
+    let opt_exists = db
+        .query_opt::<Scalar<i64>>(
+            "SELECT 1 FROM question_options WHERE id = $1",
+            args![option_id.to_owned()],
+        )
+        .await?
+        .is_some();
     if !opt_exists {
         return Err(AppError::Validation(format!(
             "question_option '{option_id}' does not exist"
         )));
     }
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
+    let affected = tx
+        .execute(
+            r#"
         UPDATE work_items
-        SET enabling_option_id = ?2, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?1
+        SET enabling_option_id = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
         "#,
-        task_id,
-        option_id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+            args![task_id.to_owned(), option_id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
     }
 
     let payload = serde_json::json!({ "enabling_option_id": option_id });
-    record_event(&mut tx, "work_item", task_id, "work_item.enabling_option_set", payload).await?;
+    record_event(tx.as_mut(), "work_item", task_id, "work_item.enabling_option_set", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -3014,25 +3103,25 @@ pub async fn set_enabling_option(
 /// `chosen_option_id` must belong to the question (else `Validation`). `NotFound`
 /// if the question is absent (checked before any write).
 pub async fn resolve_open_question(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     question_id: &str,
     chosen_option_id: &str,
     by: Option<&str>,
 ) -> Result<(), AppError> {
     // NotFound if the question is absent (before any write); capture the owning
     // story for the event aggregate (R1).
-    let story_id = open_question_story(pool, question_id).await?;
+    let story_id = open_question_story(db, question_id).await?;
 
     // Reject re-resolving an already-answered/cancelled question (R4) so the
     // advertised idempotency is real rather than silently re-running the branch
-    // transitions on a second call.
-    let status = sqlx::query!(
-        r#"SELECT status AS "status?" FROM open_questions WHERE id = ?1"#,
-        question_id,
+    // transitions on a second call. `status` is a nullable column, so it reads
+    // back as `Option<String>` (NULL → None).
+    let status = crate::db::scalar_one::<Option<String>>(
+        db,
+        "SELECT status FROM open_questions WHERE id = $1",
+        args![question_id.to_owned()],
     )
-    .fetch_one(pool)
-    .await?
-    .status;
+    .await?;
     if status.as_deref() != Some("open") {
         return Err(AppError::Validation(format!(
             "open_question '{question_id}' already resolved/cancelled (status {})",
@@ -3041,70 +3130,61 @@ pub async fn resolve_open_question(
     }
 
     // Validate the chosen option belongs to THIS question.
-    let owns = sqlx::query!(
-        r#"SELECT COUNT(*) AS "n!" FROM question_options WHERE id = ?1 AND question_id = ?2"#,
-        chosen_option_id,
-        question_id,
+    let owns = crate::db::scalar_one::<i64>(
+        db,
+        "SELECT COUNT(*) FROM question_options WHERE id = $1 AND question_id = $2",
+        args![chosen_option_id.to_owned(), question_id.to_owned()],
     )
-    .fetch_one(pool)
-    .await?
-    .n;
+    .await?;
     if owns == 0 {
         return Err(AppError::Validation(format!(
             "option '{chosen_option_id}' does not belong to open_question '{question_id}'"
         )));
     }
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
     // 1. Mark the question answered.
-    sqlx::query!(
+    tx.execute(
         r#"
         UPDATE open_questions
         SET status = 'answered',
-            chosen_option_id = ?2,
+            chosen_option_id = $2,
             decided_at = CURRENT_TIMESTAMP,
-            decided_by = ?3
-        WHERE id = ?1
+            decided_by = $3
+        WHERE id = $1
         "#,
-        question_id,
-        chosen_option_id,
-        by,
+        args![question_id.to_owned(), chosen_option_id.to_owned(), by.map(str::to_owned)],
     )
-    .execute(&mut *tx)
     .await?;
 
     // 2. Unblock the chosen branch: blocked tasks on this question whose
     //    enabling_option is the chosen one OR is NULL (non-exclusive) → todo.
-    sqlx::query!(
+    tx.execute(
         r#"
         UPDATE work_items
         SET status = 'todo', updated_at = CURRENT_TIMESTAMP
-        WHERE blocked_by_question_id = ?1
+        WHERE blocked_by_question_id = $1
           AND status = 'blocked'
-          AND (enabling_option_id = ?2 OR enabling_option_id IS NULL)
+          AND (enabling_option_id = $2 OR enabling_option_id IS NULL)
         "#,
-        question_id,
-        chosen_option_id,
+        args![question_id.to_owned(), chosen_option_id.to_owned()],
     )
-    .execute(&mut *tx)
     .await?;
 
     // 3. Cancel the other branches' EXCLUSIVE tasks: blocked tasks on this
     //    question with a non-NULL enabling_option that is NOT the chosen one.
-    sqlx::query!(
+    tx.execute(
         r#"
         UPDATE work_items
         SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-        WHERE blocked_by_question_id = ?1
+        WHERE blocked_by_question_id = $1
           AND status = 'blocked'
           AND enabling_option_id IS NOT NULL
-          AND enabling_option_id <> ?2
+          AND enabling_option_id <> $2
         "#,
-        question_id,
-        chosen_option_id,
+        args![question_id.to_owned(), chosen_option_id.to_owned()],
     )
-    .execute(&mut *tx)
     .await?;
 
     // EXACTLY ONE event for the whole resolution (NOT per task). Routed to the
@@ -3113,7 +3193,7 @@ pub async fn resolve_open_question(
     // (R2) without a per-task event.
     let payload =
         serde_json::json!({ "chosen_option_id": chosen_option_id, "question_id": question_id });
-    record_event(&mut tx, "work_item", &story_id, "open_question.resolved", payload).await?;
+    record_event(tx.as_mut(), "work_item", &story_id, "open_question.resolved", payload).await?;
 
     tx.commit().await?;
     Ok(())
