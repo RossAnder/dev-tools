@@ -2588,6 +2588,12 @@ pub struct NewFinding<'a> {
     pub fingerprint: Option<&'a str>,
     pub flow: Option<&'a str>,
     pub dedup_id: Option<&'a str>,
+    /// FK to `runs.id` (migration 0011): the review/optimise run this finding was
+    /// raised under; NULL on legacy findings that predate runs. ONLY the batch
+    /// [`add_findings`] path (B17a) stamps this — the single-item [`create_finding`]
+    /// wrapper leaves it `None`, and the triage-only `batch_update_findings` (B17c)
+    /// never touches it — so run association happens exclusively at insert time.
+    pub run_id: Option<&'a str>,
     /// Provenance (migration 0003): which command produced this finding; free
     /// TEXT in the DB (validated against the `Origin` enum at the MCP edge).
     pub origin: Option<&'a str>,
@@ -2670,13 +2676,13 @@ pub async fn create_finding_tx(
                 id, work_item_id, kind, severity, effort, category, status, \
                 file, line, symbol, summary, description, first_flagged, rounds, \
                 fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution, \
-                defer_reason, defer_trigger, wontfix_rationale, repo_id \
+                defer_reason, defer_trigger, wontfix_rationale, repo_id, run_id \
             ) \
             VALUES ( \
                 $1, $2, $3, $4, $5, $6, $7, \
                 $8, $9, $10, $11, $12, $13, $14, \
                 $15, $16, $17, $18, $19, $20, $21, \
-                $22, $23, $24, $25 \
+                $22, $23, $24, $25, $26 \
             ) \
             ON CONFLICT(work_item_id, dedup_id) \
                 WHERE dedup_id IS NOT NULL AND superseded_by IS NULL DO NOTHING",
@@ -2706,6 +2712,7 @@ pub async fn create_finding_tx(
                 finding.defer_trigger.map(|s| s.to_owned()),
                 finding.wontfix_rationale.map(|s| s.to_owned()),
                 finding.repo_id.map(|s| s.to_owned()),
+                finding.run_id.map(|s| s.to_owned()),
             ],
         )
         .await?;
@@ -2776,6 +2783,118 @@ pub fn finding_dedup_hash(
         let _ = write!(out, "{b:02x}");
     }
     out
+}
+
+/// Bulk-insert a batch of findings under ONE `BEGIN IMMEDIATE` transaction
+/// (B17a, migration 0011), with content-hash dedup and all-or-nothing atomicity.
+///
+/// Each `(work_item_id, finding)` element is inserted via [`create_finding_tx`].
+/// Before the transaction opens, this stamps every finding's `dedup_id` with the
+/// content hash [`finding_dedup_hash`] computes over its
+/// `(work_item_id, file, line, symbol, summary)` identity tuple — OVERWRITING
+/// whatever `dedup_id` the caller passed: the batch path OWNS dedup. That hash is
+/// what collapses a re-raised finding onto the `ux_findings_dedup` partial index,
+/// so the `ON CONFLICT … DO NOTHING` upsert in `create_finding_tx` skips a row
+/// already committed by a prior batch (`rows_affected == 0`) instead of
+/// double-inserting.
+///
+/// `run_id`, when `Some`, is stamped onto every finding (run association happens
+/// ONLY here — the triage-only `batch_update_findings` (B17c) never touches
+/// `findings.run_id`). `None` leaves the FK NULL (legal; no `runs` row required).
+///
+/// ## Atomicity (validation aborts the whole batch)
+/// Any error from `create_finding_tx` `?`-propagates, dropping `tx` un-committed →
+/// SQLite rolls back → ZERO rows persist (e.g. an FK violation from a `run_id`
+/// that names no `runs` row aborts the entire batch, not just the offending row).
+///
+/// ## Single coarse event (D8 / R-B4)
+/// Exactly ONE `events` row is recorded for the whole batch, NOT one per finding.
+/// Its `aggregate_type` is **deliberately not `"work_item"`**: the git-export
+/// drain (`export.rs`) materialises only `aggregate_type="work_item"` events, so a
+/// `"work_item"` batch event would wrongly re-render. A `run`-typed event (when a
+/// `run_id` is supplied) or a `finding`-typed event (otherwise, keyed by a fresh
+/// UUIDv7) is correctly inert — drained and `exported_at`-stamped, but not
+/// materialised to a file.
+///
+/// Returns [`BatchInsertResult`]: `added` (rows inserted), `skipped` (rows the
+/// dedup upsert collapsed), and `skipped_ids` — the dedup CONTENT HASH of each
+/// skipped input (NOT the finding's row id, which never minted). That hash is the
+/// stable cross-run identifier a re-run recomputes via [`finding_dedup_hash`] to
+/// assert membership.
+///
+/// Advisory: keep batches to ≲500 rows per call (one transaction, one event).
+pub async fn add_findings(
+    db: &impl DbClient,
+    run_id: Option<&str>,
+    items: &[(&str, NewFinding<'_>)],
+) -> Result<crate::domain::BatchInsertResult, AppError> {
+    // Pre-tx: compute the dedup content hash per element. This Vec OUTLIVES the
+    // tx loop because each `NewFinding.dedup_id` we build below borrows `&hashes[i]`.
+    let hashes: Vec<String> = items
+        .iter()
+        .map(|(work_item_id, finding)| {
+            finding_dedup_hash(
+                work_item_id,
+                finding.file,
+                finding.line,
+                finding.symbol,
+                finding.summary,
+            )
+        })
+        .collect();
+
+    let mut tx = db.begin().await?;
+
+    let mut added: i64 = 0;
+    let mut skipped: i64 = 0;
+    let mut skipped_ids: Vec<String> = Vec::new();
+
+    for (i, (work_item_id, finding)) in items.iter().enumerate() {
+        // The batch path OWNS dedup + run association: overwrite the caller's
+        // `dedup_id` with the computed content hash and stamp `run_id` (clone the
+        // element so the source `items` slice is untouched).
+        let stamped = NewFinding {
+            dedup_id: Some(&hashes[i]),
+            run_id,
+            ..finding.clone()
+        };
+        // A `create_finding_tx` error `?`-propagates here, dropping `tx`
+        // un-committed → full rollback → zero writes (all-or-nothing).
+        let (_id, affected) = create_finding_tx(tx.as_mut(), work_item_id, &stamped).await?;
+        if affected == 1 {
+            added += 1;
+        } else {
+            // `affected == 0` ⇒ the dedup upsert collapsed onto an existing live
+            // row. Record the content hash (the stable cross-run identifier).
+            skipped += 1;
+            skipped_ids.push(hashes[i].clone());
+        }
+    }
+
+    // Exactly one coarse event for the whole batch (D8). aggregate_type MUST NOT
+    // be "work_item" (R-B4) — keyed to the run when present, else a fresh
+    // finding-scoped id, both of which the export drain ignores.
+    let (aggregate_type, aggregate_id) = match run_id {
+        Some(rid) => ("run", rid.to_owned()),
+        None => ("finding", Uuid::now_v7().to_string()),
+    };
+    let payload = serde_json::json!({ "added": added, "skipped": skipped });
+    record_event(
+        tx.as_mut(),
+        aggregate_type,
+        &aggregate_id,
+        "findings.batch_added",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(crate::domain::BatchInsertResult {
+        added,
+        skipped,
+        skipped_ids,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -7791,5 +7910,149 @@ mod tests {
 
         let detail = get_work_item_detail(&pool, &focus).await.expect("detail");
         assert_eq!(detail.item.kind, "focus", "detail folds kind as 'focus'");
+    }
+
+    // ---------------------------------------------------------------------
+    // add_findings (B17a, migration 0011) — bulk insert with content-hash
+    // dedup, all-or-nothing atomicity, and exactly one coarse batch event.
+    // ---------------------------------------------------------------------
+
+    /// Row count of `findings` (split per table like `count_work_items` —
+    /// sqlx 0.9's `SqlSafeStr` bound rejects a dynamic table name).
+    async fn count_findings(pool: &SqlitePool) -> i64 {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM findings")
+            .fetch_one(pool)
+            .await
+            .expect("count findings")
+    }
+
+    /// R-B3 (the load-bearing test): a finding whose identity tuple matches one
+    /// already COMMITTED by a prior `add_findings` call is deduped on the re-run —
+    /// reported as skipped, NOT double-inserted. A return-value-only assertion is
+    /// insufficient: a mis-bound partial index would still report `skipped` from a
+    /// bad upsert while silently duplicating the row, so the row-count assertion
+    /// after the re-run is mandatory.
+    #[tokio::test]
+    async fn add_findings_dedup_skips_committed_prior() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let finding = NewFinding {
+            file: Some("src/foo.rs"),
+            line: Some(42),
+            symbol: Some("foo"),
+            summary: Some("a thing"),
+            ..NewFinding::default()
+        };
+
+        // First insert — added, and the fn COMMITS (it owns the tx).
+        let r1 = add_findings(&pool, None, &[(story.as_str(), finding.clone())])
+            .await
+            .expect("first add_findings");
+        assert_eq!(r1.added, 1, "first insert adds the row");
+        assert_eq!(r1.skipped, 0, "nothing skipped on first insert");
+        assert_eq!(count_findings(&pool).await, 1, "one row after first insert");
+
+        // Re-run with the SAME identity tuple — deduped against the committed row.
+        let r2 = add_findings(&pool, None, &[(story.as_str(), finding.clone())])
+            .await
+            .expect("second add_findings");
+        assert_eq!(r2.added, 0, "re-run adds nothing");
+        assert_eq!(r2.skipped, 1, "re-run skips the duplicate");
+
+        // skipped_ids carries the dedup CONTENT HASH a re-run recomputes.
+        let expected_hash = finding_dedup_hash(
+            &story,
+            Some("src/foo.rs"),
+            Some(42),
+            Some("foo"),
+            Some("a thing"),
+        );
+        assert!(
+            r2.skipped_ids.contains(&expected_hash),
+            "skipped_ids must carry the recomputed dedup hash; got {:?}",
+            r2.skipped_ids
+        );
+
+        // MANDATORY (R-B3): the row count is UNCHANGED — the dedup actually
+        // prevented a second physical insert (a mis-bound index would leave 2).
+        assert_eq!(
+            count_findings(&pool).await,
+            1,
+            "row count unchanged — the committed duplicate was not re-inserted"
+        );
+    }
+
+    /// A batch in which one element triggers a real constraint error aborts the
+    /// WHOLE batch: the tx drops un-committed → rollback → zero `findings` rows.
+    ///
+    /// The error path: `findings.run_id REFERENCES runs(id)` with FK enforcement
+    /// on (`connect_in_memory` enables `foreign_keys(true)`). Passing a `run_id`
+    /// that names no `runs` row makes every `create_finding_tx` INSERT fail with
+    /// a foreign-key violation — a clean, real abort path at this layer (there is
+    /// no validation inside `create_finding_tx` itself, so the FK is the genuine
+    /// failing input rather than a synthetic one).
+    #[tokio::test]
+    async fn add_findings_aborts_whole_batch_on_validation() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let valid_a = NewFinding { summary: Some("valid a"), ..NewFinding::default() };
+        let valid_b = NewFinding { summary: Some("valid b"), ..NewFinding::default() };
+
+        // run_id = Some("no-such-run") makes the FK fail on the first insert; the
+        // two otherwise-valid findings never persist because the tx rolls back.
+        let res = add_findings(
+            &pool,
+            Some("no-such-run"),
+            &[(story.as_str(), valid_a), (story.as_str(), valid_b)],
+        )
+        .await;
+
+        assert!(res.is_err(), "a constraint violation aborts the batch, got {res:?}");
+        assert_eq!(
+            count_findings(&pool).await,
+            0,
+            "rollback left zero findings — all-or-nothing"
+        );
+    }
+
+    /// Happy path: a batch of two DISTINCT findings inserts both, skips none, and
+    /// records EXACTLY ONE coarse `events` row for the whole batch (not one per
+    /// finding).
+    #[tokio::test]
+    async fn add_findings_multi_item_happy_path() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let events_before = count_events(&pool).await;
+
+        let a = NewFinding {
+            file: Some("src/a.rs"),
+            line: Some(1),
+            summary: Some("alpha"),
+            ..NewFinding::default()
+        };
+        let b = NewFinding {
+            file: Some("src/b.rs"),
+            line: Some(2),
+            summary: Some("beta"),
+            ..NewFinding::default()
+        };
+
+        let r = add_findings(&pool, None, &[(story.as_str(), a), (story.as_str(), b)])
+            .await
+            .expect("batch add");
+        assert_eq!(r.added, 2, "both distinct findings added");
+        assert_eq!(r.skipped, 0, "nothing skipped");
+        assert!(r.skipped_ids.is_empty(), "no skipped ids");
+        assert_eq!(count_findings(&pool).await, 2, "two rows persisted");
+
+        // EXACTLY ONE new events row for the batch (coarse event, not per-finding).
+        assert_eq!(
+            count_events(&pool).await - events_before,
+            1,
+            "exactly one coarse batch event"
+        );
     }
 }

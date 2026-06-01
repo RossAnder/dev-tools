@@ -439,6 +439,9 @@ pub async fn import_flow(pool: &SqlitePool, flow_dir: &Path) -> anyhow::Result<I
                 fingerprint: fi.fingerprint.as_deref(),
                 flow: fi.flow.as_deref(),
                 dedup_id: fi.dedup_id.as_deref(),
+                // Legacy import path predates runs (migration 0011); run
+                // association happens only via the batch `add_findings` path.
+                run_id: None,
                 origin: None,
                 confidence: None,
                 resolved_at: resolved_at.as_deref(),
