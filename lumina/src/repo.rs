@@ -30,7 +30,7 @@
 //! `as "col?"`.
 
 use serde_json::Value;
-use sqlx::{Sqlite, SqlitePool, Transaction};
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::domain::{
@@ -41,7 +41,101 @@ use crate::domain::{
     UpdateFindingRequest,
     UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
 };
+use crate::args;
+use crate::db::DbClient;
 use crate::error::AppError;
+
+/// Raw `work_items` row as it comes off the database, before `attributes` is
+/// decoded from its stored TEXT into `Option<Value>`. Generic over `R: Row` per
+/// the canonical [`crate::db`] FromRow recipe so it rides `query_*<T>` on both
+/// the SQLite arm today and a future Pg arm unchanged. The column→field
+/// nullability is carried by the field types (`String` vs `Option<String>`),
+/// replacing the old `AS "col!"`/`"col?"` macro hints.
+#[derive(Debug)]
+struct WorkItemRow {
+    id: String,
+    kind: String,
+    parent_id: Option<String>,
+    title: String,
+    body: Option<String>,
+    status: String,
+    position: Option<i64>,
+    attributes: Option<String>,
+    relevance: Option<String>,
+    effort: Option<String>,
+    complexity: Option<String>,
+    origin: Option<String>,
+    closure_gate: Option<String>,
+    blocked_by_question_id: Option<String>,
+    enabling_option_id: Option<String>,
+    task_kind: Option<String>,
+    tier: Option<String>,
+    shape: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for WorkItemRow
+where
+    R: sqlx::Row,
+    usize: sqlx::ColumnIndex<R>,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<i64>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(WorkItemRow {
+            id: row.try_get("id")?,
+            kind: row.try_get("kind")?,
+            parent_id: row.try_get("parent_id")?,
+            title: row.try_get("title")?,
+            body: row.try_get("body")?,
+            status: row.try_get("status")?,
+            position: row.try_get("position")?,
+            attributes: row.try_get("attributes")?,
+            relevance: row.try_get("relevance")?,
+            effort: row.try_get("effort")?,
+            complexity: row.try_get("complexity")?,
+            origin: row.try_get("origin")?,
+            closure_gate: row.try_get("closure_gate")?,
+            blocked_by_question_id: row.try_get("blocked_by_question_id")?,
+            enabling_option_id: row.try_get("enabling_option_id")?,
+            task_kind: row.try_get("task_kind")?,
+            tier: row.try_get("tier")?,
+            shape: row.try_get("shape")?,
+            created_at: row.try_get("created_at")?,
+            updated_at: row.try_get("updated_at")?,
+        })
+    }
+}
+
+/// Decode a [`WorkItemRow`] into the public [`WorkItem`], turning the raw
+/// `attributes` TEXT into `Option<Value>` via [`decode_attributes`].
+fn work_item_from_row(r: WorkItemRow) -> Result<WorkItem, AppError> {
+    Ok(WorkItem {
+        id: r.id,
+        kind: r.kind,
+        parent_id: r.parent_id,
+        title: r.title,
+        body: r.body,
+        status: r.status,
+        position: r.position,
+        attributes: decode_attributes(r.attributes)?,
+        relevance: r.relevance,
+        effort: r.effort,
+        complexity: r.complexity,
+        origin: r.origin,
+        closure_gate: r.closure_gate,
+        blocked_by_question_id: r.blocked_by_question_id,
+        enabling_option_id: r.enabling_option_id,
+        task_kind: r.task_kind,
+        tier: r.tier,
+        shape: r.shape,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+    })
+}
 
 /// Decode a nullable `attributes` TEXT column into `Option<Value>`. A non-NULL
 /// column that does not parse as JSON is a stored-data corruption, surfaced as
@@ -355,78 +449,40 @@ fn validate_hierarchy_edge(kind: &str, parent_kind: Option<&str>) -> Result<(), 
 /// combination is expressed with `IS NULL OR col = ?` guards so a single
 /// prepared statement covers every case (keeps the `.sqlx` cache to one entry).
 pub async fn list_work_items(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     parent_id: Option<&str>,
     kind: Option<&str>,
 ) -> Result<Vec<WorkItem>, AppError> {
-    // `query!` (not `query_as!`) because `attributes` arrives as `Option<String>`
-    // and is decoded into `WorkItem.attributes: Option<Value>` by hand.
     // Soft-delete reader policy (pinned): list views hide tombstoned rows.
-    let rows = sqlx::query!(
-        r#"
-        SELECT
-            id            AS "id!",
-            kind          AS "kind!",
-            parent_id     AS "parent_id?",
-            title         AS "title!",
-            body          AS "body?",
-            status        AS "status!",
-            position      AS "position?",
-            attributes    AS "attributes?",
-            relevance              AS "relevance?",
-            effort                 AS "effort?",
-            complexity             AS "complexity?",
-            origin                 AS "origin?",
-            closure_gate           AS "closure_gate?",
-            blocked_by_question_id AS "blocked_by_question_id?",
-            enabling_option_id     AS "enabling_option_id?",
-            task_kind              AS "task_kind?",
-            tier                   AS "tier?",
-            shape                  AS "shape?",
-            created_at    AS "created_at!",
-            updated_at    AS "updated_at!"
-        FROM work_items
-        WHERE deleted_at IS NULL
-          AND (?1 IS NULL OR parent_id = ?1)
-          AND (?2 IS NULL OR kind = ?2)
-        ORDER BY COALESCE(position, 0), created_at, id
-        "#,
-        parent_id,
-        kind,
-    )
-    .fetch_all(pool)
-    .await?;
+    // `attributes` arrives as `Option<String>` on `WorkItemRow` and is decoded
+    // into `WorkItem.attributes: Option<Value>` by hand below.
+    let rows = db
+        .query_all::<WorkItemRow>(
+            LIST_WORK_ITEMS_SQL,
+            args![parent_id.map(str::to_owned), kind.map(str::to_owned)],
+        )
+        .await?;
 
     let items = rows
         .into_iter()
-        .map(|r| {
-            Ok(WorkItem {
-                id: r.id,
-                kind: r.kind,
-                parent_id: r.parent_id,
-                title: r.title,
-                body: r.body,
-                status: r.status,
-                position: r.position,
-                attributes: decode_attributes(r.attributes)?,
-                relevance: r.relevance,
-                effort: r.effort,
-                complexity: r.complexity,
-                origin: r.origin,
-                closure_gate: r.closure_gate,
-                blocked_by_question_id: r.blocked_by_question_id,
-                enabling_option_id: r.enabling_option_id,
-                task_kind: r.task_kind,
-                tier: r.tier,
-                shape: r.shape,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
-            })
-        })
+        .map(work_item_from_row)
         .collect::<Result<Vec<_>, AppError>>()?;
 
     Ok(items)
 }
+
+const LIST_WORK_ITEMS_SQL: &str = r#"
+        SELECT
+            id, kind, parent_id, title, body, status, position, attributes,
+            relevance, effort, complexity, origin, closure_gate,
+            blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
+            created_at, updated_at
+        FROM work_items
+        WHERE deleted_at IS NULL
+          AND ($1 IS NULL OR parent_id = $1)
+          AND ($2 IS NULL OR kind = $2)
+        ORDER BY COALESCE(position, 0), created_at, id
+        "#;
 
 /// Fetch one work item plus its DIRECT children, its findings, and the context
 /// blocks linked through `work_item_context`. Returns `NotFound` if the id has
@@ -438,60 +494,12 @@ pub async fn get_work_item_detail(
     // Soft-delete reader policy (pinned): the DETAIL fetch does NOT filter on
     // `deleted_at` — it returns the row WITH `deleted_at` populated so the export
     // tombstone path and a deleted-marker detail fetch both work.
-    let row = sqlx::query!(
-        r#"
-        SELECT
-            id            AS "id!",
-            kind          AS "kind!",
-            parent_id     AS "parent_id?",
-            title         AS "title!",
-            body          AS "body?",
-            status        AS "status!",
-            position      AS "position?",
-            attributes    AS "attributes?",
-            relevance              AS "relevance?",
-            effort                 AS "effort?",
-            complexity             AS "complexity?",
-            origin                 AS "origin?",
-            closure_gate           AS "closure_gate?",
-            blocked_by_question_id AS "blocked_by_question_id?",
-            enabling_option_id     AS "enabling_option_id?",
-            task_kind              AS "task_kind?",
-            tier                   AS "tier?",
-            shape                  AS "shape?",
-            created_at    AS "created_at!",
-            updated_at    AS "updated_at!"
-        FROM work_items
-        WHERE id = ?1
-        "#,
-        id,
-    )
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("work_item '{id}' not found")))?;
+    let row = pool
+        .query_opt::<WorkItemRow>(GET_WORK_ITEM_DETAIL_SQL, args![id.to_owned()])
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("work_item '{id}' not found")))?;
 
-    let item = WorkItem {
-        id: row.id,
-        kind: row.kind,
-        parent_id: row.parent_id,
-        title: row.title,
-        body: row.body,
-        status: row.status,
-        position: row.position,
-        attributes: decode_attributes(row.attributes)?,
-        relevance: row.relevance,
-        effort: row.effort,
-        complexity: row.complexity,
-        origin: row.origin,
-        closure_gate: row.closure_gate,
-        blocked_by_question_id: row.blocked_by_question_id,
-        enabling_option_id: row.enabling_option_id,
-        task_kind: row.task_kind,
-        tier: row.tier,
-        shape: row.shape,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    };
+    let item = work_item_from_row(row)?;
 
     let children = list_work_items(pool, Some(id), None).await?;
     let findings = list_findings(pool, id).await?;
@@ -519,24 +527,9 @@ pub async fn get_work_item_detail(
         Vec::new()
     };
 
-    let context_blocks = sqlx::query_as!(
-        ContextBlock,
-        r#"
-        SELECT
-            cb.id          AS "id!",
-            cb.title       AS "title?",
-            cb.body        AS "body?",
-            cb.created_at  AS "created_at!",
-            cb.updated_at  AS "updated_at!"
-        FROM context_blocks cb
-        JOIN work_item_context wic ON wic.context_block_id = cb.id
-        WHERE wic.work_item_id = ?1
-        ORDER BY cb.created_at, cb.id
-        "#,
-        id,
-    )
-    .fetch_all(pool)
-    .await?;
+    let context_blocks = pool
+        .query_all::<ContextBlock>(DETAIL_CONTEXT_BLOCKS_SQL, args![id.to_owned()])
+        .await?;
 
     Ok(WorkItemDetail {
         item,
@@ -552,6 +545,46 @@ pub async fn get_work_item_detail(
         rejected_alternatives,
         task_dependencies,
     })
+}
+
+const GET_WORK_ITEM_DETAIL_SQL: &str = r#"
+        SELECT
+            id, kind, parent_id, title, body, status, position, attributes,
+            relevance, effort, complexity, origin, closure_gate,
+            blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
+            created_at, updated_at
+        FROM work_items
+        WHERE id = $1
+        "#;
+
+const DETAIL_CONTEXT_BLOCKS_SQL: &str = r#"
+        SELECT
+            cb.id, cb.title, cb.body, cb.created_at, cb.updated_at
+        FROM context_blocks cb
+        JOIN work_item_context wic ON wic.context_block_id = cb.id
+        WHERE wic.work_item_id = $1
+        ORDER BY cb.created_at, cb.id
+        "#;
+
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`ContextBlock`] aggregate
+/// (canonical recipe). Used by `get_work_item_detail`'s context-block JOIN; the
+/// A6 `context_blocks` wave reuses this same impl for its own reads.
+impl<'r, R> sqlx::FromRow<'r, R> for ContextBlock
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(ContextBlock {
+            id: row.try_get("id")?,
+            title: row.try_get("title")?,
+            body: row.try_get("body")?,
+            created_at: row.try_get("created_at")?,
+            updated_at: row.try_get("updated_at")?,
+        })
+    }
 }
 
 /// List the LIVE research-note rows for a work item (migration 0003), ordered by
@@ -875,7 +908,7 @@ pub struct CreateOpts<'a> {
 }
 
 pub async fn create_work_item_full(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     kind: &str,
     parent_id: Option<&str>,
     title: &str,
@@ -895,14 +928,14 @@ pub async fn create_work_item_full(
             // serve as a parent. With `AND deleted_at IS NULL`, a create under a
             // tombstoned epic/focus falls through to the parent-not-found path
             // below rather than succeeding under a dead ancestor.
-            let row = sqlx::query!(
-                r#"SELECT kind AS "kind!" FROM work_items WHERE id = ?1 AND deleted_at IS NULL"#,
-                pid,
+            let row = crate::db::scalar_opt::<String>(
+                db,
+                r#"SELECT kind FROM work_items WHERE id = $1 AND deleted_at IS NULL"#,
+                args![pid.to_owned()],
             )
-            .fetch_optional(pool)
             .await?;
             match row {
-                Some(r) => Some(r.kind),
+                Some(k) => Some(k),
                 None => {
                     return Err(AppError::Validation(format!(
                         "parent work_item '{pid}' does not exist"
@@ -977,32 +1010,30 @@ pub async fn create_work_item_full(
         None => None,
     };
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
     // R3: story-creation close-criterion gate — runs INSIDE the tx (post
-    // begin_write, pre-INSERT) so the gate read and the write share one snapshot
+    // begin, pre-INSERT) so the gate read and the write share one snapshot
     // under the writer lock, closing the TOCTOU window against a concurrent
     // criterion removal. The validated parent is a focus; resolve the focus's
     // parent (the epic) and require ≥1 close-criterion.
     if kind == "story" {
         let focus_id = parent_id.expect("hierarchy edge guarantees a focus parent for a story");
-        let epic_id: Option<String> = sqlx::query!(
-            r#"SELECT parent_id AS "parent_id?" FROM work_items WHERE id = ?1"#,
-            focus_id,
+        let epic_id: Option<String> = crate::db::tx_scalar_one::<Option<String>>(
+            tx.as_mut(),
+            r#"SELECT parent_id FROM work_items WHERE id = $1"#,
+            args![focus_id.to_owned()],
         )
-        .fetch_one(&mut *tx)
-        .await?
-        .parent_id;
+        .await?;
         let epic_id = epic_id.ok_or_else(|| {
             AppError::Validation("story's focus parent has no epic ancestor".into())
         })?;
-        let crit_count: i64 = sqlx::query!(
-            r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
-            epic_id,
+        let crit_count: i64 = crate::db::tx_scalar_one::<i64>(
+            tx.as_mut(),
+            r#"SELECT COUNT(*) FROM acceptance_criteria WHERE work_item_id = $1"#,
+            args![epic_id.clone()],
         )
-        .fetch_one(&mut *tx)
-        .await?
-        .n;
+        .await?;
         if crit_count == 0 {
             return Err(AppError::Validation(format!(
                 "cannot create a story under epic '{epic_id}': the epic has no \
@@ -1011,23 +1042,21 @@ pub async fn create_work_item_full(
         }
     }
 
-    sqlx::query!(
-        r#"
-        INSERT INTO work_items (id, kind, parent_id, title, body, status, origin, relevance, shape, attributes)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-        "#,
-        id_str,
-        kind,
-        parent_id,
-        title,
-        body,
-        "open",
-        origin,
-        default_relevance,
-        shape,
-        attributes_str,
+    tx.execute(
+        CREATE_WORK_ITEM_INSERT_SQL,
+        args![
+            id_str.clone(),
+            kind.to_owned(),
+            parent_id.map(str::to_owned),
+            title.to_owned(),
+            body.map(str::to_owned),
+            "open".to_owned(),
+            origin.map(str::to_owned),
+            default_relevance.map(str::to_owned),
+            shape.map(str::to_owned),
+            attributes_str
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({
@@ -1036,12 +1065,17 @@ pub async fn create_work_item_full(
         "title": title,
         "origin": origin,
     });
-    record_event(&mut tx, "work_item", &id_str, "work_item.created", payload).await?;
+    record_event(tx.as_mut(), "work_item", &id_str, "work_item.created", payload).await?;
 
     tx.commit().await?;
 
     Ok(id)
 }
+
+const CREATE_WORK_ITEM_INSERT_SQL: &str = r#"
+        INSERT INTO work_items (id, kind, parent_id, title, body, status, origin, relevance, shape, attributes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        "#;
 
 /// Shared closure-gate check for a `→done` transition (migration 0003,
 /// User Decision 3). Runs INSIDE the caller's transaction (so the read and the
@@ -1073,7 +1107,7 @@ pub async fn create_work_item_full(
 /// `rows_affected()==0 ⇒ NotFound` check is the authority; if the row is absent
 /// the kind read below simply returns `None` and the gate is inert.
 async fn enforce_closure_gate(
-    tx: &mut Transaction<'_, Sqlite>,
+    tx: &mut dyn crate::db::DbTx,
     id: &str,
     target_status: &str,
 ) -> Result<(), AppError> {
@@ -1082,47 +1116,47 @@ async fn enforce_closure_gate(
     }
 
     // Read the item's kind + parent. Absent row ⇒ inert (caller handles NotFound).
-    let Some(row) = sqlx::query!(
-        r#"SELECT kind AS "kind!", parent_id AS "parent_id?" FROM work_items WHERE id = ?1"#,
-        id,
+    let Some((kind, parent_id)) = crate::db::tx_query_opt::<(String, Option<String>)>(
+        tx,
+        r#"SELECT kind, parent_id FROM work_items WHERE id = $1"#,
+        args![id.to_owned()],
     )
-    .fetch_optional(&mut **tx)
     .await?
     else {
         return Ok(());
     };
 
-    if row.kind != "task" {
+    if kind != "task" {
         return Ok(());
     }
 
     // The gate is the immediate parent story's `closure_gate` (no ancestor walk).
-    let Some(parent_id) = row.parent_id else {
+    let Some(parent_id) = parent_id else {
         return Ok(());
     };
-    let Some(parent) = sqlx::query!(
-        r#"SELECT kind AS "kind!", closure_gate AS "closure_gate?" FROM work_items WHERE id = ?1"#,
-        parent_id,
-    )
-    .fetch_optional(&mut **tx)
-    .await?
+    let Some((parent_kind, parent_closure_gate)) =
+        crate::db::tx_query_opt::<(String, Option<String>)>(
+            tx,
+            r#"SELECT kind, closure_gate FROM work_items WHERE id = $1"#,
+            args![parent_id.clone()],
+        )
+        .await?
     else {
         return Ok(());
     };
 
-    if parent.kind != "story" || parent.closure_gate.as_deref() != Some("hard") {
+    if parent_kind != "story" || parent_closure_gate.as_deref() != Some("hard") {
         // soft (default) / non-story parent ⇒ allow.
         return Ok(());
     }
 
     // Hard gate: reject if any acceptance criterion of the TASK is unchecked.
-    let unchecked = sqlx::query!(
-        r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1 AND checked = 0"#,
-        id,
+    let unchecked = crate::db::tx_scalar_one::<i64>(
+        tx,
+        r#"SELECT COUNT(*) FROM acceptance_criteria WHERE work_item_id = $1 AND checked = 0"#,
+        args![id.to_owned()],
     )
-    .fetch_one(&mut **tx)
-    .await?
-    .n;
+    .await?;
 
     if unchecked > 0 {
         return Err(AppError::Validation(format!(
@@ -1148,29 +1182,31 @@ async fn enforce_closure_gate(
 /// target is `done` and the row is an `epic`; an absent row is inert (the
 /// caller's `rows_affected()==0` check owns NotFound).
 async fn enforce_epic_done_gate(
-    tx: &mut Transaction<'_, Sqlite>,
+    tx: &mut dyn crate::db::DbTx,
     id: &str,
     target_status: &str,
 ) -> Result<(), AppError> {
     if target_status != "done" {
         return Ok(());
     }
-    let Some(row) = sqlx::query!(r#"SELECT kind AS "kind!" FROM work_items WHERE id = ?1"#, id)
-        .fetch_optional(&mut **tx)
-        .await?
+    let Some(kind) = crate::db::tx_scalar_opt::<String>(
+        tx,
+        r#"SELECT kind FROM work_items WHERE id = $1"#,
+        args![id.to_owned()],
+    )
+    .await?
     else {
         return Ok(());
     };
-    if row.kind != "epic" {
+    if kind != "epic" {
         return Ok(());
     }
-    let unchecked = sqlx::query!(
-        r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1 AND checked = 0"#,
-        id,
+    let unchecked = crate::db::tx_scalar_one::<i64>(
+        tx,
+        r#"SELECT COUNT(*) FROM acceptance_criteria WHERE work_item_id = $1 AND checked = 0"#,
+        args![id.to_owned()],
     )
-    .fetch_one(&mut **tx)
-    .await?
-    .n;
+    .await?;
     if unchecked > 0 {
         return Err(AppError::Validation(format!(
             "epic '{id}' cannot transition to 'done': {unchecked} close-criterion(s) remain unchecked"
@@ -1184,16 +1220,15 @@ async fn enforce_epic_done_gate(
     // epic with zero descendant stories counts 0 non-terminal and so passes this
     // clause and closes (the close-criterion clause above still applies) — a
     // childless epic→done is intentionally allowed.
-    let nonterminal = sqlx::query!(
-        r#"SELECT COUNT(*) AS "n!" FROM work_items
+    let nonterminal = crate::db::tx_scalar_one::<i64>(
+        tx,
+        r#"SELECT COUNT(*) FROM work_items
            WHERE kind = 'story' AND deleted_at IS NULL
              AND status NOT IN ('done','cancelled')
-             AND parent_id IN (SELECT id FROM work_items WHERE kind = 'focus' AND deleted_at IS NULL AND parent_id = ?1)"#,
-        id,
+             AND parent_id IN (SELECT id FROM work_items WHERE kind = 'focus' AND deleted_at IS NULL AND parent_id = $1)"#,
+        args![id.to_owned()],
     )
-    .fetch_one(&mut **tx)
-    .await?
-    .n;
+    .await?;
     if nonterminal > 0 {
         return Err(AppError::Validation(format!(
             "epic '{id}' cannot transition to 'done': {nonterminal} descendant story(ies) are not terminal (done/cancelled)"
@@ -1208,32 +1243,30 @@ async fn enforce_epic_done_gate(
 /// emits a spurious event. A `→done` transition on a task is gated by
 /// [`enforce_closure_gate`] (the read runs inside the same tx, before the write).
 pub async fn update_work_item_status(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     status: &str,
 ) -> Result<(), AppError> {
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
     // Closure gate (migration 0003): reject task→done under a `hard` story while
     // any acceptance criterion is unchecked. Runs before the UPDATE in this tx.
-    enforce_closure_gate(&mut tx, id, status).await?;
+    enforce_closure_gate(tx.as_mut(), id, status).await?;
     // Epic-done gate (migration 0010): reject epic→done unless all close-criteria
     // are checked and all descendant stories are terminal. Independent of the
     // closure gate above (task→done vs epic→done); both run.
-    enforce_epic_done_gate(&mut tx, id, status).await?;
+    enforce_epic_done_gate(tx.as_mut(), id, status).await?;
 
-    let affected = sqlx::query!(
-        r#"
+    let affected = tx
+        .execute(
+            r#"
         UPDATE work_items
-        SET status = ?2, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?1
+        SET status = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
         "#,
-        id,
-        status,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+            args![id.to_owned(), status.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         // tx drops here → rollback; no event emitted for a missing row.
@@ -1241,7 +1274,7 @@ pub async fn update_work_item_status(
     }
 
     let payload = serde_json::json!({ "status": status });
-    record_event(&mut tx, "work_item", id, "work_item.status_changed", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.status_changed", payload).await?;
 
     tx.commit().await?;
 
@@ -1253,11 +1286,11 @@ pub async fn update_work_item_status(
 /// `task`/`project` is rejected with a typed [`AppError::Validation`]. The
 /// kind is read first; `NotFound` if the id has no row; one event on success.
 pub async fn set_relevance(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     relevance: Relevance,
 ) -> Result<(), AppError> {
-    let kind = work_item_kind(pool, id).await?;
+    let kind = work_item_kind(db, id).await?;
     if !matches!(kind.as_str(), "epic" | "focus" | "story") {
         return Err(AppError::Validation(format!(
             "relevance is settable only on epic/focus/story, not on '{kind}'"
@@ -1265,23 +1298,21 @@ pub async fn set_relevance(
     }
     let value = enum_to_str(relevance);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET relevance = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
-        id,
-        value,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET relevance = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            args![id.to_owned(), value.clone()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{id}' not found")));
     }
 
     let payload = serde_json::json!({ "relevance": value });
-    record_event(&mut tx, "work_item", id, "work_item.relevance_set", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.relevance_set", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -1291,28 +1322,26 @@ pub async fn set_relevance(
 /// kind is rejected with a typed `AppError::Validation`. Kind read first;
 /// `NotFound` via rows_affected()==0; one event. This is the revise-later
 /// path — shape-mandatory-at-create for focus is enforced in the create path.
-pub async fn set_shape(pool: &SqlitePool, id: &str, shape: Shape) -> Result<(), AppError> {
-    let kind = work_item_kind(pool, id).await?;
+pub async fn set_shape(db: &impl DbClient, id: &str, shape: Shape) -> Result<(), AppError> {
+    let kind = work_item_kind(db, id).await?;
     if kind != "focus" {
         return Err(AppError::Validation(format!(
             "shape is settable only on a focus, not on '{kind}'"
         )));
     }
     let value = enum_to_str(shape);
-    let mut tx = crate::db::begin_write(pool).await?;
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET shape = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
-        id,
-        value,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let mut tx = db.begin().await?;
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET shape = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            args![id.to_owned(), value.clone()],
+        )
+        .await?;
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{id}' not found")));
     }
     let payload = serde_json::json!({ "shape": value });
-    record_event(&mut tx, "work_item", id, "work_item.shape_set", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.shape_set", payload).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -1435,8 +1464,8 @@ pub async fn set_focus_plan(
 /// axis drives batch sizing for a leaf task, so a non-`task` kind is rejected
 /// with a typed [`AppError::Validation`]. Kind read first; `NotFound` via
 /// `rows_affected()==0`; one event.
-pub async fn set_effort(pool: &SqlitePool, id: &str, effort: Effort) -> Result<(), AppError> {
-    let kind = work_item_kind(pool, id).await?;
+pub async fn set_effort(db: &impl DbClient, id: &str, effort: Effort) -> Result<(), AppError> {
+    let kind = work_item_kind(db, id).await?;
     if kind != "task" {
         return Err(AppError::Validation(format!(
             "effort is settable only on a task, not on '{kind}'"
@@ -1444,23 +1473,21 @@ pub async fn set_effort(pool: &SqlitePool, id: &str, effort: Effort) -> Result<(
     }
     let value = enum_to_str(effort);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET effort = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
-        id,
-        value,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET effort = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            args![id.to_owned(), value.clone()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{id}' not found")));
     }
 
     let payload = serde_json::json!({ "effort": value });
-    record_event(&mut tx, "work_item", id, "work_item.effort_set", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.effort_set", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -1471,11 +1498,11 @@ pub async fn set_effort(pool: &SqlitePool, id: &str, effort: Effort) -> Result<(
 /// typed [`AppError::Validation`]. Kind read first; `NotFound` via
 /// `rows_affected()==0`; one event.
 pub async fn set_complexity(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     complexity: Complexity,
 ) -> Result<(), AppError> {
-    let kind = work_item_kind(pool, id).await?;
+    let kind = work_item_kind(db, id).await?;
     if kind != "task" {
         return Err(AppError::Validation(format!(
             "complexity is settable only on a task, not on '{kind}'"
@@ -1483,23 +1510,21 @@ pub async fn set_complexity(
     }
     let value = enum_to_str(complexity);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET complexity = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
-        id,
-        value,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET complexity = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            args![id.to_owned(), value.clone()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{id}' not found")));
     }
 
     let payload = serde_json::json!({ "complexity": value });
-    record_event(&mut tx, "work_item", id, "work_item.complexity_set", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.complexity_set", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -1511,11 +1536,11 @@ pub async fn set_complexity(
 /// (`soft`). A non-`story` kind is rejected with a typed [`AppError::Validation`].
 /// Kind read first; `NotFound` via `rows_affected()==0`; one event.
 pub async fn set_closure_gate(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     story_id: &str,
     gate: ClosureGate,
 ) -> Result<(), AppError> {
-    let kind = work_item_kind(pool, story_id).await?;
+    let kind = work_item_kind(db, story_id).await?;
     if kind != "story" {
         return Err(AppError::Validation(format!(
             "closure_gate is settable only on a story, not on '{kind}'"
@@ -1523,23 +1548,21 @@ pub async fn set_closure_gate(
     }
     let value = enum_to_str(gate);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET closure_gate = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
-        story_id,
-        value,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET closure_gate = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            args![story_id.to_owned(), value.clone()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{story_id}' not found")));
     }
 
     let payload = serde_json::json!({ "closure_gate": value });
-    record_event(&mut tx, "work_item", story_id, "work_item.closure_gate_set", payload).await?;
+    record_event(tx.as_mut(), "work_item", story_id, "work_item.closure_gate_set", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -1768,12 +1791,14 @@ pub async fn remove_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result<
 /// Fetch a work item's `kind`, erroring `NotFound` if the id has no row. Used by
 /// the attribute-validating write paths to resolve the per-kind contract before
 /// touching the row. Does NOT filter `deleted_at` (callers decide).
-async fn work_item_kind(pool: &SqlitePool, id: &str) -> Result<String, AppError> {
-    sqlx::query!(r#"SELECT kind AS "kind!" FROM work_items WHERE id = ?1"#, id)
-        .fetch_optional(pool)
-        .await?
-        .map(|r| r.kind)
-        .ok_or_else(|| AppError::NotFound(format!("work_item '{id}' not found")))
+async fn work_item_kind(db: &impl DbClient, id: &str) -> Result<String, AppError> {
+    crate::db::scalar_opt::<String>(
+        db,
+        r#"SELECT kind FROM work_items WHERE id = $1"#,
+        args![id.to_owned()],
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("work_item '{id}' not found")))
 }
 
 /// Partial update of a work item under the single-mutation-path discipline.
@@ -1783,14 +1808,14 @@ async fn work_item_kind(pool: &SqlitePool, id: &str) -> Result<String, AppError>
 /// (unknown key ⇒ `Validation`) BEFORE the write. `NotFound` via
 /// `rows_affected()==0` so a missing row emits no event. Event `work_item.updated`.
 pub async fn update_work_item(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     req: &UpdateWorkItemRequest,
 ) -> Result<(), AppError> {
     // Pre-validate `attributes` (needs the row's kind) before opening the tx.
     let attributes_str: Option<String> = match &req.attributes {
         Some(value) => {
-            let kind = work_item_kind(pool, id).await?;
+            let kind = work_item_kind(db, id).await?;
             let cleaned = normalise_object(value, "attributes")?;
             validate_attributes_for_kind(&kind, &cleaned)?;
             validate_plan_field_constraints(&cleaned)?; // R34
@@ -1801,40 +1826,41 @@ pub async fn update_work_item(
 
     let status_str: Option<String> = req.status.map(enum_to_str);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
     // Closure gate (migration 0003): this generic PATCH can set status="done"
     // directly, so it routes through the SAME gate as update_work_item_status
     // (User Decision 3) — a task→done under a `hard` story with unchecked
     // criteria is rejected here too. No-op when status is absent / not "done".
     if let Some(s) = status_str.as_deref() {
-        enforce_closure_gate(&mut tx, id, s).await?;
+        enforce_closure_gate(tx.as_mut(), id, s).await?;
         // Epic-done gate (migration 0010): same UNCONDITIONAL epic→done rule as
         // the transition_status path; both gates run, they cover disjoint kinds.
-        enforce_epic_done_gate(&mut tx, id, s).await?;
+        enforce_epic_done_gate(tx.as_mut(), id, s).await?;
     }
 
-    let affected = sqlx::query!(
-        r#"
+    let affected = tx
+        .execute(
+            r#"
         UPDATE work_items
-        SET title      = COALESCE(?2, title),
-            body       = COALESCE(?3, body),
-            status     = COALESCE(?4, status),
-            position   = COALESCE(?5, position),
-            attributes = COALESCE(?6, attributes),
+        SET title      = COALESCE($2, title),
+            body       = COALESCE($3, body),
+            status     = COALESCE($4, status),
+            position   = COALESCE($5, position),
+            attributes = COALESCE($6, attributes),
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?1 AND deleted_at IS NULL
+        WHERE id = $1 AND deleted_at IS NULL
         "#,
-        id,
-        req.title,
-        req.body,
-        status_str,
-        req.position,
-        attributes_str,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+            args![
+                id.to_owned(),
+                req.title.clone(),
+                req.body.clone(),
+                status_str.clone(),
+                req.position,
+                attributes_str.clone()
+            ],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{id}' not found")));
@@ -1847,7 +1873,7 @@ pub async fn update_work_item(
         "position": req.position,
         "attributes_set": req.attributes.is_some(),
     });
-    record_event(&mut tx, "work_item", id, "work_item.updated", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.updated", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -1959,30 +1985,31 @@ pub async fn append_activity(
 /// string or by editing `normalise_object` to preserve nulls (the TOML export
 /// path depends on null-key stripping).
 pub async fn set_work_item_attributes(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     patch: &Value,
 ) -> Result<(), AppError> {
     // The patch itself must be a null-free object root.
     let patch_obj = normalise_object(patch, "attributes")?;
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
     // Read current kind + attributes (do not resurrect a tombstoned row).
-    let current = sqlx::query!(
-        r#"SELECT kind AS "kind!", attributes AS "attributes?" FROM work_items WHERE id = ?1 AND deleted_at IS NULL"#,
-        id,
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("work_item '{id}' not found")))?;
+    let (current_kind, current_attributes) =
+        crate::db::tx_query_opt::<(String, Option<String>)>(
+            tx.as_mut(),
+            r#"SELECT kind, attributes FROM work_items WHERE id = $1 AND deleted_at IS NULL"#,
+            args![id.to_owned()],
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("work_item '{id}' not found")))?;
 
     // Merge: start from the existing object (or empty), overwrite present keys.
     // A stored blob that is non-JSON or a non-object root is data corruption (the
     // write side normalises every stored value to an object root) — fail loudly
     // as `Other` (→ 500) rather than silently discarding it (R13), mirroring
     // `decode_attributes`.
-    let mut merged: serde_json::Map<String, Value> = match current.attributes {
+    let mut merged: serde_json::Map<String, Value> = match current_attributes {
         Some(s) => match serde_json::from_str::<Value>(&s) {
             Ok(Value::Object(m)) => m,
             Ok(_) => {
@@ -2000,22 +2027,20 @@ pub async fn set_work_item_attributes(
     // Re-normalise the merged result (drop any nulls a prior store missed).
     let merged_value = Value::Object(merged);
     let cleaned = normalise_object(&merged_value, "attributes")?;
-    validate_attributes_for_kind(&current.kind, &cleaned)?;
+    validate_attributes_for_kind(&current_kind, &cleaned)?;
     validate_plan_field_constraints(&cleaned)?; // R34
 
     let merged_str =
         serde_json::to_string(&Value::Object(cleaned)).map_err(|e| AppError::Other(e.into()))?;
 
-    sqlx::query!(
-        r#"UPDATE work_items SET attributes = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
-        id,
-        merged_str,
+    tx.execute(
+        r#"UPDATE work_items SET attributes = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"#,
+        args![id.to_owned(), merged_str],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({ "attributes_merged": true });
-    record_event(&mut tx, "work_item", id, "work_item.updated", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.updated", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -2026,27 +2051,25 @@ pub async fn set_work_item_attributes(
 /// `update_work_item` partial-update convention — position is one of its
 /// COALESCE fields). `NotFound` via `rows_affected()==0`.
 pub async fn reorder_work_item(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     position: i64,
 ) -> Result<(), AppError> {
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET position = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
-        id,
-        position,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET position = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"#,
+            args![id.to_owned(), position],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{id}' not found")));
     }
 
     let payload = serde_json::json!({ "position": position });
-    record_event(&mut tx, "work_item", id, "work_item.updated", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.updated", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -2300,32 +2323,32 @@ pub async fn resolve_finding(
 /// owns export identity, so hard-delete would orphan the export TOML and lose
 /// history. Idempotent-ish: a row already deleted (or absent) is `NotFound` via
 /// `rows_affected()==0`. Event `work_item.deleted`.
-pub async fn delete_work_item(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
-    let mut tx = crate::db::begin_write(pool).await?;
+pub async fn delete_work_item(db: &impl DbClient, id: &str) -> Result<(), AppError> {
+    let mut tx = db.begin().await?;
 
     // R36: block soft-deleting a `focus` that still has non-terminal, non-deleted
     // child stories. The epic-done gate's rollup counts only stories whose focus
     // parent is `deleted_at IS NULL` (enforce_epic_done_gate), so tombstoning a
     // focus mid-flight would silently drop its live stories from the rollup and
     // let the epic close with non-terminal descendants. Force explicit story
-    // disposition first. Read inside the tx (runtime string API — no new compile-
-    // checked query, so the committed .sqlx cache is untouched) so the liveness
-    // check and the soft-delete share one snapshot under the writer lock. A
+    // disposition first. Read inside the tx through the seam so the liveness check
+    // and the soft-delete share one snapshot under the writer lock. A
     // missing/already-deleted id yields kind=None here and falls through to the
     // UPDATE's `affected == 0` NotFound path below — behaviour preserved.
-    let kind: Option<String> =
-        sqlx::query_scalar("SELECT kind FROM work_items WHERE id = ?1 AND deleted_at IS NULL")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let kind: Option<String> = crate::db::tx_scalar_opt::<String>(
+        tx.as_mut(),
+        "SELECT kind FROM work_items WHERE id = $1 AND deleted_at IS NULL",
+        args![id.to_owned()],
+    )
+    .await?;
     if kind.as_deref() == Some("focus") {
-        let live_stories: i64 = sqlx::query_scalar(
+        let live_stories: i64 = crate::db::tx_scalar_one::<i64>(
+            tx.as_mut(),
             "SELECT COUNT(*) FROM work_items \
-             WHERE kind = 'story' AND parent_id = ?1 AND deleted_at IS NULL \
+             WHERE kind = 'story' AND parent_id = $1 AND deleted_at IS NULL \
              AND status NOT IN ('done','cancelled')",
+            args![id.to_owned()],
         )
-        .bind(id)
-        .fetch_one(&mut *tx)
         .await?;
         if live_stories > 0 {
             return Err(AppError::Validation(format!(
@@ -2335,20 +2358,19 @@ pub async fn delete_work_item(pool: &SqlitePool, id: &str) -> Result<(), AppErro
         }
     }
 
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
-        id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"#,
+            args![id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{id}' not found")));
     }
 
     let payload = serde_json::json!({ "deleted": true });
-    record_event(&mut tx, "work_item", id, "work_item.deleted", payload).await?;
+    record_event(tx.as_mut(), "work_item", id, "work_item.deleted", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -4274,11 +4296,11 @@ pub async fn remove_task_dependency(
 /// is a discriminator the sprint composer may legitimately want to clear). One
 /// event `work_item.task_kind_set`.
 pub async fn set_task_kind(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     task_id: &str,
     task_kind: Option<TaskKind>,
 ) -> Result<(), AppError> {
-    let kind = work_item_kind(pool, task_id).await?;
+    let kind = work_item_kind(db, task_id).await?;
     if kind != "task" {
         return Err(AppError::Validation(format!(
             "task_kind is settable only on a task, not on '{kind}'"
@@ -4287,23 +4309,21 @@ pub async fn set_task_kind(
 
     let value: Option<String> = task_kind.map(enum_to_str);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET task_kind = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1"#,
-        task_id,
-        value,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET task_kind = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            args![task_id.to_owned(), value.clone()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
     }
 
     let payload = serde_json::json!({ "task_id": task_id, "task_kind": value });
-    record_event(&mut tx, "work_item", task_id, "work_item.task_kind_set", payload).await?;
+    record_event(tx.as_mut(), "work_item", task_id, "work_item.task_kind_set", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -4644,11 +4664,11 @@ pub async fn get_task_dispatch_plan(
 ///
 /// `tier == None` clears the column (writes NULL).
 pub async fn set_task_tier(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     task_id: &str,
     tier: Option<Tier>,
 ) -> Result<(), AppError> {
-    let kind = work_item_kind(pool, task_id).await?;
+    let kind = work_item_kind(db, task_id).await?;
     if kind != "task" {
         return Err(AppError::Validation(format!(
             "tier is settable only on a task, not on '{kind}'"
@@ -4657,23 +4677,21 @@ pub async fn set_task_tier(
 
     let value: Option<String> = tier.map(enum_to_str);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE work_items SET tier = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"#,
-        task_id,
-        value,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET tier = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"#,
+            args![task_id.to_owned(), value.clone()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
     }
 
     let payload = serde_json::json!({ "task_id": task_id, "tier": value });
-    record_event(&mut tx, "work_item", task_id, "work_item.tier_set", payload).await?;
+    record_event(tx.as_mut(), "work_item", task_id, "work_item.tier_set", payload).await?;
 
     tx.commit().await?;
     Ok(())

@@ -317,6 +317,115 @@ impl DbClient for AnyPool {
     }
 }
 
+/// Transitional / test [`DbClient`] impl for a bare `SqlitePool`.
+///
+/// During the macro-eradication waves (A4–A11) the repo functions flip their
+/// signature from `pool: &SqlitePool` to `db: &impl DbClient`, but every caller
+/// (`mcp.rs`, `http/*`, the repo unit tests) still passes a `&SqlitePool` — and
+/// `AppState.pool` stays `Arc<SqlitePool>` until the A12 handle swap. Without
+/// this impl a bare `&SqlitePool` would NOT satisfy `&impl DbClient` and the
+/// build would break mid-wave. With it, every existing `&SqlitePool` call site
+/// and test compiles UNCHANGED, and `&AnyPool` (post-A12) satisfies the same
+/// generic bound — which is exactly what makes the A12 swap "purely the handle
+/// type". This impl is KEPT permanently: tests construct `SqlitePool` directly
+/// via [`connect_in_memory`]. It mirrors the [`AnyPool`] SQLite arm method for
+/// method (including the `from_sqlx_not_found` mapping in `query_one`).
+#[async_trait]
+impl DbClient for SqlitePool {
+    async fn execute(&self, sql: &'static str, args: Args) -> Result<u64, AppError> {
+        let res = sqlx::query_with(sql, args.into_sqlite())
+            .execute(self)
+            .await?;
+        Ok(res.rows_affected())
+    }
+
+    async fn query_opt<T>(&self, sql: &'static str, args: Args) -> Result<Option<T>, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        let row = sqlx::query_as_with::<_, T, _>(sql, args.into_sqlite())
+            .fetch_optional(self)
+            .await?;
+        Ok(row)
+    }
+
+    async fn query_one<T>(&self, sql: &'static str, args: Args) -> Result<T, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        let row = sqlx::query_as_with::<_, T, _>(sql, args.into_sqlite())
+            .fetch_one(self)
+            .await
+            .map_err(|e| AppError::from_sqlx_not_found(e, ""))?;
+        Ok(row)
+    }
+
+    async fn query_all<T>(&self, sql: &'static str, args: Args) -> Result<Vec<T>, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        let rows = sqlx::query_as_with::<_, T, _>(sql, args.into_sqlite())
+            .fetch_all(self)
+            .await?;
+        Ok(rows)
+    }
+
+    async fn begin(&self) -> Result<Box<dyn DbTx + '_>, AppError> {
+        let tx = self.begin_with("BEGIN IMMEDIATE").await?;
+        Ok(Box::new(tx))
+    }
+
+    fn backend(&self) -> Backend {
+        Backend::Sqlite
+    }
+}
+
+/// Transitional [`DbClient`] impl for `Arc<SqlitePool>` (the `AppState.pool`
+/// handle type until the A12 swap). Callers in `mcp.rs` pass `&self.pool` — a
+/// `&Arc<SqlitePool>` — directly as `&impl DbClient`; trait-bound resolution
+/// does NOT auto-deref through `Arc`, so the `Arc` itself must impl `DbClient`.
+/// Every method delegates to the inner [`SqlitePool`] impl via `&**self`. Kept
+/// permanently for the same reason as the bare-`SqlitePool` impl above; dropped
+/// only if A12 changes `AppState.pool` to `Arc<AnyPool>` AND all call sites
+/// switch to `&*self.pool`.
+#[async_trait]
+impl DbClient for std::sync::Arc<SqlitePool> {
+    async fn execute(&self, sql: &'static str, args: Args) -> Result<u64, AppError> {
+        (**self).execute(sql, args).await
+    }
+
+    async fn query_opt<T>(&self, sql: &'static str, args: Args) -> Result<Option<T>, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        (**self).query_opt(sql, args).await
+    }
+
+    async fn query_one<T>(&self, sql: &'static str, args: Args) -> Result<T, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        (**self).query_one(sql, args).await
+    }
+
+    async fn query_all<T>(&self, sql: &'static str, args: Args) -> Result<Vec<T>, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        (**self).query_all(sql, args).await
+    }
+
+    async fn begin(&self) -> Result<Box<dyn DbTx + '_>, AppError> {
+        // Disambiguate to the `DbClient` trait method on the inner pool — bare
+        // `.begin()` would resolve to sqlx's inherent `Pool::begin`.
+        <SqlitePool as DbClient>::begin(&**self).await
+    }
+
+    fn backend(&self) -> Backend {
+        <SqlitePool as DbClient>::backend(&**self)
+    }
+}
+
 /// A backend-erased row, returned by the object-safe [`DbTx`] `fetch_*`
 /// primitives. The free `tx_query_*` helpers decode it via `FromRow`. A future
 /// Pg arm adds a `Pg(PgRow)` variant; the helpers stay generic over the wrapped
