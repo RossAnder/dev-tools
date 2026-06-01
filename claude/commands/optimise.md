@@ -173,6 +173,7 @@ Launch **all five** agents in parallel using the Agent tool (subagent_type: "res
 Every agent MUST:
 - Read each changed file relevant to their lens in full and explore related code for context
 - **You MUST research actively** — use Context7 MCP tools (resolve-library-id then query-docs) to look up the specific APIs and patterns being used, and you MUST use WebSearch to find current performance guidance, benchmarks, and known pitfalls for the relevant technologies. Do not rely on training data alone — verify against current documentation
+- **Reach for scholarly & low-level sources when the win would be a novel algorithm, data structure, or microarchitectural technique** — not just a library-API swap. Your `research-deep` system prompt carries the "Scholarly & Low-Level Sources" contract (arXiv / Semantic Scholar / OpenAlex / DBLP WebFetch endpoints, the domain→venue map, the forward-citation workflow, the paper-source grading rule, and the untrusted-input guardrail). The per-lens venue family for your agent is named in your lens section below — start there, then traverse forward-citations to the current edge. Keep paper-derived "apply this here" claims at `low — hypothesis` until a benchmark backs them, per that contract.
 - Adapt their analysis to the technology at hand — .NET, PostgreSQL, Vue/TypeScript, Rust, etc. Not every lens applies to every file
 - Explain the *why* behind each finding — what's the cost of the current approach and what does the better approach gain? Reference documentation or benchmarks found during research
 - Categorize every finding with a severity: **critical** (measurable perf impact), **warning** (likely overhead or missed opportunity), or **suggestion** (marginal gain or future consideration)
@@ -201,6 +202,8 @@ Tailor analysis to the project's language and runtime. Consider the idiomatic al
 
 You MUST research the specific APIs being used via Context7 to understand their allocation profiles and runtime behaviour — many framework methods have zero-alloc or more JIT-friendly alternatives that aren't obvious without checking the docs.
 
+**Scholarly/low-level venue family**: compilers, codegen & memory management (PLDI, CGO, CC, **ISMM** specifically for allocators/GC) and the low-level manuals (Intel Optimization Reference Manual, Agner Fog's instruction/microarchitecture tables) for hot-path codegen and cache-behaviour detail. Browse arXiv `cs.PL`/`cs.PF` for recent allocator/devirtualization work, then traverse forward-citations.
+
 ### Agent 2: Data Shape and Wire Efficiency
 
 Examine how data is shaped, serialized, and moved between components — across the network, the process boundary, and the storage layer. Consider payload shape and size, zero-copy or borrow-based deserialization where available, schema-evolution cost, compression, whether transformations happen at the right layer (server vs client, database vs application), and whether the chosen format fits the access pattern.
@@ -212,11 +215,15 @@ Tailor the analysis to the stack. Relevant sub-concerns by ecosystem:
 
 You MUST research the specific serialization libraries and framework versions in use via Context7 — this area evolves rapidly and guidance shifts between versions.
 
+**Scholarly/low-level venue family**: databases & indexing (VLDB, SIGMOD) for columnar/wire-format and encoding work, and systems & storage (OSDI, FAST) for serialization-at-the-storage-boundary techniques. Browse arXiv `cs.DB`/`cs.DC` for zero-copy / compression-format papers, then traverse forward-citations to the current edge.
+
 ### Agent 3: Queries and Data Access
 
 Examine database interactions and data access patterns. Look at query efficiency, whether compiled queries or raw SQL would be more appropriate, index utilization, connection and command lifecycle, pagination approaches, and caching strategy. Consider database-specific optimizations and EXPLAIN plan implications.
 
 You MUST research the specific ORM and data access patterns used to check for known performance pitfalls and recommended alternatives. Use Context7 to look up the actual query translation behaviour of methods being used.
+
+**Scholarly/low-level venue family**: databases & indexing (VLDB, SIGMOD, PODS) — this is the lens whose venue map is richest, covering query planning, index structures (learned indexes, adaptive radix trees), and access-method design. Seed from a recent VLDB/SIGMOD paper on the relevant index or join strategy, then traverse forward-citations.
 
 ### Agent 4: Algorithmic and Structural Efficiency
 
@@ -225,6 +232,8 @@ Examine the algorithmic choices and data structures used. Consider time and spac
 Expressiveness and correctness of data-shape design (illegal-state-unrepresentable, discriminated unions, newtypes, redundant representations) is `/review` Agent 1's concern — keep findings here framed around access-pattern fitness, complexity class, or allocation/reconciliation cost. If a finding is about how the type *models the domain* rather than how it *performs under access*, it belongs in `/review`.
 
 You MUST research whether the frameworks provide built-in optimised alternatives for any patterns found.
+
+**Scholarly/low-level venue family**: algorithms & data structures (SODA, ESA, ICALP, SoCG) — this is the lens that benefits most from the forward-citation workflow, since better-asymptotic or better-constant-factor structures (succinct/compact structures, cache-oblivious layouts) live in proceedings, not blogs. Browse arXiv `cs.DS` by recency, seed from a strong recent result, and traverse forward to the current edge. Hold "rewrite with structure X" findings at `low — hypothesis` until a benchmark on comparable data backs the change — an asymptotically-better structure often loses on real-world n.
 
 ### Agent 5: Async and Concurrency Architecture
 
@@ -239,6 +248,8 @@ Examine how the code structures concurrent and asynchronous work. Consider:
 - **Contention hotspots** — are shared resources (locks, channels, atomics) accessed at a frequency that could cause contention under load? Could sharding, thread-local caching, or lock-free structures reduce contention?
 
 Focus on the idioms and primitives of the project's async runtime. Common runtime-specific concerns include: in .NET — Task vs ValueTask, ConfigureAwait, Channel\<T\>, SemaphoreSlim, IHostedService lifecycle; in Rust — JoinSet vs spawn, select! branches, sync Mutex vs tokio Mutex, blocking in async; on the frontend — request deduplication, race conditions in reactive state, concurrent fetch management. You MUST research the specific async runtime and concurrency primitives in use via Context7 — correct usage of these APIs is subtle and version-dependent.
+
+**Scholarly/low-level venue family**: concurrency & parallelism (PPoPP, SPAA, PODC) for lock-free / wait-free structures and contention-reduction techniques, and systems (OSDI, SOSP, EuroSys) for scheduler / runtime / backpressure design. Browse arXiv `cs.DC` for recent concurrent-data-structure and work-stealing work, then traverse forward-citations.
 
 ## Step 2.5: Vet agent output (orchestrator)
 

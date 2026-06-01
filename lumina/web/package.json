@@ -15,7 +15,7 @@
     "@fontsource/geist-sans": "^5.2.5",
     "@fontsource/instrument-serif": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "vue": "3.6.0-beta.12",
+    "vue": "3.6.0-beta.13",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -29,9 +29,9 @@
     "npm-run-all2": "^9.0.1",
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.3",
-    "vite": "^8.0.14",
+    "vite": "^8.0.15",
     "vite-plugin-vue-devtools": "^8.1.2",
-    "vue-tsc": "^3.3.2"
+    "vue-tsc": "^3.3.3"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

@@ -255,8 +255,8 @@ slug = "lumina-epic-focus-semantics"
 last_used = "2026-05-29T08:57:48.4717117Z"
 
 [[active]]
-slug = "lumina-findings-queues-bulk-io"
-last_used = "2026-05-29T11:44:36.6470593Z"
+slug = "declarative-frolicking-cerf"
+last_used = "2026-06-01T04:41:47.7525316Z"
 
 [active.binding]
 branch = "main"
@@ -266,6 +266,9 @@ scope = [
     "lumina/migrations/**",
     "lumina/tests/**",
     "lumina/Cargo.toml",
+    "lumina/.cargo/config.toml",
+    "lumina/build.rs",
     "lumina/CLAUDE.md",
+    "CLAUDE.md",
     "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
 ]
