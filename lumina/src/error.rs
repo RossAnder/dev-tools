@@ -79,6 +79,29 @@ impl From<sqlx::Error> for AppError {
     }
 }
 
+impl AppError {
+    /// Map a raw `sqlx::Error` onto the taxonomy with `RowNotFound` lifted to a
+    /// caller-facing `NotFound` (404) rather than an opaque `Db` 500.
+    ///
+    /// Used by the [`crate::db`] seam's `query_one` primitive: a single-row read
+    /// that finds nothing is a 404, not an internal error. Every other sqlx
+    /// failure (decode, protocol, constraint, I/O) stays `Db`. The optional
+    /// `context` is folded into the 404 message so callers see *what* was missing
+    /// (e.g. `"work_item 'abc'"`); pass an empty string for a bare "not found".
+    pub fn from_sqlx_not_found(e: sqlx::Error, context: &str) -> Self {
+        match e {
+            sqlx::Error::RowNotFound => {
+                if context.is_empty() {
+                    AppError::NotFound("row not found".to_owned())
+                } else {
+                    AppError::NotFound(format!("{context} not found"))
+                }
+            }
+            other => AppError::Db(other),
+        }
+    }
+}
+
 impl From<anyhow::Error> for AppError {
     fn from(e: anyhow::Error) -> Self {
         AppError::Other(e)

@@ -14,8 +14,11 @@ use std::str::FromStr as _;
 use std::time::Duration;
 
 use anyhow::Context as _;
+use async_trait::async_trait;
+use sqlx::sqlite::{SqliteArguments, SqliteConnectOptions, SqliteJournalMode, SqliteRow};
 use sqlx::{Sqlite, SqlitePool, Transaction};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
+
+use crate::error::AppError;
 
 /// SQLite busy-wait budget applied to every pooled connection. With WAL + an
 /// upfront `BEGIN IMMEDIATE` (see [`begin_write`]) the only remaining source of
@@ -87,6 +90,368 @@ fn is_in_memory(database_url: &str) -> bool {
 /// on-disk database. `sqlite::memory:` lives for the lifetime of the pool.
 pub async fn connect_in_memory() -> anyhow::Result<SqlitePool> {
     init("sqlite::memory:").await
+}
+
+// ===========================================================================
+// Backend-abstraction seam (Part A, Wave A0 — Task A1)
+// ===========================================================================
+//
+// This seam is the foundation the macro-eradication waves (A4+) build on: it
+// lets every repo/http/mcp call site speak to the database through a small,
+// backend-erased surface (`DbClient` for auto-commit work, `DbTx` for in-flight
+// transactions) instead of naming `SqlitePool` / `Transaction<'_, Sqlite>`
+// directly. Only the SQLite arm is live today; the `Pg` arms are reserved for
+// the future Part C and are NOT implemented here.
+//
+// Object-safety is the load-bearing constraint (see the `DbTx` doc-comment):
+// `DbTx` is consumed as `&mut dyn DbTx` / `Box<dyn DbTx>`, so it carries ONLY
+// non-generic methods. Typed reads inside a transaction go through the free
+// generic helpers `tx_query_*` below, which call the object-safe `fetch_*`
+// primitives on `DbTx`. `DbClient`, by contrast, is consumed by static dispatch
+// (`&impl DbClient`), so it MAY keep generic `query_*<T>` methods.
+
+/// Which concrete database backend an [`AnyPool`] / [`DbClient`] is fronting.
+/// `Pg` is reserved for the future Part C (live Postgres); only `Sqlite` is
+/// constructed today.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    Sqlite,
+    /// Reserved for Part C. Never constructed in the SQLite-only build.
+    #[allow(dead_code)]
+    Pg,
+}
+
+/// Owned, backend-erased bound-parameter bundle for a single statement.
+///
+/// Values are `add`ed in `$1, $2, …` order and must be `'static` + owned
+/// (`String`, `i64`, `bool`, `Option<String>`, …) so the args outlive the
+/// transient borrow inside `execute`/`fetch_*`. This is a deliberately concrete
+/// (non-`dyn`) type: that is what keeps the `DbTx` primitives object-safe (no
+/// generic `args` parameter leaks onto the trait) while still letting any
+/// `Encode + Type` value be bound. A future Pg arm generalises this by adding a
+/// `Pg(PgArguments)` variant and dispatching in the `execute`/`fetch_*` bodies;
+/// call sites keep using [`args!`] / [`Args::add`] unchanged.
+///
+/// In sqlx 0.9 `SqliteArguments` is itself lifetime-free (it owns its encoded
+/// values), so the wrapper needs no lifetime parameter either.
+pub struct Args(SqliteArguments);
+
+impl Args {
+    /// An empty argument list (for statements with no bound parameters).
+    pub fn new() -> Self {
+        Args(SqliteArguments::default())
+    }
+
+    /// Bind the next positional parameter. Chains, so call sites read
+    /// `Args::new().add(a).add(b)`. Panics only on an internal sqlx encode-time
+    /// failure (e.g. a value that cannot be encoded), which is a programmer
+    /// error at the bind site, not a runtime DB error.
+    ///
+    /// The `add` name is deliberate (it mirrors sqlx's own `Arguments::add` and
+    /// reads naturally in the builder chain); it is not the `std::ops::Add::add`
+    /// operator, so the `should_implement_trait` lint is suppressed.
+    #[allow(clippy::should_implement_trait)]
+    pub fn add<T>(mut self, value: T) -> Self
+    where
+        T: 'static + sqlx::Encode<'static, Sqlite> + sqlx::Type<Sqlite>,
+    {
+        use sqlx::Arguments as _;
+        self.0
+            .add(value)
+            .expect("binding a parameter value should not fail to encode");
+        self
+    }
+
+    /// Consume into the raw `SqliteArguments` for handing to a `query_*_with`.
+    fn into_sqlite(self) -> SqliteArguments {
+        self.0
+    }
+}
+
+impl Default for Args {
+    fn default() -> Self {
+        Args::new()
+    }
+}
+
+/// Convenience constructor: `args![a, b, c]` == `Args::new().add(a).add(b).add(c)`.
+#[macro_export]
+macro_rules! args {
+    () => { $crate::db::Args::new() };
+    ($($v:expr),+ $(,)?) => {{
+        let a = $crate::db::Args::new();
+        $(let a = a.add($v);)+
+        a
+    }};
+}
+
+/// A backend-erased connection pool. Today only the `Sqlite` arm exists; the
+/// `Pg(PgPool)` arm is added in Part C. Construct via [`AnyPool::Sqlite`] or
+/// [`AnyPool::from`] (a `SqlitePool`).
+pub enum AnyPool {
+    Sqlite(SqlitePool),
+}
+
+impl From<SqlitePool> for AnyPool {
+    fn from(pool: SqlitePool) -> Self {
+        AnyPool::Sqlite(pool)
+    }
+}
+
+impl AnyPool {
+    /// Borrow the underlying `SqlitePool`. Panics on a (future) `Pg` arm — used
+    /// only by the not-yet-converted code paths that still need the raw pool
+    /// while the macro-eradication waves are in flight.
+    #[allow(dead_code)]
+    pub fn sqlite(&self) -> &SqlitePool {
+        match self {
+            AnyPool::Sqlite(p) => p,
+        }
+    }
+}
+
+/// Auto-commit query surface, consumed by static dispatch (`&impl DbClient`).
+///
+/// Because every call site passes a concrete `&AnyPool` as `&impl DbClient`,
+/// this trait is NOT required to be object-safe and so MAY carry generic
+/// `query_*<T: FromRow>` methods. The SQLite arm is the only live impl.
+#[async_trait]
+pub trait DbClient: Send + Sync {
+    /// Run a non-returning statement; yields the affected-row count.
+    async fn execute(&self, sql: &'static str, args: Args) -> Result<u64, AppError>;
+
+    /// Run a SELECT expected to return at most one row.
+    async fn query_opt<T>(&self, sql: &'static str, args: Args) -> Result<Option<T>, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin;
+
+    /// Run a SELECT expected to return exactly one row; `RowNotFound` →
+    /// [`AppError::NotFound`].
+    async fn query_one<T>(&self, sql: &'static str, args: Args) -> Result<T, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin;
+
+    /// Run a SELECT returning zero or more rows.
+    async fn query_all<T>(&self, sql: &'static str, args: Args) -> Result<Vec<T>, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin;
+
+    /// Open a write transaction. On SQLite this issues `BEGIN IMMEDIATE` (the
+    /// same RESERVED-lock-at-begin semantics as [`begin_write`]), so writer
+    /// contention surfaces upfront rather than after the first statement.
+    async fn begin(&self) -> Result<Box<dyn DbTx + '_>, AppError>;
+
+    /// Which backend this client fronts.
+    fn backend(&self) -> Backend;
+}
+
+#[async_trait]
+impl DbClient for AnyPool {
+    async fn execute(&self, sql: &'static str, args: Args) -> Result<u64, AppError> {
+        match self {
+            AnyPool::Sqlite(pool) => {
+                let res = sqlx::query_with(sql, args.into_sqlite())
+                    .execute(pool)
+                    .await?;
+                Ok(res.rows_affected())
+            }
+        }
+    }
+
+    async fn query_opt<T>(&self, sql: &'static str, args: Args) -> Result<Option<T>, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        match self {
+            AnyPool::Sqlite(pool) => {
+                let row = sqlx::query_as_with::<_, T, _>(sql, args.into_sqlite())
+                    .fetch_optional(pool)
+                    .await?;
+                Ok(row)
+            }
+        }
+    }
+
+    async fn query_one<T>(&self, sql: &'static str, args: Args) -> Result<T, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        match self {
+            AnyPool::Sqlite(pool) => {
+                let row = sqlx::query_as_with::<_, T, _>(sql, args.into_sqlite())
+                    .fetch_one(pool)
+                    .await
+                    .map_err(|e| AppError::from_sqlx_not_found(e, ""))?;
+                Ok(row)
+            }
+        }
+    }
+
+    async fn query_all<T>(&self, sql: &'static str, args: Args) -> Result<Vec<T>, AppError>
+    where
+        T: for<'r> sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    {
+        match self {
+            AnyPool::Sqlite(pool) => {
+                let rows = sqlx::query_as_with::<_, T, _>(sql, args.into_sqlite())
+                    .fetch_all(pool)
+                    .await?;
+                Ok(rows)
+            }
+        }
+    }
+
+    async fn begin(&self) -> Result<Box<dyn DbTx + '_>, AppError> {
+        match self {
+            AnyPool::Sqlite(pool) => {
+                let tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+                Ok(Box::new(tx))
+            }
+        }
+    }
+
+    fn backend(&self) -> Backend {
+        match self {
+            AnyPool::Sqlite(_) => Backend::Sqlite,
+        }
+    }
+}
+
+/// A backend-erased row, returned by the object-safe [`DbTx`] `fetch_*`
+/// primitives. The free `tx_query_*` helpers decode it via `FromRow`. A future
+/// Pg arm adds a `Pg(PgRow)` variant; the helpers stay generic over the wrapped
+/// row type.
+pub enum AnyRow {
+    Sqlite(SqliteRow),
+}
+
+/// An in-flight write transaction, backend-erased and **object-safe**.
+///
+/// ## Object-safety contract (load-bearing — do not add generic methods)
+/// `DbTx` is consumed as `&mut dyn DbTx` and `Box<dyn DbTx>`, so it MUST stay
+/// object-safe: every method here is non-generic. Typed SELECTs inside a
+/// transaction are NOT methods on this trait — they live in the free generic
+/// helpers [`tx_query_one`] / [`tx_query_opt`] / [`tx_query_all`], which decode
+/// the erased [`AnyRow`] returned by the `fetch_*` primitives below.
+///
+/// ## `record_event` coercion contract (Task A3 depends on this)
+/// `sqlx::Transaction<'_, Sqlite>` implements `DbTx`, so an in-flight
+/// `tx: Transaction<'_, Sqlite>` coerces at a call site via `&mut tx as
+/// &mut dyn DbTx` — i.e. `&mut tx` unsizes to `&mut dyn DbTx`. This is what lets
+/// A3 change `record_event(tx: &mut Transaction<'_, Sqlite>, …)` to
+/// `record_event(tx: &mut dyn DbTx, …)` WITHOUT editing record_event's ~100
+/// callers: they all pass `&mut tx` already, which now satisfies the new
+/// parameter type by unsizing. `execute` runs a bound INSERT/UPDATE (e.g.
+/// record_event's 5-column `events` insert) inside the transaction.
+#[async_trait]
+pub trait DbTx: Send {
+    /// Run a non-returning statement inside the transaction; affected-row count.
+    async fn execute(&mut self, sql: &'static str, args: Args) -> Result<u64, AppError>;
+
+    /// Fetch at most one row (object-safe primitive; decode via [`tx_query_opt`]).
+    async fn fetch_optional(
+        &mut self,
+        sql: &'static str,
+        args: Args,
+    ) -> Result<Option<AnyRow>, AppError>;
+
+    /// Fetch zero or more rows (object-safe primitive; decode via [`tx_query_all`]).
+    async fn fetch_all(&mut self, sql: &'static str, args: Args) -> Result<Vec<AnyRow>, AppError>;
+
+    /// Commit the transaction, consuming it.
+    async fn commit(self: Box<Self>) -> Result<(), AppError>;
+}
+
+#[async_trait]
+impl DbTx for Transaction<'_, Sqlite> {
+    async fn execute(&mut self, sql: &'static str, args: Args) -> Result<u64, AppError> {
+        let res = sqlx::query_with(sql, args.into_sqlite())
+            .execute(&mut **self)
+            .await?;
+        Ok(res.rows_affected())
+    }
+
+    async fn fetch_optional(
+        &mut self,
+        sql: &'static str,
+        args: Args,
+    ) -> Result<Option<AnyRow>, AppError> {
+        let row = sqlx::query_with(sql, args.into_sqlite())
+            .fetch_optional(&mut **self)
+            .await?;
+        Ok(row.map(AnyRow::Sqlite))
+    }
+
+    async fn fetch_all(&mut self, sql: &'static str, args: Args) -> Result<Vec<AnyRow>, AppError> {
+        let rows = sqlx::query_with(sql, args.into_sqlite())
+            .fetch_all(&mut **self)
+            .await?;
+        Ok(rows.into_iter().map(AnyRow::Sqlite).collect())
+    }
+
+    async fn commit(self: Box<Self>) -> Result<(), AppError> {
+        Transaction::commit(*self).await?;
+        Ok(())
+    }
+}
+
+/// Decode an [`AnyRow`] into a `FromRow` type. Free function (not a trait
+/// method) so the `FromRow` generic stays off the object-safe [`DbTx`] surface.
+fn decode_row<T>(row: AnyRow) -> Result<T, AppError>
+where
+    T: for<'r> sqlx::FromRow<'r, SqliteRow>,
+{
+    match row {
+        AnyRow::Sqlite(r) => T::from_row(&r).map_err(AppError::Db),
+    }
+}
+
+/// Typed SELECT inside a transaction, expecting exactly one row.
+/// `RowNotFound` → [`AppError::NotFound`]. Calls the object-safe
+/// [`DbTx::fetch_optional`] primitive, so it works through `&mut dyn DbTx`.
+#[allow(dead_code)]
+pub async fn tx_query_one<T>(
+    tx: &mut dyn DbTx,
+    sql: &'static str,
+    args: Args,
+) -> Result<T, AppError>
+where
+    T: for<'r> sqlx::FromRow<'r, SqliteRow>,
+{
+    match tx.fetch_optional(sql, args).await? {
+        Some(row) => decode_row(row),
+        None => Err(AppError::NotFound("row not found".to_owned())),
+    }
+}
+
+/// Typed SELECT inside a transaction, expecting at most one row.
+#[allow(dead_code)]
+pub async fn tx_query_opt<T>(
+    tx: &mut dyn DbTx,
+    sql: &'static str,
+    args: Args,
+) -> Result<Option<T>, AppError>
+where
+    T: for<'r> sqlx::FromRow<'r, SqliteRow>,
+{
+    match tx.fetch_optional(sql, args).await? {
+        Some(row) => Ok(Some(decode_row(row)?)),
+        None => Ok(None),
+    }
+}
+
+/// Typed SELECT inside a transaction, returning zero or more rows.
+#[allow(dead_code)]
+pub async fn tx_query_all<T>(
+    tx: &mut dyn DbTx,
+    sql: &'static str,
+    args: Args,
+) -> Result<Vec<T>, AppError>
+where
+    T: for<'r> sqlx::FromRow<'r, SqliteRow>,
+{
+    let rows = tx.fetch_all(sql, args).await?;
+    rows.into_iter().map(decode_row).collect()
 }
 
 #[cfg(test)]
@@ -210,5 +575,216 @@ mod tests {
             reparent.is_err(),
             "expected the BEFORE UPDATE trigger to reject re-parenting a task under a project, got Ok"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Seam tests (Task A1) — exercise DbClient / DbTx / AnyPool against an
+    // in-memory pool.
+    // -----------------------------------------------------------------------
+
+    /// A minimal hand-written `FromRow` row mapper proving the generic-over-`R`
+    /// pattern the A2 wave generalises. Decodes `(id, kind, title)` from a
+    /// `work_items` SELECT.
+    #[derive(Debug, PartialEq, Eq)]
+    struct ItemRow {
+        id: String,
+        kind: String,
+        title: String,
+    }
+
+    impl<'r, R> sqlx::FromRow<'r, R> for ItemRow
+    where
+        R: sqlx::Row,
+        usize: sqlx::ColumnIndex<R>,
+        String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    {
+        fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+            Ok(ItemRow {
+                id: row.try_get(0)?,
+                kind: row.try_get(1)?,
+                title: row.try_get(2)?,
+            })
+        }
+    }
+
+    const SELECT_ITEM: &str =
+        "SELECT id, kind, title FROM work_items WHERE id = $1";
+    const SELECT_TITLES: &str =
+        "SELECT id, kind, title FROM work_items WHERE kind = $1 ORDER BY id";
+    const INSERT_PROJECT: &str =
+        "INSERT INTO work_items (id, kind, parent_id, title, status, shape) \
+         VALUES ($1, 'project', NULL, $2, 'open', NULL)";
+
+    /// `DbClient::execute` runs a parameterised INSERT and reports the affected
+    /// row count.
+    #[tokio::test]
+    async fn dbclient_execute_inserts_row() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        assert_eq!(db.backend(), Backend::Sqlite);
+
+        let n = db
+            .execute(INSERT_PROJECT, args!["px".to_owned(), "Proj X".to_owned()])
+            .await
+            .expect("insert");
+        assert_eq!(n, 1, "one row affected");
+    }
+
+    /// `query_one` / `query_opt` / `query_all` read rows back via a hand-written
+    /// `FromRow`. `query_one` on a missing row surfaces `NotFound`.
+    #[tokio::test]
+    async fn dbclient_query_variants_read_rows() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        db.execute(INSERT_PROJECT, args!["p1".to_owned(), "First".to_owned()])
+            .await
+            .expect("insert p1");
+        db.execute(INSERT_PROJECT, args!["p2".to_owned(), "Second".to_owned()])
+            .await
+            .expect("insert p2");
+
+        // query_one — exactly one row.
+        let one: ItemRow = db
+            .query_one(SELECT_ITEM, args!["p1".to_owned()])
+            .await
+            .expect("query_one p1");
+        assert_eq!(
+            one,
+            ItemRow {
+                id: "p1".to_owned(),
+                kind: "project".to_owned(),
+                title: "First".to_owned(),
+            }
+        );
+
+        // query_opt — present and absent.
+        let some: Option<ItemRow> = db
+            .query_opt(SELECT_ITEM, args!["p2".to_owned()])
+            .await
+            .expect("query_opt p2");
+        assert_eq!(some.map(|r| r.title), Some("Second".to_owned()));
+        let none: Option<ItemRow> = db
+            .query_opt(SELECT_ITEM, args!["nope".to_owned()])
+            .await
+            .expect("query_opt absent");
+        assert!(none.is_none());
+
+        // query_all — both projects, ordered.
+        let all: Vec<ItemRow> = db
+            .query_all(SELECT_TITLES, args!["project".to_owned()])
+            .await
+            .expect("query_all projects");
+        let titles: Vec<_> = all.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, vec!["First", "Second"]);
+
+        // query_one on a missing row → NotFound (not Db 500).
+        let missing: Result<ItemRow, _> = db.query_one(SELECT_ITEM, args!["ghost".to_owned()]).await;
+        assert!(
+            matches!(missing, Err(AppError::NotFound(_))),
+            "missing single-row read maps to NotFound, got {missing:?}"
+        );
+    }
+
+    /// A tuple `FromRow` (sqlx built-in) also decodes through the seam, proving
+    /// the bound is not specific to hand-written structs.
+    #[tokio::test]
+    async fn dbclient_tuple_from_row() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        db.execute(INSERT_PROJECT, args!["pt".to_owned(), "Tup".to_owned()])
+            .await
+            .expect("insert");
+        let row: (String, String) = db
+            .query_one(
+                "SELECT id, title FROM work_items WHERE id = $1",
+                args!["pt".to_owned()],
+            )
+            .await
+            .expect("tuple query_one");
+        assert_eq!(row, ("pt".to_owned(), "Tup".to_owned()));
+    }
+
+    /// `begin()` issues BEGIN IMMEDIATE; a write through the tx + `commit()`
+    /// persists, visible on a subsequent pool read.
+    #[tokio::test]
+    async fn dbtx_begin_write_commit_persists() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+
+        let mut tx = db.begin().await.expect("begin");
+        let n = tx
+            .execute(INSERT_PROJECT, args!["tx1".to_owned(), "Committed".to_owned()])
+            .await
+            .expect("tx insert");
+        assert_eq!(n, 1);
+        // Read-through the SAME tx via the free helper (object-safe path).
+        let in_tx: Option<ItemRow> = tx_query_opt(tx.as_mut(), SELECT_ITEM, args!["tx1".to_owned()])
+            .await
+            .expect("read in tx");
+        assert_eq!(in_tx.map(|r| r.title), Some("Committed".to_owned()));
+        tx.commit().await.expect("commit");
+
+        // Visible on the pool after commit.
+        let after: ItemRow = db
+            .query_one(SELECT_ITEM, args!["tx1".to_owned()])
+            .await
+            .expect("post-commit read");
+        assert_eq!(after.title, "Committed");
+    }
+
+    /// Dropping a tx WITHOUT commit rolls back — nothing persists.
+    #[tokio::test]
+    async fn dbtx_rollback_on_drop() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        {
+            let mut tx = db.begin().await.expect("begin");
+            tx.execute(INSERT_PROJECT, args!["rb".to_owned(), "Rolled".to_owned()])
+                .await
+                .expect("tx insert");
+            // tx dropped here without commit.
+        }
+        let gone: Option<ItemRow> = db
+            .query_opt(SELECT_ITEM, args!["rb".to_owned()])
+            .await
+            .expect("post-rollback read");
+        assert!(gone.is_none(), "uncommitted write must not persist");
+    }
+
+    /// The `record_event` coercion contract: a raw `Transaction<'_, Sqlite>`
+    /// satisfies `&mut dyn DbTx`. This mirrors how A3 will call
+    /// `record_event(&mut tx, …)` with no caller changes. We obtain a real
+    /// transaction from `begin_write`, coerce `&mut tx` to `&mut dyn DbTx`, and
+    /// write through it — proving the unsizing the A3 edit relies on.
+    #[tokio::test]
+    async fn transaction_coerces_to_dyn_dbtx() {
+        let pool = connect_in_memory().await.expect("pool");
+        let mut tx: Transaction<'_, Sqlite> = begin_write(&pool).await.expect("begin_write");
+
+        // The coercion under test: `&mut tx` unsizes to `&mut dyn DbTx`.
+        let dyn_tx: &mut dyn DbTx = &mut tx;
+        let n = dyn_tx
+            .execute(INSERT_PROJECT, args!["co".to_owned(), "Coerced".to_owned()])
+            .await
+            .expect("write through &mut dyn DbTx");
+        assert_eq!(n, 1);
+        // Read it back through the same dyn ref.
+        let row: ItemRow = tx_query_one(dyn_tx, SELECT_ITEM, args!["co".to_owned()])
+            .await
+            .expect("read through dyn tx");
+        assert_eq!(row.title, "Coerced");
+
+        tx.commit().await.expect("commit raw tx");
+        let after: ItemRow = AnyPool::from(pool)
+            .query_one(SELECT_ITEM, args!["co".to_owned()])
+            .await
+            .expect("post-commit");
+        assert_eq!(after.title, "Coerced");
+    }
+
+    /// Compile-time proof that the seam is object-safe: `Box<dyn DbTx>` and
+    /// `&mut dyn DbTx` are well-formed types. (If `DbTx` grew a generic method
+    /// this would fail to compile.)
+    #[tokio::test]
+    async fn dbtx_is_object_safe() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        let boxed: Box<dyn DbTx + '_> = db.begin().await.expect("begin");
+        let _: Box<dyn DbTx + '_> = boxed;
+        // Also exercise &mut dyn through as_mut already covered above.
     }
 }
