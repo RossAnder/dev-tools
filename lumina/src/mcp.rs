@@ -1069,6 +1069,22 @@ pub struct GetStoryReadinessParams {
     pub story_id: String,
 }
 
+// ---- Findings query/aggregation params (migration 0011, Part B / B21) ----
+//
+// `query_findings` reuses `crate::domain::QueryFindingsFilter` DIRECTLY as its
+// `Parameters<T>` (it already derives `Deserialize + JsonSchema`), so there is
+// no mirror struct for it here. Only `get_story_finding_queue` needs a local
+// single-id params struct (mirroring the other single-id read tools).
+
+/// Arguments for the `get_story_finding_queue` read tool →
+/// `repo::get_story_finding_queue` (migration 0011). The queue spans the story
+/// itself plus its DIRECT task children (excluding any on tombstoned items).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetStoryFindingQueueParams {
+    /// The story work-item id whose live finding-queue to compose.
+    pub story_id: String,
+}
+
 /// Arguments for the `set_task_kind` write tool → `repo::set_task_kind`. The
 /// typed [`TaskKind`] enum advertises the three legal kebab-case values
 /// (`foundation`/`main`/`polish` — migration 0007 narrowed the round-2
@@ -2817,6 +2833,45 @@ impl LuminaTools {
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::json!({ "updated": count }))
     }
+
+    // ---- Findings query/aggregation read tools (migration 0011, Part B / B21)
+
+    /// Query LIVE findings with a static NULL-guard filter, optionally returning
+    /// grouped axis counts instead of full rows (single repo call →
+    /// `repo::query_findings`). Reuses `crate::domain::QueryFindingsFilter`
+    /// directly as the param type (it derives `Deserialize + JsonSchema`).
+    /// Read-only.
+    #[tool(
+        description = "Query LIVE findings with a static NULL-guard filter. Each optional field (work_item_id/run_id/severity/category/status/triage_state) constrains its column; an ABSENT field is unconstrained, so one prepared statement covers every filter combination. Only live (non-superseded) findings are returned. With `count_by = \"severity\"` the result switches to grouped mode, returning {\"counts\":[{key,count}]} (one bucket per severity; NULL severities fold into a `(none)` bucket) instead of {\"findings\":[...]}. Read-only. Advisory: an unfiltered query can return a large set — prefer narrowing the filter (e.g. by work_item_id or run_id), or use count_by to aggregate.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn query_findings(
+        &self,
+        Parameters(filter): Parameters<crate::domain::QueryFindingsFilter>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "query_findings", "mcp tool invoked");
+        let result = repo::query_findings(&self.pool, &filter)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// Compose a story's review/optimise finding queue (single repo call →
+    /// `repo::get_story_finding_queue`). Read-only.
+    #[tool(
+        description = "Compose a story's finding queue: every LIVE (non-superseded) finding attached to the story itself OR one of its DIRECT task children, ordered newest-flagged first. Findings on tombstoned (soft-deleted) work-items are excluded. Returns the findings as a JSON array. Read-only.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_story_finding_queue(
+        &self,
+        Parameters(GetStoryFindingQueueParams { story_id }): Parameters<GetStoryFindingQueueParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_story_finding_queue", "mcp tool invoked");
+        let rows = repo::get_story_finding_queue(&self.pool, &story_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::to_value(rows).unwrap_or_default())
+    }
 }
 
 impl LuminaTools {
@@ -3051,6 +3106,9 @@ mod tests {
             "add_findings",
             "create_work_items",
             "batch_update_findings",
+            // migration 0011 Part-B query tools (B21)
+            "query_findings",
+            "get_story_finding_queue",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -3060,17 +3118,19 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 61 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 63 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
         //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
         //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
-        //      create_work_items, batch_update_findings).
+        //      create_work_items, batch_update_findings)
+        //    + 2 migration-0011 Part-B query tools (B21: query_findings,
+        //      get_story_finding_queue).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            61,
-            "advertised tool count must be exactly 61, got {}: {names:?}",
+            63,
+            "advertised tool count must be exactly 63, got {}: {names:?}",
             names.len()
         );
 
@@ -3179,6 +3239,9 @@ mod tests {
             "get_story_readiness",
             // migration 0006 / round-3 T4 read tool.
             "get_task_dispatch_plan",
+            // migration 0011 / Part-B query read tools (B21).
+            "query_findings",
+            "get_story_finding_queue",
         ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,
@@ -3630,6 +3693,48 @@ mod tests {
             err.to_string().contains("severity") || err.to_string().contains("variant"),
             "deserialization error should concern the severity enum: {err}"
         );
+    }
+
+    // ---- Findings query/aggregation tools (migration 0011, Part B / B21) -
+
+    /// A legal `query_findings` payload (a couple of filter fields +
+    /// `count_by: "severity"`) deserialises into the reused
+    /// `crate::domain::QueryFindingsFilter` param type; a bogus `count_by`
+    /// value is REJECTED at the deserialise boundary (rmcp → invalid_params).
+    #[tokio::test]
+    async fn query_findings_params_deserialise_and_reject_bad_enum() {
+        // A legal payload: two filter fields + the grouped count axis.
+        let ok = serde_json::from_value::<crate::domain::QueryFindingsFilter>(serde_json::json!({
+            "work_item_id": "w1",
+            "severity": "major",
+            "count_by": "severity"
+        }));
+        assert!(ok.is_ok(), "a legal query_findings payload deserialises");
+
+        // An empty payload is also legal — every field is optional.
+        let empty = serde_json::from_value::<crate::domain::QueryFindingsFilter>(serde_json::json!({}));
+        assert!(empty.is_ok(), "an empty query_findings payload deserialises");
+
+        // A bogus `count_by` axis fails (the FindingAxis enum has only `severity`).
+        let err = serde_json::from_value::<crate::domain::QueryFindingsFilter>(serde_json::json!({
+            "count_by": "bogus_axis"
+        }))
+        .expect_err("an invalid count_by axis must fail to deserialize");
+        assert!(
+            err.to_string().contains("count_by")
+                || err.to_string().contains("variant")
+                || err.to_string().contains("severity"),
+            "deserialization error should concern the count_by axis enum: {err}"
+        );
+    }
+
+    /// A `get_story_finding_queue` payload with a `story_id` deserialises.
+    #[tokio::test]
+    async fn get_story_finding_queue_params_deserialise() {
+        let ok = serde_json::from_value::<GetStoryFindingQueueParams>(serde_json::json!({
+            "story_id": "s1"
+        }));
+        assert!(ok.is_ok(), "a legal get_story_finding_queue payload deserialises");
     }
 
     /// Driving the `add_findings` tool handler against an in-memory pool inserts
