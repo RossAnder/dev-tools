@@ -3228,36 +3228,33 @@ pub async fn find_project_ancestor(
     // parent until we either hit the project (returned) or NULL parent on a
     // non-project (caller maps to Validation). The CTE is bounded by the
     // 5-level hierarchy so the walk is O(5) and termination is structural.
-    let row = sqlx::query!(
+    let found: Option<String> = crate::db::scalar_opt::<String>(
+        pool,
         r#"
         WITH RECURSIVE ancestors(id, kind, parent_id) AS (
-            SELECT id, kind, parent_id FROM work_items WHERE id = ?1
+            SELECT id, kind, parent_id FROM work_items WHERE id = $1
             UNION ALL
             SELECT w.id, w.kind, w.parent_id
             FROM work_items w
             JOIN ancestors a ON w.id = a.parent_id
         )
-        SELECT id AS "id!", kind AS "kind!"
-        FROM ancestors
-        WHERE kind = 'project'
-        LIMIT 1
+        SELECT id FROM ancestors WHERE kind = 'project' LIMIT 1
         "#,
-        work_item_id,
+        args![work_item_id.to_owned()],
     )
-    .fetch_optional(pool)
     .await?;
 
-    if let Some(r) = row {
-        return Ok(r.id);
+    if let Some(id) = found {
+        return Ok(id);
     }
 
     // Distinguish "id does not exist" from "id exists but has no project
     // ancestor": probe the row directly.
-    let exists = sqlx::query!(
-        r#"SELECT 1 AS "one!" FROM work_items WHERE id = ?1"#,
-        work_item_id,
+    let exists = crate::db::scalar_opt::<i64>(
+        pool,
+        r#"SELECT 1 FROM work_items WHERE id = $1"#,
+        args![work_item_id.to_owned()],
     )
-    .fetch_optional(pool)
     .await?
     .is_some();
 
@@ -4602,6 +4599,34 @@ fn task_kind_sort_key(s: Option<&str>) -> u8 {
     }
 }
 
+/// Raw row read by [`compute_task_batches`]: a story's task children with the
+/// `task_kind` discriminator carried alongside so the intra-phase sort avoids a
+/// second query. Generic over `R: Row` per the canonical [`crate::db`] FromRow
+/// recipe; `task_kind` is nullable (`Option<String>`), `id`/`created_at` are
+/// NOT-NULL (`String`).
+#[derive(Debug)]
+struct TaskBatchRow {
+    id: String,
+    task_kind: Option<String>,
+    created_at: String,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for TaskBatchRow
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(TaskBatchRow {
+            id: row.try_get("id")?,
+            task_kind: row.try_get("task_kind")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
 /// Compute task batches (phases) for a story via Kahn's topological sort.
 /// Returns a `Vec` of phases, each phase a `Vec` of task ids whose dependencies
 /// were satisfied by earlier phases. Within a phase, tasks sort by
@@ -4632,22 +4657,19 @@ pub async fn compute_task_batches(
     // intra-phase tie-breaking when task_kind is NULL on every task. We carry
     // `task_kind` alongside the id so the intra-phase sort can use it without
     // a second query.
-    let tasks = sqlx::query!(
-        r#"
-        SELECT
-            id        AS "id!",
-            task_kind AS "task_kind?",
-            created_at AS "created_at!"
+    let tasks = pool
+        .query_all::<TaskBatchRow>(
+            r#"
+        SELECT id, task_kind, created_at
         FROM work_items
-        WHERE parent_id = ?1
+        WHERE parent_id = $1
           AND kind = 'task'
           AND deleted_at IS NULL
         ORDER BY created_at, id
         "#,
-        story_id,
-    )
-    .fetch_all(pool)
-    .await?;
+            args![story_id.to_owned()],
+        )
+        .await?;
 
     if tasks.is_empty() {
         return Ok(Vec::new());
@@ -4751,6 +4773,32 @@ pub async fn compute_task_batches(
 // Read-only; no transaction, no events.
 // ---------------------------------------------------------------------------
 
+/// Raw row read per-task by [`get_task_dispatch_plan`]: the spec columns
+/// (`effort`/`complexity`/`attributes`) feeding [`compute_tier`]. Generic over
+/// `R: Row` per the canonical [`crate::db`] FromRow recipe; all three columns
+/// are nullable (`Option<String>`).
+#[derive(Debug)]
+struct DispatchSpecRow {
+    effort: Option<String>,
+    complexity: Option<String>,
+    attributes: Option<String>,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for DispatchSpecRow
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(DispatchSpecRow {
+            effort: row.try_get("effort")?,
+            complexity: row.try_get("complexity")?,
+            attributes: row.try_get("attributes")?,
+        })
+    }
+}
+
 /// Story-level dispatch plan. Composes [`compute_task_batches`] with per-task
 /// spec reads (effort/complexity/files_touched) and runs [`compute_tier`] per
 /// row. Returns the same outer shape as `compute_task_batches`
@@ -4785,20 +4833,17 @@ pub async fn get_task_dispatch_plan(
             // rows are filtered to match the read-side convention; an absent
             // row at this point would be a races-with-delete and surfaces as
             // `NotFound`.
-            let row = sqlx::query!(
-                r#"
-                SELECT
-                    effort     AS "effort?",
-                    complexity AS "complexity?",
-                    attributes AS "attributes?"
+            let row = pool
+                .query_opt::<DispatchSpecRow>(
+                    r#"
+                SELECT effort, complexity, attributes
                 FROM work_items
-                WHERE id = ?1 AND deleted_at IS NULL
+                WHERE id = $1 AND deleted_at IS NULL
                 "#,
-                task_id,
-            )
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("work_item '{task_id}' not found")))?;
+                    args![task_id.to_owned()],
+                )
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("work_item '{task_id}' not found")))?;
 
             // Count `files_touched` entries (bare-string OR {repo,path}
             // objects). A malformed `attributes` blob is treated as 0 here
@@ -4993,13 +5038,12 @@ pub async fn get_story_readiness(
 
     let mut tasks_with_no_ac: u32 = 0;
     for t in &tasks {
-        let n = sqlx::query!(
-            r#"SELECT COUNT(*) AS "n!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
-            t.id,
+        let n: i64 = crate::db::scalar_one::<i64>(
+            pool,
+            r#"SELECT COUNT(*) FROM acceptance_criteria WHERE work_item_id = $1"#,
+            args![t.id.clone()],
         )
-        .fetch_one(pool)
-        .await?
-        .n;
+        .await?;
         if n == 0 {
             tasks_with_no_ac += 1;
         }
