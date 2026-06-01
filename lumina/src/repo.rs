@@ -3314,7 +3314,7 @@ fn is_unique_violation(backend: crate::db::Backend, e: &sqlx::Error) -> bool {
 /// Event `repo_link.created` on the owning project's `work_item` aggregate.
 /// Returns the new repo-link id.
 pub async fn add_repo_link(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     project_id: &str,
     slug: &str,
     is_primary: bool,
@@ -3325,35 +3325,37 @@ pub async fn add_repo_link(
     let id_str = id.to_string();
     let is_primary_int: i64 = if is_primary { 1 } else { 0 };
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let backend = db.backend();
+    let mut tx = db.begin().await?;
 
     // Allocate position = MAX(position)+1 per project, inside the tx so a
     // concurrent insert under SQLite's single-writer lock is serialised.
     // COALESCE(MAX(.), -1) + 1 gives 0 for the first row.
-    let position = sqlx::query!(
-        r#"SELECT COALESCE(MAX(position), -1) + 1 AS "next!" FROM repo_links WHERE project_id = ?1"#,
-        project_id,
+    let position = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM repo_links WHERE project_id = $1",
+        args![project_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    let insert = sqlx::query!(
-        r#"
+    match tx
+        .execute(
+            r#"
         INSERT INTO repo_links (id, project_id, slug, position, is_primary, created_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
         "#,
-        id_str,
-        project_id,
-        canonical,
-        position,
-        is_primary_int,
-    )
-    .execute(&mut *tx)
-    .await;
-
-    if let Err(e) = insert {
-        if is_unique_violation(crate::db::Backend::Sqlite, &e) {
+            args![
+                id_str.clone(),
+                project_id.to_owned(),
+                canonical.clone(),
+                position,
+                is_primary_int,
+            ],
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(AppError::Db(ref sqlx_err)) if is_unique_violation(backend, sqlx_err) => {
             // Either the (project_id, slug) UNIQUE or the partial primary UNIQUE
             // index fired. Both are caller-fixable; surface as Validation.
             return Err(AppError::Validation(format!(
@@ -3361,7 +3363,7 @@ pub async fn add_repo_link(
                  primary repo already exists for project '{project_id}' (primary repo conflict)"
             )));
         }
-        return Err(e.into());
+        Err(e) => return Err(e),
     }
 
     let payload = serde_json::json!({
@@ -3370,37 +3372,59 @@ pub async fn add_repo_link(
         "slug": canonical,
         "is_primary": is_primary,
     });
-    record_event(&mut tx, "work_item", project_id, "repo_link.created", payload).await?;
+    record_event(tx.as_mut(), "work_item", project_id, "repo_link.created", payload).await?;
 
     tx.commit().await?;
     Ok(id)
+}
+
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`RepoLink`] aggregate
+/// (canonical recipe, A8 wave). All columns are NOT NULL, so the field types are
+/// `String`/`i64` (no `Option<String>` bound is needed); `is_primary` mirrors the
+/// INTEGER 0/1 as `i64`. Replaces the old `query_as!` `AS "col!"` macro hints.
+impl<'r, R> sqlx::FromRow<'r, R> for RepoLink
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(RepoLink {
+            id: row.try_get("id")?,
+            project_id: row.try_get("project_id")?,
+            slug: row.try_get("slug")?,
+            position: row.try_get("position")?,
+            is_primary: row.try_get("is_primary")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
 }
 
 /// List the `repo_links` rows for a project, ordered by `position` ASC. Returns
 /// an empty Vec for a project with no links (or for a non-project id — caller is
 /// expected to gate this query on `kind='project'`). Read-only; no transaction.
 pub async fn list_repo_links(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     project_id: &str,
 ) -> Result<Vec<RepoLink>, AppError> {
-    let rows = sqlx::query_as!(
-        RepoLink,
-        r#"
+    let rows = db
+        .query_all::<RepoLink>(
+            r#"
         SELECT
-            id         AS "id!",
-            project_id AS "project_id!",
-            slug       AS "slug!",
-            position   AS "position!",
-            is_primary AS "is_primary!",
-            created_at AS "created_at!"
+            id,
+            project_id,
+            slug,
+            position,
+            is_primary,
+            created_at
         FROM repo_links
-        WHERE project_id = ?1
+        WHERE project_id = $1
         ORDER BY position ASC
         "#,
-        project_id,
-    )
-    .fetch_all(pool)
-    .await?;
+            args![project_id.to_owned()],
+        )
+        .await?;
 
     Ok(rows)
 }
@@ -3414,23 +3438,22 @@ pub async fn list_repo_links(
 /// automatically — no separate UPDATE here.
 ///
 /// Event `repo_link.removed` on the owning project's `work_item` aggregate.
-pub async fn remove_repo_link(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+pub async fn remove_repo_link(db: &impl DbClient, id: &str) -> Result<(), AppError> {
     // Resolve the owning project + slug BEFORE the write so the event aggregate
     // is correct and so an absent id is `NotFound` (not `rows_affected()==0`).
-    let row = sqlx::query!(
-        r#"SELECT project_id AS "project_id!", slug AS "slug!" FROM repo_links WHERE id = ?1"#,
-        id,
-    )
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("repo_link '{id}' not found")))?;
-
-    let mut tx = crate::db::begin_write(pool).await?;
-
-    let affected = sqlx::query!(r#"DELETE FROM repo_links WHERE id = ?1"#, id)
-        .execute(&mut *tx)
+    let (project_id, slug) = db
+        .query_opt::<(String, String)>(
+            "SELECT project_id, slug FROM repo_links WHERE id = $1",
+            args![id.to_owned()],
+        )
         .await?
-        .rows_affected();
+        .ok_or_else(|| AppError::NotFound(format!("repo_link '{id}' not found")))?;
+
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute("DELETE FROM repo_links WHERE id = $1", args![id.to_owned()])
+        .await?;
 
     if affected == 0 {
         // Lost a race against a concurrent delete — caller sees NotFound.
@@ -3439,13 +3462,13 @@ pub async fn remove_repo_link(pool: &SqlitePool, id: &str) -> Result<(), AppErro
 
     let payload = serde_json::json!({
         "id": id,
-        "project_id": row.project_id,
-        "slug": row.slug,
+        "project_id": project_id,
+        "slug": slug,
     });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
-        &row.project_id,
+        &project_id,
         "repo_link.removed",
         payload,
     )
@@ -3471,51 +3494,46 @@ pub async fn remove_repo_link(pool: &SqlitePool, id: &str) -> Result<(), AppErro
 /// given project. Event `repo_link.primary_changed` with the previous primary
 /// id (or null) and the new primary id.
 pub async fn set_primary_repo(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     project_id: &str,
     repo_link_id: &str,
 ) -> Result<(), AppError> {
-    let mut tx = crate::db::begin_write(pool).await?;
+    let backend = db.backend();
+    let mut tx = db.begin().await?;
 
     // Step 1: capture the previous primary's id (for the event payload) BEFORE
     // we clear it. NULL if no current primary.
-    let previous: Option<String> = sqlx::query!(
-        r#"SELECT id AS "id!" FROM repo_links WHERE project_id = ?1 AND is_primary = 1"#,
-        project_id,
+    let previous: Option<String> = crate::db::tx_scalar_opt::<String>(
+        tx.as_mut(),
+        "SELECT id FROM repo_links WHERE project_id = $1 AND is_primary = 1",
+        args![project_id.to_owned()],
     )
-    .fetch_optional(&mut *tx)
-    .await?
-    .map(|r| r.id);
+    .await?;
 
     // Step 2: clear the existing primary (idempotent if `previous` is None).
-    sqlx::query!(
-        r#"UPDATE repo_links SET is_primary = 0 WHERE project_id = ?1 AND is_primary = 1"#,
-        project_id,
+    tx.execute(
+        "UPDATE repo_links SET is_primary = 0 WHERE project_id = $1 AND is_primary = 1",
+        args![project_id.to_owned()],
     )
-    .execute(&mut *tx)
     .await?;
 
     // Step 3: promote the target — AND project_id guards against cross-project
     // ids. rows_affected()==0 ⇒ NotFound (id absent or wrong project).
-    let set_result = sqlx::query!(
-        r#"UPDATE repo_links SET is_primary = 1 WHERE id = ?1 AND project_id = ?2"#,
-        repo_link_id,
-        project_id,
-    )
-    .execute(&mut *tx)
-    .await;
-
-    let affected = match set_result {
-        Ok(r) => r.rows_affected(),
-        Err(e) => {
-            if is_unique_violation(crate::db::Backend::Sqlite, &e) {
-                return Err(AppError::Validation(format!(
-                    "primary repo conflict on project '{project_id}': another row already \
-                     holds is_primary=1 (concurrent set_primary_repo)"
-                )));
-            }
-            return Err(e.into());
+    let affected = match tx
+        .execute(
+            "UPDATE repo_links SET is_primary = 1 WHERE id = $1 AND project_id = $2",
+            args![repo_link_id.to_owned(), project_id.to_owned()],
+        )
+        .await
+    {
+        Ok(n) => n,
+        Err(AppError::Db(ref sqlx_err)) if is_unique_violation(backend, sqlx_err) => {
+            return Err(AppError::Validation(format!(
+                "primary repo conflict on project '{project_id}': another row already \
+                 holds is_primary=1 (concurrent set_primary_repo)"
+            )));
         }
+        Err(e) => return Err(e),
     };
 
     if affected == 0 {
@@ -3530,7 +3548,7 @@ pub async fn set_primary_repo(
         "previous_primary_id": previous,
     });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         project_id,
         "repo_link.primary_changed",
