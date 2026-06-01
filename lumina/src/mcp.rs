@@ -1109,6 +1109,154 @@ pub struct SetTaskTierParams {
     pub tier: Option<Tier>,
 }
 
+// ---- Batch-write params (migration 0011, Part B / B18) -------------------
+
+/// One finding in the `add_findings` batch. Mirrors the common subset of
+/// [`AddFindingParams`] (the heterogeneous review/optimise finding shape) minus
+/// the batch-owned channels: `dedup_id` (the repo STAMPS each finding's content
+/// hash itself — callers do NOT supply it) and `run_id` (a top-level field on
+/// [`AddFindingsParams`], applied to every element). The typed `severity` enum
+/// advertises the legal `critical|major|minor|suggestion` values; a bogus value
+/// fails deserialisation → `invalid_params` before the handler runs.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct BatchFindingInput {
+    /// The work-item id this finding attaches to.
+    pub work_item_id: String,
+    /// The finding kind (free-text classification, e.g. `review`/`optimise`).
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// The finding severity; one of `critical`/`major`/`minor`/`suggestion`.
+    #[serde(default)]
+    pub severity: Option<Severity>,
+    /// An effort estimate; optional free-text.
+    #[serde(default)]
+    pub effort: Option<String>,
+    /// A category; optional free-text.
+    #[serde(default)]
+    pub category: Option<String>,
+    /// The offending file path; optional.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// The offending line number; optional.
+    #[serde(default)]
+    pub line: Option<i64>,
+    /// The offending symbol name; optional.
+    #[serde(default)]
+    pub symbol: Option<String>,
+    /// A one-line summary of the finding.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// A long-form description of the finding.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// The evidence grade / weighting (`high|medium|low`); optional free-text.
+    #[serde(default)]
+    pub confidence: Option<String>,
+    /// Optional provenance stamp (which command produced this finding); one of
+    /// `plan`/`implement`/`review`/`optimise`/`tdd`/`human`/`none`.
+    #[serde(default)]
+    pub origin: Option<Origin>,
+    /// Optional FK to a `repo_links` row (migration 0004); omitting it (NULL)
+    /// means the file lives in the project's primary linked repo.
+    #[serde(default)]
+    pub repo_id: Option<String>,
+}
+
+/// Arguments for the `add_findings` batch write tool → `repo::add_findings`
+/// (B17a). A top-level `run_id` (optional) is applied to EVERY element; the
+/// repo stamps each element's dedup content hash itself, so a dedup-collapse is
+/// counted as `skipped` (NOT an error). A validation error aborts the whole
+/// batch.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AddFindingsParams {
+    /// Optional FK to a `runs.id` row; when present, every finding in the batch
+    /// is associated with this review/optimise run.
+    #[serde(default)]
+    pub run_id: Option<String>,
+    /// The findings to insert (each attaches to its own `work_item_id`).
+    pub items: Vec<BatchFindingInput>,
+}
+
+/// One work-item spec in the `create_work_items` batch. Mirrors
+/// [`NewWorkItemSpec`] (kind/parent/title/body + origin/outcome/shape) plus the
+/// optional spawn provenance `spawned_from_finding_id`. The typed `origin` enum
+/// advertises the legal provenance values; a bogus value fails deserialisation.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct NewWorkItemInput {
+    /// The work-item kind; one of `project`/`epic`/`focus`/`story`/`task`.
+    pub kind: String,
+    /// Optional parent work-item id; the parent must ALREADY exist (this batch
+    /// path does NOT support creating a parent within the same call).
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    /// The work-item title.
+    pub title: String,
+    /// Optional body.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Optional provenance stamp; one of
+    /// `plan`/`implement`/`review`/`optimise`/`tdd`/`human`/`none`.
+    #[serde(default)]
+    pub origin: Option<Origin>,
+    /// The epic outcome statement (mandatory for `kind:"epic"` at the repo
+    /// layer); absent for other kinds.
+    #[serde(default)]
+    pub outcome: Option<String>,
+    /// The focus shape (mandatory for `kind:"focus"`); one of
+    /// `vertical-slice`/`cross-cutting`/`foundational`. Absent for other kinds.
+    #[serde(default)]
+    pub shape: Option<String>,
+    /// Optional FK to a `findings.id` row to stamp `spawned_from_finding_id`
+    /// (migration 0011); the referenced finding must already exist (FK).
+    #[serde(default)]
+    pub spawned_from_finding_id: Option<String>,
+}
+
+/// Arguments for the `create_work_items` batch write tool →
+/// `repo::create_work_items` (B17b). All-or-nothing: a single invalid spec
+/// aborts the whole batch (zero rows persist). Returns the new ids in input
+/// order.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateWorkItemsParams {
+    /// The work-item specs to create (in input order).
+    pub items: Vec<NewWorkItemInput>,
+}
+
+/// One finding-triage update in the `batch_update_findings` batch. Set-or-leave:
+/// a `None` field leaves that column unchanged (`COALESCE`). The `status` field
+/// accepts NON-terminal values only — a terminal [`Disposition`] value is
+/// rejected (terminal dispositions belong to `resolve_finding`).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct FindingTriageInput {
+    /// The finding id to update.
+    pub finding_id: String,
+    /// New triage state; absent leaves the existing value unchanged.
+    #[serde(default)]
+    pub triage_state: Option<String>,
+    /// New severity; one of `critical`/`major`/`minor`/`suggestion`; absent
+    /// leaves the existing severity unchanged.
+    #[serde(default)]
+    pub severity: Option<Severity>,
+    /// New category; absent leaves the existing category unchanged.
+    #[serde(default)]
+    pub category: Option<String>,
+    /// New NON-terminal workflow status; absent leaves it unchanged. A terminal
+    /// disposition (`fixed`/`wontfix`/`verified_clean`/`deferred`/`duplicate`)
+    /// is rejected — use `resolve_finding` for terminal dispositions.
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+/// Arguments for the `batch_update_findings` batch write tool →
+/// `repo::batch_update_findings` (B17c). All-or-nothing: a missing finding id
+/// (`NotFound`) or a terminal-disposition `status` (`Validation`) aborts the
+/// whole batch. Returns the count of findings updated.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct BatchUpdateFindingsParams {
+    /// The per-finding triage updates to apply.
+    pub updates: Vec<FindingTriageInput>,
+}
+
 /// The MCP tool-handler. Holds an [`AppState`] clone (whose `pool` mirrors
 /// the legacy `pool` field on this struct for back-compat with the 60+
 /// existing `&self.pool` call sites) plus the generated `ToolRouter` (the
@@ -2547,6 +2695,128 @@ impl LuminaTools {
         structured_result(serde_json::json!({ "id": id }))
     }
 
+    // ---- Batch-write tools (migration 0011, Part B / B18) ---------------
+
+    /// Bulk-insert a batch of findings under ONE transaction (single repo call →
+    /// `repo::add_findings`). The repo STAMPS each finding's dedup content hash
+    /// itself, so a dedup-collapse onto an existing live row is counted as
+    /// `skipped` (NOT an error); a validation error aborts the whole batch.
+    /// Returns `{ added, skipped, skipped_ids }`.
+    #[tool(
+        description = "Bulk-add findings to work items in ONE transaction. Optional top-level `run_id` associates every finding with a review/optimise run. Dedup is automatic (a collapse onto an existing live row counts as `skipped`, not an error). Returns { added, skipped, skipped_ids }. Records one coarse event. Advisory: keep batches to <=~500 rows per call.",
+        annotations(open_world_hint = false)
+    )]
+    async fn add_findings(
+        &self,
+        Parameters(AddFindingsParams { run_id, items }): Parameters<AddFindingsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_findings", "mcp tool invoked");
+        // The repo takes BORROWING input structs (`&str`), so pre-compute the
+        // owned `Origin`→wire-string conversions into a Vec that OUTLIVES the
+        // borrowing `Vec<(&str, NewFinding)>` built below (each element's
+        // `origin: Option<&str>` borrows `&origin_strs[i]`).
+        let origin_strs: Vec<Option<String>> =
+            items.iter().map(|i| i.origin.map(enum_to_str)).collect();
+        let borrowed: Vec<(&str, NewFinding)> = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                (
+                    item.work_item_id.as_str(),
+                    NewFinding {
+                        kind: item.kind.as_deref(),
+                        severity: item.severity,
+                        effort: item.effort.as_deref(),
+                        category: item.category.as_deref(),
+                        file: item.file.as_deref(),
+                        line: item.line,
+                        symbol: item.symbol.as_deref(),
+                        summary: item.summary.as_deref(),
+                        description: item.description.as_deref(),
+                        origin: origin_strs[i].as_deref(),
+                        confidence: item.confidence.as_deref(),
+                        repo_id: item.repo_id.as_deref(),
+                        ..NewFinding::default()
+                    },
+                )
+            })
+            .collect();
+        let result = repo::add_findings(&self.pool, run_id.as_deref(), &borrowed)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// Bulk-create a batch of work items under ONE transaction (single repo call
+    /// → `repo::create_work_items`). All-or-nothing: a single invalid spec
+    /// aborts the whole batch (zero rows persist). Parents must already exist.
+    /// Returns `{ ids: [...] }` in input order.
+    #[tool(
+        description = "Bulk-create work items in ONE transaction (all-or-nothing). Every `parent_id` must reference an EXISTING work item (this path does not create a parent within the same batch). Returns { ids: [...] } in input order. Records one coarse event. Advisory: keep batches to <=~500 rows per call.",
+        annotations(open_world_hint = false)
+    )]
+    async fn create_work_items(
+        &self,
+        Parameters(CreateWorkItemsParams { items }): Parameters<CreateWorkItemsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "create_work_items", "mcp tool invoked");
+        // Pre-compute the owned `Origin`→wire-string conversions into a Vec that
+        // OUTLIVES the borrowing `Vec<NewWorkItemSpec>` (each spec's
+        // `origin: Option<&str>` borrows `&origin_strs[i]`).
+        let origin_strs: Vec<Option<String>> =
+            items.iter().map(|i| i.origin.map(enum_to_str)).collect();
+        let specs: Vec<repo::NewWorkItemSpec> = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| repo::NewWorkItemSpec {
+                kind: item.kind.as_str(),
+                parent_id: item.parent_id.as_deref(),
+                title: item.title.as_str(),
+                body: item.body.as_deref(),
+                origin: origin_strs[i].as_deref(),
+                outcome: item.outcome.as_deref(),
+                shape: item.shape.as_deref(),
+                spawned_from_finding_id: item.spawned_from_finding_id.as_deref(),
+            })
+            .collect();
+        let ids = repo::create_work_items(&self.pool, &specs)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({
+            "ids": ids.iter().map(|u| u.to_string()).collect::<Vec<_>>()
+        }))
+    }
+
+    /// Bulk non-terminal triage update over many findings under ONE transaction
+    /// (single repo call → `repo::batch_update_findings`). All-or-nothing: a
+    /// missing finding id (`NotFound`) or a terminal-disposition `status`
+    /// (`Validation`) aborts the whole batch. Returns `{ updated }`.
+    #[tool(
+        description = "Bulk-update finding triage (triage_state/severity/category/non-terminal status) in ONE transaction (all-or-nothing). A terminal disposition (fixed/wontfix/verified_clean/deferred/duplicate) is rejected — use resolve_finding for those. A missing finding id aborts the batch. Returns { updated }. Records one coarse event. Advisory: keep batches to <=~500 rows per call.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn batch_update_findings(
+        &self,
+        Parameters(BatchUpdateFindingsParams { updates }): Parameters<BatchUpdateFindingsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "batch_update_findings", "mcp tool invoked");
+        // The repo takes BORROWING `FindingTriageUpdate<&str>` structs, so build
+        // the borrowing Vec off the owned `updates` (which outlives the call).
+        let borrowed: Vec<repo::FindingTriageUpdate> = updates
+            .iter()
+            .map(|u| repo::FindingTriageUpdate {
+                finding_id: u.finding_id.as_str(),
+                triage_state: u.triage_state.as_deref(),
+                severity: u.severity,
+                category: u.category.as_deref(),
+                status: u.status.as_deref(),
+            })
+            .collect();
+        let count = repo::batch_update_findings(&self.pool, &borrowed)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "updated": count }))
+    }
 }
 
 impl LuminaTools {
@@ -2777,6 +3047,10 @@ mod tests {
             "set_shape",
             "set_epic_plan",
             "set_focus_plan",
+            // batch-write tools (migration 0011, Part B / B18)
+            "add_findings",
+            "create_work_items",
+            "batch_update_findings",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -2786,15 +3060,17 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 58 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 61 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
-        //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan).
+        //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
+        //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
+        //      create_work_items, batch_update_findings).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            58,
-            "advertised tool count must be exactly 58, got {}: {names:?}",
+            61,
+            "advertised tool count must be exactly 61, got {}: {names:?}",
             names.len()
         );
 
@@ -2961,6 +3237,9 @@ mod tests {
             "set_task_kind",
             // migration 0006 / round-3 T4 tier setter.
             "set_task_tier",
+            // migration 0011 Part-B batch-write tool (B18): the triage update is
+            // COALESCE-shaped, so re-applying the same updates is idempotent.
+            "batch_update_findings",
         ] {
             assert_eq!(
                 annotations_of(&tools, idem).idempotent_hint,
@@ -3288,5 +3567,132 @@ mod tests {
             err.to_string().contains("relevance") || err.to_string().contains("variant"),
             "deserialization error should concern the relevance enum: {err}"
         );
+    }
+
+    // ---- Batch-write tools (migration 0011, Part B / B18) ---------------
+
+    /// A valid `add_findings` payload deserialises into the params struct; an
+    /// out-of-set `severity` on a batch ELEMENT fails to deserialise (the plan's
+    /// "invalid enum → invalid_params" acceptance at the deserialise boundary).
+    #[tokio::test]
+    async fn add_findings_params_deserialise_and_reject_bad_enum() {
+        // A legal payload (optional run_id + a single item) deserialises.
+        let ok = serde_json::from_value::<AddFindingsParams>(serde_json::json!({
+            "run_id": "run-1",
+            "items": [{ "work_item_id": "w1", "severity": "major", "summary": "x" }]
+        }));
+        assert!(ok.is_ok(), "a legal add_findings payload deserialises");
+
+        // A bogus `severity` on the element fails (rmcp → invalid_params).
+        let err = serde_json::from_value::<AddFindingsParams>(serde_json::json!({
+            "items": [{ "work_item_id": "w1", "severity": "bogus" }]
+        }))
+        .expect_err("an invalid element severity must fail to deserialize");
+        assert!(
+            err.to_string().contains("severity") || err.to_string().contains("variant"),
+            "deserialization error should concern the severity enum: {err}"
+        );
+    }
+
+    /// A valid `create_work_items` payload deserialises; an out-of-set `origin`
+    /// on a batch ELEMENT fails to deserialise.
+    #[tokio::test]
+    async fn create_work_items_params_deserialise_and_reject_bad_enum() {
+        let ok = serde_json::from_value::<CreateWorkItemsParams>(serde_json::json!({
+            "items": [{ "kind": "task", "title": "t", "origin": "plan" }]
+        }));
+        assert!(ok.is_ok(), "a legal create_work_items payload deserialises");
+
+        let err = serde_json::from_value::<CreateWorkItemsParams>(serde_json::json!({
+            "items": [{ "kind": "task", "title": "t", "origin": "bogus" }]
+        }))
+        .expect_err("an invalid element origin must fail to deserialize");
+        assert!(
+            err.to_string().contains("origin") || err.to_string().contains("variant"),
+            "deserialization error should concern the origin enum: {err}"
+        );
+    }
+
+    /// A valid `batch_update_findings` payload deserialises; an out-of-set
+    /// `severity` on a batch ELEMENT fails to deserialise.
+    #[tokio::test]
+    async fn batch_update_findings_params_deserialise_and_reject_bad_enum() {
+        let ok = serde_json::from_value::<BatchUpdateFindingsParams>(serde_json::json!({
+            "updates": [{ "finding_id": "f1", "severity": "minor", "status": "triaged" }]
+        }));
+        assert!(ok.is_ok(), "a legal batch_update_findings payload deserialises");
+
+        let err = serde_json::from_value::<BatchUpdateFindingsParams>(serde_json::json!({
+            "updates": [{ "finding_id": "f1", "severity": "bogus" }]
+        }))
+        .expect_err("an invalid element severity must fail to deserialize");
+        assert!(
+            err.to_string().contains("severity") || err.to_string().contains("variant"),
+            "deserialization error should concern the severity enum: {err}"
+        );
+    }
+
+    /// Driving the `add_findings` tool handler against an in-memory pool inserts
+    /// N findings under one transaction and returns `{ added: N, skipped: 0 }`.
+    #[tokio::test]
+    async fn add_findings_tool_inserts_batch_and_reports_added() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let tools = LuminaTools::new(pool.clone());
+        let story = seed_chain_to_story(&tools).await;
+
+        // Two distinct findings (different file/symbol so dedup does not collapse
+        // them) attached to the story.
+        let result = tools
+            .add_findings(Parameters(AddFindingsParams {
+                run_id: None,
+                items: vec![
+                    BatchFindingInput {
+                        work_item_id: story.clone(),
+                        kind: Some("review".to_owned()),
+                        severity: Some(Severity::Major),
+                        effort: None,
+                        category: None,
+                        file: Some("src/a.rs".to_owned()),
+                        line: Some(1),
+                        symbol: Some("foo".to_owned()),
+                        summary: Some("finding one".to_owned()),
+                        description: None,
+                        confidence: None,
+                        origin: Some(Origin::Review),
+                        repo_id: None,
+                    },
+                    BatchFindingInput {
+                        work_item_id: story.clone(),
+                        kind: Some("review".to_owned()),
+                        severity: Some(Severity::Minor),
+                        effort: None,
+                        category: None,
+                        file: Some("src/b.rs".to_owned()),
+                        line: Some(2),
+                        symbol: Some("bar".to_owned()),
+                        summary: Some("finding two".to_owned()),
+                        description: None,
+                        confidence: None,
+                        origin: None,
+                        repo_id: None,
+                    },
+                ],
+            }))
+            .await
+            .expect("add_findings tool succeeds");
+        assert_eq!(result.is_error, Some(false), "tool result is not an error");
+
+        let payload = result.structured_content.expect("structured payload");
+        assert_eq!(payload["added"].as_i64(), Some(2), "two findings added");
+        assert_eq!(payload["skipped"].as_i64(), Some(0), "none skipped");
+
+        // The rows actually landed on the story.
+        let findings_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM findings WHERE work_item_id = ?")
+                .bind(&story)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("count findings");
+        assert_eq!(findings_count, 2, "both findings persisted");
     }
 }
