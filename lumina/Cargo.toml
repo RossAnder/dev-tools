@@ -118,6 +118,9 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 tempfile = "3"
 uuid = { version = "1", features = ["v7", "serde"] }
 
+# Content-hash dep for finding dedup (first consumed by B16's finding_dedup_hash).
+sha2 = "0.10"
+
 # mimalloc as the global allocator (mirrors tomlctl O56). lumina's hot paths are
 # small-allocation-heavy: every MCP tool call round-trips JSON through serde,
 # every sqlx Row materialises a handful of Strings, and the git-export drain
