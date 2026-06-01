@@ -308,6 +308,34 @@ One existing tool was widened by this pass:
 
 `set_closure_gate` is NOT widened: it remains story-only. The epic-done gate is unconditional and does not read `closure_gate`.
 
+## Batch + query + run/sprint/triage tools (migration 0011, Part B)
+
+Migration 0011 Part B added nine tools across three families: batch-write (B18), findings query/aggregation (B21), and the run/sprint/triage domain (B24). Domain model: a `run` = one review/optimise pass over a sprint or story (`open → triaged → closed`); persisted `sprints` + the `sprint_tasks` junction; `finding_decisions` = an append-only triage audit; `findings` gained `run_id`/`triage_state` and bulk-spawned items carry `work_items.spawned_from_finding_id`. The three batch-write tools deliberately deviate from the per-call `+1 work_items / +1 events` invariant — each records exactly ONE coarse, export-INERT event (`aggregate_type` ∈ run/sprint/finding/batch, never `work_item`), so bulk-created / spawned items are NOT git-exported individually (the accepted D8/R-B4 trade-off). Advisory: keep batches to ≤~500 rows per call.
+
+### Batch-write tools (B18)
+
+| Tool | When to use |
+|------|-------------|
+| `add_findings` | `{ run_id?, items: BatchFindingInput[] } → { added, skipped, skipped_ids }` — bulk-insert findings under ONE transaction. The optional top-level `run_id` is applied to EVERY element. The repo stamps each finding's dedup content hash itself (callers do NOT supply it), so a dedup-collapse onto an existing live row is counted as `skipped`, not an error. A validation error aborts the whole batch. |
+| `create_work_items` | `{ items: NewWorkItemInput[] } → { ids: [...] }` — all-or-nothing bulk-create (a single invalid spec aborts the batch; zero rows persist). Every `parent_id` must reference an EXISTING item (this path does NOT create a parent within the same batch). Each spec may carry `spawned_from_finding_id` (FK to an existing finding) plus the usual `kind`/`parent_id`/`title`/`body`/`origin`/`outcome`/`shape`. Returns the new ids in input order. |
+| `batch_update_findings` | `{ updates: FindingTriageInput[] } → { updated }` — all-or-nothing bulk NON-terminal triage update (`triage_state` / `severity` / `category` / `status`, set-or-leave per field). A terminal disposition (`fixed`/`wontfix`/`verified_clean`/`deferred`/`duplicate`) in `status` is rejected — use `resolve_finding` for those — and a missing finding id aborts the whole batch. |
+
+### Findings query/aggregation tools (B21)
+
+| Tool | When to use |
+|------|-------------|
+| `query_findings` | `{ work_item_id?, run_id?, severity?, category?, status?, triage_state?, count_by? } → { findings: [...] }` (or `{ counts: [{key, count}] }` in grouped mode) — query LIVE (non-superseded) findings with a static NULL-guard filter; an ABSENT field is unconstrained, so one prepared statement covers every combination. `count_by = "severity"` switches to grouped mode (one bucket per severity; NULL severities fold into a `(none)` bucket). Read-only. Prefer narrowing the filter or using `count_by` — an unfiltered query can return a large set. |
+| `get_story_finding_queue` | `{ story_id } → Finding[]` — compose a story's review/optimise finding queue: every live finding attached to the story itself OR one of its DIRECT task children, newest-flagged first. Findings on tombstoned (soft-deleted) items are excluded. Read-only. |
+
+### Run / sprint / triage tools (B24)
+
+| Tool | When to use |
+|------|-------------|
+| `create_run` | `{ kind, target_kind, target_id, ... } → { run_id }` — open a review/optimise run. `kind ∈ review|optimise`; `target_kind ∈ sprint|story`. The id, an `open` status, and the timestamp are minted by the store. |
+| `create_sprint` | `{ title? } → { sprint_id }` — open a sprint with an optional title. The id, an `open` status, and the timestamp are minted by the store. |
+| `add_tasks_to_sprint` | `{ sprint_id, task_ids: string[] } → { added }` — attach tasks to a sprint under ONE transaction. Idempotent at the junction: an already-attached `(task, sprint)` pair is collapsed via `ON CONFLICT DO NOTHING` and NOT counted in `added`. A non-task / missing id aborts the whole batch. |
+| `record_finding_decision` | `{ finding_id, decision, ... } → { decision_id, spawned_work_item_id }` — record a triage verdict. `decision ∈ spawn_task|spawn_story|defer|dismiss|resolve`: a spawn creates a child under the finding's host (its id surfaces as `spawned_work_item_id`, else null); `resolve` delegates to `resolve_finding`; `defer`/`dismiss` set the triage state. |
+
 ## Notes
 
 - Every write records exactly one event in the same transaction (drained to the
