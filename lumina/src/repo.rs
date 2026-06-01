@@ -42,7 +42,7 @@ use crate::domain::{
     UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
 };
 use crate::args;
-use crate::db::DbClient;
+use crate::db::{DbClient, Scalar};
 use crate::error::AppError;
 
 /// Raw `work_items` row as it comes off the database, before `attributes` is
@@ -775,53 +775,76 @@ async fn list_activity(
         .collect()
 }
 
+/// Hand-written generic `FromRow` for the public [`Finding`] directly (no raw
+/// row struct needed — every `Finding` field maps 1:1 to a column with no
+/// post-decode transform, unlike `WorkItemRow`'s `attributes` decode). Generic
+/// over `R: Row` per the canonical [`crate::db`] FromRow recipe so it rides
+/// `query_*<T>` on the SQLite arm today and a future Pg arm unchanged; the
+/// column→field nullability is carried by the field types (`String` for the
+/// NOT-NULL `id`, `Option<_>` for the rest), replacing the old `AS "col!"` /
+/// `"col?"` macro hints.
+impl<'r, R> sqlx::FromRow<'r, R> for crate::domain::Finding
+where
+    R: sqlx::Row,
+    usize: sqlx::ColumnIndex<R>,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<i64>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(Finding {
+            id: row.try_get("id")?,
+            work_item_id: row.try_get("work_item_id")?,
+            kind: row.try_get("kind")?,
+            severity: row.try_get("severity")?,
+            effort: row.try_get("effort")?,
+            category: row.try_get("category")?,
+            status: row.try_get("status")?,
+            file: row.try_get("file")?,
+            line: row.try_get("line")?,
+            symbol: row.try_get("symbol")?,
+            summary: row.try_get("summary")?,
+            description: row.try_get("description")?,
+            first_flagged: row.try_get("first_flagged")?,
+            rounds: row.try_get("rounds")?,
+            fingerprint: row.try_get("fingerprint")?,
+            flow: row.try_get("flow")?,
+            dedup_id: row.try_get("dedup_id")?,
+            origin: row.try_get("origin")?,
+            confidence: row.try_get("confidence")?,
+            superseded_by: row.try_get("superseded_by")?,
+            resolved_at: row.try_get("resolved_at")?,
+            resolution: row.try_get("resolution")?,
+            defer_reason: row.try_get("defer_reason")?,
+            defer_trigger: row.try_get("defer_trigger")?,
+            wontfix_rationale: row.try_get("wontfix_rationale")?,
+            repo_id: row.try_get("repo_id")?,
+        })
+    }
+}
+
 /// List the LIVE findings attached to a work item, newest-flagged first.
 /// "Live" = `superseded_by IS NULL` (migration 0003): a finding superseded by a
 /// newer one drops out of this fold, mirroring the research-note supersession
 /// chain. This is the fold `get_work_item_detail` returns.
 pub async fn list_findings(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
 ) -> Result<Vec<Finding>, AppError> {
-    let rows = sqlx::query_as!(
-        Finding,
-        r#"
-        SELECT
-            id                AS "id!",
-            work_item_id      AS "work_item_id?",
-            kind              AS "kind?",
-            severity          AS "severity?",
-            effort            AS "effort?",
-            category          AS "category?",
-            status            AS "status?",
-            file              AS "file?",
-            line              AS "line?",
-            symbol            AS "symbol?",
-            summary           AS "summary?",
-            description       AS "description?",
-            first_flagged     AS "first_flagged?",
-            rounds            AS "rounds?",
-            fingerprint       AS "fingerprint?",
-            flow              AS "flow?",
-            dedup_id          AS "dedup_id?",
-            origin            AS "origin?",
-            confidence        AS "confidence?",
-            superseded_by     AS "superseded_by?",
-            resolved_at       AS "resolved_at?",
-            resolution        AS "resolution?",
-            defer_reason      AS "defer_reason?",
-            defer_trigger     AS "defer_trigger?",
-            wontfix_rationale AS "wontfix_rationale?",
-            repo_id           AS "repo_id?"
-        FROM findings
-        WHERE work_item_id = ?1
-          AND superseded_by IS NULL
-        ORDER BY first_flagged DESC, id
-        "#,
-        work_item_id,
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows = db
+        .query_all::<Finding>(
+            "SELECT id, work_item_id, kind, severity, effort, category, status, \
+             file, line, symbol, summary, description, first_flagged, rounds, \
+             fingerprint, flow, dedup_id, origin, confidence, superseded_by, \
+             resolved_at, resolution, defer_reason, defer_trigger, \
+             wontfix_rationale, repo_id \
+             FROM findings \
+             WHERE work_item_id = $1 AND superseded_by IS NULL \
+             ORDER BY first_flagged DESC, id",
+            args![work_item_id.to_owned()],
+        )
+        .await?;
 
     Ok(rows)
 }
@@ -2164,44 +2187,43 @@ pub async fn unlink_context_block(
 /// rendered to its snake_case wire form before storage. `NotFound` via
 /// `rows_affected()==0`. Event `finding.updated`.
 pub async fn update_finding(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     req: &UpdateFindingRequest,
 ) -> Result<(), AppError> {
     let severity_str: Option<String> = req.severity.map(enum_to_str);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
-        UPDATE findings
-        SET severity    = COALESCE(?2, severity),
-            effort      = COALESCE(?3, effort),
-            category    = COALESCE(?4, category),
-            status      = COALESCE(?5, status),
-            file        = COALESCE(?6, file),
-            line        = COALESCE(?7, line),
-            symbol      = COALESCE(?8, symbol),
-            summary     = COALESCE(?9, summary),
-            description = COALESCE(?10, description),
-            confidence  = COALESCE(?11, confidence)
-        WHERE id = ?1
-        "#,
-        id,
-        severity_str,
-        req.effort,
-        req.category,
-        req.status,
-        req.file,
-        req.line,
-        req.symbol,
-        req.summary,
-        req.description,
-        req.confidence,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE findings \
+             SET severity    = COALESCE($2, severity), \
+                 effort      = COALESCE($3, effort), \
+                 category    = COALESCE($4, category), \
+                 status      = COALESCE($5, status), \
+                 file        = COALESCE($6, file), \
+                 line        = COALESCE($7, line), \
+                 symbol      = COALESCE($8, symbol), \
+                 summary     = COALESCE($9, summary), \
+                 description = COALESCE($10, description), \
+                 confidence  = COALESCE($11, confidence) \
+             WHERE id = $1",
+            args![
+                id.to_owned(),
+                severity_str.clone(),
+                req.effort.clone(),
+                req.category.clone(),
+                req.status.clone(),
+                req.file.clone(),
+                req.line,
+                req.symbol.clone(),
+                req.summary.clone(),
+                req.description.clone(),
+                req.confidence.clone(),
+            ],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("finding '{id}' not found")));
@@ -2218,7 +2240,7 @@ pub async fn update_finding(
         payload_map.insert("status".to_owned(), Value::String(s.clone()));
     }
     let payload = Value::Object(payload_map);
-    record_event(&mut tx, "finding", id, "finding.updated", payload).await?;
+    record_event(tx.as_mut(), "finding", id, "finding.updated", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -2234,41 +2256,39 @@ pub async fn update_finding(
 /// DB column itself remains `ON DELETE NO ACTION` (see the supersession-semantics
 /// note above [`supersede_research_note`]).
 pub async fn supersede_finding(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     old_id: &str,
     new_id: &str,
 ) -> Result<(), AppError> {
     // Validate the superseding finding exists (R7): clean 422 over a dangling-FK 500.
-    let new_exists = sqlx::query!(
-        r#"SELECT 1 AS "one!" FROM findings WHERE id = ?1"#,
-        new_id,
-    )
-    .fetch_optional(pool)
-    .await?
-    .is_some();
+    let new_exists = db
+        .query_opt::<Scalar<i64>>(
+            "SELECT 1 FROM findings WHERE id = $1",
+            args![new_id.to_owned()],
+        )
+        .await?
+        .is_some();
     if !new_exists {
         return Err(AppError::Validation(format!(
             "superseding finding '{new_id}' does not exist"
         )));
     }
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE findings SET superseded_by = ?2 WHERE id = ?1"#,
-        old_id,
-        new_id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE findings SET superseded_by = $2 WHERE id = $1",
+            args![old_id.to_owned(), new_id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("finding '{old_id}' not found")));
     }
 
     let payload = serde_json::json!({ "superseded_by": new_id });
-    record_event(&mut tx, "finding", old_id, "finding.superseded", payload).await?;
+    record_event(tx.as_mut(), "finding", old_id, "finding.superseded", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -2279,7 +2299,7 @@ pub async fn supersede_finding(
 /// the optional `resolution`/`wontfix_rationale` free-text. `NotFound` via
 /// `rows_affected()==0`. Event `finding.resolved`.
 pub async fn resolve_finding(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     disposition: Disposition,
     resolution: Option<&str>,
@@ -2287,32 +2307,31 @@ pub async fn resolve_finding(
 ) -> Result<(), AppError> {
     let disposition_str = enum_to_str(disposition);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
-        UPDATE findings
-        SET status            = ?2,
-            resolved_at       = CURRENT_TIMESTAMP,
-            resolution        = COALESCE(?3, resolution),
-            wontfix_rationale = COALESCE(?4, wontfix_rationale)
-        WHERE id = ?1
-        "#,
-        id,
-        disposition_str,
-        resolution,
-        rationale,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE findings \
+             SET status            = $2, \
+                 resolved_at       = CURRENT_TIMESTAMP, \
+                 resolution        = COALESCE($3, resolution), \
+                 wontfix_rationale = COALESCE($4, wontfix_rationale) \
+             WHERE id = $1",
+            args![
+                id.to_owned(),
+                disposition_str.clone(),
+                resolution.map(|s| s.to_owned()),
+                rationale.map(|s| s.to_owned()),
+            ],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("finding '{id}' not found")));
     }
 
     let payload = serde_json::json!({ "disposition": disposition_str });
-    record_event(&mut tx, "finding", id, "finding.resolved", payload).await?;
+    record_event(tx.as_mut(), "finding", id, "finding.resolved", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -2431,7 +2450,7 @@ pub struct NewFinding<'a> {
 /// `deferred`/`wontfix` import round-trips without loss (P7). Returns the new
 /// finding id.
 pub async fn create_finding(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     finding: &NewFinding<'_>,
 ) -> Result<Uuid, AppError> {
@@ -2444,50 +2463,49 @@ pub async fn create_finding(
     // (`"low"|"medium"|"high"`) — the type system precludes it.
     let severity_str = finding.severity.map(enum_to_str);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    sqlx::query!(
-        r#"
-        INSERT INTO findings (
-            id, work_item_id, kind, severity, effort, category, status,
-            file, line, symbol, summary, description, first_flagged, rounds,
-            fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution,
-            defer_reason, defer_trigger, wontfix_rationale, repo_id
-        )
-        VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-            ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-            ?15, ?16, ?17, ?18, ?19, ?20, ?21,
-            ?22, ?23, ?24, ?25
-        )
-        "#,
-        id_str,
-        work_item_id,
-        finding.kind,
-        severity_str,
-        finding.effort,
-        finding.category,
-        finding.status,
-        finding.file,
-        finding.line,
-        finding.symbol,
-        finding.summary,
-        finding.description,
-        finding.first_flagged,
-        finding.rounds,
-        finding.fingerprint,
-        finding.flow,
-        finding.dedup_id,
-        finding.origin,
-        finding.confidence,
-        finding.resolved_at,
-        finding.resolution,
-        finding.defer_reason,
-        finding.defer_trigger,
-        finding.wontfix_rationale,
-        finding.repo_id,
+    tx.execute(
+        "INSERT INTO findings ( \
+            id, work_item_id, kind, severity, effort, category, status, \
+            file, line, symbol, summary, description, first_flagged, rounds, \
+            fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution, \
+            defer_reason, defer_trigger, wontfix_rationale, repo_id \
+        ) \
+        VALUES ( \
+            $1, $2, $3, $4, $5, $6, $7, \
+            $8, $9, $10, $11, $12, $13, $14, \
+            $15, $16, $17, $18, $19, $20, $21, \
+            $22, $23, $24, $25 \
+        )",
+        args![
+            id_str.clone(),
+            work_item_id.to_owned(),
+            finding.kind.map(|s| s.to_owned()),
+            severity_str,
+            finding.effort.map(|s| s.to_owned()),
+            finding.category.map(|s| s.to_owned()),
+            finding.status.map(|s| s.to_owned()),
+            finding.file.map(|s| s.to_owned()),
+            finding.line,
+            finding.symbol.map(|s| s.to_owned()),
+            finding.summary.map(|s| s.to_owned()),
+            finding.description.map(|s| s.to_owned()),
+            finding.first_flagged.map(|s| s.to_owned()),
+            finding.rounds,
+            finding.fingerprint.map(|s| s.to_owned()),
+            finding.flow.map(|s| s.to_owned()),
+            finding.dedup_id.map(|s| s.to_owned()),
+            finding.origin.map(|s| s.to_owned()),
+            finding.confidence.map(|s| s.to_owned()),
+            finding.resolved_at.map(|s| s.to_owned()),
+            finding.resolution.map(|s| s.to_owned()),
+            finding.defer_reason.map(|s| s.to_owned()),
+            finding.defer_trigger.map(|s| s.to_owned()),
+            finding.wontfix_rationale.map(|s| s.to_owned()),
+            finding.repo_id.map(|s| s.to_owned()),
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({
@@ -2496,7 +2514,7 @@ pub async fn create_finding(
         "category": finding.category,
         "status": finding.status,
     });
-    record_event(&mut tx, "finding", &id_str, "finding.created", payload).await?;
+    record_event(tx.as_mut(), "finding", &id_str, "finding.created", payload).await?;
 
     tx.commit().await?;
 
@@ -3440,35 +3458,34 @@ pub async fn set_finding_repo(
 ) -> Result<(), AppError> {
     // Resolve the finding's owning work_item_id BEFORE opening the tx. NotFound
     // if the finding is absent.
-    let work_item_id: String = sqlx::query!(
-        r#"SELECT work_item_id AS "work_item_id?" FROM findings WHERE id = ?1"#,
-        finding_id,
-    )
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("finding '{finding_id}' not found")))?
-    .work_item_id
-    .ok_or_else(|| {
-        // A finding with NULL work_item_id has no project to validate against.
-        // This is a Validation, not a 500 — the importer may produce such rows
-        // for orphaned findings and the caller is expected to repair them first.
-        AppError::Validation(format!(
-            "finding '{finding_id}' has no work_item_id; cannot bind to a repo"
-        ))
-    })?;
+    let work_item_id: String = pool
+        .query_opt::<Scalar<Option<String>>>(
+            "SELECT work_item_id FROM findings WHERE id = $1",
+            args![finding_id.to_owned()],
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("finding '{finding_id}' not found")))?
+        .0
+        .ok_or_else(|| {
+            // A finding with NULL work_item_id has no project to validate against.
+            // This is a Validation, not a 500 — the importer may produce such rows
+            // for orphaned findings and the caller is expected to repair them first.
+            AppError::Validation(format!(
+                "finding '{finding_id}' has no work_item_id; cannot bind to a repo"
+            ))
+        })?;
 
     // Project-scope check on the repo_id (if set): the target repo_link must
     // belong to the project ancestor of this finding's work-item.
     if let Some(rid) = repo_id {
         let project_id = find_project_ancestor(pool, &work_item_id).await?;
-        let owns = sqlx::query!(
-            r#"SELECT 1 AS "one!" FROM repo_links WHERE id = ?1 AND project_id = ?2"#,
-            rid,
-            project_id,
-        )
-        .fetch_optional(pool)
-        .await?
-        .is_some();
+        let owns = pool
+            .query_opt::<Scalar<i64>>(
+                "SELECT 1 FROM repo_links WHERE id = $1 AND project_id = $2",
+                args![rid.to_owned(), project_id.clone()],
+            )
+            .await?
+            .is_some();
         if !owns {
             return Err(AppError::Validation(format!(
                 "repo_link '{rid}' does not belong to the project ancestor '{project_id}' \
@@ -3477,16 +3494,17 @@ pub async fn set_finding_repo(
         }
     }
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    // Disambiguate to the `DbClient` trait method — bare `pool.begin()` would
+    // resolve to sqlx's inherent `Pool::begin` (returning a `Transaction`, not
+    // the object-safe `Box<dyn DbTx>` this function threads through).
+    let mut tx = <SqlitePool as DbClient>::begin(pool).await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE findings SET repo_id = ?2 WHERE id = ?1"#,
-        finding_id,
-        repo_id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE findings SET repo_id = $2 WHERE id = $1",
+            args![finding_id.to_owned(), repo_id.map(|s| s.to_owned())],
+        )
+        .await?;
 
     if affected == 0 {
         // Lost a race against a concurrent delete — surface NotFound rather
@@ -3499,7 +3517,7 @@ pub async fn set_finding_repo(
         "repo_id": repo_id,
     });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         &work_item_id,
         "finding.repo_changed",
