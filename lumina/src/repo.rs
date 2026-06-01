@@ -587,6 +587,76 @@ where
     }
 }
 
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`AcceptanceCriterion`]
+/// aggregate (canonical recipe). Used by `list_acceptance_criteria`; column→field
+/// nullability is carried by the field types (`String`/`i64` for NOT-NULL columns,
+/// `Option<String>` for the nullable `checked_at`/`checked_by`), replacing the old
+/// `AS "col!"`/`"col?"` macro hints.
+impl<'r, R> sqlx::FromRow<'r, R> for AcceptanceCriterion
+where
+    R: sqlx::Row,
+    usize: sqlx::ColumnIndex<R>,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(AcceptanceCriterion {
+            id: row.try_get("id")?,
+            work_item_id: row.try_get("work_item_id")?,
+            seq: row.try_get("seq")?,
+            text: row.try_get("text")?,
+            checked: row.try_get("checked")?,
+            checked_at: row.try_get("checked_at")?,
+            checked_by: row.try_get("checked_by")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
+/// Raw `work_item_activity` row as it comes off the database, before `payload` is
+/// decoded from its stored TEXT into `Option<Value>` (via [`decode_attributes`]).
+/// Generic over `R: Row` per the canonical [`crate::db`] FromRow recipe. The
+/// `payload` field is `Option<String>` here; the `list_activity` transform turns
+/// it into the public [`WorkItemActivity`]'s `Option<Value>`.
+#[derive(Debug)]
+struct ActivityRow {
+    id: String,
+    work_item_id: String,
+    seq: i64,
+    entry_kind: String,
+    author: Option<String>,
+    summary: String,
+    payload: Option<String>,
+    origin: Option<String>,
+    created_at: String,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for ActivityRow
+where
+    R: sqlx::Row,
+    usize: sqlx::ColumnIndex<R>,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(ActivityRow {
+            id: row.try_get("id")?,
+            work_item_id: row.try_get("work_item_id")?,
+            seq: row.try_get("seq")?,
+            entry_kind: row.try_get("entry_kind")?,
+            author: row.try_get("author")?,
+            summary: row.try_get("summary")?,
+            payload: row.try_get("payload")?,
+            origin: row.try_get("origin")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
 /// List the LIVE research-note rows for a work item (migration 0003), ordered by
 /// the per-item monotonic `seq`. "Live" = `superseded_by IS NULL`: a note
 /// superseded by a newer one drops out of this fold. `query_as!` straight onto
@@ -703,29 +773,18 @@ async fn list_open_questions(
 /// [`AcceptanceCriterion`] read struct (all columns map 1:1; `checked` is the
 /// `0/1` INTEGER mirrored as `i64`).
 pub async fn list_acceptance_criteria(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
 ) -> Result<Vec<AcceptanceCriterion>, AppError> {
-    let rows = sqlx::query_as!(
-        AcceptanceCriterion,
-        r#"
-        SELECT
-            id           AS "id!",
-            work_item_id AS "work_item_id!",
-            seq          AS "seq!",
-            text         AS "text!",
-            checked      AS "checked!",
-            checked_at   AS "checked_at?",
-            checked_by   AS "checked_by?",
-            created_at   AS "created_at!"
-        FROM acceptance_criteria
-        WHERE work_item_id = ?1
-        ORDER BY seq
-        "#,
-        work_item_id,
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows = db
+        .query_all::<AcceptanceCriterion>(
+            "SELECT id, work_item_id, seq, text, checked, checked_at, checked_by, created_at \
+             FROM acceptance_criteria \
+             WHERE work_item_id = $1 \
+             ORDER BY seq",
+            args![work_item_id.to_owned()],
+        )
+        .await?;
 
     Ok(rows)
 }
@@ -734,29 +793,18 @@ pub async fn list_acceptance_criteria(
 /// monotonic `seq`. `query!` + manual map because `payload` arrives as
 /// `Option<String>` and is decoded into `Option<Value>`.
 async fn list_activity(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
 ) -> Result<Vec<WorkItemActivity>, AppError> {
-    let rows = sqlx::query!(
-        r#"
-        SELECT
-            id            AS "id!",
-            work_item_id  AS "work_item_id!",
-            seq           AS "seq!",
-            entry_kind    AS "entry_kind!",
-            author        AS "author?",
-            summary       AS "summary!",
-            payload       AS "payload?",
-            origin        AS "origin?",
-            created_at    AS "created_at!"
-        FROM work_item_activity
-        WHERE work_item_id = ?1
-        ORDER BY seq
-        "#,
-        work_item_id,
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows = db
+        .query_all::<ActivityRow>(
+            "SELECT id, work_item_id, seq, entry_kind, author, summary, payload, origin, created_at \
+             FROM work_item_activity \
+             WHERE work_item_id = $1 \
+             ORDER BY seq",
+            args![work_item_id.to_owned()],
+        )
+        .await?;
 
     rows.into_iter()
         .map(|r| {
@@ -1598,12 +1646,12 @@ pub async fn set_closure_gate(
 /// violation. The work item must exist (`NotFound` otherwise). Event
 /// `work_item.acceptance_criterion_added`. Returns the new criterion id.
 pub async fn add_acceptance_criterion(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     text: &str,
 ) -> Result<Uuid, AppError> {
     // Verify the work item exists first (NotFound, not a dangling-FK 500).
-    let _ = work_item_kind(pool, work_item_id).await?;
+    let _ = work_item_kind(db, work_item_id).await?;
 
     // R43: reject a blank criterion (a whitespace-only close-criterion would
     // vacuously satisfy the story-create ≥1-criterion gate) and cap storage
@@ -1618,29 +1666,24 @@ pub async fn add_acceptance_criterion(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM acceptance_criteria WHERE work_item_id = ?1"#,
-        work_item_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM acceptance_criteria WHERE work_item_id = $1",
+        args![work_item_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
-        r#"INSERT INTO acceptance_criteria (id, work_item_id, seq, text) VALUES (?1, ?2, ?3, ?4)"#,
-        id_str,
-        work_item_id,
-        seq,
-        text,
+    tx.execute(
+        "INSERT INTO acceptance_criteria (id, work_item_id, seq, text) VALUES ($1, $2, $3, $4)",
+        args![id_str.clone(), work_item_id.to_owned(), seq, text.to_owned()],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({ "criterion_id": id_str, "seq": seq });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         work_item_id,
         "work_item.acceptance_criterion_added",
@@ -1656,16 +1699,15 @@ pub async fn add_acceptance_criterion(
 /// the criterion id has no row. Used by the check/uncheck paths to attribute the
 /// owning item (for the audit-activity append and the event aggregate).
 async fn acceptance_criterion_work_item(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
 ) -> Result<String, AppError> {
-    sqlx::query!(
-        r#"SELECT work_item_id AS "work_item_id!" FROM acceptance_criteria WHERE id = ?1"#,
-        id,
+    crate::db::scalar_opt::<String>(
+        db,
+        "SELECT work_item_id FROM acceptance_criteria WHERE id = $1",
+        args![id.to_owned()],
     )
-    .fetch_optional(pool)
     .await?
-    .map(|r| r.work_item_id)
     .ok_or_else(|| AppError::NotFound(format!("acceptance_criterion '{id}' not found")))
 }
 
@@ -1676,26 +1718,22 @@ async fn acceptance_criterion_work_item(
 /// with ONE event. The owning work_item_id is read first (`NotFound` if the
 /// criterion is absent). Event `work_item.acceptance_criterion_checked`.
 pub async fn check_acceptance_criterion(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     by: Option<&str>,
 ) -> Result<(), AppError> {
-    let work_item_id = acceptance_criterion_work_item(pool, id).await?;
+    let work_item_id = acceptance_criterion_work_item(db, id).await?;
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
-        UPDATE acceptance_criteria
-        SET checked = 1, checked_at = CURRENT_TIMESTAMP, checked_by = ?2
-        WHERE id = ?1
-        "#,
-        id,
-        by,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE acceptance_criteria \
+             SET checked = 1, checked_at = CURRENT_TIMESTAMP, checked_by = $2 \
+             WHERE id = $1",
+            args![id.to_owned(), by.map(str::to_owned)],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("acceptance_criterion '{id}' not found")));
@@ -1704,31 +1742,29 @@ pub async fn check_acceptance_criterion(
     // Append the immutable verification-audit activity row for the owning item.
     // seq is allocated MAX(seq)+1 within this same tx.
     let activity_id = Uuid::now_v7().to_string();
-    let act_seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM work_item_activity WHERE work_item_id = ?1"#,
-        work_item_id,
+    let act_seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM work_item_activity WHERE work_item_id = $1",
+        args![work_item_id.clone()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
     let summary = format!("acceptance criterion {id} checked");
-    sqlx::query!(
-        r#"
-        INSERT INTO work_item_activity (id, work_item_id, seq, entry_kind, author, summary)
-        VALUES (?1, ?2, ?3, 'verification', ?4, ?5)
-        "#,
-        activity_id,
-        work_item_id,
-        act_seq,
-        by,
-        summary,
+    tx.execute(
+        "INSERT INTO work_item_activity (id, work_item_id, seq, entry_kind, author, summary) \
+         VALUES ($1, $2, $3, 'verification', $4, $5)",
+        args![
+            activity_id,
+            work_item_id.clone(),
+            act_seq,
+            by.map(str::to_owned),
+            summary
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({ "criterion_id": id, "checked": true });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         &work_item_id,
         "work_item.acceptance_criterion_checked",
@@ -1743,22 +1779,19 @@ pub async fn check_acceptance_criterion(
 /// Uncheck an acceptance criterion (migration 0003): clear `checked`,
 /// `checked_at`, `checked_by`. One event. `NotFound` via `rows_affected()==0`.
 /// (No audit-activity row — un-checking is a correction, not a verification.)
-pub async fn uncheck_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
-    let work_item_id = acceptance_criterion_work_item(pool, id).await?;
+pub async fn uncheck_acceptance_criterion(db: &impl DbClient, id: &str) -> Result<(), AppError> {
+    let work_item_id = acceptance_criterion_work_item(db, id).await?;
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
-        UPDATE acceptance_criteria
-        SET checked = 0, checked_at = NULL, checked_by = NULL
-        WHERE id = ?1
-        "#,
-        id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE acceptance_criteria \
+             SET checked = 0, checked_at = NULL, checked_by = NULL \
+             WHERE id = $1",
+            args![id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("acceptance_criterion '{id}' not found")));
@@ -1766,7 +1799,7 @@ pub async fn uncheck_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result
 
     let payload = serde_json::json!({ "criterion_id": id, "checked": false });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         &work_item_id,
         "work_item.acceptance_criterion_unchecked",
@@ -1781,17 +1814,19 @@ pub async fn uncheck_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result
 /// Hard-delete an acceptance criterion (migration 0003): criteria have no
 /// independent export identity, so a removal is a hard DELETE. One event.
 /// `NotFound` via `rows_affected()==0`.
-pub async fn remove_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
+pub async fn remove_acceptance_criterion(db: &impl DbClient, id: &str) -> Result<(), AppError> {
     // Resolve the owning item first so the event aggregate is the work_item
     // (and so an absent criterion is NotFound before any write).
-    let work_item_id = acceptance_criterion_work_item(pool, id).await?;
+    let work_item_id = acceptance_criterion_work_item(db, id).await?;
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(r#"DELETE FROM acceptance_criteria WHERE id = ?1"#, id)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
+    let affected = tx
+        .execute(
+            "DELETE FROM acceptance_criteria WHERE id = $1",
+            args![id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("acceptance_criterion '{id}' not found")));
@@ -1799,7 +1834,7 @@ pub async fn remove_acceptance_criterion(pool: &SqlitePool, id: &str) -> Result<
 
     let payload = serde_json::json!({ "criterion_id": id, "removed": true });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         &work_item_id,
         "work_item.acceptance_criterion_removed",
@@ -1911,7 +1946,7 @@ pub async fn update_work_item(
 /// exist (`NotFound` otherwise). Event `work_item.activity_appended`. Returns the
 /// new activity row id.
 pub async fn append_activity(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     entry_kind: &str,
     author: Option<&str>,
@@ -1933,37 +1968,35 @@ pub async fn append_activity(
     };
 
     // Verify the work item exists first (NotFound, not a dangling-FK 500).
-    let _ = work_item_kind(pool, work_item_id).await?;
+    let _ = work_item_kind(db, work_item_id).await?;
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
     // Allocate the per-item monotonic seq inside the tx.
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM work_item_activity WHERE work_item_id = ?1"#,
-        work_item_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM work_item_activity WHERE work_item_id = $1",
+        args![work_item_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
-        r#"
-        INSERT INTO work_item_activity (id, work_item_id, seq, entry_kind, author, summary, payload, origin)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-        "#,
-        id_str,
-        work_item_id,
-        seq,
-        entry_kind,
-        author,
-        summary,
-        payload_str,
-        origin,
+    tx.execute(
+        "INSERT INTO work_item_activity (id, work_item_id, seq, entry_kind, author, summary, payload, origin) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        args![
+            id_str.clone(),
+            work_item_id.to_owned(),
+            seq,
+            entry_kind.to_owned(),
+            author.map(str::to_owned),
+            summary.to_owned(),
+            payload_str,
+            origin.map(str::to_owned)
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
     let event_payload = serde_json::json!({
@@ -1971,7 +2004,7 @@ pub async fn append_activity(
         "seq": seq,
         "entry_kind": entry_kind,
     });
-    record_event(&mut tx, "work_item", work_item_id, "work_item.activity_appended", event_payload)
+    record_event(tx.as_mut(), "work_item", work_item_id, "work_item.activity_appended", event_payload)
         .await?;
 
     tx.commit().await?;
@@ -2101,26 +2134,23 @@ pub async fn reorder_work_item(
 /// Create a `context_blocks` row under the single-mutation-path discipline.
 /// Returns the new id. Event `context_block.created`.
 pub async fn create_context_block(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     title: Option<&str>,
     body: Option<&str>,
 ) -> Result<Uuid, AppError> {
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    sqlx::query!(
-        r#"INSERT INTO context_blocks (id, title, body) VALUES (?1, ?2, ?3)"#,
-        id_str,
-        title,
-        body,
+    tx.execute(
+        "INSERT INTO context_blocks (id, title, body) VALUES ($1, $2, $3)",
+        args![id_str.clone(), title.map(str::to_owned), body.map(str::to_owned)],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({ "title": title });
-    record_event(&mut tx, "context_block", &id_str, "context_block.created", payload).await?;
+    record_event(tx.as_mut(), "context_block", &id_str, "context_block.created", payload).await?;
 
     tx.commit().await?;
     Ok(id)
@@ -2129,22 +2159,20 @@ pub async fn create_context_block(
 /// Link a context block to a work item (insert the `work_item_context` row)
 /// under the single-mutation-path discipline. Event `context_block.linked`.
 pub async fn link_context_block(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     context_block_id: &str,
 ) -> Result<(), AppError> {
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    sqlx::query!(
-        r#"INSERT INTO work_item_context (work_item_id, context_block_id) VALUES (?1, ?2)"#,
-        work_item_id,
-        context_block_id,
+    tx.execute(
+        "INSERT INTO work_item_context (work_item_id, context_block_id) VALUES ($1, $2)",
+        args![work_item_id.to_owned(), context_block_id.to_owned()],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({ "context_block_id": context_block_id });
-    record_event(&mut tx, "work_item", work_item_id, "context_block.linked", payload).await?;
+    record_event(tx.as_mut(), "work_item", work_item_id, "context_block.linked", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -2154,20 +2182,18 @@ pub async fn link_context_block(
 /// have no independent export identity) under the single-mutation-path
 /// discipline. `NotFound` via `rows_affected()==0`. Event `context_block.unlinked`.
 pub async fn unlink_context_block(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     context_block_id: &str,
 ) -> Result<(), AppError> {
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"DELETE FROM work_item_context WHERE work_item_id = ?1 AND context_block_id = ?2"#,
-        work_item_id,
-        context_block_id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "DELETE FROM work_item_context WHERE work_item_id = $1 AND context_block_id = $2",
+            args![work_item_id.to_owned(), context_block_id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!(
@@ -2176,7 +2202,7 @@ pub async fn unlink_context_block(
     }
 
     let payload = serde_json::json!({ "context_block_id": context_block_id });
-    record_event(&mut tx, "work_item", work_item_id, "context_block.unlinked", payload).await?;
+    record_event(tx.as_mut(), "work_item", work_item_id, "context_block.unlinked", payload).await?;
 
     tx.commit().await?;
     Ok(())
