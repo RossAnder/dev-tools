@@ -1273,6 +1273,25 @@ pub struct BatchUpdateFindingsParams {
     pub updates: Vec<FindingTriageInput>,
 }
 
+// ---- Run / sprint / triage params (migration 0011, Part B / B24) ---------
+
+/// Arguments for the `add_tasks_to_sprint` write tool →
+/// `repo::add_tasks_to_sprint` (B23). Idempotent at the junction: a
+/// re-attached (id, sprint) pair is collapsed via `ON CONFLICT DO NOTHING`
+/// and NOT counted in the returned `added`. A non-task / missing id aborts the
+/// whole batch (`Validation`). The `create_run` / `create_sprint` /
+/// `record_finding_decision` tools reuse the `crate::domain::New*` input
+/// structs directly (each derives `Deserialize + JsonSchema`), so only the
+/// task-attach tool needs a bespoke param struct.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AddTasksToSprintParams {
+    /// The sprint id to attach the tasks to.
+    pub sprint_id: String,
+    /// The task work-item ids to attach (each must reference an EXISTING task
+    /// row; a non-task or missing id aborts the whole batch).
+    pub task_ids: Vec<String>,
+}
+
 /// The MCP tool-handler. Holds an [`AppState`] clone (whose `pool` mirrors
 /// the legacy `pool` field on this struct for back-compat with the 60+
 /// existing `&self.pool` call sites) plus the generated `ToolRouter` (the
@@ -2872,6 +2891,95 @@ impl LuminaTools {
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::to_value(rows).unwrap_or_default())
     }
+
+    // ---- Run / sprint / triage tools (migration 0011, Part B / B24) ------
+
+    /// Open a review/optimise run targeting a sprint or story (single repo call
+    /// → `repo::create_run`). Reuses `crate::domain::NewRun` directly as the
+    /// param type (it derives `Deserialize + JsonSchema`). Returns
+    /// `{ run_id }`.
+    #[tool(
+        description = "Open a review/optimise run against a sprint or story. `kind` is `review|optimise`; `target_kind` is `sprint|story`. The run id, an `open` status, and the timestamp are minted by the store. Returns { run_id }. Records one event.",
+        annotations(open_world_hint = false)
+    )]
+    async fn create_run(
+        &self,
+        Parameters(run): Parameters<crate::domain::NewRun>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "create_run", "mcp tool invoked");
+        let id = repo::create_run(&self.pool, &run)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "run_id": id.to_string() }))
+    }
+
+    /// Open a sprint (single repo call → `repo::create_sprint`). Reuses
+    /// `crate::domain::NewSprint` directly as the param type. Returns
+    /// `{ sprint_id }`.
+    #[tool(
+        description = "Open a sprint with an optional title. The sprint id, an `open` status, and the timestamp are minted by the store. Returns { sprint_id }. Records one event.",
+        annotations(open_world_hint = false)
+    )]
+    async fn create_sprint(
+        &self,
+        Parameters(sprint): Parameters<crate::domain::NewSprint>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "create_sprint", "mcp tool invoked");
+        let id = repo::create_sprint(&self.pool, &sprint)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "sprint_id": id.to_string() }))
+    }
+
+    /// Attach a batch of tasks to a sprint (single repo call →
+    /// `repo::add_tasks_to_sprint`). Idempotent at the junction: an already-
+    /// attached (task, sprint) pair is collapsed via `ON CONFLICT DO NOTHING`
+    /// and not counted; a non-task / missing id aborts the whole batch. Returns
+    /// `{ added }` (the count newly attached).
+    #[tool(
+        description = "Attach tasks to a sprint in ONE transaction. Re-attaching a task already in the sprint is a no-op (collapsed, not counted in `added`); a non-task or missing id aborts the whole batch. Returns { added } — the count of NEWLY attached tasks. Records one event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn add_tasks_to_sprint(
+        &self,
+        Parameters(AddTasksToSprintParams { sprint_id, task_ids }): Parameters<
+            AddTasksToSprintParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "add_tasks_to_sprint", "mcp tool invoked");
+        // The repo takes BORROWING `&[&str]`, so build the borrowing Vec off the
+        // owned `task_ids` (which outlives the call).
+        let refs: Vec<&str> = task_ids.iter().map(String::as_str).collect();
+        let count = repo::add_tasks_to_sprint(&self.pool, &sprint_id, &refs)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "added": count }))
+    }
+
+    /// Record a triage decision on a finding (single repo call →
+    /// `repo::record_finding_decision`). Reuses `crate::domain::NewFindingDecision`
+    /// directly as the param type. A `spawn_task`/`spawn_story` decision creates
+    /// a child under the finding host (its id surfaces as `spawned_work_item_id`);
+    /// `resolve` delegates to `resolve_finding`; `defer`/`dismiss` set the
+    /// triage state. Returns `{ decision_id, spawned_work_item_id }` (the latter
+    /// null unless a spawn occurred).
+    #[tool(
+        description = "Record a triage decision on a finding. `decision` is `spawn_task|spawn_story|defer|dismiss|resolve`: a spawn creates a child work-item under the finding's host (its id is returned as `spawned_work_item_id`); `resolve` resolves the finding; `defer`/`dismiss` set the triage state. Returns { decision_id, spawned_work_item_id } (spawned_work_item_id is null unless a spawn occurred). Records one event.",
+        annotations(open_world_hint = false)
+    )]
+    async fn record_finding_decision(
+        &self,
+        Parameters(decision): Parameters<crate::domain::NewFindingDecision>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "record_finding_decision", "mcp tool invoked");
+        let (decision_id, spawned) = repo::record_finding_decision(&self.pool, &decision)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({
+            "decision_id": decision_id.to_string(),
+            "spawned_work_item_id": spawned.map(|u| u.to_string()),
+        }))
+    }
 }
 
 impl LuminaTools {
@@ -3109,6 +3217,11 @@ mod tests {
             // migration 0011 Part-B query tools (B21)
             "query_findings",
             "get_story_finding_queue",
+            // migration 0011 Part-B run/sprint/triage domain tools (B24)
+            "create_run",
+            "create_sprint",
+            "add_tasks_to_sprint",
+            "record_finding_decision",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -3118,19 +3231,21 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 63 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 67 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
         //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
         //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
         //      create_work_items, batch_update_findings)
         //    + 2 migration-0011 Part-B query tools (B21: query_findings,
-        //      get_story_finding_queue).
+        //      get_story_finding_queue)
+        //    + 4 migration-0011 Part-B domain tools (B24: create_run, create_sprint,
+        //      add_tasks_to_sprint, record_finding_decision).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            63,
-            "advertised tool count must be exactly 63, got {}: {names:?}",
+            67,
+            "advertised tool count must be exactly 67, got {}: {names:?}",
             names.len()
         );
 
@@ -3735,6 +3850,112 @@ mod tests {
             "story_id": "s1"
         }));
         assert!(ok.is_ok(), "a legal get_story_finding_queue payload deserialises");
+    }
+
+    // ---- Run / sprint / triage tools (migration 0011, Part B / B24) ------
+
+    /// A legal `create_run` payload deserialises into the reused
+    /// `crate::domain::NewRun` param type; an out-of-set `kind` AND an out-of-set
+    /// `target_kind` are each REJECTED at the deserialise boundary (rmcp →
+    /// invalid_params).
+    #[tokio::test]
+    async fn create_run_params_deserialise_and_reject_bad_enum() {
+        let ok = serde_json::from_value::<crate::domain::NewRun>(serde_json::json!({
+            "kind": "review",
+            "target_id": "s1",
+            "target_kind": "story"
+        }));
+        assert!(ok.is_ok(), "a legal create_run payload deserialises");
+
+        // A bogus `kind` fails (RunKind has only review|optimise).
+        let bad_kind = serde_json::from_value::<crate::domain::NewRun>(serde_json::json!({
+            "kind": "bogus",
+            "target_id": "s1",
+            "target_kind": "story"
+        }))
+        .expect_err("an invalid run kind must fail to deserialize");
+        assert!(
+            bad_kind.to_string().contains("kind") || bad_kind.to_string().contains("variant"),
+            "deserialization error should concern the run-kind enum: {bad_kind}"
+        );
+
+        // A bogus `target_kind` fails (TargetKind has only sprint|story).
+        let bad_target = serde_json::from_value::<crate::domain::NewRun>(serde_json::json!({
+            "kind": "review",
+            "target_id": "s1",
+            "target_kind": "bogus"
+        }))
+        .expect_err("an invalid target kind must fail to deserialize");
+        assert!(
+            bad_target.to_string().contains("target_kind")
+                || bad_target.to_string().contains("variant"),
+            "deserialization error should concern the target-kind enum: {bad_target}"
+        );
+    }
+
+    /// A `create_sprint` payload deserialises into the reused
+    /// `crate::domain::NewSprint` param type (with and without a title — the
+    /// field is optional).
+    #[tokio::test]
+    async fn create_sprint_params_deserialise() {
+        let with_title = serde_json::from_value::<crate::domain::NewSprint>(serde_json::json!({
+            "title": "Sprint 1"
+        }));
+        assert!(with_title.is_ok(), "a create_sprint payload with a title deserialises");
+
+        let empty = serde_json::from_value::<crate::domain::NewSprint>(serde_json::json!({}));
+        assert!(empty.is_ok(), "an empty create_sprint payload deserialises (title optional)");
+    }
+
+    /// A legal `add_tasks_to_sprint` payload deserialises into the bespoke param
+    /// struct (a sprint id + a list of task ids).
+    #[tokio::test]
+    async fn add_tasks_to_sprint_params_deserialise() {
+        let ok = serde_json::from_value::<AddTasksToSprintParams>(serde_json::json!({
+            "sprint_id": "sp1",
+            "task_ids": ["t1", "t2", "t3"]
+        }));
+        assert!(ok.is_ok(), "a legal add_tasks_to_sprint payload deserialises");
+
+        // An empty task list is a structurally-valid (if no-op) shape.
+        let empty = serde_json::from_value::<AddTasksToSprintParams>(serde_json::json!({
+            "sprint_id": "sp1",
+            "task_ids": []
+        }));
+        assert!(empty.is_ok(), "an empty task list deserialises");
+    }
+
+    /// A legal `record_finding_decision` payload deserialises into the reused
+    /// `crate::domain::NewFindingDecision` param type; an out-of-set `decision`
+    /// is REJECTED at the deserialise boundary (rmcp → invalid_params).
+    #[tokio::test]
+    async fn record_finding_decision_params_deserialise_and_reject_bad_enum() {
+        let ok = serde_json::from_value::<crate::domain::NewFindingDecision>(serde_json::json!({
+            "finding_id": "f1",
+            "decision": "spawn_task",
+            "decided_by": "ross"
+        }));
+        assert!(ok.is_ok(), "a legal record_finding_decision payload deserialises");
+
+        // `decided_by` is optional.
+        let no_decider =
+            serde_json::from_value::<crate::domain::NewFindingDecision>(serde_json::json!({
+                "finding_id": "f1",
+                "decision": "resolve"
+            }));
+        assert!(no_decider.is_ok(), "a payload without decided_by deserialises");
+
+        // A bogus `decision` fails (FindingDecisionKind has only
+        // spawn_task|spawn_story|defer|dismiss|resolve).
+        let err = serde_json::from_value::<crate::domain::NewFindingDecision>(serde_json::json!({
+            "finding_id": "f1",
+            "decision": "bogus"
+        }))
+        .expect_err("an invalid finding decision must fail to deserialize");
+        assert!(
+            err.to_string().contains("decision") || err.to_string().contains("variant"),
+            "deserialization error should concern the finding-decision enum: {err}"
+        );
     }
 
     /// Driving the `add_findings` tool handler against an in-memory pool inserts
