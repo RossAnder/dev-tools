@@ -867,6 +867,102 @@ pub enum Phase {
     Closure,
 }
 
+/// Run kind (migration 0011) — CHECK-enforced at the DB layer on the
+/// `runs.kind` column (`review|optimise`). A run groups a batch of findings
+/// produced by one review or optimise pass over a sprint or story. The wire form
+/// matches the SQL CHECK literals byte-for-byte (snake_case). Consumed by the
+/// `create_run` repo path (B23) and the [`NewRun`] input struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RunKind {
+    /// A review pass.
+    Review,
+    /// An optimise pass.
+    Optimise,
+}
+
+/// Run lifecycle status (migration 0011) — CHECK-enforced at the DB layer on the
+/// `runs.status` column (`open|triaged|closed`); `open` is the column default.
+/// The wire form matches the SQL CHECK literals byte-for-byte (snake_case).
+/// Consumed by the run-lifecycle repo paths (B23).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    /// Findings are still being collected (the default at create).
+    Open,
+    /// Findings have been triaged (decisions recorded).
+    Triaged,
+    /// The run is closed.
+    Closed,
+}
+
+/// Run target kind (migration 0011) — CHECK-enforced at the DB layer on the
+/// `runs.target_kind` column (`sprint|story`): the kind of work-item a run
+/// targets. The wire form matches the SQL CHECK literals byte-for-byte
+/// (snake_case). Consumed by the `create_run` repo path (B23) and the
+/// [`NewRun`] input struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetKind {
+    /// The run targets a sprint.
+    Sprint,
+    /// The run targets a story.
+    Story,
+}
+
+/// Finding-decision kind (migration 0011) — CHECK-enforced at the DB layer on
+/// the `finding_decisions.decision` column
+/// (`spawn_task|spawn_story|defer|dismiss|resolve`): the triage verdict recorded
+/// against a finding. The wire form matches the SQL CHECK literals byte-for-byte
+/// (snake_case yields `spawn_task`/`spawn_story`). Consumed by the
+/// `record_finding_decision` repo path (B23) and the [`NewFindingDecision`]
+/// input struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FindingDecisionKind {
+    /// Spawn a task to address the finding.
+    SpawnTask,
+    /// Spawn a story to address the finding.
+    SpawnStory,
+    /// Defer the finding to a later pass.
+    Defer,
+    /// Dismiss the finding (no action).
+    Dismiss,
+    /// Resolve the finding directly.
+    Resolve,
+}
+
+/// Finding triage state (migration 0011) — stored on the free-TEXT
+/// `findings.triage_state` column (default `pending`, NO DB CHECK). `pending` is
+/// the column default; `accepted|dismissed|deferred` are the states the triage
+/// paths (B17c/B23) write. The enum is kept tight even though the column is not
+/// CHECK-constrained. The wire form is snake_case. Consumed by `query_findings`
+/// filtering (B20) and the triage repo paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TriageState {
+    /// Not yet triaged (the column default).
+    Pending,
+    /// Triaged and accepted.
+    Accepted,
+    /// Triaged and dismissed.
+    Dismissed,
+    /// Triaged and deferred.
+    Deferred,
+}
+
+/// The count-by axis for [`crate::repo::query_findings`] (decision D12,
+/// migration 0011): when `QueryFindingsFilter.count_by` is set, the query
+/// returns grouped [`AxisCount`] rows instead of full findings. Currently the
+/// only axis is `severity`. The wire form is snake_case. Consumed by the
+/// `query_findings` repo path (B20).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FindingAxis {
+    /// Group counts by `findings.severity`.
+    Severity,
+}
+
 /// One row of [`crate::repo::get_task_dispatch_plan`]'s output: a task's
 /// derived dispatch inputs (effort/complexity), the computed [`Tier`], and the
 /// `files_touched_count` that fed `compute_tier`. Returned read-only by the
@@ -1055,6 +1151,107 @@ pub struct UpdateResearchNoteRequest {
     pub lens: Option<String>,
 }
 
+/// Result of the bulk `add_findings` repo path (B17a, migration 0011): how many
+/// findings were inserted, how many were skipped (e.g. duplicate fingerprint),
+/// and the ids of the skipped inputs. `added`/`skipped` are `i64` to match the
+/// SQLite `rows_affected` parity used elsewhere in the repo layer. A read-model
+/// result, so it derives `Serialize` + `Deserialize` + `JsonSchema` for the
+/// HTTP/MCP layers and so HTTP tests can deserialise it.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BatchInsertResult {
+    /// Count of findings inserted.
+    pub added: i64,
+    /// Count of input findings skipped (not inserted).
+    pub skipped: i64,
+    /// The ids of the skipped inputs.
+    pub skipped_ids: Vec<String>,
+}
+
+/// One grouped count row returned by [`crate::repo::query_findings`] when a
+/// `count_by` axis is set (decision D12, migration 0011): the axis `key` (e.g.
+/// a severity string) and the `count` of findings with that key. A read-model
+/// result; derives `Serialize` + `Deserialize` + `JsonSchema`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AxisCount {
+    /// The grouping key (e.g. the `severity` value).
+    pub key: String,
+    /// The number of findings with this key.
+    pub count: i64,
+}
+
+/// Filter input for the `query_findings` repo path (B20, migration 0011): every
+/// field is `Option<_>` following the NULL-guard pattern (an absent field does
+/// not constrain that column). When `count_by` is set, the query returns grouped
+/// [`AxisCount`] rows instead of full findings. An input struct, so it derives
+/// `Deserialize` + `JsonSchema` (+ `Debug, Clone`).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct QueryFindingsFilter {
+    /// Constrain to findings on this work-item; absent ⇒ no constraint.
+    #[serde(default)]
+    pub work_item_id: Option<String>,
+    /// Constrain to findings from this run; absent ⇒ no constraint.
+    #[serde(default)]
+    pub run_id: Option<String>,
+    /// Constrain to this severity; absent ⇒ no constraint.
+    #[serde(default)]
+    pub severity: Option<String>,
+    /// Constrain to this category; absent ⇒ no constraint.
+    #[serde(default)]
+    pub category: Option<String>,
+    /// Constrain to this workflow status; absent ⇒ no constraint.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Constrain to this triage state; absent ⇒ no constraint.
+    #[serde(default)]
+    pub triage_state: Option<String>,
+    /// When set, return grouped [`AxisCount`] rows by this axis instead of
+    /// full findings.
+    #[serde(default)]
+    pub count_by: Option<FindingAxis>,
+}
+
+/// Create input for the `create_run` repo path (B23, migration 0011): the run's
+/// kind and the work-item it targets (with the target's kind). The run id,
+/// status (defaults `open`), and timestamp are minted by the repo. An input
+/// struct, so it derives `Deserialize` + `JsonSchema` (+ `Debug, Clone`).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct NewRun {
+    /// Whether this is a review or optimise run.
+    pub kind: RunKind,
+    /// The id of the work-item this run targets.
+    pub target_id: String,
+    /// The kind of the targeted work-item (`sprint|story`).
+    pub target_kind: TargetKind,
+}
+
+/// Create input for the `create_sprint` repo path (B23, migration 0011): an
+/// optional sprint title. The sprint id, status (defaults `open`), and timestamp
+/// are minted by the repo. An input struct, so it derives `Deserialize` +
+/// `JsonSchema` (+ `Debug, Clone`).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct NewSprint {
+    /// Optional sprint title; absent ⇒ NULL.
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+/// Create input for the `record_finding_decision` repo path (B23, migration
+/// 0011): the finding being triaged, the decision recorded, and who decided.
+/// The decision id, the spawned-work-item id (when `decision` is
+/// `spawn_task`/`spawn_story`), and the timestamp are produced by the repo — the
+/// spawned id is NOT supplied by the caller. An input struct, so it derives
+/// `Deserialize` + `JsonSchema` (+ `Debug, Clone`).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct NewFindingDecision {
+    /// The id of the finding being triaged.
+    pub finding_id: String,
+    /// The triage verdict.
+    pub decision: FindingDecisionKind,
+    /// Who recorded the decision; absent ⇒ NULL.
+    #[serde(default)]
+    pub decided_by: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1110,6 +1307,49 @@ mod tests {
         assert_snake(QuestionStatus::Cancelled, "cancelled");
         assert_snake(ClosureGate::Hard, "hard");
         assert_snake(ClosureGate::Soft, "soft");
+    }
+
+    #[test]
+    fn migration_0011_enums_round_trip_snake_case() {
+        // RunKind — wire forms must equal the runs.kind CHECK vocab.
+        assert_snake(RunKind::Review, "review");
+        assert_snake(RunKind::Optimise, "optimise");
+        // RunStatus — runs.status CHECK vocab.
+        assert_snake(RunStatus::Open, "open");
+        assert_snake(RunStatus::Triaged, "triaged");
+        assert_snake(RunStatus::Closed, "closed");
+        // TargetKind — runs.target_kind CHECK vocab.
+        assert_snake(TargetKind::Sprint, "sprint");
+        assert_snake(TargetKind::Story, "story");
+        // FindingDecisionKind — finding_decisions.decision CHECK vocab; the
+        // two-word variants are snake_case (NOT kebab-case).
+        assert_snake(FindingDecisionKind::SpawnTask, "spawn_task");
+        assert_snake(FindingDecisionKind::SpawnStory, "spawn_story");
+        assert_snake(FindingDecisionKind::Defer, "defer");
+        assert_snake(FindingDecisionKind::Dismiss, "dismiss");
+        assert_snake(FindingDecisionKind::Resolve, "resolve");
+        // TriageState — findings.triage_state values (default `pending`).
+        assert_snake(TriageState::Pending, "pending");
+        assert_snake(TriageState::Accepted, "accepted");
+        assert_snake(TriageState::Dismissed, "dismissed");
+        assert_snake(TriageState::Deferred, "deferred");
+        // FindingAxis — the query_findings count-by axis.
+        assert_snake(FindingAxis::Severity, "severity");
+
+        // Explicit json! assertions on the load-bearing two-word forms, to
+        // pin them against the 0011 CHECK literals byte-for-byte.
+        assert_eq!(
+            serde_json::to_value(RunKind::Optimise).unwrap(),
+            serde_json::json!("optimise")
+        );
+        assert_eq!(
+            serde_json::to_value(FindingDecisionKind::SpawnTask).unwrap(),
+            serde_json::json!("spawn_task")
+        );
+        assert_eq!(
+            serde_json::to_value(FindingDecisionKind::SpawnStory).unwrap(),
+            serde_json::json!("spawn_story")
+        );
     }
 
     #[test]
