@@ -3696,35 +3696,60 @@ fn validate_risk_severity_str(s: &str) -> Result<String, AppError> {
         })
 }
 
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`Risk`] aggregate (canonical
+/// recipe, A9 wave). The NOT NULL columns map to `String`/`i64`; the nullable
+/// columns (`body`/`rationale`/`severity`/`mitigation`/`superseded_by`) map to
+/// `Option<String>`. Replaces the old `query_as!` `AS "col!"`/`"col?"` hints.
+impl<'r, R> sqlx::FromRow<'r, R> for Risk
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(Risk {
+            id: row.try_get("id")?,
+            work_item_id: row.try_get("work_item_id")?,
+            seq: row.try_get("seq")?,
+            summary: row.try_get("summary")?,
+            body: row.try_get("body")?,
+            rationale: row.try_get("rationale")?,
+            severity: row.try_get("severity")?,
+            mitigation: row.try_get("mitigation")?,
+            superseded_by: row.try_get("superseded_by")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
 /// List the LIVE risk rows for a work item (migration 0005), ordered by the
 /// per-item monotonic `seq`. "Live" = `superseded_by IS NULL`; a superseded
-/// risk drops out of this fold. `query_as!` straight onto the [`Risk`] read
-/// struct (all columns map 1:1).
-async fn list_risks(pool: &SqlitePool, work_item_id: &str) -> Result<Vec<Risk>, AppError> {
-    let rows = sqlx::query_as!(
-        Risk,
+/// risk drops out of this fold. Runtime seam: `query_all` onto the [`Risk`]
+/// read struct (all columns map 1:1 via its FromRow).
+async fn list_risks(db: &impl DbClient, work_item_id: &str) -> Result<Vec<Risk>, AppError> {
+    db.query_all::<Risk>(
         r#"
         SELECT
-            id            AS "id!",
-            work_item_id  AS "work_item_id!",
-            seq           AS "seq!",
-            summary       AS "summary!",
-            body          AS "body?",
-            rationale     AS "rationale?",
-            severity      AS "severity?",
-            mitigation    AS "mitigation?",
-            superseded_by AS "superseded_by?",
-            created_at    AS "created_at!"
+            id,
+            work_item_id,
+            seq,
+            summary,
+            body,
+            rationale,
+            severity,
+            mitigation,
+            superseded_by,
+            created_at
         FROM risks
-        WHERE work_item_id = ?1
+        WHERE work_item_id = $1
           AND superseded_by IS NULL
         ORDER BY seq
         "#,
-        work_item_id,
+        args![work_item_id.to_owned()],
     )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
+    .await
 }
 
 /// Append ONE `risks` row under the single-mutation-path discipline (migration
@@ -3735,7 +3760,7 @@ async fn list_risks(pool: &SqlitePool, work_item_id: &str) -> Result<Vec<Risk>, 
 /// `risk.added` routed to the owning work-item's `work_item` aggregate so
 /// `export.rs` re-renders. Returns the new risk id.
 pub async fn add_risk(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     summary: &str,
     body: Option<&str>,
@@ -3745,37 +3770,37 @@ pub async fn add_risk(
 ) -> Result<Uuid, AppError> {
     let severity = validate_risk_severity_str(severity)?;
     // Verify the work item exists first (NotFound, not a dangling-FK 500).
-    let _ = work_item_kind(pool, work_item_id).await?;
+    let _ = work_item_kind(db, work_item_id).await?;
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM risks WHERE work_item_id = ?1"#,
-        work_item_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM risks WHERE work_item_id = $1",
+        args![work_item_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
+    tx.execute(
         r#"
         INSERT INTO risks
             (id, work_item_id, seq, summary, body, rationale, severity, mitigation)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
-        id_str,
-        work_item_id,
-        seq,
-        summary,
-        body,
-        rationale,
-        severity,
-        mitigation,
+        args![
+            id_str.clone(),
+            work_item_id.to_owned(),
+            seq,
+            summary.to_owned(),
+            body.map(str::to_owned),
+            rationale.map(str::to_owned),
+            severity.to_owned(),
+            mitigation.map(str::to_owned),
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({
@@ -3783,7 +3808,7 @@ pub async fn add_risk(
         "seq": seq,
         "severity": severity,
     });
-    record_event(&mut tx, "work_item", work_item_id, "risk.added", payload).await?;
+    record_event(tx.as_mut(), "work_item", work_item_id, "risk.added", payload).await?;
 
     tx.commit().await?;
     Ok(id)
@@ -3792,14 +3817,13 @@ pub async fn add_risk(
 /// Read a risk's owning `work_item_id`, erroring `NotFound` if the risk id has
 /// no row. Mirrors [`research_note_work_item`] — the update / supersede /
 /// remove paths all need the owning aggregate id for the event routing.
-async fn risk_work_item(pool: &SqlitePool, id: &str) -> Result<String, AppError> {
-    sqlx::query!(
-        r#"SELECT work_item_id AS "work_item_id!" FROM risks WHERE id = ?1"#,
-        id,
+async fn risk_work_item(db: &impl DbClient, id: &str) -> Result<String, AppError> {
+    crate::db::scalar_opt::<String>(
+        db,
+        "SELECT work_item_id FROM risks WHERE id = $1",
+        args![id.to_owned()],
     )
-    .fetch_optional(pool)
     .await?
-    .map(|r| r.work_item_id)
     .ok_or_else(|| AppError::NotFound(format!("risk '{id}' not found")))
 }
 
@@ -3809,35 +3833,36 @@ async fn risk_work_item(pool: &SqlitePool, id: &str) -> Result<String, AppError>
 /// bind. Mirrors [`update_research_note`]. `NotFound` via `rows_affected()==0`;
 /// one event `risk.updated`.
 pub async fn update_risk(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     patch: &RiskPatch,
 ) -> Result<(), AppError> {
-    let work_item_id = risk_work_item(pool, id).await?;
+    let work_item_id = risk_work_item(db, id).await?;
     let severity_str: Option<String> = patch.severity.map(risk_severity_str);
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
+    let affected = tx
+        .execute(
+            r#"
         UPDATE risks
-        SET summary    = COALESCE(?2, summary),
-            body       = COALESCE(?3, body),
-            rationale  = COALESCE(?4, rationale),
-            severity   = COALESCE(?5, severity),
-            mitigation = COALESCE(?6, mitigation)
-        WHERE id = ?1
+        SET summary    = COALESCE($2, summary),
+            body       = COALESCE($3, body),
+            rationale  = COALESCE($4, rationale),
+            severity   = COALESCE($5, severity),
+            mitigation = COALESCE($6, mitigation)
+        WHERE id = $1
         "#,
-        id,
-        patch.summary,
-        patch.body,
-        patch.rationale,
-        severity_str,
-        patch.mitigation,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+            args![
+                id.to_owned(),
+                patch.summary.clone(),
+                patch.body.clone(),
+                patch.rationale.clone(),
+                severity_str.clone(),
+                patch.mitigation.clone(),
+            ],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("risk '{id}' not found")));
@@ -3847,7 +3872,7 @@ pub async fn update_risk(
         "risk_id": id,
         "severity": severity_str,
     });
-    record_event(&mut tx, "work_item", &work_item_id, "risk.updated", payload).await?;
+    record_event(tx.as_mut(), "work_item", &work_item_id, "risk.updated", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -3861,7 +3886,7 @@ pub async fn update_risk(
 /// supersession discipline in [`supersede_research_note`]). Returns the new id.
 #[allow(clippy::too_many_arguments)]
 pub async fn supersede_risk(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     old_id: &str,
     new_summary: &str,
@@ -3872,7 +3897,7 @@ pub async fn supersede_risk(
 ) -> Result<Uuid, AppError> {
     let severity = validate_risk_severity_str(new_severity)?;
     // Verify the old risk belongs to the named work item; NotFound otherwise.
-    let actual_wi = risk_work_item(pool, old_id).await?;
+    let actual_wi = risk_work_item(db, old_id).await?;
     if actual_wi != work_item_id {
         return Err(AppError::Validation(format!(
             "risk '{old_id}' belongs to work_item '{actual_wi}', not '{work_item_id}'"
@@ -3882,42 +3907,40 @@ pub async fn supersede_risk(
     let new_id = Uuid::now_v7();
     let new_id_str = new_id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM risks WHERE work_item_id = ?1"#,
-        work_item_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM risks WHERE work_item_id = $1",
+        args![work_item_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
+    tx.execute(
         r#"
         INSERT INTO risks
             (id, work_item_id, seq, summary, body, rationale, severity, mitigation)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
-        new_id_str,
-        work_item_id,
-        seq,
-        new_summary,
-        new_body,
-        new_rationale,
-        severity,
-        new_mitigation,
+        args![
+            new_id_str.clone(),
+            work_item_id.to_owned(),
+            seq,
+            new_summary.to_owned(),
+            new_body.map(str::to_owned),
+            new_rationale.map(str::to_owned),
+            severity.clone(),
+            new_mitigation.map(str::to_owned),
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE risks SET superseded_by = ?2 WHERE id = ?1"#,
-        old_id,
-        new_id_str,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE risks SET superseded_by = $2 WHERE id = $1",
+            args![old_id.to_owned(), new_id_str.clone()],
+        )
+        .await?;
 
     if affected == 0 {
         // Concurrent delete between `risk_work_item` read and the UPDATE; the
@@ -3931,7 +3954,7 @@ pub async fn supersede_risk(
         "seq": seq,
         "severity": severity,
     });
-    record_event(&mut tx, "work_item", work_item_id, "risk.superseded", payload).await?;
+    record_event(tx.as_mut(), "work_item", work_item_id, "risk.superseded", payload).await?;
 
     tx.commit().await?;
     Ok(new_id)
@@ -3941,22 +3964,21 @@ pub async fn supersede_risk(
 /// independent export identity (they fold into the owning work-item's TOML), so
 /// removal is a hard DELETE. `NotFound` via `rows_affected()==0`. Event
 /// `risk.removed` on the owning work-item's aggregate.
-pub async fn remove_risk(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
-    let work_item_id = risk_work_item(pool, id).await?;
+pub async fn remove_risk(db: &impl DbClient, id: &str) -> Result<(), AppError> {
+    let work_item_id = risk_work_item(db, id).await?;
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(r#"DELETE FROM risks WHERE id = ?1"#, id)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
+    let affected = tx
+        .execute("DELETE FROM risks WHERE id = $1", args![id.to_owned()])
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("risk '{id}' not found")));
     }
 
     let payload = serde_json::json!({ "risk_id": id, "removed": true });
-    record_event(&mut tx, "work_item", &work_item_id, "risk.removed", payload).await?;
+    record_event(tx.as_mut(), "work_item", &work_item_id, "risk.removed", payload).await?;
 
     tx.commit().await?;
     Ok(())
@@ -3968,35 +3990,59 @@ pub async fn remove_risk(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
 // the repo, NOT a DB CHECK).
 // ---------------------------------------------------------------------------
 
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`RejectedAlternative`]
+/// aggregate (canonical recipe, A9 wave). NOT NULL columns map to `String`/`i64`;
+/// the nullable columns (`body`/`rationale`/`confidence`/`superseded_by`) map to
+/// `Option<String>`. Replaces the old `query_as!` `AS "col!"`/`"col?"` hints.
+impl<'r, R> sqlx::FromRow<'r, R> for RejectedAlternative
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(RejectedAlternative {
+            id: row.try_get("id")?,
+            work_item_id: row.try_get("work_item_id")?,
+            seq: row.try_get("seq")?,
+            summary: row.try_get("summary")?,
+            body: row.try_get("body")?,
+            rationale: row.try_get("rationale")?,
+            confidence: row.try_get("confidence")?,
+            superseded_by: row.try_get("superseded_by")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
 /// List the LIVE rejected-alternative rows for a work item (migration 0005),
 /// ordered by the per-item monotonic `seq`. "Live" = `superseded_by IS NULL`.
 async fn list_rejected_alternatives(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
 ) -> Result<Vec<RejectedAlternative>, AppError> {
-    let rows = sqlx::query_as!(
-        RejectedAlternative,
+    db.query_all::<RejectedAlternative>(
         r#"
         SELECT
-            id            AS "id!",
-            work_item_id  AS "work_item_id!",
-            seq           AS "seq!",
-            summary       AS "summary!",
-            body          AS "body?",
-            rationale     AS "rationale?",
-            confidence    AS "confidence?",
-            superseded_by AS "superseded_by?",
-            created_at    AS "created_at!"
+            id,
+            work_item_id,
+            seq,
+            summary,
+            body,
+            rationale,
+            confidence,
+            superseded_by,
+            created_at
         FROM rejected_alternatives
-        WHERE work_item_id = ?1
+        WHERE work_item_id = $1
           AND superseded_by IS NULL
         ORDER BY seq
         "#,
-        work_item_id,
+        args![work_item_id.to_owned()],
     )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
+    .await
 }
 
 /// Append ONE `rejected_alternatives` row under the single-mutation-path
@@ -4004,7 +4050,7 @@ async fn list_rejected_alternatives(
 /// validation: `confidence` is free TEXT (validated nowhere at the DB; mirrors
 /// `research_notes.confidence`). Event `rejected_alternative.added`.
 pub async fn add_rejected_alternative(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     summary: &str,
     body: Option<&str>,
@@ -4012,36 +4058,36 @@ pub async fn add_rejected_alternative(
     confidence: Option<&str>,
 ) -> Result<Uuid, AppError> {
     // Verify the work item exists first (NotFound, not a dangling-FK 500).
-    let _ = work_item_kind(pool, work_item_id).await?;
+    let _ = work_item_kind(db, work_item_id).await?;
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM rejected_alternatives WHERE work_item_id = ?1"#,
-        work_item_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM rejected_alternatives WHERE work_item_id = $1",
+        args![work_item_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
+    tx.execute(
         r#"
         INSERT INTO rejected_alternatives
             (id, work_item_id, seq, summary, body, rationale, confidence)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
-        id_str,
-        work_item_id,
-        seq,
-        summary,
-        body,
-        rationale,
-        confidence,
+        args![
+            id_str.clone(),
+            work_item_id.to_owned(),
+            seq,
+            summary.to_owned(),
+            body.map(str::to_owned),
+            rationale.map(str::to_owned),
+            confidence.map(str::to_owned),
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({
@@ -4049,7 +4095,7 @@ pub async fn add_rejected_alternative(
         "seq": seq,
     });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         work_item_id,
         "rejected_alternative.added",
@@ -4064,16 +4110,15 @@ pub async fn add_rejected_alternative(
 /// Read a rejected-alternative's owning `work_item_id`, erroring `NotFound` if
 /// the id has no row. Mirrors [`risk_work_item`].
 async fn rejected_alternative_work_item(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
 ) -> Result<String, AppError> {
-    sqlx::query!(
-        r#"SELECT work_item_id AS "work_item_id!" FROM rejected_alternatives WHERE id = ?1"#,
-        id,
+    crate::db::scalar_opt::<String>(
+        db,
+        "SELECT work_item_id FROM rejected_alternatives WHERE id = $1",
+        args![id.to_owned()],
     )
-    .fetch_optional(pool)
     .await?
-    .map(|r| r.work_item_id)
     .ok_or_else(|| AppError::NotFound(format!("rejected_alternative '{id}' not found")))
 }
 
@@ -4081,32 +4126,33 @@ async fn rejected_alternative_work_item(
 /// (migration 0005). Mirrors [`update_risk`] minus severity; `confidence` is
 /// free TEXT, no enum projection. Event `rejected_alternative.updated`.
 pub async fn update_rejected_alternative(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     id: &str,
     patch: &AlternativePatch,
 ) -> Result<(), AppError> {
-    let work_item_id = rejected_alternative_work_item(pool, id).await?;
+    let work_item_id = rejected_alternative_work_item(db, id).await?;
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"
+    let affected = tx
+        .execute(
+            r#"
         UPDATE rejected_alternatives
-        SET summary    = COALESCE(?2, summary),
-            body       = COALESCE(?3, body),
-            rationale  = COALESCE(?4, rationale),
-            confidence = COALESCE(?5, confidence)
-        WHERE id = ?1
+        SET summary    = COALESCE($2, summary),
+            body       = COALESCE($3, body),
+            rationale  = COALESCE($4, rationale),
+            confidence = COALESCE($5, confidence)
+        WHERE id = $1
         "#,
-        id,
-        patch.summary,
-        patch.body,
-        patch.rationale,
-        patch.confidence,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+            args![
+                id.to_owned(),
+                patch.summary.clone(),
+                patch.body.clone(),
+                patch.rationale.clone(),
+                patch.confidence.clone(),
+            ],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("rejected_alternative '{id}' not found")));
@@ -4114,7 +4160,7 @@ pub async fn update_rejected_alternative(
 
     let payload = serde_json::json!({ "alternative_id": id });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         &work_item_id,
         "rejected_alternative.updated",
@@ -4131,7 +4177,7 @@ pub async fn update_rejected_alternative(
 /// Mirrors [`supersede_risk`]; one transaction, one event
 /// `rejected_alternative.superseded`. Returns the new id.
 pub async fn supersede_rejected_alternative(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     work_item_id: &str,
     old_id: &str,
     new_summary: &str,
@@ -4139,7 +4185,7 @@ pub async fn supersede_rejected_alternative(
     new_rationale: Option<&str>,
     new_confidence: Option<&str>,
 ) -> Result<Uuid, AppError> {
-    let actual_wi = rejected_alternative_work_item(pool, old_id).await?;
+    let actual_wi = rejected_alternative_work_item(db, old_id).await?;
     if actual_wi != work_item_id {
         return Err(AppError::Validation(format!(
             "rejected_alternative '{old_id}' belongs to work_item '{actual_wi}', \
@@ -4150,41 +4196,39 @@ pub async fn supersede_rejected_alternative(
     let new_id = Uuid::now_v7();
     let new_id_str = new_id.to_string();
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let seq = sqlx::query!(
-        r#"SELECT COALESCE(MAX(seq), 0) + 1 AS "next!" FROM rejected_alternatives WHERE work_item_id = ?1"#,
-        work_item_id,
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM rejected_alternatives WHERE work_item_id = $1",
+        args![work_item_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
-    .await?
-    .next;
+    .await?;
 
-    sqlx::query!(
+    tx.execute(
         r#"
         INSERT INTO rejected_alternatives
             (id, work_item_id, seq, summary, body, rationale, confidence)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
-        new_id_str,
-        work_item_id,
-        seq,
-        new_summary,
-        new_body,
-        new_rationale,
-        new_confidence,
+        args![
+            new_id_str.clone(),
+            work_item_id.to_owned(),
+            seq,
+            new_summary.to_owned(),
+            new_body.map(str::to_owned),
+            new_rationale.map(str::to_owned),
+            new_confidence.map(str::to_owned),
+        ],
     )
-    .execute(&mut *tx)
     .await?;
 
-    let affected = sqlx::query!(
-        r#"UPDATE rejected_alternatives SET superseded_by = ?2 WHERE id = ?1"#,
-        old_id,
-        new_id_str,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "UPDATE rejected_alternatives SET superseded_by = $2 WHERE id = $1",
+            args![old_id.to_owned(), new_id_str.clone()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!(
@@ -4198,7 +4242,7 @@ pub async fn supersede_rejected_alternative(
         "seq": seq,
     });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         work_item_id,
         "rejected_alternative.superseded",
@@ -4212,15 +4256,17 @@ pub async fn supersede_rejected_alternative(
 
 /// Hard-delete a rejected alternative under the single-mutation-path discipline.
 /// `NotFound` via `rows_affected()==0`; one event `rejected_alternative.removed`.
-pub async fn remove_rejected_alternative(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
-    let work_item_id = rejected_alternative_work_item(pool, id).await?;
+pub async fn remove_rejected_alternative(db: &impl DbClient, id: &str) -> Result<(), AppError> {
+    let work_item_id = rejected_alternative_work_item(db, id).await?;
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(r#"DELETE FROM rejected_alternatives WHERE id = ?1"#, id)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
+    let affected = tx
+        .execute(
+            "DELETE FROM rejected_alternatives WHERE id = $1",
+            args![id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!("rejected_alternative '{id}' not found")));
@@ -4228,7 +4274,7 @@ pub async fn remove_rejected_alternative(pool: &SqlitePool, id: &str) -> Result<
 
     let payload = serde_json::json!({ "alternative_id": id, "removed": true });
     record_event(
-        &mut tx,
+        tx.as_mut(),
         "work_item",
         &work_item_id,
         "rejected_alternative.removed",
@@ -4251,27 +4297,44 @@ pub async fn remove_rejected_alternative(pool: &SqlitePool, id: &str) -> Result<
 /// List the OUTGOING task_dependencies edges from `task_id`, ordered by
 /// `depends_on_id` for deterministic output. Used by `get_work_item_detail`'s
 /// per-task fold.
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`TaskDependency`] edge
+/// aggregate (canonical recipe, A9 wave). All four columns are NOT NULL, so the
+/// field types are `String` (no `Option<String>` bound is needed). Replaces the
+/// old `query_as!` `AS "col!"` macro hints.
+impl<'r, R> sqlx::FromRow<'r, R> for TaskDependency
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(TaskDependency {
+            task_id: row.try_get("task_id")?,
+            depends_on_id: row.try_get("depends_on_id")?,
+            kind: row.try_get("kind")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
 async fn list_outgoing_task_dependencies(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     task_id: &str,
 ) -> Result<Vec<TaskDependency>, AppError> {
-    let rows = sqlx::query_as!(
-        TaskDependency,
+    db.query_all::<TaskDependency>(
         r#"
         SELECT
-            task_id       AS "task_id!",
-            depends_on_id AS "depends_on_id!",
-            kind          AS "kind!",
-            created_at    AS "created_at!"
+            task_id,
+            depends_on_id,
+            kind,
+            created_at
         FROM task_dependencies
-        WHERE task_id = ?1
+        WHERE task_id = $1
         ORDER BY depends_on_id
         "#,
-        task_id,
+        args![task_id.to_owned()],
     )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
+    .await
 }
 
 /// List all task_dependencies edges where BOTH endpoints are direct task
@@ -4279,27 +4342,26 @@ async fn list_outgoing_task_dependencies(
 /// deterministic output. Used by [`compute_task_batches`] and by the
 /// `wire-task-deps` SKILL to render the story's dependency graph.
 pub async fn list_task_dependencies(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     story_id: &str,
 ) -> Result<Vec<TaskDependency>, AppError> {
-    let rows = sqlx::query_as!(
-        TaskDependency,
+    // `$1` (story_id) is referenced twice in the predicate; SQLite reuses the
+    // same bound value for both occurrences, so a single positional bind suffices.
+    db.query_all::<TaskDependency>(
         r#"
         SELECT
-            task_id       AS "task_id!",
-            depends_on_id AS "depends_on_id!",
-            kind          AS "kind!",
-            created_at    AS "created_at!"
+            task_id,
+            depends_on_id,
+            kind,
+            created_at
         FROM task_dependencies
-        WHERE task_id       IN (SELECT id FROM work_items WHERE parent_id = ?1 AND kind = 'task')
-          AND depends_on_id IN (SELECT id FROM work_items WHERE parent_id = ?1 AND kind = 'task')
+        WHERE task_id       IN (SELECT id FROM work_items WHERE parent_id = $1 AND kind = 'task')
+          AND depends_on_id IN (SELECT id FROM work_items WHERE parent_id = $1 AND kind = 'task')
         ORDER BY task_id, depends_on_id
         "#,
-        story_id,
+        args![story_id.to_owned()],
     )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
+    .await
 }
 
 /// Add a task→task dependency edge under the single-mutation-path discipline.
@@ -4311,7 +4373,7 @@ pub async fn list_task_dependencies(
 /// re-projected here as a clean `Validation`. Event `task_dependency.added`
 /// routed to the owning task's aggregate so `export.rs` re-renders.
 pub async fn add_task_dependency(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     task_id: &str,
     depends_on_id: &str,
     kind: &str,
@@ -4324,57 +4386,54 @@ pub async fn add_task_dependency(
 
     // Pre-check both endpoints are kind=task; surfaces NotFound (id absent)
     // and Validation (wrong kind) as clean typed errors.
-    let task_kind = work_item_kind(pool, task_id).await?;
+    let task_kind = work_item_kind(db, task_id).await?;
     if task_kind != "task" {
         return Err(AppError::Validation(format!(
             "task_dependency.task_id must reference a 'task', not a '{task_kind}'"
         )));
     }
-    let dep_kind = work_item_kind(pool, depends_on_id).await?;
+    let dep_kind = work_item_kind(db, depends_on_id).await?;
     if dep_kind != "task" {
         return Err(AppError::Validation(format!(
             "task_dependency.depends_on_id must reference a 'task', not a '{dep_kind}'"
         )));
     }
 
-    let mut tx = crate::db::begin_write(pool).await?;
+    let backend = db.backend();
+    let mut tx = db.begin().await?;
 
-    let insert = sqlx::query!(
-        r#"
+    match tx
+        .execute(
+            r#"
         INSERT INTO task_dependencies (task_id, depends_on_id, kind)
-        VALUES (?1, ?2, ?3)
+        VALUES ($1, $2, $3)
         "#,
-        task_id,
-        depends_on_id,
-        kind,
-    )
-    .execute(&mut *tx)
-    .await;
-
-    if let Err(e) = insert {
-        if is_unique_violation(crate::db::Backend::Sqlite, &e) {
+            args![task_id.to_owned(), depends_on_id.to_owned(), kind.to_owned()],
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(AppError::Db(ref sqlx_err)) if is_unique_violation(backend, sqlx_err) => {
             return Err(AppError::Validation(format!(
                 "task_dependency '{task_id} -> {depends_on_id}' already exists"
             )));
         }
-        return Err(e.into());
+        Err(e) => return Err(e),
     }
 
-    let row = sqlx::query_as!(
-        TaskDependency,
+    let row = crate::db::tx_query_one::<TaskDependency>(
+        tx.as_mut(),
         r#"
         SELECT
-            task_id       AS "task_id!",
-            depends_on_id AS "depends_on_id!",
-            kind          AS "kind!",
-            created_at    AS "created_at!"
+            task_id,
+            depends_on_id,
+            kind,
+            created_at
         FROM task_dependencies
-        WHERE task_id = ?1 AND depends_on_id = ?2
+        WHERE task_id = $1 AND depends_on_id = $2
         "#,
-        task_id,
-        depends_on_id,
+        args![task_id.to_owned(), depends_on_id.to_owned()],
     )
-    .fetch_one(&mut *tx)
     .await?;
 
     let payload = serde_json::json!({
@@ -4382,7 +4441,7 @@ pub async fn add_task_dependency(
         "depends_on_id": depends_on_id,
         "kind": kind,
     });
-    record_event(&mut tx, "work_item", task_id, "task_dependency.added", payload).await?;
+    record_event(tx.as_mut(), "work_item", task_id, "task_dependency.added", payload).await?;
 
     tx.commit().await?;
     Ok(row)
@@ -4392,20 +4451,18 @@ pub async fn add_task_dependency(
 /// removing an absent edge does not emit a spurious event. Event
 /// `task_dependency.removed` routed to the owning task's aggregate.
 pub async fn remove_task_dependency(
-    pool: &SqlitePool,
+    db: &impl DbClient,
     task_id: &str,
     depends_on_id: &str,
 ) -> Result<(), AppError> {
-    let mut tx = crate::db::begin_write(pool).await?;
+    let mut tx = db.begin().await?;
 
-    let affected = sqlx::query!(
-        r#"DELETE FROM task_dependencies WHERE task_id = ?1 AND depends_on_id = ?2"#,
-        task_id,
-        depends_on_id,
-    )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    let affected = tx
+        .execute(
+            "DELETE FROM task_dependencies WHERE task_id = $1 AND depends_on_id = $2",
+            args![task_id.to_owned(), depends_on_id.to_owned()],
+        )
+        .await?;
 
     if affected == 0 {
         return Err(AppError::NotFound(format!(
@@ -4417,7 +4474,7 @@ pub async fn remove_task_dependency(
         "task_id": task_id,
         "depends_on_id": depends_on_id,
     });
-    record_event(&mut tx, "work_item", task_id, "task_dependency.removed", payload).await?;
+    record_event(tx.as_mut(), "work_item", task_id, "task_dependency.removed", payload).await?;
 
     tx.commit().await?;
     Ok(())
