@@ -8,6 +8,8 @@
 //!   * `PATCH /findings/{id}`                           — partial set-or-leave update.
 //!   * `POST  /findings/{id}/resolve`                   — terminal disposition.
 //!   * `POST  /findings/{old_id}/supersede/{new_id}`    — chain old→new.
+//!   * `POST  /findings/batch`                          — bulk add (B19).
+//!   * `POST  /findings/batch-update`                   — bulk triage update (B19).
 //!
 //! Each handler delegates to a single `repo::*` call, mirroring the MCP tools.
 
@@ -22,7 +24,7 @@ use serde::Deserialize;
 use crate::app::AppState;
 use crate::domain::{Disposition, Origin, Severity, UpdateFindingRequest};
 use crate::error::AppError;
-use crate::repo::{self, NewFinding};
+use crate::repo::{self, FindingTriageUpdate, NewFinding};
 
 /// Body for `POST /work-items/{id}/findings`. Mirrors `mcp::AddFindingParams`
 /// minus the `work_item_id` (which arrives on the path).
@@ -95,6 +97,74 @@ struct ResolveFindingBody {
     pub rationale: Option<String>,
 }
 
+/// One element of `BatchFindingsBody.items` (B19). Mirrors `AddFindingBody` plus
+/// the per-item `work_item_id` (the batch carries no path id), since
+/// `repo::add_findings` keys each finding by `(work_item_id, NewFinding)`.
+#[derive(Debug, Deserialize)]
+struct BatchFindingItem {
+    pub work_item_id: String,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub severity: Option<Severity>,
+    #[serde(default)]
+    pub effort: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub line: Option<i64>,
+    #[serde(default)]
+    pub symbol: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub confidence: Option<String>,
+    #[serde(default)]
+    pub origin: Option<Origin>,
+    #[serde(default)]
+    pub repo_id: Option<String>,
+}
+
+/// Body for `POST /findings/batch`. Mirrors `mcp::AddFindingsParams`: an optional
+/// `run_id` association threaded onto every inserted finding, plus the `items`
+/// list. `repo::add_findings` stamps each finding's `dedup_id` itself, so callers
+/// never supply one.
+#[derive(Debug, Deserialize)]
+struct BatchFindingsBody {
+    #[serde(default)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    pub items: Vec<BatchFindingItem>,
+}
+
+/// One element of `BatchUpdateFindingsBody.updates` (B19). Mirrors `mcp::
+/// FindingTriageUpdateParams`: the four mutable triage columns, set-or-leave, keyed
+/// by `finding_id`. A terminal `status` (a `Disposition` wire value) is rejected by
+/// `repo::batch_update_findings` with 422.
+#[derive(Debug, Deserialize)]
+struct BatchFindingUpdateItem {
+    pub finding_id: String,
+    #[serde(default)]
+    pub triage_state: Option<String>,
+    #[serde(default)]
+    pub severity: Option<Severity>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+/// Body for `POST /findings/batch-update`.
+#[derive(Debug, Deserialize)]
+struct BatchUpdateFindingsBody {
+    #[serde(default)]
+    pub updates: Vec<BatchFindingUpdateItem>,
+}
+
 /// Build the findings sub-router. Returned as `Router<AppState>` so
 /// `http::router` can `.merge` it with the other per-family sub-routers.
 pub fn router() -> Router<AppState> {
@@ -102,6 +172,11 @@ pub fn router() -> Router<AppState> {
         .route(
             "/work-items/{id}/findings",
             post(add_finding_handler),
+        )
+        .route("/findings/batch", post(add_findings_batch_handler))
+        .route(
+            "/findings/batch-update",
+            post(batch_update_findings_handler),
         )
         .route("/findings/{id}", patch(update_finding_handler))
         .route("/findings/{id}/resolve", post(resolve_finding_handler))
@@ -149,6 +224,75 @@ async fn add_finding_handler(
         StatusCode::CREATED,
         Json(serde_json::json!({ "id": id.to_string() })),
     ))
+}
+
+/// `POST /findings/batch` — bulk add (B19), delegating to `repo::add_findings`
+/// (the same call the B18 `add_findings` MCP tool drives). Dedup-collapse is NOT
+/// an error: a deduped element lands in the response's `skipped`/`skipped_ids`.
+/// Returns 201 + the `BatchInsertResult` JSON (`{added, skipped, skipped_ids}`).
+async fn add_findings_batch_handler(
+    State(state): State<AppState>,
+    Json(body): Json<BatchFindingsBody>,
+) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(count = body.items.len(), "http: POST /findings/batch");
+    // KEY BORROW PATTERN: the owned `Origin` strings must outlive the borrowing
+    // `NewFinding` slice below, so materialise them in a parallel local first.
+    let origin_strs: Vec<Option<String>> = body
+        .items
+        .iter()
+        .map(|it| it.origin.map(origin_to_str))
+        .collect();
+    let items: Vec<(&str, NewFinding)> = body
+        .items
+        .iter()
+        .zip(origin_strs.iter())
+        .map(|(it, origin)| {
+            (
+                it.work_item_id.as_str(),
+                NewFinding {
+                    kind: it.kind.as_deref(),
+                    severity: it.severity,
+                    effort: it.effort.as_deref(),
+                    category: it.category.as_deref(),
+                    file: it.file.as_deref(),
+                    line: it.line,
+                    symbol: it.symbol.as_deref(),
+                    summary: it.summary.as_deref(),
+                    description: it.description.as_deref(),
+                    origin: origin.as_deref(),
+                    confidence: it.confidence.as_deref(),
+                    repo_id: it.repo_id.as_deref(),
+                    ..NewFinding::default()
+                },
+            )
+        })
+        .collect();
+    let result = repo::add_findings(state.pool.as_ref(), body.run_id.as_deref(), &items).await?;
+    Ok((StatusCode::CREATED, Json(result)))
+}
+
+/// `POST /findings/batch-update` — bulk non-terminal triage update (B19),
+/// delegating to `repo::batch_update_findings` (the same call the B18 MCP tool
+/// drives). A terminal `status` → 422; a missing `finding_id` → 404 (aborts the
+/// whole batch). Returns 200 + `{ "updated": <n> }`.
+async fn batch_update_findings_handler(
+    State(state): State<AppState>,
+    Json(body): Json<BatchUpdateFindingsBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(count = body.updates.len(), "http: POST /findings/batch-update");
+    let updates: Vec<FindingTriageUpdate> = body
+        .updates
+        .iter()
+        .map(|u| FindingTriageUpdate {
+            finding_id: u.finding_id.as_str(),
+            triage_state: u.triage_state.as_deref(),
+            severity: u.severity,
+            category: u.category.as_deref(),
+            status: u.status.as_deref(),
+        })
+        .collect();
+    let updated = repo::batch_update_findings(state.pool.as_ref(), &updates).await?;
+    Ok(Json(serde_json::json!({ "updated": updated })))
 }
 
 /// `PATCH /findings/{id}` — partial set-or-leave update. Returns 200 +
@@ -221,7 +365,8 @@ mod tests {
 
     use crate::app::{AppState, build_router};
     use crate::db::connect_in_memory;
-    use crate::repo;
+    use crate::domain::Severity;
+    use crate::repo::{self, NewFinding};
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -334,5 +479,91 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body = json_body(resp).await;
         assert_eq!(body["ok"], true);
+    }
+
+    /// `POST /api/findings/batch` with two distinct findings → 201 + `added == 2`.
+    #[tokio::test]
+    async fn findings_batch_add_http() {
+        let pool = connect_in_memory().await.expect("pool");
+        let (story_id, _task_id) = seed_chain(&pool).await;
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let router = build_router(state);
+
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/findings/batch")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "items": [
+                                {
+                                    "work_item_id": story_id,
+                                    "summary": "missing null guard",
+                                    "severity": "minor",
+                                    "category": "review"
+                                },
+                                {
+                                    "work_item_id": story_id,
+                                    "summary": "unbounded retry loop",
+                                    "severity": "major",
+                                    "category": "review"
+                                }
+                            ]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = json_body(resp).await;
+        assert_eq!(body["added"], 2, "both distinct findings inserted");
+        assert_eq!(body["skipped"], 0);
+    }
+
+    /// `POST /api/findings/batch-update` setting `triage_state` on a seeded
+    /// finding → 200 + `updated == 1`.
+    #[tokio::test]
+    async fn findings_batch_update_http() {
+        let pool = connect_in_memory().await.expect("pool");
+        let (story_id, _task_id) = seed_chain(&pool).await;
+        // Seed one finding to triage.
+        let finding = NewFinding {
+            summary: Some("missing null guard"),
+            severity: Some(Severity::Minor),
+            category: Some("review"),
+            ..NewFinding::default()
+        };
+        let finding_id = repo::create_finding(&pool, &story_id, &finding)
+            .await
+            .expect("seed finding")
+            .to_string();
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let router = build_router(state);
+
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/findings/batch-update")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "updates": [
+                                { "finding_id": finding_id, "triage_state": "triaged" }
+                            ]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["updated"], 1, "the one seeded finding was updated");
     }
 }

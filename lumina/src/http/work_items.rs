@@ -12,6 +12,7 @@
 //!     root nodes. `?parent_id=`/`?kind=`: a flat filtered `Vec<WorkItem>`.
 //!   * `GET    /work-items/{id}`  — `WorkItemDetail` (404 when absent).
 //!   * `POST   /work-items`       — create; 201 with `{ "id": <uuid> }`.
+//!   * `POST   /work-items/batch` — bulk create (B19); 201 with `{ "ids": [...] }`.
 //!   * `PATCH  /work-items/{id}`  — generic partial update; 200 with the
 //!     updated `WorkItem`.
 //!   * `DELETE /work-items/{id}`  — soft-delete (sets `deleted_at`); 204 on
@@ -22,13 +23,13 @@ use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
 use crate::domain::{CreateWorkItemRequest, UpdateWorkItemRequest, WorkItem, WorkItemDetail};
 use crate::error::AppError;
-use crate::repo;
+use crate::repo::{self, NewWorkItemSpec};
 
 /// A node in the nested hierarchy tree returned by the default
 /// `GET /work-items`. The work-item's own fields are flattened in alongside a
@@ -52,12 +53,42 @@ pub struct ListQuery {
     pub kind: Option<String>,
 }
 
+/// One element of `BatchWorkItemsBody.items` (B19). Mirrors the
+/// `CreateWorkItemRequest` field set (kind/parent/title/body + origin/outcome/
+/// shape) plus the optional spawn provenance `spawned_from_finding_id` that
+/// `repo::create_work_items` threads onto each new row.
+#[derive(Debug, Deserialize)]
+struct BatchWorkItemSpec {
+    pub kind: String,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub origin: Option<String>,
+    #[serde(default)]
+    pub outcome: Option<String>,
+    #[serde(default)]
+    pub shape: Option<String>,
+    #[serde(default)]
+    pub spawned_from_finding_id: Option<String>,
+}
+
+/// Body for `POST /work-items/batch` (B19). All-or-nothing bulk create.
+#[derive(Debug, Deserialize)]
+struct BatchWorkItemsBody {
+    #[serde(default)]
+    pub items: Vec<BatchWorkItemSpec>,
+}
+
 /// Build the work-items + health sub-router. Returned as `Router<AppState>` so
 /// `http::router` can `.merge` it with the other per-family sub-routers.
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/work-items", get(list_work_items).post(create_work_item))
+        .route("/work-items/batch", post(create_work_items_batch))
         .route(
             "/work-items/{id}",
             get(get_work_item)
@@ -179,6 +210,37 @@ async fn create_work_item(
     .await?;
 
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": id.to_string() }))))
+}
+
+/// `POST /work-items/batch` — bulk create (B19), delegating to
+/// `repo::create_work_items` (the same call the B18 MCP tool drives). All-or-
+/// nothing: any illegal hierarchy edge or missing parent aborts the whole batch
+/// with 422 (existing parents only; no inline `depends_on`). On success returns
+/// 201 Created with `{ "ids": [<uuid strings>] }` in input order.
+async fn create_work_items_batch(
+    State(state): State<AppState>,
+    Json(body): Json<BatchWorkItemsBody>,
+) -> Result<impl IntoResponse, AppError> {
+    tracing::debug!(count = body.items.len(), "http: POST /work-items/batch");
+    // KEY BORROW PATTERN: the owned `BatchWorkItemSpec` Vec (`body.items`) outlives
+    // the borrowing `NewWorkItemSpec` slice below, which borrows `&str` from it.
+    let specs: Vec<NewWorkItemSpec> = body
+        .items
+        .iter()
+        .map(|it| NewWorkItemSpec {
+            kind: it.kind.as_str(),
+            parent_id: it.parent_id.as_deref(),
+            title: it.title.as_str(),
+            body: it.body.as_deref(),
+            origin: it.origin.as_deref(),
+            outcome: it.outcome.as_deref(),
+            shape: it.shape.as_deref(),
+            spawned_from_finding_id: it.spawned_from_finding_id.as_deref(),
+        })
+        .collect();
+    let ids = repo::create_work_items(state.pool.as_ref(), &specs).await?;
+    let ids: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+    Ok((StatusCode::CREATED, Json(serde_json::json!({ "ids": ids }))))
 }
 
 /// `PATCH /work-items/{id}` — generic partial update. Deserialises an
@@ -725,6 +787,41 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// `POST /api/work-items/batch` with two task specs under a seeded story →
+    /// 201 + `ids` of length 2 (all-or-nothing bulk create).
+    #[tokio::test]
+    async fn post_work_items_batch_creates_all() {
+        let pool = connect_in_memory().await.expect("pool");
+        let (story_id, _task_id) = seed_chain(&pool).await;
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let router = build_router(state);
+
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/work-items/batch")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "items": [
+                                { "kind": "task", "parent_id": story_id, "title": "T1" },
+                                { "kind": "task", "parent_id": story_id, "title": "T2" }
+                            ]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = json_body(resp).await;
+        let ids = body["ids"].as_array().expect("ids array");
+        assert_eq!(ids.len(), 2, "both task specs created");
+        assert!(ids.iter().all(|id| id.as_str().is_some()), "ids are uuid strings");
     }
 
     /// SPA fallback contract: an unknown non-`/api` path returns `index.html`
