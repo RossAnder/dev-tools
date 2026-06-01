@@ -61,15 +61,17 @@ bytes = "1"
 notify = "8.2.0"
 
 # --- persistence ---
-# PINNED to 0.9, NOT the plan's 0.8: the installed sqlx-cli is 0.9.0 and the
-# .sqlx offline-cache format must match between the CLI (`cargo sqlx prepare`)
-# and the macro crate. Recorded deviation from plan Task 1 ("0.8.x"); the plan's
-# own research note says "confirm latest at pin time". No TLS feature: sqlite is
-# a local file, no transport security needed.
+# PINNED to 0.9 for the runtime query API (`sqlx::query*` behind the DbClient
+# seam). 0.9.0's SqlSafeStr change makes `query*()` take `impl SqlSafeStr`,
+# satisfied by the `&'static str` literal SQL lumina uses (composed SQL wraps
+# `AssertSqlSafe`). The `macros` feature and the committed `.sqlx/` offline
+# cache were dropped once every site became a runtime query — no more
+# `cargo sqlx prepare`. `migrate` is kept for the compile-time
+# `sqlx::migrate!("./migrations")` in db.rs. No TLS feature: sqlite is a local
+# file, no transport security needed.
 sqlx = { version = "0.9", features = [
     "runtime-tokio",
     "sqlite",
-    "macros",
     "migrate",
 ] }
 
@@ -163,11 +165,6 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
-
-# Compile-time sqlx macros are expensive; bump their opt-level for faster
-# incremental builds (mirrors the sqlx project's own recommendation).
-[profile.dev.package.sqlx-macros]
-opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 2
