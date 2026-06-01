@@ -1285,6 +1285,113 @@ const CREATE_WORK_ITEM_INSERT_SQL: &str = r#"
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#;
 
+/// One work-item spec for the bulk [`create_work_items`] path (B17b). Mirrors the
+/// [`create_work_item_full`] arg list (kind/parent/title/body + the [`CreateOpts`]
+/// channels origin/outcome/shape) plus the optional spawn provenance
+/// `spawned_from_finding_id`.
+pub struct NewWorkItemSpec<'a> {
+    pub kind: &'a str,
+    pub parent_id: Option<&'a str>,
+    pub title: &'a str,
+    pub body: Option<&'a str>,
+    pub origin: Option<&'a str>,
+    pub outcome: Option<&'a str>,
+    pub shape: Option<&'a str>,
+    /// When `Some`, stamp `work_items.spawned_from_finding_id` (migration 0011
+    /// nullable FK → `findings(id)`) after the INSERT. `create_work_item_full_tx`
+    /// deliberately leaves the column NULL on create — this batch spawn path is
+    /// the only writer of the column, so the referenced finding must already
+    /// exist (FK), or pass `None`.
+    pub spawned_from_finding_id: Option<&'a str>,
+}
+
+/// Bulk-create a batch of work items under ONE `BEGIN IMMEDIATE` transaction
+/// (B17b; plan D8/D10, risk R-B2), all-or-nothing. Each spec is created via
+/// [`create_work_item_full_tx`] (which runs ALL create-time validation — the
+/// hierarchy edge, the migration-0010 epic-outcome / focus-shape gates, and the
+/// story close-criterion gate — and the `work_items` INSERT INSIDE the shared
+/// tx), then, when `spawned_from_finding_id` is `Some`, the new row's spawn
+/// column is stamped. Returns the new ids in input order.
+///
+/// ## Parents must already exist (D10)
+/// `create_work_item_full_tx`'s parent-kind read runs on the tx, and a missing
+/// parent surfaces as [`AppError::Validation`] (`parent work_item '…' does not
+/// exist`). This path does NOT support inline `depends_on` nor creating a
+/// parent within the same batch — every `parent_id` must reference an EXISTING
+/// (committed) work item.
+///
+/// ## Atomicity (validation aborts the whole batch)
+/// Any error from `create_work_item_full_tx` or the spawn-stamp `?`-propagates,
+/// dropping `tx` un-committed → SQLite rolls back → ZERO rows persist (a single
+/// invalid spec leaves nothing, including the valid specs that preceded it).
+///
+/// ## Single coarse event (D8 / R-B4)
+/// Exactly ONE `events` row is recorded for the whole batch, NOT one per item.
+/// Its `aggregate_type` is **deliberately not `"work_item"`**: the git-export
+/// drain (`export.rs`) materialises only `aggregate_type="work_item"` events, so
+/// a `"work_item"` batch event would wrongly re-render each item N times. A
+/// `"batch"`-typed event keyed by a fresh UUIDv7 is correctly inert — drained and
+/// `exported_at`-stamped, but not materialised to a file. The accepted
+/// consequence (the intended D8/B26 trade-off) is that bulk-created work items are
+/// NOT git-exported individually; only the coarse batch event records the write.
+pub async fn create_work_items(
+    db: &impl DbClient,
+    specs: &[NewWorkItemSpec<'_>],
+) -> Result<Vec<uuid::Uuid>, AppError> {
+    let mut tx = db.begin().await?;
+
+    let mut ids: Vec<Uuid> = Vec::with_capacity(specs.len());
+    for spec in specs {
+        // A `create_work_item_full_tx` error `?`-propagates here, dropping `tx`
+        // un-committed → full rollback → zero writes (all-or-nothing, D10).
+        let id = create_work_item_full_tx(
+            tx.as_mut(),
+            spec.kind,
+            spec.parent_id,
+            spec.title,
+            spec.body,
+            CreateOpts {
+                origin: spec.origin,
+                outcome: spec.outcome,
+                shape: spec.shape,
+            },
+        )
+        .await?;
+
+        // B17b owns the spawn stamp: `create_work_item_full_tx` leaves
+        // `spawned_from_finding_id` NULL, so set it here when provided. The FK to
+        // `findings(id)` is enforced by SQLite — an unknown id aborts the batch.
+        if let Some(fid) = spec.spawned_from_finding_id {
+            tx.execute(
+                "UPDATE work_items SET spawned_from_finding_id = $1 WHERE id = $2",
+                args![fid.to_owned(), id.to_string()],
+            )
+            .await?;
+        }
+
+        ids.push(id);
+    }
+
+    // Exactly one coarse event for the whole batch (D8). aggregate_type MUST NOT
+    // be "work_item" (R-B4) — a fresh UUIDv7 under a "batch" aggregate, which the
+    // export drain ignores (there is no run/finding context here, so unlike
+    // `add_findings` the only sensible key is a freshly-minted batch id).
+    let id_strs: Vec<String> = ids.iter().map(Uuid::to_string).collect();
+    let payload = serde_json::json!({ "count": ids.len(), "ids": id_strs });
+    record_event(
+        tx.as_mut(),
+        "batch",
+        &Uuid::now_v7().to_string(),
+        "work_items.batch_created",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(ids)
+}
+
 /// Shared closure-gate check for a `→done` transition (migration 0003,
 /// User Decision 3). Runs INSIDE the caller's transaction (so the read and the
 /// subsequent write are atomic). Both `update_work_item_status` (the
@@ -6278,6 +6385,186 @@ mod tests {
         assert_eq!(detail.item.kind, "story");
         assert_eq!(detail.children.len(), 1);
         assert_eq!(detail.children[0].id, task.to_string());
+    }
+
+    // -----------------------------------------------------------------------
+    // create_work_items (B17b) — bulk create under one tx, one coarse event,
+    // all-or-nothing, with the optional spawn-provenance stamp.
+    // -----------------------------------------------------------------------
+
+    /// Bulk-creating N tasks under an existing story inserts exactly N work_items
+    /// AND exactly ONE coarse `events` row (D8) — not N events.
+    #[tokio::test]
+    async fn create_work_items_bulk_under_existing_story() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let wi_before = count_work_items(&pool).await;
+        let ev_before = count_events(&pool).await;
+
+        let specs = vec![
+            NewWorkItemSpec {
+                kind: "task",
+                parent_id: Some(&story),
+                title: "T1",
+                body: None,
+                origin: None,
+                outcome: None,
+                shape: None,
+                spawned_from_finding_id: None,
+            },
+            NewWorkItemSpec {
+                kind: "task",
+                parent_id: Some(&story),
+                title: "T2",
+                body: None,
+                origin: None,
+                outcome: None,
+                shape: None,
+                spawned_from_finding_id: None,
+            },
+            NewWorkItemSpec {
+                kind: "task",
+                parent_id: Some(&story),
+                title: "T3",
+                body: None,
+                origin: None,
+                outcome: None,
+                shape: None,
+                spawned_from_finding_id: None,
+            },
+        ];
+        let n = specs.len() as i64;
+
+        let ids = create_work_items(&pool, &specs)
+            .await
+            .expect("bulk create under story");
+        assert_eq!(ids.len(), specs.len(), "one id returned per spec");
+
+        assert_eq!(
+            count_work_items(&pool).await,
+            wi_before + n,
+            "exactly N new work_items"
+        );
+        assert_eq!(
+            count_events(&pool).await,
+            ev_before + 1,
+            "exactly ONE coarse batch event for the whole batch (D8)"
+        );
+        assert_eq!(
+            count_events_of_type(&pool, "work_items.batch_created").await,
+            1,
+            "the coarse event carries the batch event_type"
+        );
+
+        // The N tasks exist as direct children of the story.
+        let task_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM work_items WHERE parent_id = $1 AND kind = 'task'",
+        )
+        .bind(&story)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(task_count, n, "all N tasks land under the story");
+    }
+
+    /// A spec carrying `spawned_from_finding_id: Some(fid)` stamps the column on
+    /// the created task (B17b owns the spawn stamp; the column is NULL on a plain
+    /// create). The referenced finding must exist first (FK).
+    #[tokio::test]
+    async fn create_work_items_stamps_spawned_from_finding_id() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        // The spawn FK targets findings(id), so create a finding on the story first.
+        let finding_id = create_finding(&pool, &story, &NewFinding::default())
+            .await
+            .expect("seed finding")
+            .to_string();
+
+        let specs = vec![NewWorkItemSpec {
+            kind: "task",
+            parent_id: Some(&story),
+            title: "spawned task",
+            body: None,
+            origin: None,
+            outcome: None,
+            shape: None,
+            spawned_from_finding_id: Some(&finding_id),
+        }];
+
+        let ids = create_work_items(&pool, &specs)
+            .await
+            .expect("create spawned task");
+        let task_id = ids[0].to_string();
+
+        let stamped = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT spawned_from_finding_id FROM work_items WHERE id = $1",
+        )
+        .bind(&task_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            stamped,
+            Some(finding_id),
+            "the spawn column equals the source finding id"
+        );
+    }
+
+    /// A batch mixing one valid spec with one invalid spec aborts WHOLLY — the
+    /// valid spec must NOT persist (all-or-nothing rollback, D10).
+    #[tokio::test]
+    async fn create_work_items_aborts_whole_batch_on_validation() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let wi_before = count_work_items(&pool).await;
+        let ev_before = count_events(&pool).await;
+
+        let specs = vec![
+            // Valid: a task under the story.
+            NewWorkItemSpec {
+                kind: "task",
+                parent_id: Some(&story),
+                title: "good",
+                body: None,
+                origin: None,
+                outcome: None,
+                shape: None,
+                spawned_from_finding_id: None,
+            },
+            // Invalid: parent_id names no existing work_item → Validation.
+            NewWorkItemSpec {
+                kind: "task",
+                parent_id: Some("no-such-parent"),
+                title: "bad",
+                body: None,
+                origin: None,
+                outcome: None,
+                shape: None,
+                spawned_from_finding_id: None,
+            },
+        ];
+
+        let err = create_work_items(&pool, &specs)
+            .await
+            .expect_err("an invalid spec must abort the batch");
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "expected Validation, got {err:?}"
+        );
+
+        assert_eq!(
+            count_work_items(&pool).await,
+            wi_before,
+            "no work_item persists — the valid spec was rolled back too"
+        );
+        assert_eq!(
+            count_events(&pool).await,
+            ev_before,
+            "no coarse event on an aborted batch"
+        );
     }
 
     /// `update_work_item_status` updates + emits one event in one tx; a missing
