@@ -8,23 +8,33 @@ import EpicCloseCriteriaPanel from '@/components/EpicCloseCriteriaPanel.vue'
 import TabStrip from '@/components/TabStrip.vue'
 import OverviewPanel from '@/components/panels/OverviewPanel.vue'
 import ReposPanel from '@/components/panels/ReposPanel.vue'
+import DecisionsPanel from '@/components/panels/DecisionsPanel.vue'
+import QualityPanel from '@/components/panels/QualityPanel.vue'
+import ActivityPanel from '@/components/panels/ActivityPanel.vue'
 import type { TabId } from '@/composables/panelRegistry'
-import type { WorkItem, AcceptanceCriterion, ContextBlock } from '@/api'
+import type { WorkItem, AcceptanceCriterion } from '@/api'
 
 const { detail, descendantCounts } = useHierarchy()
 
 // ---------------------------------------------------------------------------
-// Tabbed-lens shell (Wave-1, T6). The tab region is mounted ABOVE the existing
-// kind-specific sections, which stay for now and are retired in later waves.
-// Only the Overview panel is wired this wave; unwired tab ids render a
-// "coming soon" stub. `PANELS` holds component refs in a plain object map, so
-// each is `markRaw`'d to keep it out of the reactivity system (a component is
-// not reactive state).
+// Tabbed-lens shell. The tab region is mounted ABOVE the existing kind-specific
+// sections. `PANELS` holds component refs in a plain object map, so each is
+// `markRaw`'d to keep it out of the reactivity system (a component is not
+// reactive state).
+//
+// Wave-3 (T12) registers all three remaining panels here — Decisions (story),
+// Quality (story/task), Activity (all kinds) — joining the Wave-1/2 Overview +
+// Repos. All five tab ids now resolve to a real component; the "coming soon"
+// stub fallback is retained defensively for any future tab id that lacks a
+// registered panel, but is unreachable for the current TAB_DEFS.
 // ---------------------------------------------------------------------------
 const activeTab = ref<TabId>('overview')
 const PANELS: Partial<Record<TabId, Component>> = {
   overview: markRaw(OverviewPanel),
   repos: markRaw(ReposPanel),
+  decisions: markRaw(DecisionsPanel),
+  quality: markRaw(QualityPanel),
+  activity: markRaw(ActivityPanel),
 }
 const activePanel = computed<Component | null>(() => PANELS[activeTab.value] ?? null)
 
@@ -54,9 +64,6 @@ const titleFontClass: ComputedRef<string> = computed(() =>
 
 const acceptance: ComputedRef<AcceptanceCriterion[]> = computed(
   () => detail.value?.acceptance_criteria ?? [],
-)
-const contextBlocks: ComputedRef<ContextBlock[]> = computed(
-  () => detail.value?.context_blocks ?? [],
 )
 
 /**
@@ -327,36 +334,6 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
       </section>
     </template>
 
-    <!--
-      Context blocks (2-column grid). NOT scoped to isTask: WorkItemDetail
-      .context_blocks is not kind-filtered server-side; an epic/focus/story
-      with attached context blocks (via the MCP `create_context_block` tool)
-      should also surface them here. The inner `v-if="contextBlocks.length > 0"`
-      keeps the section hidden when there are none.
-    -->
-    <section v-if="contextBlocks.length > 0">
-      <h3
-        class="font-mono text-[10.5px] tracking-[0.18em] text-[var(--faint)] uppercase mb-3"
-      >
-        Context
-      </h3>
-      <div class="grid grid-cols-2 gap-3">
-        <article
-          v-for="ctx in contextBlocks"
-          :key="ctx.id"
-          class="bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-3"
-        >
-          <div
-            class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase mb-2"
-          >
-            {{ ctx.title }}
-          </div>
-          <p class="text-[var(--ink-2)] text-[12.5px] leading-[1.55] whitespace-pre-wrap">
-            {{ ctx.body }}
-          </p>
-        </article>
-      </div>
-    </section>
   </article>
 
   <!-- no-focus placeholder (when detail is null) -->
