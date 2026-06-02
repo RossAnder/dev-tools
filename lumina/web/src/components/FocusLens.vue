@@ -4,10 +4,10 @@ import { useHierarchy } from '@/composables/useHierarchy'
 import { kindLabel } from '@/composables/useDisplay'
 import StatusPill from '@/components/StatusPill.vue'
 import CopyIdButton from '@/components/CopyIdButton.vue'
-import RepoLinksPanel from '@/components/RepoLinksPanel.vue'
 import EpicCloseCriteriaPanel from '@/components/EpicCloseCriteriaPanel.vue'
 import TabStrip from '@/components/TabStrip.vue'
 import OverviewPanel from '@/components/panels/OverviewPanel.vue'
+import ReposPanel from '@/components/panels/ReposPanel.vue'
 import type { TabId } from '@/composables/panelRegistry'
 import type { WorkItem, AcceptanceCriterion, ContextBlock } from '@/api'
 
@@ -24,6 +24,7 @@ const { detail, descendantCounts } = useHierarchy()
 const activeTab = ref<TabId>('overview')
 const PANELS: Partial<Record<TabId, Component>> = {
   overview: markRaw(OverviewPanel),
+  repos: markRaw(ReposPanel),
 }
 const activePanel = computed<Component | null>(() => PANELS[activeTab.value] ?? null)
 
@@ -258,12 +259,6 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
         </div>
       </div>
     </div>
-
-    <!-- project-kind: repo links panel -->
-    <RepoLinksPanel
-      v-if="item.kind === 'project'"
-      :project-id="item.id"
-    />
 
     <!--
       epic-kind close-criteria panel. The outcome/context plan editors moved into
