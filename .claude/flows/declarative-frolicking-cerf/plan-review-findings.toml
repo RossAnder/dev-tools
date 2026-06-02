@@ -1,0 +1,223 @@
+schema_version = 1
+last_updated = 2026-06-01
+round = 1
+
+[[vet_events]]
+timestamp = "2026-06-01"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+dropped_ids = []
+rationale = "Verified macro census against live tree: repo.rs=142 (not 144), db.rs has 0 real invocations (the db.rs:9 match is a doc-comment, not a query! macro), A12 path malformed. All sampled claims TRUE; F6 (anchor-verification batch: repo.rs=7290 lines, 58 MCP tools, AppError variants, db.rs:58/74 anchors, etc.) reclassified to informational positive-confirmation rather than a defect."
+
+[[vet_events]]
+timestamp = "2026-06-01"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 1
+dropped_ids = []
+rationale = "Verified 61 state.pool.as_ref() sites across 14 http modules (agent said 62; 61 actual), macro census, and the lumina/CLAUDE.md Transactions section referencing begin_write(pool). All sampled TRUE. Downgraded F1 from critical to warning and folded it into the seam-underspecification finding (impl DbClient for AnyPool is load-bearing but a competent A1 implementer adds it reflexively)."
+
+[[vet_events]]
+timestamp = "2026-06-01"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Verified repo.rs #[cfg(test)] mod tests (line 5473+) holds real sqlx::query! assertion macros (11 matches at/after line 5400; sites at 5483/5492/5565/5673/5689/5883/5980/6205/6215) owned by no A4-A11 wave; verified no src/tests dir exists (tests/e2e.rs is the real path); verified A1-A3 capture no --timings baseline; confirmed the seam bind-parameter hole against Approach (args: ...) + variadic binds in repo.rs. All sampled TRUE."
+
+[[vet_events]]
+timestamp = "2026-06-01"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+dropped_ids = []
+rationale = "Confirmed the no-CI-for-lumina claim via lumina/CLAUDE.md ('CI workflow: none — deferred'); corroborated the generic-FromRow no-row-mapper-churn over-claim against the plan's own R-C1. F3 (external-claim batch: SqlSafeStr/sqlx 0.9.0/sha2/$N/statement-caching all verified via Context7+WebSearch+Cargo.lock, plus zero dynamic-SQL surface) reclassified informational positive-confirmation. R-B3 failure-mode finding kept at MEDIUM confidence — agent self-flagged it could not DB-test the exact SQLite error behaviour; framed as a correction worth verifying, not asserted fact."
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "executability"
+plan_section = "### The seam (Part A, Wave A0 — `src/db.rs`)"
+summary = "Seam bind-parameter API is a placeholder (`args: …`) and `impl DbClient for AnyPool` is unstated — A1 must invent both, and the choice dictates every one of the ~150 call sites."
+description = "The DbClient/DbTx trait methods pass binds as `args: …`, but the query! macros take variadic positional binds (e.g. repo.rs:5411). A non-variadic trait method cannot absorb them, so A1 must choose a bind strategy (a builder `.bind(a).bind(b)` or `args: &[&(dyn Encode+Type)]`) before anything compiles, and that choice shapes all call sites. Separately, the recipe makes signatures `db: &impl DbClient`, yet 61 http/* sites pass `state.pool.as_ref()` (&AnyPool) and 68 mcp.rs sites pass &self.pool — these only compile if `impl DbClient for AnyPool` exists, which the seam sketch never states. Both are architectural decisions deferred to execution time."
+anchor_old = "    async fn execute(&self, sql: &'static str, args: …) -> Result<u64, AppError>;"
+anchor_new = """
+    // DECIDE the bind strategy in A1 — binds are chained, not one arg: e.g. `db.execute(sql).bind(a).bind(b).run().await` (or `args: &[&(dyn sqlx::Encode<'_, DB> + sqlx::Type<DB>)]`). The choice shapes every call site. Also: `AnyPool` MUST `impl DbClient` so the 61 http + 68 mcp `&AnyPool` sites pass as `&impl DbClient` unchanged.
+    async fn execute(&self, sql: &'static str, args: …) -> Result<u64, AppError>;"""
+dedup_id = "3f42aab4edeeda60"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "completeness"
+plan_section = "**Wave A9r — Remaining sites + state-type swap — M**"
+summary = "repo.rs `#[cfg(test)] mod tests` (line 5473+) holds ~11 real `sqlx::query!` assertion macros owned by no A4–A11 wave; A12 lists only export.rs/e2e/db.rs, so the Part-A `rg == 0` gate cannot pass. (A12's file path `src/tests/tests/e2e.rs` is also malformed.)"
+description = "Verified: repo.rs lines 5483/5492/5565/5673/5689/5883/5980/6205/6215 are sqlx::query! macros inside the test module (line 5473 `#[cfg(test)]`). A4–A11 are scoped by production entity, A12 names only export.rs(6)/e2e(2)/db.rs(2) — none owns the in-file test macros, so after A11+A12 the `rg -c == 0` gate fails with no task to fix it. Also the A12 Files token `src/tests`/`tests/e2e.rs` is malformed: there is no src/tests/ directory; the integration test is lumina/tests/e2e.rs."
+anchor_old = "**A12: `export.rs` (6 sites), `tests/e2e.rs` (2 sites), `db.rs` (2 sites), and `AppState.pool` swap.**"
+anchor_new = "**A12: `repo.rs` `#[cfg(test)] mod tests` assertion macros (~11 sites, repo.rs:5473+), `export.rs` (6 sites), `tests/e2e.rs` (2 sites — path is `lumina/tests/e2e.rs`, NOT `src/tests/...`), `db.rs` (0 — already runtime-only), and `AppState.pool` swap.**"
+dedup_id = "8010f0c393dc9faa"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Verification Commands"
+summary = 'The Part-A exit gate `rg -c "query(_as|_scalar)?!" == 0` is unsatisfiable: it matches 4 surviving DOC-COMMENTS even after every real macro is converted.'
+description = 'The bare regex matches prose mentions at db.rs:9, domain.rs:269, http/acceptance_criteria.rs:17, and tests/migration_0003.rs:15 — none are macro invocations. A correctly-completed Part A therefore reports a non-zero count and blocks A12/A13 acceptance. Tighten the gate to match invocations (`sqlx::query…!\(`), or reword the four comments.'
+anchor_old = 'rg -c "query(_as|_scalar)?!" lumina/src lumina/tests   # MUST be 0 at end of Part A'
+anchor_new = '''rg -c 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests   # MUST be 0 — match INVOCATIONS only; the bare pattern also hits 4 doc-comments (db.rs:9, domain.rs:269, http/acceptance_criteria.rs:17, tests/migration_0003.rs:15)'''
+dedup_id = "c0af6506ad6098f7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Current State (exploration, 2026-06-01)"
+summary = """Macro census is wrong: ~150 real invocations (repo.rs 142, db.rs 0, export 6, e2e 2), not 154 (repo 144, db 2). db.rs is already runtime-only, so A12's "db.rs (2 sites)" is phantom work."""
+description = "Direct count: repo.rs=142 macro sites; db.rs=0 real invocations (db.rs:9 is a `//!` doc-comment; the only DB calls are runtime sqlx::query at db.rs:113/204). The plan's 144/2 split overcounts by treating doc-comments as live macros."
+anchor_old = "**Macro census: 154** — `query!` 131, `query_as!` 23, `query_scalar!` 0. **repo.rs 144 (94%)**, export.rs 6, db.rs 2, tests/e2e.rs 2."
+anchor_new = "**Macro census: ~150 live invocations** — **repo.rs 142**, export.rs 6, db.rs **0** (already runtime-only — `sqlx::query(...)` at db.rs:113/204; the db.rs:9 `query!`/`query_as!` mention is a doc-comment), tests/e2e.rs 2."
+dedup_id = "a48d4a079c913d05"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "completeness"
+plan_section = "**Waves A1c–A8c — per-entity `repo.rs` conversion (~144 sites; sequential after A0) — M each**"
+summary = "Per-wave site counts sum to ~180 against an actual 142 — the entity-named partition is not a verified disjoint cover, so a region could be orphaned (left as a macro). A11 is 15 sites, not ~20, and is an inline `pub mod pty` block, not a submodule file."
+description = "40+18+22+25+12+28+15+20 = 180 ≠ 142. Because waves are defined by entity name rather than line range, sites that map to no named entity (helper queries, record_event, find_project_ancestor) could be silently skipped and fail the A12 `== 0` gate. The `pub mod pty` block (repo.rs:4901–5471) is inline (no lumina/src/repo/ files exist) and contains 15 macro sites."
+anchor_old = "**A11 — Wave 8: pty_* repo submodule.** ~20 sites. Depends on: A1,A2,A3."
+anchor_new = "**A11 — Wave 8: inline `pub mod pty` block (repo.rs:4901–5471).** ~15 sites. Depends on: A1,A2,A3. NOTE: per-wave counts sum to ~180 vs the actual 142 repo.rs sites — before running A4, re-derive the eight waves as a disjoint line-range cover and assert they partition all 142 sites so none is orphaned for A12."
+dedup_id = "acfaea9e7dbc1518"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "**Wave A10t — Feature trim (delivers the build win) — S**"
+summary = """A13's acceptance compares the `--timings` self-time against "the A0 baseline", but no A0 task (A1/A2/A3) captures a baseline — the reference value never exists."""
+description = """A1's acceptance is "build green + a unit test" with no timings capture. Make the check self-contained (assert the duplicate sqlx-core/sqlx-sqlite proc-macro-host units are gone), or add an explicit baseline-capture sub-step to A1."""
+anchor_old = "Build-win check: compare the `lumina` crate **unit self-time** in `--timings` vs the A0 baseline (sccache-immune metric) and confirm the second `sqlx-core`/`sqlx-sqlite` host-side units are gone."
+anchor_new = 'Build-win check: confirm `--timings` no longer shows the second `sqlx-core`/`sqlx-sqlite` proc-macro-host units (self-contained — no stored baseline needed). If a numeric delta is wanted, add a "record the `lumina` unit self-time" sub-step to A1 first.'
+dedup_id = "0c8b2aa3c434062a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "**B27: documentation.**"
+summary = "Doc-retirement scope is incomplete: it misses lumina/CLAUDE.md `## Transactions` (`begin_write(pool)` → `AnyPool::begin()`) and `## HTTP routes`, plus the root CLAUDE.md `## Build & test` `cargo sqlx prepare --check` gate line."
+description = 'B27 names only "§lumina and §Offline query-cache gate". But lumina/CLAUDE.md `## Transactions` documents begin_write(pool) semantics that A1 moves into AnyPool::begin(), and the root `## Build & test` list carries a `cd lumina && cargo sqlx prepare --check` command that Part A removes. Consider doing this retirement at A13 (where the gate is actually deleted) to avoid a stale-docs window spanning all of Part A + most of Part B.'
+anchor_old = 'the §lumina and §"Offline query-cache gate" prose in both CLAUDE.md files must be updated/retired'
+anchor_new = """the §lumina, §"Offline query-cache gate", and the `## Build & test` `cargo sqlx prepare --check` line in the root CLAUDE.md, plus lumina/CLAUDE.md's `## Transactions` (`begin_write(pool)`→`AnyPool::begin()`) and `## HTTP routes` sections, must be updated/retired (consider doing the `.sqlx`/`prepare` retirement at A13 where the gate is removed)"""
+dedup_id = "be4bf9d60ac9922b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "**Phase B2 — repo tx refactor (after B1) — M**"
+summary = "B16 adds non-Default fields to `Finding` (run_id/triage_state) and `WorkItem` (spawned_from_finding_id), which breaks `#[cfg(test)]` fixtures in `http/findings.rs`/`http/work_items.rs` that build these structs — B16's file list omits them."
+description = "Finding and WorkItem are constructed in http/* test seed helpers; adding non-Default fields is a compile break across those test modules. B16 lists only domain.rs/repo.rs/export.rs. (Medium confidence: exact break depends on struct-literal vs builder construction — verify at B16.)"
+anchor_old = "`spawned_from_finding_id` to `WorkItem` (+ both SELECTs + both constructors + the `export.rs` test fixture)."
+anchor_new = "`spawned_from_finding_id` to `WorkItem` (+ both SELECTs + both constructors + the `export.rs` test fixture + any `#[cfg(test)]` fixtures in `http/findings.rs`/`http/work_items.rs` that build `Finding`/`WorkItem` literals)."
+dedup_id = "27c75e22bfde0dac"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = """R-B3's failure mode is inverted: a mismatched partial-index ON CONFLICT target makes SQLite RAISE an error ("ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"), it does not silently insert a duplicate. Keep the row-count assertion, fix the rationale."""
+description = 'The plan claims a mis-bound predicate "silently fails to bind and a duplicate inserts with no error" — the opposite of verified SQLite behaviour (loud error at first insert). The B17a row-count assertion is still valuable (it proves the skip path actually fires), but the stated reason is wrong. MEDIUM confidence: not DB-tested here; agent relied on docs + cross-corroboration.'
+anchor_old = "or the index silently fails to bind and a duplicate inserts with no error"
+anchor_new = 'or — more precisely — SQLite raises "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint" at the first insert (a loud failure, not a silent duplicate); the row-count assertion below still matters to prove the skip path actually fires'
+dedup_id = "217ba3402e554d1d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### sqlx 0.9 runtime-query conversion (Part A)"
+summary = 'The `?N`→`$N` rewrite estimate "~167" undercounts: repo.rs alone carries ~204 `?N` placeholders (reused within NULL-guard predicates).'
+description = 'rg -oc "\?\d" repo.rs → 204. Placeholders are reused in `(?1 IS NULL OR col = ?1)` patterns — each reuse maps to the same $N. The conversion must preserve reuse; the effort framing should reflect ~210+ across the crate.'
+anchor_old = "**`$1,$2` portable across both drivers**; rewrite the ~167 `?N` sites to `$N`. *(HIGH — cross-corroborated.)*"
+anchor_new = "**`$1,$2` portable across both drivers**; rewrite the ~210+ `?N` sites to `$N` (repo.rs alone carries ~204; placeholders are reused within NULL-guard predicates `(?1 IS NULL OR col = ?1)` — each reuse maps to the same `$N`). *(HIGH — cross-corroborated.)*"
+dedup_id = "fd7585456b9b2877"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### The seam (Part A, Wave A0 — `src/db.rs`)"
+summary = """The generic `impl<'r, R: Row> FromRow` over-claims "no row-mapper churn" at Part C: timestamp/bool/JSON columns (per R-C1) decode to different Rust types on SQLite vs Postgres and will need a per-backend decode strategy — localized, but not churn-free. (Advisory — shares a section with P1.)"""
+description = """Line 123 says the generic-R impl means the Part-C swap needs no row-mapper churn, but the plan's own R-C1 documents that CURRENT_TIMESTAMP decodes as String/NaiveDateTime on SQLite vs DateTime<Utc> on PG timestamptz. The generic impl only works where every column decodes to the same Rust type on both backends; timestamp columns break that. Soften the claim to "localized, not strictly churn-free.""""
+dedup_id = "692a24290cfa9e24"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "executability"
+plan_section = "**Waves A1c–A8c — per-entity `repo.rs` conversion (~144 sites; sequential after A0) — M each**"
+summary = "A4 (work_items, ~40 sites) has an ambiguous boundary: acceptance-criteria/activity/context_blocks functions (repo.rs:1554–2143) that A6 claims sit INSIDE A4's :357–2303 line span, inviting collision or gaps. Give A4/A6 exact function-name lists instead of `set_*` wildcards. (Advisory — shares a section with P5.)"
+description = """Because entity boundaries are not contiguous line ranges, an agent converting A4 "by region" could convert A6's functions (collision) or skip set_* functions thinking they belong to A6 (gap). Replace the wildcard anchors with explicit fn-name lists per wave."""
+dedup_id = "7c8b2cf8000f1852"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "suggestion"
+category = "completeness"
+plan_section = "**Phase B5 — run/sprint/triage domain (after B2; repo/mcp serialize after B4)**"
+summary = "New HTTP router modules (runs.rs, sprints.rs, queries.rs) each need BOTH a `mod` declaration and a `.merge()` in http/mod.rs (14 merges today); a forgotten merge silently 404s unless B26's oneshot tests hit every new path."
+description = "The plan says each phase edits http/mod.rs once but doesn't call out that a new module needs the `mod xxx;` line in addition to the merge, and that B26 must cover each new route or a missing merge is invisible."
+dedup_id = "33efd1bd56b80880"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Mid-conversion rollback is not addressed: state the invariant that each A4–A11 wave is independently git-revertible because the `macros` feature is retained through A12 (so a broken wave reverts to a compiling mixed-state repo). A12 also bundles the cross-cutting pool-swap with remaining conversions. (Advisory — shares a section with P9.)"
+description = "R-B5 covers only migration rollback. Add an explicit note that the crate compiles in a mixed macro/runtime state until A13 drops the `macros` feature, so any conversion wave reverts cleanly; consider splitting the AppState.pool swap out of A12 if it proves fiddly."
+dedup_id = "d9a2e132352a864f"

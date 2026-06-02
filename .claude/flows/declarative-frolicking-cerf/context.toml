@@ -1,0 +1,28 @@
+slug = "declarative-frolicking-cerf"
+plan_path = "docs/plans/declarative-frolicking-cerf.md"
+status = "review"
+created = 2026-06-01
+updated = 2026-06-02
+branch = "main"
+scope = [
+    "lumina/src/**",
+    "lumina/migrations/**",
+    "lumina/tests/**",
+    "lumina/Cargo.toml",
+    "lumina/.cargo/config.toml",
+    "lumina/build.rs",
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+
+[tasks]
+total = 29
+completed = 29
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/declarative-frolicking-cerf/review-ledger.toml"
+optimise_findings = ".claude/flows/declarative-frolicking-cerf/optimise-findings.toml"
+execution_record = ".claude/flows/declarative-frolicking-cerf/execution-record.toml"
+plan_review_findings = ".claude/flows/declarative-frolicking-cerf/plan-review-findings.toml"

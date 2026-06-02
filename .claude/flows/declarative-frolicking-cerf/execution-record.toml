@@ -1,0 +1,1171 @@
+schema_version = 1
+last_updated = 2026-06-01
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-01
+agent = "implement"
+summary = "Flow status draft -> in-progress (Wave A0 foundation seam start)"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "fc79e6a5c9568800"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a1-db-seam"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "A1: additive runtime-query seam in db.rs (Backend/AnyPool, object-safe DbClient/DbTx, Args+args! macro, AnyRow, free tx_query_* helpers) + error.rs from_sqlx_not_found mapper; 234 tests pass, clippy clean"
+files = [
+    "lumina/src/db.rs",
+    "lumina/src/error.rs",
+]
+commits = ["7807b2f"]
+dedup_id = "4b11cc119a35da42"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a2-fromrow"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "A2: canonical generic-over-R sqlx::FromRow row-mapper recipe + Scalar<T> newtype + scalar_*/tx_scalar_* helpers in db.rs (the conversion-wave template); 236 tests pass, clippy clean"
+files = ["lumina/src/db.rs"]
+commits = ["ab5d558"]
+dedup_id = "2bec1890afaafc83"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a3-record-event-unique-violation"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "A3: is_unique_violation(Backend,&Error) + record_event(&mut dyn DbTx) in repo.rs; de-macroed the single events INSERT, 47 callers unchanged via Transaction->dyn DbTx coercion; 236 tests pass, clippy clean"
+files = ["lumina/src/repo.rs"]
+commits = ["387a0fd"]
+dedup_id = "069b221ffb9223ca"
+
+[[items]]
+id = "E5"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "build green (Wave A0 combined)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "ec2b4869addac8fb"
+
+[[items]]
+id = "E6"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "nextest green (236 tests, +11 over A0 baseline)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "9b718cd3cd9b5cf6"
+
+[[items]]
+id = "E7"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "doctests green"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "5f55b9e7ce1fd57e"
+
+[[items]]
+id = "E8"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "clippy clean (-D warnings)"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "e71092804224d271"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a4-work-items"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "A4: 26 work_items macro sites -> runtime DbClient/DbTx seam across 17 fns (+work_item_kind helper); added impl DbClient for SqlitePool & Arc<SqlitePool>, WorkItemRow/ContextBlock FromRow; repo.rs macros 135->108; 236 nextest pass, doctests ok, clippy clean"
+files = [
+    "lumina/src/db.rs",
+    "lumina/src/repo.rs",
+]
+commits = ["0dd4045"]
+dedup_id = "6dc82ad90f18f834"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a4-work-items"
+summary = "Also converted shared helper work_item_kind (1 site beyond the 26 planned; repo.rs macros 135->108)"
+original_intent = "A4 converts only the 17 listed work_items fns (26 sites); work_item_kind was on the do-not-touch list (shared helper, nominally A10)"
+rationale = "work_item_kind is called by 6+ A4 fns; once they flip to &impl DbClient they cannot pass it a &SqlitePool, so it had to become generic and its one macro converted to keep A4 compiling. Trivial single-scalar read, behaviour unchanged; A10 now finds it already done. Out-of-scope callers still compile via impl DbClient for SqlitePool."
+commits = ["0dd4045"]
+dedup_id = "3e2d6851ecb6ca9e"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a4-work-items"
+summary = "get_work_item_detail kept its &SqlitePool signature; both its macros still eradicated in place"
+original_intent = "Recipe flips pool: &SqlitePool to db: &impl DbClient on every converted fn"
+rationale = "get_work_item_detail calls 9 not-yet-converted list helpers (A5/A6/A7/A9/A10) that still take &SqlitePool; flipping its signature would force converting all 9. Both its macros were converted in place via SqlitePool: DbClient. The signature flip is deferred to A12, where the AppState Arc<SqlitePool>->Arc<AnyPool> swap forces it together with the read helpers."
+commits = ["0dd4045"]
+dedup_id = "c07d13649ad01c17"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "build green (A4)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "9e841f359fa2f0f9"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "nextest green (236 passed, 0 skipped)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "64b5ec600303e559"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "doctests green (0 tests)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "c5b05c7b3cc6d668"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "clippy clean (-D warnings)"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "e71092804224d271"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a5-findings"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Converted the 9 sqlx macro sites across the 6 finding fns in repo.rs to the A0 runtime seam; landed a generic FromRow for domain::Finding. set_finding_repo kept &SqlitePool (find_project_ancestor is A10). repo.rs macro count 108->99."
+files = ["lumina/src/repo.rs"]
+commits = ["01aef36"]
+dedup_id = "d07b4fad98ad0490"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo build passed (A5)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "498b5a41f9d8c7d7"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo nextest run passed (A5)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "49b3ffb305ad05a7"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo test --doc passed (A5)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "e9c34a6d8650912f"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo clippy passed (A5)"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "38f8ea61ae81fc30"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a6-context-activity-acceptance"
+status = "done"
+files = ["lumina/src/repo.rs"]
+commits = ["e91812e"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Wave A6: converted acceptance_criteria/activity/context_blocks repo.rs sites (11 fns, 15 macro sites) to the runtime DbClient/DbTx seam; repo.rs macro count 99->84"
+dedup_id = "ced3b2cecebe53a3"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "cargo build (lumina) — Finished in 5.81s"
+dedup_id = "81d3be02786391a5"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "cargo nextest run (lumina) — 236 passed, 0 skipped"
+dedup_id = "a773c32752835ab7"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+summary = "cargo test --doc (lumina) — 0 doctests, ok"
+dedup_id = "063d5ea5af15472a"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+summary = "cargo clippy (lumina, -D warnings) — clean"
+dedup_id = "92ffeec73c1d14b3"
+
+[[items]]
+id = "E26"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a7-research-open-questions"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Wave A7: converted 24 research_notes/open_questions/question_options macro sites across 12 fns to the runtime DbClient/DbTx seam; added generic-R FromRow for ResearchNote + QuestionOption + new private OpenQuestionRow; repo.rs macro count 84->60. resolve_open_question multi-statement tx preserved (3 UPDATEs, 1 event). 236 nextest pass, doctests ok, clippy clean"
+files = ["lumina/src/repo.rs"]
+commits = ["baac31c"]
+dedup_id = "391363fe7f43cf4f"
+
+[[items]]
+id = "E27"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "cargo build (lumina) — Finished in 7.82s (A7)"
+dedup_id = "2c6ab1c6e58147af"
+
+[[items]]
+id = "E28"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "cargo nextest run (lumina) — 236 passed, 0 skipped (A7)"
+dedup_id = "a7919282ab0c9eea"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+summary = "cargo test --doc (lumina) — 0 doctests, ok (A7)"
+dedup_id = "0585699467aef346"
+
+[[items]]
+id = "E30"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+summary = "cargo clippy (lumina, -D warnings) — clean in 17.39s (A7)"
+dedup_id = "176e0e7fc6cdd2b0"
+
+[[items]]
+id = "E31"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a8-repo-links"
+status = "done"
+files = ["lumina/src/repo.rs"]
+commits = ["b593302"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Converted the four repo_links functions (add/list/remove_repo_link, set_primary_repo) to the runtime DbClient/DbTx seam incl. first unique-violation path via AppError::Db match; added RepoLink FromRow; repo.rs macros 60->52"
+dedup_id = "316e2ec134537113"
+
+[[items]]
+id = "E32"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo build green"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "d298152717386add"
+
+[[items]]
+id = "E33"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo nextest run green (236 tests)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "3fbb5a555b6588f6"
+
+[[items]]
+id = "E34"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo doctests green (0 doctests)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "4a45c89e21b9ed1e"
+
+[[items]]
+id = "E35"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo clippy -D warnings green"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "8cd801be6c618daf"
+
+[[items]]
+id = "E36"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a9-risks-rejected-alts-task-deps"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "A9: converted risks/rejected_alternatives/task_dependencies (16 fns, 23 macro sites) to the runtime DbClient/DbTx seam; added generic-R FromRow for Risk/RejectedAlternative/TaskDependency; repo.rs macros 52->29; 236 nextest pass, doctests ok, clippy clean"
+files = ["lumina/src/repo.rs"]
+commits = ["3363845"]
+dedup_id = "8ff61ea5cb549c2c"
+
+[[items]]
+id = "E37"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo build green (A9)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "b251b582b36db0b3"
+
+[[items]]
+id = "E38"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo nextest run green (236 passed, 0 skipped) (A9)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "9bb29e99d00633cb"
+
+[[items]]
+id = "E39"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo test --doc green (0 doctests) (A9)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "7c7add91546d12fe"
+
+[[items]]
+id = "E40"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo clippy -D warnings clean (A9)"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "2f25ec7b5733aae4"
+
+[[items]]
+id = "E41"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a10-task-planning"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "A10: converted the last 5 task-planning query!/query_as! sites (find_project_ancestor x2, compute_task_batches, get_task_dispatch_plan, get_story_readiness) to the runtime DbClient seam via scalar_opt/scalar_one + two generic-R FromRow structs (TaskBatchRow, DispatchSpecRow); signatures kept pool:&SqlitePool; repo.rs macros 29->24; 236 nextest pass, clippy clean"
+files = ["lumina/src/repo.rs"]
+commits = ["2bfeef3"]
+dedup_id = "0dc16f192770c7a9"
+
+[[items]]
+id = "E42"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo build green (A10)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "bddc6d65bf2bc43e"
+
+[[items]]
+id = "E43"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo nextest 236 passed (A10)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "4d4c2e067ef698eb"
+
+[[items]]
+id = "E44"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo doctests pass (A10)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "7226ec4541fefa3b"
+
+[[items]]
+id = "E45"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo clippy -D warnings clean (A10)"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "2aa8019b8a1ccb80"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E46"
+type = "task-completion"
+task_ref = "a11-pty-module"
+status = "done"
+summary = "Converted 15 sqlx macros in pub mod pty to the runtime DbClient/DbTx seam; added generic-R FromRow impls for PtySession/PtyMessage/PtyQueueEntry"
+files = ["lumina/src/repo.rs"]
+commits = ["200b349"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "3cd00acfd9ad3e6f"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E47"
+type = "verification"
+summary = "cargo build green (12.02s)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "6e665899d600ed49"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E48"
+type = "verification"
+summary = "cargo nextest run: 236 passed, 0 failed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "673a6c5e89e2e843"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E49"
+type = "verification"
+summary = "cargo test --doc: 0 doctests, pass"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "d3aaea6afe2329cf"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E50"
+type = "verification"
+summary = "cargo clippy --all-targets -D warnings: clean (2.98s)"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "bea3eac729fc6edc"
+
+[[items]]
+id = "E51"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a12-remaining-sites-state-swap"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Eradicated final 16 sqlx bang-macros + swapped AppState/LuminaTools pool to Arc<AnyPool> + flipped 10 domain repo fns to &impl DbClient (Part A seam complete; macro census 0)"
+files = [
+    "lumina/src/app.rs",
+    "lumina/src/db.rs",
+    "lumina/src/export.rs",
+    "lumina/src/http/acceptance_criteria.rs",
+    "lumina/src/http/activity.rs",
+    "lumina/src/http/context_blocks.rs",
+    "lumina/src/http/findings.rs",
+    "lumina/src/http/open_questions.rs",
+    "lumina/src/http/pty_sessions.rs",
+    "lumina/src/http/readiness.rs",
+    "lumina/src/http/rejected_alternatives.rs",
+    "lumina/src/http/research_notes.rs",
+    "lumina/src/http/risks.rs",
+    "lumina/src/http/structured_patches.rs",
+    "lumina/src/http/task_dependencies.rs",
+    "lumina/src/http/work_items.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/pty/ask.rs",
+    "lumina/src/pty/spawn.rs",
+    "lumina/src/pty/supervisor.rs",
+    "lumina/src/repo.rs",
+    "lumina/tests/auq_e2e.rs",
+    "lumina/tests/concurrency.rs",
+    "lumina/tests/e2e.rs",
+    "lumina/tests/pty_e2e.rs",
+]
+commits = ["d57ae81"]
+dedup_id = "5c8f850d46244a02"
+
+[[items]]
+id = "E52"
+type = "deviation"
+date = 2026-06-01
+agent = "implement"
+task_ref = "a12-remaining-sites-state-swap"
+summary = "A12 also flipped 10 domain repo fns from &SqlitePool to &impl DbClient, completing the E11-deferred seam-signature conversion"
+original_intent = "Plan A12 as written: convert the remaining macro sites and swap AppState.pool to Arc<AnyPool>; the dispatch brief assumed all repo fns already took &impl DbClient"
+rationale = "10 domain repo fns (get_work_item_detail, create_work_item(_with_origin), set_epic/focus_plan, find_project_ancestor, set_finding_repo, compute_task_batches, get_task_dispatch_plan, get_story_readiness) were still typed &SqlitePool — their macros were eradicated in earlier waves but signatures were kept per deviation E11, which deferred the flip to A12. Flipped all 10 to &impl DbClient (closed call-graph, compiler-verified) so no domain fn names a concrete backend; Part A seam goal fully met. Minor downstream: concurrency.rs &pool to &*pool, repo.rs SqlitePool import test-gated, and .sqlite() intentionally retained at handlers mixing seam + raw helpers. Behaviour-preserving; 236 tests green."
+commits = ["d57ae81"]
+dedup_id = "e77948ce6ac1eb3e"
+
+[[items]]
+id = "E53"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo build passed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+id = "E54"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo nextest run passed (236 tests)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "25302978dc2b0ff3"
+
+[[items]]
+id = "E55"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo test --doc passed (0 doctests)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "ee01ff270a33f398"
+
+[[items]]
+id = "E56"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo clippy -D warnings clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "4a02ccd4e5c417dc"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E57"
+type = "task-completion"
+task_ref = "a13-feature-trim"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+commits = ["2bb8b0e"]
+files = [
+    "lumina/Cargo.toml",
+    "lumina/.cargo/config.toml",
+    "lumina/.sqlx",
+]
+summary = "Dropped sqlx `macros` feature (features -> runtime-tokio/sqlite/migrate); deleted .sqlx/ offline cache (130 files), .cargo/config.toml (SQLX_OFFLINE), and [profile.dev.package.sqlx-macros]. Completes the Part A macro-eradication gate; build/nextest/clippy green."
+dedup_id = "943b14f099f5b8bc"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E58"
+type = "verification"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "build green (sqlx::migrate! compiles without the macros feature)"
+dedup_id = "297c05f0150f5fab"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E59"
+type = "verification"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "236 tests passed"
+dedup_id = "3e4dce6d909926b8"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E60"
+type = "verification"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+summary = "doctests passed"
+dedup_id = "48fc9d888aaaf367"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E61"
+type = "verification"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+summary = "clippy clean (-D warnings)"
+dedup_id = "e71092804224d271"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E62"
+type = "verification"
+command = '''! rg -q 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests'''
+outcome = "pass"
+summary = "macro-eradication gate: 0 query!/query_as!/query_scalar! invocations remain"
+dedup_id = "cf46faa573d58882"
+
+[[items]]
+date = 2026-06-01
+agent = "implement"
+id = "E63"
+type = "verification"
+command = "test ! -e lumina/.sqlx"
+outcome = "pass"
+summary = "offline-cache-removed gate: .sqlx/ directory absent"
+dedup_id = "7ac153dc0b3bd48b"
+
+[[items]]
+id = "E64"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b14-migration-0011"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Migration 0011 (runs/sprints/sprint_tasks/finding_decisions + findings.run_id/triage_state + work_items.spawned_from_finding_id + ux_findings_dedup partial index); promoted sha2 0.10 direct dep (zero version churn); migration_0011 test green within 238/238 suite."
+files = [
+    "lumina/migrations/0011_runs_sprints_findings_queue.sql",
+    "lumina/tests/migration_0011.rs",
+    "lumina/Cargo.toml",
+    "lumina/Cargo.lock",
+]
+commits = ["bc0d198"]
+scope_warning = true
+dedup_id = "aa8a60fb0ca316ea"
+
+[[items]]
+id = "E65"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b15-domain-structs"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Findings-queue domain enums (RunKind/RunStatus/TargetKind/FindingDecisionKind/TriageState/FindingAxis) + structs (BatchInsertResult/AxisCount/QueryFindingsFilter/NewRun/NewSprint/NewFindingDecision) with wire-forms matching the 0011 CHECK vocab + round-trip test; Finding/WorkItem untouched."
+files = ["lumina/src/domain.rs"]
+commits = ["95063b9"]
+dedup_id = "c7fab8b923eab0c8"
+
+[[items]]
+id = "E66"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b16-tx-helpers-read-structs"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extracted create_finding_tx + create_work_item_full_tx (event relocated to public wrappers for B17 coarse-event batching; dedup ON CONFLICT predicate byte-identical to ux_findings_dedup); extended Finding (run_id/triage_state) + WorkItem (spawned_from_finding_id) read path across SELECTs/FromRow/fixtures; added pub finding_dedup_hash (sha2) + determinism test. Suite 239/239 green."
+files = [
+    "lumina/src/repo.rs",
+    "lumina/src/domain.rs",
+    "lumina/src/export.rs",
+]
+commits = ["2e5ae66"]
+dedup_id = "2f09f79d89954395"
+
+[[items]]
+id = "E67"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo build green"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "d298152717386add"
+
+[[items]]
+id = "E68"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo nextest run: 239 passed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "ab1f311ba5dcff05"
+
+[[items]]
+id = "E69"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "doctests: none to run (pass)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "a03594476b429d81"
+
+[[items]]
+id = "E70"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "clippy --all-targets -D warnings clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "90e9eb15b16cacc0"
+
+[[items]]
+id = "E71"
+type = "deviation"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b17a-add-findings"
+summary = "add_findings touched lumina/src/import.rs beyond the plan's repo.rs-only file scope"
+original_intent = "B17a edits lumina/src/repo.rs only (plan Files: lumina/src/repo.rs)"
+rationale = "The additive NewFinding.run_id field (needed to stamp findings.run_id, the only write path that can set it) broke import.rs's exhaustive NewFinding literal (E0063); run_id: None there is forced and unambiguous, and the crate does not compile without it."
+commits = ["a3546bd"]
+dedup_id = "1efef95fd910e4d2"
+
+[[items]]
+id = "E72"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b17a-add-findings"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added repo add_findings (bulk findings insert, content-hash dedup via 0011 partial index, run_id stamping, one coarse non-work_item event); extended NewFinding/create_finding_tx with run_id; 3 tests green"
+files = [
+    "lumina/src/repo.rs",
+    "lumina/src/import.rs",
+]
+commits = ["a3546bd"]
+dedup_id = "ec4be71853cf126a"
+
+[[items]]
+id = "E73"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b17b-create-work-items"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added repo create_work_items + NewWorkItemSpec (bulk work-item create under one tx, all-or-nothing existing-parents-only, B17b-owned spawned_from_finding_id stamp, one coarse batch event); 3 tests green"
+files = ["lumina/src/repo.rs"]
+commits = ["8c715d7"]
+dedup_id = "41a4f532f1424dce"
+
+[[items]]
+id = "E74"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b17c-batch-update-findings"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added repo batch_update_findings + FindingTriageUpdate (non-terminal triage only, D9: terminal Disposition rejected pre-tx, missing finding aborts batch, one coarse finding event); returns updated count; 3 tests green"
+files = ["lumina/src/repo.rs"]
+commits = ["fcdc89a"]
+dedup_id = "3a65da88f0b0967c"
+
+[[items]]
+id = "E75"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b18-mcp-batch-tools"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added 3 MCP batch #[tool] handlers (add_findings/create_work_items/batch_update_findings) with JsonSchema params + element structs; tool surface 58->61; deserialise + happy-path tests green"
+files = ["lumina/src/mcp.rs"]
+commits = ["84e86bd"]
+dedup_id = "02cf57dc2c4e6307"
+
+[[items]]
+id = "E76"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b19-http-batch-routes"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added 3 HTTP POST batch routes (/findings/batch, /findings/batch-update, /work-items/batch) delegating to the same repo batch fns as B18; oneshot round-trip tests green; http/mod.rs untouched"
+files = [
+    "lumina/src/http/findings.rs",
+    "lumina/src/http/work_items.rs",
+]
+commits = ["b73f182"]
+dedup_id = "ec43f683295c4aab"
+
+[[items]]
+id = "E77"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo build green"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "d298152717386add"
+
+[[items]]
+id = "E78"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo nextest: 255 tests passed, 0 failed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "779ec716a29796bc"
+
+[[items]]
+id = "E79"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo doctests: 0 failed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "ccb656852548f33e"
+
+[[items]]
+id = "E80"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo clippy --all-targets -D warnings clean"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "83f5e6f5d32709d4"
+
+[[items]]
+id = "E81"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b20-query-findings"
+status = "done"
+files = ["lumina/src/repo.rs"]
+commits = ["f41a55d"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Adopted verified working-tree B20: query_findings (static NULL-guard filter + severity count-by) + get_story_finding_queue (tombstoned-excluded JOIN), repo-local QueryFindingsResult enum + AxisCount FromRow; full suite 258/258 + clippy -D warnings green, macro-gate 0."
+dedup_id = "512acbb6dbfcb763"
+
+[[items]]
+agent = "implement"
+date = 2026-06-01
+id = "E82"
+type = "task-completion"
+task_ref = "b21-mcp-query-tools"
+status = "done"
+files = ["lumina/src/mcp.rs"]
+commits = ["f0d38a9"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added MCP read tools query_findings (reuses domain::QueryFindingsFilter as Parameters; NULL-guard filter + count_by=severity grouped mode) and get_story_finding_queue; bumped advertised tool count 61->63 + read-only-hint set; 2 params-deserialise tests."
+dedup_id = "7168b79cbdb40d9c"
+
+[[items]]
+agent = "implement"
+date = 2026-06-01
+id = "E83"
+type = "task-completion"
+task_ref = "b22-http-query-routes"
+status = "done"
+files = [
+    "lumina/src/http/queries.rs",
+    "lumina/src/http/mod.rs",
+]
+commits = ["28a1b05"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added HTTP GET /findings/query (Query<QueryFindingsFilter> -> {findings|counts}) and GET /work-items/{story_id}/finding-queue in new http/queries.rs, wired via pub mod + .merge in http/mod.rs; oneshot round-trip tests."
+dedup_id = "c7491e6956e04b01"
+
+[[items]]
+agent = "implement"
+date = 2026-06-01
+id = "E84"
+type = "verification"
+summary = "cargo build passed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "d14ff3b3c8cf5186"
+
+[[items]]
+agent = "implement"
+date = 2026-06-01
+id = "E85"
+type = "verification"
+summary = "cargo nextest run passed (262 tests)"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "6053045027ef4d35"
+
+[[items]]
+agent = "implement"
+date = 2026-06-01
+id = "E86"
+type = "verification"
+summary = "cargo test --doc passed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "c885b34248698355"
+
+[[items]]
+agent = "implement"
+date = 2026-06-01
+id = "E87"
+type = "verification"
+summary = "cargo clippy -D warnings passed"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "c982a7ffb27c2f49"
+
+[[items]]
+id = "E88"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b23-repo-domain-fns"
+status = "done"
+files = ["lumina/src/repo.rs"]
+commits = ["0c252c8"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added create_run, create_sprint, add_tasks_to_sprint, record_finding_decision on the migration-0011 seam (one tx + one export-inert event each); +8 unit tests; build/clippy/228 lib tests green."
+dedup_id = "63a1af15a6065a93"
+
+[[items]]
+id = "E89"
+type = "deviation"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b23-repo-domain-fns"
+summary = "Pinned the plan-unspecified spawn/resolve/triage semantics of record_finding_decision at implement time."
+original_intent = "Plan B23 left under-specified: the parent a spawn decision attaches the new work_item to, the spawned item title source, which Disposition the Resolve decision maps to, and the per-decision triage_state values."
+rationale = "Orchestrator design: spawn_task/spawn_story create a child task/story under the finding host work_item (stamping spawned_from_finding_id); title = finding.summary or a fallback; Resolve delegates to resolve_finding with Disposition::Fixed; triage_state maps spawn/resolve to accepted, defer to deferred, dismiss to dismissed. No DB-constraint or compile conflict arose; the plan-pinned assertion (spawn_task sets spawned_from_finding_id + triage_state=accepted + a finding_decisions row) holds."
+commits = ["0c252c8"]
+dedup_id = "b5deade06fbd015d"
+
+[[items]]
+id = "E90"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b24-mcp-domain-tools"
+status = "done"
+files = ["lumina/src/mcp.rs"]
+commits = ["6927ea8"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added 4 MCP domain #[tool] handlers (create_run, create_sprint, add_tasks_to_sprint, record_finding_decision) + AddTasksToSprintParams; bumped tool-count invariant 63->67; 4 params-deserialise tests; build/clippy/17 mcp tests green."
+dedup_id = "b025f4e7e93ce477"
+
+[[items]]
+id = "E91"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b25-http-domain-routes"
+status = "done"
+files = [
+    "lumina/src/http/runs.rs",
+    "lumina/src/http/sprints.rs",
+    "lumina/src/http/mod.rs",
+]
+commits = ["dca979d"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added http/runs.rs + http/sprints.rs (4 POST routes to the B23 repo fns) and merged both sub-routers into http::router(); 3 oneshot round-trip tests assert the merges are live; build/clippy green."
+dedup_id = "0b3ba45b56713179"
+
+[[items]]
+id = "E92"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b26-bulk-e2e-tests"
+status = "done"
+files = ["lumina/tests/bulk_e2e.rs"]
+commits = ["feb42d2"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added lumina/tests/bulk_e2e.rs — 5 cross-family e2e tests (dedup-skip-committed w/ row-count assert, batch abort, queue tombstone exclusion, decision provenance + resolve delegation, create_run target validation) over repo + HTTP oneshot; export drain skipped. 5/5 pass."
+dedup_id = "dc772a7a7935114b"
+
+[[items]]
+id = "E93"
+type = "task-completion"
+date = 2026-06-01
+agent = "implement"
+task_ref = "b27-documentation"
+status = "done"
+files = [
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+commits = ["947b0fc"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Documented the 9 Part-B MCP tools + 8 HTTP routes + run/sprint/finding-decisions model; reconciled tool count to verified 67 (was 39/58); retired the Part-A-removed .sqlx / cargo sqlx prepare gate across lumina/CLAUDE.md, root CLAUDE.md, and the mcp SKILL.md."
+dedup_id = "7c43ab903949d16c"
+
+[[items]]
+id = "E94"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo build (lumina) passed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "21e2b0491991911f"
+
+[[items]]
+id = "E95"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo nextest run (lumina) passed — 282 tests"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "e12f0951f12ff03f"
+
+[[items]]
+id = "E96"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo test --doc (lumina) passed"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo test --manifest-path lumina/Cargo.toml --doc"
+outcome = "pass"
+dedup_id = "569cd0464ea66c51"
+
+[[items]]
+id = "E97"
+type = "verification"
+date = 2026-06-01
+agent = "implement"
+summary = "cargo clippy -D warnings (lumina) passed"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "1e814116e01a2b45"
+
+[[items]]
+id = "E98"
+type = "status-transition"
+date = 2026-06-01
+agent = "plan-update"
+summary = "All 29 plan tasks complete and verified (build/tests/doctests/lint green); implementation finished, awaiting /review + /optimise sign-off."
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "9e04bfbf770d8420"

@@ -1,0 +1,496 @@
+schema_version = 1
+last_updated = 2026-06-02
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R1"
+file = "lumina/src/repo.rs"
+line = 3606
+symbol = "record_finding_decision"
+severity = "warning"
+effort = "medium"
+category = "quality"
+summary = "Resolve verdict is cross-tx non-atomic: resolve_finding commits its own tx before the decision tx, so a crash between them leaves a resolved finding with no finding_decisions audit row"
+description = "For FindingDecisionKind::Resolve, resolve_finding(db,..) runs and COMMITS its own tx + finding.resolved event (repo.rs:3607) BEFORE record_finding_decision opens its decision tx at 3613. If the second tx (triage UPDATE + finding_decisions INSERT + event) fails or the process dies between the two commits, the finding is durably resolved but the append-only finding_decisions audit row never lands — and the returned error misleads the caller. The doc-comment (3559-3563) frames this only as the 'two events' D9 exception, not as a partial-write/audit-gap window. Flagged independently by the quality, security, and architecture lenses. Fix: inline the resolve UPDATE into the decision tx for the Resolve path rather than delegating to the self-committing resolve_finding."
+evidence = ["repo.rs:3606-3608 resolve_finding runs in its own tx; repo.rs:3613 db.begin() opens the second tx; resolve_finding commits independently"]
+dedup_id = "1a957580d1cbf080"
+resolved = 2026-06-02
+resolution = "Inlined the Resolve arm's terminal UPDATE + finding.resolved event into the decision tx (dropped the self-committing resolve_finding call) so triage-UPDATE + finding_decisions-INSERT + resolve commit atomically; test renamed record_finding_decision_resolve_is_atomic"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R2"
+file = "lumina/src/repo.rs"
+line = 3635
+symbol = "record_finding_decision"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Spawned/batch-created work-items are never git-exported until a later unrelated mutation touches them (export-trail gap)"
+description = "The normal create path (create_work_item_full, repo.rs:1316) emits a work_item.created event the export drain renders to <kind>/<id>.toml. But create_work_items (repo.rs:1588) and the spawn arm of record_finding_decision (repo.rs:3635) route new work-items through create_work_item_full_tx (no event) and fold them into an export-INERT batch/finding event (aggregate_type != 'work_item'), which export.rs:171 skips. Consequence: a spawned task/story exists in SQLite and is HTTP-readable but has NO git-export snapshot until some future edit emits a work_item event for it. Documented as the accepted D8/R-B4 trade-off, but the doc frames it as 'not exported individually' — the sharper consequence is that the audit trail is silently incomplete for spawned items. Likely disposition: wontfix (accepted) or a one-line doc callout."
+evidence = [
+    'export.rs:171 if ev.aggregate_type == "work_item"',
+    "repo.rs:3635 create_work_item_full_tx (no event) + repo.rs:3687 single 'finding' event",
+]
+dedup_id = "b885febbe17afbd0"
+resolved = 2026-06-02
+resolution = "Sharpened the R-B4 export-inert doc block: spawned/bulk-created items get no git-export snapshot until a later mutation (accepted D8/R-B4 trade-off). Doc-only"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R3"
+file = "lumina/src/repo.rs"
+line = 3241
+symbol = "add_findings"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Unbounded batch size on add_findings/create_work_items/batch_update_findings enables a memory + long-write-lock DoS"
+description = "None of the three batch-write repo fns (add_findings ~3241, create_work_items ~1544, batch_update_findings ~2756), their MCP handlers, or the HTTP routes enforce a row-count cap — the ~500-row note is advisory prose only. add_findings pre-computes a Vec<String> of sha256 hashes for EVERY element before the tx, then holds the BEGIN IMMEDIATE writer lock across N inserts; a multi-hundred-thousand-element payload forces large heap allocation and holds the RESERVED write lock for the whole loop, starving every other writer. The MCP/in-process path has no body bound at all, and per lumina/CLAUDE.md spawned PTY sessions auto-approve all tool calls. Fix: enforce a hard element cap (reject > N) in the repo or MCP/HTTP layer."
+evidence = ["repo.rs:3248-3259 collects hashes for every item pre-tx; repo.rs:3261-3287 loops all items under one db.begin(); no DefaultBodyLimit layer on the router"]
+dedup_id = "ca732c702a6486ae"
+resolved = 2026-06-02
+resolution = "Added const MAX_BATCH_ITEMS=500 + hard over-cap AppError::Validation guard at the top of add_findings/create_work_items/batch_update_findings (pre-allocation/tx); added add_findings_rejects_over_cap_batch test"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R4"
+file = "lumina/src/db.rs"
+line = 230
+symbol = "DbClient::query_opt/query_one/query_all"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "DbClient read API hard-pins FromRow<'r, SqliteRow>, so the generic-R FromRow investment buys nothing until Pg time and bakes a SQLite-ism into the seam's public read surface"
+description = "Every typed read on DbClient bounds T: for<'r> sqlx::FromRow<'r, SqliteRow> (db.rs:230,236,241; mirrored on all impls + Arc<AnyPool>, plus the Scalar<T>: FromRow<'r, SqliteRow> bounds on scalar_*). The point of the generic-over-R FromRow recipe is to decode from both SqliteRow and PgRow, but the trait surface they flow through only ever accepts SqliteRow. At Postgres time every one of these signatures must change. That is db.rs-internal (so the 'localized to src/db.rs' claim technically survives), but pressure-tests the plan's localized-swap claim: the generic-R mapper work is inert until that signature change, and the bound is an isolated SQLite-ism on the seam's read API. Recorded as a forward-looking design note for the deferred Part C."
+evidence = ["db.rs:230/236/241 T: for<'r> sqlx::FromRow<'r, SqliteRow>"]
+dedup_id = "5760bb7bc4313c4c"
+resolved = 2026-06-02
+resolution = "Added a Part-C swap-point doc note on the DbClient typed-read FromRow SqliteRow bound (bound unchanged, doc-only); cited region had drifted to db.rs ~227-241"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R6"
+file = "lumina/src/repo.rs"
+line = 3588
+symbol = "record_finding_decision"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "record_finding_decision SpawnStory and Defer verdict branches are never tested"
+description = "record_finding_decision has five verdict branches; the repo test module covers SpawnTask (repo.rs:9778), Resolve (9846), and Dismiss (9898), but there is NO test for SpawnStory (spawn_kind=Some('story'), repo.rs:3588) or Defer (TriageState::Deferred, repo.rs:3589). SpawnStory is a materially different path: it creates a story child under the finding's host, which must satisfy the hierarchy rule that a story needs a focus parent — a mis-wired story-spawn would only fail at runtime and no test would catch it. Add tests for both branches."
+evidence = ["repo.rs tests: only record_finding_decision_spawn_task/resolve_delegates/dismiss exist (9778/9846/9898)"]
+dedup_id = "3e2393d8905e5df4"
+resolved = 2026-06-02
+resolution = "Added record_finding_decision_spawn_story (finding hosted on a focus via seed_chain_to_focus, since SpawnStory is unreachable for queue findings) and record_finding_decision_defer tests"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R7"
+file = "lumina/src/repo.rs"
+line = 3581
+symbol = "record_finding_decision"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "record_finding_decision NotFound (missing finding) and hostless-spawn Validation error paths are untested"
+description = "record_finding_decision returns AppError::NotFound when the finding id names no row (repo.rs:3581) and AppError::Validation when a spawn verdict targets a hostless finding (repo.rs:3597-3601). Neither error path has a test. The decision tools are the triage-audit entry point; a regression turning NotFound into a dangling-FK 500, or letting a hostless spawn create an orphan, would pass the suite. Over HTTP this is also a status-code contract (404 vs 500)."
+evidence = ["repo.rs:3581 NotFound and :3597-3601 hostless-spawn Validation have no matching test"]
+dedup_id = "0dd69ff598c1a489"
+resolved = 2026-06-02
+resolution = "Added record_finding_decision_missing_finding_is_not_found (NotFound) and record_finding_decision_hostless_spawn_is_validation (Validation) error-path tests"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R8"
+file = "lumina/src/repo.rs"
+line = 1181
+symbol = "query_findings"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "R-A1 safety-net gap: the nullable disposition columns on Finding are never decoded with a non-NULL value through the runtime query_all path"
+description = "QUERY_FINDINGS_ROWS_SQL and STORY_FINDING_QUEUE_SQL decode the full Finding struct including resolved_at/resolution/defer_reason/defer_trigger/wontfix_rationale/repo_id via runtime query_all::<Finding>. Part A removed compile-time SQL checking, so a String-vs-Option<String> nullability mismatch on any of these now only surfaces as a runtime try_get decode error. Every test seeds findings via create_finding with NewFinding::default(), leaving those columns NULL — so the decode is only ever exercised with NULL, which would NOT distinguish String from Option<String>. Add a test that seeds a finding with defer_reason/resolution/wontfix_rationale populated and reads it back through query_findings. This is the dominant R-A1 risk's missing safety net."
+evidence = ["SELECT lists repo.rs:1177-1182 include the disposition columns; all query_findings tests seed via NewFinding::default leaving them NULL"]
+dedup_id = "09dce6d341d8f07b"
+resolved = 2026-06-02
+resolution = "Added query_findings_decodes_populated_disposition_columns: seeds non-NULL resolution/defer_reason/wontfix_rationale/repo_id and reads back via query_findings, asserting the decoded Option values (R-A1 decode safety-net)"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R5"
+file = "lumina/src/repo.rs"
+line = 3642
+symbol = "record_finding_decision"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = """Spawned work-item origin is hardcoded to "review", ignoring that the run/finding may be an 'optimise' pass"""
+description = """The spawn passes CreateOpts { origin: Some("review"), .. } unconditionally (repo.rs:3642). A finding raised under an optimise run (runs.kind ∈ review|optimise, migration 0011) that spawns a task is stamped origin='review', mislabelling its provenance. The finding's run_id is available; derive origin from the run kind, or stop hardcoding it to one of the two pass types."""
+evidence = ["""repo.rs:3642 origin: Some("review"); runs.kind CHECK IN ('review','optimise') at 0011:47"""]
+dedup_id = "b4a20d3779514640"
+resolved = 2026-06-02
+resolution = "Spawn-arm origin now derived from the finding's run kind (runs.kind read on the tx) instead of hardcoded review; falls back to review when the finding has no run_id"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R9"
+file = "lumina/src/repo.rs"
+line = 3241
+symbol = "add_findings"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "add_findings is never tested with findings that have a NULL dedup tuple (the index-exempt path)"
+description = "migration_0011.rs:246 proves the partial index exempts NULL-dedup_id rows at the SQL layer, but no repo-layer add_findings test exercises a finding whose dedup tuple is NULL (no file/line/symbol/summary). Whether a content hash is even computed (vs left NULL) for a sparse finding governs whether two identical sparse findings both insert or collapse. Add a repo test adding two findings with no dedup-contributing fields and assert BOTH persist (added==2, skipped==0)."
+evidence = ["schema-level exemption tested at migration_0011.rs:246; repo dedup tests use a fully-populated tuple only (repo.rs:8917, bulk_e2e.rs:137)"]
+dedup_id = "22ff818846bc60fb"
+resolved = 2026-06-02
+resolution = "Added a batch-path sparse-dedup test; corrected its assertion at verification to the true behaviour: add_findings owns dedup (always hashes work_item_id) so two content-empty findings COLLAPSE (added==1, skipped==1), contrasting the single-path NULL-exempt case. Renamed add_findings_content_empty_findings_collapse_via_owned_hash"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R10"
+file = "lumina/src/repo.rs"
+line = 3102
+symbol = "create_finding_tx"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "Dedup ON CONFLICT predicate byte-identity with the ux_findings_dedup index is load-bearing but pinned only by manual care — no test or shared const"
+description = "create_finding_tx's ON CONFLICT(work_item_id, dedup_id) WHERE dedup_id IS NOT NULL AND superseded_by IS NULL (repo.rs:3102-3103) must stay BYTE-IDENTICAL to the ux_findings_dedup index predicate (migration 0011:70-71); a one-byte drift makes the conflict target fail to bind the partial index and duplicates insert with no error (R-B3). Verified identical today, but nothing pins the parity. Fix: share one const for the predicate, or add a test asserting the two strings match."
+evidence = ["repo.rs:3102-3103 vs migrations/0011_runs_sprints_findings_queue.sql:70-71 — currently identical, untested"]
+dedup_id = "ded55f9a364a654b"
+resolved = 2026-06-02
+resolution = "Single-sourced the dedup ON CONFLICT predicate via a findings_dedup_predicate! macro (a const cannot feed concat!) shared by the production INSERT and the new parity test that asserts migration 0011 embeds it verbatim; fixed the dead-const warning surfaced at verification"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R11"
+file = "lumina/tests/migration_0011.rs"
+line = 227
+symbol = "migration_0011_runs_sprints_findings_queue"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The dedup index test never exercises the superseded_by IS NULL half of the partial predicate"
+description = "The test proves a second LIVE duplicate fails (migration_0011.rs:227) and NULL-dedup rows are exempt (246), but does NOT prove the superseded_by half: a duplicate (work_item_id, dedup_id) should be ALLOWED when the prior row has superseded_by SET (a legitimate re-flag after supersession). Without it, a regression narrowing the index to (work_item_id, dedup_id) only would pass yet wrongly block re-flags of superseded findings. The insert_finding helper always binds superseded_by NULL."
+evidence = ["migration_0011.rs:227/246 cover live-dup and NULL-dedup; the superseded-exempt branch is never exercised"]
+dedup_id = "f3f378aa573c2fcc"
+resolved = 2026-06-02
+resolution = "Added an assertion proving a re-flag with the same (work_item_id, dedup_id) is allowed after the prior row is superseded, exercising the superseded_by IS NULL half of the ux_findings_dedup partial-index predicate"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R12"
+file = "lumina/src/repo.rs"
+line = 3588
+symbol = "record_finding_decision"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "SpawnStory is effectively unreachable for queue-resident findings — a story child needs a focus parent, but queue findings host on a story or task"
+description = "SpawnStory creates a story child under host_id (the finding's work_item_id); create_work_item_full_tx requires a story's parent be a focus. But get_story_finding_queue (repo.rs:1184) shows queue findings attach to a story or its DIRECT task children — neither a focus — so SpawnStory from any queue-resident finding rejects with a hierarchy Validation. The decision→behaviour map is internally consistent, but SpawnStory is unreachable for the queue's actual finding hosts unless a finding is created directly on a focus. Confirm a real call path exists or document the constraint."
+evidence = ["repo.rs:3588 SpawnStory→story; hierarchy gate requires focus parent; queue scope repo.rs:1184-1185 (story or task child)"]
+dedup_id = "341e75e251980cdc"
+resolved = 2026-06-02
+resolution = "Added a doc note near the SpawnStory arm: reachable only when a finding is created directly on a focus (queue findings host on a story/task). Doc-only"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R13"
+file = "lumina/src/repo.rs"
+line = 2766
+symbol = "batch_update_findings"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "batch_update_findings rejects status 'deferred'/'duplicate' as terminal, overlapping the separate triage_state 'deferred' axis — latent confusion"
+description = "The terminal-disposition guard (repo.rs:2766-2773) serde-parses status through Disposition, which includes Deferred and Duplicate, so the strings 'deferred'/'duplicate' can NEVER be set via batch_update_findings even though triage_state has its own Deferred concept. A caller wanting to defer a finding must use record_finding_decision(Defer)→triage_state, not status. Behaviour is consistent and documented, but the two 'deferred' axes (workflow status vs triage_state) are easy to conflate. Add a one-line param-doc note distinguishing them."
+evidence = ["repo.rs:2766-2773 parses status via Disposition::deserialize; Disposition::{Deferred,Duplicate}; TriageState::Deferred separate"]
+dedup_id = "377db329c212197c"
+resolved = 2026-06-02
+resolution = "Added a FindingTriageUpdate.status param-doc note distinguishing the terminal workflow status (rejected here) from the separate triage_state Deferred/Dismissed axis. Doc-only"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R14"
+file = "lumina/src/repo.rs"
+line = 3296
+symbol = "add_findings"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Empty-batch add_findings/create_work_items/batch_update_findings still open a tx and write a coarse event for zero rows"
+description = "An empty items slice skips the loop but unconditionally records the coarse export-inert event and commits — emitting a count:0 event. Same shape in add_findings (repo.rs:3296), create_work_items (1588), batch_update_findings (2812). Not a correctness bug (the event is export-inert) but it pollutes the events outbox. Add an early `if items.is_empty() { return Ok(default) }` guard."
+evidence = ["repo.rs:3296 record_event runs even when the loop body never executed; mirrored at 1588 and 2812"]
+dedup_id = "da9f589e8bd69574"
+resolved = 2026-06-02
+resolution = "Added is_empty() zero-value early-returns at the top of all three batch fns (paired with the R3 cap) so an empty batch opens no tx and writes no count:0 event; added add_findings_empty_batch_is_zero_result test"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R15"
+file = "lumina/src/repo.rs"
+line = 3573
+symbol = "record_finding_decision"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Finding host is read on autocommit db before the decision tx — a narrow TOCTOU, inconsistent with the B16 on-tx validation tightening"
+description = "The host_id existence/host read (repo.rs:3573) uses autocommit db, not the later decision tx, so it is checked outside the writer-lock snapshot the tx holds. create_work_item_full_tx was specifically refactored in B16 to move validation reads ONTO the tx to close exactly this window; record_finding_decision's host read was left on autocommit. Low severity (the finding_decisions FK would still catch a fully-deleted finding), but inconsistent with the tightened pattern. Move the host read onto the tx."
+evidence = ["repo.rs:3573 scalar_opt on autocommit db; tx opened at 3613; contrast on-tx reads documented at repo.rs:1333-1340"]
+dedup_id = "c96cae0b124285ff"
+resolved = 2026-06-02
+resolution = "Moved the host (work_item_id + run_id) read onto the decision tx via tx_query_opt, closing the autocommit TOCTOU window (mirrors the B16 on-tx validation tightening)"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R16"
+file = "lumina/src/repo.rs"
+line = 1085
+symbol = "query_findings"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "query_findings NULL-guard filter ($N IS NULL OR col = $N) is non-sargable — forces a full scan even when a filter is pinned"
+description = "The static NULL-guard pattern (repo.rs:1085-1091, mirrored in the count-by-severity SQL 1102-1108) gives one prepared statement for every filter combination, but ($N IS NULL OR col = $N) is not sargable: SQLite cannot use an index on severity/status/run_id because the OR-with-NULL forces a table scan even when the caller pins a value. Immaterial at the current small-dataset scale, but it would prevent index use if one were later added. Recorded as a design note; the binds are positional so there is no injection concern."
+evidence = ["repo.rs:1085-1091; same pattern at 1102-1108"]
+dedup_id = "f785bf13feeae786"
+resolved = 2026-06-02
+resolution = "Added a design-note comment near the query_findings NULL-guard filter flagging the ($N IS NULL OR col=$N) pattern as non-sargable, accepted as immaterial at current scale; no query rewrite. Doc-only"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R17"
+file = "lumina/migrations/0011_runs_sprints_findings_queue.sql"
+line = 57
+symbol = "sprint_tasks/finding_decisions FKs"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "New FK columns/tables omit explicit ON DELETE behaviour (defaults to NO ACTION) — correct under soft-delete but implicit"
+description = "Every FK in 0011 (sprint_tasks→sprints/work_items lines 57-58, finding_decisions→findings/work_items 61-63, findings.run_id→runs 66, work_items.spawned_from_finding_id→findings 68) defaults to ON DELETE NO ACTION. The store uses soft-delete so hard DELETE never fires and NO ACTION is harmless — but it is implicit. If any future hard-delete/purge path lands, sprint_tasks rows would block deletion of a work_item with an FK error rather than cascade. Add a one-line comment pinning the intent (consistent with the supersede_finding NO ACTION note already in repo.rs)."
+evidence = ["migration 0011:57-68; contrast repo.rs:2834 documenting the deliberate NO ACTION for the supersede self-FK"]
+dedup_id = "c43857f5af19b4fc"
+resolved = 2026-06-02
+resolution = "Added an ON DELETE NO ACTION intent comment before the FK region of migration 0011 (soft-delete rationale, cross-refs the supersede_finding note). Comment-only DDL-inert. NOTE: changes 0011's sqlx checksum; existing dev DBs need recreation (lumina.db is gitignored, recreated by db::init)"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "verified-clean"
+flow = "declarative-frolicking-cerf"
+id = "R18"
+file = "lumina/src/db.rs"
+line = 137
+symbol = "Args"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "Args bind bundle wraps SqliteArguments with an Encode<'static, Sqlite> bound — the highest-friction part of an eventual Pg swap"
+description = "Args(SqliteArguments) (db.rs:137) and Args::add<T: Encode<'static, Sqlite> + Type<Sqlite>> (db.rs:154-156) are SQLite-typed at the call-site API used by 150+ args![] sites. The doc-comment (131-133) honestly states a Pg arm adds a Pg(PgArguments) variant, so this is acknowledged — but widening Args to dual-backend means either a generic Args<DB> (rippling to every signature) or runtime per-value boxing, and call-site type inference on args![x] could break. Related to R4: together these are the parts of the seam where the 'localized to src/db.rs + Cargo.toml' claim is most strained. Forward-looking note for Part C."
+evidence = ["db.rs:137,154-163; 150+ call sites via the args! macro infer Encode<'static, Sqlite>"]
+dedup_id = "9ec8d74cd0150903"
+verified_note = "Pg(PgArguments) arm friction already documented at db.rs:~131-133 — audited during /review-apply 2026-06-02"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R19"
+file = "lumina/src/repo.rs"
+line = 3292
+symbol = "record_event (R-B4 inert-event routing)"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "The R-B4 inert-event rule (aggregate_type != 'work_item') is hand-repeated at 6 batch/domain call sites with no shared enforcement point"
+description = "create_work_items, add_findings, batch_update_findings, create_run, create_sprint, add_tasks_to_sprint, and record_finding_decision each hand-write the same safety-critical rule — the batch/domain event must use aggregate_type ∈ run/sprint/finding/batch, never 'work_item', or the export drain would wrongly re-render it (R-B4). The rule lives as six maintained comments (repo.rs:1582, 2809, 3292, 3403, 3505, 3680) with no shared enforcement. A record_inert_event helper that statically refuses aggregate_type=='work_item' would encode the invariant once. The per-table validate/loop bodies genuinely diverge (extracting those would over-abstract), but the inert-event routing is identical and load-bearing."
+evidence = ["six hand-maintained R-B4 comments at repo.rs:1582/2809/3292/3403/3505/3680"]
+dedup_id = "cf38e650b4a06617"
+resolved = 2026-06-02
+resolution = "Added record_inert_event helper with a hard runtime guard rejecting aggregate_type==work_item; rewired the 6 inert sites + create_sprint; per-table loop bodies untouched; Resolve's finding.resolved event stays on record_event (D9 exception)"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R20"
+file = "lumina/src/repo.rs"
+line = 1185
+symbol = "get_story_finding_queue"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "get_story_finding_queue JOIN predicate has no kind='task' guard on the child branch — relies on an external hierarchy invariant the query does not assert"
+description = "The docstring (repo.rs:1191) describes the queue scope as 'the story itself OR a DIRECT task child', but the WHERE clause is (w.id = $1 OR w.parent_id = $1) with no AND kind='task' qualifier. Safe today because the hierarchy trigger makes a story's only legal direct children tasks, so the parent_id branch can only match tasks — but the SQL relies on an external invariant it does not assert. If a future migration ever permits a non-task direct child under a story, this query silently widens. Defensive-coding hardening, not a live bug."
+evidence = ["repo.rs:1185 WHERE (w.id = $1 OR w.parent_id = $1); docstring repo.rs:1191 'OR one of its DIRECT task children'"]
+dedup_id = "744ff24e4cd0c8dd"
+resolved = 2026-06-02
+resolution = "Qualified the get_story_finding_queue child branch to (w.id=$1 OR (w.parent_id=$1 AND w.kind=task)), asserting the task-only invariant the query previously relied on externally"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R21"
+file = "lumina/src/repo.rs"
+line = 9706
+symbol = "create_sprint_inserts_row"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "create_sprint test asserts row existence but not the status default"
+description = "create_sprint_inserts_row (repo.rs:9706) asserts COUNT(*)==1 for the sprint id but never reads back the status column, despite the comment claiming 'with the default status'. Its analogue create_run_accepts_live_story correctly asserts run_status=='open'. Read back and assert the persisted sprint status to lock the default against schema drift."
+evidence = ["repo.rs:9712-9717 counts the row only; no status assertion follows the 9704 comment"]
+dedup_id = "800f711c2e873c3e"
+resolved = 2026-06-02
+resolution = "create_sprint_persists_default_open_status now reads back sprints.status and asserts the column-default open value (was COUNT(*)==1 only)"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R22"
+file = "lumina/src/http/sprints.rs"
+line = 128
+symbol = "create_sprint_and_add_tasks_http"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "HTTP add_tasks_to_sprint has no negative-path test (non-task member → 422), inconsistent with create_run's HTTP negative coverage"
+description = "The repo layer tests add_tasks_to_sprint_aborts_on_non_task (repo.rs:9752), but the single HTTP test (sprints.rs:128) only covers the happy path. The HTTP error-status contract for a non-task member (should be 422) is unverified, whereas create_run's HTTP negative path IS covered (bulk_e2e.rs:486). Add an HTTP test driving POST /sprints/{id}/tasks with a non-task id and asserting the status code."
+evidence = ["sprints.rs:128 is the only sprint HTTP test; repo.rs:9752 proves the repo abort but no HTTP test drives the negative path"]
+dedup_id = "bfbee462a268f704"
+resolved = 2026-06-02
+resolution = "Added HTTP negative-path test add_tasks_to_sprint_rejects_non_task_http asserting a story (non-task) member returns 422, mirroring create_run's HTTP negative coverage"
+
+[[items]]
+first_flagged = 2026-06-01
+rounds = 1
+status = "fixed"
+flow = "declarative-frolicking-cerf"
+id = "R23"
+file = "lumina/tests/bulk_e2e.rs"
+line = 194
+symbol = "bulk_writes_abort_whole_batch_on_validation"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Abort-atomicity e2e test checks row rollback but not that ZERO coarse events were written"
+description = "bulk_writes_abort_whole_batch_on_validation (bulk_e2e.rs:194) asserts the findings/work_items row counts are unchanged after an aborted batch, but does not assert the events delta is 0 — the repo-layer batch_update_findings_missing_finding_aborts (repo.rs:9251) does. Since the batch tools' defining property is 'exactly one coarse event per successful batch, zero on abort', asserting count_events unchanged here would harden the all-or-nothing claim against a stray pre-commit event emit."
+evidence = ["bulk_e2e.rs:214-218/256-259 assert only row counts; repo.rs:9178/9251 show the stronger events-delta==0 assertion"]
+dedup_id = "127e0d78901713b1"
+resolved = 2026-06-02
+resolution = "Added events-table COUNT(*) before/after capture around the aborted add_findings batch, asserting delta==0 (zero coarse event on rollback), hardening the all-or-nothing claim"
+
+[[vet_events]]
+timestamp = "2026-06-01T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "research-deep. Sampled record_finding_decision Resolve-atomicity (confirmed repo.rs:3606-3608), origin-hardcode (confirmed repo.rs:3642), TOCTOU host read (confirmed repo.rs:3573), spawned-item export gap (confirmed export.rs:171), empty-batch event (confirmed repo.rs:3296). Dropped the finding_dedup_hash item: the agent's own text states 'This is NOT a bug ... flagging only to record that I checked' — a non-actionable self-note, not a finding. 12.5% drop rate, no fabrications. Surviving items kept as R1,R2,R5,R12,R13,R14,R15."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-01T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "research-lite, returned 3 (under the cap of 5) so all sampled. Unbounded-batch DoS confirmed (no length cap in add_findings repo.rs:3241-3313, no DefaultBodyLimit) -> R3. Resolve split-tx is a true duplicate of Agent-1's finding -> merged into R1, not double-counted. Dedup-predicate-parity (verified byte-identical, actionable 'add a parity test' core) -> R10. SQL-injection surface confirmed clean (const &str + positional $N binds, no AssertSqlSafe over user input). 0 dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-01T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 4
+dropped_count = 2
+downgraded_count = 0
+rationale = "research-deep. Sampled DbClient FromRow<SqliteRow> pin (confirmed db.rs:230/236/241 -> R4), Args/SqliteArguments (confirmed db.rs:137,154-156 -> R18), export gap (confirmed export.rs:171 -> merged into R2), NULL-guard sargability (confirmed repo.rs:1085 -> R16). Dropped 2: (a) the 'intra-batch duplicate findings are double-inserted' headline — the agent's own body REFUTES it (in-tx ON CONFLICT does collapse same-batch dupes); only the salvageable parity-untested point survives, folded into R10; (b) the '$N is not a SQLite-ism' item — a ruled-out non-finding. FK ON DELETE -> R17; inert-event DRY -> R19; Resolve cross-tx -> merged into R1. 22% drop rate."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-01T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 3
+dropped_count = 2
+downgraded_count = 0
+rationale = "research-lite, returned 3 so all sampled. Dropped 2: (a) the tool-count 'arithmetic inconsistency' — REFUTED: the comment at mcp.rs:3234-3244 sums correctly to 67 AND lines 3243-3244 explicitly note the 6 PTY tools were removed, so it does not 'silently skip' the 0008 pass; the assert value 67 is correct; (b) the /findings route-collision note — self-described 'no change required now', a verified-clean observation, not actionable. Kept R20 (queue kind='task' guard). The 67% drop rate crosses the >30% re-dispatch threshold, but the two failures were weak non-actionable observations on a dimension the agent otherwise verified thoroughly and CORRECTLY clean (all 9 tools present, all HTTP merges landed, all struct/SELECT updates complete, validation paths present) — re-dispatch to research-deep would surface nothing new, so the 'SHOULD escalate' is exercised with documented judgement, not mechanically."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-01T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 6
+dropped_count = 2
+downgraded_count = 0
+rationale = "research-lite. Sampled the record_finding_decision coverage gap (confirmed via grep: only spawn_task/resolve/dismiss tests exist at repo.rs:9778/9846/9898, no spawn_story/defer/not_found -> R6,R7), the R-A1 non-NULL decode gap (credible, aligns with the plan's dominant risk -> R8), NULL-dedup-tuple gap -> R9, superseded_by branch -> R11, create_sprint status default -> R21, abort event-count -> R23, HTTP add_tasks negative path -> R22. Dropped 2 low-confidence speculative 'should-check' items (record_finding_decision_http and findings_batch_add_http shallowness) that the agent itself flagged it had not read to confirm. 20% drop rate."
+dedup_id = "45ca31c3315a5978"
