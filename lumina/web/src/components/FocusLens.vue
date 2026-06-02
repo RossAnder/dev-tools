@@ -1,5 +1,5 @@
 <script setup vapor lang="ts">
-import { computed, type ComputedRef } from 'vue'
+import { computed, markRaw, ref, type Component, type ComputedRef } from 'vue'
 import { useHierarchy } from '@/composables/useHierarchy'
 import { kindLabel } from '@/composables/useDisplay'
 import StatusPill from '@/components/StatusPill.vue'
@@ -9,9 +9,26 @@ import ShapeEditor from '@/components/ShapeEditor.vue'
 import OutcomeEditor from '@/components/OutcomeEditor.vue'
 import FramingEditor from '@/components/FramingEditor.vue'
 import EpicCloseCriteriaPanel from '@/components/EpicCloseCriteriaPanel.vue'
+import TabStrip from '@/components/TabStrip.vue'
+import OverviewPanel from '@/components/panels/OverviewPanel.vue'
+import type { TabId } from '@/composables/panelRegistry'
 import type { WorkItem, AcceptanceCriterion, ContextBlock, Shape } from '@/api'
 
 const { detail, descendantCounts } = useHierarchy()
+
+// ---------------------------------------------------------------------------
+// Tabbed-lens shell (Wave-1, T6). The tab region is mounted ABOVE the existing
+// kind-specific sections, which stay for now and are retired in later waves.
+// Only the Overview panel is wired this wave; unwired tab ids render a
+// "coming soon" stub. `PANELS` holds component refs in a plain object map, so
+// each is `markRaw`'d to keep it out of the reactivity system (a component is
+// not reactive state).
+// ---------------------------------------------------------------------------
+const activeTab = ref<TabId>('overview')
+const PANELS: Partial<Record<TabId, Component>> = {
+  overview: markRaw(OverviewPanel),
+}
+const activePanel = computed<Component | null>(() => PANELS[activeTab.value] ?? null)
 
 const item: ComputedRef<WorkItem | null> = computed(() => detail.value?.item ?? null)
 const isTask: ComputedRef<boolean> = computed(() => item.value?.kind === 'task')
@@ -197,6 +214,39 @@ const focusShape: ComputedRef<Shape | null> = computed(() => item.value?.shape ?
         </dl>
       </div>
     </header>
+
+    <!--
+      Tabbed-lens shell (Wave-1, T6). TabStrip owns the active-tab state and
+      mirrors it back via v-model; the panel region below renders the active
+      panel (only Overview wired this wave) with a WAI-ARIA tabpanel id matching
+      TabStrip's `panel-${entityId}-${tabId}` aria-controls scheme. The existing
+      kind-specific sections render BELOW this region; the temporary overlap
+      with the read-only Overview is expected during Wave 1.
+    -->
+    <TabStrip
+      :kind="item.kind"
+      :entity-id="item.id"
+      v-model="activeTab"
+      class="mb-5"
+    />
+    <section
+      :id="`panel-${item.id}-${activeTab}`"
+      role="tabpanel"
+      class="mb-6"
+    >
+      <component
+        :is="activePanel"
+        v-if="activePanel"
+        :item-id="item.id"
+        :kind="item.kind"
+      />
+      <p
+        v-else
+        class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] italic"
+      >
+        &mdash; coming soon &mdash;
+      </p>
+    </section>
 
     <!--
       lens-stats: 4-column KPI grid — only rendered at the project (epic)
