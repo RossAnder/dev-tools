@@ -45,7 +45,7 @@ The model and reasoning effort behind each bucket live **only in the agent's fro
 - `cargo build --manifest-path lumina/Cargo.toml` — build lumina
 - `cargo test --manifest-path lumina/Cargo.toml` — run lumina tests, including the in-process end-to-end thread test (`lumina/tests/e2e.rs`: MCP write → DB rows → git-export snapshot → HTTP read, driven via `tower::ServiceExt::oneshot` and a direct export drain — no socket bind, no `sleep`)
 - `cargo clippy --manifest-path lumina/Cargo.toml --all-targets` — lint
-- `cd lumina/web && npm ci && npm run build` — build the Vue SPA bundle into `lumina/web/dist/`; release builds bake this dir into the binary via `rust-embed` (debug builds serve it from the filesystem)
+- `cd lumina/web && bun ci && bun run build` — build the Vue SPA bundle into `lumina/web/dist/`; release builds bake this dir into the binary via `rust-embed` (debug builds serve it from the filesystem)
 - `rg -c 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests` — macro-eradication gate; must report ZERO matches. Part A converted every `query!`/`query_as!` compile-time macro to a RUNTIME `sqlx::query*` call behind the `DbClient`/`DbTx` seam, dropped the sqlx `macros` feature, and DELETED `lumina/.sqlx/` + `SQLX_OFFLINE`, so there is no offline cache to keep in sync and no `cargo sqlx prepare` step. (The `migrate` feature is kept for the compile-time `sqlx::migrate!("./migrations")` in `db.rs`.)
 - `cargo audit --file lumina/Cargo.lock` — RUSTSEC advisory check (mirrors the tomlctl cadence: run weekly / before releases)
 

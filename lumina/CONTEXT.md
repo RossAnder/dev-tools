@@ -85,6 +85,40 @@ The pool of implement/review agents assigned to exactly one **Sprint**, its memb
 **File scope** (advisory):
 The best-effort set of files a **Task** expects to touch — a *caution* signal for collision, never a hard constraint. It informs **Composition** and is surfaced as a prima-facie overlap warning while a sprint runs, but the implementation may legitimately touch files beyond it, so it encourages caution without ever restricting which task an agent may take.
 
+**Run**:
+A review or optimise pass over a **Sprint** or **Story** (status `open → triaged → closed`) that produces findings — the *coarse* review granularity, distinct from the per-task review the execution queue cascades. A review **Run** over a completed sprint can motivate a follow-up review/fix **Sprint** on the same **Worktree** before its **Merge**.
+
+**Merge** (worktree merge):
+The consumer/overseer-performed reconciliation of a **Worktree**'s accumulated work into the base branch, once its sprints are done and any required review/fix round has passed (a judgement call, not always required). lumina records merge details as audit; git is the source of truth.
+
+**Checkpoint** (task flag):
+A flag marking a **Task** as a sprint-wide **commit barrier**. The instant a checkpoint task is claimed, the queue freezes new claims across the whole sprint; in-flight work drains to a coherent state; the holding agent stages and commits the entire shared worktree, then completes the checkpoint (releasing the freeze) and commits the staged snapshot. Yields whole, non-broken commits at chunk boundaries on the shared worktree, with the commit↔task map held in lumina (clean git, no harness trailers). See `../docs/adr/0003-commit-checkpoint-provenance.md`.
+
+### Observation & analysis plane
+
+**Session**:
+One `claude` process's conversation transcript — the atomic unit of capture; either *spawned* (lumina launched it under a PTY) or *ingested* (a terminal session lumina did not launch, captured once at its end via a `SessionEnd` hook).
+_Avoid_: conversation; run (a **Run** is a review/optimise pass — a different concept).
+
+**Transcript**:
+The ordered record of a **Session**, stored losslessly (every JSONL record kept verbatim) with a curated render-view derived from it.
+
+**Corpus**:
+The single cross-project collection of all captured **Sessions** — the durable substrate harness analysis reads.
+
+**Stitch**:
+To compose a higher-level transcript by gathering the **Sessions** that share a correlation key (sprint, story, agent, project, or time window) and interleaving their records by time.
+
+**Dreaming**:
+A scheduled, after-the-fact analysis pass over the **Corpus** that surfaces recurring patterns for documentation and harness tuning — the *engine* layer (deferred); only its trigger seam is built now.
+_Avoid_: reflection, mining.
+
+**Clone directory**:
+The per-machine absolute path of a linked repo's local working copy (absent when the repo is not cloned on this machine); the anchor that resolves a **Session**'s cwd to its **Project** and repo-relative paths to absolute.
+
+**Clone root**:
+The per-machine default parent directory under which an unbound linked repo is offered for cloning.
+
 ## Relationships
 
 - A **Project** contains one or more **Epics**.
@@ -93,6 +127,8 @@ The best-effort set of files a **Task** expects to touch — a *caution* signal 
 - A **Focus** contains one or more **Stories**; its "done" is their rollup.
 - A **Story** contains one or more **Tasks**.
 - **Shape** is a fractal axis: the same `vertical-slice`/`cross-cutting` distinction recurs at the intra-story task-subset scale (one focus has one Shape; one story has 0+ task-groups, each with its own shape).
+- A **Session** binds to its **Project** (via the **Clone directory** its cwd falls under) and, when it ran lumina commands, to its **Sprint** / **Agent** / **Task** — all *recovered at ingest* by parsing the lumina MCP tool records embedded in the session's own **Transcript** (the tools return lumina-minted ids), never from injected environment. **Task** attribution follows the agent's claim/lease timeline within those records.
+- A **Sprint**'s transcript is **Stitched** from the **Sessions** its **Team**'s agents produced (one `claude` process = one **Session**, so a team yields many).
 
 ## Example dialogue
 
@@ -107,5 +143,8 @@ The best-effort set of files a **Task** expects to touch — a *caution* signal 
 - **Three "kind-ish" concepts kept distinct.** `kind` = hierarchy level (project…task); `task_kind` = a task's phase disposition (`foundation|main|polish`); **Shape** = a focus's vertical/cross-cutting/foundational axis. The focus axis is named `shape` precisely to avoid a third `*_kind`.
 - **Vertical-slice/cross-cutting at two scales.** The same axis describes a coarse focus and a fine intra-story task-subset; same vocabulary, separate storage — not distinct concepts, not one shared table.
 - **File overlap is not a carving signal — and is advisory, not a gate.** `files_touched` overlap is a best-effort *caution* signal that informs sprint composition and intra-sprint collision *awareness*, not focus boundaries; carving is intent/shape only. It is never a hard constraint: file scope is best-effort (implementation routinely touches files outside the declared set), so the queue surfaces overlap as a prima-facie caution and never blocks a claim on it.
-- **Worktree = the inter-sprint isolation boundary (a consumer concern).** Each **Sprint**/**Team** runs in its own git worktree, so file-edit conflicts are reckoned only *within* a sprint; reconciling across concurrently-running sprints is a worktree *merge*, performed by a (deferred) overseer agent — never by lumina. lumina's queue stays worktree-agnostic: being **Sprint**-scoped, it is already correct for any number of concurrent worktree-isolated sprints. Whether lumina should *record* the sprint→worktree binding (for the overseer to locate) is an open follow-up.
+- **Worktree = the inter-sprint isolation boundary AND the merge unit.** Each **Team** runs in a git worktree; a worktree may host *more than one* **Sprint** in sequence — e.g. an implementation sprint followed (by judgement, *not* always) by a review/fix sprint that cleans up the first sprint's findings in the *same* worktree — and is merged to the base branch once, after its sprints are done (`worktree : sprint = 1 : many`). File-edit conflicts are reckoned only *within* a sprint's run; the worktree→base **Merge** is performed by the consumer/overseer (deferred), never by lumina. lumina's *queue* stays worktree-agnostic (being **Sprint**-scoped it is already correct for any number of concurrent worktree-isolated sprints), but lumina *does* **record** the sprint/worktree lifecycle — worktree path, run records, merge details — as a durable audit/intent log (relations to higher work items — story/focus/epic — are *inferred* via the task hierarchy, not stored as explicit sprint links). **git remains the source of truth for actual merge state; lumina records intent + outcome and never polices git.**
 - **Milestone is not an entity.** A coordinated multi-epic dated release is not modelled — epics close independently and the date is an informational `target_date` on the epic (a domain concept not yet modelled in schema). A genuine gating case would become an orthogonal tag, never a tree level.
+- **"Session" — runtime PTY state vs captured corpus.** lumina's `pty_sessions` began as *runtime* state for a spawned REPL (explicitly "not a domain entity"). A captured **Session** generalises that row family to cover *ingested* terminal transcripts too and elevates it to a durable, analysed **Corpus** record — but it stays **export-inert**: a **Session** is an *observation*, not work intent, so it never participates in the `+1 work_items / +1 events` invariant.
+- **Clone directory is single-machine for now.** The per-machine clone path lives on the shared repo-link row, which is correct only while one lumina serves one machine. A shared-remote lumina + local stubs would make that path per-machine-ambiguous and force a per-machine path layer — deliberately deferred (see ADR-0004).
+- **A "harness session" is defined by its content, not its launch.** A captured **Session** counts as harness-controlled — and gains **Sprint**/**Agent**/**Task** correlation — *iff its transcript contains lumina MCP tool calls*. A session with none binds to its **Project** by cwd only (ambient), and may be dropped from the **Corpus** entirely. The `SessionEnd` hook fires indiscriminately; the keep/correlate decision is made at ingest by harvesting lumina's own tool records (see ADR-0004).

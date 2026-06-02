@@ -352,113 +352,133 @@ const editLabelClass =
 
 // Properties-section label/value treatment (matches the Wave-1 <dt>/<dd> idiom).
 const propLabelClass = 'font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase'
+
+// ---------------------------------------------------------------------------
+// Two-column Overview layout (UI follow-up).
+//
+// The long-form text fields live in a MAIN column that no longer spans the full
+// hero-card width; the enum "Properties" live in a narrower SIDE column reserved
+// for them. The split is driven by the PANEL width via a container query (the
+// root carries `@container`), so it responds to the actual space the lens has —
+// not the viewport — and degrades to a single stacked column below `@2xl`
+// (~42rem), where the Properties drop beneath the main content with a divider.
+// ---------------------------------------------------------------------------
+const overviewGridClass =
+  'grid gap-x-10 gap-y-1 items-start @2xl:grid-cols-[minmax(0,1fr)_15rem]'
+const overviewMainClass = 'flex flex-col divide-y divide-[var(--border-faint)] min-w-0'
+const overviewAsideClass =
+  'flex flex-col gap-4 border-t border-[var(--border-faint)] pt-4 @2xl:border-t-0 @2xl:pt-2 @2xl:border-l @2xl:border-[var(--border-faint)] @2xl:pl-8'
+const propsHeadingClass = 'font-mono text-[10.5px] tracking-[0.18em] text-[var(--faint)] uppercase'
 </script>
 
 <template>
-  <div v-if="item" class="flex flex-col divide-y divide-[var(--border-faint)]">
-    <!-- project: body (READ-ONLY — no body-setter composable; see header) -->
+  <div v-if="item" class="@container">
+    <!-- project: body (READ-ONLY — no body-setter composable; see header).
+         No enum properties for this kind, so a single width-capped column. -->
     <template v-if="kind === 'project'">
-      <EditableElement
-        label="Description"
-        :descriptor="{ workItemId: itemId, field: 'body', kind }"
-      >
-        <template #agent-action><span /></template>
-        <span v-if="item.body" class="whitespace-pre-wrap">{{ item.body }}</span>
-        <span v-else class="text-[var(--faint)] italic">&mdash;</span>
-      </EditableElement>
-    </template>
-
-    <!-- epic: outcome + context + Properties(relevance) -->
-    <template v-else-if="kind === 'epic'">
-      <EditableElement
-        label="Outcome"
-        :descriptor="{ workItemId: itemId, field: 'outcome', kind }"
-      >
-        <template #agent-action>
-          <span :class="editLabelClass" @click="openEditor('outcome', 'Outcome', attrString('outcome'))">Edit</span>
-        </template>
-        <span
-          v-if="attrString('outcome')"
-          :class="editableTextClass"
-          @click="openEditor('outcome', 'Outcome', attrString('outcome'))"
-        >{{ attrString('outcome') }}</span>
-        <span
-          v-else
-          :class="editEmptyClass"
-          @click="openEditor('outcome', 'Outcome', null)"
-        >&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Context"
-        :descriptor="{ workItemId: itemId, field: 'context', kind }"
-      >
-        <template #agent-action>
-          <span :class="editLabelClass" @click="openEditor('context', 'Context', attrString('context'))">Edit</span>
-        </template>
-        <span
-          v-if="attrString('context')"
-          :class="editableTextClass"
-          @click="openEditor('context', 'Context', attrString('context'))"
-        >{{ attrString('context') }}</span>
-        <span
-          v-else
-          :class="editEmptyClass"
-          @click="openEditor('context', 'Context', null)"
-        >&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Properties"
-        :descriptor="{ workItemId: itemId, field: 'properties', kind }"
-      >
-        <template #agent-action><span /></template>
-        <div class="flex flex-col gap-1.5">
-          <span :class="propLabelClass">Relevance</span>
-          <EnumSwitch
-            :options="relevanceOptions"
-            :model-value="relevanceValue"
-            :disabled="scalars.loading.value"
-            @update:model-value="setRelevance"
-          />
-        </div>
-      </EditableElement>
-      <!--
-        Epic close-criteria — migrated from the former standalone epic
-        close-criteria panel (retired in T11b). Epics have NO Quality tab, so
-        their close-criteria (which are the kind-agnostic acceptance criteria at
-        the API) render here in the Overview tab via the shared
-        AcceptanceCriteriaSection, titled "Close Criteria".
-      -->
-      <div class="py-2">
-        <AcceptanceCriteriaSection :item-id="itemId" :kind="kind" title="Close Criteria" />
+      <div class="max-w-[72ch]">
+        <EditableElement
+          label="Description"
+          :descriptor="{ workItemId: itemId, field: 'body', kind }"
+        >
+          <template #agent-action><span /></template>
+          <span v-if="item.body" class="whitespace-pre-wrap">{{ item.body }}</span>
+          <span v-else class="text-[var(--faint)] italic">&mdash;</span>
+        </EditableElement>
       </div>
     </template>
 
-    <!-- focus: shape + framing + Properties(relevance + shape segmented) -->
+    <!-- epic: main = outcome + context + close-criteria; aside = relevance -->
+    <template v-else-if="kind === 'epic'">
+      <div :class="overviewGridClass">
+        <div :class="overviewMainClass">
+          <EditableElement
+            label="Outcome"
+            :descriptor="{ workItemId: itemId, field: 'outcome', kind }"
+          >
+            <template #agent-action>
+              <span :class="editLabelClass" @click="openEditor('outcome', 'Outcome', attrString('outcome'))">Edit</span>
+            </template>
+            <span
+              v-if="attrString('outcome')"
+              :class="editableTextClass"
+              @click="openEditor('outcome', 'Outcome', attrString('outcome'))"
+            >{{ attrString('outcome') }}</span>
+            <span
+              v-else
+              :class="editEmptyClass"
+              @click="openEditor('outcome', 'Outcome', null)"
+            >&mdash;</span>
+          </EditableElement>
+          <EditableElement
+            label="Context"
+            :descriptor="{ workItemId: itemId, field: 'context', kind }"
+          >
+            <template #agent-action>
+              <span :class="editLabelClass" @click="openEditor('context', 'Context', attrString('context'))">Edit</span>
+            </template>
+            <span
+              v-if="attrString('context')"
+              :class="editableTextClass"
+              @click="openEditor('context', 'Context', attrString('context'))"
+            >{{ attrString('context') }}</span>
+            <span
+              v-else
+              :class="editEmptyClass"
+              @click="openEditor('context', 'Context', null)"
+            >&mdash;</span>
+          </EditableElement>
+          <!--
+            Epic close-criteria — migrated from the former standalone epic
+            close-criteria panel (retired in T11b). Epics have NO Quality tab, so
+            their close-criteria (which are the kind-agnostic acceptance criteria
+            at the API) render here in the Overview tab via the shared
+            AcceptanceCriteriaSection, titled "Close Criteria".
+          -->
+          <div class="py-2">
+            <AcceptanceCriteriaSection :item-id="itemId" :kind="kind" title="Close Criteria" />
+          </div>
+        </div>
+        <aside :class="overviewAsideClass">
+          <span :class="propsHeadingClass">Properties</span>
+          <div class="flex flex-col gap-1.5">
+            <span :class="propLabelClass">Relevance</span>
+            <EnumSwitch
+              :options="relevanceOptions"
+              :model-value="relevanceValue"
+              :disabled="scalars.loading.value"
+              @update:model-value="setRelevance"
+            />
+          </div>
+        </aside>
+      </div>
+    </template>
+
+    <!-- focus: main = framing; aside = relevance + shape -->
     <template v-else-if="kind === 'focus'">
-      <EditableElement
-        label="Framing"
-        :descriptor="{ workItemId: itemId, field: 'framing', kind }"
-      >
-        <template #agent-action>
-          <span :class="editLabelClass" @click="openEditor('framing', 'Framing', attrString('framing'))">Edit</span>
-        </template>
-        <span
-          v-if="attrString('framing')"
-          :class="editableTextClass"
-          @click="openEditor('framing', 'Framing', attrString('framing'))"
-        >{{ attrString('framing') }}</span>
-        <span
-          v-else
-          :class="editEmptyClass"
-          @click="openEditor('framing', 'Framing', null)"
-        >&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Properties"
-        :descriptor="{ workItemId: itemId, field: 'properties', kind }"
-      >
-        <template #agent-action><span /></template>
-        <div class="flex flex-col gap-3">
+      <div :class="overviewGridClass">
+        <div :class="overviewMainClass">
+          <EditableElement
+            label="Framing"
+            :descriptor="{ workItemId: itemId, field: 'framing', kind }"
+          >
+            <template #agent-action>
+              <span :class="editLabelClass" @click="openEditor('framing', 'Framing', attrString('framing'))">Edit</span>
+            </template>
+            <span
+              v-if="attrString('framing')"
+              :class="editableTextClass"
+              @click="openEditor('framing', 'Framing', attrString('framing'))"
+            >{{ attrString('framing') }}</span>
+            <span
+              v-else
+              :class="editEmptyClass"
+              @click="openEditor('framing', 'Framing', null)"
+            >&mdash;</span>
+          </EditableElement>
+        </div>
+        <aside :class="overviewAsideClass">
+          <span :class="propsHeadingClass">Properties</span>
           <div class="flex flex-col gap-1.5">
             <span :class="propLabelClass">Relevance</span>
             <EnumSwitch
@@ -477,101 +497,101 @@ const propLabelClass = 'font-mono text-[10.5px] tracking-[0.16em] text-[var(--fa
               @update:model-value="setShape"
             />
           </div>
-        </div>
-      </EditableElement>
+        </aside>
+      </div>
     </template>
 
-    <!-- story: problem statement / execution strategy / not-doing / verification + Properties -->
+    <!-- story: main = problem statement / execution strategy / not-doing /
+         verification commands; aside = relevance + closure gate -->
     <template v-else-if="kind === 'story'">
-      <EditableElement
-        label="Problem Statement"
-        :descriptor="{ workItemId: itemId, field: 'problem_statement', kind }"
-      >
-        <template #agent-action>
-          <span :class="editLabelClass" @click="openEditor('problem_statement', 'Problem Statement', attrString('problem_statement'))">Edit</span>
-        </template>
-        <span
-          v-if="attrString('problem_statement')"
-          :class="editableTextClass"
-          @click="openEditor('problem_statement', 'Problem Statement', attrString('problem_statement'))"
-        >{{ attrString('problem_statement') }}</span>
-        <span
-          v-else
-          :class="editEmptyClass"
-          @click="openEditor('problem_statement', 'Problem Statement', null)"
-        >&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Execution Strategy"
-        :descriptor="{ workItemId: itemId, field: 'execution_strategy', kind }"
-      >
-        <template #agent-action>
-          <span :class="editLabelClass" @click="openEditor('execution_strategy', 'Execution Strategy', attrString('execution_strategy'))">Edit</span>
-        </template>
-        <span
-          v-if="attrString('execution_strategy')"
-          :class="editableTextClass"
-          @click="openEditor('execution_strategy', 'Execution Strategy', attrString('execution_strategy'))"
-        >{{ attrString('execution_strategy') }}</span>
-        <span
-          v-else
-          :class="editEmptyClass"
-          @click="openEditor('execution_strategy', 'Execution Strategy', null)"
-        >&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Not Doing"
-        :descriptor="{ workItemId: itemId, field: 'not_doing', kind }"
-      >
-        <template #agent-action>
-          <span :class="editLabelClass" @click="openEditor('not_doing', 'Not Doing', attrString('not_doing'))">Edit</span>
-        </template>
-        <span
-          v-if="attrString('not_doing')"
-          :class="editableTextClass"
-          @click="openEditor('not_doing', 'Not Doing', attrString('not_doing'))"
-        >{{ attrString('not_doing') }}</span>
-        <span
-          v-else
-          :class="editEmptyClass"
-          @click="openEditor('not_doing', 'Not Doing', null)"
-        >&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Verification Commands"
-        :descriptor="{ workItemId: itemId, field: 'verification_commands', kind }"
-      >
-        <template #agent-action><span /></template>
-        <dl class="flex flex-col gap-2">
-          <div
-            v-for="key in VC_KEYS"
-            :key="key"
-            class="flex items-baseline gap-2"
+      <div :class="overviewGridClass">
+        <div :class="overviewMainClass">
+          <EditableElement
+            label="Problem Statement"
+            :descriptor="{ workItemId: itemId, field: 'problem_statement', kind }"
           >
-            <dt class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase shrink-0 w-14">
-              {{ key }}
-            </dt>
-            <dd class="flex-1 min-w-0">
-              <input
-                type="text"
-                :value="vcValue(key)"
-                :disabled="storyPlan.loading.value"
-                :placeholder="`${key} command…`"
-                class="w-full font-mono text-[12.5px] bg-[var(--surface)] border border-[var(--border)] rounded-md px-2 py-1 text-[var(--ink-2)] placeholder:text-[var(--ghost)] focus:outline-none focus:border-[var(--accent)]"
-                @input="(e) => onVcInput(key, e)"
-                @change="commitVc(key)"
-                @blur="commitVc(key)"
-              />
-            </dd>
-          </div>
-        </dl>
-      </EditableElement>
-      <EditableElement
-        label="Properties"
-        :descriptor="{ workItemId: itemId, field: 'properties', kind }"
-      >
-        <template #agent-action><span /></template>
-        <div class="flex flex-col gap-3">
+            <template #agent-action>
+              <span :class="editLabelClass" @click="openEditor('problem_statement', 'Problem Statement', attrString('problem_statement'))">Edit</span>
+            </template>
+            <span
+              v-if="attrString('problem_statement')"
+              :class="editableTextClass"
+              @click="openEditor('problem_statement', 'Problem Statement', attrString('problem_statement'))"
+            >{{ attrString('problem_statement') }}</span>
+            <span
+              v-else
+              :class="editEmptyClass"
+              @click="openEditor('problem_statement', 'Problem Statement', null)"
+            >&mdash;</span>
+          </EditableElement>
+          <EditableElement
+            label="Execution Strategy"
+            :descriptor="{ workItemId: itemId, field: 'execution_strategy', kind }"
+          >
+            <template #agent-action>
+              <span :class="editLabelClass" @click="openEditor('execution_strategy', 'Execution Strategy', attrString('execution_strategy'))">Edit</span>
+            </template>
+            <span
+              v-if="attrString('execution_strategy')"
+              :class="editableTextClass"
+              @click="openEditor('execution_strategy', 'Execution Strategy', attrString('execution_strategy'))"
+            >{{ attrString('execution_strategy') }}</span>
+            <span
+              v-else
+              :class="editEmptyClass"
+              @click="openEditor('execution_strategy', 'Execution Strategy', null)"
+            >&mdash;</span>
+          </EditableElement>
+          <EditableElement
+            label="Not Doing"
+            :descriptor="{ workItemId: itemId, field: 'not_doing', kind }"
+          >
+            <template #agent-action>
+              <span :class="editLabelClass" @click="openEditor('not_doing', 'Not Doing', attrString('not_doing'))">Edit</span>
+            </template>
+            <span
+              v-if="attrString('not_doing')"
+              :class="editableTextClass"
+              @click="openEditor('not_doing', 'Not Doing', attrString('not_doing'))"
+            >{{ attrString('not_doing') }}</span>
+            <span
+              v-else
+              :class="editEmptyClass"
+              @click="openEditor('not_doing', 'Not Doing', null)"
+            >&mdash;</span>
+          </EditableElement>
+          <EditableElement
+            label="Verification Commands"
+            :descriptor="{ workItemId: itemId, field: 'verification_commands', kind }"
+          >
+            <template #agent-action><span /></template>
+            <dl class="flex flex-col gap-2">
+              <div
+                v-for="key in VC_KEYS"
+                :key="key"
+                class="flex items-baseline gap-2"
+              >
+                <dt class="font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)] uppercase shrink-0 w-14">
+                  {{ key }}
+                </dt>
+                <dd class="flex-1 min-w-0">
+                  <input
+                    type="text"
+                    :value="vcValue(key)"
+                    :disabled="storyPlan.loading.value"
+                    :placeholder="`${key} command…`"
+                    class="w-full font-mono text-[12.5px] bg-[var(--surface)] border border-[var(--border)] rounded-md px-2 py-1 text-[var(--ink-2)] placeholder:text-[var(--ghost)] focus:outline-none focus:border-[var(--accent)]"
+                    @input="(e) => onVcInput(key, e)"
+                    @change="commitVc(key)"
+                    @blur="commitVc(key)"
+                  />
+                </dd>
+              </div>
+            </dl>
+          </EditableElement>
+        </div>
+        <aside :class="overviewAsideClass">
+          <span :class="propsHeadingClass">Properties</span>
           <div class="flex flex-col gap-1.5">
             <span :class="propLabelClass">Relevance</span>
             <EnumSwitch
@@ -590,70 +610,70 @@ const propLabelClass = 'font-mono text-[10.5px] tracking-[0.16em] text-[var(--fa
               @update:model-value="setClosureGate"
             />
           </div>
-        </div>
-      </EditableElement>
+        </aside>
+      </div>
     </template>
 
-    <!-- task: execution detail / files touched / outcome + Properties(effort/complexity/kind/tier) -->
+    <!-- task: main = execution detail / files touched / outcome;
+         aside = effort / complexity / kind / tier -->
     <template v-else-if="kind === 'task'">
-      <EditableElement
-        label="Execution Detail"
-        :descriptor="{ workItemId: itemId, field: 'execution_detail', kind }"
-      >
-        <template #agent-action>
-          <span :class="editLabelClass" @click="openEditor('execution_detail', 'Execution Detail', attrString('execution_detail'))">Edit</span>
-        </template>
-        <span
-          v-if="attrString('execution_detail')"
-          :class="editableTextClass"
-          @click="openEditor('execution_detail', 'Execution Detail', attrString('execution_detail'))"
-        >{{ attrString('execution_detail') }}</span>
-        <span
-          v-else
-          :class="editEmptyClass"
-          @click="openEditor('execution_detail', 'Execution Detail', null)"
-        >&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Files Touched"
-        :descriptor="{ workItemId: itemId, field: 'files_touched', kind }"
-      >
-        <template #agent-action><span /></template>
-        <ul v-if="filesTouched.length > 0" class="flex flex-col gap-1">
-          <li
-            v-for="(f, i) in filesTouched"
-            :key="i"
-            class="font-mono text-[12.5px] text-[var(--ink-2)] break-all"
+      <div :class="overviewGridClass">
+        <div :class="overviewMainClass">
+          <EditableElement
+            label="Execution Detail"
+            :descriptor="{ workItemId: itemId, field: 'execution_detail', kind }"
           >
-            {{ f }}
-          </li>
-        </ul>
-        <span v-else class="text-[var(--faint)] italic">&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Outcome"
-        :descriptor="{ workItemId: itemId, field: 'outcome', kind }"
-      >
-        <template #agent-action>
-          <span :class="editLabelClass" @click="openEditor('outcome', 'Outcome', attrString('outcome'))">Edit</span>
-        </template>
-        <span
-          v-if="attrString('outcome')"
-          :class="editableTextClass"
-          @click="openEditor('outcome', 'Outcome', attrString('outcome'))"
-        >{{ attrString('outcome') }}</span>
-        <span
-          v-else
-          :class="editEmptyClass"
-          @click="openEditor('outcome', 'Outcome', null)"
-        >&mdash;</span>
-      </EditableElement>
-      <EditableElement
-        label="Properties"
-        :descriptor="{ workItemId: itemId, field: 'properties', kind }"
-      >
-        <template #agent-action><span /></template>
-        <div class="flex flex-col gap-3">
+            <template #agent-action>
+              <span :class="editLabelClass" @click="openEditor('execution_detail', 'Execution Detail', attrString('execution_detail'))">Edit</span>
+            </template>
+            <span
+              v-if="attrString('execution_detail')"
+              :class="editableTextClass"
+              @click="openEditor('execution_detail', 'Execution Detail', attrString('execution_detail'))"
+            >{{ attrString('execution_detail') }}</span>
+            <span
+              v-else
+              :class="editEmptyClass"
+              @click="openEditor('execution_detail', 'Execution Detail', null)"
+            >&mdash;</span>
+          </EditableElement>
+          <EditableElement
+            label="Files Touched"
+            :descriptor="{ workItemId: itemId, field: 'files_touched', kind }"
+          >
+            <template #agent-action><span /></template>
+            <ul v-if="filesTouched.length > 0" class="flex flex-col gap-1">
+              <li
+                v-for="(f, i) in filesTouched"
+                :key="i"
+                class="font-mono text-[12.5px] text-[var(--ink-2)] break-all"
+              >
+                {{ f }}
+              </li>
+            </ul>
+            <span v-else class="text-[var(--faint)] italic">&mdash;</span>
+          </EditableElement>
+          <EditableElement
+            label="Outcome"
+            :descriptor="{ workItemId: itemId, field: 'outcome', kind }"
+          >
+            <template #agent-action>
+              <span :class="editLabelClass" @click="openEditor('outcome', 'Outcome', attrString('outcome'))">Edit</span>
+            </template>
+            <span
+              v-if="attrString('outcome')"
+              :class="editableTextClass"
+              @click="openEditor('outcome', 'Outcome', attrString('outcome'))"
+            >{{ attrString('outcome') }}</span>
+            <span
+              v-else
+              :class="editEmptyClass"
+              @click="openEditor('outcome', 'Outcome', null)"
+            >&mdash;</span>
+          </EditableElement>
+        </div>
+        <aside :class="overviewAsideClass">
+          <span :class="propsHeadingClass">Properties</span>
           <div class="flex flex-col gap-1.5">
             <span :class="propLabelClass">Effort</span>
             <EnumSwitch
@@ -690,8 +710,8 @@ const propLabelClass = 'font-mono text-[10.5px] tracking-[0.16em] text-[var(--fa
               @update:model-value="setTier"
             />
           </div>
-        </div>
-      </EditableElement>
+        </aside>
+      </div>
     </template>
 
     <!-- Shared long-form editor modal (one instance serves every field). -->

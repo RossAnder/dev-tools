@@ -20,11 +20,15 @@
   parent mirrors the resolved id (handles the "stored tab invalid for the new
   kind → fall back to first" case). `setActiveTab` persists user activations.
 
-  Vapor-mode constraints (mirror EnumSwitch.vue):
-  `<script setup vapor lang="ts">`, no Options API, no
+  Vapor-mode constraints: `<script setup vapor lang="ts">`, no Options API, no
   <Transition>/<KeepAlive>/<Suspense>. Inline Tailwind utilities over the
-  var(--*) token palette — no <style scoped>. The active-tab button reuses
-  EnumSwitch's active classes; inactive reuses its inactive classes.
+  var(--*) token palette — no <style scoped>.
+
+  Visual treatment is an UNDERLINE TAB ROW, not a button group: the tabs sit on
+  a shared baseline rule (the container's bottom border) and the active tab is
+  marked by an accent bottom-border overlapping that rule (`-mb-px`). No boxed
+  backgrounds or rounded borders — this keeps the strip reading as tabs and
+  vertically compact.
 -->
 <script setup vapor lang="ts">
 import { computed, ref, watch } from 'vue'
@@ -149,7 +153,7 @@ function onKeydown(e: KeyboardEvent): void {
 <template>
   <div
     role="tablist"
-    class="flex flex-wrap gap-2"
+    class="flex flex-wrap items-end gap-x-1 border-b border-[var(--border)]"
     @keydown="onKeydown"
   >
     <button
@@ -163,10 +167,10 @@ function onKeydown(e: KeyboardEvent): void {
       :aria-controls="panelId(tab.id)"
       :tabindex="index === focusedIndex ? 0 : -1"
       :class="[
-        'font-mono text-[10.5px] tracking-[0.16em] px-3 py-2 rounded-md border uppercase shrink-0',
+        'font-mono text-[10.5px] tracking-[0.16em] px-3 py-1.5 -mb-px border-b-2 uppercase shrink-0 transition-colors',
         tab.id === active
-          ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--surface-3)]'
-          : 'border-[var(--border)] text-[var(--muted)] bg-[var(--surface-2)] hover:text-[var(--ink-2)] hover:border-[var(--border-strong)]',
+          ? 'border-[var(--accent)] text-[var(--accent)]'
+          : 'border-transparent text-[var(--muted)] hover:text-[var(--ink-2)] hover:border-[var(--border-strong)]',
       ]"
       @click="activate(index)"
     >

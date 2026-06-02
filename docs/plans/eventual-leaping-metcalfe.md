@@ -3,6 +3,7 @@
 **Plan path**: docs/plans/eventual-leaping-metcalfe.md
 **Created**: 2026-06-02
 **Status**: draft
+**Architecture**: [ADR-0002](../adr/0002-sprint-execution-architecture.md) — this plan is **layer 1 (execution substrate)** of the three-layer split; the sprint-lifecycle substrate (first-class worktrees, merge records, sprint-status lifecycle) is a separate layer-2 follow-up, and the composer/overseer engine is deferred (layer 3).
 > Last revised: 2026-06-02
 
 ## Context
@@ -21,7 +22,7 @@ lumina exposes an atomic work-queue so that a team of agents can: claim the next
 ## Scope
 
 - **In**: one additive migration (`work_items` columns + indexes); new `repo::*` mutations/reads; 6 new MCP tools + their HTTP mirrors; `Lane` domain type + row-mapping extension; `complete_task` cascade + review→rework lane stamping; concurrency + e2e tests; doc/catalogue updates.
-- **Out**: the agent-teams runtime itself (lead spawn loop, per-lane teammate prompts) — that lives in the consumer, not lumina. No git-worktree merge machinery (file-lease handles conflicts in v1). No Postgres port. No new `runs.kind` (use a **sprint** as the execution container — `sprints.status` is free TEXT, no `kind` CHECK).
+- **Out**: the agent-teams runtime itself (lead spawn loop, per-lane teammate prompts) — that lives in the consumer, not lumina. **Git-worktree isolation + merges** — inter-sprint isolation is the consumer's per-sprint worktree, and the durable worktree/merge lifecycle is the **layer-2 follow-up plan** ([ADR-0002](../adr/0002-sprint-execution-architecture.md)), NOT this one; this plan's queue is worktree-agnostic and intra-sprint file-overlap is **advisory only** (§C). No Postgres port. No new `runs.kind` (use a **sprint** as the execution container — `sprints.status` is free TEXT, no `kind` CHECK).
 - **Affected areas**: `lumina/migrations/`, `lumina/src/repo.rs`, `lumina/src/mcp.rs`, `lumina/src/domain.rs`, `lumina/src/http/`, `lumina/src/app.rs`, `lumina/tests/`, `lumina/CLAUDE.md`, `CLAUDE.md`, `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`.
 - **Estimated file count**: ~13 (1 migration, 4 src, 1–2 http, 3 tests, 3 docs).
 
@@ -42,7 +43,7 @@ lumina exposes an atomic work-queue so that a team of agents can: claim the next
 1. **Plan scope** → **Full pipeline** — deliver claim/lease + heartbeat + file-lease + done→review cascade + review→rework loop + quiescence + agent-arbiter read in this one plan.
 2. **Done→review derivation** → **Dedicated `complete_task` tool** — server-side transitions done AND spawns the review task in two composed, idempotent txns (cannot be forgotten by a flaky agent).
 3. **Review-task modeling** → **`lane` column + `reviews_work_item_id` back-link** — claim keys on `(lane, tier)`; the back-link records which impl task a review covers (reviewer target + audit trail).
-4. **File-conflict avoidance** → **In-claim Rust-side file-lease** — claim selects candidates in SQL, then in Rust skips any whose `files_touched` overlaps an in-progress task's, within the same txn. No worktrees in v1.
+4. **File-conflict avoidance** → **Advisory overlap report, NOT a lease** (revised per [ADR-0002](../adr/0002-sprint-execution-architecture.md)) — `files_touched` is best-effort, so the claim NEVER skips on overlap; it returns an advisory caution naming in-progress tasks that share files, computed as a cheap read *outside* the write txn. The team coordinates (peer `SendMessage`) or proceeds with care; inter-sprint isolation is the consumer's worktree (layer 2).
 
 ## Approach
 
@@ -68,12 +69,14 @@ Add `enum Lane { Implement, Review }` (wire `implement|review`, matching the `St
 `claim_next_task(db, sprint_id, lane, tier: Option<Tier>, agent_id, lease_ttl_secs) -> Result<Option<ClaimedTask>, AppError>` — ONE `db.begin()` txn:
 
 1. **Lazy reclaim** (first statement): `UPDATE work_items SET status='todo', assignee=NULL, lease_expires_at=NULL WHERE status='in_progress' AND lease_expires_at < :now` (scoped to the sprint). One coarse `leases.reclaimed` event if any rows hit (export-inert, precedented). Self-heals dead-agent leases without a background reaper.
-2. **Candidate select** (SQL, `LIMIT 16`): tasks joined to `sprint_tasks` where `status='todo'` AND `assignee IS NULL` AND `lane=:lane` AND (`:tier IS NULL` OR `tier=:tier`) AND `blocked_by_question_id IS NULL` AND `deleted_at IS NULL` AND `NOT EXISTS (unsatisfied dep)` — i.e. `NOT EXISTS (SELECT 1 FROM task_dependencies d JOIN work_items dep ON dep.id=d.depends_on_id WHERE d.task_id=t.id AND dep.status<>'done')`. Order by `(task_kind sort, created_at, id)` (mirror `compute_task_batches` tie-break).
-3. **File-lease (Rust-side)**: load `files_touched` for all `in_progress` tasks in the sprint once. Normalise each entry to a key — bare string `p` → `(primary, p)`; object `{repo,path}` → `(repo, path)` (entries are heterogeneous, repo.rs:251/6149). A candidate conflicts iff its key-set intersects any in-progress key-set. Empty/absent `files_touched` = conservative WILDCARD: treat as conflicting with ALL in-progress tasks (skip it while any task is in progress) to avoid the unbounded-blast-radius collision noted in Risks. Pick the first non-conflicting candidate. Document the rule in T13.
-4. **Lease**: `UPDATE … SET status='in_progress', assignee=:agent_id, lease_expires_at=:now+ttl`; `record_event 'work_item.claimed'` (payload carries `assignee`). Return `Some(ClaimedTask{ task_id, lane, tier, files_touched, … })`.
-5. **Empty/all-conflicting** → `Ok(None)` (NOT an error → MCP returns `{claimed: null}`).
+2. **Candidate select** (SQL, `LIMIT 16`): tasks joined to `sprint_tasks` where `status='todo'` AND `assignee IS NULL` AND `lane=:lane` AND (`:tier IS NULL` OR `tier=:tier`) AND `blocked_by_question_id IS NULL` AND `deleted_at IS NULL` AND `NOT EXISTS (unsatisfied dep)` — i.e. `NOT EXISTS (SELECT 1 FROM task_dependencies d JOIN work_items dep ON dep.id=d.depends_on_id WHERE d.task_id=t.id AND dep.status<>'done')`. Order by `(task_kind sort, created_at, id)` (mirror `compute_task_batches` tie-break); the first ready candidate wins — **no file-overlap filtering** (overlap is advisory, reported post-claim in step 4).
+3. **Lease** (inside the txn): `UPDATE … SET status='in_progress', assignee=:agent_id, lease_expires_at=:now+ttl`; `record_event 'work_item.claimed'` (payload carries `assignee`). Commit.
+4. **Advisory file-overlap report (post-commit, NOT a gate)**: per [ADR-0002](../adr/0002-sprint-execution-architecture.md) the claim NEVER skips on overlap (`files_touched` is best-effort). After the lease commits, compute — as a cheap read **outside** the write txn — which `in_progress` tasks in the sprint share any `files_touched` entry with the claimed task, normalising each entry to a key (bare string `p` → `(primary, p)`; object `{repo,path}` → `(repo, path)`; heterogeneous per repo.rs:251/6149). Return `Some(ClaimedTask{ task_id, lane, tier, files_touched, file_overlap_warnings, … })`. Empty/absent `files_touched` ⇒ no caution; a slightly-stale set is fine. Inter-sprint isolation is the consumer's worktree (layer 2), not this check.
+5. **No ready candidate** → `Ok(None)` (NOT an error → MCP returns `{claimed: null}`).
 
-The SELECT→UPDATE in one `BEGIN IMMEDIATE` txn is race-free under SQLite's single writer — this is the property the agent-teams shared list cannot give. Corollary: all claimers serialise on the writer lock, and the Rust file-overlap scan (step 3, which serde-parses `files_touched` per in-progress task — repo.rs:6154) runs INSIDE that lock, so keep step 3 cheap. The in-progress set is sprint-scoped/small in v1, but a large sprint extends lock-hold time; the deferred `task_files` denormalisation removes the in-lock JSON parse.
+**Sprint-status guard**: before selecting, the claim checks the target sprint's `status` and returns `Ok(None)` if it is not runnable. Layer 1 treats any non-terminal sprint as runnable; the full `composed → queued → running → merged` lifecycle (and a stricter guard) lands with the **layer-2** sprint-lifecycle plan — this is the integration seam ([ADR-0002](../adr/0002-sprint-execution-architecture.md)).
+
+The SELECT→UPDATE (steps 2–3) in one `BEGIN IMMEDIATE` txn is race-free under SQLite's single writer — this is the property the agent-teams shared list cannot give. The claim txn is deliberately small — *reclaim → select → lease → event* — and the advisory file-overlap report (step 4) is a cheap read **outside** this txn, so **no `files_touched` JSON parse runs inside the writer lock** (this resolves the earlier lock-hold concern; do not move the overlap scan back into the txn).
 
 `release_task(db, task_id, agent_id)` — clear `assignee`/`lease_expires_at`; set `status='todo'` **only if** current status is `in_progress` (leave `blocked` untouched, so park-after-question works); guarded by `WHERE assignee=:agent_id`. Used for park-and-pull and voluntary yield.
 
@@ -126,7 +129,7 @@ smoke: rg -c 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests   # must pri
 
 #### T2: Add `Lane` enum + result types
 - **Files**: `lumina/src/domain.rs`
-- **Action**: `enum Lane { Implement, Review }` (serde wire `implement|review`); add result structs with EXACT fields — `ClaimedTask { task_id, lane: Lane, tier: Option<Tier>, assignee, lease_expires_at, files_touched: Vec<serde_json::Value> }`, `SprintQuiescence { claimable, in_progress, blocked_on_question, terminal, done: bool, stalled: bool }`, `OpenQuestionSummary { question_id, story_id, text, options: Vec<String>, age_secs }` (single source of truth for T4/T9/T10/T12). ALSO extend `domain::WorkItem` (domain.rs:21) with `assignee`/`lease_expires_at`/`lane`/`reviews_work_item_id`, each `Option<String>` using the migration-0003 `skip_serializing_if = Option::is_none` serde convention — without this T3's `work_item_from_row` (repo.rs:141) cannot compile. Mirror the `Tier` enum derive set.
+- **Action**: `enum Lane { Implement, Review }` (serde wire `implement|review`); add result structs with EXACT fields — `ClaimedTask { task_id, lane: Lane, tier: Option<Tier>, assignee, lease_expires_at, files_touched: Vec<serde_json::Value>, file_overlap_warnings: Vec<{ task_id: String, shared: Vec<String> }> }` (the warnings are advisory, populated post-claim per ADR-0002), `SprintQuiescence { claimable, in_progress, blocked_on_question, terminal, done: bool, stalled: bool }`, `OpenQuestionSummary { question_id, story_id, text, options: Vec<String>, age_secs }` (single source of truth for T4/T9/T10/T12). ALSO extend `domain::WorkItem` (domain.rs:21) with `assignee`/`lease_expires_at`/`lane`/`reviews_work_item_id`, each `Option<String>` using the migration-0003 `skip_serializing_if = Option::is_none` serde convention — without this T3's `work_item_from_row` (repo.rs:141) cannot compile. Mirror the `Tier` enum derive set.
 - **Acceptance**: compiles; `Lane` round-trips its wire form in a unit test. Effort: S
 - **Blocked-by**: none
 
@@ -138,10 +141,10 @@ smoke: rg -c 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests   # must pri
 
 ### Phase 2: Core queue mutations (sequential — all in repo.rs)
 
-#### T4: Implement `claim_next_task` (+ lazy reclaim, file-lease)
+#### T4: Implement `claim_next_task` (+ lazy reclaim, advisory overlap)
 - **Files**: `lumina/src/repo.rs`
-- **Action**: Per Approach §C — one `BEGIN IMMEDIATE` txn: (1) lazy-reclaim expired leases as the first statement, emitting one coarse export-inert `leases.reclaimed` event ONLY when rows are reclaimed; (2) SQL candidate select (status/deps/lane/tier/not-blocked); (3) Rust-side file-overlap skip per the normalised-key rule (§C); (4) lease UPDATE + `work_item.claimed` event; `Ok(None)` when none. Reuse `record_event` (`repo.rs:6440`) and the `attributes.files_touched` read path (`repo.rs:6154`). Consider splitting step (1) into a prior task if the L estimate proves too large.
-- **Acceptance**: unit test covering (a) deps + in-progress file-conflict skip; (b) empty lane → `None`; (c) an expired-lease task is lazily reclaimed to todo/assignee=NULL and emits exactly one coarse `leases.reclaimed` export-inert event; (d) a legacy `lane IS NULL` task is NEVER returned by the claim (back-compat). Effort: L
+- **Action**: Per Approach §C — one `BEGIN IMMEDIATE` txn: (1) lazy-reclaim expired leases as the first statement, emitting one coarse export-inert `leases.reclaimed` event ONLY when rows are reclaimed; (2) sprint-status guard + SQL candidate select (status/deps/lane/tier/not-blocked, first ready wins); (3) lease UPDATE + `work_item.claimed` event. THEN outside the txn: (4) the advisory file-overlap report (NOT a skip — per ADR-0002) attached to `ClaimedTask`; `Ok(None)` when no ready candidate. Reuse `record_event` (`repo.rs:6440`) and the `attributes.files_touched` read path (`repo.rs:6154`). Consider splitting step (1) into a prior task if the L estimate proves too large.
+- **Acceptance**: unit test covering (a) deps respected + a claimed task carries an advisory `file_overlap_warnings` entry naming an in-progress file-sharing task (and is NOT skipped); (b) empty lane → `None`; (c) an expired-lease task is lazily reclaimed to todo/assignee=NULL and emits exactly one coarse `leases.reclaimed` export-inert event; (d) a legacy `lane IS NULL` task is NEVER returned by the claim (back-compat); (e) the sprint-status guard returns `None` for a non-runnable sprint. Effort: L
 - **Blocked-by**: T3
 
 #### T5: Implement `release_task` + `renew_lease`
@@ -199,7 +202,7 @@ smoke: rg -c 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests   # must pri
 ### Phase 5: Docs (parallel — different files)
 
 #### T13: Update docs & catalogue
-- **Files**: `CLAUDE.md` (MCP surface count 67→73), also refresh the stale `58-tool surface` comments at `app.rs:216` + `pty/ask.rs:20` and extend the count-breakdown comment at `mcp.rs:3234-3242` with a +6 team-execution line, `lumina/CLAUDE.md` (document the new tools + **correct** the inaccurate "`compute_task_batches` respects task-on-question blocks" claim), `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md` (catalogue the 6 tools + params).
+- **Files**: `CLAUDE.md` (MCP surface count 67→73), also refresh the stale `58-tool surface` comments at `app.rs:216` + `pty/ask.rs:20` and extend the count-breakdown comment at `mcp.rs:3234-3242` with a +6 team-execution line, `lumina/CLAUDE.md` (document the new tools + the **advisory** file-overlap semantics per ADR-0002 + **correct** the inaccurate "`compute_task_batches` respects task-on-question blocks" claim), `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md` (catalogue the 6 tools + params).
 - **Acceptance**: counts/catalogue match the implemented surface; the corrected claim describes the `status='blocked'` mechanism. Effort: S
 - **Blocked-by**: T9
 
@@ -231,7 +234,7 @@ T2 ─┴─► T3 ─► T4 ─► T5
 ## Risks
 
 - **Claim correctness under concurrency** — the core risk. Mitigated by the single `BEGIN IMMEDIATE` SELECT→UPDATE (SQLite single-writer) and T11's concurrency test, which relies on the pool's EXISTING WAL + 5s `busy_timeout` (db.rs:32,79) — the same mechanism `tests/concurrency.rs` uses. Do not split the select and update across txns, and do not weaken the WAL/busy_timeout config without updating T11.
-- **File-lease accuracy depends on `files_touched` being populated/honest** — a task with empty/wrong `files_touched` can collide. v1 accepts this; the documented scale path is a denormalized `task_files` table (deferred). Note the limitation in T13.
+- **File-overlap is advisory, not enforced** (per [ADR-0002](../adr/0002-sprint-execution-architecture.md)) — `files_touched` is best-effort, so the claim only *cautions*, never blocks. Intra-sprint collisions are handled by team coordination (peer `SendMessage`); inter-sprint by the consumer's per-sprint worktree (layer 2). `files_touched` quality affects caution usefulness, not correctness. The denormalized `task_files` scale path stays deferred. Note the advisory semantics in T13.
 - **`complete_task` two-txn window** — a crash between txn 1 and txn 2 leaves a done task with no review; mitigated by idempotent re-run (T6). The reviewer/lead should re-issue `complete_task` on resume for done-but-unreviewed tasks.
 - **Review↔rework non-termination** — mitigated by the `findings.rounds` cap + human escalation (T8/§E).
 - **Lease TTL vs long tasks** — too-short TTL reclaims a live task. Mitigated by a generous default (30 min) + `renew_lease` heartbeat; document the tuning knob.
