@@ -18,7 +18,7 @@
     - Cancel (the ✕) OR blur of the group → reset confirming (so a stray first
       click doesn't leave the row armed indefinitely).
 
-  Styling follows RepoLinksPanel.vue's small uppercase-mono button idiom over
+  Styling follows ReposPanel.vue's small uppercase-mono button idiom over
   the var(--*) palette. Vapor mode, no <style scoped>.
 -->
 <script setup vapor lang="ts">

@@ -23,7 +23,7 @@
       to the captured trigger (the APG assigns focus-restore to the author).
     - SSR / pre-mount: the ref may be null; every access is guarded.
 
-  Vapor-mode constraints (mirror ShapeEditor.vue / RepoLinksPanel.vue):
+  Vapor-mode constraints (mirror OverviewPanel.vue / ReposPanel.vue):
     `<script setup vapor>`, no Options API, no <Transition>/<KeepAlive>/
     <Suspense>. Inline Tailwind utilities over the var(--*) token palette —
     no <style scoped>.

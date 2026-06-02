@@ -18,7 +18,7 @@
                                is empty (hard acceptance requirement — a later
                                wave fills it without restructuring the row).
 
-  Label treatment matches the existing <h3>/<dt> token idiom in ShapeEditor.vue
+  Label treatment matches the existing <h3>/<dt> token idiom in OverviewPanel.vue
   / FocusLens.vue (font-mono, small, uppercase, wide tracking, --faint ink).
 
   Vapor mode, inline Tailwind over var(--*) tokens, no <style scoped>.

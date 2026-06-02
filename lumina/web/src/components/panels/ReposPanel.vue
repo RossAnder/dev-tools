@@ -1,7 +1,7 @@
 <!--
   ReposPanel — the project-kind "Repos" tab body for the work-item detail lens.
-  Migrated from the standalone RepoLinksPanel.vue into the panel framework: it
-  follows the same `{ itemId, kind }` prop contract as the other panels
+  Migrated from the former standalone repo-links editor into the panel
+  framework: it follows the same `{ itemId, kind }` prop contract as the other panels
   (OverviewPanel et al.) and is resolved from FocusLens's PANELS map for the
   `repos` tab (project-only per panelRegistry's TAB_DEFS).
 
@@ -11,8 +11,9 @@
   this panel does NOT refresh — it only seeds the singleton on the focused
   project via `bind`.
 
-  Vapor mode, inline Tailwind over var(--*) tokens, no <style scoped> — mirrors
-  RepoLinksPanel.vue's visual treatment.
+  Vapor mode, inline Tailwind over var(--*) tokens, no <style scoped> — the
+  small uppercase-mono button + row-list visual treatment carried over from the
+  former standalone repo-links editor.
 -->
 <script setup vapor lang="ts">
 import { ref, onMounted, watch } from 'vue'
@@ -32,7 +33,8 @@ const newSlug = ref('')
 // Load-bearing bind seeder: module state isn't auto-keyed to the focused node,
 // so seed on mount AND re-seed whenever the focused project changes. `immediate`
 // covers the initial mount, so the explicit onMounted is belt-and-braces with
-// the watch (matches RepoLinksPanel's idiom).
+// the watch (the established bind-seeder idiom carried over from the former
+// standalone repo-links editor).
 onMounted(() => {
   void bind(props.itemId)
 })

@@ -10,9 +10,9 @@
       persisted on blur via `useStoryPlan().apply`.
 
   Editor migration (T7): this panel now folds in the persist+fold-back behaviour
-  formerly owned by OutcomeEditor.vue (epic outcome/context), FramingEditor.vue
-  (focus framing) and ShapeEditor.vue (focus shape) — those mounts were removed
-  from FocusLens; the files themselves are retired by a later task.
+  formerly owned by the standalone per-kind editors — epic outcome/context,
+  focus framing and focus shape — whose separate mounts were removed from
+  FocusLens and whose files have since been retired.
 
   Refresh contract (load-bearing — see the per-composable notes inline):
     - `useScalars.set*` are PURE mutators — after a successful set we MUST call

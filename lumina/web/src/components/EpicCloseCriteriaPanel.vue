@@ -9,9 +9,9 @@
   checked (plus all descendant stories terminal) before the epic can transition
   to done.
 
-  Layout mirrors RepoLinksPanel.vue (list of rows with per-row actions + an
+  Layout mirrors ReposPanel.vue (list of rows with per-row actions + an
   add form) fused with FocusLens.vue's acceptance-criteria checkbox render.
-  Vapor constraints as RepoLinksPanel.vue.
+  Vapor constraints as ReposPanel.vue.
 -->
 <script setup vapor lang="ts">
 import { ref, onMounted, watch } from 'vue'
@@ -26,7 +26,7 @@ const { items, loading, error, bind, add, check, uncheck, remove } =
 const newText = ref('')
 
 // Seed on mount + re-seed when the focused epic changes — mirrors
-// RepoLinksPanel's onMounted/watch(projectId) bind pattern.
+// ReposPanel's onMounted/watch(projectId) bind pattern.
 onMounted(() => {
   void bind(props.epicId)
 })

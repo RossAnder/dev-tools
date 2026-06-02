@@ -20,11 +20,11 @@
   parent mirrors the resolved id (handles the "stored tab invalid for the new
   kind → fall back to first" case). `setActiveTab` persists user activations.
 
-  Vapor-mode constraints (mirror ShapeEditor.vue / EnumSwitch.vue):
+  Vapor-mode constraints (mirror EnumSwitch.vue):
   `<script setup vapor lang="ts">`, no Options API, no
   <Transition>/<KeepAlive>/<Suspense>. Inline Tailwind utilities over the
   var(--*) token palette — no <style scoped>. The active-tab button reuses
-  ShapeEditor's active classes; inactive reuses its inactive classes.
+  EnumSwitch's active classes; inactive reuses its inactive classes.
 -->
 <script setup vapor lang="ts">
 import { computed, ref, watch } from 'vue'

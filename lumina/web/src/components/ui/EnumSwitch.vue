@@ -1,6 +1,6 @@
 <!--
   EnumSwitch — Wave-1 presentational primitive: a segmented control that
-  generalises ShapeEditor.vue's three-button row into a reusable widget.
+  generalises the former focus-shape three-button row into a reusable widget.
 
   Purely presentational: it owns NO data/composable logic. Panels pass options
   + the current value and react to update:modelValue.
@@ -11,12 +11,12 @@
                 disabled?: boolean }
     - Emits:  update:modelValue(string)  (enables `v-model`)
 
-  Active/inactive button classes are copied verbatim from ShapeEditor.vue so
-  the visual language stays identical. No-op guard: clicking the already-
-  selected value does NOT emit (mirrors ShapeEditor's "already selected"
-  short-circuit, saving a downstream roundtrip).
+  Active/inactive button classes follow the segmented-control visual language
+  so it stays identical across the lens. No-op guard: clicking the already-
+  selected value does NOT emit (an "already selected" short-circuit that saves
+  a downstream roundtrip).
 
-  Vapor-mode constraints (mirror ShapeEditor.vue): `<script setup vapor>`, no
+  Vapor-mode constraints: `<script setup vapor>`, no
   Options API. Inline Tailwind utilities over var(--*) tokens — no
   <style scoped>.
 -->
@@ -32,7 +32,7 @@ const emit = defineEmits<{
 }>()
 
 function select(value: string): void {
-  // No-op when already selected — do not emit (ShapeEditor parity).
+  // No-op when already selected — do not emit (already-selected short-circuit).
   if (value === props.modelValue) return
   emit('update:modelValue', value)
 }

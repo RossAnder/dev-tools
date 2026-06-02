@@ -23,7 +23,7 @@
 
   Tailwind tokens are referenced via the project's `var(--*)` palette
   (`assets/tokens.css` + `assets/theme.css`) — same convention as the other
-  Vapor SFCs (RepoLinksPanel, StatusPill).
+  Vapor SFCs (ReposPanel, StatusPill).
 -->
 <script setup vapor lang="ts">
 import {
@@ -317,7 +317,7 @@ onMounted(() => {
     <template v-else>
     <!-- Header strip: label + project-missing tombstone + status pill +
          destructive actions. Mirrors the header treatment in
-         RepoLinksPanel.vue / CenterToolbar.vue (border-bottom, muted
+         ReposPanel.vue / CenterToolbar.vue (border-bottom, muted
          monospace typography). -->
     <header
       class="flex items-center gap-3 px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-2)]"

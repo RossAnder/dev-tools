@@ -17,7 +17,7 @@
     - Enter inside the <textarea> inserts a NEWLINE — it does NOT submit. Only
       the Save button submits (no @keydown.enter handler is wired).
 
-  Vapor-mode constraints (mirror Modal.vue / ShapeEditor.vue):
+  Vapor-mode constraints (mirror Modal.vue / OverviewPanel.vue):
   `<script setup vapor lang="ts">`, no Options API, no
   <Transition>/<KeepAlive>/<Suspense>. Inline Tailwind over the var(--*) token
   palette — no <style scoped>.

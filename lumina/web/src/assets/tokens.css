@@ -21,7 +21,7 @@
   /* Semantic colour for repo slugs in file-reference renders (e.g.
      `[owner/repo] src/x.rs`). Aliased to --accent for now — a dedicated hue
      can be introduced later if repo tags need to stand apart from other
-     accent-coloured UI. Used by RepoLinksPanel.vue and the formatFileRef
+     accent-coloured UI. Used by ReposPanel.vue and the formatFileRef
      consumers wired in by future findings-UI work. */
   --repo-tag: var(--accent);
 }

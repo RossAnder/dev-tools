@@ -21,7 +21,7 @@
   Tailwind-token note: per the project palette in `assets/tokens.css` +
   `assets/theme.css`, semantic colour utilities go through `var(--*)`
   references — `text-[var(--muted)]`, `text-blocked` (a Tailwind v4 @theme
-  colour token via `--color-blocked`), etc. Mirrors RepoLinksPanel.vue /
+  colour token via `--color-blocked`), etc. Mirrors ReposPanel.vue /
   StatusPill.vue conventions.
 -->
 <script setup vapor lang="ts">
