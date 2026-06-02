@@ -54,6 +54,18 @@ impl Queue {
         repo::pty::complete_pty_queue_entry(pool, id, "failed", Some(error)).await
     }
 
+    /// Return the most-recently-dispatched (highest-`sequence`) entry still in
+    /// `status='dispatched'` for a session, or `None` if there is none. The
+    /// supervisor calls this each quiescence tick to find the entry to mark
+    /// completed when finalising a turn — a single indexed query rather than
+    /// listing the whole queue and reverse-scanning.
+    pub async fn last_dispatched(
+        pool: &SqlitePool,
+        session_id: &str,
+    ) -> Result<Option<PtyQueueEntry>, AppError> {
+        repo::pty::last_dispatched_pty(pool, session_id).await
+    }
+
     /// Full per-session list (every row, every status, sorted by `sequence`).
     /// HTTP `GET /pty/sessions/{id}/queue` renders this.
     pub async fn list(

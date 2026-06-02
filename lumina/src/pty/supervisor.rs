@@ -361,14 +361,13 @@ async fn maybe_finalise_turn(pool: &SqlitePool, session: &Arc<crate::pty::sessio
         return;
     }
 
-    // Find the most recent dispatched queue entry for this session. v1
-    // path: list everything and scan; a future revision can add a
-    // dedicated `pop_last_dispatched` query.
-    match Queue::list(pool, &session_id_str).await {
-        Ok(rows) => {
-            if let Some(entry) = rows.iter().rev().find(|r| r.status == "dispatched")
-                && let Err(err) = Queue::mark_completed(pool, &entry.id).await
-            {
+    // Mark the most recent dispatched queue entry for this session
+    // completed via a single indexed query (highest-`sequence` row still in
+    // `status='dispatched'`), rather than listing the whole queue and
+    // reverse-scanning each tick.
+    match Queue::last_dispatched(pool, &session_id_str).await {
+        Ok(Some(entry)) => {
+            if let Err(err) = Queue::mark_completed(pool, &entry.id).await {
                 tracing::warn!(
                     entry_id = %entry.id,
                     error = %err,
@@ -376,11 +375,12 @@ async fn maybe_finalise_turn(pool: &SqlitePool, session: &Arc<crate::pty::sessio
                 );
             }
         }
+        Ok(None) => {}
         Err(err) => {
             tracing::warn!(
                 session_id = %session_id_str,
                 error = %err,
-                "supervisor: Queue::list failed"
+                "supervisor: Queue::last_dispatched failed"
             );
         }
     }

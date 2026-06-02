@@ -92,6 +92,11 @@ struct WorkItemRow {
     spawned_from_finding_id: Option<String>,
     created_at: String,
     updated_at: String,
+    /// Soft-delete tombstone instant (NULL = live). Selected by both
+    /// `GET_WORK_ITEM_DETAIL_SQL` and `LIST_WORK_ITEMS_SQL` so the export
+    /// tombstone fold reads it off the detail row instead of issuing a separate
+    /// query (O17). Maps to the `#[serde(skip_serializing)]` `WorkItem.deleted_at`.
+    deleted_at: Option<String>,
 }
 
 impl<'r, R> sqlx::FromRow<'r, R> for WorkItemRow
@@ -126,6 +131,7 @@ where
             spawned_from_finding_id: row.try_get("spawned_from_finding_id")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
+            deleted_at: row.try_get("deleted_at")?,
         })
     }
 }
@@ -155,6 +161,7 @@ fn work_item_from_row(r: WorkItemRow) -> Result<WorkItem, AppError> {
         spawned_from_finding_id: r.spawned_from_finding_id,
         created_at: r.created_at,
         updated_at: r.updated_at,
+        deleted_at: r.deleted_at,
     })
 }
 
@@ -497,7 +504,7 @@ const LIST_WORK_ITEMS_SQL: &str = r#"
             id, kind, parent_id, title, body, status, position, attributes,
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
-            spawned_from_finding_id, created_at, updated_at
+            spawned_from_finding_id, created_at, updated_at, deleted_at
         FROM work_items
         WHERE deleted_at IS NULL
           AND ($1 IS NULL OR parent_id = $1)
@@ -522,35 +529,62 @@ pub async fn get_work_item_detail(
 
     let item = work_item_from_row(row)?;
 
-    let children = list_work_items(pool, Some(id), None).await?;
-    let findings = list_findings(pool, id).await?;
-    let activity = list_activity(pool, id).await?;
-    let acceptance_criteria = list_acceptance_criteria(pool, id).await?;
-    let research_notes = list_research_notes(pool, id).await?;
-    let open_questions = list_open_questions(pool, id).await?;
-    // Migration 0004: repo links live only on `project` work-items (kind-check
-    // trigger pair). Skip the side-table query for any other kind — returns an
-    // empty Vec — to keep the per-detail read count low.
-    let repo_links = if item.kind == "project" {
-        list_repo_links(pool, &item.id).await?
-    } else {
-        Vec::new()
+    // O1: the child reads below are mutually independent — none consumes a prior
+    // result; only `item.kind` gates the project-/task-only branches — so run
+    // them concurrently with `tokio::try_join!` instead of awaiting in series.
+    // Under WAL each future acquires its own pooled connection and the reads
+    // overlap; the first error short-circuits the join. Each query is a leaf op
+    // (acquire → run → release), so there is no hold-and-wait cycle even when the
+    // fan-out exceeds the pool size — surplus reads simply queue on `acquire()`
+    // (see O5: size the pool to absorb this fan-out).
+    //
+    // The two kind-gated reads (repo_links: migration 0004, project-only;
+    // task_dependencies: migration 0005, task-only) are wrapped in `async` blocks
+    // that resolve to an empty Vec for the non-matching kind, preserving the
+    // original skip-the-query behaviour. risks / rejected_alternatives are
+    // per-work-item (live = `superseded_by IS NULL`).
+    let repo_links_fut = async {
+        if item.kind == "project" {
+            list_repo_links(pool, &item.id).await
+        } else {
+            Ok(Vec::new())
+        }
     };
-
-    // Migration 0005 folds: risks and rejected_alternatives are per-work-item
-    // (live = `superseded_by IS NULL`); task_dependencies are per-task outgoing
-    // edges, so the kind filter mirrors the repo_links project-only filter.
-    let risks = list_risks(pool, &item.id).await?;
-    let rejected_alternatives = list_rejected_alternatives(pool, &item.id).await?;
-    let task_dependencies = if item.kind == "task" {
-        list_outgoing_task_dependencies(pool, &item.id).await?
-    } else {
-        Vec::new()
+    let task_dependencies_fut = async {
+        if item.kind == "task" {
+            list_outgoing_task_dependencies(pool, &item.id).await
+        } else {
+            Ok(Vec::new())
+        }
     };
+    let context_blocks_fut =
+        pool.query_all::<ContextBlock>(DETAIL_CONTEXT_BLOCKS_SQL, args![id.to_owned()]);
 
-    let context_blocks = pool
-        .query_all::<ContextBlock>(DETAIL_CONTEXT_BLOCKS_SQL, args![id.to_owned()])
-        .await?;
+    let (
+        children,
+        findings,
+        activity,
+        acceptance_criteria,
+        research_notes,
+        open_questions,
+        risks,
+        rejected_alternatives,
+        repo_links,
+        task_dependencies,
+        context_blocks,
+    ) = tokio::try_join!(
+        list_work_items(pool, Some(id), None),
+        list_findings(pool, id),
+        list_activity(pool, id),
+        list_acceptance_criteria(pool, id),
+        list_research_notes(pool, id),
+        list_open_questions(pool, id),
+        list_risks(pool, &item.id),
+        list_rejected_alternatives(pool, &item.id),
+        repo_links_fut,
+        task_dependencies_fut,
+        context_blocks_fut,
+    )?;
 
     Ok(WorkItemDetail {
         item,
@@ -573,7 +607,7 @@ const GET_WORK_ITEM_DETAIL_SQL: &str = r#"
             id, kind, parent_id, title, body, status, position, attributes,
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
-            spawned_from_finding_id, created_at, updated_at
+            spawned_from_finding_id, created_at, updated_at, deleted_at
         FROM work_items
         WHERE id = $1
         "#;
@@ -815,10 +849,12 @@ async fn list_research_notes(
 
 /// List the open-question rows for a story (migration 0003), ordered by the
 /// per-story monotonic `seq`, EACH with its `question_options` (also `seq`-
-/// ordered) folded into the nested `options` Vec. Two queries (questions, then
-/// per-question options) keep the read shape exact: the questions query reads the
-/// scalar columns into [`OpenQuestionRow`], the options query reads
-/// [`QuestionOption`], and the loop assembles the public [`OpenQuestion`].
+/// ordered) folded into the nested `options` Vec. Two queries regardless of
+/// question count: the questions query reads the scalar columns into
+/// [`OpenQuestionRow`], then ONE options query reads every option for the
+/// story's questions into [`QuestionOption`] (`ORDER BY question_id, seq` so each
+/// per-question group is already in `seq` order), and the loop assembles the
+/// public [`OpenQuestion`], taking each question's options out of the grouped map.
 async fn list_open_questions(
     db: &impl DbClient,
     story_id: &str,
@@ -847,25 +883,39 @@ async fn list_open_questions(
         )
         .await?;
 
+    // One bulk options read for every question on this story (idx_question_options
+    // _question(question_id, seq) supports the scan). The `ORDER BY question_id,
+    // seq` guarantees per-group seq order, so the grouped map preserves it.
+    let option_rows = db
+        .query_all::<QuestionOption>(
+            r#"
+        SELECT
+            id,
+            question_id,
+            seq,
+            label,
+            detail,
+            created_at
+        FROM question_options
+        WHERE question_id IN (SELECT id FROM open_questions WHERE story_id = $1)
+        ORDER BY question_id, seq
+        "#,
+            args![story_id.to_owned()],
+        )
+        .await?;
+
+    let mut options_by_question: std::collections::HashMap<String, Vec<QuestionOption>> =
+        std::collections::HashMap::new();
+    for opt in option_rows {
+        options_by_question
+            .entry(opt.question_id.clone())
+            .or_default()
+            .push(opt);
+    }
+
     let mut out = Vec::with_capacity(questions.len());
     for q in questions {
-        let options = db
-            .query_all::<QuestionOption>(
-                r#"
-            SELECT
-                id,
-                question_id,
-                seq,
-                label,
-                detail,
-                created_at
-            FROM question_options
-            WHERE question_id = $1
-            ORDER BY seq
-            "#,
-                args![q.id.clone()],
-            )
-            .await?;
+        let options = options_by_question.remove(&q.id).unwrap_or_default();
 
         // Scalars first, the `options` array-of-tables last (tables-last rule).
         out.push(OpenQuestion {
@@ -5913,9 +5963,11 @@ pub async fn compute_task_batches(
     // Build the dependency graph: in_degree[v] = number of unsatisfied deps;
     // successors[u] = tasks that depend on u (so we can decrement their
     // in-degree when u is drained).
-    use std::collections::BTreeMap;
+    use std::collections::HashMap;
     let task_ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
-    let mut id_to_idx: BTreeMap<&str, usize> = BTreeMap::new();
+    // Point-query-only (`.get(...)`), never iterated in order — HashMap is the
+    // access-pattern-correct structure.
+    let mut id_to_idx: HashMap<&str, usize> = HashMap::with_capacity(task_ids.len());
     for (i, id) in task_ids.iter().enumerate() {
         id_to_idx.insert(id.as_str(), i);
     }
@@ -5966,11 +6018,10 @@ pub async fn compute_task_batches(
         for &i in &frontier {
             drained[i] = true;
             remaining -= 1;
-            // Defensive clone of successor list — borrow-checker won't let us
-            // index `successors[i]` while mutably borrowing `in_degree` if the
-            // successor list itself borrows from `successors` (it doesn't,
-            // since `Vec<usize>` is Copy-like). This pattern is the simplest.
-            for j in successors[i].clone() {
+            // `mem::take` consumes node `i`'s successor list once (it drains
+            // exactly once when `i` is drained), sidestepping the borrow against
+            // `in_degree` with zero allocation and no behaviour change.
+            for j in std::mem::take(&mut successors[i]) {
                 in_degree[j] = in_degree[j].saturating_sub(1);
             }
         }
@@ -6008,12 +6059,13 @@ pub async fn compute_task_batches(
 // Read-only; no transaction, no events.
 // ---------------------------------------------------------------------------
 
-/// Raw row read per-task by [`get_task_dispatch_plan`]: the spec columns
-/// (`effort`/`complexity`/`attributes`) feeding [`compute_tier`]. Generic over
-/// `R: Row` per the canonical [`crate::db`] FromRow recipe; all three columns
-/// are nullable (`Option<String>`).
+/// Raw row read in bulk by [`get_task_dispatch_plan`]: the `id` plus the spec
+/// columns (`effort`/`complexity`/`attributes`) feeding [`compute_tier`].
+/// Generic over `R: Row` per the canonical [`crate::db`] FromRow recipe; the
+/// three spec columns are nullable (`Option<String>`), `id` is NOT NULL.
 #[derive(Debug)]
 struct DispatchSpecRow {
+    id: String,
     effort: Option<String>,
     complexity: Option<String>,
     attributes: Option<String>,
@@ -6023,10 +6075,12 @@ impl<'r, R> sqlx::FromRow<'r, R> for DispatchSpecRow
 where
     R: sqlx::Row,
     &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
     Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
 {
     fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
         Ok(DispatchSpecRow {
+            id: row.try_get("id")?,
             effort: row.try_get("effort")?,
             complexity: row.try_get("complexity")?,
             attributes: row.try_get("attributes")?,
@@ -6060,24 +6114,36 @@ pub async fn get_task_dispatch_plan(
         return Ok(Vec::new());
     }
 
+    // ONE bulk read of every live task spec on this story (instead of a query
+    // per task in the nested loop below). compute_task_batches loaded only
+    // id/task_kind/created_at, so these spec columns were genuinely not
+    // available before — keyed by id for the per-task lookup.
+    let spec_rows = pool
+        .query_all::<DispatchSpecRow>(
+            r#"
+        SELECT id, effort, complexity, attributes
+        FROM work_items
+        WHERE parent_id = $1 AND kind = 'task' AND deleted_at IS NULL
+        "#,
+            args![story_id.to_owned()],
+        )
+        .await?;
+    let mut specs_by_id: std::collections::HashMap<String, DispatchSpecRow> =
+        std::collections::HashMap::with_capacity(spec_rows.len());
+    for row in spec_rows {
+        specs_by_id.insert(row.id.clone(), row);
+    }
+
     let mut out: Vec<Vec<BatchEntry>> = Vec::with_capacity(batches.len());
     for batch in batches {
         let mut entries: Vec<BatchEntry> = Vec::with_capacity(batch.len());
         for task_id in batch {
-            // Fetch the task row for effort/complexity/attributes. Tombstoned
-            // rows are filtered to match the read-side convention; an absent
-            // row at this point would be a races-with-delete and surfaces as
-            // `NotFound`.
-            let row = pool
-                .query_opt::<DispatchSpecRow>(
-                    r#"
-                SELECT effort, complexity, attributes
-                FROM work_items
-                WHERE id = $1 AND deleted_at IS NULL
-                "#,
-                    args![task_id.to_owned()],
-                )
-                .await?
+            // Look up the task spec for effort/complexity/attributes from the
+            // bulk read. An id present in the batches but absent here is a
+            // races-with-delete (the bulk read filters tombstoned rows) and
+            // surfaces as `NotFound`, matching the prior per-task semantics.
+            let row = specs_by_id
+                .remove(&task_id)
                 .ok_or_else(|| AppError::NotFound(format!("work_item '{task_id}' not found")))?;
 
             // Count `files_touched` entries (bare-string OR {repo,path}
@@ -6975,6 +7041,39 @@ pub mod pty {
         .await
     }
 
+    /// Fetch the most-recently-dispatched (highest-`sequence`) row that is
+    /// still `status='dispatched'` for a session, or `None` if there is no
+    /// such row. The supervisor calls this each quiescence tick to find the
+    /// entry to mark completed when finalising a turn; `LIMIT 1` on the
+    /// descending-`sequence` scan keeps it O(1) instead of listing the whole
+    /// queue. Reads, no transaction.
+    pub async fn last_dispatched_pty(
+        db: &impl DbClient,
+        session_id: &str,
+    ) -> Result<Option<PtyQueueEntry>, AppError> {
+        db.query_opt::<PtyQueueEntry>(
+            r#"
+            SELECT
+                id,
+                session_id,
+                sequence,
+                input_kind,
+                payload,
+                enqueued_at,
+                dispatched_at,
+                completed_at,
+                status,
+                error
+            FROM pty_queue
+            WHERE session_id = $1 AND status = 'dispatched'
+            ORDER BY sequence DESC
+            LIMIT 1
+            "#,
+            args![session_id.to_owned()],
+        )
+        .await
+    }
+
     /// Atomically pop the oldest `status='pending'` row for a session: SELECT
     /// the lowest-sequence pending row, then UPDATE it to
     /// `status='dispatched', dispatched_at=now` within the SAME transaction.
@@ -7758,14 +7857,21 @@ mod tests {
         let detail = get_work_item_detail(&pool, &id).await.expect("detail still returns");
         assert_eq!(detail.item.id, id);
 
-        // The row carries deleted_at (verified directly — WorkItem doesn't expose it).
+        // O17: the detail now surfaces the tombstone instant on the (serde-skipped)
+        // `WorkItem.deleted_at` field, so the export fold reads it off the detail.
+        assert!(
+            detail.item.deleted_at.is_some(),
+            "get_work_item_detail surfaces the tombstone on WorkItem.deleted_at"
+        );
+
+        // Cross-check the folded value against the raw column.
         let dat: Option<String> =
             sqlx::query_scalar::<_, Option<String>>("SELECT deleted_at FROM work_items WHERE id = ?1")
                 .bind(&id)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert!(dat.is_some(), "deleted_at stamped");
+        assert_eq!(dat, detail.item.deleted_at, "detail deleted_at matches the row");
 
         // Re-deleting is NotFound (already tombstoned).
         let err = delete_work_item(&pool, &id).await.expect_err("re-delete");

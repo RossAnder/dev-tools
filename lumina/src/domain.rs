@@ -21,58 +21,77 @@ use serde::{Deserialize, Serialize};
 pub struct WorkItem {
     pub id: String,
     pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<String>,
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<i64>,
     /// Nullable JSON object of kind-specific fields (migration 0002); `None`
     /// means "no kind-specific fields".
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attributes: Option<serde_json::Value>,
     /// Relevance axis (migration 0003): `active|backlog|deferred|rejected`. Set
     /// only on epic/focus/story; NULL on task/project.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub relevance: Option<String>,
     /// Effort grade (migration 0003): `s|m|l` (task scope); NULL otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     /// Complexity grade (migration 0003): `low|medium|high` (task scope).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub complexity: Option<String>,
     /// Provenance (migration 0003): which command produced this item.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
     /// Per-story closure gate (migration 0003): `hard|soft` (story scope).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub closure_gate: Option<String>,
     /// Task is blocked while this `open_questions` row is open (migration 0003).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked_by_question_id: Option<String>,
     /// Task is exclusive to this `question_options` branch (migration 0003).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enabling_option_id: Option<String>,
     /// Task-scope phase-disposition (migration 0005 + 0007 cull):
     /// `foundation|main|polish`. NULL on non-task rows; the repo layer is the
     /// source of truth for the "task rows only" rule (no DB-level kind coupling).
     /// Mirrors the `effort`/`complexity` idiom — stored as `Option<String>` on
     /// the row, with the typed [`TaskKind`] enum used by the wire / MCP layer.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_kind: Option<String>,
     /// Dispatch tier (migration 0006): `lite|deep`. NULL on non-task rows; the
     /// repo layer is the source of truth for the "task rows only" rule (no
     /// DB-level kind coupling). Mirrors the `task_kind`/`effort`/`complexity`
     /// idiom — stored as `Option<String>` on the row, with the typed [`Tier`]
     /// enum used by the wire / MCP layer.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<String>,
     /// Focus shape (migration 0010): `vertical-slice|cross-cutting|foundational`.
     /// Set only on `focus` rows, NULL otherwise; the repo layer is the source of
     /// truth for the focus-only rule (no DB-level kind coupling). Mirrors the
     /// `task_kind`/`tier` idiom — stored as `Option<String>` on the row, with the
     /// typed [`Shape`] enum used by the wire / MCP layer.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shape: Option<String>,
     /// Provenance back-link (migration 0011): the `findings.id` a triage decision
     /// spawned this work item from; NULL on items not spawned from a finding. A
     /// scalar (placed before the timestamp scalars, NOT after any Vec field) so
     /// the export tables-last ordering gate stays satisfied.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spawned_from_finding_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Soft-delete tombstone instant (`None` = live). Carried here off the detail
+    /// / list row read so the export tombstone fold reads it from the already
+    /// fetched detail rather than issuing a separate `deleted_at` query (O17).
+    /// `#[serde(skip_serializing)]` keeps it OFF both the JSON wire and the TOML
+    /// export (the drain re-inserts a top-level `deleted_at` tombstone key itself),
+    /// so adding this field changes no public contract.
+    #[serde(skip_serializing)]
+    pub deleted_at: Option<String>,
 }
 
 /// A row of `work_item_activity` (migration 0002): the append-only per-item
@@ -99,42 +118,69 @@ pub struct WorkItemActivity {
 #[derive(Debug, Clone, Serialize)]
 pub struct Finding {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_item_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub first_flagged: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rounds: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flow: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dedup_id: Option<String>,
     /// Provenance (migration 0003): which command produced this finding.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
     /// `high|medium|low` evidence grade (migration 0003; free TEXT, repo-validated).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<String>,
     /// Self-FK to the finding that supersedes this one (migration 0003); live
     /// findings are `superseded_by IS NULL`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub superseded_by: Option<String>,
     /// FK to `runs.id` (migration 0011): the review/optimise run this finding was
     /// raised under; NULL on legacy findings that predate runs.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
     /// Triage queue state (migration 0011): `'pending'` until triaged. Column
     /// `DEFAULT 'pending'`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub triage_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolution: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub defer_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub defer_trigger: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wontfix_rationale: Option<String>,
     /// FK to `repo_links.id` (migration 0004); NULL ⇒ resolves to the project's
     /// primary linked repo.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub repo_id: Option<String>,
 }
 

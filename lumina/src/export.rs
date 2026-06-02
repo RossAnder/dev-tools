@@ -248,10 +248,11 @@ pub async fn export_pending(pool: &SqlitePool, export_root: &Path) -> anyhow::Re
 /// # Tombstone (Task 6, part 2)
 ///
 /// `repo::get_work_item_detail` deliberately does NOT filter `deleted_at`, so a
-/// soft-deleted item still resolves here (it does not 404). The `deleted_at`
-/// instant is NOT a field on `WorkItem`/`WorkItemDetail`, so the whole-struct
-/// serialize alone does not surface it; we read it separately and, when present,
-/// insert a TOP-LEVEL `deleted_at` key into the rendered table — a TOMBSTONE.
+/// soft-deleted item still resolves here (it does not 404). `WorkItem.deleted_at`
+/// is `#[serde(skip_serializing)]`, so the whole-struct serialize does not surface
+/// it; we read it off the already-fetched detail (O17 — no separate query) and,
+/// when present, insert a TOP-LEVEL `deleted_at` key into the rendered table — a
+/// TOMBSTONE.
 /// The snapshot file is REWRITTEN IN PLACE (same atomic path); it is NEVER
 /// file-deleted, preserving the git-export audit trail per the soft-delete
 /// decision. The drain treats a `work_item.deleted` event like any other
@@ -280,12 +281,10 @@ async fn render_work_item(
         .with_context(|| format!("serialising work_item '{aggregate_id}' to TOML"))?;
 
     // Tombstone fold: if the row is soft-deleted, stamp a top-level `deleted_at`.
-    // The `deleted_at` column is not carried on the detail struct, so it is read
-    // here. This re-uses a query string already present in the committed `.sqlx`
-    // offline cache (identical to the repo test helper), so it adds NO new cache
-    // entry and forces NO `cargo sqlx prepare` regen — the parallel-safety
-    // invariant for this task.
-    if let Some(deleted_at) = soft_delete_marker(pool, aggregate_id).await? {
+    // `get_work_item_detail` carries the row's `deleted_at` on the serde-skipped
+    // `WorkItem.deleted_at` field, so it is read straight off the detail we already
+    // fetched — no separate `sqlx::query_scalar` round-trip (O17).
+    if let Some(deleted_at) = detail.item.deleted_at.clone() {
         table.insert("deleted_at".to_owned(), toml::Value::String(deleted_at));
     }
 
@@ -297,30 +296,6 @@ async fn render_work_item(
         .with_context(|| format!("atomically writing {}", path.display()))?;
 
     Ok(())
-}
-
-/// Read a work item's `deleted_at` (the soft-delete tombstone instant), `None`
-/// if the row is live. Returns `Ok(None)` for a missing row too (the caller has
-/// already resolved the detail; this is purely the deletion marker).
-///
-/// The query string is BYTE-IDENTICAL to the `repo` module's test-helper read,
-/// whose hash is already in the committed `.sqlx/` cache, so this `query!`
-/// resolves offline against the existing entry and triggers NO cache regen.
-async fn soft_delete_marker(
-    pool: &SqlitePool,
-    aggregate_id: &str,
-) -> anyhow::Result<Option<String>> {
-    let deleted_at: Option<String> =
-        sqlx::query_scalar::<_, Option<String>>(
-            r#"SELECT deleted_at FROM work_items WHERE id = ?1"#,
-        )
-        .bind(aggregate_id)
-        .fetch_optional(pool)
-        .await
-        .with_context(|| format!("reading deleted_at for work_item '{aggregate_id}'"))?
-        .flatten();
-
-    Ok(deleted_at)
 }
 
 /// Atomic tempfile → fsync → rename write, porting the proven `tomlctl/io.rs`
@@ -915,6 +890,7 @@ mod tests {
             spawned_from_finding_id: None,
             created_at: "2026-05-22T00:00:00Z".to_owned(),
             updated_at: "2026-05-22T00:00:00Z".to_owned(),
+            deleted_at: None,
         };
 
         let question = OpenQuestion {

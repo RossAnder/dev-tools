@@ -1,0 +1,399 @@
+schema_version = 1
+last_updated = 2026-06-02
+
+[[vet_events]]
+timestamp = "2026-06-02"
+command = "optimise"
+agent_index = 1
+lens = "memory"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Sampled F1 (args! Arc<String>/TextSlice), F3 (tx double-collect db.rs:496-501/556-566), F4 (detail N+1), F5 (batch push_values), F6 (compute_task_batches successors[i].clone() repo.rs:5973). All anchors exact. Agent honestly graded most at low confidence and framed #1/#2/#3/#7 as deliberate object-safety/dual-backend trade-offs to RULE OUT, not fix — folded those into the report's ruled-out prose rather than minting noise items. Only the actionable subset (detail N+1, batch shape, mem::take) carried forward."
+
+[[vet_events]]
+timestamp = "2026-06-02"
+command = "optimise"
+agent_index = 2
+lens = "serialization"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Sampled F1 (RawValue round-trip, decode_attributes repo.rs:165), F2 (files_touched reparse 6088), F3 (Finding skip_serializing_if — verified grep shows only 2 files; agent said '28 Option fields', actual is 27 Option + 1 String id, immaterial miscount), F4 (record_event json! 6382), F7 (export soft_delete_marker + stale .sqlx comments 284-286/307-309 verified verbatim). All anchors exact; rmcp Content::json=to_string mechanism plausible and held at low confidence."
+
+[[vet_events]]
+timestamp = "2026-06-02"
+command = "optimise"
+agent_index = 3
+lens = "query"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Sampled F1 (synchronous=NORMAL — confirmed db.rs sets only foreign_keys/busy_timeout/journal_mode=WAL, no synchronous), F5 (idx_findings_work_item_id @0001:130 on work_item_id only — exact), F6 (idx_events_unexported @0001:150 on exported_at only — exact), F2 (detail N+1), F8 (default max_connections=10, no SqlitePoolOptions — confirmed). Strongest agent; every migration/PRAGMA anchor verified exact against source. F7 (multi-row INSERT is the WRONG fix) is a correct adversarial conclusion, preserved in O10."
+
+[[vet_events]]
+timestamp = "2026-06-02"
+command = "optimise"
+agent_index = 4
+lens = "algorithm"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Sampled F2 (dispatch recompute — agent correctly noted compute_task_batches loads only id/task_kind/created_at, reframing the focal premise), F6 (id_to_idx BTreeMap @5918), F7 (successors clone @5973), F3 (create_work_item_full_tx per-spec SELECT kind @1390 — verified exact). Agent honestly graded Kahn/structure nits as realistic-n-moot. build_tree confirmed O(n) (not O(n^2)) — agent corrected a potential false-positive."
+
+[[vet_events]]
+timestamp = "2026-06-02"
+command = "optimise"
+agent_index = 5
+lens = "concurrency"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+dropped_ids = []
+rationale = "Sampled the sqlx-worker-thread background claim (correct — query does not block tokio worker, busy_timeout blocks the connection worker; cites sqlx #616), F1 (read/write pool split), F5 (batch lock-hold), F8 (jsonl_tail fire-and-forget spawn @pty/spawn.rs:282 — verified verbatim), F9 (maybe_finalise_turn Queue::list scan @supervisor.rs:341, with the literal v1/pop_last_dispatched TODO @365-366 — verified). All anchors exact. Channel-bound/RwLock ruled-outs are sound."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O1"
+file = "lumina/src/repo.rs"
+line = 511
+symbol = "get_work_item_detail"
+severity = "warning"
+effort = "medium"
+category = "query"
+summary = "get_work_item_detail issues ~11 sequential independent reads for one logical fetch — collapse to fewer queries and/or run concurrently"
+description = "Current: lines 525-553 await ~11 child reads in series (list_work_items, list_findings, list_activity, list_acceptance_criteria, list_research_notes, list_open_questions, list_risks, list_rejected_alternatives, repo_links[project-only], task_dependencies[task-only], context_blocks), each a separate auto-commit pool round-trip; none consumes a prior result (only item.kind gates the project/task-only branches). Two orthogonal fixes: (a) tokio::try_join! the independent reads so latencies overlap across pooled connections (WAL allows concurrent readers); (b) collapse the reads that share WHERE work_item_id=$1 into fewer multi-table queries. (a) is cheaper but borrows ~10 connections per in-flight detail and pressures the pool under concurrent callers (export drain + HTTP) — see O5; (b) cuts both round-trips AND connection pressure but fights the generic-FromRow-per-aggregate shape. The export drain calls this per aggregate, so it is the heaviest reader. Recommend (b) where possible + bounded try_join! groups for the rest, AFTER deciding pool sizing (O5). Risk: try_join! gives no real concurrency on a size-1/in-memory pool — benchmark p95 detail latency + pool occupancy first. Caught by all 5 lenses."
+evidence = [
+    "lumina/src/repo.rs:525-553",
+    "lumina/CLAUDE.md section Transactions (WAL concurrent readers)",
+]
+dedup_id = "6c8d2ec2e8d148e2"
+resolved = 2026-06-02
+resolution = "get_work_item_detail now runs its ~11 independent child reads concurrently via tokio::try_join! (variant a, user-directed parallelise-O1) instead of in series; the two kind-gated reads (repo_links project-only, task_dependencies task-only) are async-block-wrapped to resolve to an empty Vec for the non-matching kind, preserving prior skip-the-query behaviour. Each read is a leaf acquire/run/release op so there is no hold-and-wait cycle and no deadlock even when fan-out (11) exceeds the default pool (10); surplus reads queue on acquire (see O5 for pool sizing). Variant b (query-collapse) NOT applied. Build clean; full DB/e2e detail suite green (one unrelated pty::jsonl_tail unit test is parallel-exec flaky, passes in isolation)."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O2"
+file = "lumina/src/db.rs"
+line = 46
+symbol = "init"
+severity = "warning"
+effort = "trivial"
+category = "query"
+summary = "Under WAL the connection runs at default synchronous=FULL; set synchronous=NORMAL to drop a per-commit fsync (top quick-win)"
+description = "Current: db.rs:47-55 sets foreign_keys, busy_timeout, journal_mode=WAL but never .synchronous(...), so the on-disk DB runs synchronous=FULL — every BEGIN IMMEDIATE commit (one per repo::* mutation AND one per export-drain UPDATE events SET exported_at) forces a WAL fsync. NORMAL is the SQLite-recommended WAL pairing: durable against app/OS crash, losing at most the last transaction only on power loss — acceptable here because the git-export drain re-renders current state and is idempotent. Change: add .synchronous(SqliteSynchronous::Normal) in the if !is_in_memory branch alongside journal_mode(Wal). Risk: gives up single-txn durability on hard power loss; keep FULL if zero-loss is ever required. Trivial, zero-correctness-risk under WAL+audit-trail; highest ROI item. Caught by A3 (A5 corroborates pool/pragma surface)."
+evidence = [
+    "https://sqlite.org/wal.html",
+    "https://docs.rs/sqlx/0.9.0/sqlx/sqlite/struct.SqliteConnectOptions.html",
+    "lumina/src/db.rs:46-55",
+]
+dedup_id = "2374f9df7a60bebc"
+resolved = 2026-06-02
+resolution = "Set .synchronous(SqliteSynchronous::Normal) on the on-disk WAL branch in db::init; added SqliteSynchronous to the sqlx::sqlite import group; extended the init doc-comment. Enum path confirmed against vendored sqlx-sqlite 0.9.0."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O3"
+file = "lumina/src/repo.rs"
+line = 6054
+symbol = "get_task_dispatch_plan"
+severity = "warning"
+effort = "medium"
+category = "query"
+summary = "get_task_dispatch_plan re-reads each task's effort/complexity/attributes one-by-one (N+1) and re-parses each attributes blob just to count files_touched"
+description = "Current: lines 6064-6094 loop per task issuing SELECT effort, complexity, attributes WHERE id=$1 (one round-trip per task), then serde_json::from_str the whole attributes Value (6088) only to read files_touched.len(). compute_task_batches (5895) enumerates the task ids but loads only id/task_kind/created_at — so the spec columns were never available (the 'columns thrown away' framing is inaccurate; reframe in any plan). Fix: one bulk read SELECT id, effort, complexity, attributes FROM work_items WHERE parent_id=$story AND kind='task' AND deleted_at IS NULL into a HashMap<id,row>, index per-batch in memory; descend only into files_touched when parsing (or maintain a files_touched_count column at set_task_spec time). Collapses 1+T reads to ~3. Risk: prefer a separate bulk spec read keyed by the known ids over widening compute_task_batches' projection (keeps the pure-graph fn decoupled from dispatch columns). Caught by A2/A3/A4/A5."
+evidence = [
+    "lumina/src/repo.rs:6064-6094",
+    "lumina/src/repo.rs:5895-5907",
+]
+dedup_id = "b0c3d223b11a942d"
+resolved = 2026-06-02
+resolution = "get_task_dispatch_plan now does 1 (batches) + 1 (bulk specs) reads instead of 1 + T: bulk SELECT id,effort,complexity,attributes WHERE parent_id=$1 AND kind='task' AND deleted_at IS NULL into a HashMap, per-task lookup replaces per-task query_opt. Preserved exact NotFound-on-raced-delete and files_touched/compute_tier/BatchEntry logic."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O4"
+file = "lumina/src/repo.rs"
+line = 822
+symbol = "list_open_questions"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "list_open_questions runs one question_options query per question in a loop (1+Q round-trips) — collapse to a single IN-subquery + group in Rust"
+description = "Current: lines 850-868 loop over question rows, awaiting SELECT ... FROM question_options WHERE question_id=$1 ORDER BY seq per question. Fix: SELECT id,question_id,seq,label,detail,created_at FROM question_options WHERE question_id IN (SELECT id FROM open_questions WHERE story_id=$1) ORDER BY question_id, seq, then group into per-question Vecs with a HashMap<String,Vec<QuestionOption>> in one pass — 2 queries regardless of Q. The existing idx_question_options_question(question_id, seq) (0003:176) supports the ordered scan, and the subquery form keeps the SQL a 'static str (the owned-Args seam disallows a clean dynamic IN list). Nests inside get_work_item_detail (O1), so it compounds. Risk: stories typically carry 0-3 questions, so standalone gain is small — worth it mainly inside the detail fold. Caught by A2/A3/A4/A5."
+evidence = [
+    "lumina/src/repo.rs:850-868",
+    "lumina/migrations/0003_planning_and_decisions.sql:176",
+]
+dedup_id = "9723b560d4f29a06"
+resolved = 2026-06-02
+resolution = "Collapsed list_open_questions per-question N+1 to 2 queries: one questions read + one options read with WHERE question_id IN (SELECT id FROM open_questions WHERE story_id=$1) ORDER BY question_id, seq, grouped via HashMap and drained per question; per-group seq order preserved by ORDER BY."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O5"
+file = "lumina/src/db.rs"
+line = 57
+symbol = "init"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "Pool uses sqlx defaults (max_connections=10) for a single-writer SQLite store; size it deliberately or split a 1-conn write pool + N-conn read pool"
+description = "Current: db.rs:57 calls SqlitePool::connect_with without SqlitePoolOptions, so max_connections defaults to 10. For SQLite every write serialises on the single RESERVED lock (BEGIN IMMEDIATE), so extra write connections just let up to 10 tasks each grab a connection then contend on the lock — 9 sit in the 5s busy_timeout busy-loop (each on its own sqlx worker thread) rather than queueing cheaply at pool.acquire(). The documented remedy is a dedicated write pool (max_connections=1, writers queue async in acquire()) + a read pool (max_connections≈num_cpus, scales under WAL). At minimum set max_connections explicitly. This bounds O1's try_join! feasibility (a concurrent 11-read fan-out needs >=11 connections). Risk: the read/write split is invasive to the single-handle AnyPool/DbClient seam; at current low concurrency the default 10 may never contend — treat as latent-scaling, verify with a write-contention benchmark (tests/concurrency.rs N=8 is the seed). Caught by A3/A5."
+evidence = [
+    "https://emschwartz.me/psa-your-sqlite-connection-pool-might-be-ruining-your-write-performance/",
+    "https://github.com/launchbadge/sqlx/issues/616",
+    "lumina/src/db.rs:57",
+]
+dedup_id = "65b2af4ea664d14b"
+resolved = 2026-06-02
+resolution = "Restructured db::init to build the pool via SqlitePoolOptions and set max_connections=16 (new MAX_CONNECTIONS const) on the on-disk branch only; in-memory keeps the sqlx default (SqlitePoolOptions::new() equals the prior SqlitePool::connect_with). Sizes the single pool to absorb O1's ~11-way detail read fan-out plus the export drain and SPA/MCP readers; writes still serialise on SQLite's RESERVED lock and surplus readers queue on acquire() with no SQLITE_BUSY. Chose the well-sized single pool over the read/write split (user decision) to avoid the split's correctness traps: separate-connection reads missing a tx's uncommitted rows, max=1 self-deadlock via the shared sqlite() accessor, and export-drain WAL-concurrency regression. Coexists with O2's synchronous=NORMAL. Build + 293 tests + clippy green."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O6"
+file = "lumina/src/domain.rs"
+line = 100
+symbol = "Finding"
+severity = "warning"
+effort = "small"
+category = "serialization"
+summary = "Finding (27 Option fields) and WorkItem carry no serde skip_serializing_if — every null serialises explicitly on the MCP+HTTP wire"
+description = "Current: domain.rs:100-139 Finding has 27 Option fields; a typical finding populates ~8, so ~19 serialise as key:null. query_findings / get_story_finding_queue / get_work_item_detail return arrays of these, multiplying the null-bloat. grep confirms skip_serializing_if is used in only 2 files today (http/structured_patches.rs, pty/ask.rs). Fix: add serde(skip_serializing_if = Option::is_none) to the Option fields on Finding/WorkItem (and peers), shrinking every payload on both the rmcp Content::json text and the axum Json<T> path; absent fields deserialise back to None (no schema-evolution cost). Risk: if the Vue SPA distinguishes an absent key from an explicit null (x === null vs 'x' in obj), this changes the contract — verify the client treats undefined and null equivalently before applying. Caught by A2."
+evidence = [
+    "lumina/src/domain.rs:100-139",
+    "grep: skip_serializing_if only in http/structured_patches.rs + pty/ask.rs",
+]
+dedup_id = "955b195b71d900ca"
+resolved = 2026-06-02
+resolution = "Added serde skip_serializing_if = Option::is_none to every Option field on Finding (27) and WorkItem; null fields are now omitted on the MCP rmcp Content::json and axum Json wires (smaller, less null-noisy payloads for agents and the SPA; TOML export unaffected since the toml serializer already omits None). Required a coordinated SPA migration: the Vue SPA Zod WorkItemSchema/FindingSchema used bare .nullable(), which Zod v4 requires present, so an omitted key would fail parse and break the parent_id === null root-detection (treeUtils/useHierarchy). Migrated the O6-affected fields to .nullable().default(null) (the idiom the shape field already used) so an absent key normalises back to null: parsed type stays T|null, so the TS interfaces and every === null consumer are unchanged. Added lumina/web/src/__tests__/o6-skip-serializing.test.ts asserting omitted-key tolerance for both schemas. Verified: cargo build + 293 Rust tests + clippy clean; SPA vue-tsc type-check + 255 bun tests (incl. 3 new). User-confirmed wire-contract change and authorised the SPA migration."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "open"
+id = "O7"
+file = "lumina/src/repo.rs"
+line = 165
+symbol = "decode_attributes"
+severity = "suggestion"
+effort = "medium"
+category = "serialization"
+summary = "Stored attributes/payload JSON is parsed to serde_json::Value on every read then re-serialised to the wire unchanged — consider RawValue passthrough"
+description = "Current: decode_attributes (165-172) serde_json::from_str the attributes TEXT into Option<Value> on every read; get_work_item_detail decodes the item's + every child's attributes, and the MCP/HTTP layer (which never inspects attributes) re-serialises them straight back to JSON text (rmcp Content::json = serde_json::to_string) — a DB-string -> Value tree -> string triple-pass with allocation in the middle. Fix: type the field as Option<Box<serde_json::value::RawValue>> (serde_json raw_value feature) so both DB->struct decode and struct->wire encode are zero-copy passthroughs. Risk: read-side only — the write path's normalise_object validation still needs a parsed Map; RawValue forces a Box/lifetime change rippling through WorkItem/WorkItemActivity; held LOW confidence pending a get_work_item_detail benchmark on a story with large attributes. Caught by A2 (+A1)."
+evidence = [
+    "https://docs.rs/serde_json/latest/serde_json/value/struct.RawValue.html",
+    "lumina/src/repo.rs:165-172",
+]
+dedup_id = "58d47f1dac39e87e"
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O8"
+file = "lumina/migrations/0001_init.sql"
+line = 130
+symbol = "idx_findings_work_item_id"
+severity = "suggestion"
+effort = "trivial"
+category = "query"
+summary = "findings has only idx_findings_work_item_id; the hot live-finding reads filter superseded_by IS NULL and sort first_flagged DESC with no covering index"
+description = "Current: the only non-unique findings index is on work_item_id alone (0001:130). list_findings (repo.rs:1001), get_story_finding_queue (1230) and the detail fold all scan the work_item_id bucket then filter superseded_by IS NULL and sort first_flagged DESC, id in memory. Fix: an additive migration CREATE INDEX idx_findings_live ON findings(work_item_id, superseded_by, first_flagged DESC) makes the live-finding read index-ordered and removes the sort. (query_findings's ($N IS NULL OR col=$N) filter is the documented non-sargable R16 trade-off — out of scope; this targets the sargable work_item_id-anchored common path.) Risk: at current per-item finding counts (a handful) the existing index + in-memory sort is already cheap; only pays once volume grows — held MEDIUM, defer until row counts justify. Caught by A3."
+evidence = [
+    "lumina/migrations/0001_init.sql:130",
+    "lumina/src/repo.rs:1001-1021",
+]
+dedup_id = "7c743ee3cdf0c489"
+resolved = 2026-06-02
+resolution = "Added covering index idx_findings_live(work_item_id, superseded_by, first_flagged DESC) in new migration lumina/migrations/0012_perf_indexes.sql. Column names verified; ran clean in the e2e/migration test suite."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O9"
+file = "lumina/migrations/0001_init.sql"
+line = 150
+symbol = "idx_events_unexported"
+severity = "suggestion"
+effort = "trivial"
+category = "query"
+summary = "The export-drain outbox scan orders by (created_at,id) but idx_events_unexported is on exported_at only — the planner must sort the matched rows"
+description = "Current: the drain (export.rs) runs WHERE exported_at IS NULL ORDER BY created_at, id, but the index is on exported_at only (0001:150), so SQLite sorts the matched set. As events grows monotonically (one row per mutation, never deleted) the pending set stays small but unordered. Fix: a partial index CREATE INDEX idx_events_pending ON events(created_at, id) WHERE exported_at IS NULL — matches both predicate and sort, keeping the drain O(pending) with no sort even as total events climbs into the hundreds of thousands (the partial-index form is already used at 0011:79). Risk: the pending set is normally near-empty (5s tick), so the sort is over very few rows and the current index is adequate; only matters after a long offline backlog — measure pending depth first. Pairs with O2. Caught by A3."
+evidence = [
+    "lumina/migrations/0001_init.sql:150",
+    "lumina/migrations/0011_runs_sprints_findings_queue.sql:79",
+]
+dedup_id = "a9cccc6ec50b86aa"
+resolved = 2026-06-02
+resolution = "Added partial index idx_events_pending(created_at, id) WHERE exported_at IS NULL and dropped the old idx_events_unexported, in migration 0012. Partial index satisfies both the drain predicate and the (created_at,id) sort."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "open"
+id = "O10"
+file = "lumina/src/repo.rs"
+line = 3326
+symbol = "add_findings"
+severity = "suggestion"
+effort = "medium"
+category = "concurrency"
+summary = "Batch writers loop per-row INSERT/UPDATE across up to MAX_BATCH_ITEMS=500 awaited statements under one BEGIN IMMEDIATE lock; chunked multi-row helps only create_work_items"
+description = "Current: add_findings (3371-3391), create_work_items (1589-1618), batch_update_findings loop one prepared statement per row inside a single RESERVED-lock tx — N round-trips to the sqlx worker, all other writers blocked for the whole batch (a 500-item batch can be a multi-hundred-ms lock hold). Nuance: the per-row loop already REUSES one cached prepared statement (same 'static str) and commits once (no per-row fsync), so it is near-optimal for SQLite; the naive single multi-row INSERT VALUES(...) is the WRONG fix — it generates a distinct SQL string per batch size (statement-cache miss), hits SQLite's 999-variable limit (findings' ~28 cols -> ~35 rows max), AND loses the per-row rows_affected the dedup added/skipped/skipped_ids accounting depends on (3383-3390). Recommended: (a) create_work_items (no per-row dedup) -> FIXED-chunk multi-row INSERT (e.g. 50 rows/stmt -> bounded SQL-string set) cuts round-trips + lock-hold; (b) add_findings -> keep per-row OR rework via ON CONFLICT DO NOTHING RETURNING id to preserve skip accounting; (c) reconsider whether 500 is a sane lock-hold bound. Benchmark a max-size batch before changing the INSERT shape. Caught by A1/A3/A4/A5."
+evidence = [
+    "lumina/src/repo.rs:3371-3391",
+    "lumina/src/repo.rs:1589-1618",
+    "https://www.sqlite.org/limits.html",
+]
+dedup_id = "a1371c13b3da84f8"
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "open"
+id = "O11"
+file = "lumina/src/repo.rs"
+line = 6374
+symbol = "record_event"
+severity = "suggestion"
+effort = "small"
+category = "serialization"
+summary = "record_event builds a throwaway serde_json::json! Value tree then to_string's it on every write — build the payload string directly for the common small cases"
+description = "Current: record_event (6382) serde_json::to_string's a payload Value that each of ~58 mutators builds via the json!({...}) macro (heap Map + boxed Values) solely to immediately stringify. For the common tiny payloads ({status:done}, {count:N}) building the JSON string directly (a small derive(Serialize) struct's to_string, or format! for trivial cases) skips the Map/Value allocation per write. Risk: a single SQLite write tx (BEGIN IMMEDIATE + INSERT + commit, WAL fsync) dominates one small json! alloc by orders of magnitude — almost certainly noise; hold at suggestion unless a write-throughput profile shows serialisation. Low-priority. Caught by A2."
+evidence = ["lumina/src/repo.rs:6374-6403"]
+dedup_id = "7839a645a325f1e0"
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "wontapply"
+id = "O12"
+file = "lumina/src/repo.rs"
+line = 211
+symbol = "normalise_object"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "normalise_object deep-clones every retained key+value to strip nulls; take the Value by value and use Map::retain to mutate in place"
+description = "Current: normalise_object (215-219) iterates obj.iter() and clones each (k.clone(), v.clone()) into a fresh Map to drop null-valued keys — an owned rebuild of the whole attributes map per write, cloning potentially large nested Values (execution_detail text, files_touched arrays). Fix: change the signature from &Value to owned Value and use map.retain(|_, v| !v.is_null()) in place. Risk: requires touching call sites; if any caller needs the original unmodified Value afterward the clone is load-bearing — check each site before flipping to by-value. Trivial. Caught by A2 (A1 concurred mechanism)."
+evidence = [
+    "lumina/src/repo.rs:211-221",
+    "serde_json::Map::retain",
+]
+dedup_id = "af41eb66fc0937bf"
+wontapply_rationale = "Relocates rather than eliminates the clone (agent-evaluated during /optimise-apply 2026-06-02): of 5 callers only 2 own their Value; the other 3 pass a borrowed &Value they do not own, so an owned-Value signature would force a full deep Value::clone (incl. null keys later dropped by retain) at each call site -- strictly more work than the current selective non-null clone. Not a net win without splitting the API."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O13"
+file = "lumina/src/repo.rs"
+line = 5879
+symbol = "compute_task_batches"
+severity = "suggestion"
+effort = "small"
+category = "algorithm"
+summary = "compute_task_batches rebuilds the Kahn frontier by scanning all n tasks each phase (O(n*phases)), clones successors[i] per drain, and uses BTreeMap for point lookups"
+description = "Current: the loop (5957) recomputes the zero-in-degree frontier with a full (0..n) scan each phase -> O(n*phases) vs textbook O(V+E); per drained node it does for j in successors[i].clone() (5973) — an avoidable Vec<usize> alloc the code's own comment calls 'the simplest' workaround; id_to_idx is a BTreeMap<&str,usize> (5918) used only for point lookups. Fixes: (1) replace successors[i].clone() with std::mem::take(&mut successors[i]) (free, no behaviour change — the only zero-risk part); (2) BTreeMap -> HashMap::with_capacity(n); (3) optionally a ready-queue BFS-layer Kahn's to drop the rescan. Risk: realistic n is a single story's task count (<~50), so the asymptotic + alloc wins are unmeasurable — this is correctness-of-complexity-class + cleanliness, NOT a latency win; do only as drive-by, mem::take is the one strictly-worth-it change. Caught by A1/A4."
+evidence = [
+    "lumina/src/repo.rs:5956-5973",
+    "CLRS 3e section 22.4 (queue-based Kahn's is O(V+E))",
+]
+dedup_id = "a9b948d0b2d32563"
+resolved = 2026-06-02
+resolution = "compute_task_batches: successors[i].clone() -> std::mem::take(&mut successors[i]) (zero-alloc, consumed once); id_to_idx BTreeMap<&str,usize> -> HashMap::with_capacity(n) (point-query-only). Kahn output byte-identical. Did NOT rewrite the frontier rescan (realistic-n-moot, out of scope)."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "open"
+id = "O14"
+file = "lumina/src/repo.rs"
+line = 1568
+symbol = "create_work_items"
+severity = "suggestion"
+effort = "medium"
+category = "query"
+summary = "create_work_items calls create_work_item_full_tx per spec, each issuing a SELECT-kind parent lookup — pre-resolve distinct parents once"
+description = "Current: create_work_items (1589) loops calling create_work_item_full_tx, which issues SELECT kind FROM work_items WHERE id=$1 AND deleted_at IS NULL per spec (1390) for hierarchy validation — an N-spec batch does 2N sequential statements (N parent lookups + N inserts) under the writer lock. Fix: pre-resolve the distinct parent ids once via SELECT id, kind FROM work_items WHERE id IN (...) AND deleted_at IS NULL into a HashMap, validate each spec against it. Risk: a spec's parent may be an EARLIER spec's freshly-minted id (intra-batch dependency), so the map must be seeded from the DB and updated as ids mint — non-trivial; held LOW confidence, batch sizes are capped and inserts dominate. Benchmark a realistic batch (~30 specs) first. Caught by A4."
+evidence = [
+    "lumina/src/repo.rs:1389-1393",
+    "lumina/src/repo.rs:1589-1604",
+]
+dedup_id = "2743484f84f2201f"
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O15"
+file = "lumina/src/export.rs"
+line = 309
+symbol = "soft_delete_marker"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "Export does a separate per-aggregate soft_delete_marker query for deleted_at that get_work_item_detail could carry; also stale .sqlx/query! comments"
+description = "Current: render_work_item calls get_work_item_detail (which deliberately does NOT filter deleted_at) and THEN a separate soft_delete_marker query (309-323) to read deleted_at for the tombstone fold — an extra per-aggregate round-trip. Since get_work_item_detail's row read already touches the row (and keeps deleted rows), adding deleted_at to WorkItemRow/GET_WORK_ITEM_DETAIL_SQL would fold the marker query away. Separately, the doc-comments at export.rs:284-286 and 307-309 still reference the committed .sqlx offline cache / query! macro / cargo sqlx prepare — all DELETED in Part A (the code at 314 already uses runtime sqlx::query_scalar); these comments are stale and misleading and should be corrected. Risk: export runs off the hot path on a 5s tick, so the round-trip fold is correctness-neutral cleanup, not a latency win; do alongside O7. Caught by A2 (+A5)."
+evidence = [
+    "lumina/src/export.rs:282-323",
+    "lumina/CLAUDE.md section Runtime queries (no offline cache)",
+]
+dedup_id = "df74591c527064f2"
+resolved = 2026-06-02
+resolution = "partial: corrected stale .sqlx/query! doc-comments in export.rs render_work_item + soft_delete_marker (now accurately describe the runtime sqlx::query_scalar) / pending: fold soft_delete_marker's deleted_at read into get_work_item_detail's row read (cross-file repo.rs change, surfaced as O17)."
+
+[[items]]
+first_flagged = 2026-06-02
+rounds = 1
+status = "applied"
+id = "O16"
+file = "lumina/src/pty/supervisor.rs"
+line = 341
+symbol = "maybe_finalise_turn"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "maybe_finalise_turn does a full Queue::list scan per 250ms tick per Awaiting session to find the last dispatched entry — add the pop_last_dispatched query the code's TODO names"
+description = "Current: maybe_finalise_turn (341) lists the entire per-session queue (Queue::list, 367) and reverse-scans for status==dispatched — O(queue length) per tick where the quiescence gate passes; the code's own comment (365-366) names the fix: a dedicated SELECT ... WHERE status='dispatched' ORDER BY sequence DESC LIMIT 1 (pop_last_dispatched). It runs on the single supervisor task that also dispatches inputs, so a slow scan delays other sessions. Fix: add the targeted query. Risk: queues are short-lived per-session FIFOs and the gate short-circuits most ticks before the list, so the scan rarely fires and queue length stays small — tidiness/scaling, not a present bottleneck. PTY-subsystem (peripheral to the db/repo focal point but within the broadened stack scope). Caught by A5."
+evidence = ["lumina/src/pty/supervisor.rs:341-401"]
+dedup_id = "681e574108be0773"
+resolved = 2026-06-02
+resolution = "Added Queue::last_dispatched (+ repo::pty::last_dispatched_pty: SELECT ... WHERE session_id=$1 AND status='dispatched' ORDER BY sequence DESC LIMIT 1) and replaced the per-tick Queue::list full-scan in maybe_finalise_turn with it; preserved mark_completed side-effect and Ok(None)/Err handling. Confirmed ordering column is 'sequence'."
+
+[[items]]
+id = "O17"
+file = "lumina/src/repo.rs"
+line = 511
+symbol = "get_work_item_detail"
+severity = "suggestion"
+effort = "small"
+category = "query"
+status = "applied"
+first_flagged = 2026-06-02
+rounds = 1
+related = ["O15"]
+summary = "pending parts of O15: fold the export soft_delete_marker deleted_at read into get_work_item_detail's row read"
+description = "O15 corrected the stale comments in export.rs but deferred the cross-file query-fold. export.rs render_work_item calls get_work_item_detail then a SEPARATE soft_delete_marker query (export.rs:~309) for deleted_at. Adding deleted_at to WorkItemRow + GET_WORK_ITEM_DETAIL_SQL (repo.rs) would let export read the tombstone from the detail row, folding the extra per-aggregate query away. Low priority: export runs off the hot path on a 5s tick (correctness-neutral cleanup, not a latency win). Touches repo.rs WorkItemRow/SQL + the WorkItemDetail consumers that must tolerate the new column."
+dedup_id = "5a881c22e3a108f9"
+resolved = 2026-06-02
+resolution = "Folded the export soft_delete_marker deleted_at read into get_work_item_detail's row: added deleted_at to WorkItemRow (and its FromRow try_get) plus both GET_WORK_ITEM_DETAIL_SQL and LIST_WORK_ITEMS_SQL SELECTs, mapped it onto a new serde(skip_serializing) WorkItem.deleted_at, and deleted the per-aggregate soft_delete_marker query (export now reads detail.item.deleted_at). The serde skip keeps deleted_at off both the JSON wire and the TOML export, so there is no contract change; the drain still stamps the top-level tombstone key. Strengthened soft_delete_hides_from_list_but_detail_returns to assert the fold. Completes the O15 deferral. Build + 293 tests + clippy green."

@@ -15,7 +15,10 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use async_trait::async_trait;
-use sqlx::sqlite::{SqliteArguments, SqliteConnectOptions, SqliteJournalMode, SqliteRow};
+use sqlx::sqlite::{
+    SqliteArguments, SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow,
+    SqliteSynchronous,
+};
 use sqlx::{Sqlite, SqlitePool, Transaction};
 
 use crate::error::AppError;
@@ -28,14 +31,33 @@ use crate::error::AppError;
 /// the MCP write path + the export drain without masking a true deadlock.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Max pooled connections for the ON-DISK database (O5). Sized to absorb
+/// `get_work_item_detail`'s concurrent child-read fan-out (O1 issues ~11 reads
+/// together via `tokio::try_join!`) plus headroom for the export drain and
+/// concurrent SPA/MCP readers. Under WAL, SQLite serialises writes on a single
+/// RESERVED lock regardless of pool size, so this bound governs READ concurrency
+/// (each reader runs on its own connection); surplus readers queue cheaply on
+/// `pool.acquire()` with no `SQLITE_BUSY`. The sqlx default ceiling (10) sits
+/// just below a single detail fan-out, so we raise it explicitly. Retune with a
+/// pool-occupancy benchmark if read latency under concurrent callers warrants it.
+///
+/// In-memory pools (tests / e2e) deliberately keep the sqlx default: a
+/// `sqlite::memory:` pool shares one backing database and the e2e detail thread
+/// already exercises the O1 fan-out at the default size, so there is nothing to
+/// raise there.
+const MAX_CONNECTIONS: u32 = 16;
+
 /// Open (creating if absent) the SQLite database at `database_url`, enable
 /// foreign-key enforcement, and run all embedded migrations.
 ///
-/// On-disk databases additionally opt into WAL journal mode and a 5-second
-/// busy-timeout: WAL lets the export drain's auto-commit reads run concurrent
-/// with the writer (instead of mutually excluding it under the default
-/// rollback-journal mode), and the busy-timeout absorbs short bursts of writer
-/// contention before bubbling `SQLITE_BUSY` to the caller. In-memory databases
+/// On-disk databases additionally opt into WAL journal mode, `synchronous=NORMAL`,
+/// and a 5-second busy-timeout: WAL lets the export drain's auto-commit reads run
+/// concurrent with the writer (instead of mutually excluding it under the default
+/// rollback-journal mode), `synchronous=NORMAL` is the SQLite-recommended WAL
+/// pairing that drops the default one-fsync-per-commit (losing at most the last
+/// transaction on hard power loss, which the idempotent git-export drain re-renders),
+/// and the busy-timeout absorbs short bursts of writer contention before bubbling
+/// `SQLITE_BUSY` to the caller. In-memory databases
 /// (used by tests and the e2e thread) skip WAL — `:memory:` has no file to
 /// spill the WAL sidecar to, so the mode is meaningless there.
 ///
@@ -44,17 +66,30 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// directory present on disk at build time, NOT a live database, so the crate
 /// still compiles offline.
 pub async fn init(database_url: &str) -> anyhow::Result<SqlitePool> {
+    let in_memory = is_in_memory(database_url);
+
     let mut connect_opts = SqliteConnectOptions::from_str(database_url)
         .with_context(|| format!("parsing DATABASE_URL {database_url}"))?
         .create_if_missing(true)
         .foreign_keys(true)
         .busy_timeout(BUSY_TIMEOUT);
 
-    if !is_in_memory(database_url) {
-        connect_opts = connect_opts.journal_mode(SqliteJournalMode::Wal);
+    if !in_memory {
+        connect_opts = connect_opts
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal);
     }
 
-    let pool = SqlitePool::connect_with(connect_opts)
+    // On-disk: size the pool explicitly for the read fan-out (see MAX_CONNECTIONS).
+    // In-memory: keep the sqlx default — `SqlitePoolOptions::new()` matches the
+    // old `SqlitePool::connect_with`, so test/e2e behaviour is unchanged.
+    let mut pool_opts = SqlitePoolOptions::new();
+    if !in_memory {
+        pool_opts = pool_opts.max_connections(MAX_CONNECTIONS);
+    }
+
+    let pool = pool_opts
+        .connect_with(connect_opts)
         .await
         .with_context(|| format!("connecting to database at {database_url}"))?;
 

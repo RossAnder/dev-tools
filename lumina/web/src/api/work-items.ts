@@ -6,14 +6,19 @@
 // associated CRUD verbs (`fetchTree`, `fetchDetail`, `createWorkItem`,
 // `updateWorkItem`, `updateStatus`).
 //
-// Nullability convention: every `Option<T>` on `domain::WorkItem` (and every
-// other Rust read-aggregate folded into `WorkItemDetail`) uses `.nullable()`
-// here. Verified at T7-implementation time by grepping `lumina/src/` for
-// `skip_serializing_if` and finding zero hits — serde therefore emits `None`
-// as JSON `null` rather than omitting the key. If a future Rust change adds
-// `#[serde(skip_serializing_if = "Option::is_none")]` to any field on these
-// types, the corresponding zod field must switch to `.nullish()` to tolerate
-// the now-absent key.
+// Nullability convention: every `Option<T>` on `domain::WorkItem` /
+// `domain::Finding` is nullable here. As of O6 (2026-06-02) `domain.rs` stamps
+// `#[serde(skip_serializing_if = "Option::is_none")]` on those two types' Option
+// fields, so serde now OMITS an unset field's key rather than emitting JSON
+// `null`. The corresponding zod fields therefore use `.nullable().default(null)`
+// rather than a bare `.nullable()`: `.default(null)` normalises an ABSENT key
+// back to `null`, so the parsed type stays `T | null` — the `WorkItem` /
+// `Finding` interfaces and every `x === null` consumer keep working unchanged —
+// while an explicit `null` from a set-but-null field is still accepted. The
+// OTHER aggregates folded into `WorkItemDetail` (AcceptanceCriterion,
+// ResearchNote, OpenQuestion, Risk, RejectedAlternative, …) KEEP a plain
+// `.nullable()`: O6 did not add skip_serializing_if to them, so their null
+// fields are still emitted as `null`, never absent.
 //
 // Cross-task note: this file inline-declares `AcceptanceCriterion`,
 // `ResearchNote`, `OpenQuestion`, `QuestionOption`, `Risk`,
@@ -101,34 +106,33 @@ export interface WorkItem {
 export const WorkItemSchema = z.object({
   id: z.string().max(200),
   kind: KindSchema,
-  parent_id: z.string().max(200).nullable(),
+  parent_id: z.string().max(200).nullable().default(null),
   title: z.string().max(500),
-  body: z.string().max(65536).nullable(),
+  body: z.string().max(65536).nullable().default(null),
   status: StatusSchema,
-  position: z.number().nullable(),
+  position: z.number().nullable().default(null),
   // The server emits `attributes` as an arbitrary JSON object (or null);
   // `z.record(z.string(), z.unknown())` is the zod 4 form (single-arg
   // `z.record` was removed — it now requires both key and value schemas).
   // NOTE: deliberately uncapped — `attributes` is intentionally arbitrary
   // JSON whose shape is opaque at this boundary; capping would risk
   // rejecting valid responses. Same rationale for `WorkItemActivity.payload`.
-  attributes: z.record(z.string(), z.unknown()).nullable(),
-  relevance: RelevanceSchema.nullable(),
-  effort: EffortSchema.nullable(),
-  complexity: ComplexitySchema.nullable(),
-  origin: OriginSchema.nullable(),
-  closure_gate: ClosureGateSchema.nullable(),
-  blocked_by_question_id: z.string().max(200).nullable(),
-  enabling_option_id: z.string().max(200).nullable(),
-  // Round-4 additions (T7). `.nullable()` is correct: domain.rs has zero
-  // `skip_serializing_if` attributes (grep-verified during T7), so an unset
-  // column is emitted as JSON `null` rather than as an absent key.
-  task_kind: TaskKindSchema.nullable(),
-  tier: TierSchema.nullable(),
-  // Migration 0010: `work_items.shape`. `.nullable()` is correct — the column
-  // is NULL on every non-focus row and serde emits `None` as JSON `null` (zero
-  // `skip_serializing_if` on domain.rs). `.default(null)` additionally tolerates
-  // any pre-migration cached response that wouldn't yet emit the key, while
+  attributes: z.record(z.string(), z.unknown()).nullable().default(null),
+  relevance: RelevanceSchema.nullable().default(null),
+  effort: EffortSchema.nullable().default(null),
+  complexity: ComplexitySchema.nullable().default(null),
+  origin: OriginSchema.nullable().default(null),
+  closure_gate: ClosureGateSchema.nullable().default(null),
+  blocked_by_question_id: z.string().max(200).nullable().default(null),
+  enabling_option_id: z.string().max(200).nullable().default(null),
+  // Round-4 additions (T7), O6 (2026-06-02): domain.rs now stamps
+  // `#[serde(skip_serializing_if = "Option::is_none")]` on these Option fields,
+  // so an unset column is ABSENT from the JSON. `.nullable().default(null)`
+  // normalises the absent key back to `null`, keeping the parsed type `T | null`.
+  task_kind: TaskKindSchema.nullable().default(null),
+  tier: TierSchema.nullable().default(null),
+  // Migration 0010: `work_items.shape`. `.nullable().default(null)` tolerates
+  // the now-absent key (O6 skip_serializing_if) and any non-focus row, while
   // keeping the parsed type `Shape | null` (matching the `WorkItem` interface —
   // a bare `.optional()` would widen it to `Shape | undefined`).
   shape: ShapeSchema.nullable().default(null),
@@ -193,38 +197,44 @@ export interface Finding {
 
 export const FindingSchema = z.object({
   id: z.string().max(200),
-  work_item_id: z.string().max(200).nullable(),
+  // O6 (2026-06-02): the Rust `Finding` Option fields now carry
+  // `#[serde(skip_serializing_if = "Option::is_none")]`, so an unset field is
+  // ABSENT from the JSON. `.nullable().default(null)` normalises the absent key
+  // back to `null`, keeping the parsed type `T | null` (interface + every
+  // `x === null` consumer unchanged). The non-nullable required fields below
+  // (kind/severity/category/status/summary) are always populated on a live
+  // finding, so skip_serializing_if never fires on them — they stay required.
+  work_item_id: z.string().max(200).nullable().default(null),
   kind: z.string().max(100),
   severity: SeveritySchema,
-  effort: z.string().max(50).nullable(),
+  effort: z.string().max(50).nullable().default(null),
   category: z.string().max(100),
   status: z.string().max(50),
-  file: z.string().max(2000).nullable(),
-  line: z.number().nullable(),
-  symbol: z.string().max(500).nullable(),
+  file: z.string().max(2000).nullable().default(null),
+  line: z.number().nullable().default(null),
+  symbol: z.string().max(500).nullable().default(null),
   summary: z.string().max(1000),
-  description: z.string().max(16384).nullable(),
-  first_flagged: z.string().max(50).nullable(),
-  rounds: z.number().nullable(),
-  fingerprint: z.string().max(200).nullable(),
-  flow: z.string().max(200).nullable(),
-  dedup_id: z.string().max(200).nullable(),
-  origin: OriginSchema.nullable(),
-  confidence: ConfidenceSchema.nullable(),
-  superseded_by: z.string().max(200).nullable(),
-  resolved_at: z.string().max(50).nullable(),
+  description: z.string().max(16384).nullable().default(null),
+  first_flagged: z.string().max(50).nullable().default(null),
+  rounds: z.number().nullable().default(null),
+  fingerprint: z.string().max(200).nullable().default(null),
+  flow: z.string().max(200).nullable().default(null),
+  dedup_id: z.string().max(200).nullable().default(null),
+  origin: OriginSchema.nullable().default(null),
+  confidence: ConfidenceSchema.nullable().default(null),
+  superseded_by: z.string().max(200).nullable().default(null),
+  resolved_at: z.string().max(50).nullable().default(null),
   // `resolution` is free-text describing the change that fixed the finding
   // (e.g. "Added exp check in refresh handler"), NOT a Disposition value. The
   // disposition vocabulary belongs on `status` above. Keep this as a plain
   // nullable string to match the wire.
-  resolution: z.string().max(4000).nullable(),
-  defer_reason: z.string().max(2000).nullable(),
-  defer_trigger: z.string().max(2000).nullable(),
-  wontfix_rationale: z.string().max(4000).nullable(),
+  resolution: z.string().max(4000).nullable().default(null),
+  defer_reason: z.string().max(2000).nullable().default(null),
+  defer_trigger: z.string().max(2000).nullable().default(null),
+  wontfix_rationale: z.string().max(4000).nullable().default(null),
   // Migration 0004: `findings.repo_id` — nullable foreign key into `repo_links`.
-  // `nullable()` handles the live wire shape (column is nullable, NULL = the
-  // file lives in the project's primary repo); `optional()` tolerates absent
-  // fields from any pre-deploy caches that wouldn't yet emit the key.
+  // `.nullable().optional()` already tolerates an absent key (O6) as well as an
+  // explicit null; left as-is.
   repo_id: z.string().max(200).nullable().optional(),
 })
 
