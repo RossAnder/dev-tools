@@ -199,6 +199,10 @@ async fn bulk_writes_abort_whole_batch_on_validation() {
     // (a) add_findings with a dangling run_id FK — both otherwise-valid findings
     //     fail the all-or-nothing tx.
     let before_findings = count_findings_on(&pool, &story).await;
+    let events_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("count all events before aborted batch");
     let valid_a = NewFinding { summary: Some("valid a"), ..NewFinding::default() };
     let valid_b = NewFinding { summary: Some("valid b"), ..NewFinding::default() };
     let res = repo::add_findings(
@@ -215,6 +219,15 @@ async fn bulk_writes_abort_whole_batch_on_validation() {
         count_findings_on(&pool, &story).await,
         before_findings,
         "rollback left the finding count unchanged — all-or-nothing"
+    );
+    let events_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("count all events after aborted batch");
+    assert_eq!(
+        events_after - events_before,
+        0,
+        "no event recorded for an aborted batch — zero coarse event on rollback"
     );
 
     // (b) create_work_items with one bad parent_id — the whole batch rolls back.

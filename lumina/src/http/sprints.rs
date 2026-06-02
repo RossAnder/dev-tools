@@ -191,4 +191,57 @@ mod tests {
         let body = json_body(resp).await;
         assert_eq!(body["added"], 0, "re-adding an existing member is a no-op");
     }
+
+    /// `POST /api/sprints/{sid}/tasks` with a non-task member id (a story) aborts the
+    /// whole batch as a `Validation` → 422 over HTTP, mirroring the repo-layer
+    /// `add_tasks_to_sprint_aborts_on_non_task` guard.
+    #[tokio::test]
+    async fn add_tasks_to_sprint_rejects_non_task_http() {
+        let pool = connect_in_memory().await.expect("pool");
+        let (story_id, _task_id) = seed_chain(&pool).await;
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let router = build_router(state);
+
+        // Create a sprint → 201 + sprint_id.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sprints")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "title": "Sprint 1" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = json_body(resp).await;
+        let sprint_id = body["sprint_id"]
+            .as_str()
+            .expect("create_sprint returns a sprint_id")
+            .to_owned();
+
+        // Add a STORY id (not a task) → 422 (Validation aborts the batch).
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/sprints/{sprint_id}/tasks"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "task_ids": [story_id] }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a non-task member is a Validation → 422"
+        );
+    }
 }

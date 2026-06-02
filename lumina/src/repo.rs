@@ -50,6 +50,19 @@ use crate::args;
 use crate::db::{DbClient, Scalar};
 use crate::error::AppError;
 
+/// Hard upper bound on the number of elements a single batch-write call may
+/// carry (R3 — resource-limit / DoS guard). The batch paths (`add_findings`,
+/// `create_work_items`, `batch_update_findings`) each pre-allocate per-element
+/// state and hold the `BEGIN IMMEDIATE` writer lock across every row, so an
+/// unbounded payload would both balloon allocation and starve all other writers
+/// for the duration of the batch. Enforced at the TOP of each batch fn (before
+/// any allocation or `db.begin()`) so an over-cap call is a clean
+/// [`AppError::Validation`] that writes nothing. 500 matches the per-call
+/// advisory ("keep batches to ≲500 rows") documented on `add_findings`. This is
+/// the single chokepoint all callers (MCP + HTTP) flow through, so no per-edge
+/// body-size layer is needed.
+const MAX_BATCH_ITEMS: usize = 500;
+
 /// Raw `work_items` row as it comes off the database, before `attributes` is
 /// decoded from its stored TEXT into `Option<Value>`. Generic over `R: Row` per
 /// the canonical [`crate::db`] FromRow recipe so it rides `query_*<T>` on both
@@ -1070,6 +1083,14 @@ pub enum QueryFindingsResult {
 // bound value is NULL). The clause is written inline in both constants (rather
 // than concatenated from a shared fragment) so each stays a single greppable
 // `&'static str` literal.
+//
+// R16 (design note): the `($N IS NULL OR col = $N)` NULL-guard pattern is
+// NON-SARGABLE — the `$N IS NULL` disjunct makes the predicate non-index-friendly,
+// so if a covering index on (e.g.) `severity`/`triage_state` were ever added it
+// could not be used while the guard branch is live. This is accepted as immaterial
+// at the current `findings`-table scale (a full scan is cheap); the deliberate
+// trade-off is one prepared statement covering every filter combination (no
+// dynamic SQL). Revisit only if the table grows enough that the scan dominates.
 
 /// Full-row SELECT for the `count_by == None` branch — the exact column list of
 /// [`list_findings`] (decoded by the shared [`crate::domain::Finding`] `FromRow`)
@@ -1182,7 +1203,7 @@ const STORY_FINDING_QUEUE_SQL: &str = "\
            f.wontfix_rationale, f.repo_id \
     FROM findings f \
     JOIN work_items w ON f.work_item_id = w.id \
-    WHERE (w.id = $1 OR w.parent_id = $1) \
+    WHERE (w.id = $1 OR (w.parent_id = $1 AND w.kind = 'task')) \
       AND w.deleted_at IS NULL \
       AND f.superseded_by IS NULL \
     ORDER BY f.first_flagged DESC, f.id";
@@ -1195,7 +1216,10 @@ const STORY_FINDING_QUEUE_SQL: &str = "\
 /// The story plus its direct task children. The hierarchy makes tasks direct
 /// children of a story (`work_items.parent_id` = story id, enforced by the
 /// hierarchy trigger), so a single static JOIN `findings ↔ work_items` with
-/// `(w.id = $1 OR w.parent_id = $1)` spans the queue WITHOUT a recursive CTE.
+/// `(w.id = $1 OR (w.parent_id = $1 AND w.kind = 'task'))` spans the queue
+/// WITHOUT a recursive CTE. The child branch's `kind = 'task'` guard (R20) makes
+/// the queue self-contained rather than relying on the external hierarchy
+/// invariant that a story's only children are tasks.
 ///
 /// ## Tombstone guard (the point of the JOIN)
 /// `w.deleted_at IS NULL` EXCLUDES findings whose work-item has been
@@ -1545,6 +1569,20 @@ pub async fn create_work_items(
     db: &impl DbClient,
     specs: &[NewWorkItemSpec<'_>],
 ) -> Result<Vec<uuid::Uuid>, AppError> {
+    // R14: an empty batch opens no tx and writes no coarse event — return the
+    // zero value (an empty id list) up front.
+    if specs.is_empty() {
+        return Ok(Vec::new());
+    }
+    // R3: reject an over-cap batch BEFORE any allocation / tx, so an oversized
+    // payload cannot balloon allocation or hold the writer lock.
+    if specs.len() > MAX_BATCH_ITEMS {
+        return Err(AppError::Validation(format!(
+            "batch of {} work items exceeds the maximum of {MAX_BATCH_ITEMS} per call",
+            specs.len()
+        )));
+    }
+
     let mut tx = db.begin().await?;
 
     let mut ids: Vec<Uuid> = Vec::with_capacity(specs.len());
@@ -1585,7 +1623,7 @@ pub async fn create_work_items(
     // `add_findings` the only sensible key is a freshly-minted batch id).
     let id_strs: Vec<String> = ids.iter().map(Uuid::to_string).collect();
     let payload = serde_json::json!({ "count": ids.len(), "ids": id_strs });
-    record_event(
+    record_inert_event(
         tx.as_mut(),
         "batch",
         &Uuid::now_v7().to_string(),
@@ -2730,8 +2768,13 @@ pub struct FindingTriageUpdate<'a> {
     pub triage_state: Option<&'a str>,
     pub severity: Option<Severity>,
     pub category: Option<&'a str>,
-    /// NON-terminal status only; a terminal [`Disposition`] value is rejected
-    /// pre-tx (terminal dispositions belong to [`resolve_finding`]).
+    /// NON-terminal workflow `status` only; a terminal [`Disposition`] value
+    /// (`fixed`/`wontfix`/`verified_clean`/`deferred`/`duplicate`) is rejected
+    /// pre-tx (terminal dispositions belong to [`resolve_finding`]). R13: note
+    /// the `deferred`/`duplicate` workflow-`status` values are rejected here —
+    /// they are NOT the same axis as the triage-state `Deferred`/`Dismissed`
+    /// dispositions, which are set via `record_finding_decision(Defer/Dismiss)`
+    /// and ride the separate `triage_state` field above.
     pub status: Option<&'a str>,
 }
 
@@ -2757,6 +2800,18 @@ pub async fn batch_update_findings(
     db: &impl DbClient,
     updates: &[FindingTriageUpdate<'_>],
 ) -> Result<u64, AppError> {
+    // R14: an empty batch opens no tx and writes no coarse event — zero updated.
+    if updates.is_empty() {
+        return Ok(0);
+    }
+    // R3: reject an over-cap batch BEFORE any allocation / tx.
+    if updates.len() > MAX_BATCH_ITEMS {
+        return Err(AppError::Validation(format!(
+            "batch of {} finding updates exceeds the maximum of {MAX_BATCH_ITEMS} per call",
+            updates.len()
+        )));
+    }
+
     // Pre-tx validation: reject ANY terminal-disposition status before opening a
     // transaction, so a terminal value writes zero rows (all-or-nothing also for
     // the rejection path). "Is this terminal?" is decided by serde-parsing the
@@ -2811,7 +2866,7 @@ pub async fn batch_update_findings(
     // these are findings with no run context, so mint a fresh finding-scoped id.
     let aggregate_id = Uuid::now_v7().to_string();
     let payload = serde_json::json!({ "updated": updated });
-    record_event(
+    record_inert_event(
         tx.as_mut(),
         "finding",
         &aggregate_id,
@@ -3055,6 +3110,46 @@ pub async fn create_finding(
     Ok(id)
 }
 
+/// The dedup partial-index predicate (R10/R-B3). This MUST stay BYTE-IDENTICAL
+/// to the `WHERE` clause of the `ux_findings_dedup` partial UNIQUE index in
+/// `migrations/0011_runs_sprints_findings_queue.sql` (lines 70-71): SQLite binds
+/// an `ON CONFLICT` upsert to a partial index ONLY when the conflict target's
+/// predicate matches the index's predicate exactly — a one-byte drift silently
+/// fails to bind the index and lets duplicate findings insert. Single-sourced as
+/// a macro (not a `const`) because [`CREATE_FINDING_INSERT_SQL`] is built with
+/// `concat!`, which accepts only literals — so the production INSERT and the
+/// `findings_dedup_conflict_predicate_matches_migration` parity test expand the
+/// SAME literal, and the test asserts the migration file embeds it verbatim.
+macro_rules! findings_dedup_predicate {
+    () => {
+        "dedup_id IS NOT NULL AND superseded_by IS NULL"
+    };
+}
+
+/// The dedup-aware `findings` INSERT used by [`create_finding_tx`]. Built by
+/// concatenating the column/values clause with the shared `findings_dedup_predicate!`
+/// macro so the `ON CONFLICT … WHERE <predicate> DO NOTHING` conflict-target
+/// predicate is the SAME string the migration-0011 index uses (R10) and the
+/// parity test checks.
+const CREATE_FINDING_INSERT_SQL: &str = concat!(
+    "INSERT INTO findings ( \
+        id, work_item_id, kind, severity, effort, category, status, \
+        file, line, symbol, summary, description, first_flagged, rounds, \
+        fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution, \
+        defer_reason, defer_trigger, wontfix_rationale, repo_id, run_id \
+    ) \
+    VALUES ( \
+        $1, $2, $3, $4, $5, $6, $7, \
+        $8, $9, $10, $11, $12, $13, $14, \
+        $15, $16, $17, $18, $19, $20, $21, \
+        $22, $23, $24, $25, $26 \
+    ) \
+    ON CONFLICT(work_item_id, dedup_id) \
+        WHERE ",
+    findings_dedup_predicate!(),
+    " DO NOTHING"
+);
+
 /// Reusable tx helper extracted from [`create_finding`] (B16): mint the id, bind
 /// every `findings` column, and INSERT the row INSIDE the caller's transaction.
 ///
@@ -3087,20 +3182,7 @@ pub async fn create_finding_tx(
 
     let affected = tx
         .execute(
-            "INSERT INTO findings ( \
-                id, work_item_id, kind, severity, effort, category, status, \
-                file, line, symbol, summary, description, first_flagged, rounds, \
-                fingerprint, flow, dedup_id, origin, confidence, resolved_at, resolution, \
-                defer_reason, defer_trigger, wontfix_rationale, repo_id, run_id \
-            ) \
-            VALUES ( \
-                $1, $2, $3, $4, $5, $6, $7, \
-                $8, $9, $10, $11, $12, $13, $14, \
-                $15, $16, $17, $18, $19, $20, $21, \
-                $22, $23, $24, $25, $26 \
-            ) \
-            ON CONFLICT(work_item_id, dedup_id) \
-                WHERE dedup_id IS NOT NULL AND superseded_by IS NULL DO NOTHING",
+            CREATE_FINDING_INSERT_SQL,
             args![
                 id_str.clone(),
                 work_item_id.to_owned(),
@@ -3237,12 +3319,34 @@ pub fn finding_dedup_hash(
 /// stable cross-run identifier a re-run recomputes via [`finding_dedup_hash`] to
 /// assert membership.
 ///
-/// Advisory: keep batches to ≲500 rows per call (one transaction, one event).
+/// R3: a HARD cap of [`MAX_BATCH_ITEMS`] (500) rows per call is enforced at the
+/// top — an over-cap batch is a clean [`AppError::Validation`] that writes
+/// nothing (one transaction, one event for a legal batch). An empty batch is the
+/// zero result with no tx (R14).
 pub async fn add_findings(
     db: &impl DbClient,
     run_id: Option<&str>,
     items: &[(&str, NewFinding<'_>)],
 ) -> Result<crate::domain::BatchInsertResult, AppError> {
+    // R14: an empty batch opens no tx and writes no coarse count:0 event — return
+    // the zero result before any allocation.
+    if items.is_empty() {
+        return Ok(crate::domain::BatchInsertResult {
+            added: 0,
+            skipped: 0,
+            skipped_ids: Vec::new(),
+        });
+    }
+    // R3: reject an over-cap batch BEFORE the per-element hash allocation / tx —
+    // an unbounded payload would force a huge pre-tx `Vec<String>` of hashes and
+    // hold the writer lock across N inserts, starving other writers.
+    if items.len() > MAX_BATCH_ITEMS {
+        return Err(AppError::Validation(format!(
+            "batch of {} findings exceeds the maximum of {MAX_BATCH_ITEMS} per call",
+            items.len()
+        )));
+    }
+
     // Pre-tx: compute the dedup content hash per element. This Vec OUTLIVES the
     // tx loop because each `NewFinding.dedup_id` we build below borrows `&hashes[i]`.
     let hashes: Vec<String> = items
@@ -3294,7 +3398,7 @@ pub async fn add_findings(
         None => ("finding", Uuid::now_v7().to_string()),
     };
     let payload = serde_json::json!({ "added": added, "skipped": skipped });
-    record_event(
+    record_inert_event(
         tx.as_mut(),
         aggregate_type,
         &aggregate_id,
@@ -3330,6 +3434,16 @@ pub async fn add_findings(
 // helper), folding the spawn into the decision's single `"finding"` event so the
 // whole decision is one event, NOT two. (Resolve is the documented exception —
 // see `record_finding_decision`.)
+//
+// **R2 — the sharper consequence of inert routing.** Because a spawned work-item's
+// `work_item.created` is folded into the inert `"finding"` event (and bulk-created
+// items into a `"batch"` event), the spawned/bulk-created rows get NO git-export
+// snapshot at creation time — the export drain only renders `work_item` events.
+// The audit trail on disk is therefore SILENTLY INCOMPLETE for these items until a
+// LATER mutation touches one (emitting its own `work_item.*` event, which the
+// drain then materialises). This is the accepted D8/R-B4 trade-off, not a bug, but
+// it means "no exported TOML yet" is the expected steady state for a freshly
+// spawned item, not a sign of a dropped event.
 // ---------------------------------------------------------------------------
 
 /// Open a new review/optimise [`run`](crate::domain::NewRun) over a live story
@@ -3406,7 +3520,7 @@ pub async fn create_run(db: &impl DbClient, run: &NewRun) -> Result<Uuid, AppErr
         "target_id": run.target_id,
         "target_kind": target_kind_str,
     });
-    record_event(tx.as_mut(), "run", &id_str, "run.created", payload).await?;
+    record_inert_event(tx.as_mut(), "run", &id_str, "run.created", payload).await?;
 
     tx.commit().await?;
     Ok(id)
@@ -3432,7 +3546,7 @@ pub async fn create_sprint(db: &impl DbClient, sprint: &NewSprint) -> Result<Uui
     .await?;
 
     let payload = serde_json::json!({ "title": sprint.title });
-    record_event(tx.as_mut(), "sprint", &id_str, "sprint.created", payload).await?;
+    record_inert_event(tx.as_mut(), "sprint", &id_str, "sprint.created", payload).await?;
 
     tx.commit().await?;
     Ok(id)
@@ -3505,7 +3619,7 @@ pub async fn add_tasks_to_sprint(
     // One export-inert coarse event (R-B4): aggregate_type="sprint", keyed by the
     // sprint id, NOT "work_item".
     let payload = serde_json::json!({ "added": added, "requested": task_ids.len() });
-    record_event(
+    record_inert_event(
         tx.as_mut(),
         "sprint",
         sprint_id,
@@ -3530,7 +3644,12 @@ pub async fn add_tasks_to_sprint(
 ///   * `SpawnTask` → create a child `task` under the finding's host work_item;
 ///     `triage_state = "accepted"`.
 ///   * `SpawnStory` → create a child `story` under the finding's host work_item;
-///     `triage_state = "accepted"`.
+///     `triage_state = "accepted"`. NOTE (R12): for a queue-RESIDENT finding this
+///     verdict is effectively UNREACHABLE — a `story` child needs a `focus`
+///     parent (hierarchy trigger), but `get_story_finding_queue` only surfaces
+///     findings hosted on a `story` or its `task` children, neither of which can
+///     parent a story. SpawnStory is reachable only when a finding is created
+///     DIRECTLY on a `focus` work-item.
 ///   * `Defer` → no spawn; `triage_state = "deferred"`.
 ///   * `Dismiss` → no spawn; `triage_state = "dismissed"`.
 ///   * `Resolve` → no spawn; `triage_state = "accepted"`; ALSO resolves the
@@ -3548,41 +3667,35 @@ pub async fn add_tasks_to_sprint(
 /// host). The new id is then stamped onto `work_items.spawned_from_finding_id`
 /// (mirroring [`create_work_items`]).
 ///
-/// ## Single-mutation-path + the Resolve exception (D9)
-/// The non-Resolve verdicts run ENTIRELY in one tx: (optional) child create via
-/// `create_work_item_full_tx` (the no-event tx helper) + spawn stamp, the
-/// `findings.triage_state` UPDATE, the `finding_decisions` INSERT, and EXACTLY
-/// ONE export-inert `finding.decision_recorded` event (`aggregate_type="finding"`,
-/// keyed by the finding id; R-B4 — never `"work_item"`, even though a spawn
-/// created one: the child's create folds into this one event).
+/// ## Single-mutation-path + the Resolve atomicity (D9, R1)
+/// ALL verdicts now run ENTIRELY in ONE tx: the host read (R15 — moved onto the
+/// tx so it shares the BEGIN IMMEDIATE writer-lock snapshot with the writes,
+/// closing a TOCTOU window), (optional) child create via `create_work_item_full_tx`
+/// (the no-event tx helper) + spawn stamp, the `findings.triage_state` UPDATE, the
+/// `finding_decisions` INSERT, and EXACTLY ONE export-inert
+/// `finding.decision_recorded` event (`aggregate_type="finding"`, keyed by the
+/// finding id; R-B4 — never `"work_item"`, even though a spawn created one: the
+/// child's create folds into this one event).
 ///
-/// `Resolve` is the documented exception: `resolve_finding` opens its OWN tx +
-/// `finding.resolved` event and cannot nest, so for `Resolve` ONLY we call
-/// `resolve_finding(db, finding_id, Disposition::Fixed, None, None)` FIRST, THEN
-/// open the decision tx (no spawn). This intentionally yields TWO events for a
-/// resolve (`finding.resolved` + `finding.decision_recorded`).
+/// `Resolve` is the documented two-events exception (D9): in addition to the
+/// decision event it terminally resolves the finding. R1 INLINES that resolve
+/// (the `findings` terminal UPDATE + the `finding.resolved` event) INTO this same
+/// decision tx — replicating `resolve_finding`'s body on the tx handle rather
+/// than calling the self-committing `resolve_finding(db, …)` before the tx —
+/// so the triage UPDATE, the `finding_decisions` INSERT, the terminal resolve,
+/// and both events all commit (or roll back) atomically. This preserves the
+/// documented TWO-events-for-a-resolve shape (`finding.resolved` +
+/// `finding.decision_recorded`) while removing the prior crash window between the
+/// two independent commits (which could durably resolve the finding yet lose the
+/// audit row).
 pub async fn record_finding_decision(
     db: &impl DbClient,
     decision: &NewFindingDecision,
 ) -> Result<(Uuid, Option<Uuid>), AppError> {
     let finding_id = decision.finding_id.as_str();
 
-    // Validate the finding exists and capture its host work_item_id (nullable).
-    // A missing finding is NotFound (not a dangling-FK 500). `work_item_id` is a
-    // nullable column → reads back as Option<String>.
-    let host_id: Option<String> = match crate::db::scalar_opt::<Option<String>>(
-        db,
-        "SELECT work_item_id FROM findings WHERE id = $1",
-        args![finding_id.to_owned()],
-    )
-    .await?
-    {
-        Some(host) => host,
-        None => return Err(AppError::NotFound(format!("finding '{finding_id}' not found"))),
-    };
-
     // Map the verdict to (spawn-kind, triage_state). `Resolve` additionally
-    // delegates a terminal resolution (handled below, before the decision tx).
+    // terminally resolves the finding (inlined into the tx below, R1).
     let (spawn_kind, triage_state): (Option<&str>, TriageState) = match decision.decision {
         FindingDecisionKind::SpawnTask => (Some("task"), TriageState::Accepted),
         FindingDecisionKind::SpawnStory => (Some("story"), TriageState::Accepted),
@@ -3593,24 +3706,53 @@ pub async fn record_finding_decision(
     let triage_state_str = enum_to_str(triage_state);
     let decision_str = enum_to_str(decision.decision);
 
+    let decision_id = Uuid::now_v7();
+    let decision_id_str = decision_id.to_string();
+
+    let mut tx = db.begin().await?;
+
+    // Validate the finding exists and capture its host work_item_id + run_id,
+    // ON THE TX (R15) so the read shares the writer-lock snapshot with the writes
+    // below (closing a TOCTOU window vs. the prior autocommit read). A missing
+    // finding is NotFound (not a dangling-FK 500). Both columns are nullable →
+    // read back as Option<String>.
+    #[derive(Debug)]
+    struct FindingHostRow {
+        work_item_id: Option<String>,
+        run_id: Option<String>,
+    }
+    impl<'r, R> sqlx::FromRow<'r, R> for FindingHostRow
+    where
+        R: sqlx::Row,
+        usize: sqlx::ColumnIndex<R>,
+        &'r str: sqlx::ColumnIndex<R>,
+        Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    {
+        fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+            Ok(FindingHostRow {
+                work_item_id: row.try_get("work_item_id")?,
+                run_id: row.try_get("run_id")?,
+            })
+        }
+    }
+    let host_row: FindingHostRow = match crate::db::tx_query_opt::<FindingHostRow>(
+        tx.as_mut(),
+        "SELECT work_item_id, run_id FROM findings WHERE id = $1",
+        args![finding_id.to_owned()],
+    )
+    .await?
+    {
+        Some(row) => row,
+        None => return Err(AppError::NotFound(format!("finding '{finding_id}' not found"))),
+    };
+    let host_id = host_row.work_item_id;
+
     // A spawn needs a host to parent under; a hostless finding cannot spawn.
     if spawn_kind.is_some() && host_id.is_none() {
         return Err(AppError::Validation(format!(
             "cannot spawn from finding '{finding_id}': it has no host work_item to parent under"
         )));
     }
-
-    // Resolve delegation (D9): resolve_finding opens its OWN tx + event and
-    // cannot nest, so run it FIRST (before our decision tx). This is the one
-    // verdict that legitimately yields two events.
-    if matches!(decision.decision, FindingDecisionKind::Resolve) {
-        resolve_finding(db, finding_id, Disposition::Fixed, None, None).await?;
-    }
-
-    let decision_id = Uuid::now_v7();
-    let decision_id_str = decision_id.to_string();
-
-    let mut tx = db.begin().await?;
 
     // 1. (spawn only) create the child under the finding's host, then stamp the
     //    provenance back-link. `create_work_item_full_tx` is the no-event tx
@@ -3631,6 +3773,21 @@ pub async fn record_finding_decision(
             Some(s) if !s.trim().is_empty() => s,
             _ => &fallback,
         };
+        // R5: stamp the child's provenance from the finding's run kind
+        // (runs.kind ∈ review|optimise), NOT a hardcoded "review" — a finding
+        // raised under an optimise run must not be mislabelled. A finding with no
+        // run_id (or whose run row is somehow absent) falls back to "review", the
+        // prior default.
+        let origin: String = match host_row.run_id.as_deref() {
+            Some(rid) => crate::db::tx_scalar_opt::<String>(
+                tx.as_mut(),
+                "SELECT kind FROM runs WHERE id = $1",
+                args![rid.to_owned()],
+            )
+            .await?
+            .unwrap_or_else(|| "review".to_owned()),
+            None => "review".to_owned(),
+        };
         // An incompatible host kind surfaces the helper's Validation UN-swallowed.
         let new_id = create_work_item_full_tx(
             tx.as_mut(),
@@ -3639,7 +3796,7 @@ pub async fn record_finding_decision(
             title,
             None,
             CreateOpts {
-                origin: Some("review"),
+                origin: Some(origin.as_str()),
                 outcome: None,
                 shape: None,
             },
@@ -3663,6 +3820,31 @@ pub async fn record_finding_decision(
     )
     .await?;
 
+    // 2b. Resolve atomicity (D9 / R1): for the Resolve verdict, inline
+    //     `resolve_finding`'s body ON THIS TX — the terminal `status`/`resolved_at`
+    //     UPDATE plus the `finding.resolved` event — so the resolve, the triage
+    //     UPDATE, and the audit INSERT below all commit together (no crash window
+    //     between two independent commits). This is the documented two-events case.
+    if matches!(decision.decision, FindingDecisionKind::Resolve) {
+        let disposition_str = enum_to_str(Disposition::Fixed);
+        tx.execute(
+            "UPDATE findings \
+             SET status = $2, resolved_at = CURRENT_TIMESTAMP \
+             WHERE id = $1",
+            args![finding_id.to_owned(), disposition_str.clone()],
+        )
+        .await?;
+        let resolved_payload = serde_json::json!({ "disposition": disposition_str });
+        record_event(
+            tx.as_mut(),
+            "finding",
+            finding_id,
+            "finding.resolved",
+            resolved_payload,
+        )
+        .await?;
+    }
+
     // 3. Record the append-only decision audit row (decided_at left to DEFAULT).
     tx.execute(
         "INSERT INTO finding_decisions (id, finding_id, decision, spawned_work_item_id, decided_by) \
@@ -3677,14 +3859,16 @@ pub async fn record_finding_decision(
     )
     .await?;
 
-    // 4. EXACTLY ONE export-inert event for the decision (R-B4):
-    //    aggregate_type="finding", keyed by the finding id, NOT "work_item" —
-    //    even when a spawn created a work_item, its create folds into this event.
+    // 4. EXACTLY ONE export-inert decision event (R-B4 / R19): aggregate_type=
+    //    "finding", keyed by the finding id, NOT "work_item" — even when a spawn
+    //    created a work_item, its create folds into this event. The Resolve arm
+    //    additionally emitted `finding.resolved` above (the documented D9 two-event
+    //    exception).
     let payload = serde_json::json!({
         "decision": decision_str,
         "spawned_work_item_id": spawned_id.map(|id| id.to_string()),
     });
-    record_event(
+    record_inert_event(
         tx.as_mut(),
         "finding",
         finding_id,
@@ -6219,6 +6403,37 @@ async fn record_event(
     Ok(())
 }
 
+/// Append ONE export-INERT `events` row (R19). The batch/domain write paths
+/// (`create_work_items`, `add_findings`, `batch_update_findings`,
+/// `add_tasks_to_sprint`, `record_finding_decision`, and the run/sprint
+/// creators) record a single coarse event whose `aggregate_type` MUST be one of
+/// the inert kinds (`run`/`sprint`/`finding`/`batch`) and MUST NEVER be
+/// `"work_item"`: the git-export drain (`export.rs`) materialises ONLY
+/// `aggregate_type="work_item"` events, so a `"work_item"`-typed batch/domain
+/// event would wrongly re-render its aggregate (R-B4).
+///
+/// This helper centralises that invariant — previously hand-repeated as a
+/// comment at six call sites — behind a HARD runtime guard: an `aggregate_type`
+/// of `"work_item"` is rejected with [`AppError::Validation`] (a programmer
+/// error caught before the row is written) rather than silently mis-routed.
+/// Otherwise it delegates verbatim to [`record_event`].
+async fn record_inert_event(
+    tx: &mut dyn crate::db::DbTx,
+    aggregate_type: &str,
+    aggregate_id: &str,
+    event_type: &str,
+    payload: serde_json::Value,
+) -> Result<(), AppError> {
+    if aggregate_type == "work_item" {
+        return Err(AppError::Validation(format!(
+            "record_inert_event refuses aggregate_type=\"work_item\" for inert event \
+             '{event_type}' (R-B4: the export drain would re-render it); use an inert \
+             aggregate_type (run/sprint/finding/batch)"
+        )));
+    }
+    record_event(tx, aggregate_type, aggregate_id, event_type, payload).await
+}
+
 /// PTY-session CRUD (migration 0008). Separate submodule because the `pty_*`
 /// tables do NOT participate in the `events` outbox — they are a per-session
 /// transcript / queue store with no git-export materialisation, so the
@@ -6920,6 +7135,19 @@ mod tests {
             .unwrap()
     }
 
+    /// Count `events` rows for a given `aggregate_id` + `event_type` (used by the
+    /// R1 atomicity test to assert the two-event resolve shape).
+    async fn count_events_for(pool: &SqlitePool, aggregate_id: &str, event_type: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM events WHERE aggregate_id = $1 AND event_type = $2",
+        )
+        .bind(aggregate_id)
+        .bind(event_type)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
     /// Build the legal project→epic→focus→story chain and return the story id,
     /// so tests can create a legal `task` (or an illegal one) beneath it.
     ///
@@ -6967,6 +7195,49 @@ mod tests {
             .await
             .expect("legal story");
         story.to_string()
+    }
+
+    /// Build the legal project→epic→focus chain and return the FOCUS id. Used by
+    /// the SpawnStory test (R6): a `story` child needs a `focus` parent, so a
+    /// SpawnStory decision is only reachable when the finding hosts directly on a
+    /// focus. The epic carries ≥1 close-criterion so a story create under the
+    /// focus passes the close-criterion gate.
+    async fn seed_chain_to_focus(pool: &SqlitePool) -> String {
+        let project = create_work_item(pool, "project", None, "P", None)
+            .await
+            .expect("legal project");
+        let epic = create_work_item_full(
+            pool,
+            "epic",
+            Some(&project.to_string()),
+            "E",
+            None,
+            CreateOpts {
+                origin: None,
+                outcome: Some("the epic outcome"),
+                shape: None,
+            },
+        )
+        .await
+        .expect("legal epic");
+        add_acceptance_criterion(pool, &epic.to_string(), "epic close criterion")
+            .await
+            .expect("epic close criterion");
+        let focus = create_work_item_full(
+            pool,
+            "focus",
+            Some(&epic.to_string()),
+            "FO",
+            None,
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: Some("vertical-slice"),
+            },
+        )
+        .await
+        .expect("legal focus");
+        focus.to_string()
     }
 
     /// (a) `create_work_item` inserts exactly one work_items row AND one events
@@ -9839,11 +10110,15 @@ mod tests {
         );
     }
 
-    /// `record_finding_decision` Resolve delegates to `resolve_finding`: the
-    /// finding ends with a terminal `status` (the disposition wire value) AND a
-    /// `finding_decisions` row is recorded; no work_item is spawned.
+    /// `record_finding_decision` Resolve resolves the finding ATOMICALLY in the
+    /// SAME tx as the decision audit (R1): the finding ends with a terminal
+    /// `status`, `triage_state='accepted'`, a `finding_decisions` row exists, AND
+    /// BOTH the `finding.resolved` and `finding.decision_recorded` events are
+    /// present (the documented D9 two-event shape) — committed together, so the
+    /// audit row can never be lost to a crash between two independent commits as
+    /// the prior delegate-to-`resolve_finding` path allowed. No work_item spawned.
     #[tokio::test]
-    async fn record_finding_decision_resolve_delegates() {
+    async fn record_finding_decision_resolve_is_atomic() {
         let pool = connect_in_memory().await.expect("pool");
         let story = seed_chain_to_story(&pool).await;
         let finding = create_finding(
@@ -9874,11 +10149,11 @@ mod tests {
             work_items_before,
             "no work_item created by a resolve"
         );
-        // Terminal disposition stamped by the delegated resolve_finding.
+        // Terminal disposition stamped by the inlined resolve.
         assert_eq!(
             finding_status(&pool, &finding).await.as_deref(),
             Some("fixed"),
-            "resolve delegates a terminal Fixed disposition"
+            "resolve stamps a terminal Fixed disposition"
         );
         assert_eq!(
             finding_triage_state(&pool, &finding).await.as_deref(),
@@ -9888,7 +10163,18 @@ mod tests {
         assert_eq!(
             count_finding_decisions(&pool, &finding).await,
             1,
-            "a decision row is recorded for the resolve"
+            "the audit decision row committed atomically with the resolve"
+        );
+        // BOTH events are present, keyed to the finding id (the D9 two-event shape,
+        // now from a SINGLE tx). A crash that lost the decision row would also have
+        // rolled back the resolve — they share one commit.
+        let resolved_events = count_events_for(&pool, &finding, "finding.resolved").await;
+        let decision_events =
+            count_events_for(&pool, &finding, "finding.decision_recorded").await;
+        assert_eq!(resolved_events, 1, "exactly one finding.resolved event");
+        assert_eq!(
+            decision_events, 1,
+            "exactly one finding.decision_recorded event — same tx as the resolve"
         );
     }
 
@@ -9930,6 +10216,374 @@ mod tests {
             finding_triage_state(&pool, &finding).await.as_deref(),
             Some("dismissed"),
             "dismiss sets triage_state=dismissed"
+        );
+    }
+
+    /// R6: `record_finding_decision` SpawnStory on a FOCUS-hosted finding creates
+    /// a child `story` under the focus with `spawned_from_finding_id` set and
+    /// `triage_state='accepted'`. SpawnStory is unreachable for a queue-resident
+    /// (story/task-hosted) finding, so the finding is created directly on a focus.
+    #[tokio::test]
+    async fn record_finding_decision_spawn_story() {
+        let pool = connect_in_memory().await.expect("pool");
+        let focus = seed_chain_to_focus(&pool).await;
+        let finding = create_finding(
+            &pool,
+            &focus,
+            &NewFinding { summary: Some("needs a follow-up story"), ..NewFinding::default() },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+
+        let (decision_id, spawned) = record_finding_decision(
+            &pool,
+            &NewFindingDecision {
+                finding_id: finding.clone(),
+                decision: FindingDecisionKind::SpawnStory,
+                decided_by: Some("triager".into()),
+            },
+        )
+        .await
+        .expect("spawn_story decision");
+
+        let new_id = spawned.expect("spawn_story yields a work_item id").to_string();
+
+        let (kind, parent): (String, Option<String>) = {
+            use sqlx::Row as _;
+            let r = sqlx::query("SELECT kind, parent_id FROM work_items WHERE id = $1")
+                .bind(&new_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            (r.try_get("kind").unwrap(), r.try_get("parent_id").unwrap())
+        };
+        assert_eq!(kind, "story", "spawned a story");
+        assert_eq!(parent.as_deref(), Some(focus.as_str()), "parented under the host focus");
+        assert_eq!(
+            spawned_from(&pool, &new_id).await.as_deref(),
+            Some(finding.as_str()),
+            "spawned_from_finding_id back-link is stamped"
+        );
+        assert_eq!(
+            finding_triage_state(&pool, &finding).await.as_deref(),
+            Some("accepted"),
+            "spawn_story sets triage_state=accepted"
+        );
+        let recorded_spawn: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT spawned_work_item_id FROM finding_decisions WHERE id = $1",
+        )
+        .bind(decision_id.to_string())
+        .fetch_one(&pool)
+        .await
+        .expect("select finding_decisions row");
+        assert_eq!(
+            recorded_spawn.as_deref(),
+            Some(new_id.as_str()),
+            "the decision row names the spawned story"
+        );
+    }
+
+    /// R6: `record_finding_decision` Defer sets `triage_state='deferred'`, spawns
+    /// nothing, and records a `finding_decisions` audit row.
+    #[tokio::test]
+    async fn record_finding_decision_defer() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let finding = create_finding(
+            &pool,
+            &story,
+            &NewFinding { summary: Some("later"), ..NewFinding::default() },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+
+        let work_items_before = count_work_items(&pool).await;
+
+        let (_decision_id, spawned) = record_finding_decision(
+            &pool,
+            &NewFindingDecision {
+                finding_id: finding.clone(),
+                decision: FindingDecisionKind::Defer,
+                decided_by: None,
+            },
+        )
+        .await
+        .expect("defer decision");
+
+        assert!(spawned.is_none(), "defer spawns no work_item");
+        assert_eq!(
+            count_work_items(&pool).await,
+            work_items_before,
+            "no work_item created by a defer"
+        );
+        assert_eq!(
+            finding_triage_state(&pool, &finding).await.as_deref(),
+            Some("deferred"),
+            "defer sets triage_state=deferred"
+        );
+        assert_eq!(
+            count_finding_decisions(&pool, &finding).await,
+            1,
+            "a decision audit row is recorded for the defer"
+        );
+    }
+
+    /// R7(a): `record_finding_decision` against a finding id that names no row is
+    /// a clean `NotFound` (not a 500 / dangling-FK).
+    #[tokio::test]
+    async fn record_finding_decision_missing_finding_is_not_found() {
+        let pool = connect_in_memory().await.expect("pool");
+        let res = record_finding_decision(
+            &pool,
+            &NewFindingDecision {
+                finding_id: "no-such-finding".into(),
+                decision: FindingDecisionKind::Dismiss,
+                decided_by: None,
+            },
+        )
+        .await;
+        assert!(
+            matches!(res, Err(AppError::NotFound(_))),
+            "a missing finding id is NotFound, got {res:?}"
+        );
+    }
+
+    /// R7(b): a SPAWN verdict against a hostless finding (NULL `work_item_id`) is a
+    /// clean `Validation` — a finding with no host cannot parent a child.
+    #[tokio::test]
+    async fn record_finding_decision_hostless_spawn_is_validation() {
+        let pool = connect_in_memory().await.expect("pool");
+        // A hostless finding: insert directly with a NULL work_item_id (the public
+        // create paths require a host, so seed the edge case via raw SQL).
+        let finding_id = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO findings (id, work_item_id, summary) VALUES ($1, NULL, $2)",
+        )
+        .bind(&finding_id)
+        .bind("hostless")
+        .execute(&pool)
+        .await
+        .expect("insert hostless finding");
+
+        let res = record_finding_decision(
+            &pool,
+            &NewFindingDecision {
+                finding_id: finding_id.clone(),
+                decision: FindingDecisionKind::SpawnTask,
+                decided_by: None,
+            },
+        )
+        .await;
+        assert!(
+            matches!(res, Err(AppError::Validation(_))),
+            "a spawn on a hostless finding is a Validation, got {res:?}"
+        );
+    }
+
+    /// R8 (the dominant R-A1 safety-net gap): seed a finding with the nullable
+    /// disposition columns POPULATED (non-NULL `resolution`/`defer_reason`/
+    /// `wontfix_rationale`/`repo_id`), read it back through `query_findings`, and
+    /// assert the decoded `Option<String>` values round-trip. Most tests seed via
+    /// `NewFinding::default()` leaving these NULL, so this is the only test that
+    /// would catch a `String`-vs-`Option<String>` decode mismatch on these columns.
+    #[tokio::test]
+    async fn query_findings_decodes_populated_disposition_columns() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        // A repo_link on the project ancestor so `repo_id` can be a real FK value.
+        let project: String = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM work_items WHERE kind = 'project' LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("project id");
+        let repo_id = add_repo_link(&pool, &project, "octocat/hello-world", true)
+            .await
+            .expect("add repo link")
+            .to_string();
+
+        let finding = create_finding(
+            &pool,
+            &story,
+            &NewFinding {
+                summary: Some("populated dispositions"),
+                resolution: Some("fixed in PR #42"),
+                defer_reason: Some("blocked on upstream"),
+                wontfix_rationale: Some("by design"),
+                repo_id: Some(&repo_id),
+                ..NewFinding::default()
+            },
+        )
+        .await
+        .expect("finding with populated dispositions")
+        .to_string();
+
+        let res = query_findings(
+            &pool,
+            &QueryFindingsFilter::default_empty().with_work_item_id(&story),
+        )
+        .await
+        .expect("query findings");
+        let rows = match res {
+            QueryFindingsResult::Findings(v) => v,
+            QueryFindingsResult::Counts(_) => panic!("expected Findings variant"),
+        };
+        let f = rows
+            .iter()
+            .find(|f| f.id == finding)
+            .expect("the populated finding is in the result");
+        assert_eq!(
+            f.resolution.as_deref(),
+            Some("fixed in PR #42"),
+            "resolution decodes to its non-NULL value"
+        );
+        assert_eq!(
+            f.defer_reason.as_deref(),
+            Some("blocked on upstream"),
+            "defer_reason decodes to its non-NULL value"
+        );
+        assert_eq!(
+            f.wontfix_rationale.as_deref(),
+            Some("by design"),
+            "wontfix_rationale decodes to its non-NULL value"
+        );
+        assert_eq!(
+            f.repo_id.as_deref(),
+            Some(repo_id.as_str()),
+            "repo_id decodes to its non-NULL FK value"
+        );
+    }
+
+    /// R9: `add_findings` OWNS dedup — it stamps every element's `dedup_id` with
+    /// the content hash over `(work_item_id, file, line, symbol, summary)`, and
+    /// `work_item_id` is ALWAYS present, so the computed hash is never NULL. Two
+    /// content-empty findings on the SAME work_item therefore hash IDENTICALLY and
+    /// the second COLLAPSES onto the `ux_findings_dedup` partial index via
+    /// `ON CONFLICT DO NOTHING` (added==1, skipped==1). This is the batch path's
+    /// index-active behaviour, in deliberate contrast to the single `create_finding`
+    /// path where a caller-supplied NULL `dedup_id` is index-EXEMPT and both rows
+    /// persist (proven at the SQL layer in `tests/migration_0011.rs`). The original
+    /// finding hypothesised added==2; the batch path's owned-hash dedup makes the
+    /// real outcome a collapse — pinned here so a future change to the hash inputs
+    /// (e.g. leaving content-empty findings NULL) is caught.
+    #[tokio::test]
+    async fn add_findings_content_empty_findings_collapse_via_owned_hash() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let a = NewFinding::default();
+        let b = NewFinding::default();
+
+        let r = add_findings(&pool, None, &[(story.as_str(), a), (story.as_str(), b)])
+            .await
+            .expect("batch add of two content-empty findings");
+        assert_eq!(r.added, 1, "the first content-empty finding inserts");
+        assert_eq!(
+            r.skipped, 1,
+            "the hash-identical second collapses — the batch path owns dedup"
+        );
+        assert_eq!(
+            count_findings(&pool).await,
+            1,
+            "one row persisted after the dedup-collapse"
+        );
+    }
+
+    /// R3: an over-cap `add_findings` batch is rejected with `Validation` and
+    /// writes nothing (the cap is checked before any allocation / tx).
+    #[tokio::test]
+    async fn add_findings_rejects_over_cap_batch() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        // MAX_BATCH_ITEMS + 1 distinct findings (distinct summaries → distinct
+        // dedup hashes, so the over-cap rejection — not dedup — is what fires).
+        let summaries: Vec<String> = (0..=MAX_BATCH_ITEMS).map(|i| format!("f{i}")).collect();
+        let items: Vec<(&str, NewFinding)> = summaries
+            .iter()
+            .map(|s| {
+                (
+                    story.as_str(),
+                    NewFinding { summary: Some(s.as_str()), ..NewFinding::default() },
+                )
+            })
+            .collect();
+
+        let res = add_findings(&pool, None, &items).await;
+        assert!(
+            matches!(res, Err(AppError::Validation(_))),
+            "an over-cap batch is a Validation, got {res:?}"
+        );
+        assert_eq!(
+            count_findings(&pool).await,
+            0,
+            "over-cap rejection writes zero findings"
+        );
+    }
+
+    /// R3: an empty `add_findings` batch is the zero result with no tx / no event
+    /// (R14 early-return paired with the cap check).
+    #[tokio::test]
+    async fn add_findings_empty_batch_is_zero_result() {
+        let pool = connect_in_memory().await.expect("pool");
+        let events_before = count_events(&pool).await;
+        let r = add_findings(&pool, None, &[]).await.expect("empty batch");
+        assert_eq!(r.added, 0);
+        assert_eq!(r.skipped, 0);
+        assert!(r.skipped_ids.is_empty());
+        assert_eq!(
+            count_events(&pool).await,
+            events_before,
+            "an empty batch records no coarse event"
+        );
+    }
+
+    /// R21: `create_sprint` lands a `sprints` row whose `status` is the documented
+    /// column DEFAULT `'open'` (mirrors `create_run_accepts_live_story_with_open_status`,
+    /// which reads back `run_status`). The prior test only asserted COUNT(*)==1.
+    #[tokio::test]
+    async fn create_sprint_persists_default_open_status() {
+        let pool = connect_in_memory().await.expect("pool");
+        let id = create_sprint(&pool, &NewSprint { title: Some("Sprint 1".into()) })
+            .await
+            .expect("create_sprint")
+            .to_string();
+
+        let status = sqlx::query_scalar::<_, String>("SELECT status FROM sprints WHERE id = $1")
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .expect("select sprint status");
+        assert_eq!(status, "open", "sprint persists the column-default 'open' status");
+    }
+
+    /// R10 / R-B3: the dedup conflict-target predicate baked into
+    /// `CREATE_FINDING_INSERT_SQL` MUST stay byte-identical to the
+    /// `ux_findings_dedup` partial-index predicate in migration 0011 — a one-byte
+    /// drift fails to bind the index and silently lets duplicates insert. Both are
+    /// pinned to the single-source `findings_dedup_predicate!` macro here.
+    #[test]
+    fn findings_dedup_conflict_predicate_matches_migration() {
+        // The production INSERT embeds the predicate verbatim.
+        assert!(
+            CREATE_FINDING_INSERT_SQL.contains(findings_dedup_predicate!()),
+            "the create_finding INSERT must embed the shared dedup predicate"
+        );
+        assert!(
+            CREATE_FINDING_INSERT_SQL
+                .contains(concat!("WHERE ", findings_dedup_predicate!(), " DO NOTHING")),
+            "the ON CONFLICT target uses the shared predicate as its WHERE clause"
+        );
+        // The migration's partial-index predicate is the SAME string.
+        const MIGRATION_0011: &str =
+            include_str!("../migrations/0011_runs_sprints_findings_queue.sql");
+        assert!(
+            MIGRATION_0011.contains(findings_dedup_predicate!()),
+            "the ux_findings_dedup index predicate in migration 0011 must match \
+             the findings_dedup_predicate! macro byte-for-byte"
         );
     }
 }

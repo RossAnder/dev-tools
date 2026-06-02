@@ -53,6 +53,15 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('revi
 CREATE TABLE sprints (id TEXT PRIMARY KEY, title TEXT, status TEXT NOT NULL DEFAULT 'open',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 
+-- INTENT: every FK below (sprint_tasks→sprints/work_items, finding_decisions→
+-- findings/work_items, findings.run_id→runs, work_items.spawned_from_finding_id→
+-- findings) is left at the SQLite default ON DELETE NO ACTION. This is deliberate
+-- under the store's soft-delete model: rows are tombstoned/superseded, never hard
+-- DELETEd, so the delete path is never exercised (consistent with the supersession
+-- NO ACTION note on `supersede_finding` in repo.rs). If a future hard-delete/purge
+-- path lands, these FKs become referential-integrity blockers (FK errors) rather
+-- than silent cascades — review that intent before adding any DELETE statements.
+
 -- sprint_tasks: sprint↔task membership link.
 CREATE TABLE sprint_tasks (sprint_id TEXT NOT NULL REFERENCES sprints(id),
     task_id TEXT NOT NULL REFERENCES work_items(id), PRIMARY KEY (sprint_id, task_id));

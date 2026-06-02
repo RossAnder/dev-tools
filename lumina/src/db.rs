@@ -219,6 +219,11 @@ impl AnyPool {
 /// Because every call site passes a concrete `&AnyPool` as `&impl DbClient`,
 /// this trait is NOT required to be object-safe and so MAY carry generic
 /// `query_*<T: FromRow>` methods. The SQLite arm is the only live impl.
+///
+/// Part-C swap point: the typed-read bound `for<'r> FromRow<'r, SqliteRow>`
+/// (below, and the `Scalar<T>: FromRow<'r, SqliteRow>` bound on the scalar
+/// helpers) names `SqliteRow` concretely, so the Pg backend must widen it to
+/// also decode `PgRow` (mirroring the `Pg(PgRow)` plan on [`AnyRow`]).
 #[async_trait]
 pub trait DbClient: Send + Sync {
     /// Run a non-returning statement; yields the affected-row count.

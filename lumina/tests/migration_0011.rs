@@ -246,4 +246,27 @@ async fn migration_0011_runs_sprints_findings_queue() {
     insert_finding(&pool, "f-null-2", "p1", None)
         .await
         .expect("a second NULL-dedup_id finding on the same work_item is exempt from the dedup index");
+
+    // A SUPERSEDED finding is EXEMPT from the partial index — it exercises the
+    // `superseded_by IS NULL` half of the predicate. Insert a finding with a
+    // dedup tuple on a fresh project, mark it superseded (point superseded_by at
+    // a live finding to satisfy the self-FK), then insert ANOTHER finding with
+    // the SAME (work_item_id, dedup_id): it must SUCCEED, because the index only
+    // constrains rows where superseded_by IS NULL — proving a legitimate re-flag
+    // after supersession is allowed.
+    insert_project(&pool, "p3")
+        .await
+        .expect("legal third project");
+    insert_finding(&pool, "f-sup-1", "p3", Some("dd-2"))
+        .await
+        .expect("first finding with dedup_id dd-2 inserts");
+    sqlx::query("UPDATE findings SET superseded_by = ? WHERE id = ?")
+        .bind("f-dup-1")
+        .bind("f-sup-1")
+        .execute(&pool)
+        .await
+        .expect("mark f-sup-1 as superseded (self-FK to a live finding)");
+    insert_finding(&pool, "f-sup-2", "p3", Some("dd-2"))
+        .await
+        .expect("a re-flag with the same (work_item_id, dedup_id) is allowed once the prior row is superseded (superseded_by IS NULL predicate)");
 }
