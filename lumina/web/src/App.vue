@@ -8,6 +8,7 @@ import CenterToolbar from '@/components/CenterToolbar.vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import FocusLens from '@/components/FocusLens.vue'
 import ChildGrid from '@/components/ChildGrid.vue'
+import ExecutionSection from '@/components/ExecutionSection.vue'
 import PortfolioEmpty from '@/components/PortfolioEmpty.vue'
 import PtyConsole from '@/components/PtyConsole.vue'
 
@@ -23,6 +24,13 @@ onMounted(() => {
 // PortfolioEmpty owns the children rendering.
 const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
   () => focusedNode.value?.children ?? [],
+)
+
+// Story gate for the below-the-card execution panel: ExecutionSection is
+// story-only (dispatch plan + task-dependency graph are story-scoped reads).
+// Non-story focuses (epic/focus/task/project) render only ChildGrid, unchanged.
+const focusedStoryId: ComputedRef<string | null> = computed(() =>
+  focusedNode.value?.kind === 'story' ? focusedNode.value.id : null,
 )
 </script>
 
@@ -56,6 +64,7 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
           <template v-if="view === 'focus'">
             <FocusLens />
             <ChildGrid v-if="focusedChildren.length > 0" :children="focusedChildren" />
+            <ExecutionSection v-if="focusedStoryId !== null" :story-id="focusedStoryId" />
           </template>
           <PtyConsole v-else-if="view === 'pty'" />
           <div
