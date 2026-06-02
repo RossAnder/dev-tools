@@ -1,2 +1,332 @@
 schema_version = 1
 last_updated = 2026-06-02
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-02
+agent = "implement"
+summary = "Flow status draft to in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "f3dffc77b6e3f334"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "pure-tab-registry"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T1: pure tab registry (panelRegistry.ts) + bun tests; TabDef/TAB_DEFS/tabsForKind, no .vue imports"
+files = [
+    "lumina/web/src/composables/panelRegistry.ts",
+    "lumina/web/src/__tests__/panel-registry.test.ts",
+]
+commits = ["6ebed8c"]
+dedup_id = "e66314072b1c521d"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "roving-tabindex-keyboard-reducer"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T2: pure nextTabIndex roving-tabindex reducer (tabKeyboard.ts) + bun tests"
+files = [
+    "lumina/web/src/composables/tabKeyboard.ts",
+    "lumina/web/src/__tests__/tab-keyboard.test.ts",
+]
+commits = ["6ebed8c"]
+dedup_id = "ce110a3b45f11db1"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "modal-ui-primitives-editable-element-wrapper"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T5: ui primitives Modal/EnumSwitch/ConfirmButton/EditableElement (native dialog, segmented control, two-step confirm, agent-action seam)"
+files = [
+    "lumina/web/src/components/ui/Modal.vue",
+    "lumina/web/src/components/ui/EnumSwitch.vue",
+    "lumina/web/src/components/ui/ConfirmButton.vue",
+    "lumina/web/src/components/ui/EditableElement.vue",
+]
+commits = ["6ebed8c"]
+dedup_id = "10cd80476d1a28f4"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "tab-state-composable-sessionstorage"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T3: useTabState(entityId,validTabIds) sessionStorage-backed active-tab ref with storage test-seam + validation/fallback"
+files = [
+    "lumina/web/src/composables/useTabState.ts",
+    "lumina/web/src/__tests__/tab-state.test.ts",
+]
+commits = ["83268d2"]
+dedup_id = "405cfa0d958ae26a"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "tabstrip-component"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T4: WAI-ARIA TabStrip.vue (roving tabindex, manual activation, useTabState-authoritative, v-model). Also fixed a strict-typing build error in useTabState (T3) surfaced only by vue-tsc --build / npm run build, not vue-tsc --noEmit."
+files = [
+    "lumina/web/src/components/TabStrip.vue",
+    "lumina/web/src/composables/useTabState.ts",
+]
+commits = [
+    "8ed3edc",
+    "efc3a34",
+]
+dedup_id = "5ae8eabbbb1e32b2"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "textfieldmodal-readonly-overviewpanel-focuslens-integration"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T6 (Wave 1 complete): TextFieldModal + read-only OverviewPanel + FocusLens tab-shell integration (TabStrip + dynamic component:is; overview wired, others coming-soon). Closes the empty-story gap."
+files = [
+    "lumina/web/src/components/ui/TextFieldModal.vue",
+    "lumina/web/src/components/panels/OverviewPanel.vue",
+    "lumina/web/src/components/FocusLens.vue",
+]
+commits = ["7f1bcce"]
+dedup_id = "eb50a5644e91bf35"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "make-overviewpanel-editable-migrate-epic-focus-editors"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T7: OverviewPanel editable (TextFieldModal long-form + EnumSwitch scalars w/ fold-back + verification_commands inputs); migrated OutcomeEditor/ShapeEditor/FramingEditor logic, removed their FocusLens mounts."
+files = [
+    "lumina/web/src/components/panels/OverviewPanel.vue",
+    "lumina/web/src/components/FocusLens.vue",
+]
+commits = ["c0ae3a5"]
+dedup_id = "fb3e2bb5d1cc8271"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-06-02
+agent = "implement"
+task_ref = "make-overviewpanel-editable-migrate-epic-focus-editors"
+summary = "Project body left read-only (no backing write composable)"
+original_intent = "Plan editing-control mapping lists project body as long-form-editable text backed by a composable apply()."
+rationale = "No body-setter composable exists; only an unwrapped updateWorkItem API fn (src/api/work-items.ts) and useHierarchy exposes only changeStatus. Per Scope (raise missing read/write surfaces), body left read-only this wave; a future useWorkItemMeta wrapper around updateWorkItem + fold-back is needed. body editing was not in T7 acceptance, so no functional gap for the wave."
+commits = ["c0ae3a5"]
+dedup_id = "6c7b16573ebb1c28"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "repos-panel-migrate-repolinkspanel"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T8: ReposPanel for the project repos tab (useRepoLinks bind/add/remove/setPrimary + ConfirmButton); FocusLens maps repos tab to it and drops the inline RepoLinksPanel mount."
+files = [
+    "lumina/web/src/components/panels/ReposPanel.vue",
+    "lumina/web/src/components/FocusLens.vue",
+]
+commits = ["0e74247"]
+dedup_id = "b38fe4778931dd06"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "retire-migrated-editor-components"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+scope_warning = true
+summary = "T9: deleted OutcomeEditor/ShapeEditor/FramingEditor/RepoLinksPanel; re-pointed all dead doc-comment name-drops to living successors (12 prose-only edits) so the four-name grep gate is clean. scope_warning: assets/tokens.css scrub is outside the components/composables/__tests__ globs but plan-directed."
+files = [
+    "lumina/web/src/components/OutcomeEditor.vue",
+    "lumina/web/src/components/ShapeEditor.vue",
+    "lumina/web/src/components/FramingEditor.vue",
+    "lumina/web/src/components/RepoLinksPanel.vue",
+    "lumina/web/src/assets/tokens.css",
+    "lumina/web/src/components/PtyConsole.vue",
+    "lumina/web/src/components/PtyMessage.vue",
+    "lumina/web/src/components/EpicCloseCriteriaPanel.vue",
+    "lumina/web/src/components/TabStrip.vue",
+    "lumina/web/src/components/panels/OverviewPanel.vue",
+    "lumina/web/src/components/panels/ReposPanel.vue",
+    "lumina/web/src/components/ui/ConfirmButton.vue",
+    "lumina/web/src/components/ui/EditableElement.vue",
+    "lumina/web/src/components/ui/EnumSwitch.vue",
+    "lumina/web/src/components/ui/Modal.vue",
+    "lumina/web/src/components/ui/TextFieldModal.vue",
+]
+commits = ["2f87ddd"]
+dedup_id = "c6dae1d8d76ad3c1"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "decisionspanel-story"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T10: DecisionsPanel.vue (story) over useResearchNotes/useOpenQuestions/useRejectedAlternatives. Note: research-note update edits rationale (API has no body update); supersede clones-then-chains. Created, not yet mounted (T12 wires)."
+files = ["lumina/web/src/components/panels/DecisionsPanel.vue"]
+commits = ["a25d556"]
+dedup_id = "edf97490fe9ef7a6"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "qualitypanel-risks-findings-readiness"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T11a: QualityPanel.vue (story=risks+findings+readiness; task=findings). Findings supersede left unwired (needs new-finding create flow, out of scope); resolve wired as confirmed verified_clean. AC section deferred to T11b. Created, not yet mounted (T12 wires)."
+files = ["lumina/web/src/components/panels/QualityPanel.vue"]
+commits = ["44fc5fb"]
+dedup_id = "2d312b44d4ef6cbf"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "activitypanel-all-kinds"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T12: ActivityPanel (all kinds: detail.activity timeline + comment/execution add via useActivity().record + context-block create/link/unlink). FocusLens Wave-3 hub: PANELS map now resolves all five tabs; inline context-blocks section removed. useActivity has no bind (pure mutator) so timeline reads from useHierarchy().detail."
+files = [
+    "lumina/web/src/components/panels/ActivityPanel.vue",
+    "lumina/web/src/components/FocusLens.vue",
+]
+commits = ["2cfb08a"]
+dedup_id = "2441b2e13af38029"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "acceptance-criteria-subcomponent-epicclosecriteriapanel-migration"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T11b: shared AcceptanceCriteriaSection over useAcceptanceCriteria; mounted in QualityPanel (story/task) + OverviewPanel (epic close-criteria); deleted EpicCloseCriteriaPanel + FocusLens mount + redundant inline task-acceptance section."
+files = [
+    "lumina/web/src/components/AcceptanceCriteriaSection.vue",
+    "lumina/web/src/components/panels/QualityPanel.vue",
+    "lumina/web/src/components/panels/OverviewPanel.vue",
+    "lumina/web/src/components/FocusLens.vue",
+    "lumina/web/src/components/EpicCloseCriteriaPanel.vue",
+]
+commits = ["12ee26b"]
+dedup_id = "26266b89dbd702b8"
+
+[[items]]
+id = "E16"
+type = "deviation"
+date = 2026-06-02
+agent = "implement"
+task_ref = "acceptance-criteria-subcomponent-epicclosecriteriapanel-migration"
+summary = "T11b edited OverviewPanel + created a shared AC sub-component beyond its literal Files list"
+original_intent = "T11b Files list named only panels/QualityPanel.vue (AC sub-section) and deleting EpicCloseCriteriaPanel.vue, implying AC rendering lives only in QualityPanel."
+rationale = "Epics have no Quality tab (registry quality-tab kinds = story,task); epic close-criteria render in the Overview tab per the design matrix. To satisfy the Action/Acceptance requirement that epic close-criteria still work via the migrated path, a shared components/AcceptanceCriteriaSection.vue was created and mounted in BOTH QualityPanel (story/task) and OverviewPanel (epic), and FocusLens lost its redundant inline read-only task-acceptance section. Behaviour preserved; build green; EpicCloseCriteriaPanel grep clean."
+commits = ["12ee26b"]
+dedup_id = "c92ea2c2bec9e7c4"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-06-02
+agent = "implement"
+task_ref = "executionsection-app-wiring"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "T13: ExecutionSection.vue (story-only dispatch-plan waves + task-dependency batches with edge add/remove + cycleError). App.vue mounts it below FocusLens via focusedStoryId gate; non-stories unchanged."
+files = [
+    "lumina/web/src/components/ExecutionSection.vue",
+    "lumina/web/src/App.vue",
+]
+commits = ["16515ef"]
+dedup_id = "84d9b1c2b8882361"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-06-02
+agent = "implement"
+summary = "npm run build (vue-tsc --build + vite) passed"
+command = "cd lumina/web && npm run build"
+outcome = "pass"
+dedup_id = "0fe15e1e002c35f2"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-06-02
+agent = "implement"
+summary = "bun test: 283 pass / 0 fail"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "290acd4d9108a591"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-06-02
+agent = "implement"
+summary = "vue-tsc --noEmit clean"
+command = "cd lumina/web && npx vue-tsc --noEmit"
+outcome = "pass"
+dedup_id = "5a4228dcba85583d"
+
+[[items]]
+id = "E21"
+type = "status-transition"
+date = 2026-06-02
+agent = "plan-update"
+summary = "All 14 tasks implemented + verification passed; flow ready for review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "a8a095563b580162"

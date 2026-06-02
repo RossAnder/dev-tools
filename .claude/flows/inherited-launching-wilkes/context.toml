@@ -1,6 +1,6 @@
 slug = "inherited-launching-wilkes"
 plan_path = "docs/plans/inherited-launching-wilkes.md"
-status = "draft"
+status = "review"
 created = 2026-06-02
 updated = 2026-06-02
 branch = "main"
@@ -11,8 +11,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 14
+completed = 14
 in_progress = 0
 
 [artifacts]
