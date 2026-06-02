@@ -301,7 +301,7 @@ async fn migration_0004_cascade_and_set_null_paths() {
     );
 
     // Cascade check: spin up a standalone project (no descendants — the
-    // primary project p1 has epics/features/stories referencing it via a
+    // primary project p1 has epics/focuses/stories referencing it via a
     // self-FK that is NOT ON DELETE CASCADE, so the schema-shaped way to
     // observe the repo_links cascade is on a childless project). Attach a
     // repo_link to it, delete the project, and assert the link is gone.

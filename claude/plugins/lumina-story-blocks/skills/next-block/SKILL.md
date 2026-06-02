@@ -132,7 +132,7 @@ the full menu when this advisor is loaded:
 - `/lumina:edge-cases <id>` — Enumerate edge cases for a work item as research notes with lens="edge-case" and a per-case confidence grade.
 - `/lumina:risks <id>` — Capture or update a story's risks with severity + mitigation; per-element supersession on label collision.
 - `/lumina:acceptance-criteria <id>` — Add free-text acceptance criteria to a story's task children, prompting with concrete-I/O / trigger / verification structural hints.
-- `/lumina:relevance <id>` — Set or supersede an epic/feature/story's relevance (active / backlog / deferred / rejected).
+- `/lumina:relevance <id>` — Set or supersede an epic/focus/story's relevance (active / backlog / deferred / rejected).
 - `/lumina:closure-gate <id>` — Set or supersede a story's closure_gate (hard / soft), controlling how unchecked acceptance criteria block child-task →done transitions.
 - `/lumina:story-review <id>` — Critique a story across all planning blocks; emits structured findings via add_finding{kind="story-review"}.
 - `/lumina:decompose-tasks <id>` — (round-2) Decompose a story into task children.

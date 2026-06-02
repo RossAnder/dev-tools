@@ -896,7 +896,7 @@ pub enum Tier {
 pub enum Shape {
     /// Vertical slice — a thin end-to-end cut through the stack.
     VerticalSlice,
-    /// Cross-cutting — concerns spanning multiple features / layers.
+    /// Cross-cutting — concerns spanning multiple modules / layers.
     CrossCutting,
     /// Foundational — base infrastructure other focuses build upon.
     Foundational,

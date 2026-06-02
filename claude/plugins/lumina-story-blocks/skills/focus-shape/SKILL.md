@@ -20,9 +20,9 @@ This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIO
 
 The user needs to know what they are choosing. Surface these one-line glosses in the option labels:
 
-- **`vertical-slice`** — a thin end-to-end increment (touches every layer for one narrow capability).
+- **`vertical-slice`** — a coherent end-to-end thread of user-facing value through the layers (one narrow capability, top to bottom).
 - **`cross-cutting`** — a concern spanning many areas (a change that threads through the codebase rather than living in one slice).
-- **`foundational`** — enabling groundwork (scaffolding/infrastructure that later focuses build on).
+- **`foundational`** — the base layer other focuses' stories depend on (a structural cross-focus-dependency test — not a leftover / "didn't fit the others" bin).
 
 The skill body MUST surface these glosses in the option labels for step 3 / step 5 so the user picks meaningfully rather than guessing.
 

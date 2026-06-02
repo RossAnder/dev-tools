@@ -18,7 +18,7 @@ The `lens="edge-case"` binding on `research_notes` is the registered convention 
 
 ## Target
 
-`add_research_note` accepts any work_item kind. Edge cases are MOST useful on `story` rows (the planning unit), but the skill imposes no kind precondition — a feature or epic may legitimately carry cross-cutting edge cases. The skill body does NOT fail if the caller passes a non-story id.
+`add_research_note` accepts any work_item kind. Edge cases are MOST useful on `story` rows (the planning unit), but the skill imposes no kind precondition — a focus or epic may legitimately carry cross-cutting edge cases. The skill body does NOT fail if the caller passes a non-story id.
 
 ## MCP tool
 

@@ -400,7 +400,7 @@ An **epic** is a closeable unit of delivered value. It carries:
 
 - A MANDATORY `outcome` (set at `create_work_item` time; revised later via `set_epic_plan`) — the value the epic delivers, stated as an end-state.
 - An optional `context` plan attribute (revised via `set_epic_plan`'s JSON-merge).
-- One or more **close-criteria** — checkable conditions gating the epic's close, governed by the epic's `closure_gate` (migration 0010 widened `set_closure_gate` to accept an epic as well as a story).
+- One or more **close-criteria** — checkable conditions gating the epic's close; an epic needs ≥1 before its first story can be created. Unlike a story, an epic has NO `closure_gate`: `set_closure_gate` is story-only, and the epic-done gate is unconditional — ALL close-criteria must be checked (see the done-rule below), there is no `hard`/`soft` mode at the epic level.
 
 **Epic done-rule**: an epic is "done" when ALL of its close-criteria are checked AND ALL descendant stories are in a terminal status (`done` / `cancelled`). The close-criteria are the epic's own deliverable gate; the descendant-story rollup is the structural gate. Both must hold.
 
@@ -420,7 +420,7 @@ Four new plugin skills are the kind-precondition writers for these fields. Each 
 | Skill | Writes | Kind-precondition | MCP tool |
 |---|---|---|---|
 | `epic-outcome` | epic `outcome` | epic-only | `set_epic_plan` (and `create_work_item` at creation) |
-| `epic-close-criteria` | epic close-criteria | epic-only | `add_acceptance_criterion` family under the epic's `closure_gate` |
+| `epic-close-criteria` | epic close-criteria | epic-only | `add_acceptance_criterion` family on the epic (unconditional done-gate; no epic `closure_gate`) |
 | `focus-shape` | focus `shape` | focus-only | `set_shape` |
 | `focus-framing` | focus `framing` | focus-only | `set_focus_plan` |
 
