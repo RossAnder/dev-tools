@@ -1,0 +1,269 @@
+schema_version = 1
+last_updated = 2026-06-02
+round = 1
+
+[[vet_events]]
+command = "review-plan"
+round = 1
+date = "2026-06-02"
+summary = "Vetted 4 research-deep lens agents (feasibility/completeness/executability/risk). Independently re-verified every load-bearing claim: sprint_tasks sole-INSERT (repo.rs:3658), findings.rounds never incremented (grep empty), CreateOpts 3-field (repo.rs:1365), db.rs WAL+5s busy_timeout (db.rs:32,79), hierarchy trigger task->story (0001_init.sql:73/93), update_work_item_status signature (repo.rs:1855), count assertion 67 (mcp.rs:3245). All confirmed. 0 dropped, 0 downgraded across all four agents; no >30% systemic failure, no re-dispatch. Agent-1 F-5 reclassified from finding to Stale-References report section (no-defect record)."
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "completeness"
+plan_section = "### D. `complete_task` cascade (`repo.rs`)"
+summary = "Spawned review/rework tasks are never inserted into sprint_tasks, so the claim's sprint_tasks JOIN can never see them - the done->review->rework cascade is dead."
+description = "sprint_tasks is written only by add_tasks_to_sprint (repo.rs:3658); the SC step-2 candidate select JOINs sprint_tasks but SD/SE spawn via create_work_item_full_tx (CreateOpts carries only origin/outcome/shape, repo.rs:1365) with no sprint_tasks insert and no lane/reviews/files channel. T6/T8 unit tests pass in isolation while the real sprint-scoped flow is broken."
+anchor_old = "`files_touched` copied from the impl task, plus a `task_dependencies` edge on the impl task (provenance/order; already `done` so immediately claimable). `record_event 'work_item.created'`."
+anchor_new = "`files_touched` copied from the impl task. Mechanism: `create_work_item_full_tx` takes only `CreateOpts{origin,outcome,shape}` (repo.rs:1365), so stamp `lane='review'`/`reviews_work_item_id`/`files_touched` via a post-create `UPDATE work_items ...` in the SAME txn (mirror the `spawned_from_finding_id` stamp at repo.rs:3856). Add a `task_dependencies` edge on the impl task AND an `INSERT INTO sprint_tasks (sprint_id, task_id)` binding the review task to the impl task's sprint - WITHOUT the sprint_tasks row the SC claim JOIN never sees it (sprint_tasks is written only by `add_tasks_to_sprint`, repo.rs:3658) and the cascade never runs. `record_event 'work_item.created'`."
+dedup_id = "79f89b116910e16d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "completeness"
+plan_section = "### E. Review → rework loop (existing primitives + small extension)"
+summary = "findings.rounds is never incremented anywhere in repo.rs, so the rounds >= N round-cap can never fire - the review<->rework non-termination guard is a no-op."
+description = "rounds is written only at finding insert (repo.rs:3250); a repo-wide grep for any rounds-increment UPDATE returns zero matches. Each rework cycle creates a fresh finding, so rounds never climbs and the cap never trips. The Risks section's claim that non-termination is mitigated by the cap is unsubstantiated."
+anchor_old = "**Round-cap guard**: reuse `findings.rounds`; when `rounds >= N` (default 3), the reviewer records `record_finding_decision(defer)` + `add_open_question` (human escalation) instead of spawning another rework"
+anchor_new = "**Round-cap guard**: `findings.rounds` is NOT auto-incremented today (verified: no `SET rounds` UPDATE exists in repo.rs - it is written only at insert, repo.rs:3250), so reusing it requires a NEW increment step - extend the SpawnTask path to `UPDATE findings SET rounds = COALESCE(rounds,0)+1` on the host finding inside its txn. Then when `rounds >= N` (default 3) the reviewer records `record_finding_decision(defer)` + `add_open_question` (human escalation) instead of spawning another rework; add a unit test that the counter rises per cycle and the defer branch fires at the cap"
+dedup_id = "adb2f72c3929f36a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "feasibility"
+plan_section = "### D. `complete_task` cascade (`repo.rs`)"
+summary = "SD Txn 1 says reuse update_work_item_status and clear assignee/lease, but that fn takes only (db,id,status), opens its own tx, and clears neither."
+description = "repo.rs:1855 update_work_item_status(db,id,status) only flips status (+closure/epic gates) and commits its own tx; it never touches assignee/lease_expires_at and returns no lane. Txn 1 must first read the task's lane (drives the Txn-2 branch), call update_work_item_status, then issue a separate owner-guarded lease-clear."
+anchor_old = "**Txn 1**: transition the task to `done` via the existing `update_work_item_status` path (preserves the closure-gate / acceptance-criteria check); clear `assignee`/`lease`."
+anchor_new = "**Txn 1**: first read the task's `lane` (it drives the Txn-2 branch). Transition to `done` via `update_work_item_status(db, task_id, 'done')` (preserves the closure-gate check; note repo.rs:1855 opens its OWN tx and clears NOTHING), then issue a separate owner-guarded `UPDATE work_items SET assignee=NULL, lease_expires_at=NULL WHERE id=:task_id AND assignee=:agent_id`."
+dedup_id = "689aa96e8356878c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "executability"
+plan_section = "### E. Review → rework loop (existing primitives + small extension)"
+summary = "The rework SpawnTask can't stamp lane/tier via create_work_item_full_tx, and 'default deep' conflicts with the claim filter - rework should be tier=NULL so either a lite or deep agent re-claims it."
+description = "create_work_item_full_tx carries no lane/tier (CreateOpts = origin/outcome/shape, repo.rs:1365), so stamp via a post-create UPDATE (mirror repo.rs:3856) plus the sprint_tasks insert SD requires. Tier policy: SC filters (:tier IS NULL OR tier=:tier); a deep default makes rework invisible to a lite-tier claim - leave tier=NULL so EITHER tier claims it (a reviewer can force a tier later via set_task_tier)."
+anchor_old = "**Extension**: the SpawnTask path (`repo.rs:3741`) stamps `lane='implement'` (+ `tier` via `compute_tier` or default `deep`) on the spawned rework task so impl agents re-claim it."
+anchor_new = "**Extension**: the SpawnTask path (`repo.rs:3741`) stamps `lane='implement'` on the spawned rework task via a post-create `UPDATE` (create_work_item_full_tx carries no lane/tier - CreateOpts is origin/outcome/shape, repo.rs:1365) plus the same `INSERT INTO sprint_tasks` SD requires. Leave `tier=NULL` (NOT default `deep`): under the `(:tier IS NULL OR tier=:tier)` claim filter a `deep` default makes rework invisible to lite-tier claims; NULL lets either a lite or deep agent re-claim it, and a reviewer can force a tier afterward via `set_task_tier`."
+dedup_id = "cf32b8c3bb9b6885"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "executability"
+plan_section = "#### T2: Add `Lane` enum + result types"
+summary = "T2 must also extend the WorkItem domain struct with the four new columns (assigned to neither T2 nor T3) and give exact field lists for ClaimedTask/OpenQuestionSummary."
+description = "T3's work_item_from_row (repo.rs:141) maps WorkItemRow->domain::WorkItem, so WorkItem (domain.rs:21) needs the 4 new Option fields BEFORE T3 compiles - but T2's action lists only Lane + 3 result structs and never mentions WorkItem. ClaimedTask{...} (SC) and OpenQuestionSummary also have no field list yet T4/T9/T10/T12 consume them."
+anchor_old = "`enum Lane { Implement, Review }` (serde wire `implement|review`); add `ClaimedTask`, `SprintQuiescence`, `OpenQuestionSummary` structs. Mirror the `Tier` enum derive set."
+anchor_new = "`enum Lane { Implement, Review }` (serde wire `implement|review`); add result structs with EXACT fields - `ClaimedTask { task_id, lane: Lane, tier: Option<Tier>, assignee, lease_expires_at, files_touched: Vec<serde_json::Value> }`, `SprintQuiescence { claimable, in_progress, blocked_on_question, terminal, done: bool, stalled: bool }`, `OpenQuestionSummary { question_id, story_id, text, options: Vec<String>, age_secs }` (single source of truth for T4/T9/T10/T12). ALSO extend `domain::WorkItem` (domain.rs:21) with `assignee`/`lease_expires_at`/`lane`/`reviews_work_item_id`, each `Option<String>` using the migration-0003 skip_serializing_if = Option::is_none serde convention - without this T3's `work_item_from_row` (repo.rs:141) cannot compile. Mirror the `Tier` enum derive set."
+dedup_id = "a64c4f1faa20a9e9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T3: Extend `WorkItem` row mapping for the new columns"
+summary = "T3's Files must name all four hand-written mapping sites (WorkItemRow struct, its manual FromRow, work_item_from_row, both SELECT lists) and place new scalars before created_at for the tables-last export gate."
+description = "The git-export auto-carry claim is sound (export.rs:266 serializes the whole WorkItemDetail), but four sites change in lockstep or the build breaks: WorkItemRow (~repo.rs:73), its FromRow (~111), work_item_from_row (~141, NOT named by T3), and both SELECT lists (~502/~605)."
+anchor_old = "**Files**: `lumina/src/repo.rs` (row struct + `FromRow` + `SELECT` lists at ~506 and ~609)"
+anchor_new = "**Files**: `lumina/src/repo.rs` - the `WorkItemRow` struct (~73), its manual `FromRow::from_row` (~111), the `work_item_from_row` mapper (~141), AND both `SELECT` lists (~502/~605). All four change together or the build breaks; add the new scalar fields BEFORE `created_at` to satisfy the tables-last export-ordering gate."
+dedup_id = "49e5da5603d03b76"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "executability"
+plan_section = "### C. Claim / lease semantics (`repo.rs`)"
+summary = "The file-lease 'disjoint set' rule is undefined for empty files_touched and for heterogeneous bare-string vs {repo,path} entries - two reasonable executors pick opposite rules."
+description = "files_touched entries may be bare path strings OR {repo,path} objects (repo.rs:251,6149); SC never says how to compare them, nor whether an empty/absent files_touched is claimable-against-all or blocks-against-all. The Risks section concedes empty files_touched 'can collide' without stating the rule."
+anchor_old = "**File-lease (Rust-side)**: load `files_touched` (parsed from `attributes` JSON — read path per `repo.rs:6154`) for all `in_progress` tasks in the sprint once; iterate candidates, pick the first whose set is disjoint."
+anchor_new = "**File-lease (Rust-side)**: load `files_touched` for all `in_progress` tasks in the sprint once. Normalise each entry to a key - bare string `p` -> `(primary, p)`; object `{repo,path}` -> `(repo, path)` (entries are heterogeneous, repo.rs:251/6149). A candidate conflicts iff its key-set intersects any in-progress key-set. Empty/absent files_touched = conservative WILDCARD: treat as conflicting with ALL in-progress tasks (skip it while any task is in progress) to avoid the unbounded-blast-radius collision noted in Risks. Pick the first non-conflicting candidate. Document the rule in T13."
+dedup_id = "42f5d4ef98279654"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T4: Implement `claim_next_task` (+ lazy reclaim, file-lease)"
+summary = "T4's acceptance omits the lazy-reclaim self-heal, the coarse leases.reclaimed export-inert event, and NULL-lane back-compat - the highest-risk paths ride only on T11/T12."
+description = "SC step 1's lazy reclaim is the entire 'no background reaper' claim, the coarse event is a declared invariant exception (Constraints), and 'NULL = invisible to claim' back-compat has no test; none are in T4's acceptance."
+anchor_old = "**Acceptance**: unit test — seeds a sprint with deps + an in-progress file-conflicting task; claim returns the correct next task and skips the conflict; second claim of an empty lane returns `None`. Effort: L"
+anchor_new = "**Acceptance**: unit test covering (a) deps + in-progress file-conflict skip; (b) empty lane -> `None`; (c) an expired-lease task is lazily reclaimed to todo/assignee=NULL and emits exactly one coarse `leases.reclaimed` export-inert event; (d) a legacy `lane IS NULL` task is NEVER returned by the claim (back-compat). Effort: L"
+dedup_id = "12544643c1e80c8f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "risk"
+plan_section = "#### T11: Claim concurrency test (the correctness gate)"
+summary = "Lease-expiry/reclaim cannot be tested by elapsing a 30-min TTL without violating the crate's no-sleep discipline - seed an already-past lease_expires_at or make now/ttl injectable."
+description = "Reclaim fires WHERE lease_expires_at < :now; jiff computes now internally. Waiting out a TTL is the exact flake the no-sleep rule forbids, and nextest runs binaries in parallel. Test by seeding a row whose lease_expires_at is already in the past (or pass lease_ttl_secs=0)."
+anchor_old = "**Action**: Mirror `tests/concurrency.rs` — N=8 agents call `claim_next_task` concurrently against an on-disk pool over a sprint of M tasks; assert each task is claimed at most once (distinct assignees, claims = min(N, ready M)), no `SQLITE_BUSY`."
+anchor_new = "**Action**: Mirror `tests/concurrency.rs` — N=8 agents call `claim_next_task` concurrently against an on-disk pool over a sprint of M tasks; assert each task is claimed at most once (distinct assignees, claims = min(N, ready M)), no `SQLITE_BUSY`. Test lazy-reclaim by SEEDING a row whose `lease_expires_at` is already in the past (NOT by elapsing a TTL - that violates the crate's no-sleep rule and is flaky under nextest); ensure `claim_next_task` accepts an injectable `now` or that `lease_ttl_secs=0` yields an immediately-reclaimable lease."
+dedup_id = "91b26235287181a2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "risk"
+plan_section = "### C. Claim / lease semantics (`repo.rs`)"
+summary = "The single-txn claim serializes ALL claimers on the SQLite writer lock and runs the Rust files_touched JSON scan inside that lock - correct but a throughput ceiling the plan never sizes."
+description = "Holding the writer lock across step-3's per-in-progress-row serde_json parse (repo.rs:6154) blocks every other claimer; fine at v1 scale (<=8 agents, small sprints) but a large in-progress set extends lock-hold. The deferred task_files denormalization removes the in-lock parse."
+anchor_old = "The SELECT→UPDATE in one `BEGIN IMMEDIATE` txn is race-free under SQLite's single writer — this is the property the agent-teams shared list cannot give."
+anchor_new = "The SELECT→UPDATE in one `BEGIN IMMEDIATE` txn is race-free under SQLite's single writer — this is the property the agent-teams shared list cannot give. Corollary: all claimers serialise on the writer lock, and the Rust file-overlap scan (step 3, which serde-parses files_touched per in-progress task - repo.rs:6154) runs INSIDE that lock, so keep step 3 cheap. The in-progress set is sprint-scoped/small in v1, but a large sprint extends lock-hold time; the deferred `task_files` denormalisation removes the in-lock JSON parse."
+dedup_id = "c42fefd497757058"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "risk"
+plan_section = "## Context"
+summary = "Agent-teams in-process teammates are NOT restored on /resume - only lumina rows survive; orphaned leases self-heal via TTL, so 'durable across /resume' oversells what the runtime delivers."
+description = "Per Claude Code agent-teams docs, /resume and /rewind do not restore in-process teammates (the lead may message teammates that no longer exist). lumina rows persist but the worker pool and SendMessage peers do not; orphaned leases linger until TTL expiry (30 min default). Temper the framing and size the TTL with resume-recovery latency in mind."
+anchor_old = "it is durable across `/resume`, race-free under SQLite's single-writer `BEGIN IMMEDIATE`"
+anchor_new = "its rows are durable across `/resume` (NOTE: agent-teams in-process teammates are NOT restored on /resume - the lead may message teammates that no longer exist; orphaned leases self-heal only after TTL expiry, so size the TTL with resume-recovery latency in mind), race-free under SQLite's single-writer `BEGIN IMMEDIATE`"
+dedup_id = "b673c0c83d431895"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "risk"
+plan_section = "## Constraints"
+summary = "The additive migration adds a self-FK (reviews_work_item_id) + a lane CHECK, which SQLite cannot cleanly DROP COLUMN - there is no rollback story; state that reverting 0013 is forward-fix-only."
+description = "SQLite ALTER TABLE DROP COLUMN refuses columns used by an FK/CHECK/index without a full table rebuild, so reverting 0013 is not a one-liner. Dev impact is low (lumina.db is gitignored/rebuilt), but the plan should say rollback = a new 0014 that neutralises the columns, never a down-migration or manual DROP."
+anchor_old = "- **Additive migration only** — forward-only, no down. Nullable columns per the ADD-COLUMN-REFERENCES rule (`lumina/migrations/0011_runs_sprints_findings_queue.sql:30-37`); FK columns take NULL default, CHECK columns must pass for existing rows (`lane IS NULL OR …`)."
+anchor_new = "- **Additive migration only** — forward-only, no down. Nullable columns per the ADD-COLUMN-REFERENCES rule (`lumina/migrations/0011_runs_sprints_findings_queue.sql:30-37`); FK columns take NULL default, CHECK columns must pass for existing rows (`lane IS NULL OR …`). Rollback is forward-fix-only: a self-FK column + CHECK cannot be cleanly `DROP COLUMN`-ed under SQLite, so reverting 0013 means a new 0014 that neutralises the columns - never a down-migration or manual DROP."
+dedup_id = "d01534bc2bd6eadc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T1: Add migration `0013_team_execution.sql`"
+summary = "T1's acceptance 'sqlx::query sees the four columns' names no test; pin it to a PRAGMA table_info assertion + a lane-CHECK rejection, and add an EXPLAIN QUERY PLAN index-usage check."
+description = "The second acceptance clause is unverifiable as written (no file, query, or assertion). Since SA calls the partial index 'for the claim hot path', verify usability with EXPLAIN QUERY PLAN (SEARCH not SCAN) so a future schema change can't silently regress the claim to a full scan."
+anchor_old = "**Acceptance**: `cargo build` triggers `db::init` migration run clean; `sqlx::query` against a fresh DB sees the four columns. Effort: S"
+anchor_new = "**Acceptance**: `cargo nextest run` drives the embedded-migration path (db::init) clean on a fresh DB; a unit test asserts `PRAGMA table_info(work_items)` includes `assignee`/`lease_expires_at`/`lane`/`reviews_work_item_id` and that the `lane` CHECK rejects an out-of-vocab value; `EXPLAIN QUERY PLAN` on the T4 candidate SELECT shows the `(lane, tier, status)` partial index is used (SEARCH, not SCAN). Effort: S"
+dedup_id = "49c700b8960d5553"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### T10: Add HTTP mirrors"
+summary = "Drop app.rs from T10's Files - /api nests the whole http::router() at app.rs:209, so registering execution needs only http/mod.rs (pub mod + .merge)."
+description = "build_router mounts via .nest('/api', crate::http::router()); families register by a mod decl + .merge in http/mod.rs. app.rs is not touched; listing it invites a phantom edit/conflict and weakens the T9-vs-T10 'different files' parallel claim."
+anchor_old = "**Files**: `lumina/src/http/execution.rs` (new), `lumina/src/http/mod.rs`, `lumina/src/app.rs` (if mount needs touching)"
+anchor_new = "**Files**: `lumina/src/http/execution.rs` (new), `lumina/src/http/mod.rs` (add `pub mod execution;` + `.merge(execution::router())`). app.rs is NOT touched - it nests the whole `http::router()` at app.rs:209."
+dedup_id = "c793ff1913874374"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### T13: Update docs & catalogue"
+summary = "T13 misses three stale count sites - '58-tool surface' comments at app.rs:216 and pty/ask.rs:20, and the 67-count breakdown comment at mcp.rs:3234-3242 (needs a +6 line)."
+description = "These don't break the build but perpetuate the doc-drift the plan's Risks section warns about; the count-invariant assertion's explanatory comment must gain a +6 team-execution line."
+anchor_old = "**Files**: `CLAUDE.md` (MCP surface count 67→73), `lumina/CLAUDE.md`"
+anchor_new = "**Files**: `CLAUDE.md` (MCP surface count 67→73), also refresh the stale `58-tool surface` comments at `app.rs:216` + `pty/ask.rs:20` and extend the count-breakdown comment at `mcp.rs:3234-3242` with a +6 team-execution line, `lumina/CLAUDE.md`"
+dedup_id = "a391c55ea97ce01f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### T8: Extend `record_finding_decision` SpawnTask for rework lane"
+summary = "T8's only logical dependency is T3 (lane column + row mapping); ordering after T4/T6 is just the repo.rs single-file serialization rule, not a data dependency on complete_task."
+description = "record_finding_decision (repo.rs:3741) is a standalone fn sharing no code with complete_task; gating T8 behind T6 conflates file-ordering with a data dependency and hides T8's real T3 dependency."
+anchor_old = "- **Blocked-by**: T6"
+anchor_new = "- **Blocked-by**: T3 (logical: needs the `lane` column + row mapping). Ordered after T4/T6 only by the repo.rs single-file serialisation rule, not by a data dependency on `complete_task`."
+dedup_id = "33fd8ac2734f71b0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T4: Implement `claim_next_task` (+ lazy reclaim, file-lease)"
+summary = "Effort-L T4 bundles five concerns at the head of the sequential chain; consider splitting lazy-reclaim into a prior task to de-risk the critical path."
+description = "The reclaim helper has no dependency on the file-lease logic and could land separately, letting the highest-risk primitive be reviewed in isolation."
+anchor_old = "**Action**: Per Approach §C — one `BEGIN IMMEDIATE` txn: lazy-reclaim expired, SQL candidate select (status/deps/lane/tier/not-blocked), Rust-side file-overlap skip, lease + `work_item.claimed` event; `Ok(None)` when none. Reuse `record_event` (`repo.rs:6440`) and the `attributes.files_touched` read path (`repo.rs:6154`)."
+anchor_new = "**Action**: Per Approach §C — one `BEGIN IMMEDIATE` txn: (1) lazy-reclaim expired leases as the first statement, emitting one coarse export-inert `leases.reclaimed` event ONLY when rows are reclaimed; (2) SQL candidate select (status/deps/lane/tier/not-blocked); (3) Rust-side file-overlap skip per the normalised-key rule (§C); (4) lease UPDATE + `work_item.claimed` event; `Ok(None)` when none. Reuse `record_event` (`repo.rs:6440`) and the `attributes.files_touched` read path (`repo.rs:6154`). Consider splitting step (1) into a prior task if the L estimate proves too large."
+dedup_id = "e4a401b2b79d0935"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "suggestion"
+category = "risk"
+plan_section = "### G. MCP + HTTP surface"
+summary = "Map the informal json_result/read_only_hint=true shorthand to rmcp's actual Json<T> wrapper + annotations(read_only_hint = true) so T9 doesn't chase a non-existent attribute name (the API is correct as intended)."
+description = "Verified against rmcp 1.7: read_only_hint is set via #[tool(annotations(read_only_hint = true))] and structured JSON output is the Json<T> wrapper (places the value in structured_content). The plan's intent is right; just pin the spelling."
+anchor_old = "`get_sprint_quiescence`, `list_open_questions_for_sprint` (read; `read_only_hint=true`, `json_result`)"
+anchor_new = "`get_sprint_quiescence`, `list_open_questions_for_sprint` (read; rmcp `#[tool(annotations(read_only_hint = true))]`, return `Json<T>` for structured_content)"
+dedup_id = "8e03180d58027700"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "The 'no SQLITE_BUSY' acceptance already holds via the pool's existing WAL + 5s busy_timeout (db.rs:32,79) - record the dependency so a future db.rs change can't silently break T11."
+description = "db.rs sets BUSY_TIMEOUT=5s (line 32, applied 75), WAL on on-disk pools (79), and BEGIN IMMEDIATE (351); tests/concurrency.rs relies on exactly this. The #1 risk is real in principle but already mitigated by in-tree config - name the dependency so it stays auditable."
+anchor_old = "Mitigated by the single `BEGIN IMMEDIATE` SELECT→UPDATE (SQLite single-writer) and T11's concurrency test. Do not split the select and update across txns."
+anchor_new = "Mitigated by the single `BEGIN IMMEDIATE` SELECT→UPDATE (SQLite single-writer) and T11's concurrency test, which relies on the pool's EXISTING WAL + 5s `busy_timeout` (db.rs:32,79) - the same mechanism `tests/concurrency.rs` uses. Do not split the select and update across txns, and do not weaken the WAL/busy_timeout config without updating T11."
+dedup_id = "048ad0928d1cdbac"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### E. Review → rework loop (existing primitives + small extension)"
+summary = "Note rework findings must be hosted on the STORY not the impl task - a task-hosted spawn_task aborts on the hierarchy trigger (0001_init.sql:74/94)."
+description = "The plan already says 'on the story' (correct); the failure mode (RAISE(ABORT) when spawn_task parents a task under a task) is worth surfacing so a reviewer doesn't host findings on the natural reviews_work_item_id target."
+anchor_old = "**Problems** → `add_findings` hosted **on the story** (so `record_finding_decision(spawn_task)` is legal — it spawns under the finding host via `create_work_item_full_tx`, and a task cannot parent a task)."
+anchor_new = "**Problems** → `add_findings` hosted **on the story** - NOT on the impl task (a task-hosted finding's `spawn_task` would parent a task under a task and fail with the hierarchy-trigger `RAISE(ABORT)` at 0001_init.sql:74/94). Hosting on the story lets `record_finding_decision(spawn_task)` create the rework task legally under the story."
+dedup_id = "9b98aecd79611b36"

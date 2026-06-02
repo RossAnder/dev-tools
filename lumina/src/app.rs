@@ -1,8 +1,9 @@
 //! Composition root — the SOLE owner of router and `AppState` assembly.
 //!
 //! `serve` reads config from the environment, builds the shared pool, wires the
-//! three builder seams (`http::router`, `mcp::service`, `assets::spa_fallback`)
-//! and the background export task (`export::spawn`), then runs the server.
+//! three builder seams (`http::router`, `mcp::service`, `assets::spa_fallback`),
+//! then runs the server. Git-export is operator-triggered via `POST /api/export`
+//! (the former 5-second background drain loop was removed) — see `export.rs`.
 //! Later waves fill in the seam bodies in their own module files and never edit
 //! this file, so Wave B/C parallelism is conflict-free.
 
@@ -129,12 +130,11 @@ pub async fn serve() -> anyhow::Result<()> {
     let supervisor = crate::pty::supervisor::spawn(pool.clone(), state.pty_registry.clone());
     state.pty_register_tx = Some(supervisor.register_tx());
 
-    // Kick off the background git-export materialiser before serving so no
-    // mutation's outbox row goes undrained while the server is up. Retain the
-    // handle so shutdown can stop the loop cleanly instead of relying on a
-    // process-exit kill.
-    let export_handle = crate::export::spawn(pool.clone());
-
+    // Git-export is operator-triggered, not continuous: the former 5-second
+    // background drain loop was removed in favour of the ad-hoc `POST
+    // /api/export` endpoint (`http::export`), which runs one `export_pending`
+    // pass on demand. Outbox rows simply accumulate until a drain is requested
+    // (the transactional-outbox recovery invariant means none are ever lost).
     let app = build_router(state);
 
     let port: u16 = parse_env_or_default("PORT", DEFAULT_PORT);
@@ -151,15 +151,10 @@ pub async fn serve() -> anyhow::Result<()> {
         .await
         .context("axum server error");
 
-    // Shutdown ordering: HTTP server has already drained above.
-    // 1. Stop the PTY supervisor (cancels the loop, awaits join) before the
-    //    export drain so any final `pty_sessions` updates the supervisor may
-    //    flush are picked up by the drain while the pool is still live.
+    // Shutdown ordering: HTTP server has already drained above. Stop the PTY
+    // supervisor (cancels the loop, awaits join). There is no export loop to
+    // stop — export is on-demand via `POST /api/export`.
     supervisor.shutdown().await;
-
-    // 2. Stop the export loop and await its join regardless of whether the
-    //    server exited cleanly — keeps the runtime free of orphaned tasks.
-    export_handle.shutdown().await;
 
     serve_result?;
     eprintln!("lumina shutdown complete");

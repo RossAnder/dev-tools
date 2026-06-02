@@ -21,5 +21,8 @@
       "PowerShell(cargo test *)",
       "PowerShell(bash scripts/verify-shared-blocks.sh 2>&1)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "lumina"
+  ]
 }

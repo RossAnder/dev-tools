@@ -1,0 +1,22 @@
+slug = "inherited-launching-wilkes"
+plan_path = "docs/plans/inherited-launching-wilkes.md"
+status = "draft"
+created = 2026-06-02
+updated = 2026-06-02
+branch = "main"
+scope = [
+    "lumina/web/src/components/**",
+    "lumina/web/src/composables/**",
+    "lumina/web/src/__tests__/**",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/inherited-launching-wilkes/review-ledger.toml"
+optimise_findings = ".claude/flows/inherited-launching-wilkes/optimise-findings.toml"
+execution_record = ".claude/flows/inherited-launching-wilkes/execution-record.toml"
+plan_review_findings = ".claude/flows/inherited-launching-wilkes/plan-review-findings.toml"

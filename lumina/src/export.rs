@@ -11,11 +11,12 @@
 //! re-drained. Export runs entirely OFF the API hot path — a mutation's HTTP /
 //! MCP response never waits on it.
 //!
-//! [`export_pending`] is the synchronous, directly-callable core (so tests and
-//! the e2e drive it without `sleep`). [`spawn`] is the background loop that
-//! ticks `export_pending` on an interval and selects on a
-//! [`CancellationToken`](tokio_util::sync::CancellationToken) for graceful
-//! shutdown.
+//! [`export_pending`] is the synchronous, directly-callable core — tests, the
+//! e2e, and the `POST /api/export` handler all drive it. Export is
+//! OPERATOR-TRIGGERED, not continuous: one request drains the outbox once and
+//! returns. There is no background loop (it was removed in favour of the ad-hoc
+//! endpoint). [`resolve_export_root`] picks the export root from
+//! `LUMINA_EXPORT_ROOT` (default `./.lumina/export`).
 //!
 //! # Shutdown / recovery invariant (P12)
 //!
@@ -23,8 +24,8 @@
 //! only stamps `exported_at` AFTER the atomic file write succeeds, and it does
 //! so per-event. If the process is killed at any point before the
 //! `UPDATE … SET exported_at` commits, the event's `exported_at` stays NULL, so
-//! it remains in the outbox and is re-drained on the next start (or the next
-//! tick). The file write is itself atomic (tempfile → fsync → rename), so a
+//! it remains in the outbox and is re-drained on the next manual drain. The
+//! file write is itself atomic (tempfile → fsync → rename), so a
 //! crash mid-write never leaves a torn snapshot in place — the worst case is a
 //! leftover temp file in the export dir, never a half-written `<id>.toml`. The
 //! render is idempotent (it re-materialises the work-item's current state), so
@@ -34,59 +35,21 @@
 //! left to the user / agent, consistent with the apply-flow contracts.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::Context as _;
 use sqlx::SqlitePool;
-use tokio_util::sync::CancellationToken;
 
-use crate::db::AnyPool;
 use crate::repo;
 
-/// Default export root, used by the background [`spawn`] loop when
+/// Default export root, used by [`resolve_export_root`] when
 /// `LUMINA_EXPORT_ROOT` is unset. Distinct from `.claude/` so the export dir
 /// never clashes with live `tomlctl` flow state during coexistence.
 const DEFAULT_EXPORT_ROOT: &str = "./.lumina/export";
 
-/// Env var overriding the [`spawn`] loop's export root. `export_pending` itself
-/// takes an explicit root for test / e2e isolation; only the background loop
-/// reads this.
+/// Env var overriding the export root. `export_pending` itself takes an explicit
+/// root for test / e2e isolation; the `POST /api/export` handler resolves the
+/// runtime root through [`resolve_export_root`].
 const EXPORT_ROOT_ENV: &str = "LUMINA_EXPORT_ROOT";
-
-/// How often the background loop drains the outbox.
-const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
-
-/// Handle returned by [`spawn`]: owns the [`CancellationToken`] that stops the
-/// loop and the [`JoinHandle`](tokio::task::JoinHandle) for the loop task. The
-/// composition root (`app.rs`) ignores the return value (`export::spawn(pool)`),
-/// so this is purely for callers that want graceful shutdown / join.
-///
-/// Dropping the handle does NOT cancel the loop — call [`ExportHandle::shutdown`]
-/// (or [`cancel`](ExportHandle::cancel)) for that. This keeps the
-/// fire-and-forget `app.rs` call site working: the loop outlives the dropped
-/// handle and keeps draining until the process exits.
-pub struct ExportHandle {
-    token: CancellationToken,
-    join: tokio::task::JoinHandle<()>,
-}
-
-impl ExportHandle {
-    /// Signal the loop to stop at its next `select!` point without waiting.
-    pub fn cancel(&self) {
-        self.token.cancel();
-    }
-
-    /// Signal the loop to stop and await its completion (graceful shutdown).
-    pub async fn shutdown(self) {
-        self.token.cancel();
-        let _ = self.join.await;
-    }
-
-    /// A child token, for callers wiring the loop into a wider shutdown tree.
-    pub fn token(&self) -> CancellationToken {
-        self.token.clone()
-    }
-}
 
 /// One unexported `events` row, as read by [`export_pending`]'s outbox SELECT.
 /// `payload` is the only nullable column (events without a JSON payload). The
@@ -262,13 +225,36 @@ async fn render_work_item(
     aggregate_id: &str,
     export_root: &Path,
 ) -> anyhow::Result<()> {
-    let detail = match repo::get_work_item_detail(pool, aggregate_id).await {
+    let mut detail = match repo::get_work_item_detail(pool, aggregate_id).await {
         Ok(d) => d,
         // A missing aggregate is not an error for the drain: skip the file,
         // let the caller stamp the event so the outbox advances.
         Err(crate::error::AppError::NotFound(_)) => return Ok(()),
         Err(e) => return Err(anyhow::Error::new(e)),
     };
+
+    // Strip nested JSON nulls from every `serde_json::Value` the whole-struct
+    // TOML serialize will touch: the item's `attributes`, each direct child's
+    // `attributes`, and each activity entry's `payload`. The `toml` serializer
+    // maps a `serde_json::Value::Null` to `serialize_unit`, which it REJECTS as
+    // "unsupported unit type" — so a stored attribute like a
+    // `verification_commands` object carrying `smoke: null` (an optional plan
+    // field that serialised to null) would otherwise wedge the drain. The Task-3
+    // setters only guarantee a null-free object *root*, not null-free *nested*
+    // values, so the drain defends the leaves here.
+    if let Some(attrs) = detail.item.attributes.as_mut() {
+        strip_json_nulls(attrs);
+    }
+    for child in detail.children.iter_mut() {
+        if let Some(attrs) = child.attributes.as_mut() {
+            strip_json_nulls(attrs);
+        }
+    }
+    for activity in detail.activity.iter_mut() {
+        if let Some(payload) = activity.payload.as_mut() {
+            strip_json_nulls(payload);
+        }
+    }
 
     let kind = detail.item.kind.clone();
     let dir = export_root.join(&kind);
@@ -296,6 +282,31 @@ async fn render_work_item(
         .with_context(|| format!("atomically writing {}", path.display()))?;
 
     Ok(())
+}
+
+/// Recursively drop `null` members from a JSON value so the `toml` serializer
+/// never sees a `serde_json::Value::Null` (which it maps to `serialize_unit` and
+/// rejects as "unsupported unit type"). Object entries whose value is `null` are
+/// removed; `null` elements inside arrays are removed; surviving nested
+/// objects / arrays are cleaned in place. Order among the surviving keys is
+/// preserved (a plain `retain`), so the export's tables-last key ordering is
+/// untouched — only the null leaves disappear.
+fn strip_json_nulls(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.retain(|_, v| !v.is_null());
+            for v in map.values_mut() {
+                strip_json_nulls(v);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            items.retain(|v| !v.is_null());
+            for v in items.iter_mut() {
+                strip_json_nulls(v);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Atomic tempfile → fsync → rename write, porting the proven `tomlctl/io.rs`
@@ -333,47 +344,14 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Resolve the background loop's export root from `LUMINA_EXPORT_ROOT`, falling
-/// back to [`DEFAULT_EXPORT_ROOT`].
-fn loop_export_root() -> PathBuf {
+/// Resolve the export root from `LUMINA_EXPORT_ROOT`, falling back to
+/// [`DEFAULT_EXPORT_ROOT`]. The `POST /api/export` handler calls this to locate
+/// the snapshot tree; `export_pending` itself takes an explicit root so tests /
+/// the e2e stay hermetic.
+pub fn resolve_export_root() -> PathBuf {
     std::env::var_os(EXPORT_ROOT_ENV)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_EXPORT_ROOT))
-}
-
-/// Spawn the background export loop. Drains the outbox on a [`TICK_INTERVAL`]
-/// tick and `select!`s the tick against a [`CancellationToken`] for graceful
-/// shutdown.
-///
-/// `app.rs` calls `export::spawn(pool.clone())` and discards the return value
-/// (fire-and-forget); the returned [`ExportHandle`] is for callers that want to
-/// drive a clean shutdown (e.g. the e2e / a future signal handler). A drain
-/// error is logged to stderr and the loop continues — a transient render or DB
-/// hiccup must not silently kill the materialiser, and the failing events stay
-/// in the outbox for the next tick (recovery invariant).
-pub fn spawn(pool: Arc<AnyPool>) -> ExportHandle {
-    let token = CancellationToken::new();
-    let loop_token = token.clone();
-    let root = loop_export_root();
-
-    let join = tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(TICK_INTERVAL);
-        loop {
-            tokio::select! {
-                // Stop promptly on shutdown; do NOT run a final drain — the
-                // outbox invariant means anything unexported re-drains on the
-                // next start, so a torn shutdown loses no events.
-                () = loop_token.cancelled() => break,
-                _ = ticker.tick() => {
-                    if let Err(e) = export_pending(pool.sqlite(), &root).await {
-                        eprintln!("lumina export: drain failed (events stay in outbox): {e:#}");
-                    }
-                }
-            }
-        }
-    });
-
-    ExportHandle { token, join }
 }
 
 #[cfg(test)]
@@ -690,37 +668,74 @@ mod tests {
         assert_eq!(bytes_before, bytes_after, "tombstone byte-identical after no-op drain");
     }
 
-    /// `spawn` returns a handle whose `shutdown` stops the loop cleanly. We
-    /// cannot use the paused test clock (the `tokio` `test-util` feature is not
-    /// enabled and the dependency set is out of this task's cluster), so this is
-    /// a structural smoke test: the loop's FIRST `interval` tick fires
-    /// immediately (tokio `interval` yields its first tick without delay), so a
-    /// brief real wait lets the loop drain once before we shut it down.
+    /// Regression: a stored `attributes` blob carrying a NESTED JSON `null`
+    /// (the exact shape `set_story_plan` persists when its optional
+    /// `verification_commands.smoke` is omitted — `Option::None` serialises to
+    /// `null`) must NOT wedge the drain. The `toml` serializer maps
+    /// `serde_json::Value::Null` → `serialize_unit`, which it rejects with
+    /// "unsupported unit type"; `render_work_item` strips nested nulls first, so
+    /// the snapshot renders with the null key simply absent.
     #[tokio::test]
-    async fn spawn_loop_drains_then_shuts_down() {
-        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+    async fn export_strips_nested_null_attributes() {
+        let pool = connect_in_memory().await.expect("pool");
         let dir = tempfile::tempdir().expect("tempdir");
-        // Point the loop at an isolated root via the env var.
-        // SAFETY: single-threaded test runtime, no concurrent env access.
-        unsafe { std::env::set_var(EXPORT_ROOT_ENV, dir.path()) };
 
-        let id = repo::create_work_item(&pool, "project", None, "Root", None)
+        // Legal chain down to a story (migration-0010: epic outcome +
+        // close-criterion, focus shape).
+        let project = repo::create_work_item(&pool, "project", None, "P", None)
             .await
-            .expect("create")
+            .unwrap()
+            .to_string();
+        let epic = repo::create_work_item_full(
+            &pool, "epic", Some(&project), "E", None,
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
+        )
+        .await
+        .unwrap()
+        .to_string();
+        repo::add_acceptance_criterion(&pool, &epic, "epic close criterion")
+            .await
+            .unwrap();
+        let focus = repo::create_work_item_full(
+            &pool, "focus", Some(&epic), "FO", None,
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+        )
+        .await
+        .unwrap()
+        .to_string();
+        let story = repo::create_work_item(&pool, "story", Some(&focus), "S", None)
+            .await
+            .unwrap()
             .to_string();
 
-        let handle = spawn(pool.clone());
+        // Attributes with a NESTED null nested inside `verification_commands`.
+        repo::set_work_item_attributes(
+            &pool,
+            &story,
+            &serde_json::json!({
+                "verification_commands": { "build": "cargo build", "smoke": null, "test": "cargo test" }
+            }),
+        )
+        .await
+        .expect("set attributes carrying a nested null");
 
-        // `interval` fires its first tick immediately, so a short real sleep is
-        // enough for the loop to drain the outbox once.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // The drain must SUCCEED (previously failed: "unsupported unit type").
+        let drained = export_pending(&pool, dir.path())
+            .await
+            .expect("drain succeeds despite the nested null");
+        assert!(drained > 0, "events drained");
 
-        handle.shutdown().await;
+        let path = dir.path().join("story").join(format!("{story}.toml"));
+        let raw = std::fs::read_to_string(&path).expect("read snapshot");
+        let parsed: toml::Value = toml::from_str(&raw).expect("parse snapshot TOML");
 
-        unsafe { std::env::remove_var(EXPORT_ROOT_ENV) };
-
-        let path = dir.path().join("project").join(format!("{id}.toml"));
-        assert!(path.exists(), "loop drained the outbox at {}", path.display());
+        let vc = &parsed["item"]["attributes"]["verification_commands"];
+        assert_eq!(vc["build"].as_str(), Some("cargo build"), "non-null keys survive");
+        assert_eq!(vc["test"].as_str(), Some("cargo test"));
+        assert!(
+            vc.get("smoke").is_none(),
+            "the nested null key is stripped from the rendered snapshot"
+        );
     }
 
     /// (Task 7, part 1) After adding a research note + an acceptance criterion +

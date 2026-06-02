@@ -32,6 +32,7 @@ pub mod activity;
 pub mod context_blocks;
 pub mod readiness;
 pub mod pty_sessions;
+pub mod export;
 
 /// Build the composed `/api` sub-router by merging every per-family router.
 /// The composition root in `app.rs` calls `.nest("/api", crate::http::router())`,
@@ -55,4 +56,5 @@ pub fn router() -> Router<AppState> {
         .merge(context_blocks::router())
         .merge(readiness::router())
         .merge(pty_sessions::router())
+        .merge(export::router())
 }

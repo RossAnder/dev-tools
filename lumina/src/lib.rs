@@ -11,9 +11,10 @@
 //! Every module is declared here up front so that later implementation waves
 //! fill in module bodies WITHOUT editing this file, `main.rs`, or `app.rs`.
 //! `app.rs` is the sole-owner composition root that wires the builder seams
-//! (`http::router`, `mcp::service`, `assets::spa_fallback`, `export::spawn`),
-//! so Tasks 4/5/6 implement those builders in their own module files and never
-//! touch the root. This is what makes the later waves parallelisable.
+//! (`http::router`, `mcp::service`, `assets::spa_fallback`), so Tasks 4/5/6
+//! implement those builders in their own module files and never touch the root.
+//! This is what makes the later waves parallelisable. (Git-export is driven
+//! on-demand through `POST /api/export`, not a background task.)
 
 pub mod app;
 pub mod cli;

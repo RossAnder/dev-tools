@@ -70,6 +70,21 @@ A final work-item status — completed (`done`) or abandoned (`cancelled`) — t
 **Target date** (not yet modelled in schema):
 An epic's optional, purely informational ship-date target; never policed or enforced. A domain concept only — no migration or `domain::WorkItem` field carries it yet.
 
+### Execution
+
+**Sprint**:
+A separately-composed execution session over a chosen subset of ready **Tasks** — the unit one implement **Team** works end to end. Multiple sprints may run concurrently within the same project/epic/focus/story; a sprint is **composed before it is queued** for execution, and is the scope within which file-edit collisions are avoided (cross-sprint isolation is physical — see Worktree under Flagged ambiguities).
+_Avoid_: iteration; milestone (a sprint is a sizing/execution unit, never a dated release).
+
+**Composition** (sprint composition):
+The up-front, human- or agent-driven act of choosing which ready tasks enter a **Sprint** and how big the sprint is. Computed task batches are *suggestions* offered to the composer (a quick-add aid), never an imposed schedule — the human controls sprint sizing (a slice of a plan, or the whole thing).
+
+**Team**:
+The pool of implement/review agents assigned to exactly one **Sprint**, its member mix chosen to suit that sprint's task types. Agents *draw* the next ready task from their sprint rather than being assigned individual tasks up front.
+
+**File scope** (advisory):
+The best-effort set of files a **Task** expects to touch — a *caution* signal for collision, never a hard constraint. It informs **Composition** and is surfaced as a prima-facie overlap warning while a sprint runs, but the implementation may legitimately touch files beyond it, so it encourages caution without ever restricting which task an agent may take.
+
 ## Relationships
 
 - A **Project** contains one or more **Epics**.
@@ -91,5 +106,6 @@ An epic's optional, purely informational ship-date target; never policed or enfo
 - **"Feature" → "Focus".** The level was renamed: the agile "feature = releasable increment" meaning is explicitly NOT adopted. A focus has no intrinsic deliverable; the closeable deliverable is the **Epic**.
 - **Three "kind-ish" concepts kept distinct.** `kind` = hierarchy level (project…task); `task_kind` = a task's phase disposition (`foundation|main|polish`); **Shape** = a focus's vertical/cross-cutting/foundational axis. The focus axis is named `shape` precisely to avoid a third `*_kind`.
 - **Vertical-slice/cross-cutting at two scales.** The same axis describes a coarse focus and a fine intra-story task-subset; same vocabulary, separate storage — not distinct concepts, not one shared table.
-- **File overlap is not a carving signal.** `files_touched` overlap drives parallel-execution collision avoidance and sprint composition, not focus boundaries; carving is intent/shape only.
+- **File overlap is not a carving signal — and is advisory, not a gate.** `files_touched` overlap is a best-effort *caution* signal that informs sprint composition and intra-sprint collision *awareness*, not focus boundaries; carving is intent/shape only. It is never a hard constraint: file scope is best-effort (implementation routinely touches files outside the declared set), so the queue surfaces overlap as a prima-facie caution and never blocks a claim on it.
+- **Worktree = the inter-sprint isolation boundary (a consumer concern).** Each **Sprint**/**Team** runs in its own git worktree, so file-edit conflicts are reckoned only *within* a sprint; reconciling across concurrently-running sprints is a worktree *merge*, performed by a (deferred) overseer agent — never by lumina. lumina's queue stays worktree-agnostic: being **Sprint**-scoped, it is already correct for any number of concurrent worktree-isolated sprints. Whether lumina should *record* the sprint→worktree binding (for the overseer to locate) is an open follow-up.
 - **Milestone is not an entity.** A coordinated multi-epic dated release is not modelled — epics close independently and the date is an informational `target_date` on the epic (a domain concept not yet modelled in schema). A genuine gating case would become an orthogonal tag, never a tree level.

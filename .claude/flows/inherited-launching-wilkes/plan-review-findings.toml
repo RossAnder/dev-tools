@@ -1,0 +1,270 @@
+schema_version = 1
+last_updated = 2026-06-02
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "executability"
+plan_section = "## Dependency Graph"
+summary = "W2 declares {T7,T8} parallel but both write FocusLens.vue — same-file collision"
+description = "T7 (line 151) and T8 (line 157) both list FocusLens.vue in Files; the plan's own Risk note (line 222) says to serialise FocusLens edits, contradicting the W2 parallel batch. Also change T8 Depends-on (line 158) T6->T7 and the graph line (203) to T6 -- T7 -- T8 -- T9. [merged: feasibility-F6 + executability-F1]"
+anchor_old = "**W2**: {T7, T8} then {T9}"
+anchor_new = "**W2**: {T7} then {T8} then {T9}"
+dedup_id = "6c61277d4ed19fba"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "### Editing-control mapping (Q2)"
+summary = "Plan names API-layer mutators (setStoryPlan/...) — composables expose them as apply"
+description = "setStoryPlan/setEpicPlan/setFocusPlan/setTaskSpec are API fns in api/structured-patches.ts; the composables wrap them as apply (useStoryPlan.ts:121, useTaskSpec.ts; useEpicPlan/useFocusPlan via makePlanComposable). An implementer writing useStoryPlan().setStoryPlan(...) hits undefined. Affects every long-form edit path in T7/T10/T11."
+anchor_old = "`setStoryPlan`/`setEpicPlan`/`setFocusPlan`/`setTaskSpec`"
+anchor_new = "`useStoryPlan().apply`/`useEpicPlan().apply`/`useFocusPlan().apply`/`useTaskSpec().apply` (the API fns `setStoryPlan`/`setEpicPlan`/`setFocusPlan`/`setTaskSpec` are exposed on each composable as `apply`)"
+dedup_id = "e30fab7aaaa2b75f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "completeness"
+plan_section = "### Component architecture"
+summary = "'mutations already call useHierarchy().refresh(id)' is FALSE for useScalars"
+description = "useScalars.ts:17-22 header documents the OPPOSITE: setters do NOT refresh; they return the re-fetched WorkItem for the caller to fold into useHierarchy().detail. useFindings.ts:128/154/180/206 DO call refresh. The EnumSwitch/scalar path (T7: 'switch a focus shape -> persists') needs explicit fold-back or the UI won't re-render after an enum change."
+anchor_old = "mutations already call `useHierarchy().refresh(id)` so panels must **not** add redundant refetches."
+anchor_new = "refresh contracts DIFFER per composable: list composables (`useFindings`, `useResearchNotes`, `useRisks`, `useRejectedAlternatives`, `useAcceptanceCriteria`, `useEpicPlan`/`useFocusPlan`) DO call `useHierarchy().refresh(id)` internally, so panels must NOT re-refetch after them — but `useScalars.*` setters deliberately do NOT refresh; they return the re-fetched `WorkItem` for the caller to fold into `useHierarchy().detail`. The OverviewPanel (T7) enum/scalar edit path MUST fold the scalar result back into `detail`, or header chips / Overview Properties won't re-render after an enum change."
+dedup_id = "2f5bb6e16823f7a5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "executability"
+plan_section = "#### T12: ActivityPanel (all kinds)"
+summary = "T12 Action edits FocusLens.vue:333-355 but its Files list omits FocusLens.vue"
+description = """T12 Action (line 185) says it 'replaces the inline context-blocks section in FocusLens' — verified at FocusLens.vue:333-355 (a `<section v-if="contextBlocks.length > 0">`). Files (line 183) names only ActivityPanel.vue. An agent following Files literally leaves the inline section, double-rendering context blocks; build-clean cannot catch this."""
+anchor_old = "- **Files**: `lumina/web/src/components/panels/ActivityPanel.vue`"
+anchor_new = "- **Files**: `lumina/web/src/components/panels/ActivityPanel.vue`, `lumina/web/src/components/FocusLens.vue` (remove the inline context-blocks `<section>` at `FocusLens.vue:333-355`)"
+dedup_id = "c12bca569ff68a96"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Context"
+summary = "'imported by zero components' overstates the gap — 5 composables already wired"
+description = "FocusLens.vue:7-11 mounts RepoLinksPanel/ShapeEditor/OutcomeEditor/FramingEditor/EpicCloseCriteriaPanel, which import useRepoLinks/useScalars/useEpicPlan/useFocusPlan/useAcceptanceCriteria. Those five are already wired; the work re-homes them, not first-wires them. Harmless to build but wrong about the starting state."
+anchor_old = "The rich composables (`useStoryPlan`, `useResearchNotes`, `useRisks`, `useOpenQuestions`, `useRejectedAlternatives`, `useTaskSpec`, `useFindings`, `useReadiness`, `useDispatchPlan`, …) are imported by **zero** components."
+anchor_new = "The deep planning composables (`useStoryPlan`, `useResearchNotes`, `useRisks`, `useOpenQuestions`, `useRejectedAlternatives`, `useTaskSpec`, `useFindings`, `useReadiness`, `useDispatchPlan`, `useTaskDependencies`, `useActivity`, `useContextBlocks`) are imported by **zero** components; only `useScalars`/`useRepoLinks`/`useEpicPlan`/`useFocusPlan`/`useAcceptanceCriteria` are wired today, via the five inline editors `FocusLens` mounts (`FocusLens.vue:7-11`)."
+dedup_id = "c0434ddf2d732cbe"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### T13: ExecutionSection + App wiring"
+summary = "useTaskDependencies has no computeTaskBatches method"
+description = "useTaskDependencies.ts:277-279 returns refreshBatches/addEdge/removeEdge (plus bind, cycleError). computeTaskBatches is the injected API dep (lines 61/67/86), not a returned method. The capability exists — only the method name is wrong; cycle residue is carried by cycleError."
+anchor_old = "task batches/dependencies (`useTaskDependencies`: `computeTaskBatches`, list, add/remove with cycle-envelope handling)"
+anchor_new = "task batches/dependencies (`useTaskDependencies`: `refreshBatches`, `bind`, `addEdge`/`removeEdge` with cycle-envelope handling via the `cycleError` ref)"
+dedup_id = "8eccdd6a8269c4b8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### T3: Tab-state composable (sessionStorage)"
+summary = "sessionStorage storage seam has no precedent — repo idiom is __setApiForTests/__resetForTests"
+description = "grep for sessionStorage|localStorage|__setStorageForTests across lumina/web/src returns 0 matches. No composable touches Web Storage today. The established seam is __setApiForTests + __resetForTests (useScalars.ts:12-15). 'per the repo's idiom' misdescribes a net-new pattern."
+anchor_old = "Expose a storage seam (`__setStorageForTests`) per the repo's test idiom."
+anchor_new = "Expose a storage seam (`__setStorageForTests`, injecting a `Storage`-shaped object) plus a `__resetForTests` companion, modelled on the repo's `__setApiForTests`/`__resetForTests` idiom — no Web Storage is used anywhere today, so this is the first such seam (copy the api-seam shape)."
+dedup_id = "6e53655fa7b6e080"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope"
+summary = "migration-0011 Part-B surface has no frontend composable — Scope/Context overclaim"
+description = "grep finds no useFindingQueue/useSprint/useRun/createSprint/createRun composable. The Part-B HTTP/MCP surface (runs, sprints, finding-decisions, finding-queue, batch-write, query) has zero frontend composable. Correctly out of scope here, but the Context claim that the composable layer is 'complete' is false for that surface."
+anchor_old = "The deferred right-column (sprint composer, agent stream) and the `tree`/`pty` views."
+anchor_new = 'The deferred right-column (sprint composer, agent stream) and the `tree`/`pty` views. NOTE: the migration-0011 Part-B surface (runs, sprints, finding-decisions/triage, finding-queue, batch-write, query) has NO frontend composable yet — correctly out of scope here, but the Context claim that the composable layer is "complete" is false for it; a later finding-triage affordance would need a `useFindingQueue`/`useFindingDecision` composable built first (a backend-adjacent task this plan excludes).'
+dedup_id = "ed75c8925081bc86"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "completeness"
+plan_section = "## Verification"
+summary = "Retirement grep gate will hit doc-comment refs in tokens.css/PtyConsole/PtyMessage"
+description = "grep finds RepoLinksPanel etc. name-dropped as a layout/Vapor exemplar in assets/tokens.css:24, PtyConsole.vue, PtyMessage.vue (and the four sibling editors, which self-delete). The line-216 gate is scoped to lumina/web/src so it WILL catch these dead doc-comments and fail the 'no references' assertion. T9/T11 must scrub them or the gate must scope to imports/templates."
+anchor_old = '`rg "OutcomeEditor|ShapeEditor|FramingEditor|RepoLinksPanel|EpicCloseCriteriaPanel" lumina/web/src` returns no references (all migrated/retired).'
+anchor_new = '`rg "OutcomeEditor|ShapeEditor|FramingEditor|RepoLinksPanel|EpicCloseCriteriaPanel" lumina/web/src` returns no references in imports/templates. NOTE: `RepoLinksPanel` is name-dropped as a layout/Vapor-convention exemplar in doc-comments of `assets/tokens.css:24`, `PtyConsole.vue`, `PtyMessage.vue` — T9/T11 must also scrub or re-point these, or the gate fails on dead prose rather than live references.'
+dedup_id = "496abb27f7225704"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "completeness"
+plan_section = "### Component architecture"
+summary = "Panels need watch(entityId)->bind; useTabState reset on node/kind change unspecified"
+description = "List composables expose bind(itemId) that panels must call on mount and entity change (useFindings.ts:101-120; OutcomeEditor.vue:29 watch(itemId) idiom). The 'thin panels, no new data logic' framing omits this. Also: when the selected node changes kind, useTabState must re-validate the stored tab against the new kind's tabsForKind (a story decisions tab is invalid for a task)."
+anchor_old = "each reuses the existing composables (no new data logic) and the primitives above."
+anchor_new = "each reuses the existing composables (no new data logic) and the primitives above. Each panel MUST `watch(entityId, { immediate: true })` and call the composable's `bind(itemId)` seeder — module-singleton state is not auto-keyed to the focused node (see `useFindings.bind`, and the `RepoLinksPanel`/`OutcomeEditor` onMounted+watch(itemId) idiom). When the selected node changes kind, `useTabState` must re-validate the stored tab id against the new kind's `tabsForKind` set (a story's `decisions`/`quality` tab is invalid for a task) and fall back to `overview`."
+dedup_id = "956d20455f2c0f54"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "executability"
+plan_section = "#### T11: QualityPanel + acceptance-criteria migration"
+summary = "T11 bundles 5 collections + epic-migration + a delete; acceptance has typo 'edth'"
+description = "T11 wires useRisks+useFindings+useAcceptanceCriteria+useReadiness, absorbs EpicCloseCriteriaPanel, registers two kinds, and deletes a component — far heavier than single-concern T1/T2/T3. Recommend splitting into T11a (QualityPanel: risks+findings+readiness) and T11b (acceptance-criteria + absorb+delete EpicCloseCriteriaPanel, with a grep-gate acceptance like T9). The anchor fixes the 'edth' typo."
+anchor_old = "manual: story Quality tab shows/edth risks, findings, acceptance criteria"
+anchor_new = "manual: story Quality tab shows/edits risks, findings, acceptance criteria"
+dedup_id = "389f8021bb826c2d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "executability"
+plan_section = "#### T7: Make OverviewPanel editable + migrate epic/focus editors"
+summary = "Editing tasks (T7,T10,T11,T12,T13) have only manual acceptance, no machine gate"
+description = "Per Q4, .vue is build+manual-smoke only (bun has no Vue compiler). But npm run build only proves type-check+bundle, not that a panel renders the right fields or fires the right mutation; an autonomous agent has no browser. Recommend pushing branching/shaping logic into bun-tested pure helpers (e.g. overviewFieldsForKind(kind), controlForFieldShape(...)) or adding per-task grep gates (e.g. T12: rg context-blocks FocusLens.vue returns nothing). Advisory — no anchor."
+dedup_id = "09d807c1a893ac1e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "executability"
+plan_section = "#### T6: TextFieldModal + read-only OverviewPanel + FocusLens integration"
+summary = "T6 tabId->component map location and value type under-specified"
+description = "T6 says render via a tabId->component map but doesn't state its home (implied FocusLens, line 78) or value type (raw vs markRaw vs defineAsyncComponent) — material in Vapor. The per-kind field reads ARE grounded (useHierarchy().detail; FocusLens attrString/focusShape/epicOutcome computeds) — note that so the executor reuses them."
+anchor_old = "from a `tabId→component` map (only `OverviewPanel` wired this wave;"
+anchor_new = "from a `tabId→component` map held in `FocusLens.vue` (value type: a `markRaw`-wrapped component reference, matching the Vapor idiom; reuse FocusLens's existing `attrString`/`focusShape`/`epicOutcome` computeds for the read-only field values; only `OverviewPanel` wired this wave;"
+dedup_id = "11d9ca7c53331c91"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "risk"
+plan_section = "## Research Notes"
+summary = "'Parity except Suspense' is a blanket claim, not an itemized guarantee for the 3 features"
+description = "vuejs/core v3.6.0-beta.1 release notes (grade H) make a blanket 'feature parity except Suspense' statement and do NOT itemize <component :is>/KeepAlive/Transition by name; they also exclude Options API, app.config.globalProperties, getCurrentInstance() (null), @vue:xxx hooks (none used here). The approach survives because it routes around KeepAlive, but the [H] itemization overstates the source."
+anchor_old = "only `Suspense` is excluded (a Vapor child may still render inside a VDOM `<Suspense>`)."
+anchor_new = "the 3.6.0-beta.1 notes make a *blanket* parity claim, not an itemized guarantee — `Suspense` is excluded (a Vapor child may still render inside a VDOM `<Suspense>`), and the notes also exclude the Options API, `app.config.globalProperties`, `getCurrentInstance()` (returns null), and `@vue:xxx` per-element hooks (none used here — all panels are `<script setup>` + composables). `<component :is>`/`KeepAlive`/`Transition` are implied by parity, not named, so treat the itemization as [M]."
+dedup_id = "32f9874602b3d7e3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Beta-pin churn under-weighted — 3.6.0-beta.13 is officially 'unstable'"
+description = "Release notes (grade H) state Vapor is 'feature-complete in 3.6 beta but still considered unstable'; the pin is beta.13 (package.json:18) so the API has already churned. The [M] Vapor risk frames it narrowly around KeepAlive but the substrate itself is unstable — compiler output/vapor SFC semantics can shift at the 3.6.0 stable cut."
+anchor_old = "**[M] Vapor beta capability drift.** Tab mounting relies on `<component :is>` in Vapor (parity per beta.1) but `KeepAlive` specifics are M-grade. *Mitigation:* design depends only on `v-if` + composable-held state (no `KeepAlive`); smoke-test before adopting `KeepAlive` as optional polish."
+anchor_new = '**[M] Vapor beta capability drift.** Tab mounting relies on `<component :is>` in Vapor (blanket parity claim per beta.1; not individually itemized) and `KeepAlive` specifics are M-grade. Vue 3.6 Vapor is officially "still considered unstable" and the pin is already at *beta.13*, so compiler output and `vapor` SFC semantics can shift between betas and again at the 3.6.0 stable cut. *Mitigation:* design depends only on `v-if` + composable-held state (no `KeepAlive`); keep the exact pin (no `^`/`~` — already in place); re-smoke the tab shell on ANY Vue bump, treating a beta→beta or beta→stable bump as a deliberate, separately-verified change.'
+dedup_id = "17bc1d53e8d2104d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "warning"
+category = "risk"
+plan_section = "## Scope"
+summary = "Wave 3 effort under-stated — T11/T12 carry migration edits beyond their file count"
+description = "W3 {T10,T11,T12} runs as one batch; counting composables, T10 wires 3 collections, T11 wires 4 + absorbs+deletes EpicCloseCriteriaPanel, T12 wires 2 + edits FocusLens to retire the inline context-blocks section. The '<=6 files per batch' framing undercounts the migration/retirement edits, whose regression surface (no component tests) is the plan's largest."
+anchor_old = "**Estimated file count:** ~20 unique files across 4 waves."
+anchor_new = "**Estimated file count:** ~20 unique files across 4 waves. Wave 3 ({T10,T11,T12}) is the heaviest: although each is one new `.vue` file, T11 also migrates+deletes `EpicCloseCriteriaPanel` and T12 also edits `FocusLens` to retire its inline context-blocks section — treat T11/T12 as TWO-file edits each, with behaviour-preservation (migration-regression) obligations that build-clean cannot verify."
+dedup_id = "deb38260e6322ed7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### Editing-control mapping (Q2)"
+summary = "'EnumSwitch generalises ShapeEditor' overstates reuse"
+description = "ShapeEditor takes shape as a prop and owns its own useScalars().setShape + useHierarchy().refresh (ShapeEditor.vue:37-42); EnumSwitch (T5) is a dumb controlled options/modelValue input. Migrating ShapeEditor into EnumSwitch means relocating the setShape+fold-back logic up into OverviewPanel (which the architecture supports) — not a rename. The active-state classes the plan hardcodes for TabStrip (T4) DO exist verbatim at ShapeEditor.vue:62. Advisory — no anchor."
+dedup_id = "e86ab5a6ae759280"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Component architecture"
+summary = "tabId->component map has branching/fallback logic but is left untested (Q4 wants pure logic tested)"
+description = "The plan locates the tabId->panel map inside FocusLens.vue, so it is Q4-exempt from bun-test — but it carries the live id->component dispatch plus the 'coming soon' stub fallback for unwired ids during Waves 1-3, exactly the branching Q4 wants in a pure module. Suggest extracting the resolver to composables/panelComponentMap.ts with a test, leaving FocusLens to only mount the resolved component."
+anchor_old = "`FocusLens` holds a small `tabId → panel component` map."
+anchor_new = "`FocusLens` resolves the active panel via a pure `composables/panelComponentMap.ts` resolver (bun-tested, including the unwired-id 'coming soon' fallback), and only mounts the resolved component."
+dedup_id = "547ea3786c908058"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T5: Modal + UI primitives + editable-element wrapper"
+summary = "T5 EnumSwitch options element-shape and EditableElement value contract unspecified"
+description = "EnumSwitch options element shape (bare string vs {value,label}) and the emit event name are open; three later waves (T7 scalars, T10 note-state, T11 severity) depend on the contract. EditableElement's value-display path (prop vs slot) and label source are also unspecified. Pin them so consumers don't re-negotiate."
+anchor_old = "`EnumSwitch.vue` = segmented control (props: `options`, `modelValue`; emit on select; no-op guard on unchanged)"
+anchor_new = "`EnumSwitch.vue` = segmented control (props: `options: { value: string; label: string }[]`, `modelValue: string`; emit `update:modelValue` on select; no-op guard on unchanged). `EditableElement` renders `label` (prop) + value (default slot); the edit affordance mounts in the default slot, the empty `#agent-action` slot trails"
+dedup_id = "3799d26b6f7275d3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Native <dialog> focus-restore rationale is slightly wrong — restores to element focused at showModal() time"
+description = "Per the HTML spec + APG (grade H), close() DOES restore focus, but to the element focused when showModal() ran — not always the intended trigger. In this app a list-row edit trigger can be re-keyed by the useHierarchy().refresh(id) a mutation fires (line 86), so the recorded element may be stale on close — exactly when defensive capture-and-restore matters. The plan's mitigation is correct; only the cause statement needs sharpening."
+anchor_old = "**[L] Native `<dialog>` focus-restore.** Programmatic `close()` doesn't always restore focus. *Mitigation:* capture the trigger element and restore defensively in `Modal.vue` (per Research Notes)."
+anchor_new = "**[L] Native `<dialog>` focus-restore.** The browser restores focus to the element focused when `showModal()` ran — not always the intended trigger (e.g. a list-row button later re-keyed by the `useHierarchy().refresh(id)` a mutation fires). *Mitigation:* capture the trigger explicitly at open time and restore it defensively in `Modal.vue` after `close()`; the APG assigns focus-restore to the author, so this defensive restore is correct, not redundant."
+dedup_id = "c9bd1e24088e049a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Research Notes"
+summary = "Modal aria note: role=dialog/aria-modal are implicit via showModal() — confirm in T5 smoke"
+description = "APG (grade H) lists role=dialog + aria-modal=true + a label as required; the plan wires only aria-labelledby. A native <dialog> opened with showModal() carries an implicit dialog role + top-layer modality, so explicit aria-modal is generally unnecessary (and some guidance discourages it). No anchor change — just confirm during T5 smoke that a screen reader announces the modal as a dialog. Advisory."
+dedup_id = "4e882eca51dab367"

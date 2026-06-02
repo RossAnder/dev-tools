@@ -272,3 +272,36 @@ scope = [
     "CLAUDE.md",
     "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
 ]
+
+[[active]]
+slug = "eventual-leaping-metcalfe"
+last_used = "2026-06-02T09:32:24.1843451Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/repo.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/domain.rs",
+    "lumina/src/http/**",
+    "lumina/src/app.rs",
+    "lumina/tests/**",
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+
+[[active]]
+slug = "inherited-launching-wilkes"
+last_used = "2026-06-02T10:28:40.7314096Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/web/src/components/**",
+    "lumina/web/src/composables/**",
+    "lumina/web/src/__tests__/**",
+]

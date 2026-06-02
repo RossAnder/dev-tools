@@ -209,6 +209,12 @@ The HTTP mirrors of the migration-0011 Part-B MCP tools. Each delegates to the s
 - `GET /work-items/{story_id}/readiness`      → `repo::get_story_readiness` (the `StoryReadiness` aggregate driving `/lumina:next-block` / `/lumina:plan-story`).
 - `GET /work-items/{story_id}/dispatch-plan`  → `repo::get_task_dispatch_plan` (`Vec<Vec<BatchEntry>>` waves; cycle → 422 envelope).
 
+### Git-export trigger (`http/export.rs`)
+
+Export is OPERATOR-TRIGGERED, not continuous. The former 5-second background drain loop (`export::spawn` / `ExportHandle`) was removed — `app::serve` no longer spawns it. Outbox rows accumulate until a drain is requested; the transactional-outbox recovery invariant means none are ever lost in the meantime.
+
+- `POST /export`  → `export::export_pending` (one drain pass over the events outbox; writes per-item TOML snapshots under the resolved root and stamps `exported_at`; idempotent — an empty outbox drains 0; → `{ drained, export_root }`). The root resolves from `LUMINA_EXPORT_ROOT` (default `./.lumina/export`) via `export::resolve_export_root`. Render/DB failure → 500; the failing events stay un-stamped for the next request. `export::export_pending` remains the directly-callable core the e2e drives without a socket bind.
+
 ### PTY sessions (`http/pty_sessions.rs`, migration 0008, T9)
 
 - `GET    /api/pty/sessions`               → `repo::pty::list_pty_sessions`.

@@ -1,0 +1,29 @@
+slug = "eventual-leaping-metcalfe"
+plan_path = "docs/plans/eventual-leaping-metcalfe.md"
+status = "draft"
+created = 2026-06-02
+updated = 2026-06-02
+branch = "main"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/repo.rs",
+    "lumina/src/mcp.rs",
+    "lumina/src/domain.rs",
+    "lumina/src/http/**",
+    "lumina/src/app.rs",
+    "lumina/tests/**",
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/eventual-leaping-metcalfe/review-ledger.toml"
+optimise_findings = ".claude/flows/eventual-leaping-metcalfe/optimise-findings.toml"
+execution_record = ".claude/flows/eventual-leaping-metcalfe/execution-record.toml"
+plan_review_findings = ".claude/flows/eventual-leaping-metcalfe/plan-review-findings.toml"
