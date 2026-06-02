@@ -111,7 +111,10 @@ export function useTabState(
 ): { activeTab: Ref<TabId>; setActiveTab(id: TabId): void } {
   const key = storageKey(entityId)
 
-  const fallback: TabId = validTabIds.length > 0 ? validTabIds[0] : 'overview'
+  // `validTabIds[0]` is `TabId | undefined` under `noUncheckedIndexedAccess`
+  // even behind a `.length` guard (TS doesn't narrow indexed access that way),
+  // so coalesce to the universal first tab to keep the result a strict `TabId`.
+  const fallback: TabId = validTabIds[0] ?? 'overview'
 
   const stored = storage.getItem(key)
   const resolved: TabId =
