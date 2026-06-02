@@ -55,6 +55,7 @@ import { useScalars } from '@/composables/useScalars'
 import EditableElement from '@/components/ui/EditableElement.vue'
 import EnumSwitch from '@/components/ui/EnumSwitch.vue'
 import TextFieldModal from '@/components/ui/TextFieldModal.vue'
+import AcceptanceCriteriaSection from '@/components/AcceptanceCriteriaSection.vue'
 import {
   RelevanceSchema,
   ClosureGateSchema,
@@ -420,6 +421,16 @@ const propLabelClass = 'font-mono text-[10.5px] tracking-[0.16em] text-[var(--fa
           />
         </div>
       </EditableElement>
+      <!--
+        Epic close-criteria — migrated from the former standalone epic
+        close-criteria panel (retired in T11b). Epics have NO Quality tab, so
+        their close-criteria (which are the kind-agnostic acceptance criteria at
+        the API) render here in the Overview tab via the shared
+        AcceptanceCriteriaSection, titled "Close Criteria".
+      -->
+      <div class="py-2">
+        <AcceptanceCriteriaSection :item-id="itemId" :kind="kind" title="Close Criteria" />
+      </div>
     </template>
 
     <!-- focus: shape + framing + Properties(relevance + shape segmented) -->

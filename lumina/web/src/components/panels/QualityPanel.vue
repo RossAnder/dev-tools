@@ -23,11 +23,11 @@
   after a mutation — it only re-seeds on focus change. `useReadiness` is
   read-only (no mutators) and is re-fetched only by the bind watch.
 
-  Scope boundary (T11a): risks + findings + readiness ONLY. Acceptance-criteria
-  rendering + the EpicCloseCriteriaPanel migration are a SEPARATE later task
-  (T11b) that ADDS an acceptance-criteria <section> to THIS file. The section
-  layout below leaves a clean slot for that addition — do NOT implement
-  acceptance criteria here.
+  Acceptance criteria (T11b): rendered for story AND task via the shared
+  `AcceptanceCriteriaSection` sub-component (the same editor an epic mounts in
+  its Overview tab as "Close Criteria"). The sub-component owns its own
+  bind/add/check/uncheck/remove against `useAcceptanceCriteria` — this panel
+  only mounts it with the `{ itemId, kind }` contract.
 
   Vapor mode, inline Tailwind over var(--*) tokens, no <style scoped>.
 -->
@@ -40,6 +40,7 @@ import EditableElement from '@/components/ui/EditableElement.vue'
 import EnumSwitch from '@/components/ui/EnumSwitch.vue'
 import TextFieldModal from '@/components/ui/TextFieldModal.vue'
 import ConfirmButton from '@/components/ui/ConfirmButton.vue'
+import AcceptanceCriteriaSection from '@/components/AcceptanceCriteriaSection.vue'
 import { RiskSeveritySchema, SeveritySchema } from '@/api'
 import type { Kind, Risk, Finding, RiskSeverity, Severity } from '@/api'
 
@@ -352,6 +353,11 @@ const inputClass =
         {{ findings.error.value }}
       </p>
     </section>
+
+    <!-- ===================================================================
+         ACCEPTANCE CRITERIA (story AND task) — shared editor sub-component
+         =================================================================== -->
+    <AcceptanceCriteriaSection :item-id="itemId" :kind="kind" />
 
     <!-- ===================================================================
          READINESS (story only) — READ-ONLY verdict block

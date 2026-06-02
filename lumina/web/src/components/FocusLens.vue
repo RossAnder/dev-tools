@@ -4,7 +4,6 @@ import { useHierarchy } from '@/composables/useHierarchy'
 import { kindLabel } from '@/composables/useDisplay'
 import StatusPill from '@/components/StatusPill.vue'
 import CopyIdButton from '@/components/CopyIdButton.vue'
-import EpicCloseCriteriaPanel from '@/components/EpicCloseCriteriaPanel.vue'
 import TabStrip from '@/components/TabStrip.vue'
 import OverviewPanel from '@/components/panels/OverviewPanel.vue'
 import ReposPanel from '@/components/panels/ReposPanel.vue'
@@ -12,7 +11,7 @@ import DecisionsPanel from '@/components/panels/DecisionsPanel.vue'
 import QualityPanel from '@/components/panels/QualityPanel.vue'
 import ActivityPanel from '@/components/panels/ActivityPanel.vue'
 import type { TabId } from '@/composables/panelRegistry'
-import type { WorkItem, AcceptanceCriterion } from '@/api'
+import type { WorkItem } from '@/api'
 
 const { detail, descendantCounts } = useHierarchy()
 
@@ -60,10 +59,6 @@ const titleFontClass: ComputedRef<string> = computed(() =>
   isTask.value
     ? 'font-sans text-[36px] leading-[1.1] font-medium'
     : 'font-display italic text-[46px] leading-[1.05]',
-)
-
-const acceptance: ComputedRef<AcceptanceCriterion[]> = computed(
-  () => detail.value?.acceptance_criteria ?? [],
 )
 
 /**
@@ -267,15 +262,6 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
       </div>
     </div>
 
-    <!--
-      epic-kind close-criteria panel. The outcome/context plan editors moved into
-      the editable Overview panel (T7); the close-criteria CRUD (reusing the
-      kind-agnostic acceptance-criteria API) stays here until its own wave.
-    -->
-    <template v-if="item.kind === 'epic'">
-      <EpicCloseCriteriaPanel :epic-id="item.id" />
-    </template>
-
     <!-- task-specific extras -->
     <template v-if="isTask">
       <!-- 4 disabled action buttons (deferred — require HTTP routes) -->
@@ -292,46 +278,6 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
           {{ action }}
         </button>
       </div>
-
-      <!--
-        Acceptance criteria — read-only this plan. `checked` is normalised to a
-        JS boolean at the api.ts boundary (see fetchDetail), so we use truthy
-        semantics directly here.
-      -->
-      <section class="mb-6">
-        <h3
-          class="font-mono text-[10.5px] tracking-[0.18em] text-[var(--faint)] uppercase mb-3"
-        >
-          Acceptance Criteria
-        </h3>
-        <ul v-if="acceptance.length > 0" class="flex flex-col gap-2">
-          <li
-            v-for="ac in acceptance"
-            :key="ac.id"
-            class="flex items-start gap-3 text-[13px]"
-          >
-            <span
-              aria-hidden="true"
-              :class="[
-                'inline-block w-3 h-3 mt-1 border rounded-sm shrink-0',
-                ac.checked
-                  ? 'bg-accent border-[var(--accent)]'
-                  : 'bg-transparent border-[var(--border-strong)]',
-              ]"
-            ></span>
-            <span
-              :class="
-                ac.checked
-                  ? 'text-[var(--ink-2)] line-through'
-                  : 'text-[var(--ink-2)]'
-              "
-            >
-              {{ ac.text }}
-            </span>
-          </li>
-        </ul>
-        <p v-else class="text-[var(--faint)] text-[13px] italic">No acceptance criteria</p>
-      </section>
     </template>
 
   </article>

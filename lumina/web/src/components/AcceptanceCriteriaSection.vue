@@ -1,46 +1,54 @@
 <!--
-  EpicCloseCriteriaPanel — epic-kind FocusLens panel for managing an epic's
-  close-criteria. An epic's close-criteria ARE its acceptance criteria at the
-  API (kind-agnostic), so this panel reuses `useAcceptanceCriteria` against the
-  epic id: add / check / uncheck / remove (migration 0003 CRUD).
+  AcceptanceCriteriaSection — the ONE shared acceptance-criteria editor, used by
+  story/task (Quality tab, title "Acceptance Criteria") AND epic (Overview tab,
+  title "Close Criteria"). An epic's close-criteria ARE its acceptance criteria
+  at the API (kind-agnostic), so this component reuses `useAcceptanceCriteria`
+  against the bound item id regardless of kind: list + add / check / uncheck /
+  remove (migration 0003 CRUD). It absorbs the logic of the former standalone
+  epic close-criteria panel (retired in T11b).
 
-  Domain context (surfaced as a hint, ENFORCED by the backend): an epic needs
-  ≥1 close-criterion before its first story can be created, and ALL must be
-  checked (plus all descendant stories terminal) before the epic can transition
-  to done.
+  Bind discipline (PANEL CONTRACT): the composable is a module-singleton NOT
+  auto-keyed to the focused node, so we seed it on a
+  `watch(() => props.itemId, …, { immediate: true })`. The composable's add /
+  check / uncheck / remove mutators refresh BOTH their own `items` ref AND
+  `useHierarchy().refresh(itemId)` internally, so this component does NOT
+  manually refresh after a mutation — it only re-seeds on focus change.
 
-  Layout mirrors ReposPanel.vue (list of rows with per-row actions + an
-  add form) fused with FocusLens.vue's acceptance-criteria checkbox render.
-  Vapor constraints as ReposPanel.vue.
+  Vapor mode, inline Tailwind over var(--*) tokens, no <style scoped>.
 -->
 <script setup vapor lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useAcceptanceCriteria } from '@/composables/useAcceptanceCriteria'
-import type { AcceptanceCriterion } from '@/api'
+import type { AcceptanceCriterion, Kind } from '@/api'
 
-const props = defineProps<{ epicId: string }>()
+const props = withDefaults(
+  defineProps<{
+    itemId: string
+    kind: Kind
+    title?: string
+  }>(),
+  { title: 'Acceptance Criteria' },
+)
 
 const { items, loading, error, bind, add, check, uncheck, remove } =
   useAcceptanceCriteria()
 
 const newText = ref('')
 
-// Seed on mount + re-seed when the focused epic changes — mirrors
-// ReposPanel's onMounted/watch(projectId) bind pattern.
-onMounted(() => {
-  void bind(props.epicId)
-})
+// Load-bearing bind seeder: module state isn't auto-keyed to the focused node,
+// so seed on the initial mount AND re-seed whenever the focused item changes.
 watch(
-  () => props.epicId,
+  () => props.itemId,
   (id) => {
     void bind(id)
   },
+  { immediate: true },
 )
 
 async function handleAdd(): Promise<void> {
   const trimmed = newText.value.trim()
   if (trimmed.length === 0) return
-  const result = await add(props.epicId, trimmed)
+  const result = await add(props.itemId, trimmed)
   if (result.ok) {
     newText.value = ''
   }
@@ -55,26 +63,21 @@ async function handleToggle(ac: AcceptanceCriterion): Promise<void> {
 }
 
 async function handleRemove(ac: AcceptanceCriterion): Promise<void> {
-  await remove(props.epicId, ac.id)
+  await remove(props.itemId, ac.id)
 }
 </script>
 
 <template>
-  <section class="bg-[var(--surface-2)] border border-[var(--border)] rounded-md p-4 my-4">
+  <section class="flex flex-col gap-3">
     <h3
-      class="font-mono text-[10.5px] tracking-[0.18em] text-[var(--faint)] uppercase mb-2"
+      class="font-mono text-[10.5px] tracking-[0.18em] text-[var(--faint)] uppercase"
     >
-      Close Criteria
+      {{ title }}
     </h3>
-    <p class="text-[var(--faint)] text-[11.5px] leading-[1.5] italic mb-3">
-      An epic needs at least one close-criterion before its first story; all
-      must be checked (and descendant stories terminal) before the epic can be
-      marked done.
-    </p>
 
     <ul
       v-if="items.length > 0"
-      class="flex flex-col gap-2 mb-3"
+      class="flex flex-col gap-2"
     >
       <li
         v-for="ac in items"
@@ -113,9 +116,9 @@ async function handleRemove(ac: AcceptanceCriterion): Promise<void> {
     </ul>
     <p
       v-else
-      class="text-[var(--faint)] text-[12.5px] italic mb-3"
+      class="text-[var(--faint)] text-[12.5px] italic"
     >
-      No close-criteria yet.
+      No criteria yet.
     </p>
 
     <form
@@ -125,7 +128,7 @@ async function handleRemove(ac: AcceptanceCriterion): Promise<void> {
       <input
         v-model="newText"
         type="text"
-        placeholder="A condition that closes this epic"
+        placeholder="Add a criterion…"
         :disabled="loading"
         class="flex-1 font-sans text-[13px] bg-[var(--surface)] border border-[var(--border)] rounded-md px-2 py-1 text-[var(--ink-2)] placeholder:text-[var(--ghost)] focus:outline-none focus:border-[var(--accent)]"
       />
@@ -140,7 +143,7 @@ async function handleRemove(ac: AcceptanceCriterion): Promise<void> {
 
     <p
       v-if="error"
-      class="text-[var(--faint)] text-[12px] italic mt-2"
+      class="text-[var(--faint)] text-[12px] italic"
       role="alert"
     >
       {{ error }}
