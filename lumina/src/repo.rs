@@ -6788,6 +6788,333 @@ pub async fn renew_lease(
 }
 
 // ---------------------------------------------------------------------------
+// complete_task (team-execution migration 0013, plan §D). The done→review
+// CASCADE — the documented COMPOSER exception to the per-mutator single-tx rule
+// ("compose, don't trigger"). It does NOT open a single tx writing one domain
+// row + one event; instead it COMPOSES several already-single-mutation steps,
+// each carrying its OWN event, in the same disciplined shape as
+// `record_finding_decision` / `resolve_open_question`:
+//
+//   1. read the impl task's lane/status/parent_id (drives the branch);
+//   2. transition the task to `done` via `update_work_item_status` (its own tx +
+//      `work_item.status_changed` event; the closure-gate read runs inside it) —
+//      skipped when the task is already `done` (idempotent re-run);
+//   3. a SEPARATE owner-guarded lease-clear (its own tx + `work_item.released`
+//      event when it mutates) — completion cleanup, mirroring `release_task`;
+//   4. for an `implement`-lane task only, spawn EXACTLY ONE review task under the
+//      story (Txn-2: one create + post-create stamp + dep edge + sprint bind, all
+//      folded into a single `work_item.created` event), guarded by an idempotency
+//      probe so a crash-recovery re-run never double-spawns.
+//
+// A `review`-lane (or `lane IS NULL` / any non-implement) task completes to
+// `done` only — NO review spawn — which is what prevents an infinite
+// review→review cascade.
+// ---------------------------------------------------------------------------
+
+/// Result of [`complete_task`] (plan §D): the completed task's id and the id of
+/// the review task spawned for it (`Some` only for an `implement`-lane
+/// completion; `None` for a `review`-lane / non-implement completion, or when a
+/// review child already existed and was reused on an idempotent re-run — in the
+/// reuse case the EXISTING child id is returned, never `None`). A repo.rs-local
+/// struct (NOT in `domain.rs`) to honour the task's file-ownership constraint;
+/// the MCP/HTTP surface (T9/T10) wraps it with `Content::json`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompleteTaskResult {
+    pub task_id: String,
+    /// `Some(review_task_id)` for an implement-lane completion (freshly spawned
+    /// OR reused on idempotent re-run); `None` for a review-lane completion.
+    pub review_task_id: Option<String>,
+}
+
+/// Complete a task and cascade its review (plan §D) — the COMPOSER exception to
+/// the single-mutation rule. Composes the `done` transition (closure-gate
+/// preserved via [`update_work_item_status`]), an owner-guarded lease clear, and
+/// — for an `implement`-lane task — the spawn of exactly one review task under
+/// the story, bound back via `reviews_work_item_id`, depending on the impl task,
+/// and bound into every sprint the impl task belongs to.
+///
+/// **Idempotency / crash recovery.** Re-running on an already-`done` task skips
+/// the transition; the review-spawn step first probes for an existing review
+/// child (`reviews_work_item_id = task_id`) and, if present, returns that id with
+/// NO new spawn. So a crash between the `done` transition and the spawn — or a
+/// flaky double-call — converges to exactly one review task.
+///
+/// **Lane awareness.** Only `lane = 'implement'` spawns a review; a `review`-lane
+/// (or `lane IS NULL` / any other) task completes to `done` only, returning
+/// `review_task_id = None` — this is what prevents a review→review→… cascade.
+///
+/// **Hierarchy.** The review task's `parent_id` is the impl task's OWN
+/// `parent_id` (the story), NOT the impl task — a task cannot parent a task
+/// (hierarchy trigger, `0001_init.sql:74/94`).
+pub async fn complete_task(
+    db: &impl DbClient,
+    task_id: &str,
+    agent_id: &str,
+) -> Result<CompleteTaskResult, AppError> {
+    // --- Step 1: read the impl task's lane / status / parent_id. -----------
+    // A liveness filter (`deleted_at IS NULL`) keeps a tombstoned task from being
+    // completed. `lane` drives the branch; `status` gates the idempotent skip of
+    // the `done` transition; `parent_id` is the review task's parent (the story).
+    #[derive(Debug)]
+    struct CompleteTaskRow {
+        lane: Option<String>,
+        status: String,
+        parent_id: Option<String>,
+    }
+    impl<'r, R> sqlx::FromRow<'r, R> for CompleteTaskRow
+    where
+        R: sqlx::Row,
+        &'r str: sqlx::ColumnIndex<R>,
+        String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+        Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    {
+        fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+            Ok(CompleteTaskRow {
+                lane: row.try_get("lane")?,
+                status: row.try_get("status")?,
+                parent_id: row.try_get("parent_id")?,
+            })
+        }
+    }
+    let task_row: CompleteTaskRow = db
+        .query_opt::<CompleteTaskRow>(
+            "SELECT lane, status, parent_id FROM work_items WHERE id = $1 AND deleted_at IS NULL",
+            args![task_id.to_owned()],
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("work_item '{task_id}' not found")))?;
+
+    // --- Step 2: done transition (idempotent). -----------------------------
+    // `update_work_item_status` opens its OWN tx, runs the closure-gate read
+    // before the write, and emits one `work_item.status_changed` event. Skip it
+    // when the task is already `done` so a crash-recovery re-run does not re-emit
+    // the event (and does not re-run the gate against an already-terminal row).
+    if task_row.status != "done" {
+        update_work_item_status(db, task_id, "done").await?;
+    }
+
+    // --- Step 3: owner-guarded lease clear (completion cleanup). -----------
+    // A SEPARATE single-mutation tx (mirroring `release_task`): clear
+    // `assignee`/`lease_expires_at` ONLY for the row the caller owns. Tied to
+    // completion, so it carries its OWN `work_item.released` event when it
+    // actually mutates a row — consistent with the composer precedent
+    // (`record_finding_decision` keeps each logical sub-mutation's event). A
+    // re-run after the lease is already cleared (or a non-owner) matches 0 rows
+    // → no event, idempotent.
+    {
+        let mut tx = db.begin().await?;
+        let cleared = tx
+            .execute(
+                r#"
+            UPDATE work_items
+            SET assignee = NULL,
+                lease_expires_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1 AND assignee = $2
+            "#,
+                args![task_id.to_owned(), agent_id.to_owned()],
+            )
+            .await?;
+        if cleared > 0 {
+            let payload = serde_json::json!({ "released_by": agent_id });
+            record_event(tx.as_mut(), "work_item", task_id, "work_item.released", payload).await?;
+            tx.commit().await?;
+        }
+        // No mutation ⇒ drop (rollback) with no event.
+    }
+
+    // --- Step 4: lane branch. ----------------------------------------------
+    // Only an `implement`-lane completion cascades a review. A `review`-lane (or
+    // `lane IS NULL` / any other) completion stops here — completed to `done`,
+    // no spawn — which is what prevents an infinite review→review cascade.
+    if task_row.lane.as_deref() != Some("implement") {
+        return Ok(CompleteTaskResult {
+            task_id: task_id.to_owned(),
+            review_task_id: None,
+        });
+    }
+
+    // Idempotency probe (OUTSIDE the spawn txn): a live review child already
+    // bound back to this impl task ⇒ reuse it, no new spawn. This is the
+    // crash-recovery guard — a re-run after a prior spawn converges to the SAME
+    // review task id.
+    let existing_review: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT id FROM work_items WHERE reviews_work_item_id = $1 AND deleted_at IS NULL",
+        args![task_id.to_owned()],
+    )
+    .await?;
+    if let Some(review_id) = existing_review {
+        return Ok(CompleteTaskResult {
+            task_id: task_id.to_owned(),
+            review_task_id: Some(review_id),
+        });
+    }
+
+    // The review task parents under the STORY = the impl task's own parent_id
+    // (a task cannot parent a task; hierarchy trigger 0001_init.sql:74/94). A
+    // task with no parent is a data-integrity violation (the hierarchy gate
+    // requires a `story` parent at create) — surface it as `Validation` rather
+    // than silently skipping the cascade.
+    let story_id = task_row.parent_id.as_deref().ok_or_else(|| {
+        AppError::Validation(format!(
+            "cannot spawn a review task for '{task_id}': it has no parent story"
+        ))
+    })?;
+
+    // Copy the impl task's `files_touched` onto the review task so the reviewer
+    // inherits the file scope (and the §C advisory-overlap scan sees it). Read
+    // the raw entries from the impl task's attributes via the same best-effort
+    // path the claim uses; an empty/absent set ⇒ no files_touched stamp.
+    let impl_attrs: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT attributes FROM work_items WHERE id = $1",
+        args![task_id.to_owned()],
+    )
+    .await?;
+    let impl_files_touched = files_touched_from_attributes(impl_attrs.as_deref());
+
+    // Sprints the impl task belongs to — the review task must join EACH so the
+    // §C claim JOIN (which keys on `sprint_tasks`) can ever see it. Read OUTSIDE
+    // the spawn txn (a cheap read; the bind INSERTs happen inside).
+    let impl_sprints: Vec<String> = {
+        #[derive(Debug)]
+        struct SprintIdRow {
+            sprint_id: String,
+        }
+        impl<'r, R> sqlx::FromRow<'r, R> for SprintIdRow
+        where
+            R: sqlx::Row,
+            &'r str: sqlx::ColumnIndex<R>,
+            String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+        {
+            fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+                Ok(SprintIdRow {
+                    sprint_id: row.try_get("sprint_id")?,
+                })
+            }
+        }
+        db.query_all::<SprintIdRow>(
+            "SELECT sprint_id FROM sprint_tasks WHERE task_id = $1",
+            args![task_id.to_owned()],
+        )
+        .await?
+        .into_iter()
+        .map(|r| r.sprint_id)
+        .collect()
+    };
+
+    // --- Txn-2: spawn the review task (one create + stamps + dep + sprint ---
+    // binds, all folded into ONE `work_item.created` event — the composer's
+    // single-event-per-logical-sub-mutation discipline). ---------------------
+    let mut tx = db.begin().await?;
+
+    // Create the review child under the story via the no-event tx helper (mirrors
+    // the `record_finding_decision` spawn path). `CreateOpts` carries no
+    // lane/tier/reviews link, so those are stamped by the post-create UPDATE.
+    let review_title = format!("Review: {task_id}");
+    let review_id = create_work_item_full_tx(
+        tx.as_mut(),
+        "task",
+        Some(story_id),
+        &review_title,
+        None,
+        CreateOpts {
+            origin: Some("review"),
+            outcome: None,
+            shape: None,
+        },
+    )
+    .await?;
+    let review_id_str = review_id.to_string();
+
+    // Post-create stamp: lane='review', the back-link, and tier=NULL (a review is
+    // a LANE, never a tier — explicitly NULLed so a CreateOpts-default never
+    // leaks a tier onto the review task). Mirrors the `spawned_from_finding_id`
+    // post-create stamp idiom.
+    tx.execute(
+        r#"
+        UPDATE work_items
+        SET lane = 'review',
+            reviews_work_item_id = $2,
+            tier = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        "#,
+        args![review_id_str.clone(), task_id.to_owned()],
+    )
+    .await?;
+
+    // Copy the impl task's files_touched onto the review task's attributes (only
+    // when non-empty). Written as a minimal `{"files_touched": [...]}` object —
+    // a valid task attribute shape — directly on the tx (the review task was just
+    // created with NULL attributes, so a plain SET is sufficient; no read-merge).
+    if !impl_files_touched.is_empty() {
+        let attrs = serde_json::json!({ "files_touched": impl_files_touched });
+        let attrs_str = serde_json::to_string(&attrs).map_err(|e| AppError::Other(e.into()))?;
+        tx.execute(
+            "UPDATE work_items SET attributes = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            args![review_id_str.clone(), attrs_str],
+        )
+        .await?;
+    }
+
+    // Dependency edge: the review task depends_on the impl task, so it never
+    // becomes claimable until the impl task is `done` (which it now is). Inserted
+    // directly on the tx (NOT via `add_task_dependency`, which opens its own tx +
+    // event) so it folds into this one composer event.
+    tx.execute(
+        r#"
+        INSERT INTO task_dependencies (task_id, depends_on_id, kind)
+        VALUES ($1, $2, 'sequence')
+        "#,
+        args![review_id_str.clone(), task_id.to_owned()],
+    )
+    .await?;
+
+    // Bind the review task into EACH sprint the impl task belongs to — without
+    // this the §C claim JOIN (keyed on `sprint_tasks`) never surfaces it.
+    // Idempotent at the junction (mirrors `add_tasks_to_sprint`).
+    for sprint_id in &impl_sprints {
+        tx.execute(
+            r#"
+            INSERT INTO sprint_tasks (sprint_id, task_id)
+            VALUES ($1, $2)
+            ON CONFLICT(sprint_id, task_id) DO NOTHING
+            "#,
+            args![sprint_id.to_owned(), review_id_str.clone()],
+        )
+        .await?;
+    }
+
+    // ONE export-eligible create event for the whole spawn (the child's create +
+    // all the stamps/binds fold into it — the composer's single-event discipline).
+    let payload = serde_json::json!({
+        "kind": "task",
+        "parent_id": story_id,
+        "title": review_title,
+        "lane": "review",
+        "reviews_work_item_id": task_id,
+        "origin": "review",
+    });
+    record_event(
+        tx.as_mut(),
+        "work_item",
+        &review_id_str,
+        "work_item.created",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(CompleteTaskResult {
+        task_id: task_id.to_owned(),
+        review_task_id: Some(review_id_str),
+    })
+}
+
+// ---------------------------------------------------------------------------
 // get_story_readiness (migration 0005). Compose existing reads to summarise a
 // story's planning-pipeline readiness and the next recommended block.
 // Read-only; no transaction, no events.
@@ -11830,5 +12157,256 @@ mod tests {
             renew_events_mid,
             "no renew event when the status guard fails"
         );
+    }
+
+    // =======================================================================
+    // complete_task (T6) — the done→review CASCADE. Reuse the claim/release seed
+    // helpers (seed_chain_to_story + seed_sprint + seed_queue_task) and cover the
+    // three plan T6 acceptance bullets: an implement-lane completion spawns
+    // exactly one back-linked review task under the story (sprint-bound, with a
+    // dep edge, files_touched copied); a review-lane completion spawns nothing;
+    // a re-run is idempotent (no duplicate, same id).
+    // =======================================================================
+
+    /// Read a review task's (parent_id, reviews_work_item_id, lane, tier, status)
+    /// for the back-link / hierarchy assertions.
+    async fn review_task_shape(
+        pool: &SqlitePool,
+        review_id: &str,
+    ) -> (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        String,
+    ) {
+        use sqlx::Row as _;
+        let r = sqlx::query(
+            "SELECT parent_id, reviews_work_item_id, lane, tier, status \
+             FROM work_items WHERE id = $1",
+        )
+        .bind(review_id)
+        .fetch_one(pool)
+        .await
+        .expect("review task row");
+        (
+            r.try_get("parent_id").unwrap(),
+            r.try_get("reviews_work_item_id").unwrap(),
+            r.try_get("lane").unwrap(),
+            r.try_get("tier").unwrap(),
+            r.try_get("status").unwrap(),
+        )
+    }
+
+    /// (1) Completing an `implement`-lane task transitions it to done, clears its
+    /// lease, and spawns EXACTLY ONE review task: parent = the story (NOT the impl
+    /// task), back-linked via `reviews_work_item_id`, `lane='review'`,
+    /// `tier=NULL`, bound into the impl task's sprint, with a dependency edge on
+    /// the impl task, and the impl task's `files_touched` copied across.
+    #[tokio::test]
+    async fn complete_implement_task_spawns_one_backlinked_review() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // Give the impl task a files_touched spec so the cascade copies it.
+        set_work_item_attributes(
+            &db,
+            &task,
+            &serde_json::json!({ "files_touched": ["src/a.rs", { "repo": "o/n", "path": "src/b.rs" }] }),
+        )
+        .await
+        .expect("impl files_touched");
+
+        // Claim it so it is genuinely in_progress + leased to agent-a.
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(claimed.task_id, task);
+
+        let result = complete_task(&db, &task, "agent-a")
+            .await
+            .expect("complete runs");
+        assert_eq!(result.task_id, task);
+        let review_id = result
+            .review_task_id
+            .clone()
+            .expect("an implement-lane completion spawns a review task");
+
+        // The impl task is done + lease cleared.
+        let (status, assignee, lease) = task_lease_state(&pool, &task).await;
+        assert_eq!(status, "done", "impl task transitioned to done");
+        assert_eq!(assignee, None, "lease assignee cleared on completion");
+        assert_eq!(lease, None, "lease deadline cleared on completion");
+
+        // EXACTLY ONE review task bound back to the impl task.
+        let review_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE reviews_work_item_id = $1")
+                .bind(&task)
+                .fetch_one(&pool)
+                .await
+                .expect("count reviews");
+        assert_eq!(review_count, 1, "exactly one review task spawned");
+
+        // Hierarchy + back-link + lane/tier shape.
+        let (parent_id, reviews, lane, tier, rstatus) = review_task_shape(&pool, &review_id).await;
+        assert_eq!(
+            parent_id.as_deref(),
+            Some(story.as_str()),
+            "review task parents under the STORY, not the impl task"
+        );
+        assert_eq!(
+            reviews.as_deref(),
+            Some(task.as_str()),
+            "review task back-links to the impl task it covers"
+        );
+        assert_eq!(lane.as_deref(), Some("review"), "spawned with lane='review'");
+        assert_eq!(tier, None, "review is a lane, not a tier → tier NULL");
+        assert_eq!(rstatus, "open", "review task starts at the create-default status");
+
+        // Bound into the impl task's sprint.
+        let bound = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = $1 AND task_id = $2",
+        )
+        .bind(&sprint)
+        .bind(&review_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count sprint binding");
+        assert_eq!(bound, 1, "review task bound into the impl task's sprint");
+
+        // Dependency edge: review depends_on impl.
+        let dep = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM task_dependencies WHERE task_id = $1 AND depends_on_id = $2",
+        )
+        .bind(&review_id)
+        .bind(&task)
+        .fetch_one(&pool)
+        .await
+        .expect("count dep edge");
+        assert_eq!(dep, 1, "review task depends on the impl task");
+
+        // files_touched copied verbatim (bare string + {repo,path} object).
+        let attrs: String =
+            sqlx::query_scalar::<_, Option<String>>("SELECT attributes FROM work_items WHERE id = $1")
+                .bind(&review_id)
+                .fetch_one(&pool)
+                .await
+                .expect("review attributes")
+                .expect("review attributes present (files_touched copied)");
+        let parsed: serde_json::Value = serde_json::from_str(&attrs).expect("attrs json");
+        assert_eq!(
+            parsed.get("files_touched"),
+            Some(&serde_json::json!(["src/a.rs", { "repo": "o/n", "path": "src/b.rs" }])),
+            "the impl task's files_touched is copied onto the review task"
+        );
+
+        // The review task IS claimable in the review lane now the impl task is done
+        // (proves the sprint bind + dep-satisfied wiring is correct end-to-end).
+        let review_claim = claim_next_task(&db, &sprint, Lane::Review, None, "agent-r", 1800)
+            .await
+            .expect("review claim runs")
+            .expect("review task is claimable");
+        assert_eq!(review_claim.task_id, review_id);
+    }
+
+    /// (2) Completing a `review`-lane task transitions it to done and spawns NO
+    /// task (prevents an infinite review→review cascade).
+    #[tokio::test]
+    async fn complete_review_task_spawns_nothing() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let review =
+            seed_queue_task(&pool, &story, &sprint, "REVIEW", Some("review"), None).await;
+
+        // Claim it in the review lane so it is in_progress + leased.
+        let claimed = claim_next_task(&db, &sprint, Lane::Review, None, "agent-r", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(claimed.task_id, review);
+
+        let tasks_before =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE kind = 'task'")
+                .fetch_one(&pool)
+                .await
+                .expect("count tasks before");
+
+        let result = complete_task(&db, &review, "agent-r")
+            .await
+            .expect("complete runs");
+        assert_eq!(result.task_id, review);
+        assert_eq!(
+            result.review_task_id, None,
+            "a review-lane completion spawns no further task"
+        );
+
+        let (status, assignee, lease) = task_lease_state(&pool, &review).await;
+        assert_eq!(status, "done", "review task transitioned to done");
+        assert_eq!(assignee, None, "lease cleared");
+        assert_eq!(lease, None, "lease deadline cleared");
+
+        let tasks_after =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE kind = 'task'")
+                .fetch_one(&pool)
+                .await
+                .expect("count tasks after");
+        assert_eq!(
+            tasks_after, tasks_before,
+            "no new task row created by a review-lane completion"
+        );
+    }
+
+    /// (3) Re-running `complete_task` on an already-completed implement task is
+    /// idempotent: no duplicate review task, and the SAME review_task_id is
+    /// returned (crash-recovery convergence).
+    #[tokio::test]
+    async fn complete_implement_task_is_idempotent() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(claimed.task_id, task);
+
+        let first = complete_task(&db, &task, "agent-a")
+            .await
+            .expect("first complete");
+        let review_id = first
+            .review_task_id
+            .clone()
+            .expect("first run spawns a review task");
+
+        // Re-run (the crash-recovery / double-call case). The task is already
+        // done; the spawn probe finds the existing review child and returns it.
+        let second = complete_task(&db, &task, "agent-a")
+            .await
+            .expect("second complete (idempotent)");
+        assert_eq!(
+            second.review_task_id.as_deref(),
+            Some(review_id.as_str()),
+            "the re-run returns the SAME review task id, not a new one"
+        );
+
+        // Still EXACTLY ONE review task — no duplicate spawn.
+        let review_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE reviews_work_item_id = $1")
+                .bind(&task)
+                .fetch_one(&pool)
+                .await
+                .expect("count reviews");
+        assert_eq!(review_count, 1, "the re-run does not double-spawn the review task");
     }
 }
