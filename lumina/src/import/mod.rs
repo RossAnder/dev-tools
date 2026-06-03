@@ -36,11 +36,13 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::domain::Severity;
 use crate::repo::{self, NewFinding};
+
+mod schema;
+use schema::{ContextDoc, ExecutionRecord, Ledger};
 
 /// Counts returned by [`import_flow`] for the CLI summary line and the test.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -56,114 +58,6 @@ pub struct ImportSummary {
     /// execution-record items DROPPED by the type filter (deviation,
     /// verification, status-transition, reconcile, deferral, checkpoint, …).
     pub items_dropped: u32,
-}
-
-// --- TOML input shapes (permissive: heterogeneous-per-type union) ----------
-
-/// `context.toml` envelope — only the fields the importer needs.
-#[derive(Debug, Deserialize)]
-struct ContextDoc {
-    slug: String,
-    #[serde(default)]
-    plan_path: Option<String>,
-    #[serde(default)]
-    scope: Vec<String>,
-    #[serde(default)]
-    artifacts: Artifacts,
-}
-
-/// `[artifacts]` block. Every path is optional — a flow may declare only some.
-#[derive(Debug, Default, Deserialize)]
-struct Artifacts {
-    #[serde(default)]
-    execution_record: Option<String>,
-    #[serde(default)]
-    review_ledger: Option<String>,
-    #[serde(default)]
-    optimise_findings: Option<String>,
-}
-
-/// `execution-record.toml` file envelope.
-#[derive(Debug, Deserialize)]
-struct ExecutionRecord {
-    #[serde(default)]
-    items: Vec<ExecItem>,
-}
-
-/// A single execution-record `[[items]]` entry. The vocabulary is heterogeneous
-/// per `type`, so every per-type field is `Option`/`default`; we read only the
-/// `task-completion` shape (`task_ref`/`status`/`files`) plus the always-present
-/// `type`. Unknown extra fields are tolerated by serde (no `deny_unknown_fields`).
-#[derive(Debug, Deserialize)]
-struct ExecItem {
-    #[serde(rename = "type")]
-    item_type: String,
-    #[serde(default)]
-    task_ref: Option<String>,
-    #[serde(default)]
-    status: Option<String>,
-    #[serde(default)]
-    files: Vec<String>,
-    #[serde(default)]
-    summary: Option<String>,
-}
-
-/// A ledger file envelope (`review-ledger.toml` / `optimise-findings.toml`).
-#[derive(Debug, Deserialize)]
-struct Ledger {
-    #[serde(default)]
-    items: Vec<LedgerItem>,
-}
-
-/// A single ledger `[[items]]` finding. All fields optional (heterogeneous
-/// disposition shapes). Date-typed columns (`first_flagged`, `resolved_at`) are
-/// read as `toml::value::Datetime` so TOML local-date literals parse, then
-/// stringified for the TEXT columns.
-#[derive(Debug, Deserialize)]
-struct LedgerItem {
-    #[serde(default)]
-    severity: Option<String>,
-    #[serde(default)]
-    effort: Option<String>,
-    #[serde(default)]
-    category: Option<String>,
-    #[serde(default)]
-    status: Option<String>,
-    #[serde(default)]
-    file: Option<String>,
-    #[serde(default)]
-    line: Option<i64>,
-    #[serde(default)]
-    symbol: Option<String>,
-    #[serde(default)]
-    summary: Option<String>,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    first_flagged: Option<toml::value::Datetime>,
-    #[serde(default)]
-    rounds: Option<i64>,
-    #[serde(default)]
-    fingerprint: Option<String>,
-    #[serde(default)]
-    flow: Option<String>,
-    #[serde(default)]
-    dedup_id: Option<String>,
-    // Disposition fields (P7) — carried so deferred/wontfix imports aren't lossy.
-    // The ledger uses `resolved` (a date) in some schemas and `resolved_at` in
-    // others; accept both, preferring `resolved_at`.
-    #[serde(default)]
-    resolved_at: Option<toml::value::Datetime>,
-    #[serde(default)]
-    resolved: Option<toml::value::Datetime>,
-    #[serde(default)]
-    resolution: Option<String>,
-    #[serde(default)]
-    defer_reason: Option<String>,
-    #[serde(default)]
-    defer_trigger: Option<String>,
-    #[serde(default)]
-    wontfix_rationale: Option<String>,
 }
 
 /// The execution-record item types the slice intentionally DROPS (see the
