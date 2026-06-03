@@ -38,8 +38,9 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::domain::{
-    AcceptanceCriterion, ActivityType, AlternativePatch, BatchEntry, ClosureGate, Complexity,
-    ContextBlock, Disposition, Effort, Finding, FindingDecisionKind, NewFindingDecision, NewRun,
+    AcceptanceCriterion, ActivityType, AlternativePatch, BatchEntry, ClaimedTask, ClosureGate,
+    Complexity, ContextBlock, Disposition, Effort, FileOverlapWarning, Finding, FindingDecisionKind,
+    Lane, NewFindingDecision, NewRun,
     NewSprint, NextAction, OpenQuestion, QuestionOption,
     RejectedAlternative, Relevance, RepoLink, ResearchNote, ResearchState, Risk, RiskPatch,
     RiskSeverity, Severity, Shape, StoryReadiness, TargetKind, TaskDependency, TaskKind, Tier,
@@ -6257,6 +6258,407 @@ pub async fn set_task_tier(
 }
 
 // ---------------------------------------------------------------------------
+// claim_next_task (team-execution migration 0013, plan §C). The atomic
+// work-queue claim primitive: one BEGIN IMMEDIATE txn does lazy-reclaim →
+// sprint-status guard → candidate select → lease, then a cheap post-commit
+// read computes the advisory file-overlap report. Race-safe under SQLite's
+// single writer (the SELECT→UPDATE share one RESERVED-locked txn).
+// ---------------------------------------------------------------------------
+
+/// Sprint statuses that make a sprint NON-runnable (the claim returns
+/// `Ok(None)` immediately). `sprints.status` is FREE TEXT (migration 0011 —
+/// `status TEXT NOT NULL DEFAULT 'open'`, NO CHECK), so this set is the
+/// repo-layer source of truth for the layer-1 guard: anything NOT in this set
+/// (incl. `'open'`/`'running'`) is treated as runnable. The full
+/// `composed → queued → running → merged` lifecycle and a stricter,
+/// CHECK-backed guard are the layer-2 follow-up (ADR-0002).
+const NON_RUNNABLE_SPRINT_STATUSES: &[&str] = &["cancelled", "closed", "merged"];
+
+/// Normalise one raw `attributes.files_touched` entry to its canonical
+/// `(repo, path)` overlap KEY. Bare string `p` → `(None, p)` (the legacy form,
+/// resolving to the project's primary repo); object `{repo, path}` →
+/// `(Some(repo), path)`. Any other shape (malformed entry) yields `None` and
+/// is dropped from the overlap scan — files_touched is best-effort, so a
+/// malformed entry simply produces no caution rather than an error (ADR-0002).
+/// Used ONLY by the post-commit advisory scan; never inside the write txn.
+fn files_touched_overlap_key(entry: &Value) -> Option<(Option<String>, String)> {
+    if let Some(p) = entry.as_str() {
+        return Some((None, p.to_owned()));
+    }
+    if let Some(obj) = entry.as_object() {
+        let repo = obj.get("repo").and_then(Value::as_str)?;
+        let path = obj.get("path").and_then(Value::as_str)?;
+        return Some((Some(repo.to_owned()), path.to_owned()));
+    }
+    None
+}
+
+/// Extract the `files_touched` array from a task's stored `attributes` TEXT
+/// blob. Absent / NULL attributes, a non-object root, or a missing/non-array
+/// `files_touched` key all yield an empty vec (best-effort — a malformed blob
+/// produces no overlap caution rather than an error; `decode_attributes` is
+/// the authoritative corruption detector elsewhere). Returns the RAW JSON
+/// entries (bare strings or `{repo,path}` objects) so they flow into
+/// `ClaimedTask.files_touched` verbatim.
+fn files_touched_from_attributes(attributes: Option<&str>) -> Vec<Value> {
+    match attributes {
+        None => Vec::new(),
+        Some(raw) => serde_json::from_str::<Value>(raw)
+            .ok()
+            .and_then(|v| {
+                v.get("files_touched")
+                    .and_then(Value::as_array)
+                    .map(|a| a.to_vec())
+            })
+            .unwrap_or_default(),
+    }
+}
+
+/// Claim the next ready task in a sprint by `(lane, tier)` under a lease — the
+/// core team-execution queue primitive (plan §C). The whole claim runs in ONE
+/// `BEGIN IMMEDIATE` transaction so the SELECT→UPDATE is race-free under
+/// SQLite's single writer (the property the agent-teams shared list cannot
+/// give); the advisory file-overlap report is computed as a cheap read AFTER
+/// the commit, so no `files_touched` JSON parse runs under the writer lock.
+///
+/// Steps (all but the last inside the txn):
+///   1. **Lazy reclaim** — expired leases (`status='in_progress'` AND
+///      `lease_expires_at < now`) on this sprint's tasks are reset to `todo`
+///      / `assignee=NULL`; if any rows were reclaimed, ONE coarse,
+///      export-INERT `leases.reclaimed` event is recorded (mirrors the
+///      migration-0011 Part-B coarse-event idiom — `aggregate_type="sprint"`,
+///      never `"work_item"`). Zero reclaimed ⇒ no event.
+///   2. **Sprint-status guard** — `Ok(None)` if the sprint's status is in
+///      [`NON_RUNNABLE_SPRINT_STATUSES`] (layer-1 rule).
+///   3. **Candidate select** — the first ready task (status=`todo`, unleased,
+///      matching lane + optional tier, not blocked on a question, live, with
+///      every task-dependency `done`), ordered by the `compute_task_batches`
+///      tie-break (`task_kind` sort, `created_at`, `id`). NO file-overlap
+///      filtering (overlap is advisory). No candidate ⇒ `Ok(None)`.
+///   4. **Lease** — stamp `status='in_progress'`, `assignee`, and
+///      `lease_expires_at = now + lease_ttl_secs`; record ONE export-eligible
+///      `work_item.claimed` event. Commit.
+///   5. **Advisory overlap (post-commit)** — for every OTHER `in_progress`
+///      task in the sprint sharing ≥1 `files_touched` key with the claimed
+///      task, a [`FileOverlapWarning`] is attached. The claim is NEVER
+///      rejected on overlap (ADR-0002).
+///
+/// `lease_ttl_secs` is seconds added to `now` for the new lease deadline;
+/// both `now` and `now + ttl` are computed by SQLite's `datetime(...)` so the
+/// stored `lease_expires_at` shares the `CURRENT_TIMESTAMP` format
+/// (`YYYY-MM-DD HH:MM:SS`, UTC) and the `<`/`>` comparisons are lexical.
+pub async fn claim_next_task(
+    db: &impl DbClient,
+    sprint_id: &str,
+    lane: Lane,
+    tier: Option<Tier>,
+    agent_id: &str,
+    lease_ttl_secs: i64,
+) -> Result<Option<ClaimedTask>, AppError> {
+    let lane_str = enum_to_str(lane);
+    let tier_str: Option<String> = tier.map(enum_to_str);
+
+    let mut tx = db.begin().await?;
+
+    // --- Step 1: lazy reclaim expired leases scoped to this sprint. ---------
+    // A past `lease_expires_at` on an `in_progress` task whose id is bound to
+    // this sprint via `sprint_tasks` is reset to a reclaimable `todo`. Using
+    // `datetime('now')` keeps the comparison in the CURRENT_TIMESTAMP format.
+    let reclaimed = tx
+        .execute(
+            r#"
+        UPDATE work_items
+        SET status = 'todo', assignee = NULL, lease_expires_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'in_progress'
+          AND lease_expires_at IS NOT NULL
+          AND lease_expires_at < datetime('now')
+          AND id IN (SELECT task_id FROM sprint_tasks WHERE sprint_id = $1)
+        "#,
+            args![sprint_id.to_owned()],
+        )
+        .await?;
+
+    if reclaimed > 0 {
+        // ONE coarse, export-INERT event for the whole reclaim batch (the
+        // precedented exception to the per-row +1-event rule, mirroring the
+        // migration-0011 Part-B coarse events). `aggregate_type="sprint"`, so
+        // the git-export drain (which materialises only `"work_item"` events)
+        // ignores it — reclaimed rows are not re-exported individually here.
+        let payload = serde_json::json!({ "reclaimed": reclaimed, "sprint_id": sprint_id });
+        record_inert_event(tx.as_mut(), "sprint", sprint_id, "leases.reclaimed", payload).await?;
+    }
+
+    // --- Step 2: sprint-status guard. --------------------------------------
+    // A missing sprint OR a non-runnable status ⇒ Ok(None). The lazy-reclaim
+    // above still committed if it fired (a sprint may legitimately be reclaimed
+    // and then found non-runnable); commit the reclaim and return None.
+    let sprint_status: Option<String> = crate::db::tx_scalar_opt::<String>(
+        tx.as_mut(),
+        "SELECT status FROM sprints WHERE id = $1",
+        args![sprint_id.to_owned()],
+    )
+    .await?;
+    let runnable = match sprint_status.as_deref() {
+        None => false, // no such sprint
+        Some(s) => !NON_RUNNABLE_SPRINT_STATUSES.contains(&s),
+    };
+    if !runnable {
+        tx.commit().await?;
+        return Ok(None);
+    }
+
+    // --- Step 3: candidate select (first ready wins, LIMIT 16). ------------
+    // Ready ≡ not-started + unleased + matching lane + (tier unconstrained when
+    // the caller passes None) + not blocked on a question + live + every
+    // task-dependency `done`. The "not-started" set is `status IN ('todo',
+    // 'open')`: `create_work_item` stamps the create-default `status='open'`
+    // (and the `work_items.status` column DEFAULT is 'open'), so EVERY
+    // freshly-created task — most importantly the review task spawned by
+    // `complete_task` (T6) and the rework task spawned by
+    // `record_finding_decision` (T8), both created via the create path — starts
+    // at 'open'. A 'todo'-only predicate would render those spawned tasks
+    // invisible and SILENTLY break the entire review→rework cascade.
+    // `block_task_on_question` (repo.rs:4299) sets the same precedent, treating
+    // `"todo" | "open"` as the equivalent "ready, not started" precondition (its
+    // branch-resolution restores blocked tasks to 'todo', which is in this set).
+    // `lane IS NOT NULL` is implied by `lane = $2`
+    // (a legacy `lane IS NULL` task can never match a non-null bound value),
+    // so back-compat (lane=NULL tasks invisible) falls out for free. The
+    // ORDER BY mirrors `compute_task_batches`' intra-phase tie-break: the
+    // `task_kind` sort weight (foundation<main/NULL<polish), then created_at,
+    // then id. The `:tier IS NULL OR tier = :tier` shape uses a NULL sentinel
+    // bind so one prepared statement covers both the any-tier and exact-tier
+    // cases.
+    let candidate = crate::db::tx_query_opt::<ClaimCandidateRow>(
+        tx.as_mut(),
+        r#"
+        SELECT t.id, t.tier
+        FROM work_items t
+        JOIN sprint_tasks st ON st.task_id = t.id AND st.sprint_id = $1
+        WHERE t.status IN ('todo', 'open')
+          AND t.assignee IS NULL
+          AND t.lane = $2
+          AND ($3 IS NULL OR t.tier = $3)
+          AND t.blocked_by_question_id IS NULL
+          AND t.deleted_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM task_dependencies d
+              JOIN work_items dep ON dep.id = d.depends_on_id
+              WHERE d.task_id = t.id AND dep.status <> 'done'
+          )
+        ORDER BY
+          CASE t.task_kind
+            WHEN 'foundation' THEN 0
+            WHEN 'polish' THEN 2
+            ELSE 1
+          END,
+          t.created_at,
+          t.id
+        LIMIT 16
+        "#,
+        args![sprint_id.to_owned(), lane_str.clone(), tier_str.clone()],
+    )
+    .await?;
+
+    let Some(row) = candidate else {
+        // No ready candidate — commit (the reclaim, if any, must persist) and
+        // signal "nothing to claim" with Ok(None). No claim event.
+        tx.commit().await?;
+        return Ok(None);
+    };
+    let task_id = row.id;
+    let claimed_tier_str = row.tier;
+
+    // --- Step 4: lease the winning candidate + one claim event. ------------
+    // The new lease deadline is `now + lease_ttl_secs`, computed by SQLite so
+    // it shares the stored-timestamp format. The WHERE re-asserts the
+    // not-started/unleased predicate (defence-in-depth; the SELECT and UPDATE
+    // already share one writer-locked txn so no concurrent claimer can
+    // interleave). The status guard MUST mirror the step-3 readiness set
+    // (`IN ('todo','open')`) — otherwise an 'open'-status candidate (the create
+    // default for every spawned review/rework task) would be selected but match
+    // 0 rows here and the claim would spuriously bail.
+    let ttl_modifier = format!("+{lease_ttl_secs} seconds");
+    let leased = tx
+        .execute(
+            r#"
+        UPDATE work_items
+        SET status = 'in_progress',
+            assignee = $2,
+            lease_expires_at = datetime('now', $3),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND status IN ('todo', 'open') AND assignee IS NULL
+        "#,
+            args![task_id.clone(), agent_id.to_owned(), ttl_modifier],
+        )
+        .await?;
+    if leased == 0 {
+        // Should be unreachable inside the single writer txn; treat as
+        // "lost the race" → no claim, roll back via drop, surface None.
+        return Ok(None);
+    }
+
+    // Read back the just-stamped lease deadline so the result carries the exact
+    // stored value (rather than recomputing `now` in Rust and risking a
+    // sub-second skew with the DB clock).
+    let lease_expires_at: String = crate::db::tx_scalar_one::<String>(
+        tx.as_mut(),
+        "SELECT lease_expires_at FROM work_items WHERE id = $1",
+        args![task_id.clone()],
+    )
+    .await?;
+
+    let claim_payload = serde_json::json!({
+        "assignee": agent_id,
+        "lane": lane_str,
+        "lease_expires_at": lease_expires_at,
+        "sprint_id": sprint_id,
+    });
+    record_event(
+        tx.as_mut(),
+        "work_item",
+        &task_id,
+        "work_item.claimed",
+        claim_payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+
+    // --- Step 5: advisory file-overlap report (POST-commit; cheap read). ---
+    // Per ADR-0002 the claim NEVER skips on overlap. Read the claimed task's
+    // files_touched, then scan the OTHER in_progress tasks in this sprint and
+    // report any that share ≥1 (repo, path) key. CRUCIAL: this JSON parse runs
+    // OUTSIDE the write txn so it never holds the writer lock.
+    let claimed_attrs: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT attributes FROM work_items WHERE id = $1",
+        args![task_id.clone()],
+    )
+    .await?;
+    let files_touched = files_touched_from_attributes(claimed_attrs.as_deref());
+
+    let mut file_overlap_warnings: Vec<FileOverlapWarning> = Vec::new();
+    if !files_touched.is_empty() {
+        use std::collections::BTreeSet;
+        let claimed_keys: BTreeSet<(Option<String>, String)> = files_touched
+            .iter()
+            .filter_map(files_touched_overlap_key)
+            .collect();
+
+        if !claimed_keys.is_empty() {
+            // Other in_progress tasks in the same sprint, excluding the
+            // just-claimed one. Carry id + attributes for the per-task scan.
+            let others = db
+                .query_all::<OverlapScanRow>(
+                    r#"
+                SELECT t.id, t.attributes
+                FROM work_items t
+                JOIN sprint_tasks st ON st.task_id = t.id AND st.sprint_id = $1
+                WHERE t.status = 'in_progress'
+                  AND t.id <> $2
+                  AND t.deleted_at IS NULL
+                ORDER BY t.created_at, t.id
+                "#,
+                    args![sprint_id.to_owned(), task_id.clone()],
+                )
+                .await?;
+
+            for other in others {
+                let other_files = files_touched_from_attributes(other.attributes.as_deref());
+                let mut shared: Vec<String> = other_files
+                    .iter()
+                    .filter_map(files_touched_overlap_key)
+                    .filter(|k| claimed_keys.contains(k))
+                    // The advisory `shared` list reports the PATH segment of
+                    // each shared key (the human-meaningful piece); a {repo,
+                    // path} entry contributes its path.
+                    .map(|(_, path)| path)
+                    .collect();
+                if !shared.is_empty() {
+                    shared.sort();
+                    shared.dedup();
+                    file_overlap_warnings.push(FileOverlapWarning {
+                        task_id: other.id,
+                        shared,
+                    });
+                }
+            }
+        }
+    }
+
+    // Re-type the claimed tier string back into the typed enum for the result.
+    let claimed_tier: Option<Tier> = match claimed_tier_str {
+        Some(s) => Some(
+            serde_json::from_value::<Tier>(Value::String(s))
+                .map_err(|e| AppError::Other(e.into()))?,
+        ),
+        None => None,
+    };
+
+    Ok(Some(ClaimedTask {
+        task_id,
+        lane,
+        tier: claimed_tier,
+        assignee: agent_id.to_owned(),
+        lease_expires_at,
+        files_touched,
+        file_overlap_warnings,
+    }))
+}
+
+/// Raw row read by the candidate SELECT in [`claim_next_task`]: the winning
+/// task's id + its `tier` column (re-typed to [`Tier`] for the result).
+/// `tier` is nullable. Generic over `R: Row` per the canonical [`crate::db`]
+/// FromRow recipe.
+#[derive(Debug)]
+struct ClaimCandidateRow {
+    id: String,
+    tier: Option<String>,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for ClaimCandidateRow
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(ClaimCandidateRow {
+            id: row.try_get("id")?,
+            tier: row.try_get("tier")?,
+        })
+    }
+}
+
+/// Raw row read by the post-commit file-overlap scan in [`claim_next_task`]:
+/// an in-progress sprint task's id + its stored `attributes` TEXT blob (parsed
+/// for `files_touched` OUTSIDE the write txn). `attributes` is nullable.
+/// Generic over `R: Row` per the canonical [`crate::db`] FromRow recipe.
+#[derive(Debug)]
+struct OverlapScanRow {
+    id: String,
+    attributes: Option<String>,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for OverlapScanRow
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(OverlapScanRow {
+            id: row.try_get("id")?,
+            attributes: row.try_get("attributes")?,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // get_story_readiness (migration 0005). Compose existing reads to summarise a
 // story's planning-pipeline readiness and the next recommended block.
 // Read-only; no transaction, no events.
@@ -7194,6 +7596,7 @@ pub mod pty {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::AnyPool;
     use crate::db::connect_in_memory;
     use crate::domain::QueryFindingsFilter;
     use crate::domain::Status;
@@ -10705,5 +11108,402 @@ mod tests {
             "the ux_findings_dedup index predicate in migration 0011 must match \
              the findings_dedup_predicate! macro byte-for-byte"
         );
+    }
+
+    // =======================================================================
+    // claim_next_task (T4) — the core concurrency primitive. These cover the
+    // plan's five acceptance bullets (a)-(e). lane / lease_expires_at have no
+    // dedicated repo mutator yet (those land in T5/T6), so the seed helpers
+    // stamp them via raw sqlx UPDATE — the same raw-assertion idiom the rest of
+    // this module uses for direct row inspection.
+    // =======================================================================
+
+    /// Create a `task` under `story`, stamp its `lane` (and optional `tier`),
+    /// and bind it to `sprint`. Returns the task id. `tier` is a wire-form
+    /// string (`"lite"`/`"deep"`) or `None`.
+    async fn seed_queue_task(
+        pool: &SqlitePool,
+        story: &str,
+        sprint: &str,
+        title: &str,
+        lane: Option<&str>,
+        tier: Option<&str>,
+    ) -> String {
+        let task = create_work_item(pool, "task", Some(story), title, None)
+            .await
+            .expect("task")
+            .to_string();
+        // Stamp lane + tier directly (no repo mutator for `lane` yet) and move
+        // the task to the queue-ready `todo` status. `create_work_item` stamps
+        // the literal `status="open"` (the create default); the claim's
+        // readiness set is `{todo, open}` (both are "ready, not started"), so a
+        // task staged at `todo` by the planning flow is claimable — this helper
+        // exercises that path. The `'open'`-preserving path (the create default,
+        // covering spawned review/rework tasks) is exercised by
+        // `seed_queue_task_open` + `claim_returns_open_status_task`.
+        sqlx::query("UPDATE work_items SET lane = $2, tier = $3, status = 'todo' WHERE id = $1")
+            .bind(&task)
+            .bind(lane)
+            .bind(tier)
+            .execute(pool)
+            .await
+            .expect("stamp lane/tier/status");
+        add_tasks_to_sprint(pool, sprint, &[task.as_str()])
+            .await
+            .expect("bind task to sprint");
+        task
+    }
+
+    /// Like [`seed_queue_task`] but PRESERVES the `create_work_item` default
+    /// `status='open'` (stamps only `lane`/`tier`, never touches `status`). This
+    /// is the real-world shape of a freshly-created task — and specifically of
+    /// the review task `complete_task` (T6) and the rework task
+    /// `record_finding_decision` (T8) spawn via the create path. A claim that
+    /// keyed on `status='todo'` only would never see these.
+    async fn seed_queue_task_open(
+        pool: &SqlitePool,
+        story: &str,
+        sprint: &str,
+        title: &str,
+        lane: Option<&str>,
+        tier: Option<&str>,
+    ) -> String {
+        let task = create_work_item(pool, "task", Some(story), title, None)
+            .await
+            .expect("task")
+            .to_string();
+        sqlx::query("UPDATE work_items SET lane = $2, tier = $3 WHERE id = $1")
+            .bind(&task)
+            .bind(lane)
+            .bind(tier)
+            .execute(pool)
+            .await
+            .expect("stamp lane/tier (status left at create-default 'open')");
+        add_tasks_to_sprint(pool, sprint, &[task.as_str()])
+            .await
+            .expect("bind task to sprint");
+        task
+    }
+
+    /// Read a task's (status, assignee, lease_expires_at) for assertions.
+    async fn task_lease_state(
+        pool: &SqlitePool,
+        task_id: &str,
+    ) -> (String, Option<String>, Option<String>) {
+        use sqlx::Row as _;
+        let r = sqlx::query(
+            "SELECT status, assignee, lease_expires_at FROM work_items WHERE id = $1",
+        )
+        .bind(task_id)
+        .fetch_one(pool)
+        .await
+        .expect("task row");
+        (
+            r.try_get("status").unwrap(),
+            r.try_get("assignee").unwrap(),
+            r.try_get("lease_expires_at").unwrap(),
+        )
+    }
+
+    /// (a) Dependencies are respected (a task with an un-done dependency is NOT
+    /// claimed until the dep is done), AND the claimed task carries an advisory
+    /// `file_overlap_warnings` entry naming an in-progress file-sharing task —
+    /// and is claimed anyway (overlap never blocks, ADR-0002).
+    #[tokio::test]
+    async fn claim_respects_deps_and_reports_advisory_overlap() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+
+        // dep_task is an in-progress task sharing src/shared.rs with the claimable
+        // task. It is already leased by another agent.
+        let dep_task =
+            seed_queue_task(&pool, &story, &sprint, "DEP", Some("implement"), Some("deep")).await;
+        // ready_task depends on dep_task. While dep_task is not done, ready_task
+        // is NOT claimable.
+        let ready_task =
+            seed_queue_task(&pool, &story, &sprint, "READY", Some("implement"), Some("deep")).await;
+        add_task_dependency(&pool, &ready_task, &dep_task, "sequence")
+            .await
+            .expect("dep edge");
+
+        // Give both tasks files_touched so the overlap scan has data.
+        set_work_item_attributes(
+            &db,
+            &dep_task,
+            &serde_json::json!({ "files_touched": ["src/shared.rs", "src/only_dep.rs"] }),
+        )
+        .await
+        .expect("dep files_touched");
+        set_work_item_attributes(
+            &db,
+            &ready_task,
+            &serde_json::json!({ "files_touched": ["src/shared.rs", "src/only_ready.rs"] }),
+        )
+        .await
+        .expect("ready files_touched");
+
+        // Put dep_task in_progress (so it is an overlap target) but NOT done.
+        sqlx::query(
+            "UPDATE work_items SET status = 'in_progress', assignee = 'agent-x', \
+             lease_expires_at = datetime('now', '+1800 seconds') WHERE id = $1",
+        )
+        .bind(&dep_task)
+        .execute(&pool)
+        .await
+        .expect("dep in_progress");
+
+        // With dep_task not done, ready_task is blocked → nothing claimable.
+        let none = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs");
+        assert!(none.is_none(), "ready_task is dep-blocked while dep is not done");
+
+        // Mark dep_task done → ready_task becomes claimable. (It is also no longer
+        // in_progress, so it should NOT appear as an overlap target.) Add a THIRD
+        // in_progress task that shares a file, to exercise the advisory report.
+        let other_ip =
+            seed_queue_task(&pool, &story, &sprint, "OTHER", Some("implement"), Some("deep")).await;
+        set_work_item_attributes(
+            &db,
+            &other_ip,
+            &serde_json::json!({ "files_touched": ["src/shared.rs", "src/other.rs"] }),
+        )
+        .await
+        .expect("other files_touched");
+        sqlx::query(
+            "UPDATE work_items SET status = 'in_progress', assignee = 'agent-y', \
+             lease_expires_at = datetime('now', '+1800 seconds') WHERE id = $1",
+        )
+        .bind(&other_ip)
+        .execute(&pool)
+        .await
+        .expect("other in_progress");
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&dep_task)
+            .execute(&pool)
+            .await
+            .expect("dep done");
+
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("ready_task is now claimable");
+
+        assert_eq!(claimed.task_id, ready_task, "the dep-satisfied task is claimed");
+        assert_eq!(claimed.assignee, "agent-a");
+        assert!(!claimed.lease_expires_at.is_empty(), "lease deadline stamped");
+
+        // Advisory overlap: other_ip (in_progress, shares src/shared.rs) IS named;
+        // dep_task (now done, not in_progress) is NOT. The claim succeeded despite
+        // the overlap.
+        let names: Vec<&str> = claimed
+            .file_overlap_warnings
+            .iter()
+            .map(|w| w.task_id.as_str())
+            .collect();
+        assert!(
+            names.contains(&other_ip.as_str()),
+            "the in-progress file-sharing task is reported, got {names:?}"
+        );
+        assert!(
+            !names.contains(&dep_task.as_str()),
+            "a done (not in-progress) task is not an overlap target"
+        );
+        let other_warning = claimed
+            .file_overlap_warnings
+            .iter()
+            .find(|w| w.task_id == other_ip)
+            .expect("other_ip warning present");
+        assert_eq!(
+            other_warning.shared,
+            vec!["src/shared.rs".to_string()],
+            "the shared path is the one common file"
+        );
+
+        // And the claim actually leased the row.
+        let (status, assignee, _) = task_lease_state(&pool, &ready_task).await;
+        assert_eq!(status, "in_progress");
+        assert_eq!(assignee.as_deref(), Some("agent-a"));
+    }
+
+    /// (b) An empty / ineligible lane returns `Ok(None)`.
+    #[tokio::test]
+    async fn claim_empty_lane_returns_none() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        // One implement-lane task exists, but we claim the REVIEW lane → none.
+        seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
+
+        let claimed = claim_next_task(&db, &sprint, Lane::Review, None, "agent-r", 1800)
+            .await
+            .expect("claim runs");
+        assert!(claimed.is_none(), "no review-lane task ⇒ Ok(None)");
+
+        // Also: a tier that matches nothing returns none.
+        let claimed_tier = claim_next_task(&db, &sprint, Lane::Implement, Some(Tier::Lite), "agent-l", 1800)
+            .await
+            .expect("claim runs");
+        assert!(claimed_tier.is_none(), "no lite-tier implement task ⇒ Ok(None)");
+    }
+
+    /// (c) A task whose `lease_expires_at` is seeded in the PAST is lazily
+    /// reclaimed to status='todo'/assignee=NULL, and the call records EXACTLY
+    /// ONE coarse, export-inert `leases.reclaimed` event.
+    #[tokio::test]
+    async fn claim_lazily_reclaims_expired_lease_with_one_inert_event() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "STALE", Some("implement"), Some("deep")).await;
+
+        // Seed an EXPIRED lease in the past (no sleep): in_progress + a past
+        // lease_expires_at owned by a now-dead agent.
+        sqlx::query(
+            "UPDATE work_items SET status = 'in_progress', assignee = 'dead-agent', \
+             lease_expires_at = '2000-01-01 00:00:00' WHERE id = $1",
+        )
+        .bind(&task)
+        .execute(&pool)
+        .await
+        .expect("seed expired lease");
+
+        let events_before = count_events_of_type(&pool, "leases.reclaimed").await;
+
+        // Claiming reclaims the stale lease first, then re-claims the now-todo task
+        // for agent-a (same call). The task ends up leased to agent-a.
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("the reclaimed task is then claimable");
+        assert_eq!(claimed.task_id, task);
+        assert_eq!(claimed.assignee, "agent-a", "re-leased to the new claimer");
+
+        // Exactly ONE coarse leases.reclaimed event was recorded.
+        assert_eq!(
+            count_events_of_type(&pool, "leases.reclaimed").await,
+            events_before + 1,
+            "exactly one coarse reclaim event"
+        );
+        // And it is export-INERT: aggregate_type='sprint', NOT 'work_item'.
+        use sqlx::Row as _;
+        let row = sqlx::query(
+            "SELECT aggregate_type, aggregate_id FROM events WHERE event_type = 'leases.reclaimed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("reclaim event row");
+        let agg_type: String = row.try_get("aggregate_type").unwrap();
+        let agg_id: String = row.try_get("aggregate_id").unwrap();
+        assert_eq!(agg_type, "sprint", "reclaim event is export-inert (not work_item)");
+        assert_eq!(agg_id, sprint, "reclaim event keyed by the sprint id");
+
+        // A second claim against a fresh sprint with no expired lease records NO
+        // reclaim event (the zero-rows path emits nothing).
+        let events_after_first = count_events_of_type(&pool, "leases.reclaimed").await;
+        let _ = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-b", 1800)
+            .await
+            .expect("second claim runs");
+        assert_eq!(
+            count_events_of_type(&pool, "leases.reclaimed").await,
+            events_after_first,
+            "no further reclaim event when nothing is expired"
+        );
+    }
+
+    /// (d) A legacy `lane IS NULL` task is NEVER returned by the claim
+    /// (back-compat — null-lane tasks are invisible to team execution).
+    #[tokio::test]
+    async fn claim_never_returns_null_lane_task() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        // A task with lane = NULL, bound to the sprint, todo + unleased.
+        seed_queue_task(&pool, &story, &sprint, "LEGACY", None, None).await;
+
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs");
+        assert!(claimed.is_none(), "a lane=NULL task is invisible to the claim");
+    }
+
+    /// (e) The sprint-status guard returns `Ok(None)` for a terminal /
+    /// non-runnable sprint even when a ready task exists.
+    #[tokio::test]
+    async fn claim_honours_sprint_status_guard() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
+
+        // Mark the sprint non-runnable (terminal). 'closed' ∈ the layer-1
+        // NON_RUNNABLE set.
+        sqlx::query("UPDATE sprints SET status = 'closed' WHERE id = $1")
+            .bind(&sprint)
+            .execute(&pool)
+            .await
+            .expect("close sprint");
+
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs");
+        assert!(claimed.is_none(), "a closed sprint is not runnable ⇒ Ok(None)");
+
+        // Sanity: re-open and the same task IS claimable, proving the guard (not a
+        // missing task) caused the None above.
+        sqlx::query("UPDATE sprints SET status = 'open' WHERE id = $1")
+            .bind(&sprint)
+            .execute(&pool)
+            .await
+            .expect("reopen sprint");
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs");
+        assert!(claimed.is_some(), "the task is claimable once the sprint is runnable");
+    }
+
+    /// (f, real-world path) A task left at the `create_work_item` DEFAULT
+    /// `status='open'` (NOT pre-staged to 'todo') IS claimable — guarding the
+    /// review→rework cascade, since `complete_task` (T6) and
+    /// `record_finding_decision` (T8) both spawn their tasks via the create path
+    /// and those tasks default to 'open'. A 'todo'-only predicate would render
+    /// them invisible and silently never run the cascade.
+    #[tokio::test]
+    async fn claim_returns_open_status_task() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        // Created exactly the way create_work_item leaves it: status='open'.
+        let task =
+            seed_queue_task_open(&pool, &story, &sprint, "OPEN", Some("implement"), Some("deep"))
+                .await;
+
+        // Sanity: the task really is at the 'open' create-default, not 'todo'.
+        let (status_before, _, _) = task_lease_state(&pool, &task).await;
+        assert_eq!(
+            status_before, "open",
+            "the seed preserves the create-default 'open' status"
+        );
+
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("an 'open'-status task is claimable (the spawned-task path)");
+        assert_eq!(claimed.task_id, task, "the 'open' task is the one claimed");
+        assert_eq!(claimed.assignee, "agent-a");
+
+        // And it was actually leased: status flips to in_progress, assignee set.
+        let (status_after, assignee, lease) = task_lease_state(&pool, &task).await;
+        assert_eq!(status_after, "in_progress");
+        assert_eq!(assignee.as_deref(), Some("agent-a"));
+        assert!(lease.is_some(), "lease deadline stamped on the claimed open task");
     }
 }
