@@ -13,7 +13,7 @@
 
 use super::*;
 
-use crate::domain::Status;
+use crate::domain::{Origin, Status};
 
 /// Arguments for the `transition_status` write tool (the rename of the former
 /// `update_work_item_status`). A `#[tool]` method takes exactly ONE
