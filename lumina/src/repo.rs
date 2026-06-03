@@ -41,9 +41,10 @@ use crate::domain::{
     AcceptanceCriterion, ActivityType, AlternativePatch, BatchEntry, ClaimedTask, ClosureGate,
     Complexity, ContextBlock, Disposition, Effort, FileOverlapWarning, Finding, FindingDecisionKind,
     Lane, NewFindingDecision, NewRun,
-    NewSprint, NextAction, OpenQuestion, QuestionOption,
+    NewSprint, NextAction, OpenQuestion, OpenQuestionSummary, QuestionOption,
     RejectedAlternative, Relevance, RepoLink, ResearchNote, ResearchState, Risk, RiskPatch,
-    RiskSeverity, Severity, Shape, StoryReadiness, TargetKind, TaskDependency, TaskKind, Tier,
+    RiskSeverity, Severity, Shape, SprintQuiescence, StoryReadiness, TargetKind, TaskDependency,
+    TaskKind, Tier,
     TriageState, UpdateFindingRequest,
     UpdateResearchNoteRequest, UpdateWorkItemRequest, WorkItem, WorkItemActivity, WorkItemDetail,
 };
@@ -7115,6 +7116,218 @@ pub async fn complete_task(
 }
 
 // ---------------------------------------------------------------------------
+// Quiescence + arbiter read (team-execution migration 0013, plan §F). Two
+// READ-ONLY composers a sprint lead / arbiter agent polls:
+//   * `get_sprint_quiescence` — the four sprint-wide lane-agnostic counts plus
+//     the derived `done`/`stalled` verdict, used to decide whether to terminate
+//     the run or escalate a stall to an arbiter.
+//   * `list_open_questions_for_sprint` — the unresolved questions across the
+//     sprint's stories, for the arbiter to resolve / escalate.
+// Both issue plain auto-commit SELECTs through the `DbClient` read seam (no
+// `db.begin()`, no events) — mirroring `get_story_readiness` / `query_findings`.
+// ---------------------------------------------------------------------------
+
+/// Compute a sprint's [`SprintQuiescence`] verdict (plan §F): the four
+/// lane-agnostic counts across every task bound to the sprint via
+/// `sprint_tasks`, plus the two derived booleans the lead polls.
+///
+/// The counts come from ONE pass with conditional `SUM(CASE …)` aggregates
+/// (the crate's count idiom — one round-trip, all four columns consistent on
+/// the same snapshot):
+///   * `claimable` — the §C claim-readiness predicate MINUS the lease, byte-for-byte
+///     identical to [`claim_next_task`]'s candidate WHERE (status IN
+///     ('todo','open') AND assignee IS NULL AND blocked_by_question_id IS NULL
+///     AND deleted_at IS NULL AND NOT EXISTS(unsatisfied dep)) but WITHOUT any
+///     lane/tier filter — quiescence counts across ALL lanes. Keeping the two in
+///     lockstep means the lead's "nothing to claim" verdict can never disagree
+///     with what a claimer would actually find.
+///   * `in_progress` — leased / being-worked (`status='in_progress'`, live).
+///   * `blocked_on_question` — parked on a question (`blocked_by_question_id IS
+///     NOT NULL`, live).
+///   * `terminal` — `status IN ('done','cancelled')`, live.
+///
+/// Verdict (computed in Rust from the counts):
+///   * `done` ⇔ `claimable == 0 && in_progress == 0 && blocked_on_question == 0`
+///     (every task is terminal or there are no tasks — nothing left to do).
+///   * `stalled` ⇔ `blocked_on_question > 0 && claimable == 0 && in_progress == 0`
+///     (the only non-terminal work is parked on a question — needs an arbiter
+///     before progress can resume).
+///
+/// A missing / unknown `sprint_id` is NOT an error: the join yields zero rows,
+/// every count is 0, and the verdict is `done=true, stalled=false` (an empty
+/// sprint is trivially quiescent). Read-only — no transaction, no events.
+pub async fn get_sprint_quiescence(
+    db: &impl DbClient,
+    sprint_id: &str,
+) -> Result<SprintQuiescence, AppError> {
+    #[derive(Debug)]
+    struct QuiescenceCountsRow {
+        claimable: i64,
+        in_progress: i64,
+        blocked_on_question: i64,
+        terminal: i64,
+    }
+    impl<'r, R> sqlx::FromRow<'r, R> for QuiescenceCountsRow
+    where
+        R: sqlx::Row,
+        &'r str: sqlx::ColumnIndex<R>,
+        i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    {
+        fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+            Ok(QuiescenceCountsRow {
+                claimable: row.try_get("claimable")?,
+                in_progress: row.try_get("in_progress")?,
+                blocked_on_question: row.try_get("blocked_on_question")?,
+                terminal: row.try_get("terminal")?,
+            })
+        }
+    }
+
+    // The `claimable` CASE predicate is held byte-consistent with the
+    // `claim_next_task` candidate WHERE (sans the `lane = $2` / `:tier` filters,
+    // which quiescence omits to count across all lanes). SUM over a boolean CASE
+    // yields the count; COALESCE guards the all-NULL (zero-row) sprint so the
+    // scalar reads back 0 rather than NULL.
+    let counts: QuiescenceCountsRow = db
+        .query_one::<QuiescenceCountsRow>(
+            r#"
+        SELECT
+          COALESCE(SUM(CASE WHEN
+              t.status IN ('todo', 'open')
+              AND t.assignee IS NULL
+              AND t.blocked_by_question_id IS NULL
+              AND t.deleted_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM task_dependencies d
+                  JOIN work_items dep ON dep.id = d.depends_on_id
+                  WHERE d.task_id = t.id AND dep.status <> 'done'
+              )
+            THEN 1 ELSE 0 END), 0) AS claimable,
+          COALESCE(SUM(CASE WHEN
+              t.status = 'in_progress' AND t.deleted_at IS NULL
+            THEN 1 ELSE 0 END), 0) AS in_progress,
+          COALESCE(SUM(CASE WHEN
+              t.blocked_by_question_id IS NOT NULL AND t.deleted_at IS NULL
+            THEN 1 ELSE 0 END), 0) AS blocked_on_question,
+          COALESCE(SUM(CASE WHEN
+              t.status IN ('done', 'cancelled') AND t.deleted_at IS NULL
+            THEN 1 ELSE 0 END), 0) AS terminal
+        FROM sprint_tasks st
+        JOIN work_items t ON t.id = st.task_id
+        WHERE st.sprint_id = $1
+        "#,
+            args![sprint_id.to_owned()],
+        )
+        .await?;
+
+    let done =
+        counts.claimable == 0 && counts.in_progress == 0 && counts.blocked_on_question == 0;
+    let stalled =
+        counts.blocked_on_question > 0 && counts.claimable == 0 && counts.in_progress == 0;
+
+    Ok(SprintQuiescence {
+        claimable: counts.claimable,
+        in_progress: counts.in_progress,
+        blocked_on_question: counts.blocked_on_question,
+        terminal: counts.terminal,
+        done,
+        stalled,
+    })
+}
+
+/// List the UNRESOLVED open questions across the stories owning a sprint's
+/// tasks (plan §F) — the arbiter agent's worklist. The owning stories are the
+/// DISTINCT `parent_id`s of the sprint's task rows (a task's parent is always
+/// its story per the hierarchy trigger). For each unresolved question
+/// (`status = 'open'`, the create-default that [`add_open_question`] stamps and
+/// that [`resolve_open_question`] flips away to `'answered'`) it returns the
+/// question id, the owning story, the question text, the option labels (ordered
+/// by `seq`), and the question's age in seconds (`now − created_at`, computed in
+/// SQLite via `strftime('%s', …)` so it shares the stored-timestamp format).
+///
+/// Sprint-scoped + unresolved only: a resolved/answered question, or a question
+/// on a story NOT owning any of this sprint's tasks, is excluded. An empty /
+/// unknown sprint yields an empty Vec. Read-only — no transaction, no events.
+pub async fn list_open_questions_for_sprint(
+    db: &impl DbClient,
+    sprint_id: &str,
+) -> Result<Vec<OpenQuestionSummary>, AppError> {
+    #[derive(Debug)]
+    struct OpenQuestionRow {
+        question_id: String,
+        story_id: String,
+        text: String,
+        age_secs: i64,
+    }
+    impl<'r, R> sqlx::FromRow<'r, R> for OpenQuestionRow
+    where
+        R: sqlx::Row,
+        &'r str: sqlx::ColumnIndex<R>,
+        String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+        i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    {
+        fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+            Ok(OpenQuestionRow {
+                question_id: row.try_get("question_id")?,
+                story_id: row.try_get("story_id")?,
+                text: row.try_get("text")?,
+                age_secs: row.try_get("age_secs")?,
+            })
+        }
+    }
+
+    // Unresolved questions on the DISTINCT stories owning this sprint's tasks.
+    // The story set is the IN-subquery (`parent_id` of the sprint's task rows);
+    // `status = 'open'` is the unresolved predicate. `age_secs` is the
+    // now−created_at delta in whole seconds via the strftime epoch idiom (both
+    // operands in the same TEXT timestamp format). Ordered story, then question
+    // seq for a stable arbiter worklist.
+    let rows = db
+        .query_all::<OpenQuestionRow>(
+            r#"
+        SELECT
+          q.id                                                       AS question_id,
+          q.story_id                                                 AS story_id,
+          q.question                                                 AS text,
+          CAST(strftime('%s', 'now') - strftime('%s', q.created_at) AS INTEGER) AS age_secs
+        FROM open_questions q
+        WHERE q.status = 'open'
+          AND q.story_id IN (
+              SELECT DISTINCT t.parent_id
+              FROM sprint_tasks st
+              JOIN work_items t ON t.id = st.task_id
+              WHERE st.sprint_id = $1 AND t.parent_id IS NOT NULL
+          )
+        ORDER BY q.story_id, q.seq
+        "#,
+            args![sprint_id.to_owned()],
+        )
+        .await?;
+
+    // Fetch each question's option labels (ordered by seq). One read per
+    // question — O(n) for a per-sprint arbiter worklist (n is small), mirroring
+    // the per-task acceptance-criteria reads in `get_story_readiness`.
+    let mut summaries: Vec<OpenQuestionSummary> = Vec::with_capacity(rows.len());
+    for row in rows {
+        let options = crate::db::scalar_all::<String>(
+            db,
+            "SELECT label FROM question_options WHERE question_id = $1 ORDER BY seq",
+            args![row.question_id.clone()],
+        )
+        .await?;
+        summaries.push(OpenQuestionSummary {
+            question_id: row.question_id,
+            story_id: row.story_id,
+            text: row.text,
+            options,
+            age_secs: row.age_secs,
+        });
+    }
+
+    Ok(summaries)
+}
+
+// ---------------------------------------------------------------------------
 // get_story_readiness (migration 0005). Compose existing reads to summarise a
 // story's planning-pipeline readiness and the next recommended block.
 // Read-only; no transaction, no events.
@@ -12408,5 +12621,251 @@ mod tests {
                 .await
                 .expect("count reviews");
         assert_eq!(review_count, 1, "the re-run does not double-spawn the review task");
+    }
+
+    // =======================================================================
+    // get_sprint_quiescence + list_open_questions_for_sprint (T7, plan §F).
+    // Read-only composers; reuse the queue seed helpers and the open-question
+    // primitives. The blocked-on-question state is staged by `seed_queue_task`
+    // (creates the task at 'todo') + `block_task_on_question` (flips it to
+    // 'blocked' with `blocked_by_question_id` set, the same path production uses).
+    // =======================================================================
+
+    /// An all-terminal sprint (every task done/cancelled) is quiescent:
+    /// `done=true`, `stalled=false`, and the `claimable`/`in_progress`/`blocked`
+    /// counts are all zero. Also covers the empty-sprint trivial-done case.
+    #[tokio::test]
+    async fn quiescence_all_terminal_sprint_is_done() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+
+        // Empty sprint: trivially quiescent (no tasks at all).
+        let empty_sprint = seed_sprint(&pool).await;
+        let empty = get_sprint_quiescence(&db, &empty_sprint)
+            .await
+            .expect("quiescence on empty sprint");
+        assert_eq!(empty.claimable, 0);
+        assert_eq!(empty.in_progress, 0);
+        assert_eq!(empty.blocked_on_question, 0);
+        assert_eq!(empty.terminal, 0);
+        assert!(empty.done, "an empty sprint is trivially done");
+        assert!(!empty.stalled, "an empty sprint is not stalled");
+
+        // A missing/unknown sprint id is not an error — zero counts, done.
+        let unknown = get_sprint_quiescence(&db, "no-such-sprint")
+            .await
+            .expect("quiescence on unknown sprint");
+        assert!(unknown.done && !unknown.stalled, "unknown sprint reads as done");
+
+        // A sprint whose only tasks are terminal: one done, one cancelled.
+        let sprint = seed_sprint(&pool).await;
+        let done_task =
+            seed_queue_task(&pool, &story, &sprint, "DONE", Some("implement"), Some("deep")).await;
+        let cancelled_task =
+            seed_queue_task(&pool, &story, &sprint, "CANX", Some("implement"), Some("deep")).await;
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&done_task)
+            .execute(&pool)
+            .await
+            .expect("mark done");
+        sqlx::query("UPDATE work_items SET status = 'cancelled' WHERE id = $1")
+            .bind(&cancelled_task)
+            .execute(&pool)
+            .await
+            .expect("mark cancelled");
+
+        let q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence on all-terminal sprint");
+        assert_eq!(q.claimable, 0, "no claimable tasks");
+        assert_eq!(q.in_progress, 0, "no in-progress tasks");
+        assert_eq!(q.blocked_on_question, 0, "no blocked tasks");
+        assert_eq!(q.terminal, 2, "both tasks are terminal");
+        assert!(q.done, "all-terminal sprint is done");
+        assert!(!q.stalled, "all-terminal sprint is not stalled");
+    }
+
+    /// A sprint with at least one claimable task is NOT done (and not stalled).
+    /// The `claimable` count uses the SAME readiness predicate as
+    /// `claim_next_task`: a dep-blocked task is NOT counted claimable until its
+    /// dependency is done.
+    #[tokio::test]
+    async fn quiescence_claimable_task_is_not_done() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+
+        // One ready (claimable) task + an in-progress task to exercise both counts.
+        let _ready =
+            seed_queue_task(&pool, &story, &sprint, "READY", Some("implement"), Some("deep")).await;
+        let ip =
+            seed_queue_task(&pool, &story, &sprint, "WORK", Some("implement"), Some("deep")).await;
+        sqlx::query(
+            "UPDATE work_items SET status = 'in_progress', assignee = 'agent-x', \
+             lease_expires_at = datetime('now', '+1800 seconds') WHERE id = $1",
+        )
+        .bind(&ip)
+        .execute(&pool)
+        .await
+        .expect("mark in_progress");
+
+        let q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence");
+        assert_eq!(q.claimable, 1, "the ready task is claimable");
+        assert_eq!(q.in_progress, 1, "the leased task is in_progress");
+        assert!(!q.done, "a sprint with claimable/in-progress work is not done");
+        assert!(!q.stalled, "claimable+in_progress work present ⇒ not stalled");
+
+        // The claimable count tracks claim_next_task's predicate: a dep-blocked
+        // task is not counted until its dependency is done.
+        let dep =
+            seed_queue_task(&pool, &story, &sprint, "DEP", Some("implement"), Some("deep")).await;
+        let dependent =
+            seed_queue_task(&pool, &story, &sprint, "DEPENDENT", Some("implement"), Some("deep"))
+                .await;
+        add_task_dependency(&pool, &dependent, &dep, "sequence")
+            .await
+            .expect("dep edge");
+        let q2 = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence after deps");
+        // ready (1) + dep (1) are claimable; dependent is dep-blocked (not counted).
+        assert_eq!(
+            q2.claimable, 2,
+            "the dep-blocked task is excluded from claimable, matching claim_next_task"
+        );
+
+        // Cross-check: claim_next_task surfaces exactly the same readiness set —
+        // claiming twice drains the two claimable tasks, a third claim is None.
+        let c1 = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim 1")
+            .expect("first claimable");
+        let c2 = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-b", 1800)
+            .await
+            .expect("claim 2")
+            .expect("second claimable");
+        assert_ne!(c1.task_id, c2.task_id, "two distinct claimable tasks");
+        let c3 = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-c", 1800)
+            .await
+            .expect("claim 3");
+        assert!(
+            c3.is_none(),
+            "exactly two were claimable (the dep-blocked task stays invisible), \
+             matching the quiescence claimable count of 2"
+        );
+    }
+
+    /// A sprint whose only non-terminal task is parked on an open question is
+    /// STALLED: `blocked_on_question>0 && claimable==0 && in_progress==0`. Such a
+    /// sprint is neither done nor progress-able without an arbiter.
+    #[tokio::test]
+    async fn quiescence_blocked_only_sprint_is_stalled() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+
+        // One task, parked on an open question (todo → blocked via the prod path).
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "PARKED", Some("implement"), Some("deep")).await;
+        let question = add_open_question(&db, &story, "Which approach?")
+            .await
+            .expect("open question")
+            .to_string();
+        block_task_on_question(&db, &task, &question)
+            .await
+            .expect("block task on question");
+
+        let q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence on blocked-only sprint");
+        assert_eq!(q.claimable, 0, "the parked task is not claimable");
+        assert_eq!(q.in_progress, 0, "nothing in progress");
+        assert_eq!(q.blocked_on_question, 1, "one task parked on a question");
+        assert_eq!(q.terminal, 0, "nothing terminal");
+        assert!(!q.done, "a blocked task means not done");
+        assert!(q.stalled, "blocked-only with nothing else ⇒ stalled, needs arbiter");
+    }
+
+    /// `list_open_questions_for_sprint` returns only UNRESOLVED questions scoped
+    /// to the stories owning the sprint's tasks: a resolved question is excluded,
+    /// and a question on an unrelated story (not in this sprint) does not appear.
+    /// The returned summary carries the question text, option labels (seq order),
+    /// and a non-negative age.
+    #[tokio::test]
+    async fn open_questions_for_sprint_unresolved_and_scoped_only() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+
+        // Bind a task on `story` to the sprint so `story` is in scope.
+        let _task =
+            seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
+
+        // An UNRESOLVED question on the sprint's story, with two options.
+        let live_q = add_open_question(&db, &story, "Pick a serialization format?")
+            .await
+            .expect("live question")
+            .to_string();
+        let opt_a = add_question_option(&db, &live_q, "JSON", None)
+            .await
+            .expect("option A")
+            .to_string();
+        let _opt_b = add_question_option(&db, &live_q, "TOML", Some("matches the export format"))
+            .await
+            .expect("option B");
+
+        // A RESOLVED question on the same story — must be EXCLUDED.
+        let resolved_q = add_open_question(&db, &story, "Already decided?")
+            .await
+            .expect("resolved question")
+            .to_string();
+        let resolved_opt = add_question_option(&db, &resolved_q, "Yes", None)
+            .await
+            .expect("resolved option")
+            .to_string();
+        resolve_open_question(&db, &resolved_q, &resolved_opt, Some("lead"))
+            .await
+            .expect("resolve the question");
+
+        // A question on an UNRELATED story (a separate chain, not in this sprint)
+        // — must NOT appear.
+        let other_story = seed_chain_to_story(&pool).await;
+        let _other_q = add_open_question(&db, &other_story, "Unrelated question?")
+            .await
+            .expect("unrelated question");
+
+        let questions = list_open_questions_for_sprint(&db, &sprint)
+            .await
+            .expect("list open questions");
+
+        assert_eq!(
+            questions.len(),
+            1,
+            "only the single unresolved, sprint-scoped question is returned"
+        );
+        let summary = &questions[0];
+        assert_eq!(summary.question_id, live_q, "the live question id");
+        assert_eq!(summary.story_id, story, "scoped to the sprint's story");
+        assert_eq!(summary.text, "Pick a serialization format?", "question text mapped");
+        assert_eq!(
+            summary.options,
+            vec!["JSON".to_string(), "TOML".to_string()],
+            "option labels in seq order"
+        );
+        assert!(summary.age_secs >= 0, "age is a non-negative second delta");
+        // Sanity: the option id was minted (referenced so it isn't dead).
+        assert!(!opt_a.is_empty());
+
+        // An unknown/empty sprint yields an empty list.
+        let none = list_open_questions_for_sprint(&db, "no-such-sprint")
+            .await
+            .expect("list on unknown sprint");
+        assert!(none.is_empty(), "unknown sprint has no questions");
     }
 }
