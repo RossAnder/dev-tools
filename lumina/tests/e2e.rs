@@ -2482,3 +2482,497 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "set_focus_plan did not clobber the previously-set shape column"
     );
 }
+
+// =====================================================================
+// Team-execution work-queue coverage (migration 0013) — T12 of
+// docs/plans/eventual-leaping-metcalfe.md.
+//
+// This thread walks the full claim/lease/cascade loop through ALL layers
+// in ONE in-process test over ONE shared pool, sleep-free + socket-free
+// (oneshot HTTP + a direct `export_pending` drain), exactly mirroring the
+// existing threads above:
+//
+//   claim(implement) → complete_task (review spawned + back-linked + sprint
+//   bound) → claim(review) → add_findings ON THE STORY +
+//   record_finding_decision(spawn_task) → rework task spawned lane=implement,
+//   sprint-bound, claimable (re-claimed to prove the loop closes) →
+//   get_sprint_quiescence verdict reflects state → git-export drains the 4
+//   new work_items columns (lane / assignee / lease_expires_at /
+//   reviews_work_item_id) → HTTP read of the new /api routes.
+//
+// LANE-STAMPING NOTE (accepted layer-1 limitation): there is NO tool or
+// migration in this plan that stamps `lane='implement'` on a FRESH
+// (non-cascade) task — `create_work_item` does not set `lane`, and the only
+// lane-stamping paths are `complete_task` (spawns lane='review') and
+// `record_finding_decision` spawn_task (spawns lane='implement'). So the
+// INITIAL claimable implement task is seeded via a test-only raw
+// `sqlx::query` UPDATE (the same idiom the repo-layer claim tests and the
+// http/execution.rs route tests use). Initial-task lane-stamping is the
+// deferred composer's job (layer 3).
+//
+// The repo-layer `#[tool]` methods for the queue (claim/complete/etc.) are
+// drivable as PUBLIC `repo::*` fns; this thread drives them through `repo::*`
+// (the MCP tools wrap them 1:1, asserted by mcp.rs's own suite) and exercises
+// the new HTTP routes via `oneshot`.
+// =====================================================================
+
+/// Drain a sprint-id from `repo::create_sprint`, bind a task, and stamp the
+/// implement lane + a claimable status on the task via a test-only raw query
+/// (see the LANE-STAMPING NOTE above). Returns the bound sprint id.
+async fn seed_implement_sprint(
+    pool: &Arc<lumina::db::AnyPool>,
+    task_id: &str,
+) -> String {
+    let sprint_id = lumina::repo::create_sprint(pool, &lumina::domain::NewSprint { title: None })
+        .await
+        .expect("create sprint")
+        .to_string();
+    lumina::repo::add_tasks_to_sprint(pool, &sprint_id, &[task_id])
+        .await
+        .expect("bind task to sprint");
+    // Stamp lane='implement' + status='todo' so the initial task satisfies the
+    // §C claim-readiness predicate (no tool stamps lane on a fresh task — the
+    // accepted layer-1 limitation). Mirrors the http/execution.rs seed idiom.
+    sqlx::query("UPDATE work_items SET lane = 'implement', status = 'todo' WHERE id = ?1")
+        .bind(task_id)
+        .execute(pool.sqlite())
+        .await
+        .expect("stamp implement lane + todo status on the seed task");
+    sprint_id
+}
+
+/// The full team-execution thread: claim → complete (review spawned +
+/// back-linked) → claim(review) → findings + rework spawn (claimable) →
+/// quiescence → export drains the 4 new columns → HTTP read.
+#[tokio::test]
+async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http() {
+    // One shared pool across the MCP handler, the export drain, and the router.
+    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Build a legal chain to a story, then create ONE implement task. Bind it
+    //    to a fresh sprint and stamp lane='implement' (the seed helper).
+    let project = mcp_create(&tools, "project", None, "Team-Exec Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "Team-Exec Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Team-Exec Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Team-Exec Story").await;
+    let impl_task = mcp_create(&tools, "task", Some(&story), "Team-Exec Impl Task").await;
+
+    let sprint_id = seed_implement_sprint(&pool, &impl_task).await;
+
+    // 2. claim_next_task(lane=implement) → a task is claimed/leased: assignee +
+    //    lease_expires_at set, and the claimed id is our seeded impl task.
+    let claimed = lumina::repo::claim_next_task(
+        &pool,
+        &sprint_id,
+        lumina::domain::Lane::Implement,
+        None,
+        "impl-agent",
+        300,
+    )
+    .await
+    .expect("claim_next_task(implement)")
+    .expect("a claimable implement task");
+    assert_eq!(
+        claimed.task_id, impl_task,
+        "the claim returns our seeded implement task"
+    );
+    assert_eq!(claimed.assignee, "impl-agent", "the claim records the leasing agent");
+    assert!(
+        !claimed.lease_expires_at.is_empty(),
+        "the claim stamps a lease deadline"
+    );
+    // The DB row reflects the lease: in_progress + owned + dated.
+    let (db_status, db_assignee, db_lease): (String, Option<String>, Option<String>) = {
+        let status: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+            .bind(&impl_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read impl status");
+        let assignee: Option<String> =
+            sqlx::query_scalar("SELECT assignee FROM work_items WHERE id = ?1")
+                .bind(&impl_task)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read impl assignee");
+        let lease: Option<String> =
+            sqlx::query_scalar("SELECT lease_expires_at FROM work_items WHERE id = ?1")
+                .bind(&impl_task)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read impl lease");
+        (status, assignee, lease)
+    };
+    assert_eq!(db_status, "in_progress", "claim transitioned the task to in_progress");
+    assert_eq!(db_assignee.as_deref(), Some("impl-agent"), "lease assignee persisted");
+    assert!(db_lease.is_some(), "lease_expires_at persisted on the claim");
+
+    // 3. complete_task on the claimed impl task → done AND a review task spawned,
+    //    parented under the story, back-linked via reviews_work_item_id, and
+    //    bound into the sprint.
+    let completed = lumina::repo::complete_task(&pool, &impl_task, "impl-agent")
+        .await
+        .expect("complete_task(impl)");
+    assert_eq!(completed.task_id, impl_task, "complete echoes the impl task id");
+    let review_task = completed
+        .review_task_id
+        .expect("an implement-lane completion spawns a review task");
+
+    // The impl task is now done with a cleared lease.
+    let impl_done: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+        .bind(&impl_task)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("read impl status after complete");
+    assert_eq!(impl_done, "done", "complete_task transitioned the impl task to done");
+    let impl_assignee_cleared: Option<String> =
+        sqlx::query_scalar("SELECT assignee FROM work_items WHERE id = ?1")
+            .bind(&impl_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read impl assignee after complete");
+    assert!(
+        impl_assignee_cleared.is_none(),
+        "complete_task cleared the impl task's lease assignee"
+    );
+
+    // The review task is parented under the STORY (NOT under the impl task — a
+    // task cannot parent a task), lane='review', back-linked, sprint-bound.
+    let (review_parent, review_lane, review_backlink): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = {
+        let parent: Option<String> =
+            sqlx::query_scalar("SELECT parent_id FROM work_items WHERE id = ?1")
+                .bind(&review_task)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read review parent");
+        let lane: Option<String> =
+            sqlx::query_scalar("SELECT lane FROM work_items WHERE id = ?1")
+                .bind(&review_task)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read review lane");
+        let backlink: Option<String> =
+            sqlx::query_scalar("SELECT reviews_work_item_id FROM work_items WHERE id = ?1")
+                .bind(&review_task)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read review backlink");
+        (parent, lane, backlink)
+    };
+    assert_eq!(
+        review_parent.as_deref(),
+        Some(story.as_str()),
+        "the review task parents under the story (not the impl task)"
+    );
+    assert_eq!(review_lane.as_deref(), Some("review"), "the spawned task is on the review lane");
+    assert_eq!(
+        review_backlink.as_deref(),
+        Some(impl_task.as_str()),
+        "the review task back-links to the impl task via reviews_work_item_id"
+    );
+    let review_bound: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = ?1 AND task_id = ?2",
+    )
+    .bind(&sprint_id)
+    .bind(&review_task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count review sprint binding");
+    assert_eq!(review_bound, 1, "the review task is bound into the impl task's sprint");
+
+    // 4. claim_next_task(lane=review) → claim the spawned review task. Its
+    //    depends_on edge on the impl task is satisfied (impl is now done), so it
+    //    is claimable on the review lane.
+    let claimed_review = lumina::repo::claim_next_task(
+        &pool,
+        &sprint_id,
+        lumina::domain::Lane::Review,
+        None,
+        "review-agent",
+        300,
+    )
+    .await
+    .expect("claim_next_task(review)")
+    .expect("the spawned review task is claimable");
+    assert_eq!(
+        claimed_review.task_id, review_task,
+        "the review-lane claim returns the spawned review task"
+    );
+    assert!(
+        matches!(claimed_review.lane, lumina::domain::Lane::Review),
+        "the claimed review task carries the review lane"
+    );
+
+    // 5. The reviewer found problems → add_findings hosted ON THE STORY (a
+    //    task-hosted finding's spawn_task would parent a task under a task and
+    //    fail the hierarchy trigger), then record_finding_decision(spawn_task) →
+    //    a rework task spawned lane='implement', sprint-bound, and claimable.
+    let batch = lumina::repo::add_findings(
+        &pool,
+        None,
+        &[(
+            story.as_str(),
+            lumina::repo::NewFinding {
+                kind: Some("review"),
+                severity: Some(lumina::domain::Severity::Major),
+                summary: Some("needs rework: missing error handling"),
+                ..lumina::repo::NewFinding::default()
+            },
+        )],
+    )
+    .await
+    .expect("add_findings on the story");
+    assert_eq!(batch.added, 1, "exactly one finding added on the story");
+
+    // Read the finding id back (add_findings returns counts, not ids).
+    let finding_id: String =
+        sqlx::query_scalar("SELECT id FROM findings WHERE work_item_id = ?1")
+            .bind(&story)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read the story-hosted finding id");
+
+    let (_decision_id, spawned) = lumina::repo::record_finding_decision(
+        &pool,
+        &lumina::domain::NewFindingDecision {
+            finding_id: finding_id.clone(),
+            decision: lumina::domain::FindingDecisionKind::SpawnTask,
+            decided_by: Some("review-agent".to_owned()),
+        },
+    )
+    .await
+    .expect("record_finding_decision(spawn_task)");
+    let rework_task = spawned
+        .expect("spawn_task creates a rework work item")
+        .to_string();
+
+    // The rework task is parented under the story, lane='implement', sprint-bound.
+    let rework_parent: Option<String> =
+        sqlx::query_scalar("SELECT parent_id FROM work_items WHERE id = ?1")
+            .bind(&rework_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read rework parent");
+    assert_eq!(
+        rework_parent.as_deref(),
+        Some(story.as_str()),
+        "the rework task parents under the story (legal: finding hosted on the story)"
+    );
+    let rework_lane: Option<String> =
+        sqlx::query_scalar("SELECT lane FROM work_items WHERE id = ?1")
+            .bind(&rework_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read rework lane");
+    assert_eq!(
+        rework_lane.as_deref(),
+        Some("implement"),
+        "the spawn_task rework task is stamped lane='implement'"
+    );
+    let rework_bound: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = ?1 AND task_id = ?2",
+    )
+    .bind(&sprint_id)
+    .bind(&rework_task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count rework sprint binding");
+    assert_eq!(
+        rework_bound, 1,
+        "the rework task inherits the sprint via the story's existing membership"
+    );
+
+    // The loop closes: the rework task is itself claimable on the implement lane.
+    let claimed_rework = lumina::repo::claim_next_task(
+        &pool,
+        &sprint_id,
+        lumina::domain::Lane::Implement,
+        None,
+        "impl-agent-2",
+        300,
+    )
+    .await
+    .expect("claim_next_task(implement) for the rework task")
+    .expect("the rework task is claimable — the review→rework loop closes");
+    assert_eq!(
+        claimed_rework.task_id, rework_task,
+        "the implement-lane re-claim returns the rework task"
+    );
+
+    // 6. get_sprint_quiescence reflects the seeded state. At this point: impl
+    //    task done (terminal); review task still in_progress (claimed by
+    //    review-agent, never completed); rework task in_progress (just claimed).
+    //    So NOT done (in_progress > 0), and NOT stalled (nothing blocked).
+    let q_mid = lumina::repo::get_sprint_quiescence(&pool, &sprint_id)
+        .await
+        .expect("quiescence mid-flight");
+    assert!(!q_mid.done, "sprint is not done while tasks are in_progress: {q_mid:?}");
+    assert!(!q_mid.stalled, "sprint is not stalled (no blocked-on-question tasks): {q_mid:?}");
+    assert_eq!(q_mid.in_progress, 2, "review + rework tasks are in_progress: {q_mid:?}");
+    assert_eq!(q_mid.terminal, 1, "the completed impl task is terminal: {q_mid:?}");
+    assert_eq!(q_mid.claimable, 0, "no further claimable tasks remain: {q_mid:?}");
+
+    // Drive the verdict to `done`: complete the review task (review lane → done,
+    // no cascade) and the rework task (implement lane → would spawn a review, but
+    // we then complete that review too to fully quiesce). Simpler: complete the
+    // review task, then complete the rework task (which spawns a 2nd review), then
+    // complete that 2nd review. We assert the flip to `done` after quiescing all.
+    lumina::repo::complete_task(&pool, &review_task, "review-agent")
+        .await
+        .expect("complete the review task (review lane → done, no spawn)");
+    let rework_complete = lumina::repo::complete_task(&pool, &rework_task, "impl-agent-2")
+        .await
+        .expect("complete the rework task (implement lane → spawns a 2nd review)");
+    let second_review = rework_complete
+        .review_task_id
+        .expect("completing the rework impl task spawns a second review task");
+    // Claim + complete the second review to drain the cascade to quiescence.
+    let claimed_second_review = lumina::repo::claim_next_task(
+        &pool,
+        &sprint_id,
+        lumina::domain::Lane::Review,
+        None,
+        "review-agent",
+        300,
+    )
+    .await
+    .expect("claim the second review task")
+    .expect("the second review task is claimable");
+    assert_eq!(claimed_second_review.task_id, second_review);
+    lumina::repo::complete_task(&pool, &second_review, "review-agent")
+        .await
+        .expect("complete the second review task (review lane → done)");
+
+    let q_done = lumina::repo::get_sprint_quiescence(&pool, &sprint_id)
+        .await
+        .expect("quiescence after draining the cascade");
+    assert!(
+        q_done.done,
+        "the sprint flips to done once every task is terminal: {q_done:?}"
+    );
+    assert!(!q_done.stalled, "a done sprint is not stalled: {q_done:?}");
+    assert_eq!(q_done.in_progress, 0, "no in_progress tasks remain: {q_done:?}");
+    assert_eq!(q_done.claimable, 0, "no claimable tasks remain: {q_done:?}");
+
+    // 7. Drain git-export DIRECTLY (no sleep / no background loop) and assert the
+    //    exported work_items TOML snapshot carries the 4 new columns for the
+    //    relevant rows. Export is event-driven off work_items rows (T3 threaded
+    //    the columns into the row mapping/SELECTs), so the snapshots carry them
+    //    without any export-code change.
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+        .await
+        .expect("export drain");
+    assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
+
+    // 7a. The impl task snapshot carries lane='implement' + a cleared lease.
+    let impl_snapshot = export_dir.path().join("task").join(format!("{impl_task}.toml"));
+    assert!(impl_snapshot.exists(), "impl task snapshot exists at {}", impl_snapshot.display());
+    let impl_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&impl_snapshot).expect("read impl snapshot"))
+            .expect("parse impl snapshot TOML");
+    assert_eq!(
+        impl_toml["item"]["lane"].as_str(),
+        Some("implement"),
+        "the impl task snapshot carries the new `lane` column"
+    );
+    // assignee + lease_expires_at were cleared by complete_task; the
+    // skip_serializing_if = Option::is_none serde convention omits a None scalar,
+    // so the cleared lease fields are simply ABSENT from the snapshot (not null).
+    assert!(
+        impl_toml["item"].get("assignee").is_none(),
+        "the cleared assignee is omitted from the impl snapshot (skip_serializing_if None)"
+    );
+    assert!(
+        impl_toml["item"].get("lease_expires_at").is_none(),
+        "the cleared lease_expires_at is omitted from the impl snapshot"
+    );
+
+    // 7b. The review task snapshot carries lane='review' + the reviews_work_item_id
+    //     back-link column — the load-bearing new-column round-trip for the cascade.
+    let review_snapshot = export_dir.path().join("task").join(format!("{review_task}.toml"));
+    assert!(review_snapshot.exists(), "review task snapshot exists");
+    let review_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&review_snapshot).expect("read review snapshot"))
+            .expect("parse review snapshot TOML");
+    assert_eq!(
+        review_toml["item"]["lane"].as_str(),
+        Some("review"),
+        "the review task snapshot carries lane='review'"
+    );
+    assert_eq!(
+        review_toml["item"]["reviews_work_item_id"].as_str(),
+        Some(impl_task.as_str()),
+        "the review task snapshot carries the reviews_work_item_id back-link to the impl task"
+    );
+
+    // 7c. The rework task snapshot carries lane='implement'.
+    let rework_snapshot = export_dir.path().join("task").join(format!("{rework_task}.toml"));
+    assert!(rework_snapshot.exists(), "rework task snapshot exists");
+    let rework_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&rework_snapshot).expect("read rework snapshot"))
+            .expect("parse rework snapshot TOML");
+    assert_eq!(
+        rework_toml["item"]["lane"].as_str(),
+        Some("implement"),
+        "the rework task snapshot carries lane='implement'"
+    );
+
+    // 8. HTTP read (oneshot) via the NEW /api routes — no socket bind. Read the
+    //    sprint quiescence AND a work-item detail to prove the new fields/shape
+    //    come back over HTTP.
+    let state = AppState::new(pool.clone());
+
+    // 8a. GET /api/sprints/{id}/quiescence — the SprintQuiescence shape + verdict.
+    let quiescence_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/sprints/{sprint_id}/quiescence"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET sprint quiescence");
+    assert_eq!(quiescence_resp.status(), StatusCode::OK, "quiescence read returns 200");
+    let quiescence_body = json_body(quiescence_resp).await;
+    assert_eq!(
+        quiescence_body["done"].as_bool(),
+        Some(true),
+        "the HTTP quiescence read surfaces the done verdict"
+    );
+    assert_eq!(quiescence_body["in_progress"].as_i64(), Some(0));
+    assert_eq!(quiescence_body["claimable"].as_i64(), Some(0));
+    assert!(
+        quiescence_body["terminal"].as_i64().unwrap_or(0) >= 1,
+        "terminal count is surfaced over HTTP"
+    );
+
+    // 8b. GET /api/work-items/{review_task} — the work-item detail surfaces the
+    //     new lane + reviews_work_item_id fields (T3 threaded them into
+    //     WorkItemDetail).
+    let review_detail_resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{review_task}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET review task detail");
+    assert_eq!(review_detail_resp.status(), StatusCode::OK, "review detail returns 200");
+    let review_detail = json_body(review_detail_resp).await;
+    assert_eq!(
+        review_detail["item"]["lane"].as_str(),
+        Some("review"),
+        "the HTTP work-item detail surfaces the new `lane` field"
+    );
+    assert_eq!(
+        review_detail["item"]["reviews_work_item_id"].as_str(),
+        Some(impl_task.as_str()),
+        "the HTTP work-item detail surfaces the reviews_work_item_id back-link — full thread closed"
+    );
+}
