@@ -176,10 +176,101 @@ pub(crate) async fn count_events_of_type(pool: &SqlitePool, event_type: &str) ->
 
 /// Seed a legal sprint with no tasks; returns the sprint id. Shared by the
 /// runs/sprints cluster tests (`runs_sprints.rs`) and the team-execution
-/// claim/complete tests that remain in `repo/mod.rs`.
+/// claim/complete tests (`team_execution.rs`) + the readiness/quiescence tests
+/// (`readiness.rs`).
 pub(crate) async fn seed_sprint(pool: &SqlitePool) -> String {
     create_sprint(pool, &NewSprint { title: Some("S1".into()) })
         .await
         .expect("legal sprint")
         .to_string()
+}
+
+/// Create a `task` under `story`, stamp its `lane` (and optional `tier`),
+/// and bind it to `sprint`. Returns the task id. `tier` is a wire-form
+/// string (`"lite"`/`"deep"`) or `None`. Shared by the team-execution claim/
+/// release/complete tests (`team_execution.rs`) and the quiescence/open-question
+/// readiness tests (`readiness.rs`).
+pub(crate) async fn seed_queue_task(
+    pool: &SqlitePool,
+    story: &str,
+    sprint: &str,
+    title: &str,
+    lane: Option<&str>,
+    tier: Option<&str>,
+) -> String {
+    let task = create_work_item(pool, "task", Some(story), title, None)
+        .await
+        .expect("task")
+        .to_string();
+    // Stamp lane + tier directly (no repo mutator for `lane` yet) and move
+    // the task to the queue-ready `todo` status. `create_work_item` stamps
+    // the literal `status="open"` (the create default); the claim's
+    // readiness set is `{todo, open}` (both are "ready, not started"), so a
+    // task staged at `todo` by the planning flow is claimable — this helper
+    // exercises that path. The `'open'`-preserving path (the create default,
+    // covering spawned review/rework tasks) is exercised by
+    // `seed_queue_task_open` + `claim_returns_open_status_task`.
+    sqlx::query("UPDATE work_items SET lane = $2, tier = $3, status = 'todo' WHERE id = $1")
+        .bind(&task)
+        .bind(lane)
+        .bind(tier)
+        .execute(pool)
+        .await
+        .expect("stamp lane/tier/status");
+    add_tasks_to_sprint(pool, sprint, &[task.as_str()])
+        .await
+        .expect("bind task to sprint");
+    task
+}
+
+/// Like [`seed_queue_task`] but PRESERVES the `create_work_item` default
+/// `status='open'` (stamps only `lane`/`tier`, never touches `status`). This
+/// is the real-world shape of a freshly-created task — and specifically of
+/// the review task `complete_task` (T6) and the rework task
+/// `record_finding_decision` (T8) spawn via the create path. A claim that
+/// keyed on `status='todo'` only would never see these.
+pub(crate) async fn seed_queue_task_open(
+    pool: &SqlitePool,
+    story: &str,
+    sprint: &str,
+    title: &str,
+    lane: Option<&str>,
+    tier: Option<&str>,
+) -> String {
+    let task = create_work_item(pool, "task", Some(story), title, None)
+        .await
+        .expect("task")
+        .to_string();
+    sqlx::query("UPDATE work_items SET lane = $2, tier = $3 WHERE id = $1")
+        .bind(&task)
+        .bind(lane)
+        .bind(tier)
+        .execute(pool)
+        .await
+        .expect("stamp lane/tier (status left at create-default 'open')");
+    add_tasks_to_sprint(pool, sprint, &[task.as_str()])
+        .await
+        .expect("bind task to sprint");
+    task
+}
+
+/// Read a task's (status, assignee, lease_expires_at) for assertions. Shared by
+/// the team-execution claim/release/complete tests (`team_execution.rs`).
+pub(crate) async fn task_lease_state(
+    pool: &SqlitePool,
+    task_id: &str,
+) -> (String, Option<String>, Option<String>) {
+    use sqlx::Row as _;
+    let r = sqlx::query(
+        "SELECT status, assignee, lease_expires_at FROM work_items WHERE id = $1",
+    )
+    .bind(task_id)
+    .fetch_one(pool)
+    .await
+    .expect("task row");
+    (
+        r.try_get("status").unwrap(),
+        r.try_get("assignee").unwrap(),
+        r.try_get("lease_expires_at").unwrap(),
+    )
 }
