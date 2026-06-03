@@ -3708,7 +3708,15 @@ pub async fn add_tasks_to_sprint(
 /// source, and the `Resolve` disposition UNDER-SPECIFIED; this implements the
 /// orchestrator's chosen, internally-consistent design:
 ///   * `SpawnTask` → create a child `task` under the finding's host work_item;
-///     `triage_state = "accepted"`.
+///     `triage_state = "accepted"`. The team-execution plan §E rework-lane
+///     extension additionally stamps `lane='implement'` + `tier=NULL` on the
+///     spawned task, binds it into a sprint (the finding's run target sprint, or
+///     a fallback to the host story's existing sprint membership), and bumps the
+///     host finding's `rounds` counter — all folded into THIS decision's single
+///     event so the rework task re-enters the §C claim queue. `tier=NULL` (NOT a
+///     `deep` default) is deliberate: it lets a lite OR deep agent re-claim the
+///     rework under the `(:tier IS NULL OR tier=:tier)` filter; a reviewer can
+///     force a tier afterward via `set_task_tier`.
 ///   * `SpawnStory` → create a child `story` under the finding's host work_item;
 ///     `triage_state = "accepted"`. NOTE (R12): for a queue-RESIDENT finding this
 ///     verdict is effectively UNREACHABLE — a `story` child needs a `focus`
@@ -3874,6 +3882,109 @@ pub async fn record_finding_decision(
             args![finding_id.to_owned(), new_id.to_string()],
         )
         .await?;
+
+        // --- Rework-lane extension (team-execution plan §E). -----------------
+        // The `spawn_task` verdict on a story-hosted REVIEW finding is the
+        // review→rework loop: the spawned task must re-enter the §C claim queue
+        // as an `implement`-lane task. (The `spawn_story` verdict is NOT a
+        // rework task and gets none of this — it stays lane=NULL.) All three
+        // steps below fold into the SAME decision tx and add NO new event: the
+        // child's create + every stamp/bind folds into the one
+        // `finding.decision_recorded` event recorded below (R-B4), exactly as
+        // `complete_task`'s review spawn folds into its one create event.
+        if kind == "task" {
+            let new_id_str = new_id.to_string();
+
+            // 1. Stamp the rework lane/tier. lane='implement' makes the task
+            //    claimable on the Implement lane; tier=NULL (per §E — NOT a
+            //    default `deep`) is the explicit "tier unassigned, set later via
+            //    set_task_tier" state, so a lite OR deep agent can re-claim it
+            //    under the `(:tier IS NULL OR tier=:tier)` claim filter. (A
+            //    `deep` default would prejudge the rework and hide it from
+            //    lite-tier claims.) "review" is a LANE, never a tier; the rework
+            //    task is on the implement lane regardless of the originating
+            //    review run. Mirrors `complete_task`'s post-create lane/tier
+            //    stamp idiom.
+            tx.execute(
+                r#"
+                UPDATE work_items
+                SET lane = 'implement',
+                    tier = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+                "#,
+                args![new_id_str.clone()],
+            )
+            .await?;
+
+            // 2. Bind the rework task into a sprint so the §C claim JOIN (keyed
+            //    on `sprint_tasks`) can surface it. Resolution order:
+            //      (a) PREFER the finding's run target — when the finding carries
+            //          a run_id AND that run targets a sprint (runs.target_kind=
+            //          'sprint'), use runs.target_id directly.
+            //      (b) FALLBACK to the host story's existing sprint membership —
+            //          the DISTINCT sprint_id of the story's sprint-bound tasks.
+            //          (This is the path the review→rework loop normally takes:
+            //          the review run targets the STORY, not a sprint, so (a)
+            //          yields nothing and we inherit the sprint via the story's
+            //          already-bound tasks — e.g. the impl task that produced the
+            //          finding.)
+            //    If NEITHER resolves, the task is left unbound: it is still
+            //    lane='implement' but invisible to the claim (harmless — a later
+            //    add_tasks_to_sprint can bind it). The bind is idempotent at the
+            //    junction (ON CONFLICT DO NOTHING), mirroring `add_tasks_to_sprint`
+            //    / `complete_task`.
+            let sprint_id: Option<String> = match host_row.run_id.as_deref() {
+                Some(rid) => crate::db::tx_scalar_opt::<String>(
+                    tx.as_mut(),
+                    "SELECT target_id FROM runs WHERE id = $1 AND target_kind = 'sprint'",
+                    args![rid.to_owned()],
+                )
+                .await?,
+                None => None,
+            };
+            let sprint_id: Option<String> = match sprint_id {
+                Some(s) => Some(s),
+                // Fallback: the host story's existing sprint membership. `host`
+                // is the finding's host work_item (the story for a review
+                // finding); its sprint-bound task children share the sprint.
+                None => crate::db::tx_scalar_opt::<String>(
+                    tx.as_mut(),
+                    r#"
+                    SELECT DISTINCT st.sprint_id
+                    FROM sprint_tasks st
+                    JOIN work_items t ON t.id = st.task_id
+                    WHERE t.parent_id = $1
+                    "#,
+                    args![host.to_owned()],
+                )
+                .await?,
+            };
+            if let Some(sprint) = sprint_id {
+                tx.execute(
+                    r#"
+                    INSERT INTO sprint_tasks (sprint_id, task_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT(sprint_id, task_id) DO NOTHING
+                    "#,
+                    args![sprint, new_id_str.clone()],
+                )
+                .await?;
+            }
+
+            // 3. Round-cap counter: increment the host finding's `rounds` (the
+            //    review→rework round counter). `rounds` is nullable and written
+            //    ONLY at insert today, so COALESCE the NULL to 0 before the bump.
+            //    The `rounds >= N` cap that makes the reviewer defer+escalate
+            //    instead of spawning another rework is the CONSUMER's logic — we
+            //    only MAINTAIN the counter here.
+            tx.execute(
+                "UPDATE findings SET rounds = COALESCE(rounds, 0) + 1 WHERE id = $1",
+                args![finding_id.to_owned()],
+            )
+            .await?;
+        }
+
         Some(new_id)
     } else {
         None
@@ -11299,6 +11410,114 @@ mod tests {
             recorded_spawn.as_deref(),
             Some(new_id.as_str()),
             "the decision row names the spawned work_item"
+        );
+    }
+
+    /// Team-execution plan §E review→rework loop: a `spawn_task` on a
+    /// STORY-hosted finding, where the story already has a sprint-bound task,
+    /// yields a rework task that is `lane='implement'`, `tier=NULL`, bound into
+    /// that SAME sprint (via the host-story fallback resolution path, since the
+    /// review run targets the story not a sprint), and is consequently CLAIMABLE
+    /// on the Implement lane. The host finding's `rounds` counter increments by 1.
+    /// All of this folds into the ONE `finding.decision_recorded` event (no new
+    /// event — the rework spawn is part of the decision, R-B4).
+    #[tokio::test]
+    async fn record_finding_decision_spawn_task_rework_is_claimable() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+
+        // An existing sprint-bound impl task under the story — its sprint
+        // membership is what the rework spawn's host-story FALLBACK inherits.
+        let _impl_task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // A review finding hosted ON THE STORY (the legal host for a rework
+        // spawn). Default `rounds` is NULL on insert.
+        let finding = create_finding(
+            &pool,
+            &story,
+            &NewFinding { summary: Some("rework: fix the bug"), ..NewFinding::default() },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+
+        // Exactly one finding.decision_recorded event for the whole spawn (no
+        // extra event from the lane/sprint/rounds stamps).
+        let (_decision_id, spawned) = record_finding_decision(
+            &db,
+            &NewFindingDecision {
+                finding_id: finding.clone(),
+                decision: FindingDecisionKind::SpawnTask,
+                decided_by: Some("reviewer".into()),
+            },
+        )
+        .await
+        .expect("spawn_task decision");
+        let rework_id = spawned.expect("spawn_task yields a work_item id").to_string();
+
+        // The decision recorded exactly ONE finding.decision_recorded event (the
+        // rework spawn folded in — no separate work_item.created for it).
+        assert_eq!(
+            count_events_for(&pool, &finding, "finding.decision_recorded").await,
+            1,
+            "exactly one decision event — the rework spawn folds into it"
+        );
+
+        // lane='implement', tier=NULL on the rework task.
+        let (lane, tier): (Option<String>, Option<String>) = {
+            use sqlx::Row as _;
+            let r = sqlx::query("SELECT lane, tier FROM work_items WHERE id = $1")
+                .bind(&rework_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            (r.try_get("lane").unwrap(), r.try_get("tier").unwrap())
+        };
+        assert_eq!(lane.as_deref(), Some("implement"), "rework task is on the implement lane");
+        assert_eq!(tier, None, "rework tier left NULL (§E — not a deep default)");
+
+        // Bound into the story's sprint via the fallback path.
+        let bound: i64 = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = $1 AND task_id = $2",
+        )
+        .bind(&sprint)
+        .bind(&rework_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count sprint membership");
+        assert_eq!(bound, 1, "rework task bound into the host story's sprint");
+
+        // The host finding's rounds incremented NULL→1.
+        let rounds: Option<i64> =
+            sqlx::query_scalar::<_, Option<i64>>("SELECT rounds FROM findings WHERE id = $1")
+                .bind(&finding)
+                .fetch_one(&pool)
+                .await
+                .expect("select rounds");
+        assert_eq!(rounds, Some(1), "host finding rounds incremented by 1 (NULL→1)");
+
+        // And it is now CLAIMABLE on the Implement lane (tier unconstrained).
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-rework", 1800)
+            .await
+            .expect("claim runs")
+            .expect("the rework task is claimable");
+        // The first ready impl candidate is claimed; the rework task must be a
+        // legitimate claim target. (The pre-existing IMPL task is also claimable;
+        // assert the rework task is reachable by claiming until we get it.)
+        let mut claimed_ids = vec![claimed.task_id.clone()];
+        if claimed.task_id != rework_id {
+            let second = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-rework-2", 1800)
+                .await
+                .expect("second claim runs")
+                .expect("a second implement task is claimable");
+            claimed_ids.push(second.task_id);
+        }
+        assert!(
+            claimed_ids.contains(&rework_id),
+            "the rework task is claimable on the Implement lane, claimed: {claimed_ids:?}"
         );
     }
 
