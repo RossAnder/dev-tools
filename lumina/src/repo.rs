@@ -6930,7 +6930,7 @@ pub async fn renew_lease(
 /// reuse case the EXISTING child id is returned, never `None`). A repo.rs-local
 /// struct (NOT in `domain.rs`) to honour the task's file-ownership constraint;
 /// the MCP/HTTP surface (T9/T10) wraps it with `Content::json`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CompleteTaskResult {
     pub task_id: String,
     /// `Some(review_task_id)` for an implement-lane completion (freshly spawned
