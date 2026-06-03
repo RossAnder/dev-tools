@@ -14,6 +14,7 @@
 use sqlx::SqlitePool;
 
 use super::*;
+use crate::domain::NewSprint;
 
 /// Row count of `work_items` (compile-checked literal — sqlx 0.9's
 /// `SqlSafeStr` bound rejects a dynamically-built table name on the runtime
@@ -171,4 +172,14 @@ pub(crate) async fn count_events_of_type(pool: &SqlitePool, event_type: &str) ->
         .fetch_one(pool)
         .await
         .unwrap()
+}
+
+/// Seed a legal sprint with no tasks; returns the sprint id. Shared by the
+/// runs/sprints cluster tests (`runs_sprints.rs`) and the team-execution
+/// claim/complete tests that remain in `repo/mod.rs`.
+pub(crate) async fn seed_sprint(pool: &SqlitePool) -> String {
+    create_sprint(pool, &NewSprint { title: Some("S1".into()) })
+        .await
+        .expect("legal sprint")
+        .to_string()
 }
