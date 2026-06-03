@@ -90,6 +90,10 @@ struct WorkItemRow {
     tier: Option<String>,
     shape: Option<String>,
     spawned_from_finding_id: Option<String>,
+    assignee: Option<String>,
+    lease_expires_at: Option<String>,
+    lane: Option<String>,
+    reviews_work_item_id: Option<String>,
     created_at: String,
     updated_at: String,
     /// Soft-delete tombstone instant (NULL = live). Selected by both
@@ -129,6 +133,10 @@ where
             tier: row.try_get("tier")?,
             shape: row.try_get("shape")?,
             spawned_from_finding_id: row.try_get("spawned_from_finding_id")?,
+            assignee: row.try_get("assignee")?,
+            lease_expires_at: row.try_get("lease_expires_at")?,
+            lane: row.try_get("lane")?,
+            reviews_work_item_id: row.try_get("reviews_work_item_id")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             deleted_at: row.try_get("deleted_at")?,
@@ -159,6 +167,10 @@ fn work_item_from_row(r: WorkItemRow) -> Result<WorkItem, AppError> {
         tier: r.tier,
         shape: r.shape,
         spawned_from_finding_id: r.spawned_from_finding_id,
+        assignee: r.assignee,
+        lease_expires_at: r.lease_expires_at,
+        lane: r.lane,
+        reviews_work_item_id: r.reviews_work_item_id,
         created_at: r.created_at,
         updated_at: r.updated_at,
         deleted_at: r.deleted_at,
@@ -504,7 +516,8 @@ const LIST_WORK_ITEMS_SQL: &str = r#"
             id, kind, parent_id, title, body, status, position, attributes,
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
-            spawned_from_finding_id, created_at, updated_at, deleted_at
+            spawned_from_finding_id, assignee, lease_expires_at, lane,
+            reviews_work_item_id, created_at, updated_at, deleted_at
         FROM work_items
         WHERE deleted_at IS NULL
           AND ($1 IS NULL OR parent_id = $1)
@@ -607,7 +620,8 @@ const GET_WORK_ITEM_DETAIL_SQL: &str = r#"
             id, kind, parent_id, title, body, status, position, attributes,
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
-            spawned_from_finding_id, created_at, updated_at, deleted_at
+            spawned_from_finding_id, assignee, lease_expires_at, lane,
+            reviews_work_item_id, created_at, updated_at, deleted_at
         FROM work_items
         WHERE id = $1
         "#;

@@ -82,6 +82,27 @@ pub struct WorkItem {
     /// the export tables-last ordering gate stays satisfied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spawned_from_finding_id: Option<String>,
+    /// Work-queue claim owner (team-execution migration): the agent id holding
+    /// the current lease on this task; NULL when unclaimed. A scalar placed
+    /// before the timestamp scalars (NOT after any Vec field) so the export
+    /// tables-last ordering gate stays satisfied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignee: Option<String>,
+    /// Work-queue lease deadline (team-execution migration): ISO-8601 instant
+    /// after which the lease is reclaimable; NULL when unclaimed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lease_expires_at: Option<String>,
+    /// Work-queue lane (team-execution migration): `implement|review`. NULL on
+    /// rows outside the queue. Carried as `Option<String>` on the row per the
+    /// row-struct idiom (see `tier`/`task_kind`), with the typed [`Lane`] enum
+    /// used by the wire / MCP / claim-result layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<String>,
+    /// Review back-link (team-execution migration): for a `lane='review'` task,
+    /// the `work_items.id` of the implementation task this review covers; NULL
+    /// otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviews_work_item_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     /// Soft-delete tombstone instant (`None` = live). Carried here off the detail
@@ -884,6 +905,21 @@ pub enum Tier {
     Deep,
 }
 
+/// Work-queue lane (team-execution migration) — CHECK-enforced at the DB layer
+/// on the `work_items.lane` column (`implement|review`). The wire form matches
+/// the SQL CHECK literals byte-for-byte (snake_case). Distinct from [`Tier`]:
+/// "review" is a LANE, never a tier. Used at the claim-result / MCP-param / HTTP
+/// layer; the [`WorkItem`] row struct carries `lane` as `Option<String>` per the
+/// row-struct idiom (see `tier`/`task_kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Lane {
+    /// Implementation lane — the impl task an executor claims and works.
+    Implement,
+    /// Review lane — a review task covering a completed implementation task.
+    Review,
+}
+
 /// Focus shape (migration 0010) — CHECK-enforced at the DB layer on the
 /// `work_items.shape` column (`vertical-slice|cross-cutting|foundational`). A
 /// `focus` (renamed from feature) is a per-epic grouping carrying a mandatory
@@ -1065,6 +1101,83 @@ pub struct StoryReadiness {
     pub has_acceptance_criteria_on_all_tasks: bool,
     pub ready_for_decomposition: bool,
     pub next_recommended_action: NextAction,
+}
+
+/// Result of a successful `claim_next_task` (team-execution migration): the
+/// claimed task's id, its lane + tier, the leasing agent, the lease deadline,
+/// the task's `files_touched` spec (raw JSON entries — bare path strings or
+/// `{repo,path}` objects), and any advisory file-overlap warnings against other
+/// in-progress tasks (populated post-claim per ADR-0002; advisory only, the
+/// claim is NOT rejected on overlap). Single source of truth for the downstream
+/// claim/complete tooling. Read aggregate only — `Debug, Clone, Serialize`
+/// (mirrors [`BatchEntry`]/[`StoryReadiness`]; the MCP layer wraps it with
+/// `Content::json`).
+#[derive(Debug, Clone, Serialize)]
+pub struct ClaimedTask {
+    pub task_id: String,
+    pub lane: Lane,
+    /// `None` ⇒ task spec carries no tier.
+    pub tier: Option<Tier>,
+    pub assignee: String,
+    pub lease_expires_at: String,
+    /// Raw `attributes.files_touched` entries — bare path strings or
+    /// `{repo,path}` objects (the legacy/widened forms, see `set_task_spec`).
+    pub files_touched: Vec<serde_json::Value>,
+    /// Advisory file-overlap entries against other in-progress tasks (ADR-0002);
+    /// empty when no overlap. The claim is never rejected on overlap.
+    pub file_overlap_warnings: Vec<FileOverlapWarning>,
+}
+
+/// One advisory file-overlap entry on a [`ClaimedTask`] (team-execution
+/// migration, ADR-0002): the id of another in-progress task that shares one or
+/// more `files_touched` paths with the just-claimed task, and the shared paths.
+/// Advisory only — surfaces a coordination hint, never blocks the claim. Read
+/// aggregate only — `Debug, Clone, Serialize`.
+#[derive(Debug, Clone, Serialize)]
+pub struct FileOverlapWarning {
+    pub task_id: String,
+    /// The file paths shared with the just-claimed task.
+    pub shared: Vec<String>,
+}
+
+/// Sprint quiescence verdict (team-execution migration): the lead polls this to
+/// decide whether to terminate (all work done) or escalate (stalled — blocked
+/// with nothing claimable to make progress). The four counts are taken across
+/// the sprint's tasks in all lanes; `done`/`stalled` are derived roll-ups. The
+/// counts are `i64` to match the SQLite count-column parity used elsewhere in
+/// the repo layer. Read aggregate only — `Debug, Clone, Serialize`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SprintQuiescence {
+    /// Tasks satisfying the claim-readiness predicate (minus the lease).
+    pub claimable: i64,
+    /// Tasks currently leased / `in_progress`.
+    pub in_progress: i64,
+    /// Tasks blocked on an unresolved open question.
+    pub blocked_on_question: i64,
+    /// Tasks in a terminal state (`done`/`cancelled`).
+    pub terminal: i64,
+    /// `claimable == 0 && in_progress == 0 && blocked_on_question == 0`.
+    pub done: bool,
+    /// `blocked_on_question > 0 && claimable == 0 && in_progress == 0` — needs
+    /// an arbiter to resolve a question before progress can resume.
+    pub stalled: bool,
+}
+
+/// One unresolved open question across a sprint's stories (team-execution
+/// migration): surfaced to a dedicated arbiter agent that resolves
+/// code/convention questions and escalates product calls to the human (who
+/// answers via `POST /open-questions/{id}/resolve`). Carries the question id,
+/// the owning story, the question text, the option labels, and the question's
+/// age in seconds. Read aggregate only — `Debug, Clone, Serialize`.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenQuestionSummary {
+    pub question_id: String,
+    pub story_id: String,
+    pub text: String,
+    /// The answer-option labels.
+    pub options: Vec<String>,
+    /// Age of the question in seconds (now − created_at).
+    pub age_secs: i64,
 }
 
 /// The recommended next planning action for a story, computed by the
@@ -1407,6 +1520,19 @@ mod tests {
         assert_eq!(
             serde_json::to_value(FindingDecisionKind::SpawnStory).unwrap(),
             serde_json::json!("spawn_story")
+        );
+    }
+
+    #[test]
+    fn lane_round_trips_wire_form() {
+        // Wire form must equal the work_items.lane CHECK vocab byte-for-byte.
+        assert_snake(Lane::Implement, "implement");
+        assert_snake(Lane::Review, "review");
+        // Explicit assertions on the load-bearing wire strings.
+        assert_eq!(serde_json::to_string(&Lane::Implement).unwrap(), "\"implement\"");
+        assert_eq!(
+            serde_json::from_str::<Lane>("\"review\"").unwrap(),
+            Lane::Review
         );
     }
 
