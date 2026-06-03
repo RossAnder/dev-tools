@@ -1,2 +1,283 @@
 schema_version = 1
-last_updated = 2026-06-02
+last_updated = 2026-06-03
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-03
+agent = "implement"
+summary = "Flow status draft to in-progress at implementation start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "957e704b72e72637"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t1-add-migration-0013-team-execution-sql"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added migration 0013 (assignee/lease_expires_at/lane CHECK/reviews_work_item_id + 2 partial indexes) and migration_0013.rs; EXPLAIN QUERY PLAN confirms idx_work_items_claim used."
+files = [
+    "lumina/migrations/0013_team_execution.sql",
+    "lumina/tests/migration_0013.rs",
+]
+dedup_id = "ca10c35ee8ef4623"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t2-add-lane-enum-result-types"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added Lane enum (implement|review), result structs ClaimedTask/FileOverlapWarning/SprintQuiescence/OpenQuestionSummary, extended WorkItem with 4 scalar columns before created_at, + Lane round-trip test."
+files = ["lumina/src/domain.rs"]
+dedup_id = "e10bcddd172710dc"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t3-extend-workitem-row-mapping-for-the-new-columns"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Threaded the 4 team-execution columns through WorkItemRow, FromRow (by-name try_get), work_item_from_row and both SELECT lists; updated export.rs tables-last fixture. Crate compiles clean; migration_0013 + lane round-trip tests pass."
+files = [
+    "lumina/src/repo.rs",
+    "lumina/src/export.rs",
+]
+commits = ["4cfaf6e"]
+scope_warning = true
+dedup_id = "bd281c9d9fa89b76"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t4-implement-claim-next-task"
+summary = "Widened claim readiness predicate from status='todo' to status IN ('todo','open') at both the candidate-select and lease-UPDATE sites."
+original_intent = "Plan §C pinned the claim readiness predicate to status='todo', reusing the documented Status enum (todo|in_progress|blocked|done|cancelled)."
+rationale = "create_work_item stamps status='open' (repo.rs:1567) and the work_items column DEFAULT is 'open' (repo.rs:3570/3606), so freshly-created tasks AND the review/rework tasks spawned by complete_task (T6) and record_finding_decision (T8) all default to 'open'. A 'todo'-only claim would never see them, silently breaking the review-rework cascade. block_task_on_question (repo.rs:4299) already treats todo|open as the equivalent not-started set. The lease-UPDATE guard required the same widening or an 'open' candidate selects but leases 0 rows. Verified: 6/6 claim tests green incl. claim_returns_open_status_task."
+commits = ["ecc2bd9"]
+dedup_id = "9e4157ea49bc72c6"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t4-implement-claim-next-task"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented claim_next_task: one BEGIN IMMEDIATE txn (lazy reclaim -> sprint guard -> first-ready candidate select -> lease + work_item.claimed event); post-commit advisory file-overlap report. 6 unit tests (deps/overlap/empty-lane/reclaim-event/legacy-null/sprint-guard/open-claimability). Build+clippy+macro-gate green."
+files = ["lumina/src/repo.rs"]
+commits = ["ecc2bd9"]
+dedup_id = "0ec11dd08c61780b"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t5-implement-release-task-renew-lease"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented release_task (owner-guarded; clears lease, CASE flips only in_progress->todo, leaves blocked) and renew_lease (owned in_progress heartbeat). Each: one BEGIN IMMEDIATE txn, one event on mutate / none on no-op; Result<bool>. 4 unit tests pass."
+files = ["lumina/src/repo.rs"]
+commits = ["674417f"]
+dedup_id = "5db2a15233b27fef"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t6-implement-complete-task-cascade"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented complete_task: composes update_work_item_status(done, closure-gate kept) + owner-guarded lease-clear + idempotent review-task spawn under the story (lane=review, reviews_work_item_id backlink, files_touched copy, dep edge, sprint_tasks bind). Lane-aware (review/NULL no spawn); crash-recovery idempotent. 3 tests pass."
+files = ["lumina/src/repo.rs"]
+commits = ["da2e297"]
+dedup_id = "6d936d8da8fd63c3"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t7-implement-get-sprint-quiescence-list-open-questions"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented get_sprint_quiescence (SUM(CASE) counts; claimable predicate byte-consistent with claim_next_task; done/stalled verdict) + list_open_questions_for_sprint (unresolved, story-scoped, with options + age_secs). 4 unit tests pass."
+files = ["lumina/src/repo.rs"]
+commits = ["fdeff3c"]
+dedup_id = "237d9d98a7d87831"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t8-extend-record-finding-decision-spawntask-rework-lane"
+summary = "Stamped rework task tier=NULL (per Approach §E), not default deep (per the terse T8 action line)."
+original_intent = "The T8 task action line said: stamp lane='implement' + tier via compute_tier/default deep on spawned rework tasks."
+rationale = "Approach §E explicitly contradicts that, specifying tier=NULL with the rationale that NULL is the 'set tier later via set_task_tier' state and a deep default would prejudge the rework's tier (and is invisible to lite-specific claims). §E is the detailed, reasoned Approach spec; the T8 line is a one-line summary. Followed §E (tier=NULL). Recorded so the choice is auditable."
+commits = ["84771c0"]
+dedup_id = "4f507399feba5e4d"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t8-extend-record-finding-decision-spawntask-rework-lane"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extended record_finding_decision spawn_task: lane='implement', tier=NULL, sprint-bind (run target sprint else host story's sprint), findings.rounds++; folded into the existing decision event. New rework-claimable test + 5 pre-existing decision tests pass (16 matched)."
+files = ["lumina/src/repo.rs"]
+commits = ["84771c0"]
+dedup_id = "1e28d52aceff77b8"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t9-add-6-mcp-tools-update-count-invariant"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added 6 MCP tools (4 writes + 2 read_only_hint reads) delegating 1:1 to the repo fns; claim None->{claimed:null}; release/renew false->{released/renewed:false}. Count invariant 67->73 with breakdown comment + membership loop updated. tool_count test passes at 73."
+files = ["lumina/src/mcp.rs"]
+commits = ["e977ab5"]
+dedup_id = "a7fe6086da4130f1"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t10-add-http-mirrors"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added http/execution.rs with 6 routes (1:1 repo delegation, claim None->{claimed:null}), registered execution::router() in http/mod.rs; app.rs untouched. 3 oneshot route tests pass."
+files = [
+    "lumina/src/http/execution.rs",
+    "lumina/src/http/mod.rs",
+]
+commits = ["e977ab5"]
+dedup_id = "c11f29c7a8ee4f26"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t11-claim-concurrency-test"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added claim_concurrency.rs: deterministic N=8 no-double-claim under contention (no SQLITE_BUSY) + no-sleep lazy-reclaim via seeded past lease. 2 tests, run twice, no flake."
+files = ["lumina/tests/claim_concurrency.rs"]
+commits = ["f91948d"]
+dedup_id = "d0938fb2de141db3"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t12-e2e-thread-extension"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extended e2e.rs: claim -> complete(review spawned+backlinked) -> claim(review) -> findings+rework spawn(claimable) -> quiescence -> export drains new columns -> HTTP read. No socket/sleep. 20/20 e2e pass."
+files = ["lumina/tests/e2e.rs"]
+commits = ["f91948d"]
+dedup_id = "e31ca52f0b80a709"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "t13-update-docs-catalogue"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Docs synced to 73 tools: CLAUDE.md/lumina/CLAUDE.md/plugin SKILL.md catalogue 6 new tools + advisory file-overlap (ADR-0002); corrected compute_task_batches task-on-question claim; stale 58->73 comments in app.rs/pty/ask.rs."
+files = [
+    "CLAUDE.md",
+    "lumina/CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+    "lumina/src/app.rs",
+    "lumina/src/pty/ask.rs",
+]
+commits = ["75f925b"]
+scope_warning = true
+dedup_id = "053cbb5a84716923"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo build clean"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "834e94d62539809f"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo clippy clean (no warnings)"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "7f5205336ca743ef"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo nextest 320/320 passed (full suite)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "c727166c391cd3c8"
+
+[[items]]
+id = "E21"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "macro-eradication gate: 0 sqlx bang-macros"
+command = "rg -c sqlx::query bang-macro over lumina/src lumina/tests"
+outcome = "pass"
+dedup_id = "3fccf3251c9fd6e4"
+
+[[items]]
+id = "E22"
+type = "status-transition"
+date = 2026-06-03
+agent = "plan-update"
+summary = "All 13 tasks complete and verified (build, 320/320 tests, clippy, macro-gate); implementation finished, awaiting review."
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "7bac14547f0e4bc8"

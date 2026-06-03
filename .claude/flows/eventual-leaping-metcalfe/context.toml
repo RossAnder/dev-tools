@@ -1,8 +1,8 @@
 slug = "eventual-leaping-metcalfe"
 plan_path = "docs/plans/eventual-leaping-metcalfe.md"
-status = "draft"
+status = "review"
 created = 2026-06-02
-updated = 2026-06-02
+updated = 2026-06-03
 branch = "main"
 scope = [
     "lumina/migrations/**",
@@ -18,8 +18,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 13
+completed = 13
 in_progress = 0
 
 [artifacts]
