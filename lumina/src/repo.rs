@@ -6659,6 +6659,135 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// release_task + renew_lease (team-execution migration 0013, plan §C). The
+// lease-lifecycle companions to `claim_next_task`: `release_task` is the
+// park-and-pull / voluntary-yield path; `renew_lease` is the heartbeat. Both
+// are owner-guarded (`WHERE assignee = :agent_id`) so a non-owner — or a task
+// whose lease was already reclaimed out from under the caller — is a clean
+// no-op that mutates nothing and records no event. Each opens ONE
+// `BEGIN IMMEDIATE` txn and writes +1 work_items / +1 events when (and only
+// when) it actually mutates, mirroring `claim_next_task`.
+// ---------------------------------------------------------------------------
+
+/// Release a task the calling agent holds — clear its lease and (only if the
+/// task is mid-execution) hand it back to the ready queue. Owner-guarded: the
+/// `WHERE assignee = :agent_id` clause means a non-owner, a missing task, or a
+/// task whose lease was already reclaimed mutates NOTHING and records no event,
+/// returning `Ok(false)`.
+///
+/// Status semantics (plan §C): a single `CASE` makes `assignee`/
+/// `lease_expires_at` clearing unconditional while flipping `status` to `todo`
+/// ONLY when it is currently `in_progress`. A `blocked` task is deliberately
+/// LEFT `blocked` — park-after-question requires that a task parked on an open
+/// question stays invisible to the claim until the question resolves; resetting
+/// it to `todo` here would make it spuriously claimable while its question is
+/// still open. (Any other status — `done`/`cancelled` — is likewise left as-is;
+/// only `in_progress` returns to the queue.)
+///
+/// Returns `Ok(true)` if the row was the caller's and was updated, `Ok(false)`
+/// for the owner-guarded no-op. One `work_item.released` event on a true
+/// mutation; none on the no-op.
+pub async fn release_task(
+    db: &impl DbClient,
+    task_id: &str,
+    agent_id: &str,
+) -> Result<bool, AppError> {
+    let mut tx = db.begin().await?;
+
+    // Owner-guarded clear. `assignee`/`lease_expires_at` always cleared; status
+    // flips to `todo` ONLY from `in_progress` (a `blocked` task stays blocked so
+    // park-after-question holds). A non-owner / missing row matches 0 rows.
+    let affected = tx
+        .execute(
+            r#"
+        UPDATE work_items
+        SET assignee = NULL,
+            lease_expires_at = NULL,
+            status = CASE WHEN status = 'in_progress' THEN 'todo' ELSE status END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND assignee = $2
+        "#,
+            args![task_id.to_owned(), agent_id.to_owned()],
+        )
+        .await?;
+
+    if affected == 0 {
+        // Not owned by `agent_id` (or absent) — no-op, no event. Roll back via
+        // drop. Consistent with the owner-guarded no-op contract.
+        return Ok(false);
+    }
+
+    let payload = serde_json::json!({ "released_by": agent_id });
+    record_event(tx.as_mut(), "work_item", task_id, "work_item.released", payload).await?;
+
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// Heartbeat: extend the lease on a task the calling agent is actively running.
+/// Owner-guarded AND status-guarded (`WHERE assignee = :agent_id AND
+/// status = 'in_progress'`): the lease deadline is bumped to `now +
+/// lease_ttl_secs` ONLY for a row the caller owns and is mid-execution. A
+/// non-owner, a missing task, or a task no longer `in_progress` (e.g. already
+/// reclaimed or released) mutates NOTHING and records no event, returning
+/// `Ok(false)` — keeping the heartbeat minimal and idempotent.
+///
+/// The new deadline is computed by SQLite (`datetime('now', '+N seconds')`),
+/// matching the `claim_next_task` lease idiom so the stored `lease_expires_at`
+/// shares the `CURRENT_TIMESTAMP` format and the `<`/`>` reclaim comparisons stay
+/// lexical. `lease_ttl_secs` is the raw seconds-to-add; the default TTL tuning
+/// (e.g. 30 min) lives at the caller, not here.
+///
+/// Returns `Ok(true)` on a renewed lease, `Ok(false)` for the guarded no-op.
+/// One `work_item.lease_renewed` event on a true mutation; none on the no-op.
+pub async fn renew_lease(
+    db: &impl DbClient,
+    task_id: &str,
+    agent_id: &str,
+    lease_ttl_secs: i64,
+) -> Result<bool, AppError> {
+    let mut tx = db.begin().await?;
+
+    // `now + ttl` via the same SQLite `datetime(...)` modifier `claim_next_task`
+    // uses for the initial lease, so the stored value's format is identical.
+    let ttl_modifier = format!("+{lease_ttl_secs} seconds");
+    let affected = tx
+        .execute(
+            r#"
+        UPDATE work_items
+        SET lease_expires_at = datetime('now', $3),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND assignee = $2 AND status = 'in_progress'
+        "#,
+            args![task_id.to_owned(), agent_id.to_owned(), ttl_modifier],
+        )
+        .await?;
+
+    if affected == 0 {
+        // Not owned + in_progress (or absent) — no-op, no event.
+        return Ok(false);
+    }
+
+    // Read back the freshly-stamped deadline so the event payload carries the
+    // exact stored value (no Rust-side `now` recompute / sub-second skew).
+    let lease_expires_at: String = crate::db::tx_scalar_one::<String>(
+        tx.as_mut(),
+        "SELECT lease_expires_at FROM work_items WHERE id = $1",
+        args![task_id.to_owned()],
+    )
+    .await?;
+
+    let payload = serde_json::json!({
+        "renewed_by": agent_id,
+        "lease_expires_at": lease_expires_at,
+    });
+    record_event(tx.as_mut(), "work_item", task_id, "work_item.lease_renewed", payload).await?;
+
+    tx.commit().await?;
+    Ok(true)
+}
+
+// ---------------------------------------------------------------------------
 // get_story_readiness (migration 0005). Compose existing reads to summarise a
 // story's planning-pipeline readiness and the next recommended block.
 // Read-only; no transaction, no events.
@@ -11505,5 +11634,201 @@ mod tests {
         assert_eq!(status_after, "in_progress");
         assert_eq!(assignee.as_deref(), Some("agent-a"));
         assert!(lease.is_some(), "lease deadline stamped on the claimed open task");
+    }
+
+    // =======================================================================
+    // release_task + renew_lease (T5) — the lease-lifecycle companions to
+    // claim_next_task. Reuse the claim seed helpers (seed_chain_to_story +
+    // seed_sprint + seed_queue_task) for the project→…→story→task chain and a
+    // claimed/leased task; cover the four plan T5 acceptance bullets.
+    // =======================================================================
+
+    /// release frees a lease: an owned `in_progress` task returns to `todo` with
+    /// `assignee`/`lease_expires_at` cleared, and exactly one `work_item.released`
+    /// event is recorded.
+    #[tokio::test]
+    async fn release_frees_in_progress_lease() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
+
+        // Claim it so it is genuinely in_progress + leased to agent-a.
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(claimed.task_id, task);
+
+        let events_before = count_events_of_type(&pool, "work_item.released").await;
+
+        let released = release_task(&db, &task, "agent-a")
+            .await
+            .expect("release runs");
+        assert!(released, "the owner releases its own in_progress lease");
+
+        let (status, assignee, lease) = task_lease_state(&pool, &task).await;
+        assert_eq!(status, "todo", "in_progress → todo on release");
+        assert_eq!(assignee, None, "assignee cleared");
+        assert_eq!(lease, None, "lease_expires_at cleared");
+
+        assert_eq!(
+            count_events_of_type(&pool, "work_item.released").await,
+            events_before + 1,
+            "exactly one release event on a true mutation"
+        );
+    }
+
+    /// releasing a `blocked` task clears the lease but KEEPS status='blocked'
+    /// (park-after-question: a task parked on an open question must stay
+    /// invisible to the claim until the question resolves).
+    #[tokio::test]
+    async fn release_keeps_blocked_task_blocked() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
+
+        // Seed a leased BLOCKED task owned by agent-a (the park-after-question
+        // shape: assignee + lease set, status='blocked').
+        sqlx::query(
+            "UPDATE work_items SET status = 'blocked', assignee = 'agent-a', \
+             lease_expires_at = datetime('now', '+1800 seconds') WHERE id = $1",
+        )
+        .bind(&task)
+        .execute(&pool)
+        .await
+        .expect("seed blocked+leased");
+
+        let released = release_task(&db, &task, "agent-a")
+            .await
+            .expect("release runs");
+        assert!(released, "the owner-guarded clear still mutates (lease cleared)");
+
+        let (status, assignee, lease) = task_lease_state(&pool, &task).await;
+        assert_eq!(status, "blocked", "a blocked task STAYS blocked on release");
+        assert_eq!(assignee, None, "assignee still cleared");
+        assert_eq!(lease, None, "lease still cleared");
+    }
+
+    /// renew extends `lease_expires_at` for an owned `in_progress` task, and
+    /// records exactly one `work_item.lease_renewed` event.
+    #[tokio::test]
+    async fn renew_extends_owned_in_progress_lease() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
+
+        // Seed an owned in_progress task with a SHORT lease, so a renew to a
+        // longer TTL produces a strictly-later deadline (lexical compare on the
+        // CURRENT_TIMESTAMP format).
+        sqlx::query(
+            "UPDATE work_items SET status = 'in_progress', assignee = 'agent-a', \
+             lease_expires_at = datetime('now', '+1 seconds') WHERE id = $1",
+        )
+        .bind(&task)
+        .execute(&pool)
+        .await
+        .expect("seed short lease");
+        let (_, _, before) = task_lease_state(&pool, &task).await;
+        let before = before.expect("seeded lease present");
+
+        let events_before = count_events_of_type(&pool, "work_item.lease_renewed").await;
+
+        let renewed = renew_lease(&db, &task, "agent-a", 3600)
+            .await
+            .expect("renew runs");
+        assert!(renewed, "the owner renews its own in_progress lease");
+
+        let (status, assignee, after) = task_lease_state(&pool, &task).await;
+        assert_eq!(status, "in_progress", "status unchanged by renew");
+        assert_eq!(assignee.as_deref(), Some("agent-a"), "assignee unchanged");
+        let after = after.expect("lease still present");
+        assert!(
+            after > before,
+            "renew pushes the deadline later: {after} > {before}"
+        );
+
+        assert_eq!(
+            count_events_of_type(&pool, "work_item.lease_renewed").await,
+            events_before + 1,
+            "exactly one renew event on a true mutation"
+        );
+    }
+
+    /// A non-owner release/renew is a no-op (`Ok(false)`) that mutates nothing
+    /// and records no event. Also covers renew of a non-`in_progress` owned task
+    /// (status-guard no-op).
+    #[tokio::test]
+    async fn release_and_renew_non_owner_is_noop() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
+
+        // Owned by agent-a, in_progress + leased.
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(claimed.task_id, task);
+        let (_, _, lease_before) = task_lease_state(&pool, &task).await;
+
+        let rel_events_before = count_events_of_type(&pool, "work_item.released").await;
+        let renew_events_before = count_events_of_type(&pool, "work_item.lease_renewed").await;
+
+        // A DIFFERENT agent cannot release or renew agent-a's lease.
+        let released = release_task(&db, &task, "agent-b")
+            .await
+            .expect("release runs");
+        assert!(!released, "non-owner release is a no-op");
+        let renewed = renew_lease(&db, &task, "agent-b", 3600)
+            .await
+            .expect("renew runs");
+        assert!(!renewed, "non-owner renew is a no-op");
+
+        // Nothing mutated: still owned by agent-a, in_progress, same lease.
+        let (status, assignee, lease_after) = task_lease_state(&pool, &task).await;
+        assert_eq!(status, "in_progress", "status untouched by non-owner");
+        assert_eq!(assignee.as_deref(), Some("agent-a"), "assignee untouched");
+        assert_eq!(lease_after, lease_before, "lease deadline untouched");
+
+        // No events on either no-op.
+        assert_eq!(
+            count_events_of_type(&pool, "work_item.released").await,
+            rel_events_before,
+            "no release event on the non-owner no-op"
+        );
+        assert_eq!(
+            count_events_of_type(&pool, "work_item.lease_renewed").await,
+            renew_events_before,
+            "no renew event on the non-owner no-op"
+        );
+
+        // Owner renew of a NON-in_progress task is also a status-guard no-op:
+        // release agent-a's task (→ todo), then an owner renew finds no
+        // in_progress row to bump.
+        release_task(&db, &task, "agent-a")
+            .await
+            .expect("owner release runs");
+        let renew_events_mid = count_events_of_type(&pool, "work_item.lease_renewed").await;
+        let renewed_todo = renew_lease(&db, &task, "agent-a", 3600)
+            .await
+            .expect("renew runs");
+        assert!(!renewed_todo, "renew of a non-in_progress task is a no-op");
+        assert_eq!(
+            count_events_of_type(&pool, "work_item.lease_renewed").await,
+            renew_events_mid,
+            "no renew event when the status guard fails"
+        );
     }
 }
