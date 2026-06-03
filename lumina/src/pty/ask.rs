@@ -17,7 +17,7 @@
 //!
 //! ## Why a separate mount (not the `/mcp` work-item surface)
 //!
-//! The 58-tool work-item MCP surface (`crate::mcp`) is NOT exposed to spawned
+//! The 73-tool work-item MCP surface (`crate::mcp`) is NOT exposed to spawned
 //! `claude` sessions — a spawned REPL is a general agent, not a planning client.
 //! This mount carries ONLY `ask_user_question`, so a spawned session gains
 //! exactly the one affordance it needs.

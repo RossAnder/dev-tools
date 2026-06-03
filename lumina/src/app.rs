@@ -213,7 +213,7 @@ pub fn build_router(state: AppState) -> Router {
         // `/mcp-ask` — single-tool MCP server (`ask_user_question`) registered
         // with spawned `claude` sessions via `--mcp-config` so the agent can ask
         // the operator structured questions in the SPA (native-AUQ replacement;
-        // see `crate::pty::ask`). Separate mount keeps the 58-tool work-item
+        // see `crate::pty::ask`). Separate mount keeps the 73-tool work-item
         // surface OUT of spawned sessions.
         .nest_service("/mcp-ask", crate::pty::ask::service(state.clone()))
         // SPA fallback last (Task 4 wires rust-embed / ServeDir).
