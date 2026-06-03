@@ -1,0 +1,174 @@
+//! Shared `#[cfg(test)]` fixtures for the `repo` unit tests.
+//!
+//! The seed-chain builders and the table-count / status helpers are used by
+//! `#[test]`/`#[tokio::test]` functions across multiple domain clusters in
+//! `repo/mod.rs`'s `mod tests`, so they live here as `pub(crate) fn`s. The test
+//! module pulls them in with `use crate::repo::test_support::*;`. Every actual
+//! test FUNCTION stays in `mod.rs` for now (carved with its cluster later).
+//!
+//! `use super::*` reaches the public repo mutators the seed builders drive
+//! (`create_work_item`, `create_work_item_full`, `add_acceptance_criterion`,
+//! `CreateOpts`); `SqlitePool` is a `#[cfg(test)]`-private import in `mod.rs`
+//! and is re-declared here.
+
+use sqlx::SqlitePool;
+
+use super::*;
+
+/// Row count of `work_items` (compile-checked literal — sqlx 0.9's
+/// `SqlSafeStr` bound rejects a dynamically-built table name on the runtime
+/// `query_as`, so the two count helpers are split per table).
+pub(crate) async fn count_work_items(pool: &SqlitePool) -> i64 {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Row count of `events`.
+pub(crate) async fn count_events(pool: &SqlitePool) -> i64 {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Count `events` rows for a given `aggregate_id` + `event_type` (used by the
+/// R1 atomicity test to assert the two-event resolve shape).
+pub(crate) async fn count_events_for(pool: &SqlitePool, aggregate_id: &str, event_type: &str) -> i64 {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM events WHERE aggregate_id = $1 AND event_type = $2",
+    )
+    .bind(aggregate_id)
+    .bind(event_type)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Build the legal project→epic→focus→story chain and return the story id,
+/// so tests can create a legal `task` (or an illegal one) beneath it.
+///
+/// Migration-0010 valid-chain recipe: an epic must carry a non-empty outcome,
+/// a focus must carry a shape, and a story can only be created once its
+/// ancestor epic has ≥1 close-criterion. The chain therefore writes 4
+/// work_items (project/epic/focus/story) + 5 events (the four creates plus the
+/// epic close-criterion add).
+pub(crate) async fn seed_chain_to_story(pool: &SqlitePool) -> String {
+    let project = create_work_item(pool, "project", None, "P", None)
+        .await
+        .expect("legal project");
+    let epic = create_work_item_full(
+        pool,
+        "epic",
+        Some(&project.to_string()),
+        "E",
+        None,
+        CreateOpts {
+            origin: None,
+            outcome: Some("the epic outcome"),
+            shape: None,
+        },
+    )
+    .await
+    .expect("legal epic");
+    add_acceptance_criterion(pool, &epic.to_string(), "epic close criterion")
+        .await
+        .expect("epic close criterion");
+    let focus = create_work_item_full(
+        pool,
+        "focus",
+        Some(&epic.to_string()),
+        "FO",
+        None,
+        CreateOpts {
+            origin: None,
+            outcome: None,
+            shape: Some("vertical-slice"),
+        },
+    )
+    .await
+    .expect("legal focus");
+    let story = create_work_item(pool, "story", Some(&focus.to_string()), "S", None)
+        .await
+        .expect("legal story");
+    story.to_string()
+}
+
+/// Build the legal project→epic→focus chain and return the FOCUS id. Used by
+/// the SpawnStory test (R6): a `story` child needs a `focus` parent, so a
+/// SpawnStory decision is only reachable when the finding hosts directly on a
+/// focus. The epic carries ≥1 close-criterion so a story create under the
+/// focus passes the close-criterion gate.
+pub(crate) async fn seed_chain_to_focus(pool: &SqlitePool) -> String {
+    let project = create_work_item(pool, "project", None, "P", None)
+        .await
+        .expect("legal project");
+    let epic = create_work_item_full(
+        pool,
+        "epic",
+        Some(&project.to_string()),
+        "E",
+        None,
+        CreateOpts {
+            origin: None,
+            outcome: Some("the epic outcome"),
+            shape: None,
+        },
+    )
+    .await
+    .expect("legal epic");
+    add_acceptance_criterion(pool, &epic.to_string(), "epic close criterion")
+        .await
+        .expect("epic close criterion");
+    let focus = create_work_item_full(
+        pool,
+        "focus",
+        Some(&epic.to_string()),
+        "FO",
+        None,
+        CreateOpts {
+            origin: None,
+            outcome: None,
+            shape: Some("vertical-slice"),
+        },
+    )
+    .await
+    .expect("legal focus");
+    focus.to_string()
+}
+
+/// Row count of `work_item_activity`.
+pub(crate) async fn count_activity(pool: &SqlitePool) -> i64 {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_item_activity")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Row count of `acceptance_criteria`.
+pub(crate) async fn count_criteria(pool: &SqlitePool) -> i64 {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM acceptance_criteria")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Read a single work item's status (test helper).
+pub(crate) async fn item_status(pool: &SqlitePool, id: &str) -> String {
+    sqlx::query_scalar::<_, String>("SELECT status FROM work_items WHERE id = ?1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Count events of a given `event_type` (test helper — proves the
+/// exactly-one-event-per-logical-write invariant for the multi-write resolve).
+pub(crate) async fn count_events_of_type(pool: &SqlitePool, event_type: &str) -> i64 {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events WHERE event_type = ?1")
+        .bind(event_type)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
