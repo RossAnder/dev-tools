@@ -684,6 +684,134 @@ pub async fn resolve_cwd_to_project(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::connect_in_memory;
+    use crate::repo::test_support::count_events_for;
+    use pretty_assertions::assert_eq;
+    use rstest::rstest;
+
+    // =====================================================================
+    // Pure-fn unit tests (T5) — `normalise_path_for_compare` is PRIVATE but
+    // reachable here because this `mod tests` is co-located in the same module
+    // (`super::*` carries the private fn). No DB.
+    // =====================================================================
+
+    // ---------------------------------------------------------------------
+    // normalise_path_for_compare
+    // ---------------------------------------------------------------------
+
+    /// Plain verbatim `\\?\` prefix is stripped; `\` fold to `/`; on Windows the
+    /// result is additionally case-folded. The expected value is built with the
+    /// SAME host-keyed casing so the assertion holds on both Unix and Windows
+    /// (we round the input through a known-good lower form on Windows).
+    #[test]
+    fn normalise_strips_plain_verbatim_prefix() {
+        let got = normalise_path_for_compare(r"\\?\C:\dev\foo");
+        // On Unix: "C:/dev/foo"; on Windows: "c:/dev/foo" (step-4 case fold).
+        #[cfg(windows)]
+        let expected = "c:/dev/foo";
+        #[cfg(not(windows))]
+        let expected = "C:/dev/foo";
+        assert_eq!(got, expected);
+    }
+
+    /// Verbatim-UNC `\\?\UNC\server\share` strips the prefix and re-prepends `\\`
+    /// so the leading DOUBLE separator survives the `\`→`/` fold as `//`.
+    #[test]
+    fn normalise_verbatim_unc_keeps_double_leading_separator() {
+        let got = normalise_path_for_compare(r"\\?\UNC\server\share");
+        #[cfg(windows)]
+        let expected = "//server/share";
+        #[cfg(not(windows))]
+        let expected = "//server/share";
+        assert_eq!(
+            got, expected,
+            "verbatim-UNC must keep the double leading separator as `//`"
+        );
+    }
+
+    /// `\` separators fold to `/`.
+    #[test]
+    fn normalise_folds_backslashes() {
+        let got = normalise_path_for_compare(r"a\b\c");
+        // No leading anchor ⇒ not absolute, but the fold + (windows) case still
+        // applies. Build the expected with the same host casing.
+        let expected = {
+            #[allow(unused_mut)]
+            let mut e = String::from("a/b/c");
+            #[cfg(windows)]
+            {
+                e = e.to_ascii_lowercase();
+            }
+            e
+        };
+        assert_eq!(got, expected);
+    }
+
+    /// A single trailing `/` is stripped, but a root is NEVER reduced to empty:
+    /// `/` stays `/` and `C:/` stays `C:/`.
+    #[rstest]
+    // (input, expected-on-unix). Windows variants are computed in-body.
+    #[case("/dev/foo/", "/dev/foo")]
+    #[case("/", "/")]
+    #[case("C:/", "C:/")]
+    fn normalise_trailing_slash_and_root(#[case] input: &str, #[case] expected_unix: &str) {
+        let got = normalise_path_for_compare(input);
+        let expected = {
+            #[allow(unused_mut)]
+            let mut e = expected_unix.to_owned();
+            #[cfg(windows)]
+            {
+                e = e.to_ascii_lowercase();
+            }
+            e
+        };
+        assert_eq!(got, expected, "input {input:?}");
+    }
+
+    /// On Windows ONLY, step 4 case-folds. This assertion is gated to `cfg(windows)`
+    /// because the fold is HOST-keyed (documented limitation): on Unix the same
+    /// input keeps its case, so a single cross-platform assertion is impossible.
+    #[cfg(windows)]
+    #[test]
+    fn normalise_case_folds_on_windows() {
+        assert_eq!(normalise_path_for_compare(r"C:\Dev\FOO"), "c:/dev/foo");
+    }
+
+    /// On Unix ONLY, casing is PRESERVED (the negative of the Windows case-fold).
+    #[cfg(not(windows))]
+    #[test]
+    fn normalise_preserves_case_on_unix() {
+        assert_eq!(normalise_path_for_compare("/Dev/FOO"), "/Dev/FOO");
+    }
+
+    /// THE KEY CROSS-MATCH the feature relies on: a Windows verbatim form
+    /// `\\?\C:\dev\foo` and the bare stored form `C:/dev/foo` MUST normalise to
+    /// the SAME string — this is what lets a cwd captured in verbatim form bind
+    /// to a stored bare `local_path`. Asserted as an equality between the two
+    /// normalised outputs (host-keyed casing cancels out — both go through step 4).
+    #[test]
+    fn normalise_verbatim_and_bare_cross_match() {
+        let verbatim = normalise_path_for_compare(r"\\?\C:\dev\foo");
+        let bare = normalise_path_for_compare("C:/dev/foo");
+        assert_eq!(
+            verbatim, bare,
+            "verbatim `\\\\?\\C:\\dev\\foo` and bare `C:/dev/foo` must normalise identically"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // resolve_repo_path
+    // ---------------------------------------------------------------------
+
+    /// A normal `a/b` rel round-trips: the components are pushed onto the base.
+    #[test]
+    fn resolve_repo_path_normal_join() {
+        let got = resolve_repo_path("/repo/base", "a/b");
+        let expected = PathBuf::from(normalise_path_for_compare("/repo/base"))
+            .join("a")
+            .join("b");
+        assert_eq!(got, expected);
+    }
 
     /// Security invariant: a `..`-escaping `rel` is clamped INSIDE the base —
     /// the result is the base joined with the surviving `Normal` components,
@@ -701,6 +829,100 @@ mod tests {
         );
     }
 
+    /// An ABSOLUTE `rel` does NOT replace the base — its root anchor is ignored
+    /// and only the `Normal` parts join onto the base (the naïve `PathBuf::join`
+    /// replace-bug this guards against). Covers a unix-absolute `/etc/passwd`.
+    #[test]
+    fn resolve_repo_path_unix_absolute_rel_is_ignored() {
+        let got = resolve_repo_path("/repo/base", "/etc/passwd");
+        let expected = PathBuf::from(normalise_path_for_compare("/repo/base"))
+            .join("etc")
+            .join("passwd");
+        assert_eq!(
+            got, expected,
+            "an absolute `rel` must NOT replace the base — only Normal parts join"
+        );
+        assert!(
+            got.starts_with(normalise_path_for_compare("/repo/base")),
+            "absolute-rel result must stay under the base: {got:?}"
+        );
+    }
+
+    /// A drive-anchored / UNC absolute `rel` likewise does not replace the base:
+    /// the `Prefix`/`RootDir` anchors are dropped and only the `Normal`
+    /// components survive. (On Unix, `Path::components` of `C:/x` yields a single
+    /// `Normal("C:")` part — still a clamp, never an escape — so we assert the
+    /// result stays under the base rather than pinning exact components.)
+    #[test]
+    fn resolve_repo_path_drive_absolute_rel_is_clamped_under_base() {
+        let base = normalise_path_for_compare("/repo/base");
+        let got = resolve_repo_path("/repo/base", r"D:\windows\system32");
+        assert!(
+            got.starts_with(&base),
+            "a drive-absolute `rel` must stay clamped under the base: {got:?}"
+        );
+        assert_ne!(
+            got,
+            PathBuf::from("D:/windows/system32"),
+            "the drive-absolute `rel` must NOT have replaced the base"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // select_longest_prefix_project
+    // ---------------------------------------------------------------------
+
+    /// Nested clone dirs: the DEEPER (longer) prefix wins.
+    #[test]
+    fn select_longest_prefix_project_deeper_wins() {
+        let candidates = [
+            ("outer".to_string(), "/dev/mono".to_string()),
+            ("inner".to_string(), "/dev/mono/pkg/sub".to_string()),
+        ];
+        assert_eq!(
+            select_longest_prefix_project("/dev/mono/pkg/sub/src/lib.rs", &candidates),
+            Some("inner".to_string()),
+            "the deeper clone-dir prefix is the most specific match"
+        );
+        // A cwd inside the outer-but-not-inner subtree resolves to the outer.
+        assert_eq!(
+            select_longest_prefix_project("/dev/mono/other/x", &candidates),
+            Some("outer".to_string()),
+        );
+    }
+
+    /// An EXACT match (cwd == local_path) resolves to that project.
+    #[test]
+    fn select_longest_prefix_project_exact_match() {
+        let candidates = [("p".to_string(), "/dev/foo".to_string())];
+        assert_eq!(
+            select_longest_prefix_project("/dev/foo", &candidates),
+            Some("p".to_string()),
+        );
+    }
+
+    /// Component-boundary discipline: a cwd `/dev/foobar` does NOT match a
+    /// `local_path` `/dev/foo` (the match must land on a `/` boundary).
+    #[test]
+    fn select_longest_prefix_project_component_boundary_non_match() {
+        let candidates = [("p".to_string(), "/dev/foo".to_string())];
+        assert_eq!(
+            select_longest_prefix_project("/dev/foobar/x", &candidates),
+            None,
+            "a non-component-boundary prefix must NOT match"
+        );
+    }
+
+    /// No candidate matches ⇒ `None`.
+    #[test]
+    fn select_longest_prefix_project_no_match_is_none() {
+        let candidates = [("p".to_string(), "/dev/foo".to_string())];
+        assert_eq!(
+            select_longest_prefix_project("/elsewhere/x", &candidates),
+            None,
+        );
+    }
+
     /// Two DISTINCT projects sharing the same (longest) clone dir is a genuine
     /// tie ⇒ `None`.
     #[test]
@@ -713,6 +935,244 @@ mod tests {
             select_longest_prefix_project("/dev/foo/x", &candidates),
             None,
             "distinct-project tie on the same clone dir must resolve to None"
+        );
+    }
+
+    /// The SAME project_id appearing twice at the longest length is NOT a tie —
+    /// it resolves to that one project (the dedup branch in the longest set).
+    #[test]
+    fn select_longest_prefix_project_same_project_twice_resolves() {
+        let candidates = [
+            ("p".to_string(), "/dev/foo".to_string()),
+            ("p".to_string(), "/dev/foo".to_string()),
+        ];
+        assert_eq!(
+            select_longest_prefix_project("/dev/foo/x", &candidates),
+            Some("p".to_string()),
+            "the same project at the longest length is not a tie"
+        );
+    }
+
+    // =====================================================================
+    // DB-backed tests (T5) — open `connect_in_memory`, seed a project +
+    // repo_link via the established `repo::*` helpers (reached via `super::*`).
+    // =====================================================================
+
+    /// Seed a bare `project` work-item and a single `repo_link` under it, returning
+    /// `(pool, project_id, repo_link_id)`. Uses the public `create_work_item` /
+    /// `add_repo_link` mutators (the same path the e2e `repo_links_flow` thread drives).
+    async fn seed_project_with_repo_link(
+    ) -> (sqlx::SqlitePool, String, String) {
+        let pool = connect_in_memory().await.expect("migrated in-memory pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+        let repo_link = add_repo_link(&pool, &project, "octocat/hello-world", true)
+            .await
+            .expect("repo link")
+            .to_string();
+        (pool, project, repo_link)
+    }
+
+    /// `set_repo_local_path(Some(..))` sets the column to the NORMALISED value and
+    /// reads back; the e2e relies on this storing the normalised (not raw) form.
+    #[tokio::test]
+    async fn set_repo_local_path_sets_normalised_value() {
+        let (pool, _project, repo_link) = seed_project_with_repo_link().await;
+
+        // A raw backslash-form, drive-anchored path. The STORED value is the
+        // normalised form (sep-folded, host-cased), which is exactly what
+        // `normalise_path_for_compare` produces.
+        let raw = r"C:\dev\hello-world";
+        set_repo_local_path(&pool, &repo_link, Some(raw))
+            .await
+            .expect("set local_path");
+
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT local_path FROM repo_links WHERE id = ?1")
+                .bind(&repo_link)
+                .fetch_one(&pool)
+                .await
+                .expect("read back local_path");
+        assert_eq!(
+            stored.as_deref(),
+            Some(normalise_path_for_compare(raw).as_str()),
+            "the STORED value is the normalised form of the raw input"
+        );
+    }
+
+    /// `set_repo_local_path(None)` clears the column back to NULL.
+    #[tokio::test]
+    async fn set_repo_local_path_none_clears_to_null() {
+        let (pool, _project, repo_link) = seed_project_with_repo_link().await;
+
+        // Set then clear.
+        set_repo_local_path(&pool, &repo_link, Some("/dev/x"))
+            .await
+            .expect("set");
+        set_repo_local_path(&pool, &repo_link, None)
+            .await
+            .expect("clear");
+
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT local_path FROM repo_links WHERE id = ?1")
+                .bind(&repo_link)
+                .fetch_one(&pool)
+                .await
+                .expect("read back local_path");
+        assert_eq!(stored, None, "None clears local_path back to NULL");
+    }
+
+    /// An absent `repo_link_id` is `NotFound` BEFORE any write (the owning-project
+    /// resolve runs first).
+    #[tokio::test]
+    async fn set_repo_local_path_absent_id_is_not_found() {
+        let pool = connect_in_memory().await.expect("pool");
+        let err = set_repo_local_path(&pool, "00000000-0000-0000-0000-000000000000", Some("/x"))
+            .await
+            .expect_err("absent id must be NotFound");
+        assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
+    }
+
+    /// A RELATIVE path (normalises to a non-absolute form) is rejected with
+    /// `Validation` and writes nothing.
+    #[tokio::test]
+    async fn set_repo_local_path_relative_is_validation() {
+        let (pool, _project, repo_link) = seed_project_with_repo_link().await;
+
+        // `dev/foo` (no leading `/` and no drive anchor) normalises to `dev/foo`
+        // which is NOT absolute ⇒ Validation.
+        let err = set_repo_local_path(&pool, &repo_link, Some(r"dev\foo"))
+            .await
+            .expect_err("relative path must be rejected");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // Nothing was stored.
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT local_path FROM repo_links WHERE id = ?1")
+                .bind(&repo_link)
+                .fetch_one(&pool)
+                .await
+                .expect("read back local_path");
+        assert_eq!(stored, None, "the rejected set wrote no local_path");
+    }
+
+    /// EXACTLY ONE `repo_link.local_path_changed` event fires on the owning
+    /// PROJECT aggregate per successful set.
+    #[tokio::test]
+    async fn set_repo_local_path_emits_exactly_one_event() {
+        let (pool, project, repo_link) = seed_project_with_repo_link().await;
+
+        set_repo_local_path(&pool, &repo_link, Some("/dev/hello-world"))
+            .await
+            .expect("set local_path");
+
+        let n = count_events_for(&pool, &project, "repo_link.local_path_changed").await;
+        assert_eq!(
+            n, 1,
+            "exactly one local_path_changed event on the project aggregate"
+        );
+    }
+
+    /// `resolve_cwd_to_project` end-to-end against a small seeded DB:
+    ///   * a NULL-`local_path` row is EXCLUDED (the SQL filters `IS NOT NULL`);
+    ///   * the longest-prefix project resolves correctly.
+    #[tokio::test]
+    async fn resolve_cwd_to_project_excludes_null_and_resolves_longest() {
+        let pool = connect_in_memory().await.expect("pool");
+
+        // Project A: a clone dir at /dev/mono.
+        let proj_a = create_work_item(&pool, "project", None, "A", None)
+            .await
+            .expect("project A")
+            .to_string();
+        let link_a = add_repo_link(&pool, &proj_a, "a/outer", true)
+            .await
+            .expect("link A")
+            .to_string();
+        set_repo_local_path(&pool, &link_a, Some("/dev/mono"))
+            .await
+            .expect("set A local_path");
+
+        // Project B: a DEEPER clone dir at /dev/mono/pkg.
+        let proj_b = create_work_item(&pool, "project", None, "B", None)
+            .await
+            .expect("project B")
+            .to_string();
+        let link_b = add_repo_link(&pool, &proj_b, "b/inner", true)
+            .await
+            .expect("link B")
+            .to_string();
+        set_repo_local_path(&pool, &link_b, Some("/dev/mono/pkg"))
+            .await
+            .expect("set B local_path");
+
+        // Project C: a repo_link with NO local_path (NULL) — must be excluded.
+        let proj_c = create_work_item(&pool, "project", None, "C", None)
+            .await
+            .expect("project C")
+            .to_string();
+        add_repo_link(&pool, &proj_c, "c/null", true)
+            .await
+            .expect("link C (no local_path)");
+
+        // A cwd under the deeper dir resolves to B (longest prefix).
+        let got = resolve_cwd_to_project(&pool, "/dev/mono/pkg/src/lib.rs")
+            .await
+            .expect("resolve");
+        assert_eq!(got, Some(proj_b.clone()), "deeper clone dir wins");
+
+        // A cwd under the outer-only subtree resolves to A.
+        let got = resolve_cwd_to_project(&pool, "/dev/mono/other/x")
+            .await
+            .expect("resolve");
+        assert_eq!(got, Some(proj_a.clone()), "outer clone dir matches");
+
+        // A cwd matching nothing resolves to None (and the NULL-local_path
+        // project C is never a candidate).
+        let got = resolve_cwd_to_project(&pool, "/elsewhere")
+            .await
+            .expect("resolve");
+        assert_eq!(got, None, "no match (NULL-local_path project excluded)");
+    }
+
+    /// A SOFT-DELETED (tombstoned) project's clone dir is EXCLUDED from
+    /// `resolve_cwd_to_project` (the `w.deleted_at IS NULL` JOIN guard): a cwd
+    /// under it no longer resolves once the project is soft-deleted.
+    #[tokio::test]
+    async fn resolve_cwd_to_project_excludes_soft_deleted_project() {
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+        let link = add_repo_link(&pool, &project, "p/repo", true)
+            .await
+            .expect("link")
+            .to_string();
+        set_repo_local_path(&pool, &link, Some("/dev/tomb"))
+            .await
+            .expect("set local_path");
+
+        // Before delete: the cwd resolves to the project.
+        let got = resolve_cwd_to_project(&pool, "/dev/tomb/src")
+            .await
+            .expect("resolve before delete");
+        assert_eq!(got, Some(project.clone()), "resolves before soft-delete");
+
+        // Soft-delete the project (stamps deleted_at via the single-mutation path).
+        delete_work_item(&pool, &project)
+            .await
+            .expect("soft-delete project");
+
+        // After delete: the same cwd no longer resolves (tombstone excluded).
+        let got = resolve_cwd_to_project(&pool, "/dev/tomb/src")
+            .await
+            .expect("resolve after delete");
+        assert_eq!(
+            got, None,
+            "a soft-deleted project's clone dir is excluded from cwd resolution"
         );
     }
 }

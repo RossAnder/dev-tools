@@ -1169,6 +1169,132 @@ async fn repo_links_flow() {
     );
 }
 
+/// The full thread for the migration-0014 clone-path surface (repo-clone-path-
+/// resolution plan, T5): set a repo link's per-machine `local_path` via the HTTP
+/// PATCH route, then read the project detail back over HTTP and assert the link
+/// carries the (normalised) `local_path`; and assert `GET /api/settings` returns
+/// the documented `{ clone_root, export_root }` shape.
+///
+/// Mirrors the existing `repo_links_flow` thread — one shared in-memory pool,
+/// `oneshot` against `build_router` (no socket bind), no `sleep`. The repo-link
+/// is seeded through the public `repo::*` mutators (the 1:1 wrap-target of the
+/// HTTP/MCP surface); the WRITE under test is the HTTP `PATCH .../local-path`.
+///
+/// ## Env-var coupling (settings test)
+/// `GET /api/settings` reads the process-global `LUMINA_CLONE_ROOT` env var. Under
+/// nextest's process-per-test isolation this test owns its process, but to avoid
+/// ANY cross-test env coupling we assert the STABLE branch only: `clone_root` is
+/// either a string (var set in the runner's environment) or `null` (unset), and
+/// `export_root` is always a present string. We deliberately do NOT mutate the
+/// process env (set/unset `LUMINA_CLONE_ROOT`) — `std::env::set_var` is
+/// process-global and not test-isolated, so a set-branch assertion would risk
+/// flaking sibling tests that also read the var. The unset→null and
+/// shape-invariant branches are what the SPA actually depends on.
+#[tokio::test]
+async fn repo_local_path_and_settings_flow() {
+    let pool = Arc::new(lumina::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Project + one repo link (seeded via the public mutators).
+    let project = mcp_create(&tools, "project", None, "Local-Path Project").await;
+    let link_id = lumina::repo::add_repo_link(&pool, &project, "octocat/hello-world", true)
+        .await
+        .expect("add repo link")
+        .to_string();
+
+    let state = AppState::new(pool.clone());
+
+    // 2. PATCH /work-items/{project}/repo-links/{id}/local-path — SET the dir.
+    //    Send a raw backslash/drive-anchored path; the stored value is the
+    //    normalised form (`repo::set_repo_local_path` normalises THEN validates).
+    let raw_path = r"C:\dev\hello-world";
+    let patch_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!(
+                    "/api/work-items/{project}/repo-links/{link_id}/local-path"
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "local_path": raw_path }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot PATCH local-path");
+    assert_eq!(
+        patch_resp.status(),
+        StatusCode::OK,
+        "PATCH local-path returns 200"
+    );
+    let patch_body = json_body(patch_resp).await;
+    assert_eq!(patch_body["ok"].as_bool(), Some(true), "PATCH returns {{ ok: true }}");
+
+    // 3. GET /api/work-items/{project} — the repo_links fold carries local_path.
+    let detail_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{project}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET project detail");
+    assert_eq!(detail_resp.status(), StatusCode::OK, "project detail returns 200");
+    let detail_body = json_body(detail_resp).await;
+    let links = detail_body["repo_links"]
+        .as_array()
+        .expect("repo_links array in project detail");
+    assert_eq!(links.len(), 1, "the project has one repo link");
+    // `local_path` is serialised (it is set; `skip_serializing_if` only omits None).
+    // The HTTP detail surfaces the NORMALISED stored form. On Unix that is
+    // `C:/dev/hello-world`; on Windows the step-4 case fold lowercases it. Assert
+    // it is present, non-null, and ends with the path tail (host-casing-agnostic).
+    let local_path = links[0]["local_path"]
+        .as_str()
+        .expect("the link carries a string local_path");
+    assert!(
+        local_path.to_ascii_lowercase().ends_with("dev/hello-world"),
+        "local_path is the normalised stored form, got {local_path:?}"
+    );
+    assert!(
+        !local_path.contains('\\'),
+        "the stored form has no backslashes (separators folded), got {local_path:?}"
+    );
+
+    // 4. GET /api/settings — assert the documented shape. `clone_root` is a string
+    //    or null (env-driven; see the env-coupling note above); `export_root` is
+    //    always a present string.
+    let settings_resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri("/api/settings")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET settings");
+    assert_eq!(settings_resp.status(), StatusCode::OK, "settings returns 200");
+    let settings_body = json_body(settings_resp).await;
+    assert!(
+        settings_body.get("clone_root").is_some(),
+        "settings carries a clone_root key (string-or-null)"
+    );
+    assert!(
+        settings_body["clone_root"].is_string() || settings_body["clone_root"].is_null(),
+        "clone_root is a string or null, got {:?}",
+        settings_body["clone_root"]
+    );
+    assert!(
+        settings_body["export_root"].is_string(),
+        "export_root is always a present string, got {:?}",
+        settings_body["export_root"]
+    );
+}
+
 // =====================================================================
 // Round-2 (migration 0005) coverage — T5 of
 // docs/plans/lumina-story-planning-round-2.md.
