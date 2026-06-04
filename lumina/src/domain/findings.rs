@@ -175,6 +175,11 @@ pub struct RepoLink {
     pub position: i64,
     /// `0`/`1` mirrored from the INTEGER column.
     pub is_primary: i64,
+    /// Per-machine absolute clone directory (migration 0014); `None`/NULL = not
+    /// cloned on this machine. Skipped on serialise so the common uncloned case
+    /// stays absent in the git-export TOML snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_path: Option<String>,
     pub created_at: String,
 }
 

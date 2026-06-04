@@ -105,15 +105,19 @@ pub async fn add_repo_link(
 }
 
 /// Generic-`R` [`sqlx::FromRow`] for the read-only [`RepoLink`] aggregate
-/// (canonical recipe, A8 wave). All columns are NOT NULL, so the field types are
-/// `String`/`i64` (no `Option<String>` bound is needed); `is_primary` mirrors the
-/// INTEGER 0/1 as `i64`. Replaces the old `query_as!` `AS "col!"` macro hints.
+/// (canonical recipe, A8 wave). Most columns are NOT NULL (`String`/`i64`), but
+/// `local_path` (migration 0014) is nullable, so the impl now carries the
+/// `Option<String>` decode/type bound alongside the `String` bound (the generic
+/// recipe does not infer the Option bound from the String bound). `is_primary`
+/// mirrors the INTEGER 0/1 as `i64`. Replaces the old `query_as!` `AS "col!"`
+/// macro hints.
 impl<'r, R> sqlx::FromRow<'r, R> for RepoLink
 where
     R: sqlx::Row,
     &'r str: sqlx::ColumnIndex<R>,
     String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
     i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
 {
     fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
         Ok(RepoLink {
@@ -122,6 +126,7 @@ where
             slug: row.try_get("slug")?,
             position: row.try_get("position")?,
             is_primary: row.try_get("is_primary")?,
+            local_path: row.try_get("local_path")?,
             created_at: row.try_get("created_at")?,
         })
     }
@@ -143,6 +148,7 @@ pub async fn list_repo_links(
             slug,
             position,
             is_primary,
+            local_path,
             created_at
         FROM repo_links
         WHERE project_id = $1
