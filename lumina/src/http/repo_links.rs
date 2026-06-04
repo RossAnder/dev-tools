@@ -39,6 +39,16 @@ struct SetPrimaryBody {
     pub is_primary: bool,
 }
 
+/// Body for `PATCH /work-items/{project_id}/repo-links/{id}/local-path`
+/// (migration 0014). `local_path` SETS the per-machine clone dir when present
+/// and CLEARS it (back to NULL) when absent/`null`. `repo::set_repo_local_path`
+/// normalises + validates the value (absolute-path check on the normalised form).
+#[derive(Debug, Deserialize)]
+struct SetLocalPathBody {
+    #[serde(default)]
+    pub local_path: Option<String>,
+}
+
 /// Build the repo-links sub-router. Returned as `Router<AppState>` so
 /// `http::router` can `.merge` it with the other per-family sub-routers.
 pub fn router() -> Router<AppState> {
@@ -50,6 +60,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/work-items/{project_id}/repo-links/{id}",
             axum::routing::delete(remove_repo_link_handler).patch(set_primary_repo_handler),
+        )
+        .route(
+            "/work-items/{project_id}/repo-links/{id}/local-path",
+            axum::routing::patch(set_local_path_handler),
         )
 }
 
@@ -125,5 +139,32 @@ async fn set_primary_repo_handler(
         ));
     }
     repo::set_primary_repo(state.pool.as_ref(), &project_id, &id).await?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// `PATCH /work-items/{project_id}/repo-links/{id}/local-path` — set or clear
+/// the per-machine clone dir on a repo link (migration 0014). Body:
+/// `{ "local_path": "<abs path>" }` SETS it; `{}` / `{ "local_path": null }`
+/// CLEARS it back to NULL. This is a SEPARATE route from the `is_primary`
+/// PATCH above (which hard-guards `is_primary=true`).
+///
+/// `repo::set_repo_local_path` resolves the owning project from the row itself
+/// (the `project_id` path segment is structural REST clarity, not validated
+/// here — consistent with the sibling DELETE/PATCH handlers). It normalises the
+/// value and validates the normalised form is absolute (`Validation`/422
+/// otherwise). `NotFound`/404 if the id is absent.
+///
+/// Returns `{ "ok": true }`.
+async fn set_local_path_handler(
+    State(state): State<AppState>,
+    Path((_project_id, id)): Path<(String, String)>,
+    Json(body): Json<SetLocalPathBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(
+        repo_link_id = %id,
+        local_path = ?body.local_path,
+        "http: PATCH /work-items/{{project_id}}/repo-links/{{id}}/local-path"
+    );
+    repo::set_repo_local_path(state.pool.as_ref(), &id, body.local_path.as_deref()).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

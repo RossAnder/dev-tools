@@ -387,6 +387,105 @@ pub async fn set_finding_repo(
     Ok(())
 }
 
+/// Set or clear the per-machine clone directory (`local_path`) on a `repo_links`
+/// row under the single-mutation-path discipline. `Some(raw)` SETS the column;
+/// `None` CLEARS it back to NULL.
+///
+/// The owning project's id is resolved FIRST (so an absent `repo_link_id` is
+/// `NotFound` BEFORE any write, and the event aggregate is the project's
+/// `work_item`, letting the export drain re-render the project).
+///
+/// A `Some(raw)` value is first run through [`normalise_path_for_compare`]
+/// (separator-folding + verbatim-prefix stripping + host-keyed casing) and the
+/// NORMALISED form is what gets STORED and validated — we validate the
+/// normalised string is absolute (`/`-rooted OR drive-anchored `^[A-Za-z]:/`)
+/// rather than gating on raw `Path::is_absolute`, which rejects `\dev\foo` /
+/// `C:foo` and varies by host OS (validating the normalised form keeps a Linux
+/// CI executor and a Windows operator consistent — review P5). A non-absolute
+/// value is `Validation`.
+///
+/// Event `repo_link.local_path_changed` on the owning project's `work_item`
+/// aggregate.
+pub async fn set_repo_local_path(
+    db: &impl DbClient,
+    repo_link_id: &str,
+    local_path: Option<&str>,
+) -> Result<(), AppError> {
+    // Resolve the owning project FIRST — absent id ⇒ NotFound BEFORE any write,
+    // and the event aggregate is correct. `project_id` is NOT NULL.
+    let project_id: String = db
+        .query_opt::<Scalar<String>>(
+            "SELECT project_id FROM repo_links WHERE id = $1",
+            args![repo_link_id.to_owned()],
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("repo_link '{repo_link_id}' not found")))?
+        .0;
+
+    // Compute the value to STORE: normalise THEN validate the normalised form is
+    // absolute. Store the normalised string (review P5). `None` clears the column.
+    let to_store: Option<String> = match local_path {
+        Some(raw) => {
+            let normalised = normalise_path_for_compare(raw);
+            if !is_absolute_normalised(&normalised) {
+                return Err(AppError::Validation(format!(
+                    "local_path must be absolute (a `/`-rooted or drive-anchored path); \
+                     got '{raw}' (normalised '{normalised}')"
+                )));
+            }
+            Some(normalised)
+        }
+        None => None,
+    };
+
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute(
+            "UPDATE repo_links SET local_path = $2 WHERE id = $1",
+            args![repo_link_id.to_owned(), to_store.clone()],
+        )
+        .await?;
+
+    if affected == 0 {
+        // Lost a race against a concurrent delete — surface NotFound rather than
+        // emitting a spurious event.
+        return Err(AppError::NotFound(format!(
+            "repo_link '{repo_link_id}' not found"
+        )));
+    }
+
+    let payload = serde_json::json!({
+        "id": repo_link_id,
+        "project_id": project_id,
+        "local_path": to_store,
+    });
+    record_event(
+        tx.as_mut(),
+        "work_item",
+        &project_id,
+        "repo_link.local_path_changed",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// True iff the already-[`normalise_path_for_compare`]'d string `s` is absolute:
+/// a `/`-rooted unix path OR a drive-anchored Windows path (`^[A-Za-z]:/` —
+/// letter, colon, slash). Operates on the NORMALISED form (separators already
+/// folded to `/`) so it is host-OS-independent — see `set_repo_local_path`.
+fn is_absolute_normalised(s: &str) -> bool {
+    if s.starts_with('/') {
+        return true;
+    }
+    let b = s.as_bytes();
+    // `C:/...` — letter, colon, slash.
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/'
+}
+
 // ---------------------------------------------------------------------------
 // Clone-path resolution (T2b) — pure/DB path normalisation + cwd→project bind.
 // ---------------------------------------------------------------------------
