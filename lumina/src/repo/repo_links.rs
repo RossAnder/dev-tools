@@ -500,7 +500,7 @@ fn is_absolute_normalised(s: &str) -> bool {
 ///        remainder keeps a leading DOUBLE separator
 ///        (`\\?\UNC\server\share` → `\\server\share`, NOT `UNC\server\share`).
 ///      - plain verbatim `\\?\` → strip it (`\\?\C:\dev` → `C:\dev`).
-///      The UNC check MUST precede the plain check (it is the longer prefix).
+///        The UNC check MUST precede the plain check (it is the longer prefix).
 ///   2. Replace every `\` with `/` (so the UNC case `\\server\share` becomes
 ///      `//server/share` — the double leading separator survives as `//`).
 ///   3. Strip a SINGLE trailing `/`, but never reduce a root to empty: a bare
@@ -637,10 +637,8 @@ pub fn select_longest_prefix_project(
             best_len = len;
             best_projects.clear();
             best_projects.push(project_id.clone());
-        } else if len == best_len {
-            if !best_projects.contains(project_id) {
-                best_projects.push(project_id.clone());
-            }
+        } else if len == best_len && !best_projects.contains(project_id) {
+            best_projects.push(project_id.clone());
         }
     }
 
