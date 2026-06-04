@@ -1250,9 +1250,10 @@ async fn repo_local_path_and_settings_flow() {
         .expect("repo_links array in project detail");
     assert_eq!(links.len(), 1, "the project has one repo link");
     // `local_path` is serialised (it is set; `skip_serializing_if` only omits None).
-    // The HTTP detail surfaces the NORMALISED stored form. On Unix that is
-    // `C:/dev/hello-world`; on Windows the step-4 case fold lowercases it. Assert
-    // it is present, non-null, and ends with the path tail (host-casing-agnostic).
+    // The HTTP detail surfaces the case-PRESERVED structural stored form
+    // (`normalise_path_structural` folds separators but does NOT case-fold), so it
+    // is `C:/dev/hello-world` on both Unix and Windows. Assert it is present,
+    // non-null, and ends with the path tail (kept case-agnostic for robustness).
     let local_path = links[0]["local_path"]
         .as_str()
         .expect("the link carries a string local_path");

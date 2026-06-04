@@ -43,7 +43,13 @@ struct SetPrimaryBody {
 /// (migration 0014). `local_path` SETS the per-machine clone dir when present
 /// and CLEARS it (back to NULL) when absent/`null`. `repo::set_repo_local_path`
 /// normalises + validates the value (absolute-path check on the normalised form).
+///
+/// `deny_unknown_fields` is deliberate: this is a full-replace body where an
+/// absent `local_path` CLEARS the stored path. Without it, a misspelled key
+/// (e.g. `{"localPath": "/x"}`) would deserialise to `None` and silently wipe
+/// the column; rejecting unknown fields with 422 makes that a hard error.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SetLocalPathBody {
     #[serde(default)]
     pub local_path: Option<String>,
@@ -147,6 +153,12 @@ async fn set_primary_repo_handler(
 /// `{ "local_path": "<abs path>" }` SETS it; `{}` / `{ "local_path": null }`
 /// CLEARS it back to NULL. This is a SEPARATE route from the `is_primary`
 /// PATCH above (which hard-guards `is_primary=true`).
+///
+/// The body is deliberately FULL-REPLACE (an absent `local_path` clears, it
+/// does not "leave unchanged") AND rejects unknown fields
+/// (`deny_unknown_fields` on `SetLocalPathBody`): a misspelled key such as
+/// `{"localPath": "/x"}` returns 422 rather than silently clearing the stored
+/// path.
 ///
 /// `repo::set_repo_local_path` resolves the owning project from the row itself
 /// (the `project_id` path segment is structural REST clarity, not validated

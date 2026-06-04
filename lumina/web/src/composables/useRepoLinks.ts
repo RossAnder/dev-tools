@@ -40,13 +40,19 @@ type Api = {
   setRepoLocalPath: typeof productionApi.setRepoLocalPath
   fetchDetail: typeof productionApi.fetchDetail
 }
-let api: Api = {
-  addRepoLink: productionApi.addRepoLink,
-  removeRepoLink: productionApi.removeRepoLink,
-  setPrimaryRepo: productionApi.setPrimaryRepo,
-  setRepoLocalPath: productionApi.setRepoLocalPath,
-  fetchDetail: productionApi.fetchDetail,
+/** Single source for the production API adapter — used by both the module-scope
+ * initialiser and `__resetForTests`, so a new wire wrapper is wired up once. */
+function defaultApi(): Api {
+  return {
+    addRepoLink: productionApi.addRepoLink,
+    removeRepoLink: productionApi.removeRepoLink,
+    setPrimaryRepo: productionApi.setPrimaryRepo,
+    setRepoLocalPath: productionApi.setRepoLocalPath,
+    fetchDetail: productionApi.fetchDetail,
+  }
 }
+
+let api: Api = defaultApi()
 
 /** Replace API adapter entries. Test-only — do NOT call from production code. */
 export function __setApiForTests(override: Partial<Api>): void {
@@ -58,13 +64,7 @@ export function __resetForTests(): void {
   items.value = []
   loading.value = false
   error.value = null
-  api = {
-    addRepoLink: productionApi.addRepoLink,
-    removeRepoLink: productionApi.removeRepoLink,
-    setPrimaryRepo: productionApi.setPrimaryRepo,
-    setRepoLocalPath: productionApi.setRepoLocalPath,
-    fetchDetail: productionApi.fetchDetail,
-  }
+  api = defaultApi()
 }
 
 // ---------------------------------------------------------------------------

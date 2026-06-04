@@ -1,0 +1,180 @@
+schema_version = 1
+last_updated = 2026-06-04
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### T3: `set_repo_local_path` mutator + HTTP mirror + settings read endpoint"
+summary = "Settings router mounts in http/mod.rs (not app.rs); register the route as `/settings` relative to the `/api` nest"
+description = "Verified: http/mod.rs:38-62 owns the `.merge()` composition and its doc-comment (l.39-40) states paths inside each family module are relative to `/api`; app.rs:209 only does `.nest('/api', http::router())`. So (a) the two edits are BOTH in http/mod.rs (add `pub mod settings;` + `.merge(settings::router())`) and app.rs is NOT touched — drop it from the Scope affected-areas line and the T3 Files line; (b) the route must be registered as `/settings` inside the sub-router, NOT `/api/settings`, which would resolve to `/api/api/settings`. Corroborated by Agent 1 + Agent 2."
+anchor_old = "Mount the `settings::router()` sub-router in `http/mod.rs`/`app::build_router` alongside the other `/api` families."
+anchor_new = "Mount the `settings::router()` sub-router in `http/mod.rs` ONLY — add `pub mod settings;` (with the other `pub mod` decls) and `.merge(settings::router())` inside `http::router()`. app.rs is NOT touched (it only nests `http::router()` under the `/api` prefix). Register the route as `GET /settings` inside the sub-router — paths there are relative to the `/api` nest, so registering `/api/settings` would resolve to `/api/api/settings`. Drop `lumina/src/app.rs` from this task's Files list and the Scope affected-areas line."
+dedup_id = "cc88b2c034391367"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### T2: `RepoLink.local_path` + resolve/normalise functions"
+summary = "RepoLink FromRow needs the `Option<String>: Decode + Type` bound ADDED — it is required, not optional"
+description = "The plan says 'no bound change expected (add one only if the compiler demands it)'. Verified this is wrong: export.rs:66-72 PendingEvent's generic-over-R FromRow reads a nullable `Option<String>` column and explicitly bounds BOTH `String: Decode+Type` (l.71) AND `Option<String>: Decode+Type` (l.72). That second line would be redundant if the String bound implied the Option bound in this recipe. RepoLink's FromRow (repo_links.rs:115-116) bounds only String/i64, so `try_get::<Option<String>>` will fail to compile until the bound is added. Resolves the Agent-1/Agent-4 conflict in favour of Agent 4."
+anchor_old = "The existing `String: Decode + Type` where-bound already satisfies `Option<String>` via sqlx's blanket `Option<T>` impls — no bound change expected (add one only if the compiler demands it)."
+anchor_new = "Add `Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>` to the where-clause — REQUIRED, mirroring `PendingEvent` at export.rs:72 which restates the Option bound even though it already bounds String; the generic-over-R recipe does not infer it."
+dedup_id = "f0b3062bc71657bf"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "risk"
+plan_section = "#### T2: `RepoLink.local_path` + resolve/normalise functions"
+summary = "Give `local_path` the `skip_serializing_if = Option::is_none` attribute — every sibling Option field has it; load-bearing for TOML export of the common NULL case"
+description = """RepoLink is TOML-serialised via toml::to_string_pretty(WorkItemDetail) (export.rs:278; toml crate = '1'). RepoLink currently has zero Option fields; local_path is the first. Every Option field in domain/findings.rs (e.g. repo_id at l.79) carries #[serde(skip_serializing_if = "Option::is_none")]. Without it, the uncloned (NULL) case — the COMMON case — risks a toml None-serialisation error / dirty output and is NOT caught by `cargo build`. This directly bears on the plan's 'back-compat for existing exports' claim."""
+anchor_old = "Add `pub local_path: Option<String>` to `RepoLink` (place before `created_at`; all-scalar struct, so the export tables-last rule is unaffected). Add a doc-comment."
+anchor_new = 'Add `pub local_path: Option<String>` to `RepoLink` (place before `created_at`; all-scalar struct, so the export tables-last rule is unaffected), carrying #[serde(skip_serializing_if = "Option::is_none")] to match every sibling Option field in domain/findings.rs (e.g. repo_id) — load-bearing for the common NULL case under toml::to_string_pretty export. Add a doc-comment.'
+dedup_id = "c82b7b29e066006c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T2: `RepoLink.local_path` + resolve/normalise functions"
+summary = "`resolve_cwd_to_project` must guard `deleted_at IS NULL` — soft-deleted projects retain repo_links rows"
+description = "Verified delete_work_item is SOFT-delete (export.rs:213-274 keeps tombstoned rows; repo_links CASCADE fires only on a hard delete). The plan's `SELECT ... FROM repo_links WHERE local_path IS NOT NULL` has no tombstone guard, so resolve_cwd_to_project could map a cwd to a soft-deleted project — the exact mis-attribution Q3's tie-to-None tries to avoid. Join work_items and add `w.deleted_at IS NULL` (precedent: findings_query.rs:187)."
+anchor_old = "`SELECT project_id, local_path FROM repo_links WHERE local_path IS NOT NULL`, hand to `select_longest_prefix_project`."
+anchor_new = "`SELECT rl.project_id, rl.local_path FROM repo_links rl JOIN work_items w ON w.id = rl.project_id WHERE rl.local_path IS NOT NULL AND w.deleted_at IS NULL` (the deleted_at guard excludes soft-deleted projects — precedent findings_query.rs:187), hand to `select_longest_prefix_project`."
+dedup_id = "b2f45c8cb002c6ea"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "executability"
+plan_section = "#### T2: `RepoLink.local_path` + resolve/normalise functions"
+summary = "Pin the `normalise_path_for_compare` algorithm explicitly — sanitise_cwd is the WRONG precedent (it slugifies separators)"
+description = '''Verified sanitise_cwd (parse.rs:196-214) replaces EVERY non-alphanumeric byte (incl. / \ :) with '-' and never lowercases — a directory-name slugifier, structurally unusable for a path normaliser that must preserve '/' as a component separator for select_longest_prefix_project's boundary match. Only the verbatim-prefix-strip idea transfers. Pin the ordered algorithm in the plan body: (1) strip a leading verbatim prefix, INCLUDING the UNC verbatim form (the bare verbatim-UNC strip must yield a leading double-slash, not a bare 'UNC\...' — Agent 4's UNC edge); (2) replace backslash with '/'; (3) strip a single trailing '/' but never reduce a root (drive-root or '/') to empty; (4) on cfg(windows) ONLY, lowercase via to_ascii_lowercase. Also pin the T3 absolute-path validation: Path::is_absolute rejects `\dev\foo` (rooted, no drive) and `C:foo` (drive-relative) on Windows, so a Linux-CI executor validating a Windows operator's path diverges — require a drive-anchored (^[A-Za-z]:/) or '/'-rooted normalised form. Advisory (T2 has multiple findings → mechanical merge will conflict-skip the section).'''
+dedup_id = "4cf541985f5dbcca"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "#### T2: `RepoLink.local_path` + resolve/normalise functions"
+summary = "Pin `resolve_repo_path` `..`/absolute-rel semantics — 'rejected/clamped' is ambiguous and `-> PathBuf` forecloses reject"
+description = "The spec says reject a rel that escapes via `..` while the signature is `-> PathBuf` (no error channel) and the parenthetical leans clamp — an executor cannot write the T5 test without guessing. Also Agent 4: PathBuf::join silently REPLACES the base when the arg is absolute, so an absolute rel must be rejected explicitly, and ALL `..` components (not just a leading one) must be dropped after lexical normalisation. Pin to one behaviour."
+anchor_old = "reject a `rel` that escapes via `..` (return the un-escaped join only; document that `..`-escaping `rel` is rejected/clamped), join, return. No DB."
+anchor_new = "lexically normalise `rel`, dropping every `..` component so the result can never ascend above `local_path` (CLAMP, not error — the `-> PathBuf` signature has no error channel), and reject/ignore an absolute `rel` (PathBuf::join silently REPLACES the base on an absolute arg); join onto the normalised `local_path`. Document: a `..`-escaping or absolute `rel` is clamped to `local_path`, never escapes. No DB."
+dedup_id = "4e7926ac01a4221d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = '#### T4: SPA repo-detail `local_path` field + "offer to clone" affordance'
+summary = 'Name the concrete web files + the mandatory Zod-schema edit (the broken `\|` grep returns nothing; a missing schema field silently strips local_path)'
+description = '''Verified web files exist via glob. Name them instead of 'locate via rg' (the plan's grep uses BRE `\|` which ripgrep/ERE matches as a literal pipe → zero results): row component = lumina/web/src/components/panels/ReposPanel.vue; module-singleton composable = lumina/web/src/composables/useRepoLinks.ts (extend its `Api` adapter type AND the production + __setApiForTests doubles, else tests break); API client = lumina/web/src/api/repo-links.ts — REQUIRED dual edit: extend `interface RepoLink` (+ `local_path: string | null`) AND `RepoLinkSchema` (z.string().nullable()), or Zod .parse() silently drops local_path even when the server sends it; add a `setRepoLocalPath(projectId,id,localPath|null)` wrapper (mirror setPrimaryRepo). New module-singleton useSettings.ts (GET /api/settings) is correctly net-new. Also: lumina/web/src/__tests__/repoTag.test.ts link() factory needs the new field (non-optional) or it type-errors; add `bun test` to T5's web acceptance. Derive clone name as slug.split('/')[1] (GitHub slugs are exactly owner/name, lowercased at store per migration 0004). Advisory (multi-file fix + the anchor contains a backslash).'''
+dedup_id = "426931d6cc5e8f9b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T2: `RepoLink.local_path` + resolve/normalise functions"
+summary = "Split T2 — 3 mechanical plumbing steps + 4 algorithmic fns is oversized, and the hard fns have no acceptance gate until T5"
+description = "T2 bundles struct+FromRow+SELECT plumbing (mechanical, verified anchors) with the plan's thorniest under-specified logic (normalise/resolve/select fns). Its Acceptance (`cargo build` + `rg 'FROM repo_links'`) exercises NONE of the four pure fns. Suggest T2a (plumbing; acceptance = build + detail-includes-local_path) and T2b (the fns; acceptance names a real check — fns compile + are pub-exported, with correctness gated in T5). At minimum move fn-correctness acceptance out of T5's blanket green so the algorithmic risk gates at authoring time."
+dedup_id = "5bdd18fac436664a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T5: Tests"
+summary = "Tighten the coverage acceptance — `--fail-under-lines 80` is the PROJECT gate, `--fail-under-file-lines 90` the per-file target (the plan conflates them)"
+description = "Verified against lumina/CLAUDE.md Testing Stack: the project gate is `--fail-under-lines 80 --fail-under-regions 70`; the per-file 90% target uses `--fail-under-file-lines 90`. The plan writes `--fail-under-lines 80 ... for the touched files`, conflating the project-wide and per-file thresholds. Also normalise T1's `cargo test` to `cargo nextest run` for plan-wide consistency (harmless but inconsistent)."
+anchor_old = "`cargo llvm-cov … --fail-under-lines 80` holds for the touched files."
+anchor_new = "`cargo llvm-cov --manifest-path lumina/Cargo.toml nextest --fail-under-lines 80 --fail-under-regions 70` passes (the project gate), AND the new files (repo_links.rs additions, http/settings.rs) meet the per-file `--fail-under-file-lines 90` target."
+dedup_id = "0b90cc976860d6ec"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Record the host-keyed case-fold deferral in Risks — `cfg!(windows)` folds by the lumina host's FS, not the path's FS"
+description = "The normalise helper case-folds on cfg!(windows) of the lumina PROCESS. Correct single-machine-now (the host FS is the only one in play), but under the deferred shared-remote topology a Linux-hosted lumina holding a Windows clone path would under-fold (and vice-versa would over-fold a case-sensitive Linux path, colliding /dev/Foo and /dev/foo → wrong attribution). Add one Risks line: 'case-fold is host-keyed, not path-keyed — revisit with the per-machine path layer', alongside the existing shared-remote export-leak caveat. Advisory (additive Risks line)."
+dedup_id = "9d9c9003acf425be"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Scope"
+summary = "Add a Scope/Out line for `formatFileRef` — the live web repo-relative renderer stays relative-only"
+description = "lumina/web/src/utils/repoTag.ts `formatFileRef` already renders a finding's file ref against a repo-link ([slug] path). With local_path available a future enhancement could render an absolute clickable path, but that is correctly layer-2 (harness-session-corpus) work. The plan's Scope/Out lists 'rewriting historical files_touched/file:line entries' but not formatFileRef, so a reviewer can't tell it was deliberately left untouched. Add: 'formatFileRef (web) and finding file:line rendering stay relative-only; absolute-path rendering via local_path is deferred.' Advisory (additive Scope/Out line)."
+dedup_id = "2a000cf32197adef"
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 3
+dropped_count = 1
+downgraded_count = 1
+rationale = "Verified router-mount finding TRUE (http/mod.rs:38-62 owns .merge composition; app.rs:209 only nests /api) -> P1. DROPPED the Phase-3 parallel-safety nit (F5) as non-actionable: the Blocked-by:T3 edge already serialises the co-located #[cfg(test)] module. DOWNGRADED F3's 'FromRow needs no bound change' sub-claim — contradicted by export.rs:72 (PendingEvent restates Option<String>:Decode despite bounding String), so the bound IS required (P2). F2/F4 were confirmations of feasibility, not persisted."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified web files exist via glob (repo-links.ts, ReposPanel.vue, useRepoLinks.ts, repoTag.test.ts); useSettings.ts correctly net-new -> P7. Verified soft-delete retains repo_links rows (export.rs:213-274) so resolve_cwd_to_project deleted_at gap is real -> P4. Router/app.rs finding corroborates Agent 1 (merged into P1). The 'RepoLink is Serialize-only, no JsonSchema regen' sub-point folded as a non-actionable confirmation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = '''Verified sanitise_cwd (parse.rs:196-214) slugifies ALL non-alphanumerics incl separators -> wrong precedent for normalise_path_for_compare (P5). Verified the SPA component resolves to ReposPanel.vue and the plan's BRE `\|` grep matches nothing under ripgrep ERE (P7). Verified coverage flags against lumina/CLAUDE.md: --fail-under-lines 80 = project gate, --fail-under-file-lines 90 = per-file (P9). T2-oversized kept as a suggestion (P8); name-derivation folded into P7.'''
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+rationale = "Verified FromRow Option bound REQUIRED via export.rs:66-72 PendingEvent precedent (P2) — decisive over Agent 1. Verified route double-prefix via http/mod.rs:39-40 doc-comment 'paths relative to /api' (P1). Verified toml='1' + to_string_pretty(WorkItemDetail) at export.rs:278 so the None-skip-attr finding stands (P3). DOWNGRADED the ESCALATE (verbatim/realpath variance): the correlation cwd is raw not canonicalised, so no code-level escalation is warranted; folded the UNC-verbatim edge into P5's test matrix. is_absolute/case-fold/path-traversal kept (P5/P6/P10)."
+dedup_id = "45ca31c3315a5978"

@@ -38,12 +38,22 @@ const newSlug = ref('')
 // authoritative server value. `draftFor` seeds the input on first render.
 const localPathDrafts = ref<Record<string, string>>({})
 
+// Tracks the last per-row draft value the server REJECTED (422), keyed by link
+// id. A re-blur with the identical value is short-circuited so we don't re-fire
+// the same failing PATCH; cleared as soon as the operator edits the field.
+const rejectedDrafts = ref<Record<string, string>>({})
+
 function draftFor(link: RepoLink): string {
   return localPathDrafts.value[link.id] ?? link.local_path ?? ''
 }
 
 function onDraftInput(link: RepoLink, value: string): void {
   localPathDrafts.value = { ...localPathDrafts.value, [link.id]: value }
+  // The value changed — any prior rejection no longer applies to this row.
+  if (rejectedDrafts.value[link.id] !== undefined) {
+    const { [link.id]: _cleared, ...rest } = rejectedDrafts.value
+    rejectedDrafts.value = rest
+  }
 }
 
 // Offer-to-clone suggestion: `<cloneRoot>/<name>` where `name` is the second
@@ -54,7 +64,11 @@ function suggestionFor(link: RepoLink): string | null {
   if (link.local_path !== null) return null
   const name = link.slug.split('/')[1]
   if (name === undefined || name.length === 0) return null
-  return `${cloneRoot.value}/${name}`
+  // Normalise the root for cross-platform display: fold backslashes to forward
+  // slashes and strip any trailing slash so `/dev/`→`/dev/repo` and
+  // `C:\dev`→`C:/dev/repo` (no double slash, no mixed separators).
+  const root = cloneRoot.value.replace(/\\/g, '/').replace(/\/+$/, '')
+  return `${root}/${name}`
 }
 
 // Load-bearing bind seeder: module state isn't auto-keyed to the focused node,
@@ -104,10 +118,17 @@ async function handleCommitLocalPath(link: RepoLink): Promise<void> {
   const raw = draftFor(link).trim()
   const next = raw.length === 0 ? null : raw
   if (next === (link.local_path ?? null)) return
+  // Skip a redundant PATCH that the server already rejected with this exact
+  // value — avoids re-firing the identical failing request on every re-blur.
+  if (next !== null && rejectedDrafts.value[link.id] === next) return
   const result = await setLocalPath(props.itemId, link.id, next)
   if (result.ok) {
     const { [link.id]: _dropped, ...rest } = localPathDrafts.value
     localPathDrafts.value = rest
+  } else if (next !== null) {
+    // Remember the rejected value so a re-blur with it short-circuits above.
+    // The in-progress text is preserved — we do NOT revert the field.
+    rejectedDrafts.value = { ...rejectedDrafts.value, [link.id]: next }
   }
 }
 

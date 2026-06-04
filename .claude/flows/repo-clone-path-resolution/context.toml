@@ -1,0 +1,24 @@
+slug = "repo-clone-path-resolution"
+plan_path = "docs/plans/repo-clone-path-resolution.md"
+status = "review"
+created = 2026-06-04
+updated = 2026-06-04
+branch = "main"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/**",
+    "lumina/tests/**",
+    "lumina/web/**",
+    "lumina/CLAUDE.md",
+]
+
+[tasks]
+total = 7
+completed = 7
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/repo-clone-path-resolution/review-ledger.toml"
+optimise_findings = ".claude/flows/repo-clone-path-resolution/optimise-findings.toml"
+execution_record = ".claude/flows/repo-clone-path-resolution/execution-record.toml"
+plan_review_findings = ".claude/flows/repo-clone-path-resolution/plan-review-findings.toml"

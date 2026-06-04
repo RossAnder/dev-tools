@@ -51,3 +51,29 @@ async fn get_settings() -> Json<Value> {
         "export_root": export_root,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `resolve_clone_root` reads `LUMINA_CLONE_ROOT` and maps it to a `PathBuf`
+    /// when set, returning `None` when unset. cargo-nextest runs process-per-test,
+    /// so mutating this process-global env var is isolated and cannot flake peers.
+    #[test]
+    fn resolve_clone_root_reads_env_and_unset() {
+        let known = "/tmp/lumina-clone-root-test";
+
+        // Set branch: a known value resolves to `Some(PathBuf::from(value))`.
+        // `set_var`/`remove_var` are `unsafe` in edition 2024.
+        unsafe {
+            std::env::set_var(CLONE_ROOT_ENV, known);
+        }
+        assert_eq!(resolve_clone_root(), Some(PathBuf::from(known)));
+
+        // Unset branch: a removed var resolves to `None`.
+        unsafe {
+            std::env::remove_var(CLONE_ROOT_ENV);
+        }
+        assert_eq!(resolve_clone_root(), None);
+    }
+}

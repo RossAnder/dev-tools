@@ -395,12 +395,17 @@ pub async fn set_finding_repo(
 /// `NotFound` BEFORE any write, and the event aggregate is the project's
 /// `work_item`, letting the export drain re-render the project).
 ///
-/// A `Some(raw)` value is first run through [`normalise_path_for_compare`]
-/// (separator-folding + verbatim-prefix stripping + host-keyed casing) and the
-/// NORMALISED form is what gets STORED and validated — we validate the
-/// normalised string is absolute (`/`-rooted OR drive-anchored `^[A-Za-z]:/`)
-/// rather than gating on raw `Path::is_absolute`, which rejects `\dev\foo` /
-/// `C:foo` and varies by host OS (validating the normalised form keeps a Linux
+/// A `Some(raw)` value is first trimmed of surrounding whitespace (review R13)
+/// then run through [`normalise_path_structural`] (separator-folding +
+/// verbatim-prefix stripping + internal-separator collapse, but NO case fold) and
+/// the STRUCTURAL form is what gets STORED and validated — storing the structural
+/// (casing-preserved) form keeps the operator's casing in the detail/export
+/// snapshot (review R7), while matching stays correct because
+/// [`normalise_path_for_compare`] case-folds BOTH sides at compare time. We
+/// validate the structural string is absolute via [`is_absolute_normalised`]
+/// (`/`-rooted OR drive-anchored `^[A-Za-z]:/`, case-insensitive on the drive
+/// letter) rather than gating on raw `Path::is_absolute`, which rejects `\dev\foo`
+/// / `C:foo` and varies by host OS (validating the normalised form keeps a Linux
 /// CI executor and a Windows operator consistent — review P5). A non-absolute
 /// value is `Validation`.
 ///
@@ -422,11 +427,15 @@ pub async fn set_repo_local_path(
         .ok_or_else(|| AppError::NotFound(format!("repo_link '{repo_link_id}' not found")))?
         .0;
 
-    // Compute the value to STORE: normalise THEN validate the normalised form is
-    // absolute. Store the normalised string (review P5). `None` clears the column.
+    // Compute the value to STORE: trim, then normalise to the STRUCTURAL form,
+    // THEN validate that structural form is absolute. Store the structural string
+    // (casing preserved — review R7). `None` clears the column.
     let to_store: Option<String> = match local_path {
         Some(raw) => {
-            let normalised = normalise_path_for_compare(raw);
+            // Trim surrounding whitespace before normalise/validate/store so a
+            // value like " /dev/foo" is accepted (review R13).
+            let trimmed = raw.trim();
+            let normalised = normalise_path_structural(trimmed);
             if !is_absolute_normalised(&normalised) {
                 return Err(AppError::Validation(format!(
                     "local_path must be absolute (a `/`-rooted or drive-anchored path); \
@@ -473,10 +482,21 @@ pub async fn set_repo_local_path(
     Ok(())
 }
 
-/// True iff the already-[`normalise_path_for_compare`]'d string `s` is absolute:
-/// a `/`-rooted unix path OR a drive-anchored Windows path (`^[A-Za-z]:/` —
-/// letter, colon, slash). Operates on the NORMALISED form (separators already
-/// folded to `/`) so it is host-OS-independent — see `set_repo_local_path`.
+/// True iff the already-normalised (structural or compare) string `s` is
+/// absolute: a `/`-rooted unix path OR a drive-anchored Windows path
+/// (`^[A-Za-z]:/` — letter, colon, slash). Operates on the NORMALISED form
+/// (separators already folded to `/`) so it is host-OS-independent — see
+/// `set_repo_local_path`. The drive-letter check is case-insensitive
+/// (`is_ascii_alphabetic`), so it holds on the casing-preserved structural form.
+///
+/// NOTE: a UNC path `//server/share` passes the leading-`/` branch and is
+/// accepted INTENTIONALLY — UNC is a valid Windows clone directory, so this
+/// predicate must not reject it (review R8). This is purely an *absoluteness*
+/// gate, NOT a filesystem-sink safety gate: the future filesystem consumer of a
+/// stored `local_path` (see the layer-1-staging NOTE above the resolution
+/// section, review R11) MUST add its own host-class check (e.g. reject or
+/// specially handle UNC / network shares) BEFORE using a stored path as a real
+/// FS sink — accepting UNC here does not vouch for its safety as a write target.
 fn is_absolute_normalised(s: &str) -> bool {
     if s.starts_with('/') {
         return true;
@@ -490,9 +510,13 @@ fn is_absolute_normalised(s: &str) -> bool {
 // Clone-path resolution (T2b) — pure/DB path normalisation + cwd→project bind.
 // ---------------------------------------------------------------------------
 
-/// Normalise a filesystem path string into a canonical *comparison* form for
-/// component-boundary prefix matching. PRIVATE: callers use the `resolve_*` /
-/// `select_*` wrappers below.
+/// Normalise a filesystem path string into a canonical *structural* form:
+/// verbatim-prefix-stripped, `\`→`/`-folded, internal-separator-collapsed, and
+/// trailing-slash-stripped — but with CASING PRESERVED. This is the STORAGE form
+/// (`set_repo_local_path` stores it, keeping the operator's casing in the
+/// detail/export snapshot) and the shared base of [`normalise_path_for_compare`].
+/// PRIVATE: callers use the `resolve_*` / `select_*` wrappers and the
+/// `is_absolute_normalised` predicate below.
 ///
 /// Pinned ordered algorithm (the order is load-bearing — do not reorder):
 ///   1. Strip a leading Windows verbatim prefix, longest-match FIRST:
@@ -503,19 +527,16 @@ fn is_absolute_normalised(s: &str) -> bool {
 ///        The UNC check MUST precede the plain check (it is the longer prefix).
 ///   2. Replace every `\` with `/` (so the UNC case `\\server\share` becomes
 ///      `//server/share` — the double leading separator survives as `//`).
-///   3. Strip a SINGLE trailing `/`, but never reduce a root to empty: a bare
+///   3. Collapse runs of `/` into a single `/`, BUT preserve a leading DOUBLE
+///      slash for UNC: a string starting `//` keeps its `//`, and only the
+///      remainder is collapsed (`/dev//foo` → `/dev/foo`;
+///      `//server//share` → `//server/share`).
+///   4. Strip a SINGLE trailing `/`, but never reduce a root to empty: a bare
 ///      `/` (unix root) and a `C:/` drive root (`^[A-Za-z]:/$`) are left intact.
-///   4. On `cfg(windows)` ONLY, lowercase via `to_ascii_lowercase()`.
-///
-/// NOTE step 4 is HOST-keyed, not path-keyed: the same path string normalises
-/// differently on Windows vs Unix (case-fold). This is correct for the
-/// single-machine-now use case (the cwd and the stored `local_path` were both
-/// produced on the same host) but is the documented limitation in the plan's
-/// Risks note — a future cross-host store would need a path-keyed casing policy.
 ///
 /// No `std::fs::canonicalize`: the path may name a directory that does not yet
 /// exist (the clone has not happened), so this is purely lexical.
-fn normalise_path_for_compare(p: &str) -> String {
+fn normalise_path_structural(p: &str) -> String {
     // Step 1: strip the Windows verbatim prefix (UNC form first — it is longer).
     let stripped: String = if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
         // Re-prepend `\\` so the UNC host keeps its double leading separator.
@@ -527,14 +548,61 @@ fn normalise_path_for_compare(p: &str) -> String {
     };
 
     // Step 2: normalise separators.
-    let mut s: String = stripped.replace('\\', "/");
+    let folded: String = stripped.replace('\\', "/");
 
-    // Step 3: strip a single trailing `/`, but never collapse a root to empty.
+    // Step 3: collapse runs of `/` to a single `/`, preserving a leading `//`
+    // (UNC). When the string begins with `//`, emit the `//` verbatim and
+    // collapse only the remainder (the host/share separators); otherwise collapse
+    // every run including the leading one.
+    let leading_unc = folded.starts_with("//");
+    let mut s = String::with_capacity(folded.len());
+    // `body` is the portion subject to run-collapsing. For UNC we emit a literal
+    // `//` first, then collapse the rest (with any further leading slashes after
+    // the `//` trimmed, so `///x` → `//x`).
+    let body = if leading_unc {
+        s.push_str("//");
+        folded.trim_start_matches('/')
+    } else {
+        folded.as_str()
+    };
+    let mut prev_slash = false;
+    for ch in body.chars() {
+        if ch == '/' {
+            if !prev_slash {
+                s.push('/');
+            }
+            prev_slash = true;
+        } else {
+            s.push(ch);
+            prev_slash = false;
+        }
+    }
+
+    // Step 4: strip a single trailing `/`, but never collapse a root to empty.
     if s.ends_with('/') && !is_root(&s) {
         s.pop();
     }
 
-    // Step 4 (windows only): host-keyed case fold.
+    s
+}
+
+/// Normalise a filesystem path string into a canonical *comparison* form for
+/// component-boundary prefix matching: the [`normalise_path_structural`] form
+/// PLUS a host-keyed case fold on `cfg(windows)`. Used by
+/// [`select_longest_prefix_project`] and [`resolve_repo_path`] (which compares /
+/// joins against a stored path); the storage path stores the structural form and
+/// matching stays correct because the compare form folds case on BOTH sides.
+///
+/// NOTE the case fold is HOST-keyed, not path-keyed: the same path string
+/// normalises differently on Windows vs Unix. This is correct for the
+/// single-machine-now use case (the cwd and the stored `local_path` were both
+/// produced on the same host) but is the documented limitation in the plan's
+/// Risks note — a future cross-host store would need a path-keyed casing policy.
+fn normalise_path_for_compare(p: &str) -> String {
+    #[allow(unused_mut)]
+    let mut s = normalise_path_structural(p);
+
+    // Host-keyed case fold (windows only).
     #[cfg(windows)]
     {
         s = s.to_ascii_lowercase();
@@ -554,6 +622,19 @@ fn is_root(s: &str) -> bool {
     b.len() == 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/'
 }
 
+// ---------------------------------------------------------------------------
+// NOTE (review R11): the resolution functions below — `resolve_repo_path`,
+// `select_longest_prefix_project`, and the `resolve_cwd_to_project` DB wrapper —
+// are LAYER-1 substrate, staged AHEAD of their layer-2 consumer (the
+// harness-session-corpus cwd→project correlation; see ADR-0004). They have NO
+// production caller yet (confirmed via a repo-wide grep). In particular,
+// `resolve_repo_path`'s security-critical clamp invariant (`..`-escaping and
+// absolute `rel` can never escape the base) is NOT yet exercised by a live flow
+// — it is covered only by the unit tests in this module until the consumer
+// lands. Treat the clamp guarantee as load-bearing the moment a real FS sink
+// starts consuming the joined path.
+// ---------------------------------------------------------------------------
+
 /// Join a repo-relative path `rel` against a clone directory `local_path`,
 /// returning a path that can NEVER ascend above the clone dir.
 ///
@@ -562,30 +643,48 @@ fn is_root(s: &str) -> bool {
 ///   - `local_path` is normalised via [`normalise_path_for_compare`] and used as
 ///     the base.
 ///   - `rel` is normalised lexically: its `\` separators are folded to `/` first
-///     (so a Windows-style `rel` splits on BOTH Windows and Unix), then only the
-///     `Component::Normal` parts are kept and pushed onto the base. Every
-///     `ParentDir` (`..`) is DROPPED (clamp — no escape), every `CurDir` (`.`)
-///     skipped, and any absolute anchor (`RootDir` / a drive-or-UNC `Prefix`) is
-///     IGNORED so an absolute `rel` is treated relative-to-the-base instead of
-///     REPLACING it (the naïve `PathBuf::join` bug this guards against).
+///     (so a Windows-style `rel` splits on BOTH Windows and Unix), then the
+///     `Component::Normal` parts are pushed onto the base and each `ParentDir`
+///     (`..`) LEXICALLY CANCELS the most-recently-pushed `Normal` component —
+///     CLAMPED at the base, so a `..` can never pop INTO (above) the base. Every
+///     `CurDir` (`.`) is skipped, and any absolute anchor (`RootDir` / a
+///     drive-or-UNC `Prefix`) is IGNORED so an absolute `rel` is treated
+///     relative-to-the-base instead of REPLACING it (the naïve `PathBuf::join`
+///     bug this guards against). `a/../b` → `base/b`; `../../etc` → `base`
+///     (clamped).
 ///
 /// Security invariant: a `..`-escaping or absolute `rel` is clamped to within
 /// `local_path` and can never escape. No DB; no canonicalize.
 pub fn resolve_repo_path(local_path: &str, rel: &str) -> PathBuf {
     let mut out = PathBuf::from(normalise_path_for_compare(local_path));
 
+    // Track how many `Normal` components we have pushed BEYOND the base so a
+    // `..` only ever cancels a component we ourselves pushed — never one of the
+    // base's own components (the clamp invariant). `depth==0` ⇒ a `..` is a
+    // no-op (already at the base floor).
+    let mut depth: usize = 0;
+
     // Fold `\` → `/` so a Windows-style `rel` splits into components on Unix too
     // (on Unix, `Path::components` treats `\` as an ordinary `Normal` byte).
     let rel_norm = rel.replace('\\', "/");
     for comp in Path::new(&rel_norm).components() {
         match comp {
-            Component::Normal(part) => out.push(part),
-            // Drop `..` (clamp), skip `.`, ignore any absolute anchor — an
-            // absolute `rel` must NOT replace the base.
-            Component::ParentDir
-            | Component::CurDir
-            | Component::RootDir
-            | Component::Prefix(_) => {}
+            Component::Normal(part) => {
+                out.push(part);
+                depth += 1;
+            }
+            // `..` lexically cancels the last pushed component, clamped at the
+            // base: pop only if we have pushed something beyond the base.
+            Component::ParentDir => {
+                if depth > 0 {
+                    out.pop();
+                    depth -= 1;
+                }
+                // depth == 0 ⇒ already at the base floor; drop the `..` (clamp).
+            }
+            // Skip `.`, ignore any absolute anchor — an absolute `rel` must NOT
+            // replace the base.
+            Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
         }
     }
 
@@ -623,11 +722,15 @@ pub fn select_longest_prefix_project(
     for (project_id, local_path) in candidates {
         let base = normalise_path_for_compare(local_path);
 
-        // Component-boundary match: equal, or cwd extends base past a `/`.
+        // Component-boundary match: equal, or cwd extends base past a `/`. A
+        // filesystem-ROOT base (`/` or `C:/`) already ENDS in `/`, so the
+        // stripped tail does NOT begin with a fresh `/` — accept a root base when
+        // cwd starts with it (the boundary is the trailing `/` the root carries)
+        // (review R1). A deeper non-root base still wins by longest-prefix below.
         let matches = cwd_norm == base
             || cwd_norm
                 .strip_prefix(&base)
-                .is_some_and(|tail| tail.starts_with('/'));
+                .is_some_and(|tail| tail.starts_with('/') || base.ends_with('/'));
         if !matches {
             continue;
         }
@@ -668,6 +771,12 @@ pub async fn resolve_cwd_to_project(
     db: &impl DbClient,
     cwd: &str,
 ) -> Result<Option<String>, AppError> {
+    // NOTE (review R12): this is an unindexed full-scan of `repo_links` filtered
+    // on `local_path IS NOT NULL`. Acceptable at the current handful-of-repos
+    // cardinality (the scan is over a tiny table). If cwd→project resolution
+    // becomes hot, the upgrade is a partial index
+    // (`CREATE INDEX … ON repo_links(local_path) WHERE local_path IS NOT NULL`)
+    // in a future migration — NOT added here (no migration in this scope).
     let candidates = db
         .query_all::<(String, String)>(
             "SELECT rl.project_id, rl.local_path \
@@ -714,58 +823,85 @@ mod tests {
         assert_eq!(got, expected);
     }
 
-    /// Verbatim-UNC `\\?\UNC\server\share` strips the prefix and re-prepends `\\`
-    /// so the leading DOUBLE separator survives the `\`→`/` fold as `//`.
+    /// Verbatim-UNC `\\?\UNC\Server\Share` strips the prefix and re-prepends `\\`
+    /// so the leading DOUBLE separator survives the `\`→`/` fold as `//`. Uses an
+    /// UPPERCASE input so the assertion also exercises the host-keyed case fold
+    /// (review R20): on Windows the result is lowered to `//server/share`; on Unix
+    /// the casing is preserved as `//Server/Share`.
     #[test]
     fn normalise_verbatim_unc_keeps_double_leading_separator() {
-        let got = normalise_path_for_compare(r"\\?\UNC\server\share");
+        let got = normalise_path_for_compare(r"\\?\UNC\Server\Share");
         #[cfg(windows)]
         let expected = "//server/share";
         #[cfg(not(windows))]
-        let expected = "//server/share";
+        let expected = "//Server/Share";
         assert_eq!(
             got, expected,
             "verbatim-UNC must keep the double leading separator as `//`"
         );
     }
 
-    /// `\` separators fold to `/`.
+    /// Internal repeated separators collapse to a single `/`, BUT a leading `//`
+    /// (UNC) is preserved (review R4). Asserted on the STRUCTURAL form so the
+    /// collapse is exercised independently of the host-keyed case fold.
+    #[rstest]
+    #[case("/dev//foo", "/dev/foo")]
+    #[case("/dev///foo//bar", "/dev/foo/bar")]
+    #[case("//server//share", "//server/share")]
+    #[case("//server///share//x", "//server/share/x")]
+    #[case(r"C:\\dev\\foo", "C:/dev/foo")]
+    fn normalise_collapses_internal_separators(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(
+            normalise_path_structural(input),
+            expected,
+            "internal `/` runs collapse; leading `//` (UNC) is preserved; input {input:?}"
+        );
+    }
+
+    /// The compare form collapses internal separators too (it composes the
+    /// structural form), with the host-keyed case fold applied on top (review R4).
     #[test]
-    fn normalise_folds_backslashes() {
-        let got = normalise_path_for_compare(r"a\b\c");
-        // No leading anchor ⇒ not absolute, but the fold + (windows) case still
-        // applies. Build the expected with the same host casing.
-        let expected = {
-            #[allow(unused_mut)]
-            let mut e = String::from("a/b/c");
-            #[cfg(windows)]
-            {
-                e = e.to_ascii_lowercase();
-            }
-            e
-        };
+    fn normalise_compare_collapses_and_case_folds() {
+        let got = normalise_path_for_compare("/Dev//Foo");
+        #[cfg(windows)]
+        let expected = "/dev/foo";
+        #[cfg(not(windows))]
+        let expected = "/Dev/Foo";
         assert_eq!(got, expected);
     }
 
+    /// `\` separators fold to `/`. Asserted as a HARD LITERAL (review R16):
+    /// lowercase input so the value is case-fold-invariant — `a/b/c` is the
+    /// expected on BOTH hosts (lowercasing it is a no-op), so the literal is not
+    /// tautological with the SUT's own fold.
+    #[test]
+    fn normalise_folds_backslashes() {
+        assert_eq!(normalise_path_for_compare(r"a\b\c"), "a/b/c");
+    }
+
     /// A single trailing `/` is stripped, but a root is NEVER reduced to empty:
-    /// `/` stays `/` and `C:/` stays `C:/`.
+    /// `/` stays `/`. Asserted as HARD LITERALS (review R16); these cases are
+    /// case-free so the literal holds on both hosts without re-running the SUT's
+    /// case fold. (The drive-root `C:/` case, where the case fold DOES differ, is
+    /// asserted separately below with a cfg-gated literal.)
     #[rstest]
-    // (input, expected-on-unix). Windows variants are computed in-body.
     #[case("/dev/foo/", "/dev/foo")]
     #[case("/", "/")]
-    #[case("C:/", "C:/")]
-    fn normalise_trailing_slash_and_root(#[case] input: &str, #[case] expected_unix: &str) {
-        let got = normalise_path_for_compare(input);
-        let expected = {
-            #[allow(unused_mut)]
-            let mut e = expected_unix.to_owned();
-            #[cfg(windows)]
-            {
-                e = e.to_ascii_lowercase();
-            }
-            e
-        };
-        assert_eq!(got, expected, "input {input:?}");
+    fn normalise_trailing_slash_and_root(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(normalise_path_for_compare(input), expected, "input {input:?}");
+    }
+
+    /// The drive root `C:/` is NEVER reduced to empty by the trailing-slash strip.
+    /// The expected is a cfg-gated HARD LITERAL because the drive letter DOES
+    /// case-fold on Windows (`C:/` → `c:/`) but not on Unix (review R16).
+    #[test]
+    fn normalise_drive_root_not_emptied() {
+        let got = normalise_path_for_compare("C:/");
+        #[cfg(windows)]
+        let expected = "c:/";
+        #[cfg(not(windows))]
+        let expected = "C:/";
+        assert_eq!(got, expected);
     }
 
     /// On Windows ONLY, step 4 case-folds. This assertion is gated to `cfg(windows)`
@@ -800,31 +936,87 @@ mod tests {
     }
 
     // ---------------------------------------------------------------------
+    // is_absolute_normalised — focused accept/reject branches
+    // ---------------------------------------------------------------------
+
+    /// `is_absolute_normalised` accepts `/`-rooted and drive-anchored
+    /// (`^[A-Za-z]:/`) NORMALISED strings and rejects relative / bare-drive /
+    /// empty forms (review R19). Inputs are already-normalised structural forms
+    /// (the predicate's contract), so no separator folding is needed here.
+    #[rstest]
+    #[case("/x", true)] // unix-rooted
+    #[case("C:/x", true)] // drive-anchored (letter, colon, slash)
+    #[case("C:foo", false)] // drive-relative — no slash after the colon
+    #[case("dev/foo", false)] // plain relative
+    #[case("c:", false)] // bare drive letter, no slash
+    #[case("", false)] // empty
+    fn is_absolute_normalised_accepts_and_rejects(#[case] input: &str, #[case] expected: bool) {
+        assert_eq!(
+            is_absolute_normalised(input),
+            expected,
+            "is_absolute_normalised({input:?})"
+        );
+    }
+
+    // ---------------------------------------------------------------------
     // resolve_repo_path
     // ---------------------------------------------------------------------
 
     /// A normal `a/b` rel round-trips: the components are pushed onto the base.
+    /// Asserted as a HARD LITERAL (review R16) — `/repo/base` is case-free, so it
+    /// normalises identically on both hosts.
     #[test]
     fn resolve_repo_path_normal_join() {
         let got = resolve_repo_path("/repo/base", "a/b");
-        let expected = PathBuf::from(normalise_path_for_compare("/repo/base"))
-            .join("a")
-            .join("b");
-        assert_eq!(got, expected);
+        assert_eq!(got, PathBuf::from("/repo/base/a/b"));
     }
 
-    /// Security invariant: a `..`-escaping `rel` is clamped INSIDE the base —
-    /// the result is the base joined with the surviving `Normal` components,
-    /// never an ancestor of the base.
+    /// Security invariant: a leading-`..`-escaping `rel` is clamped INSIDE the
+    /// base — every leading `..` is a no-op at the base floor (depth 0), so only
+    /// the surviving `Normal` components join, never an ancestor of the base.
     #[test]
     fn resolve_repo_path_clamps_parent_escape() {
         let got = resolve_repo_path("/repo/base", "../../etc/passwd");
-        // The `..` are dropped; only `etc/passwd` survives, joined onto the base.
-        let expected = PathBuf::from("/repo/base").join("etc").join("passwd");
-        assert_eq!(got, expected, "`..` must be clamped within the base");
-        // And the result is strictly within the normalised base.
+        // The leading `..` are clamped (no-ops at depth 0); only `etc/passwd`
+        // survives, joined onto the base. HARD LITERAL (review R16).
+        assert_eq!(
+            got,
+            PathBuf::from("/repo/base/etc/passwd"),
+            "`..` must be clamped within the base"
+        );
+        // And the result is strictly within the base.
         assert!(
-            got.starts_with(normalise_path_for_compare("/repo/base")),
+            got.starts_with("/repo/base"),
+            "clamped path must stay under the base: {got:?}"
+        );
+    }
+
+    /// A `..` LEXICALLY CANCELS the preceding pushed component (review R5):
+    /// `a/../b` resolves to `base/b`, NOT `base/a/b`.
+    #[test]
+    fn resolve_repo_path_cancels_parent_dir() {
+        let got = resolve_repo_path("/repo/base", "a/../b");
+        assert_eq!(
+            got,
+            PathBuf::from("/repo/base/b"),
+            "`..` must cancel the preceding `a`, yielding base/b"
+        );
+    }
+
+    /// `..` cancellation is CLAMPED at the base: a `rel` that cancels past the
+    /// pushed depth (`../../etc` after a single `a`) never pops INTO the base —
+    /// the surplus `..` are no-ops at depth 0 (review R5). `a/../../etc` →
+    /// `base/etc` (push a, cancel a → depth 0, surplus `..` no-op, push etc).
+    #[test]
+    fn resolve_repo_path_parent_cancellation_clamped_at_base() {
+        let got = resolve_repo_path("/repo/base", "a/../../etc");
+        assert_eq!(
+            got,
+            PathBuf::from("/repo/base/etc"),
+            "cancellation must clamp at the base floor: {got:?}"
+        );
+        assert!(
+            got.starts_with("/repo/base"),
             "clamped path must stay under the base: {got:?}"
         );
     }
@@ -832,18 +1024,17 @@ mod tests {
     /// An ABSOLUTE `rel` does NOT replace the base — its root anchor is ignored
     /// and only the `Normal` parts join onto the base (the naïve `PathBuf::join`
     /// replace-bug this guards against). Covers a unix-absolute `/etc/passwd`.
+    /// HARD LITERAL (review R16) — `/repo/base` is case-free.
     #[test]
     fn resolve_repo_path_unix_absolute_rel_is_ignored() {
         let got = resolve_repo_path("/repo/base", "/etc/passwd");
-        let expected = PathBuf::from(normalise_path_for_compare("/repo/base"))
-            .join("etc")
-            .join("passwd");
         assert_eq!(
-            got, expected,
+            got,
+            PathBuf::from("/repo/base/etc/passwd"),
             "an absolute `rel` must NOT replace the base — only Normal parts join"
         );
         assert!(
-            got.starts_with(normalise_path_for_compare("/repo/base")),
+            got.starts_with("/repo/base"),
             "absolute-rel result must stay under the base: {got:?}"
         );
     }
@@ -888,6 +1079,32 @@ mod tests {
         assert_eq!(
             select_longest_prefix_project("/dev/mono/other/x", &candidates),
             Some("outer".to_string()),
+        );
+    }
+
+    /// A filesystem-ROOT base (`/`) matches a cwd that starts with it — the root
+    /// already carries its trailing `/`, so the boundary test must accept it
+    /// (review R1). And a DEEPER non-root base still beats the root by
+    /// longest-prefix.
+    #[test]
+    fn select_longest_prefix_project_root_base_matches() {
+        // A bare root base `/` matches cwd `/foo`.
+        let root_only = [("root".to_string(), "/".to_string())];
+        assert_eq!(
+            select_longest_prefix_project("/foo", &root_only),
+            Some("root".to_string()),
+            "a root base `/` must match a cwd that starts with it"
+        );
+
+        // A deeper `/dev/foo` still beats the root base `/` for cwd `/dev/foo/x`.
+        let root_and_deep = [
+            ("root".to_string(), "/".to_string()),
+            ("deep".to_string(), "/dev/foo".to_string()),
+        ];
+        assert_eq!(
+            select_longest_prefix_project("/dev/foo/x", &root_and_deep),
+            Some("deep".to_string()),
+            "a deeper non-root base must win over the root base (longest-prefix)"
         );
     }
 
@@ -975,15 +1192,17 @@ mod tests {
         (pool, project, repo_link)
     }
 
-    /// `set_repo_local_path(Some(..))` sets the column to the NORMALISED value and
+    /// `set_repo_local_path(Some(..))` sets the column to the STRUCTURAL
+    /// normalised value (separators folded, casing PRESERVED — review R7) and
     /// reads back; the e2e relies on this storing the normalised (not raw) form.
     #[tokio::test]
     async fn set_repo_local_path_sets_normalised_value() {
         let (pool, _project, repo_link) = seed_project_with_repo_link().await;
 
         // A raw backslash-form, drive-anchored path. The STORED value is the
-        // normalised form (sep-folded, host-cased), which is exactly what
-        // `normalise_path_for_compare` produces.
+        // STRUCTURAL form (sep-folded, casing PRESERVED), which is exactly what
+        // `normalise_path_structural` produces — NOT the compare form (no
+        // host-keyed case fold at store time, so the operator's casing survives).
         let raw = r"C:\dev\hello-world";
         set_repo_local_path(&pool, &repo_link, Some(raw))
             .await
@@ -997,8 +1216,32 @@ mod tests {
                 .expect("read back local_path");
         assert_eq!(
             stored.as_deref(),
-            Some(normalise_path_for_compare(raw).as_str()),
-            "the STORED value is the normalised form of the raw input"
+            Some(normalise_path_structural(raw).as_str()),
+            "the STORED value is the STRUCTURAL (casing-preserved) form of the raw input"
+        );
+    }
+
+    /// Surrounding whitespace is TRIMMED before normalise/validate/store, so a
+    /// value like ` /dev/foo ` is ACCEPTED and stored without the padding (review
+    /// R13).
+    #[tokio::test]
+    async fn set_repo_local_path_trims_whitespace() {
+        let (pool, _project, repo_link) = seed_project_with_repo_link().await;
+
+        set_repo_local_path(&pool, &repo_link, Some("  /dev/foo  "))
+            .await
+            .expect("padded-but-absolute path must be accepted after trim");
+
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT local_path FROM repo_links WHERE id = ?1")
+                .bind(&repo_link)
+                .fetch_one(&pool)
+                .await
+                .expect("read back local_path");
+        assert_eq!(
+            stored.as_deref(),
+            Some("/dev/foo"),
+            "the stored value is trimmed of surrounding whitespace"
         );
     }
 
@@ -1025,14 +1268,29 @@ mod tests {
     }
 
     /// An absent `repo_link_id` is `NotFound` BEFORE any write (the owning-project
-    /// resolve runs first).
+    /// resolve runs first) — and emits ZERO events (review R18).
     #[tokio::test]
     async fn set_repo_local_path_absent_id_is_not_found() {
         let pool = connect_in_memory().await.expect("pool");
-        let err = set_repo_local_path(&pool, "00000000-0000-0000-0000-000000000000", Some("/x"))
+        let absent = "00000000-0000-0000-0000-000000000000";
+        let err = set_repo_local_path(&pool, absent, Some("/x"))
             .await
             .expect_err("absent id must be NotFound");
         assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
+
+        // No event was recorded on any aggregate — the resolve fails before the
+        // tx opens, so nothing is written. The absent id is also (vacuously) not
+        // an event aggregate, so a count over it is 0 (review R18).
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM events WHERE event_type = 'repo_link.local_path_changed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count events");
+        assert_eq!(
+            total, 0,
+            "a NotFound set must record no local_path_changed event"
+        );
     }
 
     /// A RELATIVE path (normalises to a non-absolute form) is rejected with
@@ -1059,12 +1317,15 @@ mod tests {
     }
 
     /// EXACTLY ONE `repo_link.local_path_changed` event fires on the owning
-    /// PROJECT aggregate per successful set.
+    /// PROJECT aggregate per successful set — AND its payload carries the
+    /// expected `id` / `project_id` / `local_path` (the normalised STORED value)
+    /// (review R18).
     #[tokio::test]
     async fn set_repo_local_path_emits_exactly_one_event() {
         let (pool, project, repo_link) = seed_project_with_repo_link().await;
 
-        set_repo_local_path(&pool, &repo_link, Some("/dev/hello-world"))
+        let raw = "/dev/hello-world";
+        set_repo_local_path(&pool, &repo_link, Some(raw))
             .await
             .expect("set local_path");
 
@@ -1072,6 +1333,36 @@ mod tests {
         assert_eq!(
             n, 1,
             "exactly one local_path_changed event on the project aggregate"
+        );
+
+        // Read the event row and assert its JSON payload (review R18). The
+        // `payload` column is the JSON-serialised object record_event wrote; the
+        // `local_path` field MUST be the normalised STORED form (structural).
+        let payload_str: String = sqlx::query_scalar(
+            "SELECT payload FROM events \
+             WHERE aggregate_id = ?1 AND event_type = 'repo_link.local_path_changed'",
+        )
+        .bind(&project)
+        .fetch_one(&pool)
+        .await
+        .expect("read event payload");
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload_str).expect("payload is valid JSON");
+
+        assert_eq!(
+            payload["id"].as_str(),
+            Some(repo_link.as_str()),
+            "payload.id is the repo_link id"
+        );
+        assert_eq!(
+            payload["project_id"].as_str(),
+            Some(project.as_str()),
+            "payload.project_id is the owning project"
+        );
+        assert_eq!(
+            payload["local_path"].as_str(),
+            Some(normalise_path_structural(raw).as_str()),
+            "payload.local_path is the normalised STORED value"
         );
     }
 

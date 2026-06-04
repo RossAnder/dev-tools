@@ -52,6 +52,12 @@ export function useSettings() {
         cloneRoot.value = settings.clone_root
         exportRoot.value = settings.export_root
         loaded = true
+      } catch (err) {
+        // Failed load: log so the failure is observable, and DO NOT set
+        // `loaded`, so the next call retries via the existing guard. Swallowing
+        // here also resolves the returned promise, avoiding an unhandled
+        // rejection in `void loadSettings()` callers (ReposPanel.vue onMounted).
+        console.warn('useSettings: failed to load GET /api/settings', err)
       } finally {
         inFlight = null
       }

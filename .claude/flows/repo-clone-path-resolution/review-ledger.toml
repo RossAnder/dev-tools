@@ -1,0 +1,418 @@
+schema_version = 1
+last_updated = 2026-06-04
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R1"
+file = "lumina/src/repo/repo_links.rs"
+line = 627
+symbol = "select_longest_prefix_project"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Filesystem-root local_path ('/' or 'C:/') can never match any cwd"
+description = "Component-boundary test (repo_links.rs:627-630) is cwd==base OR cwd.strip_prefix(base) starts_with '/'. For base='/' and cwd='/foo', strip_prefix yields 'foo' (no leading slash) and they are not equal, so no match; same for base='C:/' vs 'C:/foo'. normalise_path_for_compare deliberately preserves these roots (is_root, l.548) and is_absolute_normalised accepts them (l.481-486), so such a row CAN be stored and cwd resolution then silently returns None. Verified by reading the matcher. Low likelihood (a root clone dir is unusual) but a real correctness hole in the resolver."
+dedup_id = "3968000c56d61a36"
+resolved = 2026-06-04
+resolution = "select_longest_prefix_project boundary check now matches a filesystem-root base (tail.starts_with('/') OR base.ends_with('/')): root '/' matches '/foo' while deeper non-root bases still win by longest-prefix. Added select_longest_prefix_project_root_base_matches test."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R2"
+file = "lumina/web/src/components/panels/ReposPanel.vue"
+line = 57
+symbol = "suggestionFor"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Offer-to-clone path join is naive: double slash on trailing-slash root, mixed separators on a Windows root"
+description = "suggestionFor returns `${cloneRoot.value}/${name}` (ReposPanel.vue:57). clone_root is surfaced verbatim from var_os with no normalisation (settings.rs:27). A LUMINA_CLONE_ROOT ending in a slash yields '/dev//repo'; a backslash-separated Windows root yields a mixed-separator path. handleUseSuggestion (l.124-127) commits the un-normalised form, and the stored double-slash then silently fails cwd matching because normalise_path_for_compare does not collapse internal repeated separators (see R4). Trim/normalise cloneRoot before joining, or normalise clone_root server-side. Flagged independently by the Quality, Architecture, and Completeness lenses."
+related = ["R4"]
+dedup_id = "bbe881db71fa92b5"
+resolved = 2026-06-04
+resolution = "suggestionFor normalises cloneRoot for display (folds separators to '/' and strips a trailing slash), so a trailing-slash or Windows-backslash clone root yields a clean single-separator path. (ReposPanel.vue)"
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R3"
+file = "lumina/web/src/composables/useSettings.ts"
+line = 49
+symbol = "loadSettings"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Settings load failure is silent: no catch, unhandled rejection, offer-to-clone disappears"
+description = "The in-flight IIFE (useSettings.ts:49-58) has only try/finally, no catch. handle() throws on a non-2xx or zod-contract violation (api/http.ts). The sole caller is `void loadSettings()` in ReposPanel.onMounted (ReposPanel.vue:68), so a failed GET /api/settings rejects with no surfacing path: no error ref (unlike useRepoLinks which captures into a Result), no UI feedback, an unhandled promise rejection, and cloneRoot stays null so the offer-to-clone affordance silently never appears (indistinguishable from LUMINA_CLONE_ROOT being unset). Capture the error into a ref or console.warn so the failure is observable."
+dedup_id = "0143ef2472ff4f2b"
+resolved = 2026-06-04
+resolution = "loadSettings IIFE gained a catch that console.warns and leaves loaded unset (retry preserved), resolving the promise so void loadSettings() callers no longer raise an unhandled rejection. (useSettings.ts)"
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R4"
+file = "lumina/src/repo/repo_links.rs"
+line = 518
+symbol = "normalise_path_for_compare"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Internal repeated separators not collapsed; degenerate '//' popped to '/'"
+description = "normalise_path_for_compare folds backslash to forward slash and strips one trailing slash, but never collapses internal repeated separators (l.529-535). A stored '/dev//foo' (e.g. from the R2 double-slash suggestion or a sloppy operator entry) and a cwd '/dev/foo/x' normalise to distinct strings, so select_longest_prefix_project silently fails to bind. Separately, a degenerate '//' is not a root (is_root knows only '/' and 'X:/', l.548-554) so the trailing-slash strip pops it to '/', conflating a UNC anchor with the unix root. The plan's pinned algorithm (T2b) does not mention '//' collapse, so this is a spec omission. Collapse repeated separators in the normalise step."
+related = ["R2"]
+dedup_id = "ace10b8a30553943"
+resolved = 2026-06-04
+resolution = "normalise now collapses runs of '/' to one (after separator fold, before trailing-slash strip), preserving a leading '//' for UNC: /dev//foo to /dev/foo, //server//share to //server/share. Added collapse tests."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R5"
+file = "lumina/src/repo/repo_links.rs"
+line = 585
+symbol = "resolve_repo_path"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "'..' is dropped, not lexically cancelled: 'a/../b' resolves to base/a/b not base/b"
+description = "The ParentDir arm drops the component unconditionally (repo_links.rs:585-588) rather than popping the previously-pushed Normal. So rel='a/../etc' yields base/a/etc and 'a/b/../../c' yields base/a/b/c, diverging from how a real path resolver canonicalises. This is SAFE (the clamp invariant at l.572 holds; no escape is possible) but the result is surprising and only reached if the literal nested dirs exist. Since the path is destined for a real filesystem location once a layer-2 consumer wires it (see R11), prefer pop-on-ParentDir clamped at the base so the result matches lexical-normalisation intuition."
+dedup_id = "073a37f4e753fd52"
+resolved = 2026-06-04
+resolution = "resolve_repo_path ParentDir now lexically cancels the last pushed component, clamped at the base via a depth counter (a/../b to base/b; ../../etc to base). Security clamp invariant preserved (never pops into base). Updated clamp test + added cancellation tests. Plan deviation: T2b pinned ..-dropped, now ..-cancelled-clamped."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R6"
+file = "lumina/src/http/repo_links.rs"
+line = 47
+symbol = "SetLocalPathBody"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Absent key, explicit null, and a typo'd key all clear the column with no malformed-request signal"
+description = "SetLocalPathBody uses #[serde(default)] local_path: Option<String> (repo_links.rs:47-50), so {}, {local_path:null}, and a misspelled field name (e.g. localPath) ALL deserialise to None and CLEAR the column via set_repo_local_path's None branch. The route doc (l.145-149) states absent/null clearing is intentional and it matches the single wire caller (repo-links.ts), so it is internally consistent, but unlike the set-or-leave convention used elsewhere (UpdateFindingRequest) a PATCH here can never be a partial no-op and a typo'd key silently wipes an absolute path. Document the route as deliberately full-replace, or reject unknown fields."
+dedup_id = "df2ed0e1a943610b"
+resolved = 2026-06-04
+resolution = "Added serde deny_unknown_fields to SetLocalPathBody so a misspelled key returns 422 instead of silently clearing local_path; doc comments updated to full-replace + reject-unknown semantics. Legit empty/value/null bodies unaffected. (http/repo_links.rs)"
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R7"
+file = "lumina/src/repo/repo_links.rs"
+line = 429
+symbol = "set_repo_local_path"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Lossy case-fold at store time loses operator casing in detail/export"
+description = "set_repo_local_path stores the output of normalise_path_for_compare, which on cfg(windows) lowercases the whole path (l.538-541). An operator entering 'C:/Dev/HelloWorld' gets 'c:/dev/helloworld' persisted and reflected back in GET /work-items/{id} and the export snapshot: the stored value is a comparison-normal form, not the operator's literal input. Since select_longest_prefix_project already re-normalises candidates at compare time (l.624), storing the validated-RAW value instead would preserve display/audit fidelity AND still match correctly. Consider storing raw-but-validated and normalising lazily."
+dedup_id = "de5b6949b1907920"
+resolved = 2026-06-04
+resolution = "Split normalisation into normalise_path_structural (verbatim-strip + separator-fold + collapse + trailing-strip, case-PRESERVED; used for storage and as the compare base) and normalise_path_for_compare (= structural + cfg(windows) case fold; used by matchers). set_repo_local_path stores the case-preserved structural form; matching stays correct (compare folds both sides). Plan deviation: T2b/T3 stored-form changed case-folded to case-preserved; matching semantics unchanged."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R8"
+file = "lumina/src/repo/repo_links.rs"
+line = 481
+symbol = "is_absolute_normalised"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "Absolute-path check accepts UNC and unbounded '//server/share' remote paths"
+description = "is_absolute_normalised returns true for any forward-slash-rooted string (repo_links.rs:481), so a normalised UNC path like '//server/share' passes validation and is stored as a clone dir; set_repo_local_path performs no further check. No filesystem sink consumes local_path in THIS feature (resolve_repo_path has no production caller yet, see R11), so impact is latent: if a later task feeds a stored UNC path into a clone or file op, an operator-supplied value could point at an attacker-controlled remote share. Add a host-class check at the future consumer, or reject UNC at store time."
+dedup_id = "d334a47d34178ead"
+resolved = 2026-06-04
+resolution = "Documented on is_absolute_normalised that UNC //server/share passes intentionally (valid Windows clone dir) and the future filesystem consumer (R11) must add a host-class check before using a stored path as a filesystem sink. Doc-only; no predicate change."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "deferred"
+flow = "repo-clone-path-resolution"
+id = "R9"
+file = "lumina/src/http/settings.rs"
+line = 44
+symbol = "get_settings"
+severity = "suggestion"
+effort = "medium"
+category = "security"
+summary = "GET /api/settings exposes absolute host filesystem paths with no authentication"
+description = "get_settings returns clone_root and export_root as raw absolute machine paths to any unauthenticated caller (settings.rs:44-53). This is a NEW info-disclosure surface (host usernames in home paths, directory layout). Downgraded from warning: it is consistent with lumina's documented 127.0.0.1-only posture (lumina/CLAUDE.md), and on an API that already permits arbitrary tool execution to any reachable caller via the PTY surface, the incremental path-disclosure is marginal. Action is to document it in the settings.rs leak note, or gate behind the same trust boundary as the PTY surface if lumina is ever exposed. Orchestrator resolved the agent's ESCALATE-TO-DEEP using CLAUDE.md rather than a deep re-dispatch."
+dedup_id = "60e624bedfa6132b"
+defer_reason = "User-directed deferral during /review-apply (notes: defer items complaining about no auth). GET /api/settings exposing host paths is consistent with lumina's documented 127.0.0.1-only posture (lumina/CLAUDE.md) on an API that already permits arbitrary tool execution to any reachable caller, so the incremental path-disclosure is accepted for now."
+defer_trigger = "When lumina gains an authentication layer OR is configured to bind beyond 127.0.0.1 (0.0.0.0 / reverse proxy / external exposure) — at which point unauthenticated host-path disclosure must be gated."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "wontfix"
+flow = "repo-clone-path-resolution"
+id = "R10"
+file = "lumina/src/repo/repo_links.rs"
+line = 458
+symbol = "set_repo_local_path"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "Per-machine local_path flows into the git-export project snapshot (documented deferred caveat)"
+description = "set_repo_local_path stores the absolute path and emits repo_link.local_path_changed on the project aggregate (repo_links.rs:458), and RepoLink.local_path serializes into the export TOML (skip only when None, domain/findings.rs). So a SET clone path (an absolute host path embedding the OS username) lands in the git-exported snapshot; if that export is committed to a shared remote it leaks per-machine layout. This is the documented ADR-0004 single-machine-now trade-off (lumina/CLAUDE.md caveat a), so it is accepted, not a defect. Only actionable check: confirm no current deployment exports to a shared remote; relocate when the per-machine path layer lands. Likely defer/wontfix."
+dedup_id = "a17a3d678d375851"
+wontfix_rationale = "Documented accepted ADR-0004 single-machine-now trade-off (lumina/CLAUDE.md caveat a): local_path flows into the git-export project snapshot; harmless while one lumina serves one machine. No code point-fix — relocate to the per-machine path layer when the shared-remote topology lands. Agent reported skipped R10."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R11"
+file = "lumina/src/repo/repo_links.rs"
+line = 574
+symbol = "resolve_repo_path"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Layer-1 resolution helpers have no production caller yet"
+description = "resolve_repo_path, resolve_cwd_to_project, and select_longest_prefix_project (repo_links.rs:574/667/613) are defined, documented, and unit/DB-tested, but a repo-wide grep finds NO production call site outside the module and its tests. This is consistent with the feature being an explicit layer-1 path substrate (the consumer is deferred to layer-2 harness-session-corpus), so it is intentional staging rather than orphaned wiring; the pub exports avoid a dead_code warning. Confirm this is intended staging and add a one-line tracking note so a future reader does not treat the security-critical clamp invariant as already live."
+dedup_id = "d53ff6097d2e520f"
+resolved = 2026-06-04
+resolution = "Added a NOTE above the resolution section marking resolve_repo_path/resolve_cwd_to_project/select_longest_prefix_project as layer-1 substrate staged ahead of the harness-session-corpus consumer, with the clamp invariant not yet exercised by a live flow."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R12"
+file = "lumina/src/repo/repo_links.rs"
+line = 673
+symbol = "resolve_cwd_to_project"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "cwd->project query full-scans repo_links with no partial index on local_path"
+description = "resolve_cwd_to_project runs SELECT rl.project_id, rl.local_path FROM repo_links rl JOIN work_items w ... WHERE rl.local_path IS NOT NULL AND w.deleted_at IS NULL (repo_links.rs:673-678) and resolves the longest prefix in Rust. Migration 0014 adds no index. For the single-machine-now scale (a handful of linked repos) this is fine, but unlike migration 0013 (which added partial indexes for its hot claim path) there is no '... WHERE local_path IS NOT NULL' partial index. Add a one-line note that the scan is acceptable at current cardinality, or a partial index if cwd-resolution becomes hot."
+dedup_id = "34a3e720352ee62c"
+resolved = 2026-06-04
+resolution = "Added a comment on resolve_cwd_to_project that the full-scan is acceptable at current cardinality and a partial index (WHERE local_path IS NOT NULL) is the upgrade if cwd-resolution becomes hot; no migration added (minimum change)."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R13"
+file = "lumina/src/repo/repo_links.rs"
+line = 429
+symbol = "set_repo_local_path"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "No whitespace trim before normalise/validate, so a leading-space absolute path is rejected"
+description = "set_repo_local_path passes the raw value straight into normalise_path_for_compare (repo_links.rs:429) with no trim. A value like ' /dev/foo' normalises to ' /dev/foo', fails is_absolute_normalised (does not start with '/'), and returns Validation. The SPA's handleCommitLocalPath trims before sending (ReposPanel.vue:104), so this only bites direct HTTP callers, but the mutator is the public HTTP-mirrored contract. Either trim at the mutator or document that callers must pre-trim."
+dedup_id = "f50f9deb4e487264"
+resolved = 2026-06-04
+resolution = "set_repo_local_path now trims the raw value before normalise/validate/store, so a whitespace-padded absolute path is accepted. Added set_repo_local_path_trims_whitespace test."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R14"
+file = "lumina/web/src/components/panels/ReposPanel.vue"
+line = 103
+symbol = "handleCommitLocalPath"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Blur after a server-rejected (422) commit re-fires the identical rejected PATCH"
+description = "handleCommitLocalPath (ReposPanel.vue:103-112) guards a no-op (next === link.local_path) but on a server Validation rejection result.ok is false, so the per-row draft is NOT dropped (l.108-111 drop only on success) and link.local_path is unchanged. The next blur therefore re-sends the identical rejected PATCH; the error banner re-shows each time and the field never settles. Not data-corrupting, a minor UX dead-end on the 422 path. Surface the validation inline or clear the draft on rejection."
+dedup_id = "4885b63f9dfe285e"
+resolved = 2026-06-04
+resolution = "handleCommitLocalPath tracks per-row rejectedDrafts: a re-blur with the same just-rejected value short-circuits (no redundant failing PATCH); the entry is set on 422 and cleared on edit; in-progress text preserved. (ReposPanel.vue)"
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R15"
+file = "lumina/web/src/composables/useRepoLinks.ts"
+line = 61
+symbol = "__resetForTests"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Default API adapter duplicated between the initialiser and __resetForTests"
+description = "The production adapter object is written twice verbatim: the module-scope initialiser (useRepoLinks.ts:43-49) and __resetForTests (l.61-67). When migration 0014 added setRepoLocalPath both copies had to be updated in lockstep; a future mutator that updates only one copy leaves tests resetting to a stale adapter. Extract a defaultApi() factory and assign it in both places so the adapter set is single-source."
+dedup_id = "848c96effde9695f"
+resolved = 2026-06-04
+resolution = "Extracted a single defaultApi() factory for the production API adapter, used by both the module initialiser and __resetForTests, eliminating the duplicated adapter object. (useRepoLinks.ts)"
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R16"
+file = "lumina/src/repo/repo_links.rs"
+line = 810
+symbol = "resolve_repo_path_normal_join"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Several pure-fn tests build the expected value by re-invoking the SUT helper (tautological)"
+description = "resolve_repo_path_normal_join (l.810) and resolve_repo_path_unix_absolute_rel_is_ignored (l.838) derive their expected via PathBuf::from(normalise_path_for_compare(...)).join(...), so a bug in normalise_path_for_compare moves both sides and the test still passes (only the rel component-parsing is independently asserted). Similarly normalise_folds_backslashes (l.734) and normalise_trailing_slash_and_root (l.757) re-apply the same cfg(windows) to_ascii_lowercase the SUT uses. Assert hard literals (the clamp test at l.823 correctly uses a literal PathBuf::from). Owned by the Testability lens."
+dedup_id = "f34f0efcf5072a63"
+resolved = 2026-06-04
+resolution = "Replaced tautological/SUT-re-applying expecteds with hard literals in resolve_repo_path_normal_join, resolve_repo_path_unix_absolute_rel_is_ignored, normalise_folds_backslashes, normalise_trailing_slash_and_root (cfg-gated where the case fold differs)."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R17"
+file = "lumina/src/http/settings.rs"
+line = 26
+symbol = "resolve_clone_root"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "resolve_clone_root() and the unset->null mapping have zero direct coverage"
+description = "The e2e (e2e.rs:~1186) deliberately asserts only that clone_root is string-or-null to avoid process-global LUMINA_CLONE_ROOT env flake, so the var-read and the None->null serialisation in resolve_clone_root (settings.rs:26-28) are never exercised concretely; the GET /api/settings test passes regardless of which branch runs. Add a serialised-isolation unit test (e.g. a scoped env guard) asserting set->Some(path) and unset->None."
+dedup_id = "74f17c86268c5b5e"
+resolved = 2026-06-04
+resolution = "Added #[cfg(test)] mod tests to http/settings.rs: resolve_clone_root_reads_env_and_unset asserts Some(path) when LUMINA_CLONE_ROOT is set and None when unset (unsafe set_var/remove_var for edition 2024; nextest process-per-test isolation prevents flake)."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R18"
+file = "lumina/src/repo/repo_links.rs"
+line = 1064
+symbol = "set_repo_local_path_emits_exactly_one_event"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Event count asserted but payload never verified; NotFound path does not assert zero events"
+description = "set_repo_local_path_emits_exactly_one_event (l.1064) asserts count==1 of repo_link.local_path_changed but never reads the events row payload, so the test would pass even if the mutator wrote the wrong id/project_id/local_path (payload built at repo_links.rs:458-462). The single-mutation invariant the plan calls out is therefore only half-checked. Additionally set_repo_local_path_absent_id_is_not_found (l.1029) checks the NotFound variant but does not assert event count==0. Assert the event payload JSON, and assert zero events on the NotFound path."
+dedup_id = "4438c45641c628b4"
+resolved = 2026-06-04
+resolution = "set_repo_local_path_emits_exactly_one_event now also asserts the repo_link.local_path_changed event payload (id/project_id/local_path); set_repo_local_path_absent_id_is_not_found now asserts zero events on the NotFound path."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R19"
+file = "lumina/src/repo/repo_links.rs"
+line = 480
+symbol = "is_absolute_normalised"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "is_absolute_normalised / is_root have no focused unit test for their reject branches"
+description = "is_absolute_normalised (l.480-487) is only exercised transitively (drive-anchored accept via the e2e, /-rooted accept via resolve_cwd seeds, one reject via set_repo_local_path_relative_is_validation). The colon-without-slash reject ('C:foo' -> not absolute) and the bare-drive-letter edge ('c:') are never asserted. A direct rstest over is_absolute_normalised ('/x'->true, 'C:/x'->true, 'C:foo'->false, 'dev/foo'->false, 'c:'->false) would pin the predicate that gates the Validation error."
+dedup_id = "03316f6205f8ff09"
+resolved = 2026-06-04
+resolution = "Added is_absolute_normalised_accepts_and_rejects parameterised rstest: /x true, C:/x true, C:foo false, dev/foo false, c: false, empty false."
+
+[[items]]
+first_flagged = 2026-06-04
+rounds = 1
+status = "fixed"
+flow = "repo-clone-path-resolution"
+id = "R20"
+file = "lumina/src/repo/repo_links.rs"
+line = 719
+symbol = "normalise_verbatim_unc_keeps_double_leading_separator"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Verbatim-UNC test never exercises the UNC + case-fold interaction"
+description = "normalise_verbatim_unc_keeps_double_leading_separator (l.719) hardcodes lowercase '//server/share' for BOTH the cfg(windows) and cfg(not(windows)) arms (l.722-725), so the cfg split is dead duplication and the step-4 case fold over a UNC remainder is never tested. Add an uppercase UNC input (e.g. a verbatim-UNC Server/Share) asserting '//server/share' on Windows to cover the fold-applies-to-UNC-host path; the verbatim-vs-bare cross-match (l.793) only covers the drive-letter form."
+dedup_id = "49d3eddb206fb4a4"
+resolved = 2026-06-04
+resolution = "normalise_verbatim_unc test now uses an uppercase verbatim-UNC input and asserts the case fold on cfg(windows) vs case-preserved on cfg(not(windows)); removed the dead cfg duplication."
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked Q1 (root-match hole confirmed at repo_links.rs:627-630), suggestionFor double-slash (confirmed ReposPanel.vue:57), resolve_repo_path .. drop (confirmed l.585, safe), loadSettings silent failure (confirmed useSettings.ts:49). All quality findings verified against code; none dropped. Persisted as R1,R2,R3(merged),R5,R6(merged),R15."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+rationale = "All 3 returned (under the 5 cap, no padding). The resolve_repo_path clamp was independently re-verified safe (no escape; RootDir/Prefix/ParentDir all dropped at repo_links.rs:585-588). S1 (GET /settings no-auth) downgraded warning->suggestion: consistent with the documented 127.0.0.1-only posture (lumina/CLAUDE.md) on an API that already permits arbitrary tool execution to any reachable caller, so incremental path-disclosure is marginal; the agent ESCALATE-TO-DEEP was resolved by the orchestrator via CLAUDE.md rather than a deep re-dispatch. S2/S3 verified. Persisted as R8,R9(downgraded),R10(merged with A5)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 4
+dropped_count = 3
+downgraded_count = 0
+rationale = "Spot-checked A1 (dup of R2), A2 (no production caller confirmed via repo-wide grep: only defs+tests), A5 (export leak, dup of S3/R10), A8 (lossy case-fold store, confirmed). Pruned 3 accurate-but-non-actionable findings at consolidation (NOT vetting failures, all file:lines correct): A4 (O(n) Vec::contains; n is tiny, agent itself said not a real concern), A6 (resolve_clone_root placement; agent explicitly 'no change recommended'), A7 (premature path-module extraction; acceptable as-is per agent). 3/8 by count exceeds 30% but reflects target-count padding not fabrication, so NO deep re-dispatch (lens is already research-deep). Persisted A2->R11, A3->R12, A8->R7."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 6 verified against code: C1 (suggestionFor, dup->R2), C2 (internal // not collapsed, confirmed normalise_path_for_compare l.529-535 ->R4), C3 (no whitespace trim, confirmed mutator passes raw ->R13), C4 (loadSettings silent, dup->R3), C5 (clear-on-typo, confirmed SetLocalPathBody serde(default) ->R6), C6 (blur re-fires rejected PATCH, confirmed ReposPanel.vue:103-111 ->R14). No fabrications. The C2 ESCALATE-TO-DEEP was resolved by the orchestrator (a clear robustness gap needing no deep judgement)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-04T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 9
+dropped_count = 1
+downgraded_count = 0
+rationale = "Verified test claims against repo_links.rs tests + e2e.rs. Dropped T9 (e2e loose ends_with assertion) per the drop-low-confidence rule (agent self-graded confidence:low and 'minor'). Consolidated the rest: T1+T7+T8 (tautological expecteds)->R16, T2->R17, T3+T4 (event payload + zero-event-on-failure unasserted)->R18, T5->R19, T6->R20. All confirmed real test-quality gaps; Testability is the owning lens."
+dedup_id = "45ca31c3315a5978"

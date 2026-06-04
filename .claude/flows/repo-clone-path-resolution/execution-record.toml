@@ -1,0 +1,209 @@
+schema_version = 1
+last_updated = 2026-06-04
+
+[[items]]
+id = "E1"
+type = "task-completion"
+date = 2026-06-04
+agent = "implement"
+task_ref = "add-the-local-path-column"
+status = "done"
+files = ["lumina/migrations/0014_repo_local_path.sql"]
+commits = ["d960f9b"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Created migration 0014_repo_local_path.sql adding nullable local_path TEXT to repo_links"
+dedup_id = "f0ccfa895885f780"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-06-04
+agent = "implement"
+task_ref = "repolink-local-path-field-fromrow-select-plumbing"
+status = "done"
+files = [
+    "lumina/src/domain/findings.rs",
+    "lumina/src/repo/repo_links.rs",
+]
+commits = ["5edb2e9"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added local_path to RepoLink struct + FromRow (Option<String> bound) + list_repo_links SELECT"
+dedup_id = "9a7572ac3844bee0"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-06-04
+agent = "implement"
+task_ref = "path-resolution-functions"
+status = "done"
+files = ["lumina/src/repo/repo_links.rs"]
+commits = ["ae0cf54"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added normalise_path_for_compare, resolve_repo_path, select_longest_prefix_project, resolve_cwd_to_project + smoke tests"
+dedup_id = "8238e911eb96ce87"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-04
+agent = "implement"
+task_ref = "set-repo-local-path-mutator-http-mirror-settings-read-endpoint"
+status = "done"
+files = [
+    "lumina/src/repo/repo_links.rs",
+    "lumina/src/http/repo_links.rs",
+    "lumina/src/http/settings.rs",
+    "lumina/src/http/mod.rs",
+]
+commits = ["7e22deb"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added set_repo_local_path mutator + PATCH local-path route + GET /api/settings (resolve_clone_root); mcp count stays 73"
+dedup_id = "b130f4f9d8fe1d10"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-06-04
+agent = "implement"
+task_ref = "spa-repo-detail-local-path-field-offer-to-clone-affordance"
+status = "done"
+files = [
+    "lumina/web/src/api/repo-links.ts",
+    "lumina/web/src/composables/useRepoLinks.ts",
+    "lumina/web/src/composables/useSettings.ts",
+    "lumina/web/src/components/panels/ReposPanel.vue",
+    "lumina/web/src/__tests__/repoTag.test.ts",
+]
+commits = ["01370d3"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added SPA local_path editor + offer-to-clone affordance + useSettings composable; bun run build + 283 tests green"
+dedup_id = "f76984abfabaddce"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-06-04
+agent = "implement"
+task_ref = "tests"
+status = "done"
+files = [
+    "lumina/src/repo/repo_links.rs",
+    "lumina/tests/e2e.rs",
+]
+commits = ["12aca2f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added unit+DB tests for path fns/mutator and e2e HTTP round-trip for local-path + /api/settings; 346 nextest pass"
+dedup_id = "67a64bbfca044cfe"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-06-04
+agent = "implement"
+task_ref = "docs"
+status = "done"
+files = ["lumina/CLAUDE.md"]
+commits = ["1a40a4c"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Documented migration-0014 clone-path surface in lumina/CLAUDE.md; 73-tool MCP invariant reaffirmed"
+dedup_id = "c6ab1f1e940ec48a"
+
+[[items]]
+id = "E8"
+type = "verification"
+date = 2026-06-04
+agent = "implement"
+summary = "cargo nextest run — 346 passed, 0 failed (incl. repo_local_path_and_settings_flow + mcp count=73)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "8067cb2661428e39"
+
+[[items]]
+id = "E9"
+type = "verification"
+date = 2026-06-04
+agent = "implement"
+summary = "cargo clippy --all-targets — clean, no warnings"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "3c4a9da6e983517d"
+
+[[items]]
+id = "E10"
+type = "verification"
+date = 2026-06-04
+agent = "implement"
+summary = "macro-eradication gate — 0 matches"
+command = '''rg -c 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests'''
+outcome = "pass"
+dedup_id = "afa56b4a3d324801"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-06-04
+agent = "implement"
+summary = "SPA vue-tsc build — success"
+command = "cd lumina/web && bun run build"
+outcome = "pass"
+dedup_id = "17abefff9bd22bf0"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-06-04
+agent = "implement"
+summary = "SPA bun test — 283 passed, 0 failed"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "b65c0dfba667f9d9"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-06-04
+agent = "implement"
+summary = "llvm-cov gate PASS — TOTAL 88.74% line / 86.84% region (gate 80/70); http/settings.rs 94.44% line; repo/repo_links.rs 87.28% whole-file line (legacy mutator branches; new clone-path fns/mutator covered by dedicated unit+DB tests). PTY e2e binaries excluded to avoid a nested claude in-session."
+command = "cargo llvm-cov --manifest-path lumina/Cargo.toml nextest -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))' --fail-under-lines 80 --fail-under-regions 70"
+outcome = "pass"
+dedup_id = "d740382375c61fce"
+
+[[items]]
+id = "E14"
+type = "status-transition"
+date = 2026-06-04
+agent = "plan-update"
+summary = "All 7 plan tasks complete; implementation finished, transitioning in-progress to review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "44848624a92a2a59"
+
+[[items]]
+id = "E15"
+type = "deviation"
+date = 2026-06-04
+agent = "plan-update"
+task_ref = "path-resolution-functions"
+summary = "resolve_repo_path now lexically cancels .. against pushed components (clamped at base) instead of dropping every .."
+original_intent = "Plan T2b pinned: resolve_repo_path DROPS every .. (ParentDir) component (clamp-by-drop), so a/../b yields base/a/b"
+rationale = "Review finding R5 (round 1): dropping rather than cancelling produces a surprising base/a/b for a/../b on a path destined to be a real filesystem location. Switched to pop-on-ParentDir clamped at the base so a/../b yields base/b, while the security clamp invariant (a rel can never escape the base) is strictly preserved. Verified by cargo nextest (361 pass)."
+dedup_id = "f035f6f96def1443"
+
+[[items]]
+id = "E16"
+type = "deviation"
+date = 2026-06-04
+agent = "plan-update"
+task_ref = "path-resolution-functions"
+summary = "Path normalisation split into structural (case-preserved, stored) vs compare (case-folded, matching); set_repo_local_path stores the structural form"
+original_intent = "Plan T2b/T3 pinned: set_repo_local_path stores the normalise_path_for_compare (host-case-folded) form, with a single comparison normal form"
+rationale = "Review finding R7 (round 1): storing the case-folded compare form lost operator casing in the work-item detail and git-export snapshot. Split into normalise_path_structural (verbatim-strip + separator-fold + repeated-separator collapse + trailing-strip, case-PRESERVED; used for storage and as the compare base) and normalise_path_for_compare (= structural + cfg(windows) case fold; used by matchers). Matching semantics unchanged (compare folds both sides); only the stored/exported display casing is preserved. Verified by cargo nextest (361 pass)."
+dedup_id = "6312604b06095b2c"
