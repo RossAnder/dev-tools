@@ -1,0 +1,25 @@
+slug = "harness-session-corpus"
+plan_path = "docs/plans/harness-session-corpus.md"
+status = "draft"
+created = 2026-06-04
+updated = 2026-06-04
+branch = "main"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/**",
+    "lumina/tests/**",
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/**",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/harness-session-corpus/review-ledger.toml"
+optimise_findings = ".claude/flows/harness-session-corpus/optimise-findings.toml"
+execution_record = ".claude/flows/harness-session-corpus/execution-record.toml"
+plan_review_findings = ".claude/flows/harness-session-corpus/plan-review-findings.toml"

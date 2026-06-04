@@ -305,3 +305,43 @@ scope = [
     "lumina/web/src/composables/**",
     "lumina/web/src/__tests__/**",
 ]
+
+[[active]]
+slug = "joyful-singing-crane"
+last_used = "2026-06-03T10:41:12.8728886Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = ["lumina/src/**"]
+
+[[active]]
+slug = "repo-clone-path-resolution"
+last_used = "2026-06-04T11:17:19.6339302Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/**",
+    "lumina/tests/**",
+    "lumina/web/**",
+    "lumina/CLAUDE.md",
+]
+
+[[active]]
+slug = "harness-session-corpus"
+last_used = "2026-06-04T14:26:51.6184807Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/**",
+    "lumina/tests/**",
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/**",
+]

@@ -1,0 +1,18 @@
+slug = "joyful-singing-crane"
+plan_path = "docs/plans/joyful-singing-crane.md"
+status = "review"
+created = 2026-06-03
+updated = 2026-06-03
+branch = "main"
+scope = ["lumina/src/**"]
+
+[tasks]
+total = 16
+completed = 16
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/joyful-singing-crane/review-ledger.toml"
+optimise_findings = ".claude/flows/joyful-singing-crane/optimise-findings.toml"
+execution_record = ".claude/flows/joyful-singing-crane/execution-record.toml"
+plan_review_findings = ".claude/flows/joyful-singing-crane/plan-review-findings.toml"

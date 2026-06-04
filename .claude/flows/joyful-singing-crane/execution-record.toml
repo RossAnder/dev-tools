@@ -1,0 +1,531 @@
+schema_version = 1
+last_updated = 2026-06-03
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-03
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "a20818a758714f2f"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "m0-convert-mcp-to-mcp-mod"
+status = "done"
+files = ["lumina/src/mcp/mod.rs"]
+commits = ["3ba724a"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "M0: mcp.rs -> mcp/mod.rs rename. Executed by orchestrator in the foundation checkpoint (3ba724a) that also renamed the other 7 modules to directory form; pure git mv, zero content change, tree builds green."
+dedup_id = "41ee6778fc33eb75"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "db1-split-db"
+status = "done"
+files = [
+    "lumina/src/db/mod.rs",
+    "lumina/src/db/client.rs",
+    "lumina/src/db/erased.rs",
+]
+commits = ["103f489"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Split db.rs into db/{mod,erased,client}.rs; preserved db::* paths + crate::args!; fixed stale //! header. Orchestrator added use crate::args; to db test module post-carve."
+dedup_id = "202997a281ead4e4"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "d1-split-domain"
+status = "done"
+files = [
+    "lumina/src/domain/mod.rs",
+    "lumina/src/domain/enums.rs",
+    "lumina/src/domain/work_items.rs",
+    "lumina/src/domain/findings.rs",
+    "lumina/src/domain/planning.rs",
+]
+commits = ["95a9100"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Split domain.rs into enums/work_items/findings/planning; 62 types moved, all crate::domain::X paths preserved via pub use *. Orchestrator removed one unused JsonSchema import."
+dedup_id = "f2857a42f27fd395"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "r0-repo-shell-shared-substrate"
+status = "done"
+files = [
+    "lumina/src/repo/mod.rs",
+    "lumina/src/repo/events.rs",
+    "lumina/src/repo/shared.rs",
+    "lumina/src/repo/test_support.rs",
+]
+commits = ["e1c6d3d"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extracted repo shared substrate (events/shared/test_support); widened shared helpers to pub(crate), kept pub paths re-exported; fixed stale //! doc + include_str ../ to ../.. path from the directory-module move."
+dedup_id = "b437550dc328e35f"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "m1-carve-reads-work-items-families"
+status = "done"
+files = [
+    "lumina/src/mcp/mod.rs",
+    "lumina/src/mcp/reads.rs",
+    "lumina/src/mcp/work_items.rs",
+    "lumina/src/mcp/test_support.rs",
+]
+commits = ["5ba941a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Carved mcp reads (4) + work-items (10) tool families via rmcp multi-router; list_all stays 73. Orchestrator added pub use reads::*/work_items::* so integration-test lumina::mcp::*Params imports keep resolving."
+dedup_id = "df57f61a41259fe7"
+
+[[items]]
+id = "E7"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo build clean after Batch 1"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "920dc140440e06cb"
+
+[[items]]
+id = "E8"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo nextest 319/319 pass after Batch 1; pty_e2e excluded as an environmental real-claude-spawn teardown hang (untouched code, not a refactor regression)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not binary(pty_e2e)'"
+outcome = "pass"
+dedup_id = "2c601e731ffd96e4"
+
+[[items]]
+id = "E9"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo clippy -D warnings clean after Batch 1"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "d283b733dc65b368"
+
+[[items]]
+id = "E10"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "macro-eradication gate reports 0 sqlx bang-macros after Batch 1"
+command = "rg -c sqlx-query-bang-macros lumina/src lumina/tests"
+outcome = "pass"
+dedup_id = "fb94d0fc8be964a5"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "r1-carve-reads-findings-query"
+status = "done"
+files = [
+    "lumina/src/repo/mod.rs",
+    "lumina/src/repo/reads.rs",
+    "lumina/src/repo/findings_query.rs",
+]
+commits = ["8870518"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Carved repo reads (list_work_items/get_work_item_detail) + findings-query (QueryFindingsResult/query_findings/get_story_finding_queue) into siblings; pub use preserves repo::X paths. Orchestrator removed an unused super::* import."
+dedup_id = "1103eb064017ead3"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "m2-carve-planning-findings-runs-sprints-families"
+status = "done"
+files = [
+    "lumina/src/mcp/mod.rs",
+    "lumina/src/mcp/work_items.rs",
+    "lumina/src/mcp/planning.rs",
+    "lumina/src/mcp/findings.rs",
+    "lumina/src/mcp/runs_sprints.rs",
+]
+commits = ["1f7a4aa"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Carved mcp planning(19)+findings(9)+runs_sprints(5) families; default 26+4+10+19+9+5=73. Orchestrator widened add_acceptance_criterion to pub(crate) for the shared seed fixture."
+dedup_id = "e4be4c7bb4634de8"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "j1-split-jsonl-tail"
+status = "done"
+files = [
+    "lumina/src/pty/jsonl_tail/mod.rs",
+    "lumina/src/pty/jsonl_tail/parse.rs",
+]
+commits = ["d8ffaa3"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Split jsonl_tail: parse.rs (record types + parse_line/map_record_to_typed/sanitise_cwd/resolve_projects_root); mod.rs keeps bind_jsonl_path/tail/drain_and_broadcast. pub use parse::* preserves jsonl_tail::X paths."
+dedup_id = "990afc3d04061976"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "ps1-split-pty-sessions"
+status = "done"
+files = [
+    "lumina/src/http/pty_sessions/mod.rs",
+    "lumina/src/http/pty_sessions/ws.rs",
+    "lumina/src/http/pty_sessions/ask.rs",
+]
+commits = ["303f4af"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Split pty_sessions: ws.rs (WebSocket), ask.rs (answer_question+keystrokes); router() unchanged. Orchestrator widened KeystrokeFrame/AnswerQuestionBody body types to pub(crate) (private-type-in-pub-interface leak)."
+dedup_id = "235dde89d2d1ce0d"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo build clean after Batch 2"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "2a07936bcc6e68ff"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo nextest 319/319 pass after Batch 2 (pty_e2e excluded: environmental real-claude-spawn teardown hang)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not binary(pty_e2e)'"
+outcome = "pass"
+dedup_id = "b876035228be1193"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo clippy -D warnings clean after Batch 2"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "9a5169613e87612b"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "macro-eradication gate reports 0 sqlx bang-macros after Batch 2"
+command = "rg -c sqlx-query-bang-macros lumina/src lumina/tests"
+outcome = "pass"
+dedup_id = "0eafbdea54130093"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "r2-carve-work-items-crud-meta"
+status = "done"
+files = [
+    "lumina/src/repo/mod.rs",
+    "lumina/src/repo/work_items.rs",
+    "lumina/src/repo/work_items_meta.rs",
+    "lumina/src/repo/acceptance_criteria.rs",
+]
+commits = ["e35091e"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Carved repo work-items CRUD/meta/acceptance-criteria (largest cluster); pub use preserves repo::X paths. Orchestrator moved Shape/UpdateWorkItemRequest to the test-module import (used only in tests)."
+dedup_id = "90779f190cf43b3f"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "m3-carve-repo-links-risks-task-graph-team-finalize"
+status = "done"
+files = [
+    "lumina/src/mcp/mod.rs",
+    "lumina/src/mcp/work_items.rs",
+    "lumina/src/mcp/repo_links.rs",
+    "lumina/src/mcp/risks_alts.rs",
+    "lumina/src/mcp/task_graph.rs",
+    "lumina/src/mcp/team_execution.rs",
+]
+commits = ["a3f31ac"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Carved final 4 mcp families (26 tools), removed default tool_router block, summed 9 family routers, added name-uniqueness assertion. Orchestrator added explicit Tier import to work_items.rs after the mod.rs trim. All 73 tools unique."
+dedup_id = "7e43ea8fc651e012"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "pt1-split-pty-transport"
+status = "done"
+files = [
+    "lumina/src/pty/pty_transport/mod.rs",
+    "lumina/src/pty/pty_transport/config.rs",
+]
+commits = ["53df2a2"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Split pty_transport config helpers (no_auq_system_prompt/lumina_ask_mcp_url/ask_mcp_config_json/translate_keystroke_dsl + tests) into config.rs; security-critical bypassPermissions/skipDangerousModePermissionPrompt spawn block kept byte-identical in mod.rs."
+dedup_id = "ea6be60ce5c83ff5"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "i1-split-import"
+status = "done"
+files = [
+    "lumina/src/import/mod.rs",
+    "lumina/src/import/schema.rs",
+]
+commits = ["312262f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Split import TOML DTOs (ContextDoc/Artifacts/ExecutionRecord/ExecItem/Ledger/LedgerItem + fields, widened to pub(crate)) into schema.rs; mod.rs keeps import_flow/ensure_scaffold/resolve_artifact/ImportSummary."
+dedup_id = "22bac76cbd81865f"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo build clean after Batch 3"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "92bc0630a099a719"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo nextest 319/319 pass after Batch 3 incl new tool-name-uniqueness assertion (pty_e2e excluded: environmental hang)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not binary(pty_e2e)'"
+outcome = "pass"
+dedup_id = "e83814f3b088df59"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo clippy -D warnings clean after Batch 3"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "6253fa8774f3a082"
+
+[[items]]
+id = "E26"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "macro-eradication gate reports 0 sqlx bang-macros after Batch 3"
+command = "rg -c sqlx-query-bang-macros lumina/src lumina/tests"
+outcome = "pass"
+dedup_id = "4f58f2640dbb969e"
+
+[[items]]
+id = "E27"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "r3-carve-findings-runs-sprints-research-notes"
+status = "done"
+files = [
+    "lumina/src/repo/mod.rs",
+    "lumina/src/repo/findings.rs",
+    "lumina/src/repo/runs_sprints.rs",
+    "lumina/src/repo/research_notes.rs",
+    "lumina/src/repo/test_support.rs",
+]
+commits = ["510f2cb"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Carved repo findings/runs_sprints/research_notes; pub use preserves repo::X paths. Agent self-verified clippy --all-targets -D warnings clean (no orchestrator fixes needed); hoisted shared seed_sprint fixture to test_support.rs."
+dedup_id = "11f2111c1875c191"
+
+[[items]]
+id = "E28"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo nextest 319/319 pass after R3 (pty_e2e excluded: environmental hang)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not binary(pty_e2e)'"
+outcome = "pass"
+dedup_id = "3479983b6eac9504"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo clippy -D warnings clean after R3"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "4dac96bc043a0cd9"
+
+[[items]]
+id = "E30"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "macro-eradication gate reports 0 sqlx bang-macros after R3"
+command = "rg -c sqlx-query-bang-macros lumina/src lumina/tests"
+outcome = "pass"
+dedup_id = "f793363a77694840"
+
+[[items]]
+id = "E31"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "r4-carve-open-questions-repo-links-risks-alternatives"
+status = "done"
+files = [
+    "lumina/src/repo/mod.rs",
+    "lumina/src/repo/open_questions.rs",
+    "lumina/src/repo/repo_links.rs",
+    "lumina/src/repo/risks.rs",
+    "lumina/src/repo/rejected_alternatives.rs",
+]
+commits = ["6ab044c"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Carved repo open-questions/repo-links/risks/rejected-alternatives mutator clusters; pub use preserves repo::X paths; FromRow readers left in mod.rs (consumed by shared.rs/reads.rs). Agent self-verified clippy --all-targets -D warnings clean."
+dedup_id = "314eb2661eff6dcc"
+
+[[items]]
+id = "E32"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo nextest 319/319 pass after R4 (pty_e2e excluded: environmental hang)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not binary(pty_e2e)'"
+outcome = "pass"
+dedup_id = "1fd27b417a7adaa5"
+
+[[items]]
+id = "E33"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo clippy -D warnings clean after R4"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "cf4f3f9ff3896710"
+
+[[items]]
+id = "E34"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "macro-eradication gate reports 0 sqlx bang-macros after R4"
+command = "rg -c sqlx-query-bang-macros lumina/src lumina/tests"
+outcome = "pass"
+dedup_id = "d0d8a014986682bb"
+
+[[items]]
+id = "E35"
+type = "task-completion"
+date = 2026-06-03
+agent = "implement"
+task_ref = "r5-carve-task-graph-team-execution-readiness-pty"
+status = "done"
+files = [
+    "lumina/src/repo/mod.rs",
+    "lumina/src/repo/task_dependencies.rs",
+    "lumina/src/repo/task_graph.rs",
+    "lumina/src/repo/team_execution.rs",
+    "lumina/src/repo/readiness.rs",
+    "lumina/src/repo/pty.rs",
+    "lumina/src/repo/test_support.rs",
+]
+commits = ["064546f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Final repo carve: task-dependencies/task-graph/team-execution/readiness siblings + inline pub mod pty body into repo/pty.rs declared as `pub mod pty;` (module path preserved). Agent self-verified clippy --all-targets -D warnings clean; hoisted queue fixtures to test_support.rs."
+dedup_id = "ab4f99cec4d34535"
+
+[[items]]
+id = "E36"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo nextest 319/319 pass after R5 - final tree (pty_e2e excluded: environmental real-claude-spawn teardown hang)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not binary(pty_e2e)'"
+outcome = "pass"
+dedup_id = "781f0099bf489632"
+
+[[items]]
+id = "E37"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "cargo clippy -D warnings clean after R5 - final tree"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "eb694fd04d55fb92"
+
+[[items]]
+id = "E38"
+type = "verification"
+date = 2026-06-03
+agent = "implement"
+summary = "macro-eradication gate reports 0 sqlx bang-macros - final tree"
+command = "rg -c sqlx-query-bang-macros lumina/src lumina/tests"
+outcome = "pass"
+dedup_id = "60febfc1a9824e45"
+
+[[items]]
+id = "E39"
+type = "status-transition"
+date = 2026-06-03
+agent = "plan-update"
+summary = "All 16 plan tasks complete and verified; flow status in-progress -> review awaiting /review and /optimise sign-off"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "bbe0a1baaba35eeb"

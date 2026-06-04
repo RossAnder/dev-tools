@@ -1,0 +1,197 @@
+schema_version = 1
+last_updated = 2026-06-03
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### R0: Establish repo/ shell + shared substrate"
+summary = "R0 moves a non-existent shared `now_string` into events.rs"
+description = "R0 instructs `move record_event/record_inert_event/now_string into events.rs`, but the only `fn now_string` is at repo.rs:7807 — a `#[cfg(test)]` helper INSIDE the `pub mod pty` block (7707-8374), which R5 moves verbatim to repo/pty.rs. Production code mints ids via inline `Uuid::now_v7().to_string()` (repo.rs:7643, 1504, 2221, +~20); there is no shared module-scope `now_string`. Flagged independently by 3 agents. Drop `now_string` from R0; it travels with pty in R5."
+anchor_old = "move `record_event`/`record_inert_event`/`now_string` into `events.rs`"
+anchor_new = "move `record_event`/`record_inert_event` into `events.rs`"
+dedup_id = "ef28ad96d389609e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "warning"
+category = "completeness"
+plan_section = "#### DB1: Split db.rs → db/"
+summary = "DB1 client.rs carve omits the scalar_*/tx_scalar_* family, the Scalar trait, and the args! macro"
+description = "DB1 Action lists `client.rs = DbClient/DbTx traits + decode_row/tx_query_one/tx_query_opt/tx_query_all` but db.rs ALSO defines pub scalar_one(746)/scalar_opt(760)/scalar_all(774)/tx_scalar_one(794)/tx_scalar_opt(807) and `#[macro_export] macro_rules! args!`(214). repo.rs references db::scalar*/Scalar ~46 times (e.g. 1454,1537,2226,4405,6617) and does `use crate::db::{DbClient, Scalar}` at repo.rs:52. Omitting these from the carve list either strands them in mod.rs (compiles, but contradicts the stated layout) or risks a missing re-export so crate::db::scalar_one no longer resolves. The build is a backstop, but the carve spec must enumerate the full query API."
+anchor_old = "`client.rs` = `DbClient`/`DbTx` traits + `decode_row`/`tx_query_one`/`tx_query_opt`/`tx_query_all`"
+anchor_new = "`client.rs` = `DbClient`/`DbTx`/`Scalar` traits + `decode_row`/`tx_query_one`/`tx_query_opt`/`tx_query_all` + the `scalar_one`/`scalar_opt`/`scalar_all`/`tx_scalar_one`/`tx_scalar_opt` family (db.rs:746-807, ~46 call sites in repo.rs); keep the `#[macro_export] args!` macro (db.rs:214) reachable as `crate::args!`"
+dedup_id = "f8693995da7508ed"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "completeness"
+plan_section = "#### DB1: Split db.rs → db/"
+summary = "DB1 propagates db.rs's stale //! header (query!/.sqlx) but never schedules a fix, unlike R0 for repo"
+description = "The plan's Doc-staleness note and R0 fix only repo.rs's //!. But db.rs:8-11 carries the identical falsehood post-Part-A: it claims the compile-checked query!/query_as! macros need the .sqlx offline cache that Task 3 generates. Part A deleted .sqlx and dropped the macros (confirmed in lumina/CLAUDE.md). DB1 git-mv's this header verbatim into db/mod.rs, carrying the stale claim forward — exactly the risk the plan lists, left unaddressed for a file DB1 is touching."
+anchor_old = "`mod.rs` = `init`/`connect_in_memory`/`begin_write`/`is_in_memory`"
+anchor_new = "`mod.rs` = `init`/`connect_in_memory`/`begin_write`/`is_in_memory`; **fix the stale `//!` header** (db.rs:8-11 still claims `query!`/`query_as!` need the `.sqlx` cache — false post-Part-A; state that queries are runtime via the `DbClient`/`DbTx` seam)"
+dedup_id = "89d8d23970c87d94"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "executability"
+plan_section = "## Approach"
+summary = "R2 creates repo/acceptance_criteria.rs but the Recommended file layout folds AC into work_items_meta.rs — contradictory instructions"
+description = "R2 Files (plan line 161) names repo/acceptance_criteria.rs and the Action says `acceptance_criteria.rs = AC CRUD`, but the Recommended file layout (line 122) has no such sibling and places AC inside work_items_meta.rs (`setters/attrs/AC/activity/context`). acceptance_criteria.rs is the ONLY file any task creates that is absent from the layout. AC CRUD is ~200 lines (repo.rs:2203-2406) so a standalone file is defensible — but layout and task must agree. Fix mechanically in the layout line."
+anchor_old = "`work_items_meta.rs` (setters/attrs/AC/activity/context), `findings.rs`"
+anchor_new = "`work_items_meta.rs` (setters/attrs/activity/context), `acceptance_criteria.rs` (AC CRUD), `findings.rs`"
+dedup_id = "abc5a4517b376ffc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Verification Commands"
+summary = "The 73-count guard is named tool_surface_is_sound in 5 places but no such test exists (real name: create_tool_writes_rows_and_lists_domain_tools)"
+description = "`tool_surface_is_sound` appears 5x in the plan (Exploration Notes l.45, Research Notes l.71, Verification Commands l.139, Verification checklist l.246, Risks l.255) but grep of mcp.rs finds it nowhere. The actual len()==73 assertion lives in `async fn create_tool_writes_rows_and_lists_domain_tools` (mcp.rs:3338, assertion at 3461-3466). The companion `tool_annotations_match_the_spec`(3543) IS named correctly. The refactor still passes (the real test runs under nextest) but an executor told to confirm `tool_surface_is_sound` will not find it, weakening the very router-sum guard each M-task leans on. Advisory: global find/replace all 5 occurrences."
+dedup_id = "388c57d4eb624805"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "#### M1: Carve reads + work-items tool families"
+summary = "mcp test co-location is under-specified — no M-task creates an mcp test_support and seed_chain_to_story spans two families"
+description = "User Decision Q(test placement) and Approach step 5 say each submodule carries its own #[cfg(test)] mod tests, but mcp.rs has ONE mod tests block (mcp.rs:3284) whose core fixture seed_chain_to_story (3290) drives create_work_item (M1) AND add_acceptance_criterion (M2). The repo chain handles this via R0's test_support, but no M-task creates an mcp test_support and none of M1/M2/M3 says how to partition the monolithic mcp test block or where cross-family fixtures live. Mirror R0: add an explicit mcp/test_support.rs instruction to M1."
+anchor_old = "Keep the shrinking default `#[tool_router] impl` in `mod.rs`; set constructor"
+anchor_new = "Move shared test fixtures (`seed_chain_to_story` at mcp.rs:3290 and any cross-family helpers from the single `mod tests` block at mcp.rs:3284) into a `#[cfg(test)] pub(crate) mod test_support` (`mcp/test_support.rs`); only family-local tests move with their tools. Keep the shrinking default `#[tool_router] impl` in `mod.rs`; set constructor"
+dedup_id = "e65f49d0d1153fde"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "ToolRouter::merge is HashMap-keyed by tool name, so the 73-count guard does NOT catch a duplicate-name overwrite"
+description = "docs.rs/rmcp/1.7.0 source: ToolRouter holds `map: HashMap<Cow<str>, ToolRoute<S>>` and merge calls add_route per entry — a duplicate key overwrites. The plan's guard is list_all().len()==73. A count-preserving collision (a method name accidentally duplicated across two carved family impls, or a method retained in the shrinking default block) passes the count test silently while one tool's body/annotations vanish. Add a name-uniqueness assertion (collect list_all() names into a set; assert the set has 73 entries). Also corrects the phantom test name here."
+anchor_old = "The `tool_surface_is_sound` test is the guard."
+anchor_new = "The `create_tool_writes_rows_and_lists_domain_tools` test (mcp.rs:3338, NOT `tool_surface_is_sound`) is the guard — but `ToolRouter::merge` is HashMap-keyed by tool name, so a duplicate-name collision overwrites silently and KEEPS the count at 73. Add a name-uniqueness assertion (collect `list_all()` names into a set; assert the set has 73 entries) so a count-preserving overwrite is caught."
+dedup_id = "931e590061fa8555"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Per-task acceptance (build/test/clippy/73/macro-gate) is not task-discriminating — a no-op carve passes every check"
+description = "The shared acceptance block is identical for all 16 tasks: green build/nextest/clippy + 73 + macro-gate 0. These prove nothing broke, not that THIS task's carve happened — a task that git-mv'd and added `mod x; pub use x::*;` but left every fn in mod.rs passes all five (a re-export shell over an unmoved body compiles and tests green). The only discriminating check is the end-of-plan git diff --stat human review. Add a per-task structural assertion so code-moved is mechanical, not eyeballed."
+anchor_old = "**Acceptance for every task** = `cargo build`, `cargo nextest run`, `cargo clippy --all-targets` all green + tool-count 73 + macro-gate 0 (commands above)."
+anchor_new = "**Acceptance for every task** = `cargo build`, `cargo nextest run`, `cargo clippy --all-targets` all green + tool-count 73 + macro-gate 0 (commands above), PLUS a per-task structural check that the carve landed (each new sibling is non-trivial and the carved symbols are gone from `mod.rs`, e.g. `rg -c '<representative fn>' <module>/mod.rs` -> 0). Without it a no-op carve that leaves bodies in `mod.rs` passes every check above."
+dedup_id = "8de76e237e922188"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Verification Commands"
+summary = "clippy lint gate needs -D warnings — the wall-to-wall glob re-exports trigger warn-by-default lints that slip past a green build"
+description = "The Approach re-exports every submodule with `pub use sib::*;`. That pattern is the trigger for ambiguous_glob_reexports (if two siblings export the same name, e.g. a shared enum_to_str), and a file->dir split routinely fires unused_imports / unreachable_pub from over-broad `use super::*` headers. clippy reports these as WARNINGS; the build stays green and nextest passes, so the Verification goal of `no new warnings` needs -D warnings to actually gate."
+anchor_old = "lint:  cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+anchor_new = "lint:  cargo clippy --manifest-path lumina/Cargo.toml --all-targets -- -D warnings"
+dedup_id = "291c308b92b7349b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### R5: Carve task-graph + team-execution + readiness + pty"
+summary = "R5's pty re-export must stay nested (pub mod pty;), deviating from the uniform pub use sib::* pattern — call it out"
+description = "27 call sites across 5 files (pty/queue.rs, pty/emit.rs, pty/spawn.rs, pty/supervisor.rs, http/pty_sessions.rs) use the nested path repo::pty::*. These require repo/mod.rs to declare `pub mod pty;` (re-export the MODULE), NOT `mod pty; pub use pty::*;` (which would flatten to repo::insert_pty_message and break repo::pty::insert_pty_message). R5's Action already says `pub mod pty;` correctly — but since Approach step 2 says every sibling gets `pub use <sib>::*;`, an implementer applying the pattern mechanically to pty.rs would break all 27 consumers. Worth an explicit deviation callout."
+dedup_id = "98b8e89d08d2f47a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "No per-task commit cadence — a semantically-wrong-but-green mis-split has no clean task-granular revert"
+description = "The plan relies on /implement running build+nextest+clippy after each task; that catches a task that BREAKS the build, not one that mis-assigns a pub(crate) helper to the wrong sibling while staying green. With no commit per task, rollback is only the working tree, not git revert <task-commit>. Recommend committing after each green R*/M*/D* task — this also makes the final moves-only git diff --stat review tractable per-task instead of one 40-file blob. (Note: clean-git preference — no harness trailers in those commit messages.)"
+dedup_id = "9353ba031a575443"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### R2: Carve work-items CRUD + meta/lifecycle"
+summary = "The if small / trivially-small / sub-150-line fold rule defers a decidable size judgement to the executor"
+description = "The layout says fold a trivially-small cluster (sub-150-line) into an adjacent sibling, and R2 says fold context-blocks + append_activity into work_items_meta.rs `if small`. The numbers exist now: context-blocks is repo.rs:2691-2767 (~80 lines) and append_activity ~95 lines — both <150, so both fold. Resolve the judgement at plan time rather than deferring it, to keep parallel-module layouts deterministic."
+anchor_old = "(fold context-blocks + `append_activity` into `work_items_meta.rs` if small)"
+anchor_new = "(context-blocks at repo.rs:2691-2767 is ~80 lines and `append_activity` ~95 lines — both <150, so fold both into `work_items_meta.rs`)"
+dedup_id = "6ef8f522f4becdde"
+
+[[vet_events]]
+timestamp = "2026-06-03"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified now_string at repo.rs:7807 inside pub mod pty; confirmed no tool_surface_is_sound test (real: create_tool_writes_rows_and_lists_domain_tools@3338); line counts 13090/4240/1591 exact; rmcp 1.7.0 pinned; git mv / no #[path] / lib.rs-unchanged all hold. All sampled findings true."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-03"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified db.rs scalar_one/opt/all + tx_scalar_one/opt (746-807) + args! macro(214) omitted from DB1 carve, ~46 call sites in repo.rs; db.rs:8-11 //! stale; 27 repo::pty:: nested call sites across 5 files; size survey confirms no >800-line file silently omitted. All sampled findings true."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-03"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified R2 Files (acceptance_criteria.rs) contradicts Recommended layout line 122; mcp single mod tests@3284 with seed_chain_to_story@3290 spanning two families; now_string dup of Agent-1. All sampled findings true."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-03"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "rmcp 1.7.0 multi-router + vis=pub(crate) + Add/merge confirmed via Context7+source; PT1 spawn line bypassPermissions@290 / skipDangerousModePermissionPrompt@305 present; ToolRouter::merge HashMap-keyed (count-preserving collision blind spot) consistent with 1.7.0 source. All sampled findings true."
+dedup_id = "45ca31c3315a5978"

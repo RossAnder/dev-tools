@@ -4,7 +4,8 @@
 **Created**: 2026-06-02
 **Status**: skeleton (seed — resolve the Open Design Questions and flesh the tasks before `/review-plan` → `/implement`)
 **Architecture**: layer 2 of [ADR-0002](../adr/0002-sprint-execution-architecture.md); commit/checkpoint provenance per [ADR-0003](../adr/0003-commit-checkpoint-provenance.md). Builds on layer 1 — the execution substrate (`docs/plans/eventual-leaping-metcalfe.md`). The composer/overseer **engine** (layer 3) stays deferred; this plan builds none of it.
-> Last revised: 2026-06-02
+> Last revised: 2026-06-04
+> Paths updated 2026-06-04 for the joyful-singing-crane refactor: `repo.rs` / `mcp.rs` / `domain.rs` are now submodule directories. Worktree mutators land in a NEW `repo/worktrees.rs`; sprint-lifecycle + run-chaining extend `repo/runs_sprints.rs`; the claim-guard tightening + checkpoint-freeze edit `repo/team_execution.rs` (where `claim_next_task` now lives). Domain: `WorktreeStatus`/sprint-status enums in `domain/enums.rs` (beside `Lane`), the `Worktree` struct in `domain/planning.rs` (beside `ClaimedTask`/`NewSprint`). New MCP tools form a `mcp/worktrees.rs` family (constructor router-sum + count-invariant in `mcp/mod.rs`); HTTP in a new `http/worktrees.rs`.
 
 ## Objective
 
@@ -24,7 +25,7 @@ Make the **Sprint** a fully-tracked lifecycle entity and introduce a first-class
 
 - **In**: a `worktrees` first-class entity (path, base_ref, branch, status, `requires_review` disposition, merge audit); `sprints.worktree_id` + a formal sprint status lifecycle + the *stricter* sprint-status guard the layer-1 claim left as a seam; the **checkpoint barrier** (`work_items.checkpoint` flag + a claim-freeze clause: yield no candidate while a checkpoint task is `in_progress` in the sprint — per [ADR-0003](../adr/0003-commit-checkpoint-provenance.md)); a `task_commits` cross-reference record (checkpoint commit SHA ↔ covered tasks) + its reads; sprint run-chaining provenance (fix sprint ↔ predecessor impl sprint, same worktree); MCP tools + HTTP mirrors for the new surface; e2e + lifecycle tests; doc/glossary/catalogue updates.
 - **Out**: actually creating or merging git worktrees (consumer/overseer); the **commit choreography** (staging, message-drafting via the `commit-conventions` skill, committing — the lead's job at a checkpoint barrier, per ADR-0003); the composer/overseer engine; any *automatic* review-before-merge decision (a human/agent judgement — lumina records the disposition + outcome only).
-- **Affected areas**: `lumina/migrations/`, `lumina/src/repo.rs`, `lumina/src/mcp.rs`, `lumina/src/domain.rs`, `lumina/src/http/`, `lumina/tests/`, `lumina/CLAUDE.md`, `CLAUDE.md`, `lumina/CONTEXT.md`, `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`.
+- **Affected areas**: `lumina/migrations/`, `lumina/src/repo/worktrees.rs` (new — worktree + `task_commits` mutators), `lumina/src/repo/runs_sprints.rs` (sprint lifecycle + run-chaining), `lumina/src/repo/team_execution.rs` (claim-guard tightening + checkpoint-freeze), `lumina/src/repo/mod.rs` (re-export the new submodule), `lumina/src/mcp/worktrees.rs` (+ `mcp/runs_sprints.rs`; constructor router-sum + count-invariant in `mcp/mod.rs`), `lumina/src/domain/enums.rs` + `lumina/src/domain/planning.rs`, `lumina/src/http/worktrees.rs` (new) + `lumina/src/http/sprints.rs` (sprint-status routes) + `lumina/src/http/mod.rs` (mount), `lumina/tests/`, `lumina/CLAUDE.md`, `CLAUDE.md`, `lumina/CONTEXT.md`, `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`.
 
 ## Open Design Questions (resolve before fleshing tasks)
 
@@ -41,19 +42,19 @@ Make the **Sprint** a fully-tracked lifecycle entity and introduce a first-class
 
 ### Phase 1: Schema & domain
 - **T1**: migration `0014_sprint_lifecycle_worktrees.sql` — `worktrees` table + `sprints.worktree_id` (FK, nullable) + (per Q3) `sprints.predecessor_sprint_id` + a `work_items.checkpoint` flag (nullable bool) + a `task_commits` table (checkpoint commit SHA ↔ task_id); indexes in 0012 style.
-- **T2**: domain types — `Worktree`, `WorktreeStatus`, the sprint-status vocab; row mapping (mirror the layer-1 `Lane` pattern).
+- **T2**: domain types — `WorktreeStatus` + sprint-status enums in `domain/enums.rs` (mirror the layer-1 `Lane` pattern, also in `enums.rs`); the `Worktree` struct in `domain/planning.rs` (beside `ClaimedTask`/`NewSprint`); row mapping in the owning repo submodule.
 
-### Phase 2: Worktree + sprint-lifecycle mutations (repo.rs)
-- **T3**: `create_worktree` / `get_worktree` / `list_worktrees`.
-- **T4**: `record_worktree_merge` (audit; review gate per Q4) + `set_worktree_status`.
-- **T5**: `set_sprint_status` (formal transitions) + attach `worktree_id` to a sprint (extend `create_sprint` or a new `set_sprint_worktree`).
-- **T6**: run-chaining — compose a fix sprint on a predecessor's worktree (provenance link) from a review run's findings; wire `record_finding_decision(spawn_task)` so rework lands in the fix sprint + its sprint_tasks.
-- **T6b**: `record_task_commits` mutation — map a checkpoint commit SHA ↔ the tasks it covered (per ADR-0003) + read APIs (task→commits, commit→tasks; story→commits via the hierarchy). Pure audit; never polices git.
-- **T7**: tighten the layer-1 claim's **sprint-status guard** to the full lifecycle (the seam Plan A left at `eventual-leaping-metcalfe` §C step 5), AND add the **checkpoint-freeze clause** — yield no candidate while a checkpoint task is `in_progress` in the sprint (ADR-0003).
+### Phase 2: Worktree + sprint-lifecycle mutations (`repo/` submodules)
+- **T3**: `create_worktree` / `get_worktree` / `list_worktrees` in a new `repo/worktrees.rs` (declare `mod worktrees; pub use worktrees::*;` in `repo/mod.rs`).
+- **T4**: `record_worktree_merge` (audit; review gate per Q4) + `set_worktree_status` — `repo/worktrees.rs`.
+- **T5**: `set_sprint_status` (formal transitions) + attach `worktree_id` to a sprint (extend `create_sprint` or a new `set_sprint_worktree`) — `repo/runs_sprints.rs`.
+- **T6**: run-chaining (`repo/runs_sprints.rs`, where `record_finding_decision` already lives) — compose a fix sprint on a predecessor's worktree (provenance link) from a review run's findings; wire `record_finding_decision(spawn_task)` so rework lands in the fix sprint + its sprint_tasks.
+- **T6b**: `record_task_commits` mutation in `repo/worktrees.rs` — map a checkpoint commit SHA ↔ the tasks it covered (per ADR-0003) + read APIs (task→commits, commit→tasks; story→commits via the hierarchy). Pure audit; never polices git.
+- **T7**: tighten the layer-1 claim's **sprint-status guard** to the full lifecycle (the seam Plan A left at `eventual-leaping-metcalfe` §C step 5) — this edits `claim_next_task` in `repo/team_execution.rs` — AND add the **checkpoint-freeze clause** there too: yield no candidate while a checkpoint task is `in_progress` in the sprint (ADR-0003).
 
 ### Phase 3: Surface
-- **T8**: MCP tools for the above (+ count-invariant bump; `app_error_to_mcp` mapping).
-- **T9**: HTTP mirrors (likely a new `http/worktrees.rs` + sprint-status routes).
+- **T8**: MCP tools for the above — a new `mcp/worktrees.rs` `#[tool_router(router = tool_router_worktrees, vis = "pub(crate)")]` family (+ sprint-status tools extending `mcp/runs_sprints.rs`); add the family to the constructor router-sum and bump the count-invariant + annotations tests in `mcp/mod.rs`; `app_error_to_mcp` (in `mcp/mod.rs`) mapping.
+- **T9**: HTTP mirrors — a new `http/worktrees.rs` + sprint-status routes in `http/sprints.rs`, both mounted via `.merge(...)` in `http/mod.rs`.
 
 ### Phase 4: Tests
 - **T10**: e2e — impl sprint on W1 → review `Run` → fix sprint on W1 → `record_worktree_merge` → exported audit → HTTP read (no socket/sleep).
@@ -72,4 +73,4 @@ Make the **Sprint** a fully-tracked lifecycle entity and introduce a first-class
 
 - **Scope creep into the engine** — the temptation to auto-decide review-before-merge or auto-merge. Hold the line: records + transitions only (layer 3 owns decisions).
 - **lumina/git divergence** — out-of-band git operations make lumina's merge records stale. Mitigate by treating them as audit/intent, never authority; keep transitions idempotent.
-- **Sprint-status guard coupling** — tightening the layer-1 claim (T7) edits `repo.rs` that layer 1 owns; sequence after layer 1 lands to avoid churn.
+- **Sprint-status guard coupling** — tightening the layer-1 claim (T7) edits `claim_next_task` in `repo/team_execution.rs` (layer-1-owned); sequence after layer 1 lands to avoid churn. The refactor's submodule split means T7's edits are now confined to `repo/team_execution.rs` and no longer collide with this plan's worktree/sprint mutators in `repo/worktrees.rs` + `repo/runs_sprints.rs` — so once the new submodule + its `repo/mod.rs` re-export exist, those three can proceed concurrently.
