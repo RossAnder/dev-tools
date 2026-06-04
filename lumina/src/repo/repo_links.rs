@@ -16,6 +16,8 @@
 //! domain types named in the signatures are imported explicitly from `crate::*`
 //! (a `use super::*` glob does NOT carry super's private `use` imports).
 
+use std::path::{Component, Path, PathBuf};
+
 use uuid::Uuid;
 
 use super::*;
@@ -383,4 +385,237 @@ pub async fn set_finding_repo(
 
     tx.commit().await?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Clone-path resolution (T2b) — pure/DB path normalisation + cwd→project bind.
+// ---------------------------------------------------------------------------
+
+/// Normalise a filesystem path string into a canonical *comparison* form for
+/// component-boundary prefix matching. PRIVATE: callers use the `resolve_*` /
+/// `select_*` wrappers below.
+///
+/// Pinned ordered algorithm (the order is load-bearing — do not reorder):
+///   1. Strip a leading Windows verbatim prefix, longest-match FIRST:
+///      - verbatim-UNC `\\?\UNC\` → strip the prefix, then prepend `\\` so the
+///        remainder keeps a leading DOUBLE separator
+///        (`\\?\UNC\server\share` → `\\server\share`, NOT `UNC\server\share`).
+///      - plain verbatim `\\?\` → strip it (`\\?\C:\dev` → `C:\dev`).
+///      The UNC check MUST precede the plain check (it is the longer prefix).
+///   2. Replace every `\` with `/` (so the UNC case `\\server\share` becomes
+///      `//server/share` — the double leading separator survives as `//`).
+///   3. Strip a SINGLE trailing `/`, but never reduce a root to empty: a bare
+///      `/` (unix root) and a `C:/` drive root (`^[A-Za-z]:/$`) are left intact.
+///   4. On `cfg(windows)` ONLY, lowercase via `to_ascii_lowercase()`.
+///
+/// NOTE step 4 is HOST-keyed, not path-keyed: the same path string normalises
+/// differently on Windows vs Unix (case-fold). This is correct for the
+/// single-machine-now use case (the cwd and the stored `local_path` were both
+/// produced on the same host) but is the documented limitation in the plan's
+/// Risks note — a future cross-host store would need a path-keyed casing policy.
+///
+/// No `std::fs::canonicalize`: the path may name a directory that does not yet
+/// exist (the clone has not happened), so this is purely lexical.
+fn normalise_path_for_compare(p: &str) -> String {
+    // Step 1: strip the Windows verbatim prefix (UNC form first — it is longer).
+    let stripped: String = if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
+        // Re-prepend `\\` so the UNC host keeps its double leading separator.
+        format!(r"\\{rest}")
+    } else if let Some(rest) = p.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        p.to_owned()
+    };
+
+    // Step 2: normalise separators.
+    let mut s: String = stripped.replace('\\', "/");
+
+    // Step 3: strip a single trailing `/`, but never collapse a root to empty.
+    if s.ends_with('/') && !is_root(&s) {
+        s.pop();
+    }
+
+    // Step 4 (windows only): host-keyed case fold.
+    #[cfg(windows)]
+    {
+        s = s.to_ascii_lowercase();
+    }
+
+    s
+}
+
+/// True iff `s` is a path root that must NOT be trailing-slash-stripped to
+/// empty: the unix root `/`, or a drive root `^[A-Za-z]:/$` (e.g. `C:/`).
+fn is_root(s: &str) -> bool {
+    if s == "/" {
+        return true;
+    }
+    let b = s.as_bytes();
+    // `C:/` — exactly three bytes: ASCII letter, colon, slash.
+    b.len() == 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/'
+}
+
+/// Join a repo-relative path `rel` against a clone directory `local_path`,
+/// returning a path that can NEVER ascend above the clone dir.
+///
+/// The `-> PathBuf` signature has no error channel, so misuse CLAMPS rather than
+/// erroring or escaping:
+///   - `local_path` is normalised via [`normalise_path_for_compare`] and used as
+///     the base.
+///   - `rel` is normalised lexically: its `\` separators are folded to `/` first
+///     (so a Windows-style `rel` splits on BOTH Windows and Unix), then only the
+///     `Component::Normal` parts are kept and pushed onto the base. Every
+///     `ParentDir` (`..`) is DROPPED (clamp — no escape), every `CurDir` (`.`)
+///     skipped, and any absolute anchor (`RootDir` / a drive-or-UNC `Prefix`) is
+///     IGNORED so an absolute `rel` is treated relative-to-the-base instead of
+///     REPLACING it (the naïve `PathBuf::join` bug this guards against).
+///
+/// Security invariant: a `..`-escaping or absolute `rel` is clamped to within
+/// `local_path` and can never escape. No DB; no canonicalize.
+pub fn resolve_repo_path(local_path: &str, rel: &str) -> PathBuf {
+    let mut out = PathBuf::from(normalise_path_for_compare(local_path));
+
+    // Fold `\` → `/` so a Windows-style `rel` splits into components on Unix too
+    // (on Unix, `Path::components` treats `\` as an ordinary `Normal` byte).
+    let rel_norm = rel.replace('\\', "/");
+    for comp in Path::new(&rel_norm).components() {
+        match comp {
+            Component::Normal(part) => out.push(part),
+            // Drop `..` (clamp), skip `.`, ignore any absolute anchor — an
+            // absolute `rel` must NOT replace the base.
+            Component::ParentDir
+            | Component::CurDir
+            | Component::RootDir
+            | Component::Prefix(_) => {}
+        }
+    }
+
+    out
+}
+
+/// Q3: select the single project whose linked clone dir is the longest
+/// component-boundary prefix of `cwd`. Pure (DB-free) for direct unit testing;
+/// the DB wrapper is [`resolve_cwd_to_project`].
+///
+/// Algorithm:
+///   - Normalise `cwd` and each candidate `local_path` via
+///     [`normalise_path_for_compare`].
+///   - A candidate matches on a COMPONENT BOUNDARY (not a raw string prefix):
+///     `cwd == local_path` OR `cwd` starts with `local_path + "/"`. So a cwd
+///     `/dev/foobar` does NOT match a `local_path` `/dev/foo`.
+///   - Among the matches keep the LONGEST normalised `local_path` (most
+///     specific — resolves nesting like `/dev/mono` vs `/dev/mono/pkg` to the
+///     deeper repo).
+///   - Collect the DISTINCT `project_id`s in that longest set. Return
+///     `Some(project_id)` iff EXACTLY ONE distinct project_id; otherwise `None`.
+///     (Two distinct projects sharing the longest clone dir is a genuine tie ⇒
+///     `None`; the same project_id appearing twice at the longest length is NOT
+///     a tie ⇒ resolves to that one project.)
+pub fn select_longest_prefix_project(
+    cwd: &str,
+    candidates: &[(String, String)],
+) -> Option<String> {
+    let cwd_norm = normalise_path_for_compare(cwd);
+
+    let mut best_len: usize = 0;
+    // Distinct project_ids among the current longest-match set.
+    let mut best_projects: Vec<String> = Vec::new();
+
+    for (project_id, local_path) in candidates {
+        let base = normalise_path_for_compare(local_path);
+
+        // Component-boundary match: equal, or cwd extends base past a `/`.
+        let matches = cwd_norm == base
+            || cwd_norm
+                .strip_prefix(&base)
+                .is_some_and(|tail| tail.starts_with('/'));
+        if !matches {
+            continue;
+        }
+
+        let len = base.len();
+        if len > best_len {
+            best_len = len;
+            best_projects.clear();
+            best_projects.push(project_id.clone());
+        } else if len == best_len {
+            if !best_projects.contains(project_id) {
+                best_projects.push(project_id.clone());
+            }
+        }
+    }
+
+    match best_projects.as_slice() {
+        [only] => Some(only.clone()),
+        [] => None,
+        _ => {
+            tracing::debug!(
+                cwd = %cwd,
+                tied_projects = ?best_projects,
+                "cwd→project resolution: multiple distinct projects share the \
+                 longest clone-dir prefix; returning None (genuine tie)"
+            );
+            None
+        }
+    }
+}
+
+/// DB wrapper over [`select_longest_prefix_project`]: load every linked clone
+/// dir (project_id, local_path) for a NON-soft-deleted project and resolve
+/// `cwd` to a single project, or `None` (no match, or a tie).
+///
+/// The `w.deleted_at IS NULL` guard excludes soft-deleted (tombstoned) projects
+/// so a cwd never binds to a tombstoned project (precedent: the
+/// `STORY_FINDING_QUEUE_SQL` tombstone JOIN in `findings_query.rs`).
+pub async fn resolve_cwd_to_project(
+    db: &impl DbClient,
+    cwd: &str,
+) -> Result<Option<String>, AppError> {
+    let candidates = db
+        .query_all::<(String, String)>(
+            "SELECT rl.project_id, rl.local_path \
+             FROM repo_links rl \
+             JOIN work_items w ON w.id = rl.project_id \
+             WHERE rl.local_path IS NOT NULL AND w.deleted_at IS NULL",
+            args![],
+        )
+        .await?;
+
+    Ok(select_longest_prefix_project(cwd, &candidates))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Security invariant: a `..`-escaping `rel` is clamped INSIDE the base —
+    /// the result is the base joined with the surviving `Normal` components,
+    /// never an ancestor of the base.
+    #[test]
+    fn resolve_repo_path_clamps_parent_escape() {
+        let got = resolve_repo_path("/repo/base", "../../etc/passwd");
+        // The `..` are dropped; only `etc/passwd` survives, joined onto the base.
+        let expected = PathBuf::from("/repo/base").join("etc").join("passwd");
+        assert_eq!(got, expected, "`..` must be clamped within the base");
+        // And the result is strictly within the normalised base.
+        assert!(
+            got.starts_with(normalise_path_for_compare("/repo/base")),
+            "clamped path must stay under the base: {got:?}"
+        );
+    }
+
+    /// Two DISTINCT projects sharing the same (longest) clone dir is a genuine
+    /// tie ⇒ `None`.
+    #[test]
+    fn select_longest_prefix_project_distinct_tie_is_none() {
+        let candidates = [
+            ("projA".to_string(), "/dev/foo".to_string()),
+            ("projB".to_string(), "/dev/foo".to_string()),
+        ];
+        assert_eq!(
+            select_longest_prefix_project("/dev/foo/x", &candidates),
+            None,
+            "distinct-project tie on the same clone dir must resolve to None"
+        );
+    }
 }
