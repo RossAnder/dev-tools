@@ -1,0 +1,33 @@
+-- lumina migration 0014: per-machine clone-directory binding (PURELY ADDITIVE).
+--
+-- Forward-only; no down-migration. Recovery if a later task fails: `git revert`
+-- this file and recreate the gitignored dev DB (db::init / `sqlx migrate run`
+-- rebuilds it from the embedded migration set). This migration adds exactly one
+-- nullable `repo_links` column — it touches no existing column, default, index,
+-- or trigger and changes no existing query result, so it breaks no current
+-- consumer or test; a wipe-and-recreate is safe (the dev DB carries no live
+-- clone-path data).
+--
+-- NOTE on rollback under SQLite: `local_path` is a plain nullable TEXT column
+-- with no CHECK, index, or FK, so a `DROP COLUMN` would in principle succeed —
+-- but per the forward-only discipline (mirrors 0013), reverting 0014 means a
+-- NEW forward migration that neutralises the column, never a down-migration or
+-- a manual DROP.
+--
+-- ## Why
+-- Each linked repo needs a per-machine ABSOLUTE clone directory so lumina can
+-- resolve repo-relative paths to absolute and map a session cwd back to its
+-- project (per ADR-0004, single-machine-now by deliberate design). `local_path`
+-- carries that binding:
+--   * It may name a directory that does NOT yet exist — the operator records
+--     the intended clone path BEFORE running `git clone` — so this column is
+--     NEVER canonicalised at store time.
+--   * NULL = the repo is not cloned on this machine.
+--
+-- ## Plain nullable add (mirrors 0004's ADD-COLUMN note)
+-- 0004 carries the `ADD COLUMN ... REFERENCES needs implicit NULL default` rule,
+-- but that applies only to FK columns. `local_path` has NO REFERENCES, NO
+-- NOT-NULL, NO DEFAULT, and NO CHECK — it is a simple nullable TEXT add with the
+-- implicit NULL default and needs no special handling.
+
+ALTER TABLE repo_links ADD COLUMN local_path TEXT; -- per-machine absolute clone directory; NULL = not cloned on this machine
