@@ -29,7 +29,18 @@ The model and reasoning effort behind each bucket live **only in the agent's fro
 
 `flow-bootstrap` (flow resolution + doctor) and `verification` (sequential command runner) are fixed `haiku`-alias utility agents that sit outside the lite/deep buckets.
 
+## Build discipline in multi-agent flows
+
+During a flow (`/implement`, `/optimise-apply`, `/review-apply`, `/tdd`), implementer and research sub-agents must NOT run full builds or test suites to self-verify their edits. `cargo build`/`cargo test`/`cargo nextest` are expensive, and N parallel agents each invoking them against the SHARED `tomlctl/target` or `lumina/target` directory serialise on cargo's build lock and thrash the incremental cache — repeated, redundant whole-crate rebuilds are the cost this discipline exists to cut.
+
+- **Sub-agents** (`implement-lite`, `implement-deep`, `research-*`): reach for `cargo check` or `cargo clippy` (or, for the SPA, `bun run type-check`) **sparingly** — at most once near the end of your cluster to confirm a non-trivial edit type-checks before handing back, never after every Edit, and not at all for edits you can reason about confidently (docs, comments, a localised rename). Prefer reasoning over re-checking. Do **not** run `cargo build`, `cargo test`, `cargo nextest`, or `bun run build` — those belong to the verification step. If `cargo check`/`clippy` fails for a transient/environmental reason (e.g. a Bash fork flake), do not retry-loop or escalate to a full build: note it (`[vet-recommended]` for lite clusters) and return so the orchestrator's verification pass becomes the source of truth.
+- **The orchestrator** owns all building and testing, at two tiers — never per sub-agent — via the `verification` agent (`claude/agents/verification.md`): (1) **at each batch commit checkpoint**, it builds the touched crate and runs that crate's full test suite *before* committing, so every commit is non-broken and bisectable; (2) **a final full pass** (build + tests + lint + audit) in the command's Phase-3 verification. `cargo build` / `cargo test` / `cargo nextest` / the SPA bundle build belong to these orchestrator tiers, not to any sub-agent's task — even when a task's `Acceptance` names one (that command is the orchestrator's checkpoint responsibility).
+
+The per-crate command lists below are the menu for that orchestrator-run verification step (and for a human at a terminal) — they are NOT a per-edit checklist for sub-agents.
+
 ## Build & test
+
+> In a flow, these are run by the orchestrator's `verification` step, not by each sub-agent — see **Build discipline in multi-agent flows** above. Sub-agents prefer `cargo check`/`cargo clippy` sparingly.
 
 - `cargo build --manifest-path tomlctl/Cargo.toml` — build tomlctl
 - `cargo install --path tomlctl` — install the `tomlctl` binary onto your PATH (run once per clone; rerun when the tomlctl binary version bumps)
@@ -41,6 +52,8 @@ The model and reasoning effort behind each bucket live **only in the agent's fro
 ## lumina
 
 `lumina/` is a standalone sibling crate (the successor to `tomlctl`): a SQLite-canonical flow-tracking store fronted by an MCP server + axum JSON API + Vue SPA, with a git-export audit trail. It is built and tested independently of `tomlctl` (no workspace; always pass `--manifest-path lumina/Cargo.toml`).
+
+> In a flow, these are run by the orchestrator's `verification` step, not by each sub-agent — see **Build discipline in multi-agent flows** above. lumina is the heavier crate to compile, so this matters most here: sub-agents prefer `cargo check --manifest-path lumina/Cargo.toml` (or `cargo clippy`) sparingly and leave `cargo build`/`cargo test`/`cargo nextest` to verification.
 
 - `cargo build --manifest-path lumina/Cargo.toml` — build lumina
 - `cargo test --manifest-path lumina/Cargo.toml` — run lumina tests, including the in-process end-to-end thread test (`lumina/tests/e2e.rs`: MCP write → DB rows → git-export snapshot → HTTP read, driven via `tower::ServiceExt::oneshot` and a direct export drain — no socket bind, no `sleep`)
