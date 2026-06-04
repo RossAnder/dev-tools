@@ -24,6 +24,12 @@ export interface RepoLink {
   position: number
   is_primary: number
   created_at: string
+  /**
+   * Per-machine absolute path where the operator has cloned this repo
+   * (migration 0014). Nullable mirror of the Rust `Option<String>` — null when
+   * the operator has not yet recorded a clone location for this link.
+   */
+  local_path: string | null
 }
 
 export const RepoLinkSchema = z.object({
@@ -33,6 +39,7 @@ export const RepoLinkSchema = z.object({
   position: z.number(),
   is_primary: z.number(),
   created_at: z.string(),
+  local_path: z.string().nullable(),
 })
 
 /** Response shape of `POST /api/work-items/{project_id}/repo-links`. */
@@ -89,6 +96,30 @@ export async function setPrimaryRepo(projectId: string, id: string): Promise<{ o
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_primary: true }),
+      },
+    ),
+    OkResponseSchema,
+  )
+}
+
+/**
+ * `PATCH /api/work-items/{project_id}/repo-links/{id}/local-path` — record (or
+ * clear, with `null`) the per-machine absolute clone directory for this repo
+ * link (migration 0014). lumina only records the path — the operator runs the
+ * actual `git clone` themselves (single-machine-now by design, ADR-0004).
+ */
+export async function setRepoLocalPath(
+  projectId: string,
+  id: string,
+  localPath: string | null,
+): Promise<{ ok: boolean }> {
+  return handle(
+    await fetch(
+      `${API_BASE}/work-items/${encodeURIComponent(projectId)}/repo-links/${encodeURIComponent(id)}/local-path`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ local_path: localPath }),
       },
     ),
     OkResponseSchema,

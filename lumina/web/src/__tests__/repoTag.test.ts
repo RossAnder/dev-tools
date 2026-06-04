@@ -16,6 +16,7 @@ function link(partial: Partial<RepoLink> & Pick<RepoLink, 'id' | 'slug' | 'is_pr
     project_id: 'p1',
     position: 0,
     created_at: '2026-05-25T00:00:00Z',
+    local_path: null,
     ...partial,
   }
 }

@@ -37,12 +37,14 @@ type Api = {
   addRepoLink: typeof productionApi.addRepoLink
   removeRepoLink: typeof productionApi.removeRepoLink
   setPrimaryRepo: typeof productionApi.setPrimaryRepo
+  setRepoLocalPath: typeof productionApi.setRepoLocalPath
   fetchDetail: typeof productionApi.fetchDetail
 }
 let api: Api = {
   addRepoLink: productionApi.addRepoLink,
   removeRepoLink: productionApi.removeRepoLink,
   setPrimaryRepo: productionApi.setPrimaryRepo,
+  setRepoLocalPath: productionApi.setRepoLocalPath,
   fetchDetail: productionApi.fetchDetail,
 }
 
@@ -60,6 +62,7 @@ export function __resetForTests(): void {
     addRepoLink: productionApi.addRepoLink,
     removeRepoLink: productionApi.removeRepoLink,
     setPrimaryRepo: productionApi.setPrimaryRepo,
+    setRepoLocalPath: productionApi.setRepoLocalPath,
     fetchDetail: productionApi.fetchDetail,
   }
 }
@@ -164,6 +167,33 @@ export function useRepoLinks() {
     }
   }
 
+  /**
+   * Record (or clear, with `localPath = null`) the per-machine clone directory
+   * for a repo link (migration 0014). Mirrors {@link setPrimary}: calls the
+   * wire wrapper, then refreshes both the repo-link singleton and the
+   * hierarchy detail so the path renders without a manual reload.
+   */
+  async function setLocalPath(
+    projectId: string,
+    id: string,
+    localPath: string | null,
+  ): Promise<Result<void>> {
+    loading.value = true
+    error.value = null
+    try {
+      await api.setRepoLocalPath(projectId, id, localPath)
+      await refresh(projectId)
+      await useHierarchy().refresh(projectId)
+      return { ok: true, value: undefined }
+    } catch (e) {
+      const message = toMessage(e)
+      error.value = message
+      return { ok: false, error: message }
+    } finally {
+      loading.value = false
+    }
+  }
+
   /** Clear `error.value` — for the UI's "dismiss banner" button. */
   function clearError(): void {
     error.value = null
@@ -177,6 +207,7 @@ export function useRepoLinks() {
     add,
     remove,
     setPrimary,
+    setLocalPath,
     clearError,
   }
 }
