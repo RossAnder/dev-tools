@@ -22,6 +22,10 @@
 - `bun test --coverage` — coverage report (text by default; add `--coverage-reporter=lcov` for CI upload)
 - `bun test --watch` — re-run on save
 
+### Build discipline in flows
+
+The repo-wide **Build discipline in multi-agent flows** rule (root `CLAUDE.md`) applies to the SPA too: a sub-agent in `/implement` / `/optimise-apply` / `/review-apply` / `/tdd` must NOT run the full `bun run build` (it composes `type-check` + a Vite production bundle) or `bun test` to self-verify. Reach for the cheap `bun run type-check` (`vue-tsc --build`) **sparingly** — at most once near the end of a cluster — and leave the bundle build and test run to the orchestrator's single `verification` pass.
+
 ### Scope and limits
 
 Bun test runs plain TypeScript and JavaScript natively (no transpile step). Vue SFC (`.vue`) component rendering is OUT OF SCOPE for this scaffold — Bun has no native Vue compiler. The showcase covers what bun test does well: pure TS unit tests on composables (`src/composables/*.ts`), API-client wrappers (`src/api.ts`), and any pure helpers. If full Vue component-rendering tests are needed later, add Vitest + `@vue/test-utils` alongside (they coexist with bun test on the same codebase) and re-run /test-bootstrap.
