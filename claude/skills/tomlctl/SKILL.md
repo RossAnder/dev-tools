@@ -1,6 +1,6 @@
 ---
 name: tomlctl
-description: Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml — and their per-row [[items]] arrays. Verbs: read/parse/get, query/filter/list/count/group-by/pluck, write/set/set-json, append/array-append, items add/add-many/update/remove/apply/backfill-dedup-id, validate, integrity refresh/verify, dry-run preview, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux.
+description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml — and their per-row [[items]] arrays. Verbs: read/parse/get, query/filter/list/count/group-by/pluck, write/set/set-json, append/array-append, items add/add-many/update/remove/apply/backfill-dedup-id, validate, integrity refresh/verify, dry-run preview, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux."
 ---
 
 # tomlctl
@@ -11,7 +11,7 @@ A small Rust CLI that reads and writes the TOML files used by the `/plan-new`, `
 
 ## When to use this skill
 
-Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, the review / optimise ledgers, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — prefer in-tool primitives (`--raw` / `--lines` / `--count-distinct` / `--count`) over piping through `jq -r .count` / `jq -r '.[]'` / `| sort -u | wc -l`.
+Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, the review / optimise ledgers, `plan-review-findings.toml`, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — prefer in-tool primitives (`--raw` / `--lines` / `--count-distinct` / `--count`) over piping through `jq -r .count` / `jq -r '.[]'` / `| sort -u | wc -l`.
 
 ## Quick Reference
 
@@ -170,6 +170,8 @@ else:
 ## Read operations
 
 All read commands print JSON on stdout by default.
+
+> **There is no `--format` / `--output` flag.** JSON is the only structured output; use `--raw` / `--lines` for bare scalars (see [Output shapes](#output-shapes---raw----lines----ndjson)). To verify a write — e.g. read back a ledger after `items add-many` — use `tomlctl items list <file>` (or `tomlctl items list <file> --count` for a tally). Do **not** invent `--format json`; it errors with `unexpected argument found`, and if the error is swallowed (`2>/dev/null`) the verification silently produces nothing.
 
 ```bash
 # Whole document (omit path to read the entire file) or a single value

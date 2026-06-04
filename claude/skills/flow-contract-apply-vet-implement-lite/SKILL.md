@@ -1,6 +1,6 @@
 ---
 name: flow-contract-apply-vet-implement-lite
-description: Canonical apply-vet-implement-lite contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the Step 4.5 orchestrator vet pass that fires on every `implement-lite` cluster return: which `applied`/`[vet-recommended]` tags must be inspected (every `[vet-recommended]`-flagged tag is a mandatory read; bare `applied` tags are spot-sampled), the per-cluster spot-sample minimum, the sample-failure expand-and-fix escalation to `implement-deep`, the deep-cluster skip rule, and the mandatory per-cluster vet console line. Consult before running the post-cluster, pre-checkpoint vet pass in an apply-flow command.
+description: "Canonical apply-vet-implement-lite contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the Step 4.5 orchestrator vet pass that fires on every `implement-lite` cluster return: which `applied`/`[vet-recommended]` tags must be inspected (every `[vet-recommended]`-flagged tag is a mandatory read; bare `applied` tags are spot-sampled), the per-cluster spot-sample minimum, the sample-failure expand-and-fix escalation to `implement-deep`, the deep-cluster skip rule, and the mandatory per-cluster vet console line. Consult before running the post-cluster, pre-checkpoint vet pass in an apply-flow command."
 ---
 
 ## Step 4.5: Vet `implement-lite` apply tags (orchestrator)

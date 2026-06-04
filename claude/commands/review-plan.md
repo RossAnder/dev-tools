@@ -63,6 +63,8 @@ Invoke the `flow-contract-vet-research` skill to load the universal vet-pass pro
 
 After Step 3 and before Step 4, persist findings to the flow's `plan-review-findings.toml` so subsequent runs dedup and Step 4 has a single source of truth.
 
+**Before the first TOML mutation, invoke the `tomlctl` skill** to load the full CLI surface (`items next-id` / `add-many` / `array-append` / `items apply` / `set` / readback). Drive every read and write of `plan-review-findings.toml` through `tomlctl` — never line-edit the TOML, and do **not** probe `tomlctl --help` (the skill is authoritative for subcommands and flag spelling; `--help` round-trips waste a turn and invite invented flags such as `--format json`).
+
 1. Resolve `plan_review_findings_path` from `envelope.resolved.artifacts.plan_review_findings`; for legacy flows derive `.claude/flows/<slug>/plan-review-findings.toml` per the `flow-contract-flow-context` self-healing contract and write it back to `[artifacts]` on the next TOML write.
 2. If the file does not exist, bootstrap it with two lines: `schema_version = 1` / `last_updated = <today>` (no atomic dance — `/review-plan` is the sole writer).
 3. Mint monotonic IDs via `tomlctl items next-id <path> --prefix P`.
@@ -73,22 +75,39 @@ After Step 3 and before Step 4, persist findings to the flow's `plan-review-find
 
 Required fields: `id` (`P{n}` monotonic), `review_round` (int), `severity` ∈ {`critical`, `warning`, `suggestion`}, `category` ∈ {`feasibility`, `completeness`, `executability`, `risk`}, `plan_section` (markdown heading anchor, copied verbatim from the plan), `summary` (one line), `status` ∈ {`open`, `merged`, `discarded`}. Optional: `description`, `anchor_old` (exact substring already in the plan under `plan_section`), `anchor_new` (replacement). **The `anchor_old` + `anchor_new` pair is the mechanical merge contract — BOTH required for auto-merge; anchor-less findings are advisory-only and skipped by the merger.** Schema callouts: `tomlctl items find-duplicates` / `orphans` hardcode the review/optimise schema and MUST NOT run against this file; `next-id --prefix P`, `items list`, `add-many --ndjson -`, and `apply --ops -` are the supported subcommands.
 
-## Step 4: Auto-Merge Offer (end of turn)
+## Step 4: Merge Offer (end of turn)
 
-Let the user opt-in to a mechanical merge of selected-severity findings into a `.revised.md` sibling of the plan, then accept / keep both / discard.
+Let the user merge selected-severity findings into the plan. **Two modes**: a **Manual merge + accept** fast path (one judgement-based rewrite over the original, then end — skips the mechanical-merge → accept → manual-fixup cycle) and the **Mechanical merge** path (anchor-based, conflict-safe, produces a `.revised.md` sibling for review).
 
 1. **Count findings by severity.** If zero total, output `No findings — plan is clean.` and end.
-2. **`AskUserQuestion` (Q1)** — `multiSelect` over `[Critical, Warning, Suggestion]`, default `[Critical, Warning]`. **Empty-answer rule**: if the response comes back empty (running in `acceptEdits` / skill-hosted / headless mode, per Claude Code issues [#29618](https://github.com/anthropics/claude-code/issues/29618) and [#29547](https://github.com/anthropics/claude-code/issues/29547)), treat as "zero selected" — **SKIP the merge step entirely and persist findings only. Do NOT proceed to Q2.**
-3. **If zero severities selected** → persist only, no merge. Output: `Findings persisted; auto-merge skipped. Re-run interactively to merge.`
-4. **Filter selected-severity findings** to those with **both `anchor_old` AND `anchor_new`**; advisory-only findings are skipped silently.
-5. **Conflict detection** — group filtered findings by `plan_section`; if >1 in a group has non-empty `anchor_old`, emit `[conflict: plan_section="..."; findings=P3, P7] — manual merge required` and skip that whole group (other groups still apply).
-6. **Mechanical merge** — for each survivor, locate `anchor_old` as a substring under its `plan_section` heading; if found exactly once, replace with `anchor_new`, else log `[merge-failed: P{n} — anchor_old not found uniquely in section "..."]` and skip. Apply in P-id monotonic order.
-7. **Materialise** via `Write` to a sibling: replace the plan's trailing `.md` with `.revised.md` (do not append). For multi-file plans (`plan_path` → `<dir>/00-outline.md`), materialise only `<outline-dir>/00-outline.revised.md` — detail files are not rewritten by v1.
-8. **Pre-existing sibling**: if `<plan>.revised.md` already exists, rename it to `<plan>.revised.prev.md` first (overwriting any older one). Cheap rollback.
-9. **Console summary**: `N applied, K conflicts skipped, M merge-failures`; list `plan_section → summary` per applied finding.
-10. **`AskUserQuestion` (Q2)** — `[Accept, Keep both, Discard]`. **Default `Keep both`** (NOT `Accept` — `Accept` is irreversible, and default-Accept + auto-mode empty-answer = silent overwrite). **Empty-answer rule**: empty → treat as `Keep both`.
-11. **Apply chosen action**: **Accept** → `Write` revised content over the original, keep `<plan>.revised.md` one cycle, transition matching findings to `status = "merged"` via `tomlctl items apply <path> --ops -`. **Keep both** → no mutation; findings stay `open`. **Discard** → delete `<plan>.revised.md`, transition findings to `discarded`. The prior run's `<plan>.revised.prev.md` is deleted on the NEXT run's step 8 (one-cycle retention).
-12. `tomlctl set <path> last_updated <today>`.
+2. **`AskUserQuestion` — ask both questions in one call:**
+   - **Q1 "Severities"** — `multiSelect` over `[Critical, Warning, Suggestion]`, default `[Critical, Warning]`.
+   - **Q2 "Merge mode"** — single-select:
+     - **Manual merge + accept** *(recommended)* — judgement-merge **all** selected-severity findings (anchored *and* advisory; same-section clusters resolved by reasoning) directly into the plan, write over the original, transition them to `merged`, and end. One rewrite, no second prompt. → Step 4A.
+     - **Mechanical merge → review** — anchor-based, conflict-safe; produce a `.revised.md` sibling, then a follow-up Accept / Keep both / Discard prompt. → Step 4B.
+   - **Empty-answer rule**: if the response comes back empty (running in `acceptEdits` / skill-hosted / headless mode, per Claude Code issues [#29618](https://github.com/anthropics/claude-code/issues/29618) and [#29547](https://github.com/anthropics/claude-code/issues/29547)), treat as **zero severities selected** → **SKIP merging, persist findings only, end.** Never silently run **Manual merge + accept** — it overwrites the original, so it requires an explicit interactive selection.
+3. **If zero severities selected** → persist only, no merge (the Q2 merge mode is moot — nothing is merged regardless of mode). Output: `Findings persisted; merge skipped. Re-run interactively to merge.`
+
+### Step 4A: Manual merge + accept (fast path)
+
+A1. **Select findings** — every `open` finding whose severity is in the Q1 set, both anchored (`anchor_old`/`anchor_new`) and advisory (anchor-less). Manual mode reasons over all of them; it is **not** limited to the mechanical anchor contract.
+A2. **Merge with judgement** — apply each finding to the plan: use `anchor_new` as the intended wording where present, the finding `description` as intent where not. Resolve same-`plan_section` clusters (the case the mechanical path conflict-skips) into one coherent edit. Preserve the plan's structure and section order; change only what the findings require.
+A3. **Back up, then write over the original** — first copy the current plan to a `<plan>.premerge.md` sibling (cheap rollback for this no-checkpoint fast path; overwrite any prior one), then `Write` the merged content over the original. This *is* the accept; no `.revised.md` is produced (the `.premerge.md` sibling and git history are the recovery paths).
+A4. **Transition** every merged finding to `status = "merged"` in one batch via `tomlctl items apply <path> --ops -`.
+A5. `tomlctl set <path> last_updated <today>`.
+A6. **Console summary**: `N findings merged into <plan>`; list `plan_section → summary` per finding. End the turn — no further prompt.
+
+### Step 4B: Mechanical merge → review
+
+B1. **Filter selected-severity findings** to those with **both `anchor_old` AND `anchor_new`**; advisory-only findings are skipped silently.
+B2. **Conflict detection** — group filtered findings by `plan_section`; if >1 in a group has non-empty `anchor_old`, emit `[conflict: plan_section="..."; findings=P3, P7] — manual merge required` and skip that whole group (other groups still apply).
+B3. **Mechanical merge** — for each survivor, locate `anchor_old` as a substring under its `plan_section` heading; if found exactly once, replace with `anchor_new`, else log `[merge-failed: P{n} — anchor_old not found uniquely in section "..."]` and skip. Apply in P-id monotonic order.
+B4. **Materialise** via `Write` to a sibling: replace the plan's trailing `.md` with `.revised.md` (do not append). For multi-file plans (`plan_path` → `<dir>/00-outline.md`), materialise only `<outline-dir>/00-outline.revised.md` — detail files are not rewritten by v1.
+B5. **Pre-existing sibling**: if `<plan>.revised.md` already exists, rename it to `<plan>.revised.prev.md` first (overwriting any older one). Cheap rollback.
+B6. **Console summary**: `N applied, K conflicts skipped, M merge-failures`; list `plan_section → summary` per applied finding.
+B7. **`AskUserQuestion` (Q3)** — `[Accept, Keep both, Discard]`. **Default `Keep both`** (NOT `Accept` — `Accept` is irreversible, and default-Accept + auto-mode empty-answer = silent overwrite). **Empty-answer rule**: empty → treat as `Keep both`.
+B8. **Apply chosen action**: **Accept** → `Write` revised content over the original, keep `<plan>.revised.md` one cycle, transition matching findings to `status = "merged"` via `tomlctl items apply <path> --ops -`. **Keep both** → no mutation; findings stay `open`. **Discard** → delete `<plan>.revised.md`, transition findings to `discarded`. The prior run's `<plan>.revised.prev.md` is deleted on the NEXT run's B5 (one-cycle retention).
+B9. `tomlctl set <path> last_updated <today>`.
 
 ### Re-run dedup (subsequent invocations)
 
