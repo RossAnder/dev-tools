@@ -101,8 +101,9 @@ pub enum IngestOutcome {
 /// `ON CONFLICT DO NOTHING`, so partial progress is safe and re-ingest is
 /// idempotent) rather than one unbounded `BEGIN IMMEDIATE` that would hold the
 /// RESERVED writer lock past the 5s busy_timeout (P12 merged finding). The
-/// pty_sessions upsert + the single coarse inert event ride the FIRST chunk's
-/// txn; the inert event stays COARSE — exactly one per ingest.
+/// pty_sessions upsert rides the FIRST chunk's txn (the session_records FK needs
+/// it); the single coarse inert event stays COARSE — AT MOST one per ingest,
+/// emitted in its OWN final post-loop txn and only when net-new rows land.
 const INGEST_CHUNK_ROWS: usize = 500;
 
 /// Maximum transcript size (bytes) `ingest_transcript` will read into memory.
