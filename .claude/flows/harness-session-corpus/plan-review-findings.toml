@@ -1,0 +1,310 @@
+schema_version = 1
+last_updated = 2026-06-05
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### T7"
+summary = "Live-tail broadcast carries no line_ordinal and is lossy (Lagged) — T4/T7 dedup contract is unsatisfiable as written"
+description = "jsonl_tail/mod.rs broadcasts a bare JsonlRecordParsed (broadcast::Sender<JsonlRecordParsed>, mod.rs:179/319); line_ordinal is a local lines_read counter (mod.rs:324) never sent. A T7 second consumer cannot reconstruct '1-based among non-empty lines', need_rescan re-delivers from offset 0, and Lagged silently drops records — so l<ordinal> dedup keys for uuid-less rows (summary/mode/system) are unstable AND lossless capture is violated under lag. Convergent: Agent1-F2, Agent3-F3/F4. Fix: widen the broadcast to carry (line_ordinal, raw) (ripples to every existing jsonl_rx consumer in spawn.rs) OR have T7 re-read from offset 0 like ingest; widens T4 scope and T7 Blocked-by."
+anchor_old = "Subscribe a **second, lightweight broadcast consumer** in `spawn_pty_session_internal`"
+anchor_new = "The broadcast channel carries only `JsonlRecordParsed` with NO ordinal and is lossy on `Lagged`, so a second consumer cannot reconstruct `l<ordinal>` dedup keys (and `need_rescan` re-delivers from line 0). T4 must therefore change `tail`/`drain_and_broadcast` to broadcast `(line_ordinal, JsonlRecordParsed)`; then subscribe a second, lightweight consumer in `spawn_pty_session_internal`"
+dedup_id = "e27fe2f5676a635a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "risk"
+plan_section = "#### T9"
+summary = "POST /api/sessions/ingest is an unauthenticated arbitrary-file-read: caller-supplied transcript_path is read and stored verbatim"
+description = "lumina's HTTP API is unauthenticated (loopback by default; lumina/CLAUDE.md Security warns a non-loopback bind lets any caller drive arbitrary tool execution). The handler reads whatever transcript_path the caller supplies and stores it verbatim (redaction deferred to layer 3), then serves it back via the read path. Any local process can exfiltrate /etc/passwd, ~/.aws/credentials, ~/.claude.json into session_records. The harvest drop-gate is only a partial accidental mitigation — one synthetic mcp__lumina__ line defeats it. Fix: canonicalise transcript_path and constrain to the ~/.claude/projects/** transcript root (reject ../symlinks) before ingest; name the trust boundary in ## Risks."
+anchor_old = "Handler returns `202 Accepted` (empty body) immediately, then `tokio::spawn`s a task that `let _permit = state.session_ingest_sem.clone().acquire_owned().await` then calls `repo::ingest_transcript`."
+anchor_new = "Handler validates `transcript_path` canonicalises within the `~/.claude/projects/` transcript root (reject `..`, symlinks, out-of-root) BEFORE accepting, returns `202 Accepted`, then `tokio::spawn`s a task that `let _permit = state.session_ingest_sem.clone().acquire_owned().await` then calls `repo::ingest_transcript`. The endpoint is unauthenticated — inherits the loopback-only deployment rule; never expose lumina non-loopback."
+dedup_id = "4bdde6d6b9f634c3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "executability"
+plan_section = "#### T4"
+summary = "T4's 'raw on both variants / or lift to a struct' is an executor-time architectural fork; the 'no behaviour change to consumers' claim is false (Known is a tuple variant)"
+description = "parse.rs:147 — Known(JsonlRecord) is a tuple variant. Adding raw forces Known { raw, record } (a struct-variant rewrite) which breaks every Known(rec) arm even if .raw is ignored: map_record_to_typed (parse.rs:269), spawn.rs:308's caller, and ~9 test match-sites in parse.rs. The plan's 'No behaviour change to existing map_record_to_typed consumers' is wrong about the pattern shape. Pin one shape."
+anchor_old = "Add `raw: String` to `JsonlRecordParsed` for BOTH `Known` and `UnknownRaw` (or lift to a struct `{ raw, record }`)"
+anchor_new = "Refactor `JsonlRecordParsed::Known(JsonlRecord)` into the struct variant `Known { raw: String, record: JsonlRecord }` (do NOT also duplicate `raw` onto `UnknownRaw`, which already carries it). This is a mechanical pattern-shape change touching every `Known(rec) =>` arm (parse.rs:269, spawn.rs:308, ~9 test sites) — no behaviour change, but all must be re-bound"
+dedup_id = "859b1bd4703f08a4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "executability"
+plan_section = "#### T6"
+summary = "harvest_correlation timeline tie-break and IngestOutcome success variants under-specified — executor must invent matching/timeline logic"
+description = "The Action hands the executor un-pinned sub-algorithms: 'task from the claim_next_task/complete_task timeline' has no defined structure (first claim? last? unmatched?); tool_result.content may be a bare string OR [{type,text}] OR top-level toolUseResult (parse.rs:96-135); IngestOutcome is named in the signature with only Dropped defined. The unit acceptance covers only the happy pair + drop, so a wrong timeline choice passes it."
+anchor_old = "task from the `claim_next_task`-result/`complete_task`-input timeline; also read `get_session_context` results. `ingest_transcript(db, session_id, transcript_path, cwd) -> Result<IngestOutcome>`"
+anchor_new = 'task_id = the `task_id` from the LAST (highest-ordinal) successful `claim_next_task` tool_result with `is_error=false`, parsed from `tool_result.content` (handle a bare JSON string AND `[{type:"text",text}]`; if the content is a JSON-encoded string, parse once more); a later `complete_task` input does NOT change attribution. Also read `get_session_context` results. Define `pub enum IngestOutcome { Dropped, Ingested { records_inserted: usize, correlation: Correlation } }`. `ingest_transcript(db, session_id, transcript_path, cwd) -> Result<IngestOutcome>`'
+dedup_id = "5d098dc53a938ba8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "executability"
+plan_section = "#### T8"
+summary = "Count-invariant test asserts 73 in TWO places (mcp/mod.rs:467 count + :482 uniqueness) plus a stale :451 arithmetic comment — bump all, not 'the assertion'"
+description = "mcp/mod.rs:467 asserts total ==73, :482 asserts the distinct-name set ==73, and the :451 comment carries the arithmetic breakdown. T8 says 'bump the count-invariant assertion 73->74' (singular). Bump BOTH assertions and update the comment (+1 get_session_context)."
+anchor_old = "**bump the count-invariant assertion 73→74** plus any tool-name-catalogue/annotations test"
+anchor_new = "**bump BOTH `73` assertions (mcp/mod.rs:467 total-count AND :482 distinct-names-uniqueness) to 74** and update the stale :451 arithmetic comment (+1 get_session_context), plus any tool-name-catalogue/annotations test"
+dedup_id = "bd6c42ba169b4a77"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T3"
+summary = "PtySession's 3 new fields are an unmentioned wire-format change on 3 existing /api/pty/sessions routes"
+description = "PtySession is returned verbatim as JSON by GET /api/pty/sessions, GET /api/pty/sessions/{id}, and POST /api/pty/sessions (http/pty_sessions/mod.rs:120/139/180 — note it's a submodule DIR, the CLAUDE.md doc's pty_sessions.rs is stale). source (pub String, non-Option) newly appears on every existing response. T3 audits only the repo SELECTs; assert an HTTP round-trip too."
+anchor_old = "existing `get`/`list_pty_sessions` round-trip unchanged (spawned rows read `source='spawned'`)."
+anchor_new = "existing `get`/`list_pty_sessions` round-trip unchanged (spawned rows read `source='spawned'`); note the 3 `http/pty_sessions/mod.rs` routes (`GET`/`POST /api/pty/sessions[/{id}]`) now serialise `source` (+ `sprint_id`/`agent_id` when set) — additive wire change, assert via an HTTP round-trip."
+dedup_id = "ef5508cbecb83c27"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Approach"
+summary = "Trigger is named pty_sessions_project_kind_check_insert/_update (0008:24/34), not the plan's singular name, and RAISE(ABORT)s the whole ingest txn"
+description = "Migration 0008:24-42 defines pty_sessions_project_kind_check_insert (BEFORE INSERT) and _update (BEFORE UPDATE OF project_id). The plan's singular pty_sessions_project_kind_check does not exist. The INSERT trigger RAISE(ABORT)s the whole ingest txn if project_id isn't a live kind='project' row — resolve_cwd_to_project mitigates, but note the abort semantics (not silent-NULL)."
+anchor_old = "The `pty_sessions_project_kind_check` trigger fires on the ingested INSERT"
+anchor_new = "The `pty_sessions_project_kind_check_insert` trigger (0008:24) fires on the ingested INSERT — it `RAISE(ABORT)`s the whole txn if project_id isn't a live kind='project' row"
+dedup_id = "9b3ae17a56955fdd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "executability"
+plan_section = "#### T2"
+summary = "T2 acceptance 'cargo build clean' is unachievable — the crate doesn't compile until T3 extends the hand-written FromRow (pty.rs:38-54); T2+T3 are one build unit"
+description = "pty.rs:38-54 constructs PtySession exhaustively (no ..Default). Adding 3 fields to the struct in T2 makes from_row a missing-fields compile error until T3 adds the try_gets. The DAG sequences T2->T3 correctly (no parallel breakage), but T2's acceptance text is internally inconsistent. Per build discipline sub-agents shouldn't cargo build anyway."
+anchor_old = "**Acceptance**: `cargo build` clean; `SessionSource` + `SessionRecord` reachable at `crate::domain::*`; `PtySession` carries the 3 fields."
+anchor_new = "**Acceptance**: `SessionSource` + `SessionRecord` reachable at `crate::domain::*`; `PtySession` carries the 3 fields. NOTE: the crate does NOT compile until T3 extends the hand-written FromRow at `repo/pty.rs:38-54` — T2+T3 are one build unit; do not gate T2 on `cargo build`."
+dedup_id = "ed39feb6271ea740"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "risk"
+plan_section = "## Approach"
+summary = "SessionEnd also fires on /clear and /resume (closed reason enum, verified against hooks docs) — status='completed' is not terminal-truth"
+description = "Verified against the official hooks doc: SessionEnd reason is a closed enum {clear, resume, logout, prompt_input_exit, bypass_permissions_disabled, other} and fires on /clear and resume/pause, not only terminal close. So status='completed' is a lie for reason in {resume, clear}. Idempotent re-ingest reconciles the later real end — don't treat the row as terminal-truth."
+anchor_old = "(the session is over by SessionEnd)"
+anchor_new = "(best-effort: SessionEnd also fires on `/clear` and `/resume` where the session continues — `reason ∈ resume|clear`; idempotent re-ingest reconciles the later real end — do not treat the row as terminal-truth)"
+dedup_id = "2d5ed9c30a54c351"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "allowedHttpHookUrls is an active BLOCK gate that merges across settings sources — a managed/user-settings gate can silently kill delivery; add a reachability probe"
+description = "Verified against the official settings doc: when set, non-matching URLs are BLOCKED; an EMPTY array blocks ALL http hooks; arrays MERGE across settings sources. So a gate in managed/user settings is invisible to a project-level init-hooks writer and cannot be satisfied from there, and SessionEnd surfaces no error — every terminal session is silently lost. Add a reachability/allowlist probe (lumina doctor) so silent loss is detectable."
+anchor_old = "`allowedHttpHookUrls`/managed-settings layers may require operator allowlisting (T10 writes it when present)."
+anchor_new = "`allowedHttpHookUrls` is an active BLOCK gate (empty array blocks ALL http hooks; non-match blocks silently — SessionEnd surfaces no error) that MERGES across settings sources, so a gate set in managed/user settings is NOT satisfiable by project-level `init-hooks`. Add a reachability/allowlist probe (`lumina doctor`) so silent loss is detectable."
+dedup_id = "507c299a33abba01"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "risk"
+plan_section = "#### T1"
+summary = "Forward-only migration has no documented rollback — add a corpus-reset recipe; SQLite can't DROP the source CHECK column without the rebuild the plan avoids"
+description = "The migration is low-risk (additive ADD-COLUMNs + one table). The gap is operational: if ingest mis-correlates or volume balloons there's no down-migration, and SQLite DROP COLUMN can't remove the source CHECK without a table rebuild. Recovery is cheap because sessions are inert: DELETE FROM session_records + NULL the pty_sessions correlation scalars loses no work-intent. Write it down as the explicit rollback."
+anchor_old = "Forward-only header comment (no down-migration); note the `source` default backfills existing spawned rows."
+anchor_new = "Forward-only header comment (no down-migration); note the `source` default backfills existing spawned rows. Rollback recipe (document in ADR): the corpus is observational/inert, so recovery = `DELETE FROM session_records` + `UPDATE pty_sessions SET sprint_id=NULL, agent_id=NULL WHERE source='ingested'`; schema columns stay (SQLite DROP COLUMN can't remove the `source` CHECK without the table rebuild this plan avoids)."
+dedup_id = "6af048b0f1d418ef"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "risk"
+plan_section = "## Approach"
+summary = "A large transcript ingests as one unbounded BEGIN IMMEDIATE txn holding the writer lock (5s busy_timeout); 4 concurrent ingests worsen it — chunk or cap"
+description = "lumina uses BEGIN IMMEDIATE (RESERVED lock at begin-time, 5s busy_timeout). A multi-MB orchestrator transcript = one large txn (one row per JSONL line) blocking ALL other writers (MCP tool calls, live-tail session_records writes) for the insert duration; the 4-permit semaphore bounds concurrency but not per-txn size. The Volume risk only addresses disk growth. Mitigation: chunk the bulk insert (~500-row short txns — ON CONFLICT DO NOTHING makes partial progress safe) OR cap ingested line count."
+dedup_id = "877aeeaeae773d56"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "executability"
+plan_section = "#### T8"
+summary = "T1/T8/T11 acceptance pushes orchestrator-owned cargo nextest/llvm-cov into per-agent acceptance, against this repo's build discipline"
+description = "T1 ('cargo nextest run migration test green'), T8 ('cargo nextest run — mcp count test asserts 74'), and T11 (cargo nextest + cargo llvm-cov) name orchestrator-verification commands. Per the repo's hard Build-discipline rule (lumina is the heaviest crate), cargo nextest/llvm-cov are orchestrator-owned, never per-sub-agent. Reframe these acceptances as orchestrator-checkpoint conditions; the sub-agent's local signal is cargo check/clippy."
+anchor_old = "- **Acceptance**: `cargo build` clean; `cargo nextest run` — the `mcp` count test asserts **74** and passes; `get_session_context` returns the project/sprint/story ids for a seeded story under a sprint."
+anchor_new = "- **Acceptance**: `cargo check`/`clippy` clean (sub-agent signal); the `mcp` count-invariant test in `mcp/mod.rs` asserts **74** (both the count and distinct-name sets update) — VERIFIED by the orchestrator's checkpoint `cargo nextest run`, not self-run by the implementer (build discipline). `get_session_context` returns project/sprint/story ids for a seeded story under a sprint."
+dedup_id = "8f6ca85ab189313f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Approach"
+summary = "config_json='{}' sentinel requires every SpawnConfig field be Option/#[serde(default)]; no live reader deserialises it today (verified safe) — add a forward-guard note + test"
+description = "SpawnConfig (pty/transport.rs:25-32) has 6 non-defaulted fields, so serde_json::from_str::<SpawnConfig>('{}') WOULD error. But config_json is written-only — read solely as an opaque String via the PtySession FromRow (pty.rs:44) and the SPA's z.string(); no live consumer breaks. Add a forward-guard note so a future 'rehydrate SpawnConfig' feature doesn't assume ingested rows are deserialisable, plus a SpawnConfig::deserialize('{}') acceptance test."
+anchor_old = "they store a **sentinel** `config_json='{}'`"
+anchor_new = "they store a **sentinel** `config_json='{}'` (config_json is written-only today, read as an opaque String — verified no live reader deserialises it back to SpawnConfig, so the sentinel is safe; a future SpawnConfig-rehydration feature would need every field Option/#[serde(default)])"
+dedup_id = "29332ad2a8c1fccb"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T9"
+summary = "T9 spawned task should tracing::warn! on failure and clone state.pool + the semaphore Arc into the 'static task; must also add the field to AppState::new"
+description = "The HTTP layer logs via tracing:: (e.g. mod.rs:185). The best-effort task should tracing::warn!(session_id, error=%e, 'ingest failed') so the documented silent-loss is observable. tokio::spawn needs 'static, so the task must capture an owned state.pool clone (+ the semaphore Arc) to avoid a borrow-of-&state lifetime error. Separately, T9's app.rs edit must touch both the AppState struct AND AppState::new (its docstring already calls itself the drift-killer for the T9 fields)."
+anchor_old = "then calls `repo::ingest_transcript`."
+anchor_new = "then calls `repo::ingest_transcript`, logging any error via `tracing::warn!(session_id, error=%e)` (best-effort, no 500). Clone `state.pool` + the semaphore `Arc` into the `'static` spawned task, and add the field to BOTH the `AppState` struct AND `AppState::new`."
+dedup_id = "1a0db03a97362df9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Approach"
+summary = "resolve_cwd_to_project is an unindexed repo_links full-scan run under 4-way ingest concurrency — acceptable at v1 cardinality, but note it"
+description = "repo_links.rs:770-776 — resolve_cwd_to_project is an unindexed full-scan of repo_links filtered on local_path IS NOT NULL (its own comment says 'Acceptable at the current handful-of-repos cardinality'). The plan runs it inside up to 4 concurrent spawned ingest tasks and never acknowledges the scan. local_path is purely lexical (never canonicalised), so a cwd not matching on a component boundary returns None -> project_id NULL (safe, silently uncorrelated). Note it so a reviewer doesn't assume indexed resolution."
+dedup_id = "b14b2e71cef74d24"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### T1"
+summary = "session_records ON DELETE CASCADE from pty_sessions is dead — delete_pty_session is a soft-delete; a future prune knob must reconcile with lossless-at-rest"
+description = "repo/pty.rs:381 delete_pty_session is a soft-delete (UPDATE pty_sessions SET status='cancelled'); no DELETE FROM pty_sessions exists in the crate. So the ON DELETE CASCADE never fires — fine as a safety net, and it silently protects keep-forever losslessness. But if the deferred prune knob (Risks/Volume) ever adds a hard delete, the CASCADE will destroy the corpus — pin that the prune must reconcile with losslessness."
+dedup_id = "2d3155889e17ee18"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Scope"
+summary = "SPA PtySessionSchema (declared out-of-scope) silently strips the new fields — correlation invisible to the SPA without a layer-3 edit; flag as a known gap"
+description = "lumina/web/src/api/pty.ts:56-70 PtySessionSchema is a plain z.object with no .passthrough — zod strips unknowns, so the new source/sprint_id/agent_id are dropped (validation passes, fields invisible). Not a runtime failure (hence suggestion), but the correlation data is invisible to the SPA by the scope boundary's design. Flag explicitly as a layer-3 follow-up so a reviewer doesn't read it as an oversight."
+dedup_id = "f463b2c1eb006ed4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### T12"
+summary = "SKILL.md carries no '73' count so 'update everywhere it says 73' is a no-op there; the real sites are lumina/CLAUDE.md + root CLAUDE.md (and the HTTP-routes doc's pty_sessions.rs is itself stale)"
+description = "rg '73' across the plugin returns no tool-count match in SKILL.md. The load-bearing 73-sites are lumina/CLAUDE.md (migration-0013 'taking the surface to 73' + migration-0014 'still asserts exactly 73') and root CLAUDE.md — both need a migration-0015 follow-on note (74), not in-place edits of the historical wave descriptions. No ADR references 73. Redirect T12's SKILL.md instruction to 'add a get_session_context tool entry' (not a count bump), and fix the stale http/pty_sessions.rs doc reference (now a dir)."
+dedup_id = "19bda3c6c875fe58"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T12"
+summary = "'representative, not exhaustive' skill list is an executor-time scope decision — pin the criterion (plan-story, next-block, decompose-tasks)"
+description = "T12 leaves 'which /lumina:* entrypoints call get_session_context' to the executor (25 skills on disk), risking inconsistent wiring. Since Q1's purpose is to let planning/read-only sessions surface ids, pin the criterion: wire it into the blocks that OPEN a session against a known work_item_id — plan-story, next-block, decompose-tasks — and exclude pure-write blocks."
+anchor_old = "the `/lumina:*` entrypoint skills that should call `get_session_context`, e.g. `plan-story`, `next-block` — representative, not exhaustive"
+anchor_new = "the `/lumina:*` entrypoint skills that OPEN a session against a known `work_item_id` — specifically `plan-story`, `next-block`, and `decompose-tasks` (the planning/read-only blocks Q1 targets); pure-write blocks are out of scope"
+dedup_id = "4afc7f4a2523cb43"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T10"
+summary = "'Port resolves from lumina's bind config' implies runtime introspection an offline init-hooks can't do — make --url primary with a named default-port constant"
+description = "T10 says 'Port resolves from lumina's bind config (or a --url override)'. lumina binds 127.0.0.1 by default but the plan doesn't name where the port lives, so 'resolve from bind config' hands the executor a discovery task that implies introspecting a running server — which an offline init-hooks can't reliably do. Make --url the primary mechanism with a sensible compile-time default-port constant."
+anchor_old = "Port resolves from lumina's bind config (or a `--url` flag override)."
+anchor_new = "URL comes from the `--url` flag; default to `http://127.0.0.1:<lumina default bind port>/api/sessions/ingest` (a compile-time constant — do NOT introspect a running server, since `init-hooks` may run offline). Name the default-port constant explicitly in this task."
+dedup_id = "8ee63092828adf81"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified on disk: trigger names pty_sessions_project_kind_check_insert/_update (0008:24/34) confirm plan's singular ref is stale (F1); broadcast::Sender<JsonlRecordParsed> + local lines_read counter confirm the ordinal-not-on-wire critical (F2); mcp/mod.rs:467+:482 both assert 73 (F6); exactly 3 FROM pty_sessions SELECTs all in pty.rs (F10); PtySession FromRow exhaustive (F9). Zero fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified: http/pty_sessions is a submodule DIR (mod.rs/ws.rs/ask.rs) so PtySession-over-HTTP wire change is real (F1); delete_pty_session soft-delete corroborated by lumina/CLAUDE.md HTTP routes (F3); count test 73x2 same as Agent1-F6 (F4). Ruled-out items (migration registration, parse_strategy_version, no PtySession test literal) independently sound. Zero fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified: JsonlRecordParsed::Known(JsonlRecord) is a tuple variant (parse.rs:147) so the T4 'no behaviour change' claim is false (F1); broadcast-no-ordinal critical convergent with Agent1-F2 (F3); coverage gate 80/70 + --fail-under-file-lines 90 matches lumina/CLAUDE.md Testing Stack verbatim (F5). Zero fabrications."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Independently re-fetched code.claude.com/docs/en/hooks: http hook type, SessionEnd {session_id,transcript_path,cwd,hook_event_name,reason} body, closed reason enum {clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other}, fires on /clear+resume not only terminal close, non-blocking/no-retry — all confirm F1. Security boundary (unauth API, 127.0.0.1) + BEGIN IMMEDIATE/5s busy_timeout corroborated by lumina/CLAUDE.md (F3,F7); router-sum F4 corroborated by mcp/mod.rs:227-235. Zero fabrications."
+dedup_id = "45ca31c3315a5978"
