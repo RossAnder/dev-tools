@@ -27,11 +27,15 @@
 --                   every PRE-EXISTING row (which ARE spawned) to 'spawned';
 --                   the CHECK constrains it to ('spawned','ingested'). Ingested
 --                   corpus rows are inserted with source='ingested'.
---   * `sprint_id` — nullable self-reference into the work-item graph
---                   (REFERENCES work_items(id)); the sprint a session belongs
---                   to, harvested from the transcript's mcp__lumina__* records.
---                   Nullable per the ADD-COLUMN-REFERENCES rule (SQLite cannot
---                   add a NOT-NULL FK column without a non-NULL default).
+--   * `sprint_id` — nullable, NO foreign key: the sprint a session belongs to,
+--                   harvested from the transcript's mcp__lumina__* records. A
+--                   harvested sprint id is a `sprints.id` (migration 0011), NOT
+--                   a work_items.id — and even a hard FK against sprints(id)
+--                   would abort the LOSSLESS ingest on a deleted/cross-instance
+--                   sprint, so this is kept FK-free: a best-effort correlation
+--                   hint (mirroring agent_id), with full multi-sprint detail
+--                   preserved in session_records per the plan's Q4 last-wins
+--                   scalar + lossless-detail design.
 --   * `agent_id`  — plain nullable TEXT (agents are NOT work_items, so this is
 --                   NOT an FK); the agent that ran the session, also harvested.
 --
@@ -67,13 +71,13 @@
 
 ALTER TABLE pty_sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'spawned'
     CHECK (source IN ('spawned', 'ingested'));            -- provenance; DEFAULT backfills existing rows to 'spawned'
-ALTER TABLE pty_sessions ADD COLUMN sprint_id TEXT REFERENCES work_items(id); -- nullable: harvested sprint (ADD-COLUMN-REFERENCES rule)
+ALTER TABLE pty_sessions ADD COLUMN sprint_id TEXT;                           -- nullable, NO FK: harvested correlation hint (a sprints.id, NOT a work_items.id); FK-free so a deleted/cross-instance sprint never aborts the lossless ingest (mirrors agent_id)
 ALTER TABLE pty_sessions ADD COLUMN agent_id  TEXT;                           -- nullable: harvested agent (plain TEXT — agents aren't work_items)
 
 CREATE TABLE session_records (
     id            TEXT PRIMARY KEY,                                           -- uuid v7
     session_id    TEXT NOT NULL REFERENCES pty_sessions(id) ON DELETE CASCADE, -- CASCADE currently DEAD (soft-delete, pty.rs:381)
-    line_ordinal  INTEGER NOT NULL,                                           -- 0-based position of this line within the session's JSONL
+    line_ordinal  INTEGER NOT NULL,                                           -- 1-based position among NON-EMPTY lines (T4 contract; identical in live-tail and ingest)
     record_type   TEXT,                                                       -- nullable: JSONL record "type" (user|assistant|system|…), NULL if absent/unparsable
     record_uuid   TEXT,                                                       -- nullable: the record's own "uuid"
     parent_uuid   TEXT,                                                       -- nullable: the record's "parentUuid"

@@ -25,6 +25,10 @@
 //!      mapped `TypedMessage` to `pty_messages`, (c) flips the session
 //!      status from `Spawning` to `Idle` on the first record, and (d)
 //!      forwards messages into the registry-side broadcast for WS fan-out.
+//!      A SECOND, independent broadcast consumer (T7) writes the lossless
+//!      `session_records` corpus (uniform losslessness with the ingest
+//!      path) — kept separate from the render-bridge so a corpus-write
+//!      failure can never stall message persistence, and vice versa.
 //!   6. Best-effort supervisor registration: if `state.pty_register_tx` is
 //!      `Some`, push a `SessionRegistration`; otherwise log and explicitly
 //!      drop `handle.completed` + `handle.shutdown` (the transport handle's
@@ -48,6 +52,7 @@ use std::path::{Path, PathBuf};
 use tokio::sync::broadcast;
 
 use crate::app::AppState;
+use crate::db::DbClient;
 use crate::domain::PtySession;
 use crate::error::AppError;
 use crate::pty::jsonl_tail;
@@ -279,6 +284,110 @@ pub async fn spawn_pty_session_internal(
 
             let (jsonl_tx, mut jsonl_rx) =
                 broadcast::channel::<jsonl_tail::BroadcastRecord>(BROADCAST_CAPACITY);
+
+            // ---- T7: lossless session-corpus consumer ----
+            //
+            // Subscribe a SECOND, independent consumer to the SAME broadcast
+            // BEFORE the tail task is spawned, so it cannot miss the records
+            // that arrive during the initial drain. This consumer writes the
+            // lossless `session_records` corpus (uniform losslessness with the
+            // ingest path, ADR-0004 layer 2). It is a SEPARATE task — never
+            // folded into the render-bridge loop below — so a corpus-write
+            // failure can never stall message persistence (and vice versa).
+            //
+            // Spawned sessions are ALWAYS captured: there is no drop-gate, and
+            // the `pty_sessions` row already exists with `source='spawned'`
+            // (created at step 3 above), so the `session_records.session_id` FK
+            // is satisfied without touching `create_pty_session` here.
+            {
+                let corpus_pool = pool.clone();
+                let corpus_session_id = session_id_str.clone();
+                let mut corpus_rx = jsonl_tx.subscribe();
+                tokio::spawn(async move {
+                    loop {
+                        match corpus_rx.recv().await {
+                            Ok(jsonl_tail::BroadcastRecord {
+                                line_ordinal,
+                                parsed,
+                            }) => {
+                                // The verbatim raw line is preserved on both
+                                // parsed variants — that string IS the lossless
+                                // at-rest payload.
+                                let raw = match &parsed {
+                                    jsonl_tail::JsonlRecordParsed::Known { raw, .. } => raw,
+                                    jsonl_tail::JsonlRecordParsed::UnknownRaw { raw, .. } => raw,
+                                };
+                                let index = jsonl_tail::record_index_fields(&parsed);
+                                // dedup_key IDENTICAL to the ingest path: the
+                                // record's own uuid when present, else a
+                                // synthetic `l<ordinal>` (diverging would break
+                                // cross-path dedup on re-read / re-ingest).
+                                let dedup_key = index
+                                    .record_uuid
+                                    .clone()
+                                    .unwrap_or_else(|| format!("l{line_ordinal}"));
+
+                                // Per-record short write tx (the live tail is
+                                // low-volume; never hold a tx across recvs).
+                                match corpus_pool.begin().await {
+                                    Ok(mut tx) => {
+                                        if let Err(e) = repo::insert_session_record(
+                                            tx.as_mut(),
+                                            &corpus_session_id,
+                                            line_ordinal as i64,
+                                            raw,
+                                            &index,
+                                            &dedup_key,
+                                        )
+                                        .await
+                                        {
+                                            tracing::warn!(
+                                                session_id = %corpus_session_id,
+                                                error = %e,
+                                                "pty corpus: insert_session_record failed"
+                                            );
+                                            // Drop the tx (rollback); keep
+                                            // consuming subsequent records.
+                                            continue;
+                                        }
+                                        if let Err(e) = tx.commit().await {
+                                            tracing::warn!(
+                                                session_id = %corpus_session_id,
+                                                error = %e,
+                                                "pty corpus: session_record commit failed"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            session_id = %corpus_session_id,
+                                            error = %e,
+                                            "pty corpus: begin write tx failed"
+                                        );
+                                    }
+                                }
+                            }
+                            // Lossless capture is the contract, so a lag (slow
+                            // corpus writer outrun by the broadcast) is a
+                            // corpus-LOSS event we LOG rather than silently
+                            // swallow. `Lagged` repositions the receiver to the
+                            // oldest retained record, so we keep consuming.
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                tracing::warn!(
+                                    session_id = %corpus_session_id,
+                                    dropped = n,
+                                    "pty corpus: broadcast lagged — {n} record(s) lost from the \
+                                     lossless corpus for this session"
+                                );
+                                continue;
+                            }
+                            // Sender gone (tail task ended) → exit cleanly.
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                });
+            }
+
             tokio::spawn(jsonl_tail::tail(jsonl_path.clone(), jsonl_tx));
 
             // tool_use_ids of raw `lumina-ask` MCP calls to suppress from the
