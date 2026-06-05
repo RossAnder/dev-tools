@@ -48,10 +48,21 @@ pub struct AppState {
     /// (`POST /api/sessions/ingest`, `http::sessions`). The SessionEnd http-hook
     /// fires-and-forgets; the handler returns 202 immediately and `tokio::spawn`s
     /// the DB-bound ingest, which must `acquire_owned()` a permit before touching
-    /// the pool. Capped at 4 so a burst of session-end hooks cannot stampede the
-    /// SQLite writer; re-ingest idempotency makes a dropped/abandoned task safe.
+    /// the pool. Capped at [`DEFAULT_INGEST_PERMITS`] so a burst of session-end
+    /// hooks cannot stampede the SQLite writer; re-ingest idempotency makes a
+    /// dropped/abandoned task safe. The permit count is constructor-injectable via
+    /// [`AppState::with_ingest_permits`] so a 1-permit instance can assert the
+    /// back-pressure (queue-not-reject) contract deterministically.
     pub session_ingest_sem: Arc<Semaphore>,
 }
+
+/// Default number of concurrent session-transcript ingests — the
+/// `session_ingest_sem` permit count under [`AppState::new`]. Four is low enough
+/// that a burst of SessionEnd hooks cannot stampede the single SQLite writer, yet
+/// lets a handful of (mostly I/O-bound) ingests overlap. Tests that exercise
+/// back-pressure construct a 1-permit instance via
+/// [`AppState::with_ingest_permits`].
+const DEFAULT_INGEST_PERMITS: usize = 4;
 
 impl AppState {
     /// Construct an `AppState` with default PTY plumbing: a fresh empty
@@ -62,14 +73,27 @@ impl AppState {
     /// Provided so per-family HTTP tests, the e2e test, and the composition
     /// root can construct `AppState` without each having to know the
     /// per-field defaults — drift-killer for the new fields added in T9.
+    ///
+    /// The session-ingest semaphore is sized at [`DEFAULT_INGEST_PERMITS`]; use
+    /// [`AppState::with_ingest_permits`] when a test needs a different cap.
     pub fn new(pool: Arc<AnyPool>) -> Self {
+        Self::with_ingest_permits(pool, DEFAULT_INGEST_PERMITS)
+    }
+
+    /// Like [`AppState::new`], but with an explicit session-ingest permit count.
+    ///
+    /// The ONLY field that differs from [`AppState::new`] is `session_ingest_sem`.
+    /// This exists as a back-pressure test seam (R29): production always goes
+    /// through [`AppState::new`] (which passes [`DEFAULT_INGEST_PERMITS`]), but a
+    /// test can build a 1-permit instance to prove that concurrent ingests QUEUE
+    /// on the semaphore (the handler still returns 202) rather than being rejected.
+    pub fn with_ingest_permits(pool: Arc<AnyPool>, ingest_permits: usize) -> Self {
         Self {
             pool,
             pty_registry: crate::pty::registry::SessionRegistry::new(),
             pty_transport: Arc::new(crate::pty::pty_transport::PtyTransport),
             pty_register_tx: None,
-            // Four concurrent transcript ingests max (see the field docstring).
-            session_ingest_sem: Arc::new(Semaphore::new(4)),
+            session_ingest_sem: Arc::new(Semaphore::new(ingest_permits)),
         }
     }
 }

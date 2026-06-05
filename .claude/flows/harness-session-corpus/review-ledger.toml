@@ -638,9 +638,11 @@ description = "R24 added the persist-leg coverage but the 4-permit semaphore cou
 first_flagged = 2026-06-05
 rounds = 1
 related = ["R24"]
-status = "open"
+status = "fixed"
 flow = "harness-session-corpus"
 dedup_id = "add97a437133942f"
+resolved = 2026-06-05
+resolution = "Exposed the session-ingest permit count via AppState::with_ingest_permits (new() delegates with DEFAULT_INGEST_PERMITS=4); added a deterministic nextest back-pressure test (concurrent_ingests_queue_not_reject_under_one_permit) proving concurrent ingests 202-queue under a 1-permit instance rather than rejecting"
 
 [[vet_events]]
 timestamp = "2026-06-05T00:00:00Z"

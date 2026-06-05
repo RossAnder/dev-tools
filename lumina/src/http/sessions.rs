@@ -5,7 +5,8 @@
 //! fires-and-forgets: this handler validates+confines the supplied
 //! `transcript_path`, returns `202 Accepted` (empty body) IMMEDIATELY, and
 //! `tokio::spawn`s the DB-bound ingest behind a [`Semaphore`](tokio::sync::Semaphore)
-//! permit (`state.session_ingest_sem`, 4 permits). The ingest is best-effort —
+//! permit (`state.session_ingest_sem`; 4 by default, injectable via
+//! [`AppState::with_ingest_permits`] for back-pressure tests). The ingest is best-effort —
 //! any failure is logged via `tracing::warn!` and swallowed (never a 500), and
 //! re-ingest is idempotent, so a dropped/abandoned spawn is safe (the hook
 //! tolerates loss by design).

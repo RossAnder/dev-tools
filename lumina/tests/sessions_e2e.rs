@@ -560,9 +560,11 @@ async fn spawned_session_persists_a_corpus_record() {
         lumina::pty::jsonl_tail::JsonlRecordParsed::Known { raw, .. }
         | lumina::pty::jsonl_tail::JsonlRecordParsed::UnknownRaw { raw, .. } => raw.as_str(),
     };
-    // The ingest/live-tail dedup_key contract: record_uuid when present, else
-    // `l{ordinal}`. This assistant record carries uuid "a1".
-    let dedup_key = index.record_uuid.clone().unwrap_or_else(|| "l1".to_owned());
+    // Key the row via the SAME canonical helper the live-tail consumer uses
+    // (`corpus_dedup_key`) rather than hand-rolling it, so this test pins the REAL
+    // spawned-path key. This assistant record carries uuid "a1", so the helper
+    // yields the namespaced `u:a1`.
+    let dedup_key = lumina::repo::corpus_dedup_key(&index, 1);
     {
         let mut tx = db.begin().await.expect("begin insert");
         repo::insert_session_record(tx.as_mut(), session_id, 1, raw, &index, &dedup_key)
@@ -587,7 +589,7 @@ async fn spawned_session_persists_a_corpus_record() {
     .await
     .expect("read the spawned session's corpus row");
     assert_eq!(stored_raw, line, "the spawned consumer persisted the verbatim JSONL line");
-    assert_eq!(stored_dedup, "a1", "the dedup_key is the record's uuid");
+    assert_eq!(stored_dedup, "u:a1", "the dedup_key is the record's namespaced uuid (`u:` + uuid)");
 }
 
 // ===========================================================================
@@ -643,7 +645,8 @@ async fn large_transcript_crosses_chunk_boundary_and_emits_one_event() {
     assert_eq!(rows, expected_rows, "every non-empty line persists, across the >500-row chunk boundary");
 
     // EXACTLY ONE coarse, export-inert session.ingested event for the whole
-    // multi-chunk ingest (the coarse event rides only the first chunk's txn).
+    // multi-chunk ingest (emitted once in its own final post-loop txn, gated on
+    // net-new rows — never once per chunk).
     let events: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM events \
          WHERE aggregate_type = 'session' AND aggregate_id = ? AND event_type = 'session.ingested'",
@@ -812,4 +815,152 @@ async fn same_line_via_spawn_then_ingest_collapses_to_one_row() {
         after_ingest, 1,
         "the same line via the spawned path then the ingest path collapses to ONE corpus row"
     );
+}
+
+// ===========================================================================
+// 7. INGEST back-pressure (R29) — the session-ingest semaphore QUEUES concurrent
+//    ingests (the handler still 202s) instead of rejecting them, and its permit
+//    count is constructor-injectable so this is testable deterministically.
+// ===========================================================================
+
+/// (R29) Back-pressure is QUEUE-not-reject, proven on a 1-permit instance built
+/// via the [`AppState::with_ingest_permits`] injection seam.
+///
+/// The contract: `ingest_session` validates+confines SYNCHRONOUSLY, returns
+/// `202 Accepted`, and only THEN does the spawned task `acquire_owned()` a permit
+/// before any DB work. So when the permit pool is exhausted, concurrent requests
+/// must still be ACCEPTED (202) and their work parked on the semaphore — never
+/// rejected (no 5xx, no `try_acquire`-style 503).
+///
+/// We make this deterministic WITHOUT sleeping or polling the detached ingest
+/// tasks (which this file deliberately never asserts on — see the header):
+///   * size the pool to ONE permit and HOLD it for the whole burst;
+///   * fire N concurrent route POSTs and assert EVERY one is 202 — the handler
+///     accepts regardless of permit availability (queue, not reject);
+///   * assert the pool is GENUINELY exhausted while held (`try_acquire` fails) so
+///     the 202s above were back-pressure, not a free permit;
+///   * assert the SAFETY PROPERTY that no ingest wrote a corpus row while the
+///     permit was held — scheduling-independent, since the permit is acquired
+///     BEFORE any DB work, so a parked task cannot have written;
+///   * release the permit and prove the valve reopens (a fresh acquire succeeds).
+///
+/// ISOLATION: like every confinement test in this file, this relies on the
+/// process-global `LUMINA_PTY_PROJECTS_ROOT` set by `set_projects_root`, so it
+/// must run under nextest's process-per-test isolation (the project's runner —
+/// `cargo nextest run`). It is especially sensitive to a SHARED-process run
+/// (plain `cargo test`): its many `.await` points give sibling tests a wide
+/// window to clear the env var mid-body, which would surface as a confinement
+/// 403 here rather than the expected 202 (see the module header).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_ingests_queue_not_reject_under_one_permit() {
+    let pool = shared_pool().await;
+
+    // Confinement root for the fixture transcripts (RAII-cleared on drop, R28).
+    let root = tempfile::tempdir().expect("projects-root tempdir");
+    let _root_guard = set_projects_root(root.path());
+
+    // The default constructor exposes the production permit pool — pin the default
+    // so a silent edit to DEFAULT_INGEST_PERMITS is caught here too.
+    assert_eq!(
+        AppState::new(pool.clone()).session_ingest_sem.available_permits(),
+        4,
+        "the default AppState exposes the production 4-permit ingest pool"
+    );
+
+    // The injection seam (R29): a single-permit instance so the burst below is
+    // forced to queue on exactly one permit.
+    let state = AppState::with_ingest_permits(pool.clone(), 1);
+    assert_eq!(
+        state.session_ingest_sem.available_permits(),
+        1,
+        "with_ingest_permits(_, 1) yields a single-permit ingest pool"
+    );
+
+    // N valid, confined transcripts — one per session. Each carries a lumina
+    // claim pair so a COMPLETED ingest would persist (not drop); we never let them
+    // complete while the permit is held, so the corpus stays empty below.
+    const N: usize = 8;
+    let mut sessions: Vec<(String, std::path::PathBuf)> = Vec::with_capacity(N);
+    for i in 0..N {
+        let sid = format!("sess-bp-{i}");
+        let body = format!(
+            "{}\n{}\n",
+            claim_tool_use_line(&format!("a{i}"), &format!("tu-{i}"), "sprint-bp", "agent-bp"),
+            claim_result_line(&format!("u{i}"), &format!("tu-{i}"), &format!("task-{i}")),
+        );
+        let path = root.path().join(format!("session-{i}.jsonl"));
+        std::fs::write(&path, &body).expect("write fixture transcript");
+        sessions.push((sid, path));
+    }
+
+    // HOLD the sole permit for the whole burst: every spawned ingest will park at
+    // `acquire_owned().await` and write nothing while we hold it.
+    let held = state
+        .session_ingest_sem
+        .clone()
+        .acquire_owned()
+        .await
+        .expect("acquire the sole ingest permit");
+    assert_eq!(
+        state.session_ingest_sem.available_permits(),
+        0,
+        "holding the sole permit exhausts the pool"
+    );
+
+    // Fire N concurrent route POSTs. Each handler returns 202 BEFORE its spawned
+    // task touches the (exhausted) semaphore, so back-pressure is queue-not-reject.
+    for (sid, path) in &sessions {
+        let resp = post_ingest(
+            state.clone(),
+            serde_json::json!({
+                "session_id": sid,
+                "transcript_path": path.to_str().unwrap(),
+                "cwd": "/dev/proj",
+                "hook_event_name": "SessionEnd",
+            }),
+        )
+        .await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::ACCEPTED,
+            "{sid}: a confined POST is 202-accepted (queued behind the held permit), never rejected"
+        );
+    }
+
+    // The pool is GENUINELY exhausted while held — a non-blocking acquire fails.
+    // This proves the 202s above were NOT because a permit was free: every spawned
+    // ingest is parked on `acquire_owned().await`, i.e. queued.
+    assert!(
+        state.session_ingest_sem.clone().try_acquire_owned().is_err(),
+        "the sole permit is held, so the ingest pool is exhausted (back-pressure is real, not a free permit)"
+    );
+
+    // SAFETY PROPERTY (deterministic, scheduling-independent): no spawned ingest
+    // can write a corpus row while the permit is held, because `ingest_session`
+    // acquires the permit BEFORE any DB work. So the corpus is empty for EVERY
+    // queued session regardless of how the tasks were scheduled.
+    for (sid, _) in &sessions {
+        let n: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM session_records WHERE session_id = ?")
+                .bind(sid)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("count session_records while the permit is held");
+        assert_eq!(
+            n, 0,
+            "{sid}: no corpus row is written while the sole permit is held — the ingest is queued, not running"
+        );
+    }
+
+    // Release the permit: the back-pressure valve reopens. We prove forward
+    // progress at the semaphore seam (deterministic, sleep-free) rather than by
+    // polling the detached DB tasks — a fresh acquire eventually succeeds once a
+    // waiter releases the recycled permit.
+    drop(held);
+    let _reacquired = state
+        .session_ingest_sem
+        .clone()
+        .acquire_owned()
+        .await
+        .expect("the released permit is recycled to a waiter and re-acquirable");
 }
