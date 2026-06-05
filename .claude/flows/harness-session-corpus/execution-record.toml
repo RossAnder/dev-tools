@@ -1,2 +1,454 @@
 schema_version = 1
-last_updated = 2026-06-04
+last_updated = 2026-06-05
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-05
+agent = "implement"
+summary = "Flow status draft to in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "f3dffc77b6e3f334"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E2"
+type = "verification"
+summary = "cargo build (lumina) — Batch A checkpoint"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "t1-migration-0015-session-corpus"
+dedup_id = "91be4d4544d3ab41"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E3"
+type = "verification"
+summary = "cargo nextest (lumina) — Batch A checkpoint: 369 passed, 0 failed"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "t1-migration-0015-session-corpus"
+dedup_id = "b4c700d6582c4c51"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E4"
+type = "deviation"
+task_ref = "t4-lossless-parse-plumbing"
+summary = "spawn.rs ripple was the broadcast destructure, not a Known(...) arm; 5 test sites not ~9"
+original_intent = "T4 plan pinned a Known(...) match arm at spawn.rs:308 plus ~9 test match-sites to re-bind for the struct-variant refactor."
+rationale = "spawn.rs has no Known arm — its jsonl_rx consumer takes a bare JsonlRecordParsed and calls map_record_to_typed, so the spawn.rs ripple was the broadcast destructure + channel-type change. Actual Known arms: 1 (map_record_to_typed) + 5 parse.rs test sites. All re-bound; plan intent fully met, no behaviour change."
+commits = ["bf17a7c"]
+dedup_id = "3f7788a05d36cff0"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E5"
+type = "task-completion"
+task_ref = "t1-migration-0015-session-corpus"
+status = "done"
+files = ["lumina/migrations/0015_session_corpus.sql"]
+commits = ["bf17a7c"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Migration 0015: session_records table + pty_sessions source/sprint_id/agent_id columns + 3 indexes"
+dedup_id = "be590fad74d1e00d"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E6"
+type = "task-completion"
+task_ref = "t4-lossless-parse-plumbing"
+status = "done"
+files = [
+    "lumina/src/pty/jsonl_tail/parse.rs",
+    "lumina/src/pty/jsonl_tail/mod.rs",
+    "lumina/src/pty/spawn.rs",
+]
+commits = ["bf17a7c"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Known struct-variant carries raw line; broadcast widened to 1-based non-empty ordinal (BroadcastRecord); record_index_fields/SessionRecordIndex added"
+dedup_id = "e21d5b73ecb77781"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E7"
+type = "verification"
+summary = "cargo build (lumina) — Batch B checkpoint"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "t2-session-domain-types"
+dedup_id = "cd530dadd32b4647"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E8"
+type = "verification"
+summary = "cargo nextest (lumina) — Batch B checkpoint: 369 passed, 0 failed"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "t2-session-domain-types"
+dedup_id = "c0be687bc4eb2579"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E9"
+type = "deviation"
+task_ref = "t2-session-domain-types"
+summary = "SessionRecord.is_sidechain declared i64 (0/1) not bool, to match the RepoLink.is_primary row idiom"
+original_intent = "Plan/brief specced SessionRecord.is_sidechain as a Rust bool."
+rationale = "Declared is_sidechain as i64 to match the codebase row-struct idiom for INTEGER 0/1 columns (RepoLink.is_primary: i64 + its repo_links.rs FromRow) and keep the SessionRecord FromRow bound-set identical to PtyMessage (a bool field would add a bool Decode+Type where-bound). The SQL column is INTEGER NOT NULL either way; the write path binds T4's bool SessionRecordIndex.is_sidechain as 0/1; a wire-layer i64->bool map is the established fix if a JSON boolean is later needed."
+commits = ["b0f54d7"]
+dedup_id = "572a3e1edfa26a12"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E10"
+type = "task-completion"
+task_ref = "t2-session-domain-types"
+status = "done"
+files = [
+    "lumina/src/domain/enums.rs",
+    "lumina/src/domain/work_items.rs",
+]
+commits = ["b0f54d7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "SessionSource enum (spawned|ingested) + SessionRecord struct + PtySession source/sprint_id/agent_id fields"
+dedup_id = "a7ec604d1d3a4ec9"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E11"
+type = "task-completion"
+task_ref = "t3-pty-session-fromrow-audit"
+status = "done"
+files = ["lumina/src/repo/pty.rs"]
+commits = ["b0f54d7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extended PtySession FromRow + added 3 columns to all 3 FROM pty_sessions SELECTs (create/get/list) + SessionRecord FromRow"
+dedup_id = "247cea25a1492883"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E12"
+type = "verification"
+summary = "cargo build (lumina) — Batch C checkpoint"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "t5-repo-sessions-persistence"
+dedup_id = "a17001688b14a6ea"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E13"
+type = "verification"
+summary = "cargo nextest (lumina) — Batch C checkpoint: 374 passed, 0 failed (count-invariant now 74)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "t5-repo-sessions-persistence"
+dedup_id = "2f05d78cf05d42cf"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E14"
+type = "deviation"
+task_ref = "t8-get-session-context-tool"
+summary = "get_session_context issues one inline read-only sprint_tasks probe (no public repo accessor + SCOPE FENCE forbade repo/ edits)"
+original_intent = "T8 brief/module doc: get_session_context composes existing repo reads and the mcp module issues no new SQL."
+rationale = "Sprint membership has no public repo:: accessor (only a private SELECT in repo/team_execution.rs) and the dispatch SCOPE FENCE forbade touching repo/. T8 added one minimal read-only inline probe (SELECT sprint_id FROM sprint_tasks WHERE task_id=$1 LIMIT 1 via crate::db::scalar_opt) in mcp/sessions.rs; ancestry still composes get_work_item_detail with zero new SQL. Read-only, within the fence; a follow-up can relocate the sprint read into a repo:: helper. T8 also chose structured_result (CallToolResult::structured) over the sibling json_result text helper — a functional superset."
+commits = ["9bd263c"]
+dedup_id = "8b6fc9ccecc84fd0"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E15"
+type = "task-completion"
+task_ref = "t5-repo-sessions-persistence"
+status = "done"
+files = [
+    "lumina/src/repo/sessions.rs",
+    "lumina/src/repo/mod.rs",
+    "lumina/src/repo/events.rs",
+]
+commits = ["9bd263c"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "insert_session_record + upsert_session_row + centralised session.ingested inert event + 'session' vocab doc; orchestrator fixed co-located tests to use the AnyPool/db.begin seam (scalar_one reads) within retry budget"
+dedup_id = "390c0843b02a2694"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E16"
+type = "task-completion"
+task_ref = "t8-get-session-context-tool"
+status = "done"
+files = [
+    "lumina/src/mcp/sessions.rs",
+    "lumina/src/mcp/mod.rs",
+]
+commits = ["9bd263c"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "get_session_context read-only MCP tool (ancestry + sprint membership); MCP surface 73->74 with both count-invariant asserts + catalogue + annotations updated"
+dedup_id = "8fa535701b275da0"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E17"
+type = "verification"
+summary = "cargo build (lumina) — Batch D checkpoint"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "t6-harvest-ingest"
+dedup_id = "8cfb8caccee49c4c"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E18"
+type = "verification"
+summary = "cargo nextest (lumina) — Batch D checkpoint: 383 passed, 0 failed"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "t6-harvest-ingest"
+dedup_id = "4fec4d5c3bad6357"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E19"
+type = "deviation"
+task_ref = "t6-harvest-ingest"
+summary = "Dropped the pty_sessions.sprint_id FK in migration 0015 — harvested sprint ids are sprints.id not work_items.id, and a hard FK would abort the lossless ingest"
+original_intent = "Plan T1 and migration 0015 declared pty_sessions.sprint_id TEXT REFERENCES work_items(id)."
+rationale = "A harvested sprint_id (from claim_next_task input) is a sprints.id (migration 0011), NOT a work_items.id, so the work_items FK could never be satisfied and every sprint-correlated ingest aborted (surfaced by T6's e2e: SQLite error 787 FOREIGN KEY constraint failed on the parent pty_sessions INSERT). Retargeting the FK to sprints(id) was also rejected: a hard FK on a best-effort harvested correlation scalar contradicts the plan's lossless-at-rest constraint and Q4 (last-wins scalar + lossless detail) — a deleted or cross-instance sprint would abort the entire capture. Orchestrator dropped the FK: sprint_id is now plain nullable TEXT, a correlation hint mirroring agent_id, with full multi-sprint detail preserved in session_records. Migration 0015 was amended in place (unreleased this run; dev + in-memory test DBs recreate from the embedded migration set). Also corrected the migration's line_ordinal comment from 0-based to the 1-based T4 contract."
+commits = ["ad4981e"]
+dedup_id = "178c03a8ead04422"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E20"
+type = "task-completion"
+task_ref = "t6-harvest-ingest"
+status = "done"
+files = [
+    "lumina/src/repo/sessions.rs",
+    "lumina/migrations/0015_session_corpus.sql",
+]
+commits = ["ad4981e"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "harvest_correlation (tool_use_id-paired, last-wins, complete_task-exclusion) + ingest_transcript (drop-if-no-lumina, chunked idempotent txns, coarse inert event) + 9 tests; orchestrator dropped the sprint_id FK in migration 0015 to fix the ingest-abort and green the checkpoint"
+dedup_id = "c5da4e0f17a43817"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E21"
+type = "task-completion"
+task_ref = "t7-spawn-corpus-consumer"
+status = "done"
+files = ["lumina/src/pty/spawn.rs"]
+commits = ["ad4981e"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Second independent broadcast consumer writes session_records for SPA-spawned sessions (lossless parity); per-record short tx; RecvError::Lagged logged as corpus-loss; existing message-persistence path untouched"
+dedup_id = "8dccc162d8dc679c"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E22"
+type = "verification"
+summary = "cargo build (lumina) — Batch E checkpoint"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "t9-sessions-ingest-route"
+dedup_id = "d975dbf6f2278187"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E23"
+type = "verification"
+summary = "cargo nextest (lumina) — Batch E checkpoint: 387 passed, 0 failed"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "t9-sessions-ingest-route"
+dedup_id = "759c12e703a47182"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E24"
+type = "task-completion"
+task_ref = "t9-sessions-ingest-route"
+status = "done"
+files = [
+    "lumina/src/http/sessions.rs",
+    "lumina/src/http/mod.rs",
+    "lumina/src/app.rs",
+]
+commits = ["556102f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "POST /api/sessions/ingest (202 + best-effort spawned ingest behind a 4-permit AppState semaphore); transcript_path confined to ~/.claude/projects via canonicalise + starts_with (reject ../symlink-escape/out-of-root before 202); +4 inline confinement unit tests (sibling idiom)"
+dedup_id = "6336bd875cecc56f"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E25"
+type = "verification"
+summary = "cargo build (lumina) — Batch F checkpoint"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "t10-init-hooks"
+dedup_id = "c2eb281a6f01f0dd"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E26"
+type = "verification"
+summary = "cargo nextest (lumina) — Batch F checkpoint: 398 passed, 0 failed"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "t10-init-hooks"
+dedup_id = "cdcb81b5578f7d35"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E27"
+type = "deviation"
+task_ref = "t10-init-hooks"
+summary = "init-hooks lives entirely in cli.rs (main.rs untouched); default port is a local DEFAULT_BIND_PORT=24817 const mirroring app.rs's private DEFAULT_PORT"
+original_intent = "Plan T10 listed Files: cli.rs + main.rs, and to use lumina's default bind port for the default --url."
+rationale = "main.rs is a 2-line entrypoint that only calls cli::run(); subcommand dispatch (incl. the existing import-flow arm) lives entirely in cli.rs, so init-hooks was added there and main.rs needed no edit (a manufactured no-op edit would be worse). The default bind port DEFAULT_PORT=24817 is a PRIVATE const in app.rs (outside T10's scope fence), so a local DEFAULT_BIND_PORT=24817 const was introduced in cli.rs, doc'd to be kept in sync — a minor drift risk; a follow-up can make app's const pub(crate) to single-source it."
+commits = ["91f56ba"]
+dedup_id = "06acea1abb6ae1dc"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E28"
+type = "task-completion"
+task_ref = "t10-init-hooks"
+status = "done"
+files = ["lumina/src/cli.rs"]
+commits = ["91f56ba"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "init-hooks subcommand: read-modify-merge SessionEnd http-hook into .claude/settings.json (idempotent, never-clobber, allowedHttpHookUrls extend + cross-source-gate warning); +6 co-located tests"
+dedup_id = "715c831b5d5ae819"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E29"
+type = "task-completion"
+task_ref = "t11-sessions-e2e"
+status = "done"
+files = ["lumina/tests/sessions_e2e.rs"]
+commits = ["4bfa342"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "In-process ingest e2e: 202 + confinement (400/403), lossless persist + 1-based ordinals + correlation, idempotent re-ingest, drop-gate, spawned-path primitive; orchestrator fixed the happy-path event-count assertion (route-202 leg given a distinct session id so its fire-and-forget spawn cannot double-ingest the deterministic session)"
+dedup_id = "1146efbfba2980e2"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E30"
+type = "verification"
+summary = "Phase 3 final: cargo build (lumina)"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "phase-3-final-verification"
+dedup_id = "ba364db971f3576b"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E31"
+type = "verification"
+summary = "Phase 3 final: cargo nextest (lumina) — 398 passed, 0 failed (count-invariant=74)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "phase-3-final-verification"
+dedup_id = "7b9d092ceba9a841"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E32"
+type = "verification"
+summary = "Phase 3 final: cargo clippy --all-targets (lumina) — no warnings"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+task_ref = "phase-3-final-verification"
+dedup_id = "07d5da7d1e9a60ba"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E33"
+type = "verification"
+summary = "Phase 3 final: runtime-sqlx macro-eradication gate — 0 matches"
+command = '''rg 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests'''
+outcome = "pass"
+task_ref = "phase-3-final-verification"
+dedup_id = "097c95103d1874ca"
+
+[[items]]
+date = 2026-06-05
+agent = "implement"
+id = "E34"
+type = "task-completion"
+task_ref = "t12-docs-plugin-skills"
+status = "done"
+files = [
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/plan-story/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/next-block/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks/SKILL.md",
+]
+commits = ["2a9bbf4"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Session-corpus § + ingest route in lumina/CLAUDE.md; count 73->74 in both CLAUDE.md (history preserved); get_session_context added to MCP catalogue + wired into plan-story/next-block/decompose-tasks; fixed stale mcp.rs and http/pty_sessions.rs references"
+dedup_id = "97c2a180f10b9f73"
+
+[[items]]
+id = "E35"
+type = "status-transition"
+date = 2026-06-05
+agent = "plan-update"
+summary = "All 12 tasks complete and Phase 3 verification green; flow in-progress to review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "8c81821059be4708"

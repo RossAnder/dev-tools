@@ -1,8 +1,8 @@
 slug = "harness-session-corpus"
 plan_path = "docs/plans/harness-session-corpus.md"
-status = "draft"
+status = "review"
 created = 2026-06-04
-updated = 2026-06-04
+updated = 2026-06-05
 branch = "main"
 scope = [
     "lumina/migrations/**",
@@ -14,8 +14,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 12
+completed = 12
 in_progress = 0
 
 [artifacts]
