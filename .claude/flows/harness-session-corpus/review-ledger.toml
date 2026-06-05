@@ -238,7 +238,7 @@ resolution = "Namespaced dedup_key as u:<uuid>/o:<ordinal> inside corpus_dedup_k
 [[items]]
 first_flagged = 2026-06-05
 rounds = 1
-status = "wontfix"
+status = "fixed"
 flow = "harness-session-corpus"
 id = "R11"
 file = "lumina/src/mcp/sessions.rs"
@@ -252,7 +252,8 @@ description = "Each ancestry level calls get_work_item_detail, loading the full 
 evidence = ["lumina/src/mcp/sessions.rs:90-112"]
 related = ["R12"]
 dedup_id = "769bcf1334a91cb9"
-wontfix_rationale = "Deferred refactor (agent skip): removing the N+1 + raw SQL needs a repo::sprint_for_task accessor + lightweight ancestry query in repo/*.rs (cross-file). The R4 depth cap bounds the walk meanwhile. Re-open via /review if prioritised."
+resolved = 2026-06-05
+resolution = "Replaced the get_session_context N+1 (a full get_work_item_detail per ancestry level) with repo::resolve_work_item_ancestry — one bounded recursive CTE up parent_id (modelled on find_project_ancestor; keeps the R4 depth-cap cycle guard + missing-id NotFound) — and moved the inline sprint_tasks SQL probe into repo::sprint_for_task (keeps R12 ORDER BY rowid DESC). mcp/sessions.rs is now SQL-free. Behaviour preserved (existing get_session_context tests green); added repo-level tests for ancestry classification, self-project, missing-id, and sprint membership."
 
 [[items]]
 first_flagged = 2026-06-05

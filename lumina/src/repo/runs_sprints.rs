@@ -232,6 +232,27 @@ pub async fn add_tasks_to_sprint(
     Ok(added)
 }
 
+/// The sprint a task is bound to via `sprint_tasks`, most-recent attachment
+/// winning, or `None` when the task is not a sprint member. Read-only, no
+/// transaction.
+///
+/// Moves the former inline `get_session_context` MCP-layer scalar probe behind
+/// the repo seam (review R11), keeping that tool SQL-free. `sprint_tasks` has no
+/// recency column (its PK is `(sprint_id, task_id)`), so `ORDER BY rowid DESC`
+/// makes a re-sprinted task bind deterministically to its NEWEST attachment —
+/// SQLite's `rowid` is insertion-monotonic (review R12).
+pub async fn sprint_for_task(
+    db: &impl DbClient,
+    task_id: &str,
+) -> Result<Option<String>, AppError> {
+    crate::db::scalar_opt::<String>(
+        db,
+        "SELECT sprint_id FROM sprint_tasks WHERE task_id = $1 ORDER BY rowid DESC LIMIT 1",
+        args![task_id.to_owned()],
+    )
+    .await
+}
+
 /// Record a triage [`decision`](crate::domain::NewFindingDecision) against a
 /// finding (migration 0011, B23), returning `(decision_id,
 /// spawned_work_item_id)` — the second element is `Some` only for the two spawn

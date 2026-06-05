@@ -12,15 +12,14 @@
 //!
 //! ## Composition (read-only, no migration, no write)
 //!
-//! The ancestry ids are resolved by COMPOSING the existing `get_work_item_detail`
-//! read — walking the `parent_id` adjacency list up from the target item and
-//! classifying each visited row by `kind` (`project` / `epic` / `story`). The
-//! walk is bounded by the 5-level hierarchy (`project > epic > focus > story >
-//! task`), so it is O(5) and terminates structurally. Sprint membership is the
-//! one read with no existing public `repo::*` accessor, so it is a single inline
-//! read-only `scalar_opt` probe of the `sprint_tasks` junction (no write, no
-//! event). All four ids are OPTIONAL: a planning item part-way up the hierarchy
-//! (or one not yet attached to a sprint) simply omits the ids it lacks.
+//! Both reads live behind the repo seam, so this tool issues NO SQL of its own
+//! and no write/event (R11). The ancestry ids (`project` / `epic` / `story`) come
+//! from [`repo::resolve_work_item_ancestry`] — ONE bounded recursive CTE up the
+//! `parent_id` chain (which replaced a per-level `get_work_item_detail` N+1, with
+//! the same depth-cap cycle guard and missing-id 404). Sprint membership comes
+//! from [`repo::sprint_for_task`] (the most-recent `sprint_tasks` attachment).
+//! All four ids are OPTIONAL: a planning item part-way up the hierarchy (or one
+//! not yet attached to a sprint) simply omits the ids it lacks.
 
 use super::*;
 
@@ -60,12 +59,12 @@ impl LuminaTools {
     // ---- Session-context read tool (read_only_hint = true) --------------
 
     /// Resolve a work item's lumina-minted ancestry context — its `project_id`,
-    /// `epic_id`, `story_id` (by walking the `parent_id` chain and classifying
-    /// each row by `kind`) and its `sprint_id` (via `sprint_tasks` membership).
-    /// Read-only: COMPOSES `get_work_item_detail` for the ancestry walk plus one
-    /// inline `sprint_tasks` membership probe; issues no write and no event. Every
-    /// id is optional — a planning item need not carry a full ancestry chain or a
-    /// sprint binding.
+    /// `epic_id`, `story_id` (the `parent_id` chain classified by `kind`) and its
+    /// `sprint_id` (`sprint_tasks` membership). Read-only: composes the repo-seam
+    /// reads [`repo::resolve_work_item_ancestry`] (one bounded recursive CTE) and
+    /// [`repo::sprint_for_task`]; issues no SQL of its own, no write, no event.
+    /// Every id is optional — a planning item need not carry a full ancestry chain
+    /// or a sprint binding.
     #[tool(
         description = "Resolve a work item's lumina-minted ancestry context (project_id, epic_id, story_id, sprint_id). Read-only; every id is optional.",
         annotations(read_only_hint = true, open_world_hint = false)
@@ -76,59 +75,18 @@ impl LuminaTools {
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "get_session_context", "mcp tool invoked");
 
-        // Ancestry walk: start at the target item (its detail fetch 404s a
-        // missing id), then climb `parent_id` until the chain bottoms out at a
-        // NULL parent. The 5-level hierarchy bounds the walk; classify each
-        // visited row by `kind` to fill in the project/epic/story ids. Composes
-        // `get_work_item_detail` only — no new ancestry SQL.
-        //
-        // `parent_id` is a plain self-FK with no DB-level acyclicity constraint,
-        // so a corrupt cycle (A→B→A, or a self-parent, from a buggy `move` or a
-        // manual edit) would otherwise spin this read-only tool in an infinite
-        // loop of DB reads, holding a connection. Bound the climb with a hop
-        // counter set well above the real 5-level depth; exceeding it is treated
-        // as a probable `parent_id` cycle and surfaced as an error.
-        const MAX_ANCESTRY_DEPTH: usize = 16;
-        let mut project_id = None;
-        let mut epic_id = None;
-        let mut story_id = None;
-
-        let mut cursor = Some(work_item_id.clone());
-        let mut hops = 0usize;
-        while let Some(id) = cursor {
-            if hops >= MAX_ANCESTRY_DEPTH {
-                return Err(app_error_to_mcp(AppError::Validation(
-                    "ancestry walk exceeded max depth — possible parent_id cycle"
-                        .to_owned(),
-                )));
-            }
-            hops += 1;
-            let detail = repo::get_work_item_detail(&self.pool, &id)
-                .await
-                .map_err(app_error_to_mcp)?;
-            match detail.item.kind.as_str() {
-                "project" => project_id = Some(detail.item.id.clone()),
-                "epic" => epic_id = Some(detail.item.id.clone()),
-                "story" => story_id = Some(detail.item.id.clone()),
-                _ => {}
-            }
-            cursor = detail.item.parent_id.clone();
-        }
-
-        // Sprint membership: the one read with no existing public `repo::*`
-        // accessor. A single read-only `scalar_opt` probe of the `sprint_tasks`
-        // junction (only `kind='task'` rows are ever members); LIMIT 1 because a
-        // task is attached to at most one sprint for this context's purpose.
-        // `sprint_tasks` carries no recency column (PK is `(sprint_id, task_id)`),
-        // so `ORDER BY rowid DESC` makes a multi-sprint task bind deterministically
-        // to its most-recent attachment (SQLite rowid is insertion-monotonic).
-        let sprint_id: Option<String> = crate::db::scalar_opt::<String>(
-            &*self.pool,
-            "SELECT sprint_id FROM sprint_tasks WHERE task_id = $1 ORDER BY rowid DESC LIMIT 1",
-            crate::args![work_item_id.clone()],
-        )
-        .await
-        .map_err(app_error_to_mcp)?;
+        // Both reads resolve behind the repo seam — this tool issues NO SQL of
+        // its own (R11). `resolve_work_item_ancestry` is ONE bounded recursive
+        // CTE up the `parent_id` chain (replacing the former per-level
+        // `get_work_item_detail` N+1); it 404s a missing id and guards a
+        // `parent_id` cycle via a depth cap. `sprint_for_task` is the single
+        // most-recent-attachment `sprint_tasks` probe (`None` when unattached).
+        let ancestry = repo::resolve_work_item_ancestry(&self.pool, &work_item_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        let sprint_id = repo::sprint_for_task(&self.pool, &work_item_id)
+            .await
+            .map_err(app_error_to_mcp)?;
 
         // Return a STRUCTURED result: `CallToolResult::structured` populates both
         // `structured_content` (the harvest consumer reads this object directly)
@@ -136,10 +94,10 @@ impl LuminaTools {
         // owned-`String`/`Option` struct is effectively infallible, but is mapped
         // to `internal_error` rather than unwrapped (matching `json_result`).
         let value = serde_json::to_value(SessionContext {
-            project_id,
+            project_id: ancestry.project_id,
             sprint_id,
-            story_id,
-            epic_id,
+            story_id: ancestry.story_id,
+            epic_id: ancestry.epic_id,
         })
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         structured_result(value)

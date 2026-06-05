@@ -174,3 +174,188 @@ const DETAIL_CONTEXT_BLOCKS_SQL: &str = r#"
         WHERE wic.work_item_id = $1
         ORDER BY cb.created_at, cb.id
         "#;
+
+/// The lumina-minted ancestry ids of a work item — the `project` / `epic` /
+/// `story` ancestor (or self) ids — recovered by classifying each row on the
+/// `parent_id` chain by `kind`. Every field is optional: a planning item need
+/// not sit under a full `project > epic > … > story` chain. Returned by
+/// [`resolve_work_item_ancestry`] and consumed by the `get_session_context` MCP
+/// tool.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct WorkItemAncestry {
+    pub project_id: Option<String>,
+    pub epic_id: Option<String>,
+    pub story_id: Option<String>,
+}
+
+/// Depth ceiling on the ancestry climb — a defensive `parent_id`-cycle guard.
+/// `parent_id` is a plain self-FK with no DB-level acyclicity constraint, so a
+/// corrupt cycle (A→B→A, a self-parent) from a buggy `move_work_item` or a manual
+/// edit must not spin the walk. The real hierarchy is 5 levels
+/// (`project > epic > focus > story > task`), so 16 is far above any legitimate
+/// chain; reaching it is treated as a probable cycle (mirrors the former MCP-layer
+/// `MAX_ANCESTRY_DEPTH`, review R4).
+const ANCESTRY_MAX_DEPTH: i64 = 16;
+
+/// Resolve a work item's `project` / `epic` / `story` ancestry ids in ONE bounded
+/// recursive CTE up the `parent_id` chain.
+///
+/// Replaces the former `get_session_context` N+1 — a full `get_work_item_detail`
+/// (loading every child table) per ancestry level just to read `kind`/`parent_id`
+/// — with a single lightweight query behind the repo seam (review R11), so the
+/// MCP tool no longer issues raw SQL or up to five heavy fetches.
+///
+/// Behaviour preserved from the former MCP walk: a missing `work_item_id` is
+/// `NotFound`; the climb is bounded by [`ANCESTRY_MAX_DEPTH`] and a chain that
+/// reaches the cap is a `Validation` "possible parent_id cycle". Like
+/// [`get_work_item_detail`] and `find_project_ancestor`, the walk does NOT filter
+/// `deleted_at`, so a tombstoned ancestor is still classified.
+pub async fn resolve_work_item_ancestry(
+    db: &impl DbClient,
+    work_item_id: &str,
+) -> Result<WorkItemAncestry, AppError> {
+    // Seed at the target, then climb `parent_id`, carrying a `depth` so a cyclic
+    // chain is DB-bounded — the SQLite recursion stops once `depth` reaches the
+    // cap, so this can never loop forever. Returns (id, kind, depth) per
+    // ancestor, self-first (a tuple `FromRow` decodes through the seam).
+    let rows = db
+        .query_all::<(String, String, i64)>(
+            r#"
+        WITH RECURSIVE ancestry(id, kind, parent_id, depth) AS (
+            SELECT id, kind, parent_id, 0 FROM work_items WHERE id = $1
+            UNION ALL
+            SELECT w.id, w.kind, w.parent_id, a.depth + 1
+            FROM work_items w
+            JOIN ancestry a ON w.id = a.parent_id
+            WHERE a.depth < $2
+        )
+        SELECT id, kind, depth FROM ancestry ORDER BY depth
+        "#,
+            args![work_item_id.to_owned(), ANCESTRY_MAX_DEPTH],
+        )
+        .await?;
+
+    // The recursive arm only adds rows once the seed matched, so an empty result
+    // means the seed id does not exist — surface NotFound, mirroring the former
+    // `get_work_item_detail`-on-the-start-id 404.
+    if rows.is_empty() {
+        return Err(AppError::NotFound(format!(
+            "work_item '{work_item_id}' not found"
+        )));
+    }
+
+    // A row at the cap depth means the climb was truncated by the bound rather
+    // than bottoming out at a NULL parent. A real chain is ≤5 rows, so this is a
+    // probable `parent_id` cycle (matches the former MCP hop-cap error).
+    if rows.iter().any(|(_, _, depth)| *depth >= ANCESTRY_MAX_DEPTH) {
+        return Err(AppError::Validation(
+            "ancestry walk exceeded max depth — possible parent_id cycle".to_owned(),
+        ));
+    }
+
+    let mut ancestry = WorkItemAncestry::default();
+    for (id, kind, _) in &rows {
+        match kind.as_str() {
+            "project" => ancestry.project_id = Some(id.clone()),
+            "epic" => ancestry.epic_id = Some(id.clone()),
+            "story" => ancestry.story_id = Some(id.clone()),
+            _ => {}
+        }
+    }
+    Ok(ancestry)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::connect_in_memory;
+    use crate::domain::NewSprint;
+    use crate::error::AppError;
+    use crate::repo::test_support::*;
+    use crate::repo::*;
+
+    /// R11: `resolve_work_item_ancestry` classifies the project / epic / story
+    /// ancestors of a task seeded under a full `project > epic > focus > story >
+    /// task` chain (focus/task are not ancestry-classified kinds).
+    #[tokio::test]
+    async fn resolves_full_chain_ancestry() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        let a = resolve_work_item_ancestry(&pool, &task)
+            .await
+            .expect("ancestry");
+        assert_eq!(
+            a.story_id.as_deref(),
+            Some(story.as_str()),
+            "story ancestor classified"
+        );
+        assert!(a.project_id.is_some(), "project ancestor classified: {a:?}");
+        assert!(a.epic_id.is_some(), "epic ancestor classified: {a:?}");
+    }
+
+    /// Resolving the project itself yields only `project_id` (self-classified;
+    /// nothing above it).
+    #[tokio::test]
+    async fn resolves_self_project_only() {
+        let pool = connect_in_memory().await.expect("pool");
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+
+        let a = resolve_work_item_ancestry(&pool, &project)
+            .await
+            .expect("ancestry");
+        assert_eq!(a.project_id.as_deref(), Some(project.as_str()));
+        assert!(
+            a.epic_id.is_none() && a.story_id.is_none(),
+            "no epic/story above a project: {a:?}"
+        );
+    }
+
+    /// A missing id is `NotFound`: the seed row never matches, so the recursive
+    /// CTE is empty (mirrors the former `get_work_item_detail`-on-start-id 404).
+    #[tokio::test]
+    async fn missing_id_is_not_found() {
+        let pool = connect_in_memory().await.expect("pool");
+        let err = resolve_work_item_ancestry(&pool, "no-such-id")
+            .await
+            .expect_err("missing id errors");
+        assert!(matches!(err, AppError::NotFound(_)), "got {err:?}");
+    }
+
+    /// R11/R12: `sprint_for_task` is `None` for an unattached task and resolves to
+    /// the attached sprint after `add_tasks_to_sprint`.
+    #[tokio::test]
+    async fn sprint_for_task_resolves_membership() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        assert_eq!(
+            sprint_for_task(&pool, &task).await.expect("probe"),
+            None,
+            "unattached task has no sprint"
+        );
+
+        let sprint = create_sprint(&pool, &NewSprint { title: None })
+            .await
+            .expect("sprint")
+            .to_string();
+        add_tasks_to_sprint(&pool, &sprint, &[task.as_str()])
+            .await
+            .expect("attach");
+        assert_eq!(
+            sprint_for_task(&pool, &task).await.expect("probe").as_deref(),
+            Some(sprint.as_str()),
+            "attached task resolves to its sprint"
+        );
+    }
+}
