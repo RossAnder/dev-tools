@@ -56,6 +56,7 @@ mod repo_links;
 mod research_notes;
 mod risks;
 mod runs_sprints;
+mod sessions;
 mod shared;
 mod task_dependencies;
 mod task_graph;
@@ -112,6 +113,12 @@ pub use work_items_meta::*;
 pub use findings::*;
 pub use research_notes::*;
 pub use runs_sprints::*;
+// Harness session-corpus persistence helpers (migration 0015, ADR-0004 layer 2)
+// carved to `repo/sessions.rs` (T5). The glob `pub use` exposes the two write
+// helpers (`insert_session_record`, `upsert_session_row`) + the centralised
+// inert-event call (`record_session_ingested_event`) at their `crate::repo::*`
+// paths; the T6 ingest composer (and a future HTTP/MCP surface) call them by path.
+pub use sessions::*;
 // Open-questions lifecycle (`open_questions.rs`), project↔repo-links
 // (`repo_links.rs`), risks CRUD (`risks.rs`), and rejected-alternatives CRUD
 // (`rejected_alternatives.rs`), all carved out by R4. The glob `pub use`

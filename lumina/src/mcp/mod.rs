@@ -84,6 +84,7 @@ mod reads;
 mod repo_links;
 mod risks_alts;
 mod runs_sprints;
+mod sessions;
 mod task_graph;
 mod team_execution;
 mod work_items;
@@ -103,6 +104,7 @@ pub use reads::*;
 pub use repo_links::*;
 pub use risks_alts::*;
 pub use runs_sprints::*;
+pub use sessions::*;
 pub use task_graph::*;
 pub use team_execution::*;
 pub use work_items::*;
@@ -232,7 +234,8 @@ impl LuminaTools {
                 + Self::tool_router_repo_links()
                 + Self::tool_router_risks_alts()
                 + Self::tool_router_task_graph()
-                + Self::tool_router_team_execution(),
+                + Self::tool_router_team_execution()
+                + Self::tool_router_sessions(),
         }
     }
 }
@@ -439,6 +442,8 @@ mod tests {
             "complete_task",
             "get_sprint_quiescence",
             "list_open_questions_for_sprint",
+            // session-context read tool (harness-session-corpus, ADR-0004 / T8)
+            "get_session_context",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -448,7 +453,7 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 73 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 74 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
         //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
         //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
@@ -460,27 +465,29 @@ mod tests {
         //    + 6 team-execution work-queue tools (claim_next_task, release_task,
         //      renew_lease, complete_task, get_sprint_quiescence,
         //      list_open_questions_for_sprint).
+        //    + 1 get_session_context (harness-session-corpus, ADR-0004 / T8:
+        //      read-only ancestry/sprint-context resolver).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            73,
-            "advertised tool count must be exactly 73, got {}: {names:?}",
+            74,
+            "advertised tool count must be exactly 74, got {}: {names:?}",
             names.len()
         );
 
-        // Name-uniqueness guard (router-split risk mitigation): the nine
+        // Name-uniqueness guard (router-split risk mitigation): the ten
         // per-family `tool_router_*` sub-routers are summed with
         // `ToolRouter::merge`, which is NAME-KEYED — a duplicate tool name
         // across two families would be silently absorbed while KEEPING the
-        // count at 73 (the second registration overwrites the first). Collect
-        // the names into a set and assert it ALSO has 73 entries, so a
+        // count at 74 (the second registration overwrites the first). Collect
+        // the names into a set and assert it ALSO has 74 entries, so a
         // collision is caught rather than masked by the bare count check above.
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            73,
-            "advertised tool names must be UNIQUE (73 distinct), got {} distinct of {}: {names:?}",
+            74,
+            "advertised tool names must be UNIQUE (74 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
@@ -593,6 +600,8 @@ mod tests {
             // migration 0011 / Part-B query read tools (B21).
             "query_findings",
             "get_story_finding_queue",
+            // session-context read tool (harness-session-corpus, ADR-0004 / T8).
+            "get_session_context",
         ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,

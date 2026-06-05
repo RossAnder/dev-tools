@@ -55,9 +55,10 @@ pub(crate) async fn record_event(
 
 /// Append ONE export-INERT `events` row (R19). The batch/domain write paths
 /// (`create_work_items`, `add_findings`, `batch_update_findings`,
-/// `add_tasks_to_sprint`, `record_finding_decision`, and the run/sprint
-/// creators) record a single coarse event whose `aggregate_type` MUST be one of
-/// the inert kinds (`run`/`sprint`/`finding`/`batch`) and MUST NEVER be
+/// `add_tasks_to_sprint`, `record_finding_decision`, the run/sprint creators,
+/// and the harness session-corpus ingest) record a single coarse event whose
+/// `aggregate_type` MUST be one of the inert kinds
+/// (`run`/`sprint`/`finding`/`batch`/`session`) and MUST NEVER be
 /// `"work_item"`: the git-export drain (`export.rs`) materialises ONLY
 /// `aggregate_type="work_item"` events, so a `"work_item"`-typed batch/domain
 /// event would wrongly re-render its aggregate (R-B4).
@@ -66,7 +67,8 @@ pub(crate) async fn record_event(
 /// comment at six call sites — behind a HARD runtime guard: an `aggregate_type`
 /// of `"work_item"` is rejected with [`AppError::Validation`] (a programmer
 /// error caught before the row is written) rather than silently mis-routed.
-/// Otherwise it delegates verbatim to [`record_event`].
+/// Otherwise it delegates verbatim to [`record_event`] — any inert kind
+/// (`run`/`sprint`/`finding`/`batch`/`session`) is accepted.
 pub(crate) async fn record_inert_event(
     tx: &mut dyn crate::db::DbTx,
     aggregate_type: &str,
@@ -78,7 +80,7 @@ pub(crate) async fn record_inert_event(
         return Err(AppError::Validation(format!(
             "record_inert_event refuses aggregate_type=\"work_item\" for inert event \
              '{event_type}' (R-B4: the export drain would re-render it); use an inert \
-             aggregate_type (run/sprint/finding/batch)"
+             aggregate_type (run/sprint/finding/batch/session)"
         )));
     }
     record_event(tx, aggregate_type, aggregate_id, event_type, payload).await
