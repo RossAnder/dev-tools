@@ -567,7 +567,7 @@ async fn spawned_session_persists_a_corpus_record() {
     let dedup_key = lumina::repo::corpus_dedup_key(&index, 1);
     {
         let mut tx = db.begin().await.expect("begin insert");
-        repo::insert_session_record(tx.as_mut(), session_id, 1, raw, &index, &dedup_key)
+        repo::insert_session_record(tx.as_mut(), session_id, 1, raw, index, dedup_key, "2026-06-05T00:00:00Z")
             .await
             .expect("insert spawned session record");
         tx.commit().await.expect("commit insert");
@@ -778,7 +778,7 @@ async fn same_line_via_spawn_then_ingest_collapses_to_one_row() {
         // transcript the ingest path enumerates below.
         let dedup_key = lumina::repo::corpus_dedup_key(&index, 1);
         let mut tx = db.begin().await.expect("begin insert");
-        repo::insert_session_record(tx.as_mut(), session_id, 1, raw, &index, &dedup_key)
+        repo::insert_session_record(tx.as_mut(), session_id, 1, raw, index, dedup_key, "2026-06-05T00:00:00Z")
             .await
             .expect("spawned-path insert");
         tx.commit().await.expect("commit insert");

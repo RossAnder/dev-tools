@@ -15,8 +15,9 @@
 //! short txns (each `INGEST_CHUNK_ROWS` records committed independently, every
 //! insert `ON CONFLICT DO NOTHING` so partial progress is safe and re-ingest is
 //! idempotent), with the `pty_sessions` upsert riding the FIRST chunk's txn and
-//! the single coarse `session.ingested` event emitted in its OWN final small
-//! txn AFTER the chunk loop — and only when net-new corpus rows actually
+//! the single coarse `session.ingested` event riding the SINGLE chunk's txn for
+//! a one-chunk transcript (O11) — else emitted in its OWN final small txn AFTER
+//! the chunk loop — and only when net-new corpus rows actually
 //! landed. Mirrors the `record_event`/`record_inert_event` contract: the
 //! borrowed `&str` params are `.to_owned()`'d before binding so the bound args
 //! are owned/`'static`.
@@ -113,7 +114,11 @@ pub(crate) fn corpus_raw(parsed: &JsonlRecordParsed) -> &str {
 /// (`jiff::Timestamp::now().to_string()`, see `repo/pty.rs::now_string` and
 /// `export.rs`); the `session_records.created_at` / `pty_sessions` timestamp
 /// columns are NOT NULL with no SQL default, so the Rust side supplies them.
-fn now_string() -> String {
+///
+/// `pub(crate)` so the spawned-corpus writer (`crate::pty::spawn`) can hoist ONE
+/// per-batch ingest instant and pass it down to [`insert_session_record`]'s
+/// `created_at` parameter, mirroring this path's once-per-ingest hoist (O3).
+pub(crate) fn now_string() -> String {
     jiff::Timestamp::now().to_string()
 }
 
@@ -134,8 +139,15 @@ fn now_string() -> String {
 ///     via `index.is_sidechain as i64`.
 ///   * `raw` — the VERBATIM JSONL line, stored unmodified (lossless-at-rest).
 ///   * `dedup_key` — the content-derived idempotency key (the caller computes
-///     it; this fn never derives it).
-///   * `created_at` — the ingest timestamp ([`now_string`]).
+///     it; this fn never derives it). Taken BY VALUE (a fresh per-row String)
+///     and bound by move — no clone.
+///   * `created_at` — the ONE ingest instant, computed once per batch by the
+///     caller (via [`now_string`]) and passed in, NOT re-read per row: a single
+///     logical ingest shares one timestamp and avoids N clock reads (O3).
+///
+/// `index` is consumed BY VALUE (its `record_type`/`record_uuid`/`parent_uuid`/
+/// `ts` Strings are bound by MOVE — the `Args` buffer takes them by value, so a
+/// `&SessionRecordIndex` + per-field `.clone()` was pure waste (O10)).
 ///
 /// This helper records NO event — the single coarse `session.ingested` event
 /// for an ingest batch is recorded once by [`record_session_ingested_event`],
@@ -151,11 +163,11 @@ pub async fn insert_session_record(
     session_id: &str,
     ordinal: i64,
     raw: &str,
-    index: &SessionRecordIndex,
-    dedup_key: &str,
+    index: SessionRecordIndex,
+    dedup_key: String,
+    created_at: &str,
 ) -> Result<u64, AppError> {
     let id = Uuid::now_v7().to_string();
-    let created_at = now_string();
 
     let rows_affected = tx.execute(
         r#"
@@ -170,15 +182,20 @@ pub async fn insert_session_record(
             id,
             session_id.to_owned(),
             ordinal,
-            index.record_type.clone(),
-            index.record_uuid.clone(),
-            index.parent_uuid.clone(),
-            index.ts.clone(),
+            // Bound by MOVE — the `Args` buffer takes each `T` by value, so the
+            // former per-field `.clone()`s were pure waste (O10).
+            index.record_type,
+            index.record_uuid,
+            index.parent_uuid,
+            index.ts,
             // `is_sidechain: bool` on the index → 0/1 for the INTEGER column.
             index.is_sidechain as i64,
+            // `raw` STAYS `&str` → owned here: it borrows the parsed Vec and must
+            // satisfy the bind's `'static` (lossless-at-rest also forbids changing
+            // it). `dedup_key` is a fresh per-row String, bound by move.
             raw.to_owned(),
-            dedup_key.to_owned(),
-            created_at
+            dedup_key,
+            created_at.to_owned()
         ],
     )
     .await?;
@@ -290,11 +307,16 @@ pub async fn record_session_ingested_event(
 ///      carry only their per-line record inserts. Every insert is
 ///      `ON CONFLICT DO NOTHING`, so re-calling this fn inserts ZERO new
 ///      `session_records` (idempotent).
-///   5. AFTER the chunk loop, in its OWN final small txn, record the ONE coarse
-///      export-inert `session.ingested` event — but ONLY when net-new corpus
-///      rows actually landed (summed from each insert's `rows_affected`). A
-///      re-ingest that inserts zero new rows therefore writes NO event, so
-///      repeated (re)ingests cannot accumulate never-drained export-inert rows.
+///   5. Record the ONE coarse export-inert `session.ingested` event — but ONLY
+///      when net-new corpus rows actually landed (summed from each insert's
+///      `rows_affected`). For a SINGLE-chunk transcript (the dominant case) the
+///      net-new total is known within that one chunk's txn, so the event rides
+///      that same short txn (O11 — saving an extra RESERVED-lock acquire + WAL
+///      fsync); a MULTI-chunk transcript emits it AFTER the loop in its own final
+///      small txn (net-new only totals once every chunk has committed). Either
+///      way it is AT MOST one event, and a re-ingest that inserts zero new rows
+///      writes NO event, so repeated (re)ingests cannot accumulate never-drained
+///      export-inert rows.
 ///
 /// `dedup_key` is derived by the shared [`corpus_dedup_key`] helper (the
 /// record's `record_uuid` namespaced `u:<uuid>`, else the synthetic
@@ -329,27 +351,63 @@ pub async fn ingest_transcript(
         )));
     }
 
-    let body = tokio::fs::read_to_string(transcript_path)
-        .await
-        .map_err(|e| {
-            AppError::Other(anyhow::anyhow!(
-                "reading transcript '{transcript_path}': {e}"
-            ))
+    // Step 2: the CPU-bound burst — file read + per-line parse + per-line
+    // index/dedup_key precompute (O1) + correlation harvest — runs on a BLOCKING
+    // thread so it never pins a tokio worker through a multi-MiB transcript (O2).
+    // The big `body` String lives and DIES inside the closure (it is consumed by
+    // `.lines()` and freed at closure return), so it never coexists with the
+    // chunked write loop below (O8). Only the compact `parsed`/`row_meta`/
+    // `correlation` (all `Send`) cross back to the async side.
+    let path = transcript_path.to_owned();
+    let join = tokio::task::spawn_blocking(move || -> Result<_, AppError> {
+        let body = std::fs::read_to_string(&path).map_err(|e| {
+            AppError::Other(anyhow::anyhow!("reading transcript '{path}': {e}"))
         })?;
 
-    // Parse only the NON-EMPTY lines; the 1-based ordinal counts ONLY those
-    // lines. The filter uses the SHARED `is_corpus_blank` predicate so this
-    // path and the live tail agree on exactly which lines advance the ordinal
-    // (a whitespace-only line counts on BOTH paths).
-    let parsed: Vec<(i64, JsonlRecordParsed)> = body
-        .lines()
-        .filter(|l| !crate::pty::jsonl_tail::is_corpus_blank(l))
-        .enumerate()
-        .map(|(i, line)| ((i as i64) + 1, parse_line(line)))
-        .collect();
+        // Parse only the NON-EMPTY lines; the 1-based ordinal counts ONLY those
+        // lines. The filter uses the SHARED `is_corpus_blank` predicate so this
+        // path and the live tail agree on exactly which lines advance the ordinal
+        // (a whitespace-only line counts on BOTH paths).
+        let parsed: Vec<(i64, JsonlRecordParsed)> = body
+            .lines()
+            .filter(|l| !crate::pty::jsonl_tail::is_corpus_blank(l))
+            .enumerate()
+            .map(|(i, line)| ((i as i64) + 1, parse_line(line)))
+            .collect();
 
-    // Step 2/3: harvest; drop if no lumina tool call.
-    let correlation = harvest_correlation(&parsed);
+        // O1: harvest FIRST (it needs the `&[(i64, JsonlRecordParsed)]` slice),
+        // then compute each line's index fields (a DOM re-parse of `raw`) + its
+        // `dedup_key` + extract the verbatim `raw` ONCE here, OUTSIDE any
+        // writer-locked txn — not per-row inside the `BEGIN IMMEDIATE` chunk loop.
+        // Building OWNED per-row tuples lets the write loop consume them by value
+        // (no per-row clone — O10's no-copy intent carried through), so `parsed`
+        // is dropped here too and only `rows` crosses to the write side.
+        let correlation = harvest_correlation(&parsed);
+        let rows: Vec<(i64, SessionRecordIndex, String, String)> = parsed
+            .into_iter()
+            .map(|(ordinal, p)| {
+                let index = record_index_fields(&p);
+                let dedup_key = corpus_dedup_key(&index, ordinal);
+                let raw = corpus_raw(&p).to_owned();
+                (ordinal, index, dedup_key, raw)
+            })
+            .collect();
+
+        Ok((rows, correlation))
+        // `body` (and `parsed`) dropped here (O8): both are gone before the write
+        // loop runs, so the multi-MiB transcript never coexists with the chunked
+        // writes.
+    });
+    // A `JoinError` means the blocking task panicked — an internal 500, not a
+    // caller error (Context7-verified: `spawn_blocking` → `JoinHandle<R>`, and
+    // `.await` yields `Result<R, JoinError>`; the inner `Result` is `?`'d next).
+    let (rows, correlation) = join.await.map_err(|e| {
+        AppError::Other(anyhow::anyhow!(
+            "transcript parse task for '{transcript_path}' failed: {e}"
+        ))
+    })??;
+
+    // Step 3: drop if no lumina tool call.
     if !correlation.has_lumina {
         return Ok(IngestOutcome::Dropped);
     }
@@ -357,7 +415,17 @@ pub async fn ingest_transcript(
     // Step 4: resolve the project floor (may be None → NULL).
     let project_id = super::resolve_cwd_to_project(db, cwd).await?;
 
-    let started_at = now_string();
+    // ONE ingest instant for the whole batch, shared by every row's `created_at`
+    // and the `pty_sessions` timestamps (O3 — no per-row clock read).
+    let now = now_string();
+
+    // O11: when the transcript fits in a SINGLE chunk (the dominant case), the
+    // net-new total is fully known within that one chunk's txn, so the coarse
+    // `session.ingested` event can ride that same short txn (saving an extra
+    // RESERVED-lock acquire + WAL fsync) instead of a separate post-loop txn.
+    // Multi-chunk transcripts keep the existing post-loop event txn, because
+    // net-new only accumulates across all chunks.
+    let single_chunk = rows.len() <= INGEST_CHUNK_ROWS;
 
     // CHUNKED writes. The FIRST chunk's txn also carries the pty_sessions upsert
     // (the session_records FK needs it); later chunks carry only record inserts.
@@ -365,9 +433,21 @@ pub async fn ingest_transcript(
     // whole ingest is idempotent on re-call. We sum each insert's rows_affected
     // to derive the NET-NEW count: a re-ingest collapses every insert and lands
     // zero new rows, so it must NOT re-emit the coarse event (R5/R6).
+    //
+    // `rows` is consumed BY VALUE here — each `(index, dedup_key, raw)` is MOVED
+    // into `insert_session_record` (no per-row clone — O10's no-copy intent end
+    // to end). We chunk the owned Vec by draining `INGEST_CHUNK_ROWS` items per
+    // txn off an owned iterator (a `.chunks()` slice would force a re-clone).
     let mut net_new: u64 = 0;
     let mut first_chunk = true;
-    for chunk in parsed.chunks(INGEST_CHUNK_ROWS) {
+    let mut row_iter = rows.into_iter();
+    loop {
+        let chunk: Vec<(i64, SessionRecordIndex, String, String)> =
+            row_iter.by_ref().take(INGEST_CHUNK_ROWS).collect();
+        if chunk.is_empty() {
+            break;
+        }
+
         let mut tx = db.begin().await?;
 
         if first_chunk {
@@ -379,30 +459,52 @@ pub async fn ingest_transcript(
                 project_id.as_deref(),
                 correlation.sprint_id.as_deref(),
                 correlation.agent_id.as_deref(),
-                &started_at,
+                &now,
                 None,
             )
             .await?;
             first_chunk = false;
         }
 
-        for (ordinal, p) in chunk {
-            let index = record_index_fields(p);
-            let dedup_key = corpus_dedup_key(&index, *ordinal);
-            let raw = corpus_raw(p);
-            net_new +=
-                insert_session_record(tx.as_mut(), session_id, *ordinal, raw, &index, &dedup_key)
-                    .await?;
+        for (ordinal, index, dedup_key, raw) in chunk {
+            net_new += insert_session_record(
+                tx.as_mut(),
+                session_id,
+                ordinal,
+                &raw,
+                index,
+                dedup_key,
+                &now,
+            )
+            .await?;
+        }
+
+        // O11: single-chunk fast path — emit the ONE coarse event inside THIS
+        // (the only) chunk's txn before its commit, when net-new landed. This
+        // never violates the chunked-short-txn contract: the event rides an
+        // existing short chunk txn, not a new unbounded one.
+        if single_chunk && net_new > 0 {
+            record_session_ingested_event(
+                tx.as_mut(),
+                session_id,
+                serde_json::json!({
+                    "records": net_new,
+                    "has_lumina": true,
+                }),
+            )
+            .await?;
         }
 
         tx.commit().await?;
     }
 
-    // The ONE coarse, export-inert `session.ingested` event — emitted AFTER the
-    // chunk loop in its own final small txn, and ONLY when net-new corpus rows
-    // actually landed. A re-ingest (net_new == 0) writes no event, so repeated
-    // (re)ingests can never accumulate never-drained export-inert outbox rows.
-    if net_new > 0 {
+    // The ONE coarse, export-inert `session.ingested` event for the MULTI-chunk
+    // case — emitted AFTER the chunk loop in its own final small txn, and ONLY
+    // when net-new corpus rows actually landed. (Single-chunk transcripts already
+    // emitted it inside the chunk txn above; this branch is skipped for them.) A
+    // re-ingest (net_new == 0) writes no event, so repeated (re)ingests can never
+    // accumulate never-drained export-inert outbox rows.
+    if !single_chunk && net_new > 0 {
         let mut tx = db.begin().await?;
         record_session_ingested_event(
             tx.as_mut(),
@@ -472,18 +574,37 @@ mod tests {
         // First insert writes the row.
         {
             let mut tx = db.begin().await.expect("begin");
-            insert_session_record(tx.as_mut(), "sess-1", 0, "{\"x\":1}", &index, "dk-1")
-                .await
-                .expect("first insert");
+            // `index` is reused by the second insert below, so clone it here and
+            // move the original into that call. `dedup_key`/`created_at` are
+            // passed by value / by ref per the new signature.
+            insert_session_record(
+                tx.as_mut(),
+                "sess-1",
+                0,
+                "{\"x\":1}",
+                index.clone(),
+                "dk-1".to_owned(),
+                "2026-06-05T00:00:00Z",
+            )
+            .await
+            .expect("first insert");
             tx.commit().await.expect("commit");
         }
 
         // Second insert with the SAME (session_id, dedup_key) collapses (no-op).
         {
             let mut tx = db.begin().await.expect("begin");
-            insert_session_record(tx.as_mut(), "sess-1", 1, "{\"x\":2}", &index, "dk-1")
-                .await
-                .expect("second insert (conflict no-op)");
+            insert_session_record(
+                tx.as_mut(),
+                "sess-1",
+                1,
+                "{\"x\":2}",
+                index,
+                "dk-1".to_owned(),
+                "2026-06-05T00:00:00Z",
+            )
+            .await
+            .expect("second insert (conflict no-op)");
             tx.commit().await.expect("commit");
         }
 
@@ -512,9 +633,17 @@ mod tests {
         };
         {
             let mut tx = db.begin().await.expect("begin");
-            insert_session_record(tx.as_mut(), "sess-side", 0, "{}", &index, "dk-side")
-                .await
-                .expect("insert");
+            insert_session_record(
+                tx.as_mut(),
+                "sess-side",
+                0,
+                "{}",
+                index,
+                "dk-side".to_owned(),
+                "2026-06-05T00:00:00Z",
+            )
+            .await
+            .expect("insert");
             tx.commit().await.expect("commit");
         }
 

@@ -1,0 +1,308 @@
+schema_version = 1
+last_updated = 2026-06-05
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O1"
+file = "lumina/src/repo/sessions.rs"
+line = 390
+symbol = "ingest_transcript"
+severity = "warning"
+effort = "medium"
+category = "algorithm"
+summary = "record_index_fields re-parses every line's raw JSON into a full serde_json::Value a second time, inside the chunked write loop (within BEGIN IMMEDIATE)"
+description = "Each line is parsed once by parse_line (sessions.rs:348) into JsonlRecordParsed, then the chunk write loop calls record_index_fields(p) per row (sessions.rs:390), which runs serde_json::from_str::<Value>(raw) AGAIN (parse.rs:228 Known, :254 UnknownRaw) to recover ts/isSidechain/uuids - building and discarding a full JSON DOM per row. For an N-line transcript that is N redundant DOM parses ON TOP of the N at parse time, and they run inside the writer-locked txn, inflating RESERVED-lock hold time. Fix: compute the SessionRecordIndex once during the initial map/collect pass (sessions.rs:344-349) and store (ordinal, JsonlRecordParsed, SessionRecordIndex[, dedup_key]) so the write loop binds without re-parsing. Found independently by the Memory and Algorithm lenses; highest-value item. Couples with O8 (peak memory) and O2 (move work off the lock/async worker). Risk: marginally higher peak memory (index held alongside parsed for the whole ingest) - small vs the parsed Vec already resident."
+evidence = [
+    "lumina/src/pty/jsonl_tail/parse.rs:228",
+    "lumina/src/pty/jsonl_tail/parse.rs:254",
+    "lumina/src/repo/sessions.rs:390",
+]
+dedup_id = "9c05e8c6a1edcfec"
+resolved = 2026-06-05
+resolution = "Hoisted record_index_fields + corpus_dedup_key + corpus_raw out of the BEGIN IMMEDIATE write loop: computed once per line into an owned rows Vec inside the spawn_blocking closure (sessions.rs:386-394), so the per-row serde_json::from_str::<Value> DOM re-parse no longer runs inside the writer-locked txn. Working tree only (no commit)."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O2"
+file = "lumina/src/repo/sessions.rs"
+line = 344
+symbol = "ingest_transcript"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "Whole-transcript parse_line map + two-pass harvest_correlation run synchronously between awaits, monopolising one tokio worker for the CPU burst"
+description = "Between read_to_string().await (sessions.rs:332) and the first db.begin().await (sessions.rs:371) the code runs body.lines().map(parse_line).collect() then harvest_correlation(&parsed) with no await/yield. For a multi-MiB (up to 64 MiB) transcript this is one un-yielded CPU section pinning a worker thread; tokio only preempts at await points, so it head-of-line-blocks other tasks on that worker. The 4-permit ingest semaphore bounds concurrency to <=4 but does NOT stop each admitted ingest's burst from pinning its worker. Fix: wrap read+parse+harvest in tokio::task::spawn_blocking (body is owned; Vec<(i64,JsonlRecordParsed)> + Correlation are Send) - keep the stat+64MiB cap on the async side so a hostile file is still refused without occupying a blocking thread; the DB chunk loop stays async. The spawned-tail path streams (bounded bursts) and does NOT need this. Risk: adds a thread-pool hop + moving body; verify benefit with a parse-time benchmark on a representative 5-10 MiB transcript (typical observed transcripts are single-digit MiB)."
+evidence = [
+    "https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html",
+    "https://tokio.rs/blog/2020-04-preemption",
+]
+dedup_id = "202ca95f2b3400cf"
+resolved = 2026-06-05
+resolution = "Wrapped file read + per-line parse + index precompute + harvest_correlation in tokio::task::spawn_blocking (sessions.rs:362-408); stat + 64 MiB cap stay async before the closure; JoinError maps to AppError::Other then double-? on the inner Result. CPU burst no longer pins a tokio worker. Working tree only."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O3"
+file = "lumina/src/repo/sessions.rs"
+line = 158
+symbol = "insert_session_record"
+severity = "suggestion"
+effort = "small"
+category = "memory"
+summary = "now_string() (jiff Timestamp::now().to_string()) is called once per row inside insert_session_record - N clock reads + N String allocs for one logical ingest instant"
+description = "insert_session_record calls now_string() per row (sessions.rs:158, invoked per line at :393); a 5000-line transcript makes 5000 Timestamp::now() reads + 5000 Strings for what is semantically one ingest timestamp. started_at is ALREADY hoisted once-per-ingest at sessions.rs:360 - created_at should follow: compute it once alongside started_at and thread a created_at: &str param into insert_session_record. Nothing reads created_at for ordering (line_ordinal is the order key; the docstring calls it 'the ingest timestamp'), so a shared per-ingest value is safe and arguably more correct. The per-row Uuid::now_v7() must stay (unique PK). Cheap under mimalloc + vDSO clock, so graded suggestion; clean, safe, trivial win."
+evidence = [
+    "https://docs.rs/jiff/latest/jiff/struct.Timestamp.html",
+    "lumina/src/repo/sessions.rs:360",
+]
+dedup_id = "c9c1f9b45d30c9e0"
+resolved = 2026-06-05
+resolution = "Added created_at: &str param to insert_session_record; computed once per ingest (sessions.rs:420) and once per spawn batch (spawn.rs persist_corpus_records) instead of a per-row now_string() call; now_string made pub(crate). Working tree only."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O4"
+file = "lumina/src/repo/sessions/harvest.rs"
+line = 153
+symbol = "is_lumina_tool"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "is_lumina_tool allocates a String via format! on every tool_use block just to compare against a fixed prefixed name"
+description = 'name == format!("{LUMINA_TOOL_PREFIX}{short}") (harvest.rs:153) heap-allocates per call; called up to twice per ToolUse block (CLAIM then SESSION_CONTEXT) for every assistant tool_use block (harvest.rs:229,237). Zero-alloc rewrite: name == short || name.strip_prefix(LUMINA_TOOL_PREFIX) == Some(short) - exactly equivalent for a prefix match. Flagged independently by the Memory, Serialization, and Algorithm lenses. Off the lossless write path so impact is modest, but the fix is a one-liner with zero risk.'
+evidence = ["https://doc.rust-lang.org/std/primitive.str.html#method.strip_prefix"]
+dedup_id = "3c4436ac0061d240"
+resolved = 2026-06-05
+resolution = "Replaced is_lumina_tool's per-call format! String alloc with name == short || name.strip_prefix(LUMINA_TOOL_PREFIX) == Some(short) (harvest.rs:152-156); zero-alloc, exactly equivalent prefix match. Working tree only."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O5"
+file = "lumina/src/repo/sessions/harvest.rs"
+line = 81
+symbol = "flatten_tool_result_content"
+severity = "suggestion"
+effort = "small"
+category = "serialization"
+summary = "flatten_tool_result_content clones the content String on the common path and re-parses into a full untyped Value DOM to read 1-2 fields"
+description = "Two layered wins on the claim/ctx result path (cold - only fires per registered claim/session-context result, a tiny subset of lines): (1) Trivial: the bare-string arm does Some(s.clone()) (harvest.rs:85) then from_str::<Value>(&s) (harvest.rs:115), but from_str only needs &str - drop the clone and own lazily only in the Err fallback returning Value::String(s). (2) Small: from_str builds a full serde_json::Value (BTreeMap-backed object: a map alloc + a String key + a boxed Value per field) though only claimed.task_id / task_id / sprint_id are read; deserialize into a tiny typed struct (all-Option + serde(default), #[serde(borrow)] Cow) to skip the DOM and borrow from s. Keep it permissive (NO deny_unknown_fields on the outer shape - results carry many extra fields) to preserve the never-errors-on-mismatch behaviour. Bonus: a typed target makes a renamed claim field observable (today extract_claim_task_id silently returns None). Minor: the array arm (harvest.rs:93-104) could pre-size buf with String::with_capacity. Graded suggestion because the path is cold."
+evidence = [
+    "https://docs.rs/serde_json/latest/serde_json/map/index.html",
+    "https://serde.rs/lifetimes.html",
+]
+dedup_id = "32b961025c446b6e"
+resolved = 2026-06-05
+resolution = "Applied the clone-avoidance: flatten_tool_result_content's intermediate is now Option<Cow<str>>, borrowing the bare-string content and owning only lazily in the reparse-Err fallback (harvest.rs:84-128). The optional typed-struct DOM-avoidance was deliberately NOT pursued (decision on merit, not deferred work): it would change the return type and risk the never-errors-on-shape-mismatch permissive semantics the harvest relies on. Working tree only."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "open"
+flow = "harness-session-corpus"
+id = "O6"
+file = "lumina/src/repo/sessions.rs"
+line = 389
+symbol = "insert_session_record"
+severity = "suggestion"
+effort = "medium"
+category = "query"
+summary = "Per-line single-row INSERT loop could batch each chunk into a multi-row VALUES insert - but sqlx already caches the prepared statement, so the win is only bind/step/round-trip and is modest"
+description = "Each non-blank line issues one tx.execute (sessions.rs:389->394). VERIFIED via Context7 (sqlx FAQ): sqlx caches prepared statements per-connection and a txn pins one connection, so parse/plan happens ONCE per chunk - the classic 'N re-prepares' win does NOT exist; remaining cost is N bind+step+round-trips. Batching a chunk into one multi-row INSERT ... VALUES (...) x k ON CONFLICT(session_id,dedup_key) DO NOTHING (11 cols/row => <=90 rows/stmt at the 999-var limit, <=2900 at 32766) collapses steps/round-trips ~2x in a cited benchmark - but for a once-per-session-end ingest of single-digit-MiB transcripts the absolute saving is sub-ms to low-ms, hence suggestion. GATES before applying: (a) intra-chunk dedup hazard - corpus_dedup_key returns u:<record_uuid> when present; two lines sharing a record_uuid produce identical (session_id,dedup_key) within ONE multi-row statement, which ON CONFLICT DO NOTHING may not rescue intra-statement, so batching must first dedup the chunk's keys in Rust (keep-first); the synthetic o:<ordinal> key is always unique - confirm whether real transcripts ever repeat a record_uuid. (b) net-new gate survives: a multi-row insert's rows_affected is the total inserted, so net_new += batch_rows_affected still gates the event correctly given the Rust-side dedup. (c) seam friction: db execute takes &'static str; a variable-length batched SQL string fights that signature. Benchmark ingest on a real 5 MiB transcript before applying - under ~2k rows this is noise."
+evidence = [
+    "https://github.com/launchbadge/sqlx/blob/main/FAQ.md",
+    "https://zerowidthjoiner.net/2021/02/21/sqlite-bulk-insert-benchmarking-and-optimization",
+]
+dedup_id = "707272d76662fe0a"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "open"
+flow = "harness-session-corpus"
+id = "O7"
+file = "lumina/migrations/0015_session_corpus.sql"
+line = 102
+symbol = "idx_session_records_type"
+severity = "suggestion"
+effort = "trivial"
+category = "query"
+summary = "idx_session_records_type is documented as currently UNUSED - one extra B-tree insert per corpus row backing no live read"
+description = "Each session_records insert maintains the PK, UNIQUE(session_id,dedup_key) (load-bearing for ON CONFLICT), idx_session_records_ordinal (replay), idx_session_records_type, and the partial idx_session_records_uuid. The migration comment (0015:97-101) states idx_session_records_type is 'currently UNUSED... harvest_correlation scans the parsed Vec in Rust and never queries session_records by record_type. Kept... as a reservation for a future egress/replay by-type consumer'. On a 5000-row ingest that is 5000 extra B-tree inserts (~20% of per-row index work) for zero current readers. NOTE this is a DELIBERATE documented reservation, and removing it requires a NEW forward migration (0016+) - never edit the applied 0015 (breaks the sqlx checksum / forces a dev-DB wipe). Vet downgraded warning->suggestion for exactly these reasons: keep it if the layer-3 egress/replay consumer is near; drop via a new migration only if ingest write-amp is shown to matter."
+evidence = ["lumina/migrations/0015_session_corpus.sql:97"]
+dedup_id = "0d85cf0e6fd8dd0c"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O8"
+file = "lumina/src/repo/sessions.rs"
+line = 349
+symbol = "ingest_transcript"
+severity = "suggestion"
+effort = "small"
+category = "memory"
+summary = "The whole transcript body String stays live across the entire write loop even though parse_line copies each line into an owned raw, so peak RSS is ~2x the transcript"
+description = "read_to_string holds the whole body (<=64 MiB, sessions.rs:332). parse_line stores raw: line.to_string() (parse.rs:294) - an OWNED copy, not a borrow - so parsed holds a second full copy and body is dead the instant parsed is built (sessions.rs:349) yet lives to fn end. corpus_raw returns &raw from the parsed copy, never from body, confirming body is unused downstream. Cheap fix: drop(body) (or scope body to the collect) right after sessions.rs:349, cutting steady-state peak from ~2x to ~1x transcript before the DB loop - matters most near the 64 MiB ceiling and under up-to-4 concurrent ingests. A full streaming parse->write redesign is FORECLOSED by the !has_lumina drop-everything gate (sessions.rs:353), which requires seeing the whole transcript before persisting - do not attempt it. Flagged by Memory, Algorithm, and Async lenses. Under NLL the compiler may already drop body early, so confirm with a memory profile; small absolute saving for typical single-digit-MiB transcripts."
+evidence = [
+    "lumina/src/pty/jsonl_tail/parse.rs:294",
+    "lumina/src/repo/sessions.rs:349",
+]
+dedup_id = "837669107c4200e2"
+resolved = 2026-06-05
+resolution = "Satisfied by O2's restructure: body is consumed by .lines() and dropped at the spawn_blocking closure return (sessions.rs:397), and parsed is consumed into rows there, so neither the multi-MiB body nor parsed coexists with the chunked write loop. Working tree only."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O9"
+file = "lumina/src/repo/sessions/harvest.rs"
+line = 341
+symbol = "harvest_correlation"
+severity = "suggestion"
+effort = "small"
+category = "algorithm"
+summary = "harvest_correlation scans the full record slice twice (O(2n)); the second pass is redundant for in-order transcripts, which the live-tail path already assumes"
+description = "harvest_correlation runs observe_tool_uses over the whole slice then observe_tool_results over the whole slice (harvest.rs:341-356) to handle a tool_result that lexically precedes its tool_use. The live-tail drain_and_persist_corpus folds the SAME accumulator single-pass via observe (harvest.rs:298) and is asserted correct because records arrive in file order; claude JSONL is append-only/turn-ordered, so a result physically follows its producing use. RECOMMENDED SAFE form (not an unconditional switch): single-pass observe, but track whether any tool_result referenced a not-yet-registered tool_use_id; only if that orphan flag fires, run the existing observe_tool_results pass as a fallback - keeps the re-ordered-transcript guarantee while making the common case O(n). The streaming_observe_matches_batch_harvest equality test (harvest.rs:404) must still pass. Cannot fully prove transcript ordering from these two files - grade suggestion; verify against a real multi-claim transcript before applying even the fallback form. Small per-pass cost relative to the SQL round-trips, so primarily a structural win that also unifies the two paths."
+evidence = [
+    "lumina/src/repo/sessions/harvest.rs:298",
+    "lumina/src/repo/sessions/harvest.rs:404",
+]
+dedup_id = "337585c93428b29f"
+resolved = 2026-06-05
+resolution = "harvest_correlation now folds a single in-order pass and runs the second result-only pass ONLY when an unattributed result id later became a producer (a re-ordered transcript) — harvest.rs:384-407. Orchestrator vet fix: orphan tracking confined to the batch path via a track_orphans flag (streaming observe passes false) so the live-tail accumulator stays O(distinct claim/ctx ids), not O(lines). Single-source equality test preserved; all harvest unit tests pass. Working tree only."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O10"
+file = "lumina/src/repo/sessions.rs"
+line = 173
+symbol = "insert_session_record"
+severity = "suggestion"
+effort = "small"
+category = "memory"
+summary = "insert_session_record clones the four Option<String> index fields at args bind time, but the index is a fresh per-row local that could be moved"
+description = "args![] binds index.record_type.clone()/.record_uuid.clone()/.parent_uuid.clone()/.ts.clone() (sessions.rs:173-176). VERIFIED at the seam: Args::add<T> takes T: 'static + Encode by value and moves the String's heap buffer into SqliteArguments (db/erased.rs:58-66) - no re-copy - so these clones are pure waste since index is built fresh per row (sessions.rs:390) and used once. Pass index (and dedup_key, also a fresh per-row String at :391) BY VALUE into insert_session_record and bind by move, saving up to ~5 String allocs/row. raw stays to_owned() (a borrow of the parsed Vec that must satisfy 'static - confirmed unavoidable; lossless constraint independently forbids changing it). Caveat: changing the helper signature (&SessionRecordIndex -> owned) touches the spawned-tail call site too - verify pty/spawn.rs does not reuse index after the insert. Pairs with O1 (restructures how index is produced) and O6 (batched row-arg assembly)."
+evidence = ["lumina/src/db/erased.rs:58"]
+dedup_id = "6b8904376e8b72b2"
+resolved = 2026-06-05
+resolution = "insert_session_record now takes index: SessionRecordIndex and dedup_key: String by value, bound by move (db Args::add moves the buffer) — dropped 4 per-field .clone()s + the dedup_key.to_owned() per row. Call sites updated: ingest loop, spawn.rs persist_corpus_records, in-module tests, and tests/sessions_e2e.rs. Working tree only."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O11"
+file = "lumina/src/repo/sessions.rs"
+line = 405
+symbol = "ingest_transcript"
+severity = "suggestion"
+effort = "small"
+category = "concurrency"
+summary = "The session.ingested event is written in a separate post-loop txn (extra BEGIN IMMEDIATE + fsync); for the common single-chunk transcript it could ride that one chunk's txn"
+description = "After the chunk loop the event is recorded in a fresh begin()/commit() (sessions.rs:405-417) - a second RESERVED-lock acquire/release + a second WAL fsync. Net-new is only fully known after the last chunk in the general multi-chunk case, so the event genuinely cannot ride an earlier chunk there. BUT the common case is a transcript <= INGEST_CHUNK_ROWS (500 non-empty lines) => exactly one chunk, where net_new is fully accumulated within that single txn before commit. Emitting the event inside the final chunk's txn WHEN it is the only/last chunk and net_new>0 collapses two txns to one for the dominant case (one fewer lock cycle + fsync), preserving 'at most one coarse event' and the chunked-short-txn contract (rides an existing short txn, not a new unbounded one). Risk: adds an is-final-chunk branch coupling event-emit to the loop body; weigh against the readability of the current clean post-loop block on a path that runs once per session end. Graded suggestion."
+evidence = [
+    "https://www.sqlite.org/wal.html",
+    "lumina/src/repo/sessions.rs:405",
+]
+dedup_id = "9f34c7b9901c5d99"
+resolved = 2026-06-05
+resolution = "Single-chunk transcripts (rows.len() <= INGEST_CHUNK_ROWS, the dominant case) now emit the coarse session.ingested event INSIDE the only chunk's txn (sessions.rs:486-496) instead of a separate post-loop txn, saving a RESERVED-lock cycle + WAL fsync; multi-chunk keeps the post-loop event txn (gated !single_chunk && net_new > 0). At-most-one-event + net-new>0 gate preserved. Working tree only."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "applied"
+flow = "harness-session-corpus"
+id = "O12"
+file = "lumina/src/repo/sessions/harvest.rs"
+line = 171
+symbol = "update_max"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "update_max call sites own the value (s.to_owned()) before the ordinal check, wasting the alloc on a losing update; producer HashMap is heavyweight for its tiny cardinality"
+description = "Low-priority cleanup both lenses self-rated near-leave-alone. (1) Call sites build the owned String (s.to_owned()/tid) before update_max decides if ordinal>=stored (harvest.rs:232,235,281,286), so a losing update allocates then drops. A lazy form (update_max taking FnOnce()->String) owns only on the winning branch. BUT the slice is in-order last-wins by climbing ordinal, so updates almost always WIN - wasted allocs are rare (only ties), payoff near-zero. (2) producer: HashMap<String,ResultProducer> (harvest.rs:206) holds only claim/ctx tool_use_ids (typically single-digit per session); a small Vec<(String,ResultProducer)> with linear find would avoid the SipHash + bucket alloc at this cardinality and drop the import - but the HashMap is the safer default if a pathological session drives thousands of claims. Net: genuinely marginal; an apply pass may skip O12 entirely. Recorded for completeness, not urgency."
+evidence = ["lumina/src/repo/sessions/harvest.rs:206"]
+dedup_id = "105d39eb236016b2"
+resolved = 2026-06-05
+resolution = "Applied the lazy-alloc form: update_max now takes value: impl FnOnce() -> String and owns only inside the winning ordinal branch (harvest.rs:171-181); 4 call sites pass closures. The HashMap->Vec part deliberately NOT done — the HashMap is the safer default for unbounded input (per the finding's own note). Working tree only."
+
+[[vet_events]]
+timestamp = "2026-06-05T13:35:04Z"
+command = "optimise"
+agent_index = 1
+lens = "memory"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked O1 (record_index_fields double-parse), now_string-per-row (O3), is_lumina_tool format! (O4). All verified against parse.rs:228/254 + sessions.rs:158/360 + harvest.rs:153. Args::add move semantics (O10) confirmed at db/erased.rs:58-66. No fabrications; nothing dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T13:35:04Z"
+command = "optimise"
+agent_index = 2
+lens = "serialization"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked the Value-DOM/typed-struct claim (O5, from_str::<Value> at harvest.rs:115; serde_json Value is BTreeMap-backed - confirmed), is_lumina_tool (O4), array-arm buffer. Agent was notably conservative (all suggestion-tier, several explicit rule-outs); high trust. Nothing dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T13:35:04Z"
+command = "optimise"
+agent_index = 3
+lens = "query"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+dropped_ids = ["O7"]
+rationale = "Spot-checked the batch-INSERT reframe (O6 - sqlx per-connection statement cache verified via Context7 FAQ; agent correctly down-claimed the prep win, preventing an over-claimed finding), the intra-chunk u:<uuid> dedup hazard (sound caveat), and idx_session_records_type UNUSED (O7 - confirmed at migration 0015:97-102). O7 DOWNGRADED warning->suggestion: it is a deliberate documented index reservation and removing it needs a new migration (never edit applied 0015). Nothing dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T13:35:04Z"
+command = "optimise"
+agent_index = 4
+lens = "algorithm"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+dropped_ids = ["O4"]
+rationale = "Spot-checked is_lumina_tool (O4), two-pass harvest single-pass-with-orphan-fallback (O9 - observe at harvest.rs:298, equality test at :404 confirmed), record_index_fields recompute (O1, dup of Memory lens). O4 DOWNGRADED warning->suggestion on consolidation (off the hot write path; majority grade across 3 agents was suggestion). Nothing dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T13:35:04Z"
+command = "optimise"
+agent_index = 5
+lens = "concurrency"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked spawn_blocking inline-CPU (O2 - no await between read_to_string and first begin, sessions.rs:332-371 confirmed), final-event separate txn (O11, sessions.rs:405-417), semaphore RAII no-leak (confirmation, no item). Three correctness confirmations (lock fairness, permit RAII, harvest purity) recorded as clean - no ledger items. Nothing dropped."
+dedup_id = "45ca31c3315a5978"

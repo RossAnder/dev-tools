@@ -80,9 +80,13 @@ pub struct Correlation {
 /// best-effort Value — this never panics and never errors.
 fn flatten_tool_result_content(content: &serde_json::Value) -> serde_json::Value {
     // Step 1: reduce to a single text string (or fall straight through if the
-    // content is already a structured object/number/bool/null).
-    let text: Option<String> = match content {
-        serde_json::Value::String(s) => Some(s.clone()),
+    // content is already a structured object/number/bool/null). The common
+    // bare-string arm BORROWS the inner `&str` (no eager clone) — we only own
+    // lazily in the rare reparse-failure fallback below where the owned
+    // `Value::String` is actually needed. The array arm must build an owned
+    // `String` (concatenation has no single source slice).
+    let text: Option<std::borrow::Cow<'_, str>> = match content {
+        serde_json::Value::String(s) => Some(std::borrow::Cow::Borrowed(s)),
         serde_json::Value::Array(items) => {
             // Concatenate the `text` of every `{type:"text", text:"…"}` block.
             // NOTE this is a best-effort recovery: if the result was split
@@ -99,7 +103,7 @@ fn flatten_tool_result_content(content: &serde_json::Value) -> serde_json::Value
             if buf.is_empty() {
                 None
             } else {
-                Some(buf)
+                Some(std::borrow::Cow::Owned(buf))
             }
         }
         // Already a non-string Value (object/number/etc.) — probe it directly.
@@ -120,7 +124,7 @@ fn flatten_tool_result_content(content: &serde_json::Value) -> serde_json::Value
                     "session harvest: tool_result inner text did not reparse as JSON — \
                      correlation may be missed for this record"
                 );
-                serde_json::Value::String(s)
+                serde_json::Value::String(s.into_owned())
             }
         },
         None => serde_json::Value::Null,
@@ -150,7 +154,9 @@ fn extract_claim_task_id(flattened: &serde_json::Value) -> Option<String> {
 
 /// True iff `name` is the bare or `mcp__lumina__`-prefixed form of `short`.
 fn is_lumina_tool(name: &str, short: &str) -> bool {
-    name == short || name == format!("{LUMINA_TOOL_PREFIX}{short}")
+    // Allocation-free equivalent of `name == short || name == format!("{PREFIX}{short}")`:
+    // the bare form, OR the prefix stripped leaving exactly `short`.
+    name == short || name.strip_prefix(LUMINA_TOOL_PREFIX) == Some(short)
 }
 
 /// Which lumina tool a given `tool_use_id` belongs to, recorded from the
@@ -168,9 +174,9 @@ enum ResultProducer {
 /// Last-wins-by-ordinal slot update: replace `slot` whenever `ordinal` is `>=`
 /// the stored ordinal, so the highest-ordinal value wins and a tie keeps the
 /// later-visited one. Shared by every correlation tracker.
-fn update_max(slot: &mut Option<(i64, String)>, ordinal: i64, value: String) {
+fn update_max(slot: &mut Option<(i64, String)>, ordinal: i64, value: impl FnOnce() -> String) {
     if slot.as_ref().is_none_or(|(o, _)| ordinal >= *o) {
-        *slot = Some((ordinal, value));
+        *slot = Some((ordinal, value()));
     }
 }
 
@@ -185,9 +191,12 @@ fn update_max(slot: &mut Option<(i64, String)>, ordinal: i64, value: String) {
 /// off the RESULT, but only once the producing `tool_use_id` is known. The two
 /// entry points feed those phases differently:
 ///
-///   * [`harvest_correlation`] runs [`Self::observe_tool_uses`] over the WHOLE
-///     slice first, then [`Self::observe_tool_results`] — so a result that
-///     lexically precedes its `tool_use` (a re-ordered transcript) still pairs.
+///   * [`harvest_correlation`] folds [`Self::observe`] over the slice in a SINGLE
+///     in-order pass and, ONLY if a successful result referenced a producer
+///     registered LATER (a re-ordered transcript — tracked via
+///     `unattributed_result_ids`), runs a second [`Self::observe_tool_results`]
+///     pass to attribute that orphan. The common in-order transcript needs just
+///     the one pass.
 ///   * [`Self::observe`] folds BOTH halves of one record in arrival order — the
 ///     streaming entry point for the live tail, where records arrive in file
 ///     (ordinal) order so a claim/ctx result's `tool_use` was always registered
@@ -204,6 +213,20 @@ pub struct CorrelationAccumulator {
     ctx_sprint_at: Option<(i64, String)>,
     /// `tool_use_id` → which correlation-relevant tool produced it.
     producer: std::collections::HashMap<String, ResultProducer>,
+    /// `tool_use_id`s of successful (non-error) `tool_result`s that were visited
+    /// BEFORE their producer was registered. Recorded by
+    /// [`Self::observe_tool_results`] ONLY when called with `track_orphans=true`
+    /// (the batch [`harvest_correlation`] pass); consulted ONLY by
+    /// [`harvest_correlation`] AFTER its single in-order pass — if any recorded id
+    /// has since become a claim/ctx producer (its `tool_use` appeared LATER in the
+    /// slice, a re-ordered transcript), a second result-only pass is run to
+    /// attribute it. Most recorded ids are UNRELATED tools (a `complete_task`/
+    /// `Read`/`Bash` result whose id never becomes a producer) and are correctly
+    /// ignored — so the common in-order transcript still takes ONE pass. The
+    /// strictly-in-order streaming `observe` path passes `track_orphans=false` and
+    /// never records here, so the live-tail accumulator stays O(distinct claim/ctx
+    /// ids), never O(lines).
+    unattributed_result_ids: Vec<String>,
 }
 
 impl CorrelationAccumulator {
@@ -229,10 +252,10 @@ impl CorrelationAccumulator {
             if is_lumina_tool(name, CLAIM_TOOL) {
                 self.producer.insert(id.clone(), ResultProducer::Claim);
                 if let Some(s) = input.get("sprint_id").and_then(|v| v.as_str()) {
-                    update_max(&mut self.sprint_at, ordinal, s.to_owned());
+                    update_max(&mut self.sprint_at, ordinal, || s.to_owned());
                 }
                 if let Some(a) = input.get("agent_id").and_then(|v| v.as_str()) {
-                    update_max(&mut self.agent_at, ordinal, a.to_owned());
+                    update_max(&mut self.agent_at, ordinal, || a.to_owned());
                 }
             } else if is_lumina_tool(name, SESSION_CONTEXT_TOOL) {
                 self.producer.insert(id.clone(), ResultProducer::SessionContext);
@@ -248,7 +271,7 @@ impl CorrelationAccumulator {
     /// in-order streaming fold an unknown producer means an unrelated tool (a
     /// `complete_task` result never registers, so it can't hijack attribution).
     /// No-op on a record that is not a `Known` user message with block content.
-    fn observe_tool_results(&mut self, ordinal: i64, parsed: &JsonlRecordParsed) {
+    fn observe_tool_results(&mut self, ordinal: i64, parsed: &JsonlRecordParsed, track_orphans: bool) {
         let JsonlRecordParsed::Known {
             record: JsonlRecord::User { message, .. },
             ..
@@ -272,18 +295,34 @@ impl CorrelationAccumulator {
                 continue;
             }
             let Some(kind) = self.producer.get(tool_use_id).copied() else {
+                // A successful result whose producing `tool_use` is not (yet)
+                // registered. Usually an UNRELATED tool (a `complete_task` /
+                // `Read` / `Bash` result whose id never becomes a claim/ctx
+                // producer) — genuinely unattributable, skip. But it MIGHT be a
+                // re-ordered transcript whose claim/ctx `tool_use` appears LATER:
+                // record the id so `harvest_correlation` can, after its single
+                // pass, check whether it became a producer and (only then) run a
+                // second result-only pass to attribute the orphan. ONLY the batch
+                // `harvest_correlation` pass records (track_orphans=true); the
+                // strictly-in-order streaming `observe` passes false — a result's
+                // producer always precedes it there, so an orphan is genuinely
+                // unattributable and recording it would grow the live-tail
+                // accumulator O(lines) instead of O(distinct claim/ctx ids).
+                if track_orphans {
+                    self.unattributed_result_ids.push(tool_use_id.clone());
+                }
                 continue;
             };
             let flattened = flatten_tool_result_content(content);
             match kind {
                 ResultProducer::Claim => {
                     if let Some(tid) = extract_claim_task_id(&flattened) {
-                        update_max(&mut self.task_at, ordinal, tid);
+                        update_max(&mut self.task_at, ordinal, || tid);
                     }
                 }
                 ResultProducer::SessionContext => {
                     if let Some(s) = flattened.get("sprint_id").and_then(|v| v.as_str()) {
-                        update_max(&mut self.ctx_sprint_at, ordinal, s.to_owned());
+                        update_max(&mut self.ctx_sprint_at, ordinal, || s.to_owned());
                     }
                 }
             }
@@ -297,7 +336,11 @@ impl CorrelationAccumulator {
     /// record.
     pub fn observe(&mut self, ordinal: i64, parsed: &JsonlRecordParsed) {
         self.observe_tool_uses(ordinal, parsed);
-        self.observe_tool_results(ordinal, parsed);
+        // `track_orphans=false`: the streaming path is strictly in-order, so a
+        // result's producer always precedes it — there are no recoverable orphans,
+        // and recording them would grow this accumulator O(lines) over a long
+        // spawned session (it must stay O(distinct claim/ctx ids)).
+        self.observe_tool_results(ordinal, parsed, false);
     }
 
     /// Resolve the accumulated [`Correlation`]: a claim-derived sprint wins, else
@@ -332,25 +375,47 @@ impl CorrelationAccumulator {
 ///   * `get_session_context` results FILL `sprint_id` (fallback only — never
 ///     override a claim-derived value), again gated by the `tool_use_id` pairing.
 ///
-/// Records may appear in any order: we do a FIRST pass to register every
-/// `tool_use_id`→producer pairing (and harvest the claim inputs), then a SECOND
-/// pass to attribute the results — so a result that lexically precedes its
-/// `tool_use` (a malformed/re-ordered transcript) is still paired correctly.
+/// Records may appear in any order, so correctness must survive a `tool_result`
+/// that lexically PRECEDES its producing `tool_use`. We fold the SINGLE-pass
+/// streaming [`Self::observe`] (uses + results per record, in slice order),
+/// recording the `tool_use_id` of any successful result whose producer was not
+/// yet registered. For the common IN-ORDER transcript every claim/ctx result's
+/// producer is already registered, so the single pass is the whole job —
+/// identical to the streaming `observe` fold, which is exactly what the
+/// single-source guarantee requires. We then run a SECOND result-only pass over
+/// the whole slice ONLY IF one of those recorded ids turns out to be a claim/ctx
+/// producer registered LATER (a genuinely re-ordered transcript) — recovering
+/// precisely the old two-pass behaviour for that case. Recorded ids that never
+/// became producers (a `complete_task`/`Read`/`Bash` result, the overwhelming
+/// majority) do NOT trigger the second pass, so an ordinary transcript stays
+/// single-pass. The second pass is idempotent for already-attributed results
+/// because [`update_max`] is `>=` (re-applying the same `(ordinal, value)`
+/// replaces it with itself).
 ///
 /// All records are scanned regardless of `isSidechain` (harvest-all).
 pub fn harvest_correlation(records: &[(i64, JsonlRecordParsed)]) -> Correlation {
     let mut acc = CorrelationAccumulator::default();
-    // Pass 1: register EVERY `tool_use`→producer pairing (and the claim inputs)
-    // over the whole slice FIRST, so a `tool_result` that lexically precedes its
-    // `tool_use` (a re-ordered transcript) is still attributed in pass 2.
+    // Single in-order pass: register producers + harvest inputs + attribute
+    // results per record — identical slot updates to the streaming `observe` fold
+    // (the single-source guarantee), but with `track_orphans=true` so a re-ordered
+    // transcript's orphan result ids are recorded for the conditional pass below.
     for (ordinal, parsed) in records {
         acc.observe_tool_uses(*ordinal, parsed);
+        acc.observe_tool_results(*ordinal, parsed, true);
     }
-    // Pass 2: attribute the results now that all producers are known. (The live
-    // spawned tail instead folds both halves per record via `observe`, sound
-    // because its records arrive in file order.)
-    for (ordinal, parsed) in records {
-        acc.observe_tool_results(*ordinal, parsed);
+    // Orphan fallback: run the second result-only pass ONLY if some successful
+    // result was visited before its producer was registered AND that producer
+    // is a claim/ctx tool that appeared LATER in the slice (a re-ordered
+    // transcript). An ordinary transcript records only unrelated-tool ids here
+    // (never producers) and skips the second pass entirely.
+    let needs_orphan_pass = acc
+        .unattributed_result_ids
+        .iter()
+        .any(|id| acc.producer.contains_key(id));
+    if needs_orphan_pass {
+        for (ordinal, parsed) in records {
+            acc.observe_tool_results(*ordinal, parsed, false);
+        }
     }
     acc.finish()
 }

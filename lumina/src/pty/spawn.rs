@@ -544,9 +544,17 @@ async fn persist_corpus_records(
     if recs.is_empty() {
         return Ok(());
     }
+    // ONE ingest instant for the whole batch (this is a ≤256-row tx), shared by
+    // every row's `created_at` — a per-batch hoist mirroring the ingest path's
+    // once-per-ingest `now_string` (O3 — no per-row clock read). Uses the shared
+    // `repo::now_string` so the spawned and ingest paths render the timestamp
+    // identically.
+    let created_at = repo::now_string();
     let mut tx = pool.begin().await?;
     for rec in recs {
         let raw = repo::corpus_raw(&rec.parsed);
+        // `index` is computed here and used once → moved into the insert (no
+        // clone); `dedup_key` is a fresh per-row String → moved too (O10).
         let index = jsonl_tail::record_index_fields(&rec.parsed);
         let dedup_key = repo::corpus_dedup_key(&index, rec.line_ordinal as i64);
         repo::insert_session_record(
@@ -554,8 +562,9 @@ async fn persist_corpus_records(
             session_id,
             rec.line_ordinal as i64,
             raw,
-            &index,
-            &dedup_key,
+            index,
+            dedup_key,
+            &created_at,
         )
         .await?;
     }
