@@ -36,6 +36,7 @@ Phase 4), §j (wire-task-deps composes with `compute_task_batches` in Phase 5),
   (`attributes.verification_commands`, task children's `tier`/`effort`/`complexity`).
 - `mcp__lumina__get_story_readiness` — top-of-walk + before each phase entry + after each block.
 - `mcp__lumina__record_task_activity` — final §c rollup + one §l.1 audit per overridden block.
+- `mcp__lumina__get_session_context` — session-start correlation stamp (Step 1). Read-only; called ONCE against `$work_item_id` so the resolved sprint/story/epic ids land in this session's transcript for the migration-0015 corpus harvest. See [`../mcp/SKILL.md`](../mcp/SKILL.md#session-start-correlation-migration-0015).
 
 Per-block dispatch: `Skill("lumina:<block>", "$work_item_id")` — each
 dispatched skill takes one positional arg per its `arguments` frontmatter.
@@ -47,6 +48,8 @@ dispatched skill takes one positional arg per its `arguments` frontmatter.
 `detail = mcp__lumina__get_work_item({ id: "$work_item_id" })`. If
 `detail.kind != "story"`, ABORT: `"plan-story requires a story work item;
 got kind=<kind> for id=<id>."`
+
+Once the kind check passes, call `mcp__lumina__get_session_context({ work_item_id: "$work_item_id" })` ONCE (read-only — no event) so the resolved sprint/story/epic ids are stamped into this session's transcript for the migration-0015 corpus harvest; this is correlation only and does not gate the walk.
 
 ### Step 2 — initial readiness read + header
 

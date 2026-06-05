@@ -20,6 +20,7 @@ CONVENTIONS.md §d currently cites TWO forked-context skills (`research-notes` +
 
 ## MCP tools used
 
+- `mcp__lumina__get_session_context` — session-start correlation stamp (step 1, read-only — no event). Resolves `{project_id?, sprint_id?, story_id?, epic_id?}` for `$work_item_id` so the ids land in this fork's transcript for the migration-0015 corpus harvest. See [`../mcp/SKILL.md`](../mcp/SKILL.md#session-start-correlation-migration-0015).
 - `mcp__lumina__get_work_item` — story read (folds in `attributes.problem_statement`, `attributes.execution_strategy`, `attributes.rejected_alternatives`, `attributes.verification_commands`, `research_notes`, `acceptance_criteria`, `open_questions`, `risks`, existing task children, existing `findings`).
 - `mcp__lumina__create_work_item` — creates one task work-item per accepted proposal (`{kind: "task", parent_id: $work_item_id, title, body, origin: "plan"}`); returns the new task id.
 - `mcp__lumina__set_task_kind` — stamps the new task's `task_kind` column to one of `foundation` / `main` / `polish` (matches migration 0007's narrowed CHECK constraint — see CONVENTIONS §j for why the round-2 four-value vocab was culled).
@@ -38,7 +39,9 @@ R28's contract describes not-started tasks as "superseded en-masse." Lumina's `S
 
 ### 1. Prerequisite read
 
-Call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind:
+At the top of the fork, call `mcp__lumina__get_session_context({work_item_id: "$work_item_id"})` ONCE (read-only — no event, no write) so the resolved sprint/story/epic ids are stamped into this fork's transcript for the migration-0015 corpus harvest. This is correlation only and does not gate decomposition.
+
+Then call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind:
 
 - `detail.kind` — MUST equal `"story"`. If not, abort with a one-line error: `"decompose-tasks requires a story work item; got kind=<kind>."`
 - `detail.attributes.problem_statement` — required input. If absent, ABORT with: `"decompose-tasks requires a problem_statement; run /lumina:problem-statement <id> first."`
@@ -210,7 +213,7 @@ The skill body cites tools by short name above; the canonical argument shapes ar
 - `mcp__lumina__update_work_item { id: "<prior_task_id>", status: "cancelled" }` — partial set-or-leave update; only `status` is set; other columns untouched. Used ONLY in R28's supersede branch per the Plan-deviation note.
 - `mcp__lumina__record_task_activity { work_item_id: "<story_id>", entry_type: "execution", origin: "plan", summary: "<...>", body: "session=${CLAUDE_SESSION_ID}" }` — per §c.
 
-The skill body MUST NOT call any other lumina write tools. Reading via `mcp__lumina__get_work_item` is allowed (step 1, and as needed during proposal synthesis). Forks may use `Grep`/`Glob`/`Read` for pattern-replacement enumeration.
+The skill body MUST NOT call any other lumina write tools. Read-only calls are allowed: `mcp__lumina__get_session_context` (the step-1 session-start correlation stamp) and `mcp__lumina__get_work_item` (step 1, and as needed during proposal synthesis). Forks may use `Grep`/`Glob`/`Read` for pattern-replacement enumeration.
 
 ## Pointers
 

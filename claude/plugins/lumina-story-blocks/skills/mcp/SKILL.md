@@ -214,6 +214,18 @@ Fine-grained prerequisite edges between task siblings of a story. Both endpoints
 | `get_work_item` | Fetch one item with its direct children, findings, linked context blocks, and activity log. |
 | `get_tree` | Walk the tree from an optional `root` (default: all roots), bounded by an optional `max_depth`. Returns a nested forest. |
 | `get_sprint_view` | View a story with its task subtree and each task's activity log. |
+| `get_session_context` | `{ work_item_id } → { project_id?, sprint_id?, story_id?, epic_id? }` — resolve a work item's correlation context (ancestry walk + sprint membership). Read-only. **Call it at session start against the work item you are operating on** so the resolved ids land in the transcript JSONL; lumina's session-corpus ingest (migration 0015) later harvests them to correlate this session to its sprint / story / task. See the "Session-start correlation" note below. |
+
+### Session-start correlation (migration 0015)
+
+Migration 0015 added a lossless transcript corpus: every `claude` session lumina spawns OR ingests is captured verbatim into `session_records`, and a harvest pass derives sprint / agent / task correlation hints from the `mcp__lumina__*` calls in the transcript. To make a session correlatable, call once at session start:
+
+```
+mcp__lumina__get_session_context { work_item_id: "<the id this session operates on>" }
+  → { project_id?, sprint_id?, story_id?, epic_id? }
+```
+
+The call is purely read-only (no event, no write) — its value is that the resolved ids appear in the session's transcript, where the corpus harvest can pick them up. Each `/lumina:*` entrypoint skill that opens a session against a KNOWN `work_item_id` (e.g. `plan-story`, `next-block`, `decompose-tasks`) should make this call at the top of its walk; pure-write blocks invoked mid-session do not need to repeat it. (Spawned sessions are always captured regardless; this call adds the correlation hints, and is also what lets an INGESTED terminal transcript bind to its sprint/story.)
 
 ## Call patterns
 

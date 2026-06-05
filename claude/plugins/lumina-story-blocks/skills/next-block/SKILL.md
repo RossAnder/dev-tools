@@ -20,7 +20,8 @@ per CONVENTIONS.md §a to remove its `description` from the routing context, so
 ONLY explicit triggers (`/lumina:<name>` slash, UI dispatch, explicit `Skill`
 tool call) fire it. The §a **exception** carves out read-only / documentation
 skills — these may stay model-discoverable so agents can auto-find them. This
-skill is exclusively read (one call: `mcp__lumina__get_story_readiness`) and
+skill is exclusively read (two read-only calls: `mcp__lumina__get_session_context`
+for session-start correlation + `mcp__lumina__get_story_readiness`) and
 therefore qualifies for the exception. The `mcp` catalogue uses the same
 exception; mirror its frontmatter shape (the four §a keys, no
 `disable-model-invocation`).
@@ -35,7 +36,15 @@ recommendation + slash command.
 
 ### Step 1 — read
 
-Call once:
+First, stamp session correlation once (read-only — no event, no provenance):
+
+```
+mcp__lumina__get_session_context({ work_item_id: "$work_item_id" })
+```
+
+This puts the resolved sprint/story/epic ids into the session transcript for the
+migration-0015 corpus harvest (see [`../mcp/SKILL.md`](../mcp/SKILL.md#session-start-correlation-migration-0015)).
+It is correlation-only and does not affect the recommendation. Then read readiness:
 
 ```
 readiness = mcp__lumina__get_story_readiness({ story_id: "$work_item_id" })
@@ -101,8 +110,10 @@ current variant (e.g. for `run_approach`, surface `has_approach=false` and
 
 ### Step 4 — DO NOT write anything
 
-This skill is **strictly read-only**. The MCP calls allowed are exactly one:
+This skill is **strictly read-only**. The only MCP calls allowed are the two
+read-only calls in Step 1:
 
+- `mcp__lumina__get_session_context` (session-start correlation stamp — no event, no write)
 - `mcp__lumina__get_story_readiness`
 
 The skill MUST NOT call:
