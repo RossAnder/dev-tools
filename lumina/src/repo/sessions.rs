@@ -411,6 +411,157 @@ enum ResultProducer {
     SessionContext,
 }
 
+/// Last-wins-by-ordinal slot update: replace `slot` whenever `ordinal` is `>=`
+/// the stored ordinal, so the highest-ordinal value wins and a tie keeps the
+/// later-visited one. Shared by every correlation tracker.
+fn update_max(slot: &mut Option<(i64, String)>, ordinal: i64, value: String) {
+    if slot.as_ref().is_none_or(|(o, _)| ordinal >= *o) {
+        *slot = Some((ordinal, value));
+    }
+}
+
+/// Incremental correlation harvester — the SINGLE implementation of the harvest
+/// rules, shared by both the batch ingest path ([`harvest_correlation`]) and the
+/// live spawned-session tail (`crate::pty::spawn::drain_and_persist_corpus`, R3),
+/// so the two paths can never drift on what correlation they recover.
+///
+/// The harvest is naturally two-phase: a record's `tool_use` blocks set
+/// `has_lumina`, register the claim/session-context producers, and supply the
+/// claim-INPUT sprint/agent; its `tool_result` blocks then attribute task/sprint
+/// off the RESULT, but only once the producing `tool_use_id` is known. The two
+/// entry points feed those phases differently:
+///
+///   * [`harvest_correlation`] runs [`Self::observe_tool_uses`] over the WHOLE
+///     slice first, then [`Self::observe_tool_results`] — so a result that
+///     lexically precedes its `tool_use` (a re-ordered transcript) still pairs.
+///   * [`Self::observe`] folds BOTH halves of one record in arrival order — the
+///     streaming entry point for the live tail, where records arrive in file
+///     (ordinal) order so a claim/ctx result's `tool_use` was always registered
+///     by an earlier record. It retains nothing per record beyond the small
+///     producer map + last-wins slots (no transcript buffering), so a long
+///     spawned session costs O(distinct claim/ctx tool_use_ids), not O(lines).
+#[derive(Default)]
+pub struct CorrelationAccumulator {
+    has_lumina: bool,
+    sprint_at: Option<(i64, String)>,
+    agent_at: Option<(i64, String)>,
+    task_at: Option<(i64, String)>,
+    /// `get_session_context` sprint fallback — lower priority than a claim input.
+    ctx_sprint_at: Option<(i64, String)>,
+    /// `tool_use_id` → which correlation-relevant tool produced it.
+    producer: std::collections::HashMap<String, ResultProducer>,
+}
+
+impl CorrelationAccumulator {
+    /// Fold one record's `tool_use` blocks (the registration phase): set
+    /// `has_lumina`, register claim/session-context producers, and harvest the
+    /// claim-INPUT sprint/agent (last-wins by `ordinal`). No-op on a record that
+    /// is not a `Known` assistant message.
+    fn observe_tool_uses(&mut self, ordinal: i64, parsed: &JsonlRecordParsed) {
+        let JsonlRecordParsed::Known {
+            record: JsonlRecord::Assistant { message, .. },
+            ..
+        } = parsed
+        else {
+            return;
+        };
+        for block in &message.content {
+            let AssistantContentBlock::ToolUse { id, name, input } = block else {
+                continue;
+            };
+            if name.starts_with(LUMINA_TOOL_PREFIX) {
+                self.has_lumina = true;
+            }
+            if is_lumina_tool(name, CLAIM_TOOL) {
+                self.producer.insert(id.clone(), ResultProducer::Claim);
+                if let Some(s) = input.get("sprint_id").and_then(|v| v.as_str()) {
+                    update_max(&mut self.sprint_at, ordinal, s.to_owned());
+                }
+                if let Some(a) = input.get("agent_id").and_then(|v| v.as_str()) {
+                    update_max(&mut self.agent_at, ordinal, a.to_owned());
+                }
+            } else if is_lumina_tool(name, SESSION_CONTEXT_TOOL) {
+                self.producer.insert(id.clone(), ResultProducer::SessionContext);
+            }
+        }
+    }
+
+    /// Fold one record's `tool_result` blocks (the attribution phase): attribute
+    /// task_id (claim) / sprint fallback (session-context) for a successful
+    /// (`is_error = false`) result whose producing `tool_use_id` is ALREADY
+    /// registered. A result whose producer is unknown is skipped — in the
+    /// two-pass batch entry every producer was registered first, and in the
+    /// in-order streaming fold an unknown producer means an unrelated tool (a
+    /// `complete_task` result never registers, so it can't hijack attribution).
+    /// No-op on a record that is not a `Known` user message with block content.
+    fn observe_tool_results(&mut self, ordinal: i64, parsed: &JsonlRecordParsed) {
+        let JsonlRecordParsed::Known {
+            record: JsonlRecord::User { message, .. },
+            ..
+        } = parsed
+        else {
+            return;
+        };
+        let UserContent::Blocks(blocks) = &message.content else {
+            return;
+        };
+        for block in blocks {
+            let UserContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } = block
+            else {
+                continue;
+            };
+            if *is_error {
+                continue;
+            }
+            let Some(kind) = self.producer.get(tool_use_id).copied() else {
+                continue;
+            };
+            let flattened = flatten_tool_result_content(content);
+            match kind {
+                ResultProducer::Claim => {
+                    if let Some(tid) = extract_claim_task_id(&flattened) {
+                        update_max(&mut self.task_at, ordinal, tid);
+                    }
+                }
+                ResultProducer::SessionContext => {
+                    if let Some(s) = flattened.get("sprint_id").and_then(|v| v.as_str()) {
+                        update_max(&mut self.ctx_sprint_at, ordinal, s.to_owned());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Fold ONE record in arrival order — the streaming entry point for the live
+    /// spawned tail. A single JSONL record is either an assistant (`tool_use`s)
+    /// or a user (`tool_result`s), never both, so exactly one half does work; the
+    /// in-order guarantee means a result's producer was registered by an earlier
+    /// record.
+    pub fn observe(&mut self, ordinal: i64, parsed: &JsonlRecordParsed) {
+        self.observe_tool_uses(ordinal, parsed);
+        self.observe_tool_results(ordinal, parsed);
+    }
+
+    /// Resolve the accumulated [`Correlation`]: a claim-derived sprint wins, else
+    /// the `get_session_context` fallback fills it.
+    pub fn finish(self) -> Correlation {
+        let sprint_id = self
+            .sprint_at
+            .map(|(_, v)| v)
+            .or_else(|| self.ctx_sprint_at.map(|(_, v)| v));
+        Correlation {
+            has_lumina: self.has_lumina,
+            sprint_id,
+            agent_id: self.agent_at.map(|(_, v)| v),
+            task_id: self.task_at.map(|(_, v)| v),
+        }
+    }
+}
+
 /// Scan a slice of `(ordinal, parsed-record)` for lumina's own MCP tool records
 /// and recover the correlation tuple. See [`Correlation`] for the field
 /// contract; the precise harvest rules:
@@ -434,112 +585,20 @@ enum ResultProducer {
 ///
 /// All records are scanned regardless of `isSidechain` (harvest-all).
 pub fn harvest_correlation(records: &[(i64, JsonlRecordParsed)]) -> Correlation {
-    let mut has_lumina = false;
-
-    // Last-wins-by-ordinal trackers. We keep the (ordinal, value) so a record
-    // visited out of order still resolves to the highest ordinal.
-    let mut sprint_at: Option<(i64, String)> = None;
-    let mut agent_at: Option<(i64, String)> = None;
-    let mut task_at: Option<(i64, String)> = None;
-    // get_session_context fallbacks (lower priority than the claim-derived ones).
-    let mut ctx_sprint_at: Option<(i64, String)> = None;
-
-    // tool_use_id → which correlation-relevant tool produced it (claim / ctx).
-    let mut producer: std::collections::HashMap<String, ResultProducer> =
-        std::collections::HashMap::new();
-
-    let update_max = |slot: &mut Option<(i64, String)>, ordinal: i64, value: String| {
-        if slot.as_ref().is_none_or(|(o, _)| ordinal >= *o) {
-            *slot = Some((ordinal, value));
-        }
-    };
-
-    // ---- Pass 1: tool_use blocks → has_lumina, claim inputs, id→producer map.
+    let mut acc = CorrelationAccumulator::default();
+    // Pass 1: register EVERY `tool_use`→producer pairing (and the claim inputs)
+    // over the whole slice FIRST, so a `tool_result` that lexically precedes its
+    // `tool_use` (a re-ordered transcript) is still attributed in pass 2.
     for (ordinal, parsed) in records {
-        let JsonlRecordParsed::Known {
-            record: JsonlRecord::Assistant { message, .. },
-            ..
-        } = parsed
-        else {
-            continue;
-        };
-        for block in &message.content {
-            let AssistantContentBlock::ToolUse { id, name, input } = block else {
-                continue;
-            };
-            if name.starts_with(LUMINA_TOOL_PREFIX) {
-                has_lumina = true;
-            }
-            if is_lumina_tool(name, CLAIM_TOOL) {
-                producer.insert(id.clone(), ResultProducer::Claim);
-                if let Some(s) = input.get("sprint_id").and_then(|v| v.as_str()) {
-                    update_max(&mut sprint_at, *ordinal, s.to_owned());
-                }
-                if let Some(a) = input.get("agent_id").and_then(|v| v.as_str()) {
-                    update_max(&mut agent_at, *ordinal, a.to_owned());
-                }
-            } else if is_lumina_tool(name, SESSION_CONTEXT_TOOL) {
-                producer.insert(id.clone(), ResultProducer::SessionContext);
-            }
-        }
+        acc.observe_tool_uses(*ordinal, parsed);
     }
-
-    // ---- Pass 2: tool_result blocks → attribute task_id (claim) + sprint
-    // fallback (session-context), gated by the id→producer pairing.
+    // Pass 2: attribute the results now that all producers are known. (The live
+    // spawned tail instead folds both halves per record via `observe`, sound
+    // because its records arrive in file order.)
     for (ordinal, parsed) in records {
-        let JsonlRecordParsed::Known {
-            record: JsonlRecord::User { message, .. },
-            ..
-        } = parsed
-        else {
-            continue;
-        };
-        let UserContent::Blocks(blocks) = &message.content else {
-            continue;
-        };
-        for block in blocks {
-            let UserContentBlock::ToolResult {
-                tool_use_id,
-                content,
-                is_error,
-            } = block
-            else {
-                continue;
-            };
-            if *is_error {
-                continue;
-            }
-            let Some(kind) = producer.get(tool_use_id).copied() else {
-                // Not a claim/session-context result — irrelevant to correlation.
-                continue;
-            };
-            let flattened = flatten_tool_result_content(content);
-            match kind {
-                ResultProducer::Claim => {
-                    if let Some(tid) = extract_claim_task_id(&flattened) {
-                        update_max(&mut task_at, *ordinal, tid);
-                    }
-                }
-                ResultProducer::SessionContext => {
-                    if let Some(s) = flattened.get("sprint_id").and_then(|v| v.as_str()) {
-                        update_max(&mut ctx_sprint_at, *ordinal, s.to_owned());
-                    }
-                }
-            }
-        }
+        acc.observe_tool_results(*ordinal, parsed);
     }
-
-    // sprint_id: claim-derived wins; fall back to the get_session_context signal.
-    let sprint_id = sprint_at
-        .map(|(_, v)| v)
-        .or_else(|| ctx_sprint_at.map(|(_, v)| v));
-
-    Correlation {
-        has_lumina,
-        sprint_id,
-        agent_id: agent_at.map(|(_, v)| v),
-        task_id: task_at.map(|(_, v)| v),
-    }
+    acc.finish()
 }
 
 // ---------------------------------------------------------------------------
@@ -959,6 +1018,30 @@ mod tests {
         assert_eq!(c.sprint_id.as_deref(), Some("sprint-7"));
         assert_eq!(c.agent_id.as_deref(), Some("agent-x"));
         assert_eq!(c.task_id.as_deref(), Some("task-42"));
+    }
+
+    /// The streaming `CorrelationAccumulator::observe` fold (the spawned-tail
+    /// entry point, R3) yields the SAME `Correlation` as the two-pass
+    /// `harvest_correlation` (the ingest entry point) for an in-order transcript —
+    /// locking the single-source guarantee so the two paths cannot drift.
+    #[test]
+    fn streaming_observe_matches_batch_harvest() {
+        let lines = vec![
+            (1, parse_line(&claim_tool_use_line("a1", "tu-1", "sprint-7", "agent-x"))),
+            (2, parse_line(&claim_result_line("u1", "tu-1", "task-42"))),
+        ];
+        let batch = harvest_correlation(&lines);
+
+        let mut acc = CorrelationAccumulator::default();
+        for (ordinal, parsed) in &lines {
+            acc.observe(*ordinal, parsed);
+        }
+        let streamed = acc.finish();
+
+        assert_eq!(streamed, batch, "streaming observe == two-pass harvest");
+        assert_eq!(streamed.sprint_id.as_deref(), Some("sprint-7"));
+        assert_eq!(streamed.agent_id.as_deref(), Some("agent-x"));
+        assert_eq!(streamed.task_id.as_deref(), Some("task-42"));
     }
 
     /// The single-hyphen `mcp__lumina-ask__*` ask-server tool does NOT set

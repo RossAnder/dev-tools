@@ -302,6 +302,57 @@ pub async fn set_pty_jsonl_path(
     Ok(())
 }
 
+/// Backfill a spawned session's harvested correlation hints
+/// (`sprint_id`/`agent_id`, migration 0015) onto its `pty_sessions` row.
+///
+/// The spawned-corpus pipeline (`crate::pty::spawn`, R3) harvests the same
+/// claim-record correlation the INGEST path runs and calls this once at
+/// end-of-session, closing the asymmetry where a spawned session that drove
+/// `claim_next_task` kept NULL correlation columns forever. `project_id` is NOT
+/// touched here — a spawned session's project is bound at spawn time
+/// ([`create_pty_session`]).
+///
+/// Both columns use `COALESCE($n, col)`: a `None` hint LEAVES the existing value
+/// (backfill semantics — a partial harvest never clobbers a column it didn't
+/// resolve), while a `Some` hint overwrites. The caller skips the write entirely
+/// when both hints are `None`, so this never issues a no-op UPDATE. `NotFound`
+/// via `rows_affected()==0` (the soft-delete-only row should still exist; a
+/// hard-deleted row surfaces here rather than silently no-op'ing).
+pub async fn update_pty_session_correlation(
+    db: &impl DbClient,
+    id: &str,
+    sprint_id: Option<&str>,
+    agent_id: Option<&str>,
+) -> Result<(), AppError> {
+    let now = now_string();
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute(
+            r#"
+        UPDATE pty_sessions
+        SET sprint_id = COALESCE($2, sprint_id),
+            agent_id = COALESCE($3, agent_id),
+            updated_at = $4
+        WHERE id = $1
+        "#,
+            args![
+                id.to_owned(),
+                sprint_id.map(|s| s.to_owned()),
+                agent_id.map(|s| s.to_owned()),
+                now
+            ],
+        )
+        .await?;
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("pty_session '{id}' not found")));
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Mark a session as ended: stamp `status`, `ended_at=now`, optional
 /// `exit_code`, optional `last_error`, and `updated_at=now` in one
 /// transaction. Typical terminal statuses are `completed|failed|cancelled`;

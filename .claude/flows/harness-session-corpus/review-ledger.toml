@@ -56,7 +56,7 @@ resolution = "Extracted shared corpus_dedup_key()/corpus_raw() helpers in repo/s
 [[items]]
 first_flagged = 2026-06-05
 rounds = 1
-status = "wontfix"
+status = "fixed"
 flow = "harness-session-corpus"
 id = "R3"
 file = "lumina/src/pty/spawn.rs"
@@ -76,7 +76,8 @@ related = [
     "R25",
 ]
 dedup_id = "f23b377f93192df4"
-wontfix_rationale = "Deferred refactor (agent skip): correlating spawned sessions needs end-of-session record accumulation + a pty_sessions correlation-update path in repo/pty.rs (cross-file). Track as a follow-up architectural item; re-open via /review if prioritised."
+resolved = 2026-06-05
+resolution = "Spawned corpus now harvests correlation: drain_and_persist_corpus folds each record into a shared repo::CorrelationAccumulator (single source with the ingest two-pass harvest_correlation, zero drift) and at end-of-session backfills sprint_id/agent_id onto the spawned pty_sessions row via repo::pty::update_pty_session_correlation (COALESCE backfill, best-effort). Memory-bounded (no transcript buffering)."
 
 [[items]]
 first_flagged = 2026-06-05

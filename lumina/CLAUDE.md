@@ -297,7 +297,7 @@ Migration 0015 ([ADR-0004](../docs/adr/0004-harness-session-corpus.md) layer 2) 
 
 ### Spawned-session parity (`pty/spawn.rs`)
 
-A second broadcast consumer writes `session_records` for SPA-spawned sessions too, so spawned and ingested sessions reach the same lossless-at-rest corpus. A `RecvError::Lagged` on that consumer is logged as corpus loss (a spawned session is ALWAYS captured — the drop-at-ingest asymmetry below applies only to ingested terminal transcripts).
+A cheap broadcast DRAINER forwards every record into an unbounded buffer that a batched WRITER persists into `session_records`, so spawned and ingested sessions reach the same lossless-at-rest corpus WITHOUT the bounded render broadcast ever dropping a corpus line under DB-write backpressure (R9 — the unbounded buffer, not the bounded broadcast, backs the corpus; a `RecvError::Lagged` in the drainer is now near-unreachable but still logged as corpus loss). That writer ALSO folds each drained record into the same single-source `CorrelationAccumulator` the ingest path runs and, at end-of-session, backfills the recovered `sprint_id`/`agent_id` onto the spawned `pty_sessions` row (R3 — uniform correlation with the ingest path; best-effort, since the corpus rows are already durable). A spawned session is ALWAYS captured (the drop-at-ingest asymmetry below applies only to ingested terminal transcripts).
 
 ### MCP tool (`get_session_context`)
 

@@ -31,7 +31,10 @@
 //!      UNBOUNDED buffer and a separate batched writer persists from it —
 //!      so a slow corpus write can neither make the bounded render
 //!      broadcast lag and drop corpus lines (R9), nor stall message
-//!      persistence (and vice versa).
+//!      persistence (and vice versa). That writer also folds each record
+//!      into the shared correlation harvester and, at end-of-session,
+//!      backfills the recovered `sprint_id`/`agent_id` onto the spawned
+//!      `pty_sessions` row (R3 — uniform correlation with the ingest path).
 //!   6. Best-effort supervisor registration: if `state.pty_register_tx` is
 //!      `Some`, push a `SessionRegistration`; otherwise log and explicitly
 //!      drop `handle.completed` + `handle.shutdown` (the transport handle's
@@ -571,12 +574,23 @@ async fn persist_corpus_records(
 /// backs the corpus. A batch write that errors is logged and that batch dropped
 /// (the same best-effort policy as the rest of the bridge); the unbounded buffer
 /// keeps the lag-loss vector closed regardless.
+///
+/// It is ALSO the correlation-harvest leg (R3): every drained record is folded
+/// into a [`repo::CorrelationAccumulator`] — the SAME single-source harvester the
+/// ingest path runs — and at end-of-session (the channel closing) the recovered
+/// `sprint_id`/`agent_id` are backfilled onto the spawned `pty_sessions` row, so
+/// a spawned session that drove `claim_next_task` carries the same correlation
+/// hints an ingested one would. The fold retains nothing per record beyond the
+/// accumulator's small producer map, so it adds no per-line memory to the
+/// already-bounded corpus pipeline.
 async fn drain_and_persist_corpus(
     pool: &AnyPool,
     session_id: &str,
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<jsonl_tail::BroadcastRecord>,
 ) {
     let mut batch: Vec<jsonl_tail::BroadcastRecord> = Vec::new();
+    // Single-source harvester, folded in file (ordinal) order as records drain.
+    let mut correlation = repo::CorrelationAccumulator::default();
     loop {
         batch.clear();
         // Block for the first record; `None` ⇒ all senders dropped + drained.
@@ -592,6 +606,12 @@ async fn drain_and_persist_corpus(
                 Err(_) => break, // Empty or Disconnected → flush what we have.
             }
         }
+        // Fold correlation BEFORE persisting (a persist failure must not skip the
+        // harvest, and folding has no DB cost). Records arrive in ordinal order,
+        // so the in-order `observe` fold is correct.
+        for rec in &batch {
+            correlation.observe(rec.line_ordinal as i64, &rec.parsed);
+        }
         if let Err(e) = persist_corpus_records(pool, session_id, &batch).await {
             tracing::warn!(
                 session_id = %session_id,
@@ -600,6 +620,39 @@ async fn drain_and_persist_corpus(
                 "pty corpus: batch persist failed"
             );
         }
+    }
+    // Session ended (every sender dropped + the buffer drained): backfill the
+    // harvested correlation onto the spawned `pty_sessions` row. The corpus rows
+    // are already durable, so this is purely additive (R3).
+    backfill_spawned_correlation(pool, session_id, correlation.finish()).await;
+}
+
+/// Backfill a spawned session's harvested `sprint_id`/`agent_id` correlation onto
+/// its `pty_sessions` row (R3). A no-op when the harvest found neither hint (a
+/// session that never called `claim_next_task`), so a non-correlated session
+/// issues no write. Best-effort: a failed update is logged and swallowed — the
+/// corpus rows are already persisted, so correlation is a pure enrichment.
+async fn backfill_spawned_correlation(
+    pool: &AnyPool,
+    session_id: &str,
+    correlation: repo::Correlation,
+) {
+    if correlation.sprint_id.is_none() && correlation.agent_id.is_none() {
+        return;
+    }
+    if let Err(e) = repo::pty::update_pty_session_correlation(
+        pool,
+        session_id,
+        correlation.sprint_id.as_deref(),
+        correlation.agent_id.as_deref(),
+    )
+    .await
+    {
+        tracing::warn!(
+            session_id = %session_id,
+            error = %e,
+            "pty corpus: spawned-session correlation backfill failed (corpus rows are durable)"
+        );
     }
 }
 
@@ -785,6 +838,107 @@ mod tests {
         assert_eq!(
             max_ordinal as u64, k,
             "the highest persisted ordinal equals k — contiguous, no gaps"
+        );
+    }
+
+    /// Build a `claim_next_task` `tool_use` corpus record carrying the given
+    /// sprint/agent input — the spawned-path mirror of the ingest test helpers.
+    fn claim_use_record(ordinal: u64, tool_use_id: &str, sprint: &str, agent: &str) -> BroadcastRecord {
+        let line = format!(
+            r#"{{"type":"assistant","uuid":"u-{ordinal}","message":{{"content":[{{"type":"tool_use","id":"{tool_use_id}","name":"mcp__lumina__claim_next_task","input":{{"sprint_id":"{sprint}","agent_id":"{agent}","lane":"implement"}}}}]}}}}"#
+        );
+        BroadcastRecord {
+            line_ordinal: ordinal,
+            parsed: jsonl_tail::parse_line(&line),
+        }
+    }
+
+    /// Build a SUCCESSFUL `claim_next_task` `tool_result` corpus record whose
+    /// double-encoded content carries `{"claimed":{"task_id":…}}`.
+    fn claim_result_record(ordinal: u64, tool_use_id: &str, task_id: &str) -> BroadcastRecord {
+        let inner = serde_json::json!({ "claimed": { "task_id": task_id } }).to_string();
+        let content_value = serde_json::Value::String(inner);
+        let line = format!(
+            r#"{{"type":"user","uuid":"r-{ordinal}","message":{{"content":[{{"type":"tool_result","tool_use_id":"{tool_use_id}","content":{content_value},"is_error":false}}]}}}}"#
+        );
+        BroadcastRecord {
+            line_ordinal: ordinal,
+            parsed: jsonl_tail::parse_line(&line),
+        }
+    }
+
+    /// R3: a spawned session whose drained corpus carries a `claim_next_task`
+    /// tool_use/result ends with the harvested `sprint_id`/`agent_id` backfilled
+    /// onto its `pty_sessions` row — uniform correlation with the ingest path —
+    /// AND the corpus rows still land.
+    #[tokio::test]
+    async fn drain_backfills_spawned_session_correlation() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        seed_spawned_session(&db, "sess-corr").await;
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<BroadcastRecord>();
+        tx.send(claim_use_record(1, "tu-1", "sprint-7", "agent-x"))
+            .expect("buffer use");
+        tx.send(claim_result_record(2, "tu-1", "task-42"))
+            .expect("buffer result");
+        drop(tx);
+
+        drain_and_persist_corpus(&db, "sess-corr", &mut rx).await;
+
+        // The pty_sessions row carries the harvested correlation hints.
+        let (sprint, agent): (Option<String>, Option<String>) = db
+            .query_one(
+                "SELECT sprint_id, agent_id FROM pty_sessions WHERE id = $1",
+                crate::args!["sess-corr".to_owned()],
+            )
+            .await
+            .expect("read correlation");
+        assert_eq!(
+            sprint.as_deref(),
+            Some("sprint-7"),
+            "spawned sprint_id is backfilled from the claim input"
+        );
+        assert_eq!(
+            agent.as_deref(),
+            Some("agent-x"),
+            "spawned agent_id is backfilled from the claim input"
+        );
+
+        // The corpus rows landed too (correlation is additive, never lossy).
+        let count: i64 = scalar_one(
+            &db,
+            "SELECT COUNT(*) FROM session_records WHERE session_id = $1",
+            crate::args!["sess-corr".to_owned()],
+        )
+        .await
+        .expect("count records");
+        assert_eq!(count, 2, "both corpus records persisted alongside the harvest");
+    }
+
+    /// R3: a spawned session with NO `claim_next_task` call leaves the correlation
+    /// columns NULL — the backfill is a no-op (no write) when nothing is harvested.
+    #[tokio::test]
+    async fn drain_without_claim_leaves_correlation_null() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        seed_spawned_session(&db, "sess-nocorr").await;
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<BroadcastRecord>();
+        // A plain assistant record with no lumina tool_use.
+        tx.send(assistant_record(1, "a1")).expect("buffer record");
+        drop(tx);
+
+        drain_and_persist_corpus(&db, "sess-nocorr", &mut rx).await;
+
+        let (sprint, agent): (Option<String>, Option<String>) = db
+            .query_one(
+                "SELECT sprint_id, agent_id FROM pty_sessions WHERE id = $1",
+                crate::args!["sess-nocorr".to_owned()],
+            )
+            .await
+            .expect("read correlation");
+        assert!(
+            sprint.is_none() && agent.is_none(),
+            "no claim ⇒ correlation columns stay NULL"
         );
     }
 }
