@@ -13,6 +13,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use axum::Extension;
 use axum::Router;
+use tokio::sync::Semaphore;
 
 use crate::db::AnyPool;
 
@@ -43,6 +44,13 @@ pub struct AppState {
     /// observable rather than silently dispatching to a dropped channel.
     pub pty_register_tx:
         Option<tokio::sync::mpsc::Sender<crate::pty::supervisor::SessionRegistration>>,
+    /// Concurrency limiter for the async session-transcript ingest
+    /// (`POST /api/sessions/ingest`, `http::sessions`). The SessionEnd http-hook
+    /// fires-and-forgets; the handler returns 202 immediately and `tokio::spawn`s
+    /// the DB-bound ingest, which must `acquire_owned()` a permit before touching
+    /// the pool. Capped at 4 so a burst of session-end hooks cannot stampede the
+    /// SQLite writer; re-ingest idempotency makes a dropped/abandoned task safe.
+    pub session_ingest_sem: Arc<Semaphore>,
 }
 
 impl AppState {
@@ -60,6 +68,8 @@ impl AppState {
             pty_registry: crate::pty::registry::SessionRegistry::new(),
             pty_transport: Arc::new(crate::pty::pty_transport::PtyTransport),
             pty_register_tx: None,
+            // Four concurrent transcript ingests max (see the field docstring).
+            session_ingest_sem: Arc::new(Semaphore::new(4)),
         }
     }
 }
