@@ -50,7 +50,7 @@ use tokio::sync::broadcast;
 use crate::app::AppState;
 use crate::domain::PtySession;
 use crate::error::AppError;
-use crate::pty::jsonl_tail::{self, JsonlRecordParsed};
+use crate::pty::jsonl_tail;
 use crate::pty::protocol::{MessageKind, SessionStatus, TypedMessage};
 use crate::pty::session::Session;
 use crate::pty::supervisor::SessionRegistration;
@@ -278,7 +278,7 @@ pub async fn spawn_pty_session_internal(
             }
 
             let (jsonl_tx, mut jsonl_rx) =
-                broadcast::channel::<JsonlRecordParsed>(BROADCAST_CAPACITY);
+                broadcast::channel::<jsonl_tail::BroadcastRecord>(BROADCAST_CAPACITY);
             tokio::spawn(jsonl_tail::tail(jsonl_path.clone(), jsonl_tx));
 
             // tool_use_ids of raw `lumina-ask` MCP calls to suppress from the
@@ -294,7 +294,9 @@ pub async fn spawn_pty_session_internal(
 
             loop {
                 match jsonl_rx.recv().await {
-                    Ok(parsed) => {
+                    // `line_ordinal` is carried for the (T7) corpus-ingest
+                    // consumer; this render-bridge ignores it.
+                    Ok(jsonl_tail::BroadcastRecord { parsed, .. }) => {
                         // Update Session bookkeeping FIRST so the
                         // supervisor's quiescence check on the next
                         // 250ms tick sees a fresh `last_record_at` and

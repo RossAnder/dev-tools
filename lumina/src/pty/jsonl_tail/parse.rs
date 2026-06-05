@@ -144,7 +144,13 @@ pub enum AssistantContentBlock {
 #[derive(Debug, Clone)]
 pub enum JsonlRecordParsed {
     /// Parsed into one of the known [`JsonlRecord`] variants.
-    Known(JsonlRecord),
+    ///
+    /// `raw` preserves the verbatim JSONL line the record was parsed from —
+    /// the lossless-at-rest contract for the session corpus (one
+    /// `session_records` row carries this string unmodified). The derived
+    /// render-view (`map_record_to_typed`) ignores `raw` and works off
+    /// `record`.
+    Known { raw: String, record: JsonlRecord },
     /// Couldn't parse — raw line preserved, plus a best-effort attempt to
     /// pull the `type` discriminator out (None when the JSON itself is
     /// malformed).
@@ -154,6 +160,129 @@ pub enum JsonlRecordParsed {
     },
 }
 
+/// Best-effort index fields pulled off a [`JsonlRecordParsed`] for the session
+/// corpus's per-row index columns.
+///
+/// Everything here is `Option`/defaulted: a corpus row is lossless because the
+/// verbatim raw line is stored alongside it (see [`JsonlRecordParsed::Known`]'s
+/// `raw` / [`JsonlRecordParsed::UnknownRaw`]'s `raw`), so these columns are
+/// purely for cheap querying and may be absent on any given record shape
+/// (a `mode` / `ai-title` record carries no `uuid`, etc.).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionRecordIndex {
+    /// The record's top-level `type` discriminator (`user` / `assistant` /
+    /// `summary` / `system`, or the raw `type` string of an [`UnknownRaw`]
+    /// record when one was parseable). `None` only for malformed JSON with no
+    /// recoverable `type`.
+    ///
+    /// [`UnknownRaw`]: JsonlRecordParsed::UnknownRaw
+    pub record_type: Option<String>,
+    /// The record's own `uuid`, when the variant carries one.
+    pub record_uuid: Option<String>,
+    /// The record's `parentUuid`, when present.
+    pub parent_uuid: Option<String>,
+    /// The record's wall-clock `timestamp` field, when present (verbatim
+    /// string — no parsing).
+    pub ts: Option<String>,
+    /// The record's `isSidechain` flag, defaulting to `false` when absent.
+    pub is_sidechain: bool,
+}
+
+/// Extract the best-effort index fields from a parsed record for the corpus's
+/// per-row index columns.
+///
+/// This is lossy by design — the lossless representation is the verbatim raw
+/// line stored alongside (see [`SessionRecordIndex`]). Everything returned is
+/// `Option`/defaulted: a record shape that carries no `uuid` (e.g. a `mode` /
+/// `ai-title` record landing in [`JsonlRecordParsed::UnknownRaw`]) yields
+/// `None` there, not an error.
+///
+/// `ts` / `is_sidechain` for [`JsonlRecordParsed::Known`] records are pulled
+/// from a best-effort re-parse of the raw line as a generic `Value`, because
+/// the typed [`JsonlRecord`] variants do not (today) deserialise those fields.
+pub fn record_index_fields(p: &JsonlRecordParsed) -> SessionRecordIndex {
+    match p {
+        JsonlRecordParsed::Known { raw, record } => {
+            let (record_type, record_uuid, parent_uuid) = match record {
+                JsonlRecord::User {
+                    uuid, parent_uuid, ..
+                } => (
+                    Some("user".to_string()),
+                    Some(uuid.clone()),
+                    parent_uuid.clone(),
+                ),
+                JsonlRecord::Assistant {
+                    uuid, parent_uuid, ..
+                } => (
+                    Some("assistant".to_string()),
+                    Some(uuid.clone()),
+                    parent_uuid.clone(),
+                ),
+                JsonlRecord::Summary { uuid, .. } => {
+                    (Some("summary".to_string()), uuid.clone(), None)
+                }
+                JsonlRecord::SystemMeta { .. } => (Some("system".to_string()), None, None),
+            };
+            // `timestamp` / `isSidechain` are not modelled on the typed
+            // variants; recover them best-effort from the raw line.
+            let (ts, is_sidechain) = serde_json::from_str::<serde_json::Value>(raw)
+                .ok()
+                .map(|v| {
+                    let ts = v
+                        .get("timestamp")
+                        .and_then(|t| t.as_str())
+                        .map(String::from);
+                    let is_sidechain = v
+                        .get("isSidechain")
+                        .and_then(|s| s.as_bool())
+                        .unwrap_or(false);
+                    (ts, is_sidechain)
+                })
+                .unwrap_or((None, false));
+            SessionRecordIndex {
+                record_type,
+                record_uuid,
+                parent_uuid,
+                ts,
+                is_sidechain,
+            }
+        }
+        JsonlRecordParsed::UnknownRaw { raw, parsed_type } => {
+            // Pull uuid/parentUuid/timestamp/isSidechain best-effort off the
+            // raw line — an UnknownRaw record may still carry them (e.g. an
+            // attachment/file-history-snapshot record).
+            let v = serde_json::from_str::<serde_json::Value>(raw).ok();
+            let record_uuid = v
+                .as_ref()
+                .and_then(|v| v.get("uuid"))
+                .and_then(|u| u.as_str())
+                .map(String::from);
+            let parent_uuid = v
+                .as_ref()
+                .and_then(|v| v.get("parentUuid"))
+                .and_then(|u| u.as_str())
+                .map(String::from);
+            let ts = v
+                .as_ref()
+                .and_then(|v| v.get("timestamp"))
+                .and_then(|t| t.as_str())
+                .map(String::from);
+            let is_sidechain = v
+                .as_ref()
+                .and_then(|v| v.get("isSidechain"))
+                .and_then(|s| s.as_bool())
+                .unwrap_or(false);
+            SessionRecordIndex {
+                record_type: parsed_type.clone(),
+                record_uuid,
+                parent_uuid,
+                ts,
+                is_sidechain,
+            }
+        }
+    }
+}
+
 /// Parse one JSONL line into a [`JsonlRecordParsed`].
 ///
 /// On any deserialise failure (unknown `type`, missing field, etc.) returns
@@ -161,7 +290,10 @@ pub enum JsonlRecordParsed {
 /// it as a `system` row without losing the data.
 pub fn parse_line(line: &str) -> JsonlRecordParsed {
     match serde_json::from_str::<JsonlRecord>(line) {
-        Ok(rec) => JsonlRecordParsed::Known(rec),
+        Ok(record) => JsonlRecordParsed::Known {
+            raw: line.to_string(),
+            record,
+        },
         Err(_) => {
             // Best-effort: pull out the `type` field for diagnostics. If the
             // line isn't valid JSON at all, parsed_type stays None.
@@ -266,7 +398,7 @@ pub fn resolve_projects_root() -> PathBuf {
 pub fn map_record_to_typed(parsed: &JsonlRecordParsed) -> Vec<TypedMessage> {
     let now = jiff::Timestamp::now().to_string();
     match parsed {
-        JsonlRecordParsed::Known(rec) => match rec {
+        JsonlRecordParsed::Known { record, .. } => match record {
             JsonlRecord::Assistant { message, .. } => message
                 .content
                 .iter()
@@ -454,7 +586,7 @@ mod tests {
     fn parse_assistant_text() {
         let line = r#"{"type":"assistant","uuid":"a","parentUuid":"b","message":{"content":[{"type":"text","text":"hi"}]}}"#;
         match parse_line(line) {
-            JsonlRecordParsed::Known(JsonlRecord::Assistant { uuid, parent_uuid, message }) => {
+            JsonlRecordParsed::Known { record: JsonlRecord::Assistant { uuid, parent_uuid, message }, .. } => {
                 assert_eq!(uuid, "a");
                 assert_eq!(parent_uuid.as_deref(), Some("b"));
                 assert_eq!(message.content.len(), 1);
@@ -471,7 +603,7 @@ mod tests {
     fn parse_assistant_tool_use() {
         let line = r#"{"type":"assistant","uuid":"a","message":{"content":[{"type":"tool_use","id":"id1","name":"Read","input":{"file_path":"x"}}]}}"#;
         match parse_line(line) {
-            JsonlRecordParsed::Known(JsonlRecord::Assistant { message, .. }) => {
+            JsonlRecordParsed::Known { record: JsonlRecord::Assistant { message, .. }, .. } => {
                 match &message.content[0] {
                     AssistantContentBlock::ToolUse { id, name, input } => {
                         assert_eq!(id, "id1");
@@ -489,7 +621,7 @@ mod tests {
     fn parse_user_string_content() {
         let line = r#"{"type":"user","uuid":"u","parentUuid":null,"message":{"content":"hello"}}"#;
         match parse_line(line) {
-            JsonlRecordParsed::Known(JsonlRecord::User { uuid, parent_uuid, message }) => {
+            JsonlRecordParsed::Known { record: JsonlRecord::User { uuid, parent_uuid, message }, .. } => {
                 assert_eq!(uuid, "u");
                 assert_eq!(parent_uuid, None);
                 match message.content {
@@ -505,7 +637,7 @@ mod tests {
     fn parse_user_tool_result_block() {
         let line = r#"{"type":"user","uuid":"u","message":{"content":[{"type":"tool_result","tool_use_id":"id1","content":"ok","is_error":false}]}}"#;
         match parse_line(line) {
-            JsonlRecordParsed::Known(JsonlRecord::User { message, .. }) => {
+            JsonlRecordParsed::Known { record: JsonlRecord::User { message, .. }, .. } => {
                 match &message.content {
                     UserContent::Blocks(blocks) => {
                         assert_eq!(blocks.len(), 1);
@@ -529,7 +661,7 @@ mod tests {
     fn parse_summary() {
         let line = r#"{"type":"summary","summary":"compacted","leafUuid":"x"}"#;
         match parse_line(line) {
-            JsonlRecordParsed::Known(JsonlRecord::Summary { summary, leaf_uuid, .. }) => {
+            JsonlRecordParsed::Known { record: JsonlRecord::Summary { summary, leaf_uuid, .. }, .. } => {
                 assert_eq!(summary, "compacted");
                 assert_eq!(leaf_uuid.as_deref(), Some("x"));
             }
@@ -736,5 +868,94 @@ mod tests {
             Some("malformed_jsonl")
         );
         assert_eq!(out[0].raw_text.as_deref(), Some("not-valid-json-at-all"));
+    }
+
+    // -----------------------------------------------------------------
+    // Known now carries the verbatim raw line (lossless-at-rest contract)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn known_carries_verbatim_raw_line() {
+        let line = r#"{"type":"assistant","uuid":"a","message":{"content":[{"type":"text","text":"hi"}]}}"#;
+        match parse_line(line) {
+            JsonlRecordParsed::Known { raw, record } => {
+                assert_eq!(raw, line, "Known.raw must be the verbatim parsed line");
+                assert!(matches!(record, JsonlRecord::Assistant { .. }));
+            }
+            other => panic!("expected Known, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // record_index_fields — best-effort index extraction
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn index_fields_user() {
+        let line = r#"{"type":"user","uuid":"u1","parentUuid":"p0","timestamp":"2026-06-05T00:00:00Z","message":{"content":"hi"}}"#;
+        let idx = record_index_fields(&parse_line(line));
+        assert_eq!(idx.record_type.as_deref(), Some("user"));
+        assert_eq!(idx.record_uuid.as_deref(), Some("u1"));
+        assert_eq!(idx.parent_uuid.as_deref(), Some("p0"));
+        assert_eq!(idx.ts.as_deref(), Some("2026-06-05T00:00:00Z"));
+        assert!(!idx.is_sidechain);
+    }
+
+    #[test]
+    fn index_fields_assistant_sidechain() {
+        let line = r#"{"type":"assistant","uuid":"a1","parentUuid":"u1","isSidechain":true,"message":{"content":[{"type":"text","text":"hi"}]}}"#;
+        let idx = record_index_fields(&parse_line(line));
+        assert_eq!(idx.record_type.as_deref(), Some("assistant"));
+        assert_eq!(idx.record_uuid.as_deref(), Some("a1"));
+        assert_eq!(idx.parent_uuid.as_deref(), Some("u1"));
+        assert!(idx.is_sidechain);
+    }
+
+    #[test]
+    fn index_fields_summary() {
+        let line = r#"{"type":"summary","summary":"compacted","uuid":"s1","leafUuid":"x"}"#;
+        let idx = record_index_fields(&parse_line(line));
+        assert_eq!(idx.record_type.as_deref(), Some("summary"));
+        assert_eq!(idx.record_uuid.as_deref(), Some("s1"));
+        assert_eq!(idx.parent_uuid, None);
+    }
+
+    #[test]
+    fn index_fields_system() {
+        let line = r#"{"type":"system","subtype":"turn_duration","durationMs":1234}"#;
+        let idx = record_index_fields(&parse_line(line));
+        assert_eq!(idx.record_type.as_deref(), Some("system"));
+        assert_eq!(idx.record_uuid, None);
+        assert_eq!(idx.parent_uuid, None);
+    }
+
+    #[test]
+    fn index_fields_mode_record_has_type_no_uuid() {
+        // A `mode` record lands in UnknownRaw (NOISY_INTERNAL_TYPES) and carries
+        // no uuid — record_type is recovered, uuid is None.
+        let line = r#"{"type":"mode","mode":"normal","sessionId":"s1"}"#;
+        let idx = record_index_fields(&parse_line(line));
+        assert_eq!(idx.record_type.as_deref(), Some("mode"));
+        assert_eq!(idx.record_uuid, None);
+        assert_eq!(idx.parent_uuid, None);
+        assert!(!idx.is_sidechain);
+    }
+
+    #[test]
+    fn index_fields_ai_title_record_has_type_no_uuid() {
+        let line = r#"{"type":"ai-title","aiTitle":"My Convo","sessionId":"s1"}"#;
+        let idx = record_index_fields(&parse_line(line));
+        assert_eq!(idx.record_type.as_deref(), Some("ai-title"));
+        assert_eq!(idx.record_uuid, None);
+    }
+
+    #[test]
+    fn index_fields_malformed_json_all_none() {
+        let idx = record_index_fields(&parse_line("not-json-at-all"));
+        assert_eq!(idx.record_type, None);
+        assert_eq!(idx.record_uuid, None);
+        assert_eq!(idx.parent_uuid, None);
+        assert_eq!(idx.ts, None);
+        assert!(!idx.is_sidechain);
     }
 }

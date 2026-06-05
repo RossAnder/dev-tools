@@ -59,6 +59,33 @@ mod parse;
 pub use parse::*;
 
 // ---------------------------------------------------------------------------
+// Broadcast payload
+// ---------------------------------------------------------------------------
+
+/// One broadcast item: a parsed JSONL record paired with its line ordinal.
+///
+/// `line_ordinal` is **1-BASED and counted among NON-EMPTY lines only** — the
+/// tailer skips empty lines before parsing (see [`drain_and_broadcast`]), so
+/// the first non-empty line of the file is ordinal `1`, the second `2`, and so
+/// on; blank lines never advance the counter and never produce a broadcast
+/// item. This is the SHARED ordinal definition the corpus ingest path MUST
+/// replicate so its `line_ordinal` column lines up with what live consumers
+/// see.
+///
+/// Caveat (matches the rescan note on [`tail`]): on `need_rescan` the reader
+/// seeks back to 0 and re-drains, so an ordinal-`N` record may be re-broadcast.
+/// Consumers that persist by ordinal must tolerate / dedup re-delivery (the
+/// ingest path keys on the record's own uuid where present — see plan
+/// Risks §8).
+#[derive(Debug, Clone)]
+pub struct BroadcastRecord {
+    /// 1-based ordinal among NON-EMPTY lines (see type-level docs).
+    pub line_ordinal: u64,
+    /// The parsed record (or raw-captured fallback).
+    pub parsed: JsonlRecordParsed,
+}
+
+// ---------------------------------------------------------------------------
 // File binding: snapshot-then-poll
 // ---------------------------------------------------------------------------
 
@@ -141,7 +168,8 @@ pub async fn bind_jsonl_path(
 // Watcher task: tail a JSONL file with notify + broadcast its records
 // ---------------------------------------------------------------------------
 
-/// Tail `jsonl_path` and broadcast each parsed record on `tx`.
+/// Tail `jsonl_path` and broadcast each parsed record on `tx` as a
+/// [`BroadcastRecord`] carrying its 1-based non-empty-line ordinal.
 ///
 /// Lifecycle:
 /// 1. Watch the file's parent directory non-recursively via
@@ -176,7 +204,7 @@ pub async fn bind_jsonl_path(
 /// tracks the task — dropping the watcher unsubscribes.
 pub async fn tail(
     jsonl_path: PathBuf,
-    tx: broadcast::Sender<JsonlRecordParsed>,
+    tx: broadcast::Sender<BroadcastRecord>,
 ) {
     tracing::info!(
         path = %jsonl_path.display(),
@@ -263,9 +291,16 @@ pub async fn tail(
     };
     let mut reader = BufReader::new(file);
 
+    // Cumulative 1-based ordinal of NON-EMPTY lines seen across drains. This
+    // is the running count `drain_and_broadcast` increments per emitted record
+    // so the ordinal stays file-global, not per-drain-pass. On `need_rescan`
+    // we seek back to 0 and reset this so the re-read re-numbers from line 1
+    // (consumers tolerate the re-delivery — see `BroadcastRecord` docs).
+    let mut line_ordinal: u64 = 0;
+
     // Initial drain — Claude Code may have written records between the
     // Create event firing and our open call.
-    if !drain_and_broadcast(&mut reader, &tx, &jsonl_path).await {
+    if !drain_and_broadcast(&mut reader, &tx, &jsonl_path, &mut line_ordinal).await {
         return;
     }
 
@@ -282,6 +317,8 @@ pub async fn tail(
                 tracing::error!(error = %e, "jsonl_tail: rescan seek failed");
                 return;
             }
+            // Re-numbering from line 1 on the full re-read.
+            line_ordinal = 0;
         }
 
         // Trigger a drain on any event whose path matches our file (Create
@@ -303,21 +340,29 @@ pub async fn tail(
             continue;
         }
 
-        if !drain_and_broadcast(&mut reader, &tx, &jsonl_path).await {
+        if !drain_and_broadcast(&mut reader, &tx, &jsonl_path, &mut line_ordinal).await {
             return;
         }
     }
 }
 
-/// Read from `reader` to EOF; parse each non-empty line and broadcast it.
+/// Read from `reader` to EOF; parse each non-empty line and broadcast it
+/// paired with its 1-based non-empty-line ordinal.
+///
+/// `line_ordinal` is the caller-owned running count of NON-EMPTY lines emitted
+/// so far across all drain passes (file-global, NOT per-pass). It is
+/// incremented BEFORE each broadcast — so the first non-empty line of the file
+/// is broadcast with `line_ordinal = 1`. Empty lines are skipped before the
+/// increment and never advance it (the pinned contract on [`BroadcastRecord`]).
 ///
 /// Returns `false` if the broadcast channel is dead (no receivers) — the
 /// caller should then exit the watcher task. Returns `true` on any other
 /// outcome (including IO errors, which are logged and swallowed).
 async fn drain_and_broadcast(
     reader: &mut BufReader<tokio::fs::File>,
-    tx: &broadcast::Sender<JsonlRecordParsed>,
+    tx: &broadcast::Sender<BroadcastRecord>,
     path: &Path,
+    line_ordinal: &mut u64,
 ) -> bool {
     let mut lines = reader.lines();
     let mut bytes_read: usize = 0;
@@ -330,8 +375,17 @@ async fn drain_and_broadcast(
                 }
                 bytes_read += line.len();
                 lines_read += 1;
+                // 1-based among non-empty lines (file-global): advance the
+                // shared counter, then tag this record with it.
+                *line_ordinal += 1;
                 let parsed = parse_line(&line);
-                if tx.send(parsed).is_err() {
+                if tx
+                    .send(BroadcastRecord {
+                        line_ordinal: *line_ordinal,
+                        parsed,
+                    })
+                    .is_err()
+                {
                     // No subscribers — the bridge task has been dropped.
                     // This is terminal for the watcher.
                     return false;
