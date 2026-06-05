@@ -530,7 +530,12 @@ mod tests {
 
         let (bcast_tx, _bcast_rx) = broadcast::channel(16);
         let (input_tx, _input_rx) = tokio_mpsc::channel(4);
-        let session = Session::new(session_id, bcast_tx, input_tx);
+        let session = Session::new(
+            session_id,
+            bcast_tx,
+            input_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
         session.set_status(SessionStatus::Idle).await;
         registry.insert(session.clone()).await;
 

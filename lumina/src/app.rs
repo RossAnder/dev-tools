@@ -169,6 +169,10 @@ pub async fn serve() -> anyhow::Result<()> {
     // /api/export` endpoint (`http::export`), which runs one `export_pending`
     // pass on demand. Outbox rows simply accumulate until a drain is requested
     // (the transactional-outbox recovery invariant means none are ever lost).
+    // Keep a handle to the session registry so the shutdown path can hard-kill
+    // any still-running PTY children before the runtime drops (the build below
+    // consumes `state`).
+    let pty_registry = state.pty_registry.clone();
     let app = build_router(state);
 
     let port: u16 = parse_env_or_default("PORT", DEFAULT_PORT);
@@ -185,9 +189,39 @@ pub async fn serve() -> anyhow::Result<()> {
         .await
         .context("axum server error");
 
-    // Shutdown ordering: HTTP server has already drained above. Stop the PTY
-    // supervisor (cancels the loop, awaits join). There is no export loop to
-    // stop — export is on-demand via `POST /api/export`.
+    // Shutdown ordering: HTTP server has already drained above.
+    //
+    // First, hard-kill every still-running PTY child. The tokio runtime drop at
+    // the end of `main` WAITS for in-flight `spawn_blocking` tasks (it cannot
+    // cancel an OS thread mid-syscall), and each live session parks one in
+    // `child.wait()` — so a child still alive here would stall shutdown until it
+    // exits on its own. Cancelling each session's transport token fires its
+    // cancel task (kill child + drop the PTY master), letting `child.wait()`
+    // return and the supervisor reap it. We then briefly wait for the registry
+    // to drain (bounded), so the children are dead before the runtime drops.
+    let sessions = pty_registry.list().await;
+    if !sessions.is_empty() {
+        const SHUTDOWN_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+        const SHUTDOWN_DRAIN_POLL: std::time::Duration = std::time::Duration::from_millis(25);
+        tracing::info!(count = sessions.len(), "shutdown: hard-killing live PTY sessions");
+        for session in &sessions {
+            session.shutdown.cancel();
+        }
+        // Yield until the supervisor has reaped them (registry empties) or the
+        // bounded deadline elapses — a killed child's `child.wait()` returns in
+        // milliseconds, so this is near-instant in practice; the deadline only
+        // guards a child that refuses to die even after a kill.
+        let deadline = tokio::time::Instant::now() + SHUTDOWN_DRAIN_TIMEOUT;
+        while tokio::time::Instant::now() < deadline {
+            if pty_registry.list().await.is_empty() {
+                break;
+            }
+            tokio::time::sleep(SHUTDOWN_DRAIN_POLL).await;
+        }
+    }
+
+    // Stop the PTY supervisor (cancels the loop, awaits join). There is no
+    // export loop to stop — export is on-demand via `POST /api/export`.
     supervisor.shutdown().await;
 
     serve_result?;

@@ -622,7 +622,12 @@ mod tests {
 
         let (bcast_tx, mut bcast_rx) = broadcast::channel(16);
         let (input_tx, _input_rx) = mpsc::channel(8);
-        let session = Session::new(SessionId::new(), bcast_tx, input_tx);
+        let session = Session::new(
+            SessionId::new(),
+            bcast_tx,
+            input_tx,
+            tokio_util::sync::CancellationToken::new(),
+        );
         let sid = session.id;
         state.pty_registry.insert(session.clone()).await;
 

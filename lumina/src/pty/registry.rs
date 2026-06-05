@@ -71,7 +71,12 @@ mod tests {
     fn make_session() -> Arc<Session> {
         let (bcast, _bcast_rx) = broadcast::channel(16);
         let (input_tx, _input_rx) = mpsc::channel(4);
-        Session::new(SessionId::new(), bcast, input_tx)
+        Session::new(
+            SessionId::new(),
+            bcast,
+            input_tx,
+            tokio_util::sync::CancellationToken::new(),
+        )
     }
 
     #[tokio::test]

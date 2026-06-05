@@ -177,7 +177,12 @@ pub async fn spawn_pty_session_internal(
     // here and bridge the transport tail into it. Every WS client subscribes
     // through `Session::subscribe()` against our owned sender.
     let (broadcast_tx, _initial_rx) = broadcast::channel::<TypedMessage>(BROADCAST_CAPACITY);
-    let session = Session::new(session_id, broadcast_tx.clone(), handle.inbound);
+    let session = Session::new(
+        session_id,
+        broadcast_tx.clone(),
+        handle.inbound,
+        handle.shutdown.clone(),
+    );
 
     // Clone the Arc<Session> BEFORE insert so the bridge task can retain its
     // own handle (next_sequence / set_status both live on `Session`).
@@ -510,10 +515,14 @@ pub async fn spawn_pty_session_internal(
             session_id = %session_id_str,
             "pty spawn: no supervisor register channel attached"
         );
-        // TransportHandle's Drop does not chain these — drop explicitly so
-        // the child-wait worker is released and the cancel task unblocks.
+        // No supervisor will reap this session, so terminate it now: cancelling
+        // the token fires the transport's cancel task (kill child + drop the PTY
+        // master), which releases the blocking child-wait / reader workers. A
+        // raw CancellationToken does NOT cancel on drop, so an explicit cancel is
+        // required — `drop` here would leave the child running. `completed` has
+        // no reader without a supervisor, so drop it.
         drop(handle.completed);
-        drop(handle.shutdown);
+        handle.shutdown.cancel();
     }
 
     Ok(row)

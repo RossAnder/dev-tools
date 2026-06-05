@@ -360,16 +360,25 @@ async fn patch_session_stub(
     )
 }
 
-/// `DELETE /pty/sessions/{id}` — cancel the session. Three best-effort steps:
+/// Grace period between a `DELETE`'s soft `Cancel` (ETX) and the hard-kill that
+/// cancels the transport token. Long enough for a responsive `claude` to flush
+/// and exit on the ETX; short enough that closing a session feels immediate.
+const CANCEL_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// `DELETE /pty/sessions/{id}` — cancel the session. Best-effort steps:
 ///
 ///   1. Look up the in-memory `Session` in the registry; if present, push a
 ///      `Cancel` `InputFrame` down its input channel so the PTY writer worker
 ///      sends ETX to the child.
 ///   2. Transition the in-memory `SessionStatus` to `Cancelled`.
-///   3. Persist via `repo::pty::delete_pty_session` (which stamps
+///   3. After `CANCEL_GRACE`, hard-kill: cancel the session's transport token so
+///      an idle `claude` that ignored the ETX is terminated rather than lingering
+///      until process shutdown (which would otherwise stall the drain on its
+///      blocking `child.wait()` worker). Idempotent — a no-op if already reaped.
+///   4. Persist via `repo::pty::delete_pty_session` (which stamps
 ///      `status='cancelled'` + `ended_at=now`).
 ///
-/// 404 when step 3 finds no row. 204 on success.
+/// 404 when step 4 finds no row. 204 on success.
 async fn cancel_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -392,6 +401,17 @@ async fn cancel_session(
             session
                 .set_status(crate::pty::protocol::SessionStatus::Cancelled)
                 .await;
+            // Grace-then-hard-kill: an idle `claude` at its prompt ignores the
+            // ETX and keeps running, which would otherwise leave the child (and
+            // its blocking child.wait / reader workers) alive until process
+            // shutdown. After a short grace, cancel the transport token to
+            // hard-kill the child + drop the PTY master. Idempotent: if the
+            // child already exited and was reaped, the kill is a benign no-op.
+            let shutdown = session.shutdown.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(CANCEL_GRACE).await;
+                shutdown.cancel();
+            });
         }
     }
 

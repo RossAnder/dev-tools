@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 
 use crate::pty::protocol::{AskOutcome, InputFrame, SessionId, SessionStatus, TypedMessage};
 
@@ -28,6 +29,14 @@ pub struct Session {
     pub status: Mutex<SessionStatus>,
     pub broadcast_tx: broadcast::Sender<TypedMessage>,
     pub input_tx: mpsc::Sender<InputFrame>,
+    /// Cancels this session's PTY transport. Firing it drives the transport's
+    /// cancel task to hard-kill the `claude` child and drop the PTY master,
+    /// which releases the blocking `child.wait()` / reader workers. Held here so
+    /// `DELETE` (grace-then-kill) and process shutdown can both terminate the
+    /// child — a raw `CancellationToken` does NOT cancel on drop, so it must be
+    /// `.cancel()`-ed explicitly. A dummy (never-cancelled) token is fine for a
+    /// session with no real transport (tests, the ask-only stub).
+    pub shutdown: CancellationToken,
     /// Tool-use ids the bridge has observed as `ToolUse` rows but has NOT
     /// yet seen a matching `ToolResult` for. Empties when every outstanding
     /// tool call has been answered — a precondition for the
@@ -56,12 +65,14 @@ impl Session {
         id: SessionId,
         broadcast_tx: broadcast::Sender<TypedMessage>,
         input_tx: mpsc::Sender<InputFrame>,
+        shutdown: CancellationToken,
     ) -> Arc<Self> {
         Arc::new(Self {
             id,
             status: Mutex::new(SessionStatus::Spawning),
             broadcast_tx,
             input_tx,
+            shutdown,
             outstanding_tool_uses: Mutex::new(HashSet::new()),
             last_record_at: AtomicI64::new(0),
             sequence_counter: AtomicI64::new(1),
