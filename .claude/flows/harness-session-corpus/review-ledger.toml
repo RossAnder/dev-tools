@@ -191,7 +191,7 @@ resolution = "Added resolve_projects_root_strict() with no CWD fallback; confine
 [[items]]
 first_flagged = 2026-06-05
 rounds = 1
-status = "wontfix"
+status = "fixed"
 flow = "harness-session-corpus"
 id = "R9"
 file = "lumina/src/pty/spawn.rs"
@@ -205,7 +205,8 @@ description = "The corpus consumer shares the bounded broadcast ring with the re
 evidence = ["lumina/src/pty/spawn.rs:330-383"]
 related = ["R3"]
 dedup_id = "55f40cfdfa110ea5"
-wontfix_rationale = "Deferred refactor (agent skip): fixing the lossless-on-lossy-broadcast needs a batching window or backpressured channel (a deliberate concurrency-model change). Lagged-as-loss logging retained; R25's extracted seam eases a future fix. Re-open via /review if prioritised."
+resolved = 2026-06-05
+resolution = "Decoupled the spawned corpus from the bounded render broadcast (previously deferred): a cheap drainer forwards each broadcast record into an UNBOUNDED mpsc buffer (O(1), no DB work, keeps pace with the producer), and a separate batched writer (drain_and_persist_corpus + persist_corpus_records, <=256 rows/tx) persists from it. The unbounded buffer, not the bounded broadcast, now backs the lossless corpus, so a slow writer costs memory not dropped lines; the per-record begin/commit that maximised lag risk is gone. tail/producer and the render bridge untouched. Added unit tests for batch idempotency and lossless drain across batch boundaries."
 
 [[items]]
 first_flagged = 2026-06-05

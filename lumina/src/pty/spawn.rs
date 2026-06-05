@@ -25,10 +25,13 @@
 //!      mapped `TypedMessage` to `pty_messages`, (c) flips the session
 //!      status from `Spawning` to `Idle` on the first record, and (d)
 //!      forwards messages into the registry-side broadcast for WS fan-out.
-//!      A SECOND, independent broadcast consumer (T7) writes the lossless
+//!      A SECOND, independent corpus pipeline (T7) writes the lossless
 //!      `session_records` corpus (uniform losslessness with the ingest
-//!      path) — kept separate from the render-bridge so a corpus-write
-//!      failure can never stall message persistence, and vice versa.
+//!      path): a cheap drainer forwards each broadcast record into an
+//!      UNBOUNDED buffer and a separate batched writer persists from it —
+//!      so a slow corpus write can neither make the bounded render
+//!      broadcast lag and drop corpus lines (R9), nor stall message
+//!      persistence (and vice versa).
 //!   6. Best-effort supervisor registration: if `state.pty_register_tx` is
 //!      `Some`, push a `SessionRegistration`; otherwise log and explicitly
 //!      drop `handle.completed` + `handle.shutdown` (the transport handle's
@@ -285,66 +288,84 @@ pub async fn spawn_pty_session_internal(
             let (jsonl_tx, mut jsonl_rx) =
                 broadcast::channel::<jsonl_tail::BroadcastRecord>(BROADCAST_CAPACITY);
 
-            // ---- T7: lossless session-corpus consumer ----
+            // ---- T7: lossless session-corpus pipeline (R9) ----
             //
-            // Subscribe a SECOND, independent consumer to the SAME broadcast
-            // BEFORE the tail task is spawned, so it cannot miss the records
-            // that arrive during the initial drain. This consumer writes the
-            // lossless `session_records` corpus (uniform losslessness with the
-            // ingest path, ADR-0004 layer 2). It is a SEPARATE task — never
-            // folded into the render-bridge loop below — so a corpus-write
-            // failure can never stall message persistence (and vice versa).
+            // Writes the lossless `session_records` corpus (uniform losslessness
+            // with the ingest path, ADR-0004 layer 2). Spawned sessions are
+            // ALWAYS captured: there is no drop-gate, and the `pty_sessions` row
+            // already exists with `source='spawned'` (created at step 3 above),
+            // so the `session_records.session_id` FK is satisfied without
+            // touching `create_pty_session` here.
             //
-            // Spawned sessions are ALWAYS captured: there is no drop-gate, and
-            // the `pty_sessions` row already exists with `source='spawned'`
-            // (created at step 3 above), so the `session_records.session_id` FK
-            // is satisfied without touching `create_pty_session` here.
+            // The corpus must NOT depend on the bounded render broadcast keeping
+            // pace with a slow DB writer (R9): a corpus writer that fell behind a
+            // burst would get `RecvError::Lagged` and those JSONL lines would be
+            // GONE from the "lossless" corpus, with no replay source. So the two
+            // concerns are decoupled into a DRAINER + a WRITER:
+            //
+            //   * the DRAINER subscribes to the broadcast (BEFORE the tail task
+            //     is spawned, so it cannot miss the initial drain) and forwards
+            //     each record into an UNBOUNDED buffer with O(1) non-blocking
+            //     sends — no DB work in the recv loop, so it keeps pace with the
+            //     producer and effectively never lags;
+            //   * the WRITER batch-drains that unbounded buffer into the corpus.
+            //
+            // The unbounded buffer — not the bounded broadcast — now backs the
+            // corpus, so a slow/stalled writer costs MEMORY, never dropped lines.
+            // Both run in tasks SEPARATE from the render-bridge loop below, so a
+            // corpus write can never stall message persistence (and vice versa).
             {
-                let corpus_pool = pool.clone();
-                let corpus_session_id = session_id_str.clone();
-                let mut corpus_rx = jsonl_tx.subscribe();
-                tokio::spawn(async move {
-                    loop {
-                        match corpus_rx.recv().await {
-                            Ok(rec) => {
-                                // Per-record raw/dedup derivation + short write
-                                // tx is factored into `persist_corpus_record`
-                                // (the testable seam, R25) so the broadcast loop
-                                // here owns only the recv/lag/close control flow.
-                                if let Err(e) = persist_corpus_record(
-                                    &corpus_pool,
-                                    &corpus_session_id,
-                                    &rec,
-                                )
-                                .await
-                                {
+                let (corpus_buf_tx, mut corpus_buf_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<jsonl_tail::BroadcastRecord>();
+
+                // Drainer: broadcast → unbounded buffer (cheap, non-blocking).
+                {
+                    let corpus_session_id = session_id_str.clone();
+                    let mut corpus_rx = jsonl_tx.subscribe();
+                    tokio::spawn(async move {
+                        loop {
+                            match corpus_rx.recv().await {
+                                // `send` fails only if the writer half is gone —
+                                // nothing left to forward to, so exit.
+                                Ok(rec) => {
+                                    if corpus_buf_tx.send(rec).is_err() {
+                                        break;
+                                    }
+                                }
+                                // A drainer lag is now near-unreachable (its only
+                                // per-record work is an O(1) forward), but were it
+                                // ever to happen it is still genuine corpus loss,
+                                // so LOG rather than swallow silently.
+                                Err(broadcast::error::RecvError::Lagged(n)) => {
                                     tracing::warn!(
                                         session_id = %corpus_session_id,
-                                        error = %e,
-                                        "pty corpus: persist_corpus_record failed"
+                                        dropped = n,
+                                        "pty corpus: broadcast lagged — {n} record(s) lost before \
+                                         the unbounded buffer (should be unreachable post-R9)"
                                     );
-                                    // Logged + swallowed; keep consuming.
+                                    continue;
                                 }
+                                // Tail task ended → drop the buffer sender so the
+                                // writer drains the remainder and then exits.
+                                Err(broadcast::error::RecvError::Closed) => break,
                             }
-                            // Lossless capture is the contract, so a lag (slow
-                            // corpus writer outrun by the broadcast) is a
-                            // corpus-LOSS event we LOG rather than silently
-                            // swallow. `Lagged` repositions the receiver to the
-                            // oldest retained record, so we keep consuming.
-                            Err(broadcast::error::RecvError::Lagged(n)) => {
-                                tracing::warn!(
-                                    session_id = %corpus_session_id,
-                                    dropped = n,
-                                    "pty corpus: broadcast lagged — {n} record(s) lost from the \
-                                     lossless corpus for this session"
-                                );
-                                continue;
-                            }
-                            // Sender gone (tail task ended) → exit cleanly.
-                            Err(broadcast::error::RecvError::Closed) => break,
                         }
-                    }
-                });
+                    });
+                }
+
+                // Writer: unbounded buffer → `session_records`, batched per tx.
+                {
+                    let corpus_pool = pool.clone();
+                    let corpus_session_id = session_id_str.clone();
+                    tokio::spawn(async move {
+                        drain_and_persist_corpus(
+                            &corpus_pool,
+                            &corpus_session_id,
+                            &mut corpus_buf_rx,
+                        )
+                        .await;
+                    });
+                }
             }
 
             tokio::spawn(jsonl_tail::tail(jsonl_path.clone(), jsonl_tx));
@@ -495,42 +516,91 @@ pub async fn spawn_pty_session_internal(
     Ok(row)
 }
 
-/// Persist ONE spawned-session corpus record: derive the verbatim raw line and
-/// the per-line `dedup_key` (both via the shared `repo::sessions` helpers, so
-/// the spawned path and the ingest path can never drift on either), then run a
-/// short begin/insert/commit write tx.
+/// Maximum number of corpus records folded into a single write transaction by
+/// the batched writer ([`drain_and_persist_corpus`]). A burst that arrives while
+/// the writer is mid-commit is buffered (unbounded) and then drained up to this
+/// many rows per tx — amortising begin/commit over many inserts so the writer
+/// keeps up without per-record tx overhead, while bounding the tx size (and the
+/// rollback blast radius of a write error) rather than the buffer.
+const CORPUS_WRITE_BATCH_MAX: usize = 256;
+
+/// Persist a BATCH of spawned-session corpus records in ONE write transaction.
 ///
-/// Extracted from the broadcast consumer loop in `spawn_pty_session_internal`
-/// (R25) so the per-record write body is unit-testable in isolation — the loop
-/// retains only the recv / `Lagged` / `Closed` control flow (the `Lagged`
-/// corpus-loss path is therefore NOT exercised by this fn's unit test).
-///
-/// The dedup_key is the shared `corpus_dedup_key` scheme (the record's own uuid
-/// namespaced `u:<uuid>`, else the synthetic `o:<ordinal>`); diverging would
-/// break cross-path dedup on re-read / re-ingest.
-async fn persist_corpus_record(
+/// Derives each record's verbatim raw line + per-line `dedup_key` via the shared
+/// `repo::sessions` helpers (so the spawned path and the ingest path can never
+/// drift on either — the `corpus_dedup_key` scheme is the record's own uuid
+/// namespaced `u:<uuid>`, else the synthetic `o:<ordinal>`), then inserts all
+/// rows under a single begin/commit. Each insert is `ON CONFLICT DO NOTHING`, so
+/// a re-delivered line collapses and the batch stays idempotent. An empty slice
+/// is a no-op (no empty tx).
+async fn persist_corpus_records(
     pool: &AnyPool,
     session_id: &str,
-    rec: &jsonl_tail::BroadcastRecord,
+    recs: &[jsonl_tail::BroadcastRecord],
 ) -> Result<(), AppError> {
-    let raw = repo::corpus_raw(&rec.parsed);
-    let index = jsonl_tail::record_index_fields(&rec.parsed);
-    let dedup_key = repo::corpus_dedup_key(&index, rec.line_ordinal as i64);
-
-    // Per-record short write tx (the live tail is low-volume; never hold a tx
-    // across recvs).
+    if recs.is_empty() {
+        return Ok(());
+    }
     let mut tx = pool.begin().await?;
-    repo::insert_session_record(
-        tx.as_mut(),
-        session_id,
-        rec.line_ordinal as i64,
-        raw,
-        &index,
-        &dedup_key,
-    )
-    .await?;
+    for rec in recs {
+        let raw = repo::corpus_raw(&rec.parsed);
+        let index = jsonl_tail::record_index_fields(&rec.parsed);
+        let dedup_key = repo::corpus_dedup_key(&index, rec.line_ordinal as i64);
+        repo::insert_session_record(
+            tx.as_mut(),
+            session_id,
+            rec.line_ordinal as i64,
+            raw,
+            &index,
+            &dedup_key,
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(())
+}
+
+/// Drain the UNBOUNDED corpus buffer into `session_records`, batching each
+/// wakeup's immediately-available records into one write tx (up to
+/// [`CORPUS_WRITE_BATCH_MAX`]). Returns when every sender is dropped AND the
+/// buffer is empty.
+///
+/// This is the LOSSLESS leg of the spawned-corpus pipeline (R9): every record
+/// that entered the unbounded buffer is persisted — a slow writer costs memory,
+/// never dropped lines, because the buffer (not the bounded render broadcast)
+/// backs the corpus. A batch write that errors is logged and that batch dropped
+/// (the same best-effort policy as the rest of the bridge); the unbounded buffer
+/// keeps the lag-loss vector closed regardless.
+async fn drain_and_persist_corpus(
+    pool: &AnyPool,
+    session_id: &str,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<jsonl_tail::BroadcastRecord>,
+) {
+    let mut batch: Vec<jsonl_tail::BroadcastRecord> = Vec::new();
+    loop {
+        batch.clear();
+        // Block for the first record; `None` ⇒ all senders dropped + drained.
+        match rx.recv().await {
+            Some(rec) => batch.push(rec),
+            None => break,
+        }
+        // Greedily fold in whatever else is already buffered, without awaiting,
+        // up to the batch cap — turning a burst into a few large txns.
+        while batch.len() < CORPUS_WRITE_BATCH_MAX {
+            match rx.try_recv() {
+                Ok(rec) => batch.push(rec),
+                Err(_) => break, // Empty or Disconnected → flush what we have.
+            }
+        }
+        if let Err(e) = persist_corpus_records(pool, session_id, &batch).await {
+            tracing::warn!(
+                session_id = %session_id,
+                error = %e,
+                count = batch.len(),
+                "pty corpus: batch persist failed"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -560,10 +630,11 @@ mod tests {
         tx.commit().await.expect("commit seed");
     }
 
-    /// `persist_corpus_record` writes one `session_records` row carrying the
-    /// broadcast record's `line_ordinal` and the shared `u:<uuid>` dedup_key.
+    /// `persist_corpus_records` writes one `session_records` row per record,
+    /// carrying the broadcast record's `line_ordinal` and the shared dedup_key
+    /// (`u:<uuid>` when present, else the synthetic `o:<ordinal>`).
     #[tokio::test]
-    async fn persist_corpus_record_writes_ordinal_and_dedup_key() {
+    async fn persist_corpus_records_derives_ordinal_and_dedup_key() {
         let db: AnyPool = connect_in_memory().await.expect("pool").into();
         seed_spawned_session(&db, "sess-spawn").await;
 
@@ -575,7 +646,7 @@ mod tests {
             parsed: jsonl_tail::parse_line(line),
         };
 
-        persist_corpus_record(&db, "sess-spawn", &rec)
+        persist_corpus_records(&db, "sess-spawn", std::slice::from_ref(&rec))
             .await
             .expect("persist corpus record");
 
@@ -598,7 +669,7 @@ mod tests {
             line_ordinal: 6,
             parsed: jsonl_tail::parse_line(raw_line),
         };
-        persist_corpus_record(&db, "sess-spawn", &rec2)
+        persist_corpus_records(&db, "sess-spawn", std::slice::from_ref(&rec2))
             .await
             .expect("persist uuid-less record");
         let synthetic_key: String = scalar_one(
@@ -611,6 +682,109 @@ mod tests {
         assert_eq!(
             synthetic_key, "o:6",
             "a uuid-less record uses the synthetic o:<ordinal> key"
+        );
+    }
+
+    /// Build a synthetic one-block `assistant` corpus record at `ordinal` whose
+    /// record uuid is `uuid` (so each gets a distinct `u:<uuid>` dedup_key and
+    /// persists as its own row).
+    fn assistant_record(ordinal: u64, uuid: &str) -> BroadcastRecord {
+        let line = format!(
+            r#"{{"type":"assistant","uuid":"{uuid}","message":{{"content":[{{"type":"text","text":"x"}}]}}}}"#
+        );
+        BroadcastRecord {
+            line_ordinal: ordinal,
+            parsed: jsonl_tail::parse_line(&line),
+        }
+    }
+
+    /// `persist_corpus_records` writes every record of a batch in one tx, and a
+    /// re-persist of the same batch is idempotent (`ON CONFLICT DO NOTHING`).
+    #[tokio::test]
+    async fn persist_corpus_records_writes_whole_batch_and_is_idempotent() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        seed_spawned_session(&db, "sess-batch").await;
+
+        let recs: Vec<BroadcastRecord> =
+            (1u64..=5).map(|i| assistant_record(i, &format!("b{i}"))).collect();
+        persist_corpus_records(&db, "sess-batch", &recs)
+            .await
+            .expect("batch persist");
+
+        let count: i64 = scalar_one(
+            &db,
+            "SELECT COUNT(*) FROM session_records WHERE session_id = $1",
+            crate::args!["sess-batch".to_owned()],
+        )
+        .await
+        .expect("count rows");
+        assert_eq!(count, 5, "every record in the batch is persisted in one tx");
+
+        // Re-persisting the same batch adds no rows.
+        persist_corpus_records(&db, "sess-batch", &recs)
+            .await
+            .expect("re-persist batch");
+        let count_again: i64 = scalar_one(
+            &db,
+            "SELECT COUNT(*) FROM session_records WHERE session_id = $1",
+            crate::args!["sess-batch".to_owned()],
+        )
+        .await
+        .expect("re-count rows");
+        assert_eq!(count_again, 5, "re-persisting the same batch is idempotent");
+
+        // An empty slice is a no-op (no empty tx, no rows).
+        persist_corpus_records(&db, "sess-batch", &[])
+            .await
+            .expect("empty batch is a no-op");
+    }
+
+    /// THE R9 lossless guarantee: every record that enters the unbounded buffer
+    /// is persisted by the batched drainer — nothing is dropped, even across many
+    /// batch boundaries. We buffer well over two full batches, drop the sender so
+    /// the drain loop terminates, run it to completion, and assert the row count
+    /// and contiguous ordinals show no loss.
+    #[tokio::test]
+    async fn drain_and_persist_corpus_persists_every_buffered_record() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        seed_spawned_session(&db, "sess-drain").await;
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<BroadcastRecord>();
+        // Cross several batch boundaries so the multi-batch drain path runs.
+        let k: u64 = (CORPUS_WRITE_BATCH_MAX as u64) * 2 + 7;
+        for i in 1..=k {
+            tx.send(assistant_record(i, &format!("d{i}")))
+                .expect("buffer record");
+        }
+        // Drop the only sender so the drain loop sees the channel close once the
+        // buffer is empty, and returns.
+        drop(tx);
+
+        drain_and_persist_corpus(&db, "sess-drain", &mut rx).await;
+
+        let count: i64 = scalar_one(
+            &db,
+            "SELECT COUNT(*) FROM session_records WHERE session_id = $1",
+            crate::args!["sess-drain".to_owned()],
+        )
+        .await
+        .expect("count rows");
+        assert_eq!(
+            count as u64, k,
+            "every buffered record is persisted across batch boundaries — nothing dropped"
+        );
+
+        // Ordinals are contiguous 1..=k (no gaps ⇒ no loss).
+        let max_ordinal: i64 = scalar_one(
+            &db,
+            "SELECT MAX(line_ordinal) FROM session_records WHERE session_id = $1",
+            crate::args!["sess-drain".to_owned()],
+        )
+        .await
+        .expect("max ordinal");
+        assert_eq!(
+            max_ordinal as u64, k,
+            "the highest persisted ordinal equals k — contiguous, no gaps"
         );
     }
 }
