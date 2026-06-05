@@ -16,7 +16,7 @@
 
 use crate::args;
 use crate::db::DbClient;
-use crate::domain::{PtyMessage, PtyQueueEntry, PtySession};
+use crate::domain::{PtyMessage, PtyQueueEntry, PtySession, SessionRecord};
 use crate::error::AppError;
 
 /// Hand-written generic `FromRow` for [`PtySession`] per the canonical
@@ -51,6 +51,9 @@ where
             last_error: row.try_get("last_error")?,
             previous_session_id: row.try_get("previous_session_id")?,
             jsonl_path: row.try_get("jsonl_path")?,
+            source: row.try_get("source")?,
+            sprint_id: row.try_get("sprint_id")?,
+            agent_id: row.try_get("agent_id")?,
         })
     }
 }
@@ -102,6 +105,38 @@ where
             completed_at: row.try_get("completed_at")?,
             status: row.try_get("status")?,
             error: row.try_get("error")?,
+        })
+    }
+}
+
+/// Hand-written generic `FromRow` for [`SessionRecord`] (migration 0015) per the
+/// canonical [`crate::db`] FromRow recipe (see [`PtySession`]'s impl above). The
+/// nullable columns (`record_type`/`record_uuid`/`parent_uuid`/`ts`) carry the
+/// `Option<String>` decode/type bound; `line_ordinal`/`is_sidechain` are the
+/// `i64`-mirrored INTEGER columns (the latter is `0`/`1`, mirrored as `i64` per
+/// the row-struct idiom, NOT `bool`).
+impl<'r, R> sqlx::FromRow<'r, R> for SessionRecord
+where
+    R: sqlx::Row,
+    usize: sqlx::ColumnIndex<R>,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(SessionRecord {
+            id: row.try_get("id")?,
+            session_id: row.try_get("session_id")?,
+            line_ordinal: row.try_get("line_ordinal")?,
+            record_type: row.try_get("record_type")?,
+            record_uuid: row.try_get("record_uuid")?,
+            parent_uuid: row.try_get("parent_uuid")?,
+            ts: row.try_get("ts")?,
+            is_sidechain: row.try_get("is_sidechain")?,
+            raw: row.try_get("raw")?,
+            dedup_key: row.try_get("dedup_key")?,
+            created_at: row.try_get("created_at")?,
         })
     }
 }
@@ -178,7 +213,10 @@ pub async fn create_pty_session(
             exit_code,
             last_error,
             previous_session_id,
-            jsonl_path
+            jsonl_path,
+            source,
+            sprint_id,
+            agent_id
         FROM pty_sessions
         WHERE id = $1
         "#,
@@ -332,7 +370,10 @@ pub async fn list_pty_sessions(
             exit_code,
             last_error,
             previous_session_id,
-            jsonl_path
+            jsonl_path,
+            source,
+            sprint_id,
+            agent_id
         FROM pty_sessions
         WHERE ($1 IS NULL OR status = $1)
           AND ($2 IS NULL OR project_id = $2)
@@ -365,7 +406,10 @@ pub async fn get_pty_session(
             exit_code,
             last_error,
             previous_session_id,
-            jsonl_path
+            jsonl_path,
+            source,
+            sprint_id,
+            agent_id
         FROM pty_sessions
         WHERE id = $1
         "#,

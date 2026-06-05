@@ -149,6 +149,59 @@ pub struct PtySession {
     pub last_error: Option<String>,
     pub previous_session_id: Option<String>,
     pub jsonl_path: Option<String>,
+    /// Provenance (migration 0015): `spawned|ingested` — `spawned` (the column
+    /// `NOT NULL DEFAULT`) for sessions lumina launched, `ingested` for harvested
+    /// external sessions folded into the corpus. Carried as a non-`Option`
+    /// `String` per the row-struct idiom (mirrors `status`); the typed
+    /// [`SessionSource`] enum is the wire / MCP form.
+    pub source: String,
+    /// Harvested sprint (migration 0015): the `work_items.id` of the sprint this
+    /// session belongs to, recovered from the transcript's `mcp__lumina__*`
+    /// records; NULL when uncorrelated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sprint_id: Option<String>,
+    /// Harvested agent (migration 0015): the agent that ran the session, also
+    /// recovered from the transcript; plain TEXT (agents are NOT work_items, so
+    /// this is not an FK); NULL when uncorrelated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+}
+
+/// A row of `session_records` (migration 0015): one lossless, verbatim JSONL
+/// line of an ingested or spawned harness `claude` session — the lossless-at-rest
+/// substrate behind the derived `pty_messages` render-view (ADR-0004 layer 2).
+/// One row per JSONL line, the original line stored VERBATIM in `raw`;
+/// `UNIQUE(session_id, dedup_key)` makes re-harvest idempotent. Read aggregate
+/// only — `Serialize`, no `JsonSchema` (mirrors the other PTY row structs).
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionRecord {
+    pub id: String,
+    pub session_id: String,
+    /// 0-based position of this line within the session's JSONL.
+    pub line_ordinal: i64,
+    /// The JSONL record `type` (`user|assistant|system|…`); NULL if absent/unparsable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_type: Option<String>,
+    /// The record's own `uuid`; NULL if absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_uuid: Option<String>,
+    /// The record's `parentUuid`; NULL if absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_uuid: Option<String>,
+    /// The record's `timestamp`; NULL if absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ts: Option<String>,
+    /// The record's `isSidechain` flag — `0`/`1` mirrored from the INTEGER
+    /// column per the row-struct idiom (see `RepoLink.is_primary`), NOT `bool`,
+    /// so the hand-written `FromRow` keeps the same `i64` decode bound as the
+    /// sibling PTY row structs.
+    pub is_sidechain: i64,
+    /// The VERBATIM JSONL line (lossless-at-rest).
+    pub raw: String,
+    /// Content-derived idempotency key for re-harvest collapse.
+    pub dedup_key: String,
+    /// ISO-8601 ingest timestamp.
+    pub created_at: String,
 }
 
 /// A row of `pty_messages` (migration 0008): one ordered transcript entry on

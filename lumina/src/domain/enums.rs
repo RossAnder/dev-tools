@@ -427,6 +427,23 @@ pub enum TriageState {
     Deferred,
 }
 
+/// Provenance of a `pty_sessions` row (migration 0015) — CHECK-enforced at the
+/// DB layer on the `pty_sessions.source` column (`spawned|ingested`), with a
+/// `NOT NULL DEFAULT 'spawned'` backfilling every pre-existing (spawned) row.
+/// The wire form matches the SQL CHECK literals byte-for-byte (snake_case).
+/// `spawned` = a session lumina launched via `PtyTransport`; `ingested` = a
+/// harvested terminal/external session folded into the lossless corpus. The
+/// [`PtySession`] row struct carries `source` as a non-`Option` `String` per the
+/// row-struct idiom (see `status`); this typed enum is the wire / MCP form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionSource {
+    /// A session lumina spawned via `PtyTransport` (the column default).
+    Spawned,
+    /// A harvested external session folded into the lossless corpus.
+    Ingested,
+}
+
 /// The count-by axis for [`crate::repo::query_findings`] (decision D12,
 /// migration 0011): when `QueryFindingsFilter.count_by` is set, the query
 /// returns grouped [`AxisCount`] rows instead of full findings. Currently the
