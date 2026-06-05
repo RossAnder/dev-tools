@@ -47,13 +47,16 @@
 -- exactly as before. The new columns add no trigger of their own.
 --
 -- ## session_records — lossless verbatim corpus (one row per JSONL line)
--- `session_id … REFERENCES pty_sessions(id) ON DELETE CASCADE` — NOTE the
--- CASCADE is currently DEAD: `delete_pty_session` is a SOFT-delete
--- (`pty.rs:381` tombstones the row, never `DELETE`s it), so no cascade ever
--- fires and the corpus is keep-forever / lossless-at-rest by construction. A
--- future hard-prune knob MUST reconcile this CASCADE with the lossless-at-rest
--- guarantee BEFORE it can fire (a hard `DELETE FROM pty_sessions` would silently
--- drop the corpus rows). `id`/`created_at` follow the repo convention: `id` is
+-- `session_id … REFERENCES pty_sessions(id) ON DELETE RESTRICT` — RESTRICT is
+-- chosen deliberately to PROTECT the lossless-at-rest guarantee: today deletes
+-- are SOFT (`delete_pty_session` tombstones the row at `pty.rs:381`, never
+-- `DELETE`s it), so no referential action ever fires and the corpus is
+-- keep-forever by construction. RESTRICT (rather than CASCADE) means a FUTURE
+-- hard `DELETE FROM pty_sessions` that still has corpus rows will FAIL LOUDLY
+-- with a foreign-key violation instead of silently cascading-away the corpus —
+-- a future hard-prune knob must therefore explicitly delete `session_records`
+-- first (or otherwise reconcile the lossless-at-rest guarantee) before it can
+-- remove a `pty_sessions` row. `id`/`created_at` follow the repo convention: `id` is
 -- a uuidv7 TEXT PK, `created_at` an ISO-8601 TEXT timestamp (mirrors
 -- pty_messages 0008:44-48). `UNIQUE(session_id, dedup_key)` makes ingest
 -- idempotent — a re-harvest of the same line collapses on the dedup_key.
@@ -76,7 +79,7 @@ ALTER TABLE pty_sessions ADD COLUMN agent_id  TEXT;                           --
 
 CREATE TABLE session_records (
     id            TEXT PRIMARY KEY,                                           -- uuid v7
-    session_id    TEXT NOT NULL REFERENCES pty_sessions(id) ON DELETE CASCADE, -- CASCADE currently DEAD (soft-delete, pty.rs:381)
+    session_id    TEXT NOT NULL REFERENCES pty_sessions(id) ON DELETE RESTRICT, -- RESTRICT: deletes are soft today (pty.rs:381); a future hard DELETE FROM pty_sessions fails loudly rather than cascading-away the lossless corpus
     line_ordinal  INTEGER NOT NULL,                                           -- 1-based position among NON-EMPTY lines (T4 contract; identical in live-tail and ingest)
     record_type   TEXT,                                                       -- nullable: JSONL record "type" (user|assistant|system|…), NULL if absent/unparsable
     record_uuid   TEXT,                                                       -- nullable: the record's own "uuid"
@@ -91,7 +94,11 @@ CREATE TABLE session_records (
 
 -- Replay order: read a session's records in JSONL order.
 CREATE INDEX idx_session_records_ordinal ON session_records(session_id, line_ordinal);
--- Harvest scan: pick out a session's mcp__lumina__* tool records by type.
+-- By-type lookup: (session_id, record_type). NOTE: currently UNUSED by the
+-- harvest path — `harvest_correlation` scans the parsed Vec in Rust and never
+-- queries session_records by record_type. Kept (not dropped) as a reservation
+-- for a future egress/replay by-type query consumer; re-adding it later would be
+-- migration churn. Do not assume harvest depends on this index.
 CREATE INDEX idx_session_records_type ON session_records(session_id, record_type);
 -- Cross-record correlation (parent/child threading) keyed on the record's own uuid;
 -- partial — only rows that carry a uuid participate.

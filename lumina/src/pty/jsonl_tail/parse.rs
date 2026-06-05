@@ -377,6 +377,38 @@ pub fn resolve_projects_root() -> PathBuf {
     }
 }
 
+/// STRICT counterpart of [`resolve_projects_root`] for SECURITY-boundary callers.
+///
+/// Used by the session-ingest confinement check (`http::sessions`), where the
+/// resolved root is the trust boundary the untrusted `transcript_path` is confined
+/// inside. Unlike the best-effort [`resolve_projects_root`], this NEVER falls back
+/// to the current working directory: an unset HOME/USERPROFILE must NOT silently
+/// collapse the confinement boundary to the process CWD (which would expose the
+/// repo tree, `.git`, and any in-tree secrets to the arbitrary-file-read primitive).
+///
+/// Precedence:
+/// 1. `LUMINA_PTY_PROJECTS_ROOT` env override (set if present — same as the
+///    best-effort resolver, so tests that point the override at a tempdir work
+///    against BOTH).
+/// 2. `~/.claude/projects` (`%USERPROFILE%` on Windows, `$HOME` on Unix).
+/// 3. `None` — neither is resolvable. The caller MUST reject the request rather
+///    than confine against a CWD fallback.
+pub fn resolve_projects_root_strict() -> Option<PathBuf> {
+    if let Ok(v) = std::env::var("LUMINA_PTY_PROJECTS_ROOT") {
+        return Some(PathBuf::from(v));
+    }
+
+    #[cfg(target_os = "windows")]
+    let home_var = "USERPROFILE";
+    #[cfg(not(target_os = "windows"))]
+    let home_var = "HOME";
+
+    match std::env::var(home_var) {
+        Ok(home) => Some(PathBuf::from(home).join(".claude").join("projects")),
+        Err(_) => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // JSONL record → TypedMessage mapping
 // ---------------------------------------------------------------------------

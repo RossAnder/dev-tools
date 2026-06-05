@@ -59,6 +59,24 @@ mod parse;
 pub use parse::*;
 
 // ---------------------------------------------------------------------------
+// Shared corpus-blank predicate
+// ---------------------------------------------------------------------------
+
+/// The SINGLE source of truth for "this JSONL line does not count toward the
+/// corpus / the non-empty-line ordinal".
+///
+/// Both the live tail ([`drain_and_broadcast`]) and the post-hoc ingest path
+/// ([`crate::repo::sessions::ingest_transcript`]) MUST filter lines through
+/// this exact predicate so their 1-based non-empty-line ordinals (and the
+/// synthetic per-line dedup keys derived from them) can never drift. A line is
+/// corpus-blank iff it is byte-empty (`""`). NOTE this is deliberately NOT
+/// `trim().is_empty()`: a whitespace-only line still counts as a non-empty
+/// line and advances the ordinal, on BOTH paths.
+pub fn is_corpus_blank(line: &str) -> bool {
+    line.is_empty()
+}
+
+// ---------------------------------------------------------------------------
 // Broadcast payload
 // ---------------------------------------------------------------------------
 
@@ -370,7 +388,10 @@ async fn drain_and_broadcast(
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
-                if line.is_empty() {
+                // Shared corpus-blank predicate — the ingest path filters on
+                // the SAME `is_corpus_blank` so the non-empty-line ordinals
+                // can never drift between the two paths.
+                if is_corpus_blank(&line) {
                     continue;
                 }
                 bytes_read += line.len();

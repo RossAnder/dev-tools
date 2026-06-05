@@ -52,7 +52,7 @@ use std::path::{Path, PathBuf};
 use tokio::sync::broadcast;
 
 use crate::app::AppState;
-use crate::db::DbClient;
+use crate::db::{AnyPool, DbClient};
 use crate::domain::PtySession;
 use crate::error::AppError;
 use crate::pty::jsonl_tail;
@@ -306,65 +306,24 @@ pub async fn spawn_pty_session_internal(
                 tokio::spawn(async move {
                     loop {
                         match corpus_rx.recv().await {
-                            Ok(jsonl_tail::BroadcastRecord {
-                                line_ordinal,
-                                parsed,
-                            }) => {
-                                // The verbatim raw line is preserved on both
-                                // parsed variants — that string IS the lossless
-                                // at-rest payload.
-                                let raw = match &parsed {
-                                    jsonl_tail::JsonlRecordParsed::Known { raw, .. } => raw,
-                                    jsonl_tail::JsonlRecordParsed::UnknownRaw { raw, .. } => raw,
-                                };
-                                let index = jsonl_tail::record_index_fields(&parsed);
-                                // dedup_key IDENTICAL to the ingest path: the
-                                // record's own uuid when present, else a
-                                // synthetic `l<ordinal>` (diverging would break
-                                // cross-path dedup on re-read / re-ingest).
-                                let dedup_key = index
-                                    .record_uuid
-                                    .clone()
-                                    .unwrap_or_else(|| format!("l{line_ordinal}"));
-
-                                // Per-record short write tx (the live tail is
-                                // low-volume; never hold a tx across recvs).
-                                match corpus_pool.begin().await {
-                                    Ok(mut tx) => {
-                                        if let Err(e) = repo::insert_session_record(
-                                            tx.as_mut(),
-                                            &corpus_session_id,
-                                            line_ordinal as i64,
-                                            raw,
-                                            &index,
-                                            &dedup_key,
-                                        )
-                                        .await
-                                        {
-                                            tracing::warn!(
-                                                session_id = %corpus_session_id,
-                                                error = %e,
-                                                "pty corpus: insert_session_record failed"
-                                            );
-                                            // Drop the tx (rollback); keep
-                                            // consuming subsequent records.
-                                            continue;
-                                        }
-                                        if let Err(e) = tx.commit().await {
-                                            tracing::warn!(
-                                                session_id = %corpus_session_id,
-                                                error = %e,
-                                                "pty corpus: session_record commit failed"
-                                            );
-                                        }
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            session_id = %corpus_session_id,
-                                            error = %e,
-                                            "pty corpus: begin write tx failed"
-                                        );
-                                    }
+                            Ok(rec) => {
+                                // Per-record raw/dedup derivation + short write
+                                // tx is factored into `persist_corpus_record`
+                                // (the testable seam, R25) so the broadcast loop
+                                // here owns only the recv/lag/close control flow.
+                                if let Err(e) = persist_corpus_record(
+                                    &corpus_pool,
+                                    &corpus_session_id,
+                                    &rec,
+                                )
+                                .await
+                                {
+                                    tracing::warn!(
+                                        session_id = %corpus_session_id,
+                                        error = %e,
+                                        "pty corpus: persist_corpus_record failed"
+                                    );
+                                    // Logged + swallowed; keep consuming.
                                 }
                             }
                             // Lossless capture is the contract, so a lag (slow
@@ -534,4 +493,124 @@ pub async fn spawn_pty_session_internal(
     }
 
     Ok(row)
+}
+
+/// Persist ONE spawned-session corpus record: derive the verbatim raw line and
+/// the per-line `dedup_key` (both via the shared `repo::sessions` helpers, so
+/// the spawned path and the ingest path can never drift on either), then run a
+/// short begin/insert/commit write tx.
+///
+/// Extracted from the broadcast consumer loop in `spawn_pty_session_internal`
+/// (R25) so the per-record write body is unit-testable in isolation — the loop
+/// retains only the recv / `Lagged` / `Closed` control flow (the `Lagged`
+/// corpus-loss path is therefore NOT exercised by this fn's unit test).
+///
+/// The dedup_key is the shared `corpus_dedup_key` scheme (the record's own uuid
+/// namespaced `u:<uuid>`, else the synthetic `o:<ordinal>`); diverging would
+/// break cross-path dedup on re-read / re-ingest.
+async fn persist_corpus_record(
+    pool: &AnyPool,
+    session_id: &str,
+    rec: &jsonl_tail::BroadcastRecord,
+) -> Result<(), AppError> {
+    let raw = repo::corpus_raw(&rec.parsed);
+    let index = jsonl_tail::record_index_fields(&rec.parsed);
+    let dedup_key = repo::corpus_dedup_key(&index, rec.line_ordinal as i64);
+
+    // Per-record short write tx (the live tail is low-volume; never hold a tx
+    // across recvs).
+    let mut tx = pool.begin().await?;
+    repo::insert_session_record(
+        tx.as_mut(),
+        session_id,
+        rec.line_ordinal as i64,
+        raw,
+        &index,
+        &dedup_key,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{connect_in_memory, scalar_one, AnyPool};
+    use crate::pty::jsonl_tail::{self, BroadcastRecord};
+
+    /// Seed a bare `pty_sessions` row so the `session_records.session_id` FK is
+    /// satisfiable, mirroring the spawned-session row that exists at step 3 of
+    /// the pipeline before the corpus consumer runs.
+    async fn seed_spawned_session(db: &AnyPool, id: &str) {
+        let mut tx = db.begin().await.expect("begin");
+        repo::upsert_session_row(
+            tx.as_mut(),
+            id,
+            "spawned",
+            "/dev/proj",
+            None,
+            None,
+            None,
+            "2026-06-05T00:00:00Z",
+            None,
+        )
+        .await
+        .expect("seed session row");
+        tx.commit().await.expect("commit seed");
+    }
+
+    /// `persist_corpus_record` writes one `session_records` row carrying the
+    /// broadcast record's `line_ordinal` and the shared `u:<uuid>` dedup_key.
+    #[tokio::test]
+    async fn persist_corpus_record_writes_ordinal_and_dedup_key() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+        seed_spawned_session(&db, "sess-spawn").await;
+
+        // A synthetic assistant record carrying uuid "a7" at non-empty-line
+        // ordinal 5.
+        let line = r#"{"type":"assistant","uuid":"a7","message":{"content":[{"type":"text","text":"hi"}]}}"#;
+        let rec = BroadcastRecord {
+            line_ordinal: 5,
+            parsed: jsonl_tail::parse_line(line),
+        };
+
+        persist_corpus_record(&db, "sess-spawn", &rec)
+            .await
+            .expect("persist corpus record");
+
+        let (ordinal, dedup_key): (i64, String) = db
+            .query_one(
+                "SELECT line_ordinal, dedup_key FROM session_records WHERE session_id = $1",
+                crate::args!["sess-spawn".to_owned()],
+            )
+            .await
+            .expect("read row");
+        assert_eq!(ordinal, 5, "line_ordinal is carried verbatim from the broadcast record");
+        assert_eq!(
+            dedup_key, "u:a7",
+            "dedup_key uses the shared u:<uuid> namespaced scheme"
+        );
+
+        // A record with no uuid falls back to the synthetic o:<ordinal> key.
+        let raw_line = "not-json-at-all";
+        let rec2 = BroadcastRecord {
+            line_ordinal: 6,
+            parsed: jsonl_tail::parse_line(raw_line),
+        };
+        persist_corpus_record(&db, "sess-spawn", &rec2)
+            .await
+            .expect("persist uuid-less record");
+        let synthetic_key: String = scalar_one(
+            &db,
+            "SELECT dedup_key FROM session_records WHERE session_id = $1 AND line_ordinal = $2",
+            crate::args!["sess-spawn".to_owned(), 6_i64],
+        )
+        .await
+        .expect("read synthetic key");
+        assert_eq!(
+            synthetic_key, "o:6",
+            "a uuid-less record uses the synthetic o:<ordinal> key"
+        );
+    }
 }

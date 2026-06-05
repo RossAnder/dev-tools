@@ -145,20 +145,41 @@ fn init_hooks_cmd(project_dir: &Path, url: &str) -> anyhow::Result<()> {
     let mut serialized = serde_json::to_string_pretty(&root)
         .context("serialising merged settings.json")?;
     serialized.push('\n');
-    std::fs::write(&settings_path, serialized)
+
+    // Write atomically: a plain `fs::write` truncates-then-writes, so an
+    // interruption mid-write (crash, Ctrl-C, disk-full) would leave the
+    // operator's settings.json truncated and the next init-hooks run would
+    // hard-error on the unparseable file. Instead write to a temp file in the
+    // SAME directory (so the rename stays on one filesystem) then atomically
+    // replace the target. `tempfile::NamedTempFile::persist` is a cross-platform
+    // atomic replace that handles the Windows "rename fails if dest exists"
+    // gotcha for us.
+    let mut tmp = tempfile::NamedTempFile::new_in(&claude_dir)
+        .with_context(|| format!("creating temp file in {}", claude_dir.display()))?;
+    {
+        use std::io::Write as _;
+        tmp.write_all(serialized.as_bytes())
+            .with_context(|| format!("writing temp file for {}", settings_path.display()))?;
+        tmp.flush()
+            .with_context(|| format!("flushing temp file for {}", settings_path.display()))?;
+    }
+    tmp.persist(&settings_path)
+        .map_err(|e| e.error)
         .with_context(|| format!("writing {}", settings_path.display()))?;
 
-    // Surface the gate caveat whenever we touched the hook AND there is no
-    // local gate satisfying it — a gate inherited from managed/user settings
-    // would silently block delivery and is not satisfiable from here.
+    // Surface the gate caveat whenever we did not extend a LOCAL
+    // `allowedHttpHookUrls` gate. We deliberately cannot read managed/user
+    // settings from here, so we cannot tell whether a gate exists upstream
+    // (real risk) or nowhere at all (the common fresh-project case, no risk).
+    // The note is therefore conditional/informational — not an assertion that
+    // delivery WILL be blocked.
     if !outcome.local_gate_extended {
         eprintln!(
-            "warning: `allowedHttpHookUrls` MERGES across managed/user/project settings sources. \
-             This project-level write did not extend a local gate (none present in {}). If a gate \
-             is set in managed or user settings, the SessionEnd http-hook to {url} will be \
-             SILENTLY BLOCKED and transcripts will not reach lumina. Verify the URL is allowlisted \
-             at the settings source that defines the gate (e.g. run `lumina doctor` once it lands, \
-             or check that the hook actually fires).",
+            "note: `allowedHttpHookUrls` MERGES across managed/user/project settings sources, and \
+             this project-level write did not extend a local gate (none present in {}). If — and \
+             only if — an `allowedHttpHookUrls` gate is configured in your managed or user \
+             settings, ensure {url} is allowlisted there, or the SessionEnd http-hook would be \
+             blocked. If no such gate exists anywhere, no action is needed.",
             settings_path.display()
         );
     }
@@ -449,6 +470,109 @@ mod tests {
             root.get("allowedHttpHookUrls").is_none(),
             "init-hooks must NOT create a gate (an empty/restrictive gate would block all http hooks)"
         );
+    }
+
+    #[test]
+    fn unparseable_settings_errors_and_never_clobbers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude = tmp.path().join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        let settings = claude.join("settings.json");
+        // Deliberately invalid JSON.
+        let original = "{ not json";
+        std::fs::write(&settings, original).unwrap();
+
+        // init-hooks must refuse to overwrite a file it cannot parse.
+        let result = init_hooks_cmd(tmp.path(), URL);
+        assert!(
+            result.is_err(),
+            "an unparseable settings.json must be a hard error"
+        );
+
+        // The original bytes must survive untouched (never-clobber).
+        let after = std::fs::read_to_string(&settings).unwrap();
+        assert_eq!(
+            after, original,
+            "the unparseable file must be left byte-for-byte unchanged"
+        );
+    }
+
+    #[test]
+    fn preserves_existing_session_end_command_hook() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude = tmp.path().join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        // A pre-existing SessionEnd group carrying a `command` hook.
+        let pre = json!({
+            "hooks": {
+                "SessionEnd": [
+                    {
+                        "hooks": [
+                            { "type": "command", "command": "echo bye" }
+                        ]
+                    }
+                ]
+            }
+        });
+        std::fs::write(
+            claude.join("settings.json"),
+            serde_json::to_string_pretty(&pre).unwrap(),
+        )
+        .unwrap();
+
+        init_hooks_cmd(tmp.path(), URL).unwrap();
+        let root = read_settings(tmp.path());
+
+        let groups = root["hooks"]["SessionEnd"].as_array().unwrap();
+        // No duplicate group: the http entry is appended into the existing
+        // group's `hooks` array rather than spawning a second group.
+        assert_eq!(groups.len(), 1, "no duplicate SessionEnd group");
+
+        let entries = groups[0]["hooks"].as_array().unwrap();
+        // The pre-existing command hook survives untouched.
+        assert!(
+            entries.iter().any(|e| {
+                e.get("type").and_then(Value::as_str) == Some("command")
+                    && e.get("command").and_then(Value::as_str) == Some("echo bye")
+            }),
+            "the existing command hook must survive"
+        );
+        // The http entry landed alongside it.
+        assert_eq!(
+            session_end_http_hooks(&root, URL).len(),
+            1,
+            "the http-hook must be appended alongside the command hook"
+        );
+    }
+
+    #[test]
+    fn non_array_allowed_http_hook_urls_is_left_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude = tmp.path().join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        // A malformed (non-array) gate value — here a string.
+        let pre = json!({
+            "allowedHttpHookUrls": "https://hooks.example.com/*"
+        });
+        std::fs::write(
+            claude.join("settings.json"),
+            serde_json::to_string_pretty(&pre).unwrap(),
+        )
+        .unwrap();
+
+        // init-hooks must still complete (it does not own/repair this key).
+        init_hooks_cmd(tmp.path(), URL).unwrap();
+        let root = read_settings(tmp.path());
+
+        // The malformed value is left exactly as-is — neither coerced to an
+        // array nor extended.
+        assert_eq!(
+            root["allowedHttpHookUrls"],
+            json!("https://hooks.example.com/*"),
+            "a non-array gate value must be left untouched"
+        );
+        // The hook itself still landed.
+        assert_eq!(session_end_http_hooks(&root, URL).len(), 1);
     }
 
     #[test]

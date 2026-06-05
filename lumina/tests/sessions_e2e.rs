@@ -28,6 +28,12 @@
 //!    (`insert_session_record`) persists a `source='spawned'` session's record
 //!    keyed on `(session_id, dedup_key)`. We do NOT spawn a real `claude` PTY
 //!    (that is the excluded `pty_e2e`/`conpty_minimal_repro` territory).
+//! 6. INGEST internals — a >500-line transcript crossing the `INGEST_CHUNK_ROWS`
+//!    chunk boundary persists every row + exactly ONE coarse event; a cwd that
+//!    matches a repo `local_path` binds a NON-NULL `project_id`; and the SAME line
+//!    persisted via the spawned path then re-ingested collapses to ONE corpus row
+//!    (all asserted at the BEHAVIOUR level — the dedup_key string scheme is in
+//!    flux cross-cluster, so these tests never hard-code the key format).
 //!
 //! ## Why no real socket / no spawn-race
 //!
@@ -109,15 +115,34 @@ async fn shared_pool() -> Arc<lumina::db::AnyPool> {
     ))
 }
 
-/// Set `LUMINA_PTY_PROJECTS_ROOT` to `dir` for the current (process-per-test)
-/// process. SAFETY: nextest runs process-per-test, so this process-global env
-/// mutation is isolated — exactly the pattern the `http/sessions.rs` in-module
-/// confinement tests use.
-fn set_projects_root(dir: &std::path::Path) {
-    // SAFETY: process-per-test isolation under nextest.
+/// RAII scope-guard that sets `LUMINA_PTY_PROJECTS_ROOT` on construction and
+/// `remove_var`s it on drop (R28). Under plain `cargo test` (a SHARED process,
+/// NOT nextest's process-per-test) an un-cleared `set_var` bleeds the confinement
+/// root into sibling tests; pairing every set with a drop-time clear keeps the
+/// env mutation scoped to the test that needs it regardless of the runner.
+struct ProjectsRootGuard;
+
+impl Drop for ProjectsRootGuard {
+    fn drop(&mut self) {
+        // SAFETY: process-global env mutation; see `set_projects_root`.
+        unsafe {
+            std::env::remove_var("LUMINA_PTY_PROJECTS_ROOT");
+        }
+    }
+}
+
+/// Set `LUMINA_PTY_PROJECTS_ROOT` to `dir`, returning a guard that CLEARS it when
+/// dropped (R28). Bind the guard to a `_root_guard` local so it lives for the
+/// rest of the test body. SAFETY: process-global env mutation — isolated under
+/// nextest's process-per-test, and the drop-clear keeps plain `cargo test`
+/// (shared process) honest too.
+#[must_use = "bind the guard to a local so the env var is cleared at test end (R28)"]
+fn set_projects_root(dir: &std::path::Path) -> ProjectsRootGuard {
+    // SAFETY: process-per-test isolation under nextest; drop-clear for cargo test.
     unsafe {
         std::env::set_var("LUMINA_PTY_PROJECTS_ROOT", dir);
     }
+    ProjectsRootGuard
 }
 
 /// POST a `/api/sessions/ingest` body against the SAME router the server builds
@@ -151,7 +176,7 @@ async fn ingest_happy_path_persists_losslessly_and_is_idempotent() {
     // The transcript MUST live under the confinement root. Use ONE tempdir as
     // both the projects root and the transcript's parent dir.
     let root = tempfile::tempdir().expect("projects-root tempdir");
-    set_projects_root(root.path());
+    let _root_guard = set_projects_root(root.path());
 
     // Fixture: ≥4 non-empty lines + an interleaved BLANK line (proves the
     // non-empty-line filter + the 1-based ordinal contract — the blank line does
@@ -400,7 +425,7 @@ async fn non_lumina_transcript_is_dropped_and_persists_nothing() {
 async fn route_rejects_parent_dir_traversal_with_400_and_no_rows() {
     let pool = shared_pool().await;
     let root = tempfile::tempdir().expect("projects-root tempdir");
-    set_projects_root(root.path());
+    let _root_guard = set_projects_root(root.path());
 
     let session_id = "sess-traversal";
     let state = AppState::new(pool.clone());
@@ -449,7 +474,7 @@ async fn route_rejects_out_of_root_path_with_403_and_no_rows() {
     let outside_file = outside.path().join("secret.jsonl");
     std::fs::write(&outside_file, "{}\n").expect("write outside file");
 
-    set_projects_root(root.path());
+    let _root_guard = set_projects_root(root.path());
 
     let session_id = "sess-outside";
     let state = AppState::new(pool.clone());
@@ -563,4 +588,228 @@ async fn spawned_session_persists_a_corpus_record() {
     .expect("read the spawned session's corpus row");
     assert_eq!(stored_raw, line, "the spawned consumer persisted the verbatim JSONL line");
     assert_eq!(stored_dedup, "a1", "the dedup_key is the record's uuid");
+}
+
+// ===========================================================================
+// 6. INGEST internals — chunk-boundary persistence, project binding, and
+//    cross-path collapse (R24 persist-leg + R27 a/b/c). All assert BEHAVIOUR,
+//    not the dedup_key string format (the key scheme is in flux cross-cluster).
+// ===========================================================================
+
+/// (R27a / R24 persist-leg) A transcript LARGER than one ingest chunk
+/// (`INGEST_CHUNK_ROWS = 500`) persists EVERY non-empty line as a corpus row and
+/// records EXACTLY ONE coarse `session.ingested` event — proving the multi-chunk
+/// loop persists across the chunk boundary without duplicating the coarse event.
+#[tokio::test]
+async fn large_transcript_crosses_chunk_boundary_and_emits_one_event() {
+    let pool = shared_pool().await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("big.jsonl");
+
+    // One lumina claim pair (so has_lumina is set and the transcript is NOT
+    // dropped) plus enough filler `assistant` text lines to push the non-empty
+    // line count WELL past the 500-row chunk size.
+    const FILLER: usize = 600;
+    let mut body = String::new();
+    body.push_str(&claim_tool_use_line("a-claim", "tu-1", "sprint-big", "agent-big"));
+    body.push('\n');
+    body.push_str(&claim_result_line("u-claim", "tu-1", "task-big"));
+    body.push('\n');
+    for i in 0..FILLER {
+        // Distinct uuids so each line gets its own dedup_key and persists as a
+        // distinct row (no accidental collapse between filler lines).
+        body.push_str(&format!(
+            r#"{{"type":"assistant","uuid":"fill-{i}","message":{{"content":[{{"type":"text","text":"line {i}"}}]}}}}"#
+        ));
+        body.push('\n');
+    }
+    std::fs::write(&path, &body).expect("write big transcript");
+
+    let expected_rows = (FILLER + 2) as i64; // claim use + claim result + filler
+    assert!(expected_rows > 500, "fixture must cross the INGEST_CHUNK_ROWS boundary");
+
+    let session_id = "sess-big";
+    let outcome = repo::ingest_transcript(pool.as_ref(), session_id, path.to_str().unwrap(), "/dev/proj")
+        .await
+        .expect("ingest big transcript");
+    assert!(matches!(outcome, IngestOutcome::Ingested { .. }), "a lumina transcript ingests");
+
+    // EVERY non-empty line landed (across the chunk boundary).
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_records WHERE session_id = ?")
+        .bind(session_id)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("count rows");
+    assert_eq!(rows, expected_rows, "every non-empty line persists, across the >500-row chunk boundary");
+
+    // EXACTLY ONE coarse, export-inert session.ingested event for the whole
+    // multi-chunk ingest (the coarse event rides only the first chunk's txn).
+    let events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events \
+         WHERE aggregate_type = 'session' AND aggregate_id = ? AND event_type = 'session.ingested'",
+    )
+    .bind(session_id)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count events");
+    assert_eq!(events, 1, "a >500-line transcript yields exactly ONE session.ingested event");
+}
+
+/// (R27b) When a project's linked repo carries a `local_path` that matches the
+/// ingest `cwd`, `resolve_cwd_to_project` binds a NON-NULL `pty_sessions.project_id`
+/// (the existing tests only cover the NULL/no-match path).
+#[tokio::test]
+async fn ingest_binds_project_id_when_cwd_matches_a_repo_local_path() {
+    let pool = shared_pool().await;
+    let db = pool.as_ref();
+
+    // Seed a project + a linked repo whose local_path equals the ingest cwd.
+    let cwd = "/dev/match-proj";
+    let project_id = repo::create_work_item_full(
+        db,
+        "project",
+        None,
+        "Match Project",
+        None,
+        repo::CreateOpts { origin: None, outcome: None, shape: None },
+    )
+    .await
+    .expect("create project")
+    .to_string();
+
+    let repo_link_id = repo::add_repo_link(db, &project_id, "owner/match-repo", true)
+        .await
+        .expect("add repo link")
+        .to_string();
+    repo::set_repo_local_path(db, &repo_link_id, Some(cwd))
+        .await
+        .expect("set local_path to the ingest cwd");
+
+    // Sanity: the pure resolver binds this cwd to the project.
+    let resolved = repo::resolve_cwd_to_project(db, cwd)
+        .await
+        .expect("resolve cwd");
+    assert_eq!(
+        resolved.as_deref(),
+        Some(project_id.as_str()),
+        "the cwd matching a repo local_path resolves to the project (precondition)"
+    );
+
+    // Ingest a lumina transcript with that cwd.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("session.jsonl");
+    let body = format!(
+        "{}\n{}\n",
+        claim_tool_use_line("a1", "tu-1", "sprint-m", "agent-m"),
+        claim_result_line("u1", "tu-1", "task-m"),
+    );
+    std::fs::write(&path, &body).expect("write transcript");
+
+    let session_id = "sess-match";
+    let outcome = repo::ingest_transcript(db, session_id, path.to_str().unwrap(), cwd)
+        .await
+        .expect("ingest");
+    assert!(matches!(outcome, IngestOutcome::Ingested { .. }));
+
+    // The persisted pty_sessions row carries the resolved (NON-NULL) project_id.
+    let stored_project: Option<String> =
+        sqlx::query_scalar("SELECT project_id FROM pty_sessions WHERE id = ?")
+            .bind(session_id)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read project_id");
+    assert_eq!(
+        stored_project.as_deref(),
+        Some(project_id.as_str()),
+        "an ingest whose cwd matches a repo local_path binds a NON-NULL project_id"
+    );
+}
+
+/// (R27c) Cross-path collapse: the SAME JSONL line persisted FIRST via the
+/// spawned-consumer primitive (`insert_session_record`) and THEN re-ingested via
+/// `ingest_transcript` (the ingest path) collapses to EXACTLY ONE corpus row for
+/// that line. Asserted at the BEHAVIOUR level (one row), NOT the dedup_key format
+/// — the key scheme is changing cross-cluster, so the test pins the collapse
+/// guarantee, not the key string.
+#[tokio::test]
+async fn same_line_via_spawn_then_ingest_collapses_to_one_row() {
+    let pool = shared_pool().await;
+    let db = pool.as_ref();
+
+    let session_id = "sess-collapse";
+
+    // The shared line — a lumina claim tool_use (so the later ingest is NOT
+    // dropped, AND this is the line that must collapse across the two paths).
+    let claim_line = claim_tool_use_line("a-shared", "tu-1", "sprint-c", "agent-c");
+
+    // --- Path 1 (spawned): seed a spawned session row, then persist the line via
+    //     insert_session_record exactly as the live-tail consumer does.
+    {
+        let mut tx = db.begin().await.expect("begin seed");
+        repo::upsert_session_row(
+            tx.as_mut(),
+            session_id,
+            "spawned",
+            "/dev/collapse-proj",
+            None,
+            None,
+            None,
+            "2026-06-05T00:00:00Z",
+            None,
+        )
+        .await
+        .expect("seed spawned session");
+        tx.commit().await.expect("commit seed");
+    }
+    {
+        let parsed = lumina::pty::jsonl_tail::parse_line(&claim_line);
+        let index = lumina::pty::jsonl_tail::record_index_fields(&parsed);
+        let raw = match &parsed {
+            lumina::pty::jsonl_tail::JsonlRecordParsed::Known { raw, .. }
+            | lumina::pty::jsonl_tail::JsonlRecordParsed::UnknownRaw { raw, .. } => raw.as_str(),
+        };
+        // The spawned consumer derives the dedup_key via the SAME canonical helper
+        // the ingest path uses (`corpus_dedup_key`), so the two paths key on the
+        // SAME value and collapse — computed via the real function rather than
+        // hard-coding the namespacing scheme. Ordinal 1 matches the single-line
+        // transcript the ingest path enumerates below.
+        let dedup_key = lumina::repo::corpus_dedup_key(&index, 1);
+        let mut tx = db.begin().await.expect("begin insert");
+        repo::insert_session_record(tx.as_mut(), session_id, 1, raw, &index, &dedup_key)
+            .await
+            .expect("spawned-path insert");
+        tx.commit().await.expect("commit insert");
+    }
+
+    let after_spawn: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM session_records WHERE session_id = ?")
+            .bind(session_id)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("count after spawn-path");
+    assert_eq!(after_spawn, 1, "the spawned path persisted exactly one row");
+
+    // --- Path 2 (ingest): re-ingest a transcript containing the SAME claim line,
+    //     under the SAME session_id. The per-line insert collapses on the shared
+    //     (session_id, dedup_key).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("session.jsonl");
+    std::fs::write(&path, format!("{claim_line}\n")).expect("write transcript");
+    let outcome = repo::ingest_transcript(db, session_id, path.to_str().unwrap(), "/dev/collapse-proj")
+        .await
+        .expect("ingest the same line");
+    assert!(matches!(outcome, IngestOutcome::Ingested { .. }));
+
+    // BEHAVIOUR: still exactly ONE corpus row for that line — the spawned insert
+    // and the ingest insert collapsed onto the same row, NOT two.
+    let after_ingest: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM session_records WHERE session_id = ?")
+            .bind(session_id)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("count after ingest-path");
+    assert_eq!(
+        after_ingest, 1,
+        "the same line via the spawned path then the ingest path collapses to ONE corpus row"
+    );
 }

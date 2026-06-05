@@ -85,16 +85,28 @@ pub fn router() -> Router<AppState> {
 /// Validate and confine an untrusted `transcript_path` to the `~/.claude/projects`
 /// transcript root, returning the VALIDATED CANONICAL path on success.
 ///
-/// Returns `Err(StatusCode)` (a 4xx) on ANY of:
+/// Returns `Err(StatusCode)` on ANY of:
 ///   * the raw path contains a `..` (`ParentDir`) component (defence-in-depth,
 ///     rejected before touching the filesystem) → `400 BAD_REQUEST`;
 ///   * the path fails to canonicalise — non-existent, unreadable, or a broken
 ///     symlink (`std::fs::canonicalize` requires the target to exist) →
 ///     `400 BAD_REQUEST`;
-///   * the transcript root itself fails to canonicalise (cannot confine to a
-///     root that does not exist) → `500` (server misconfiguration, not the
-///     caller's fault);
+///   * the confinement ROOT cannot be RESOLVED at all — the STRICT resolver
+///     (`resolve_projects_root_strict`) returns `None` because neither
+///     `LUMINA_PTY_PROJECTS_ROOT` nor HOME/USERPROFILE is set →
+///     `500 INTERNAL_SERVER_ERROR`. This deliberately does NOT fall back to the
+///     process CWD (R8): a CWD confinement root would expose the repo tree to the
+///     arbitrary-file-read primitive, so an unresolvable root is a server
+///     misconfiguration we reject, not silently widen;
+///   * the resolved root is RESOLVABLE but does not yet exist on disk (a fresh
+///     machine that has never run `claude`, so `~/.claude/projects` is absent)
+///     and therefore fails to canonicalise → `500 INTERNAL_SERVER_ERROR` (still a
+///     server-side condition, not the caller's fault — once `claude` has run at
+///     least once on this machine the dir exists and ingest proceeds);
 ///   * the canonical path is NOT inside the canonical root → `403 FORBIDDEN`.
+///
+/// Both `500` paths are logged once via `tracing::warn!` (the caller's 202 has
+/// NOT been sent — the confinement runs synchronously before any spawn).
 ///
 /// The check runs on the CANONICAL forms of both sides, so symlink-escape is
 /// defeated: a link pointing outside the root canonicalises to its outside
@@ -114,11 +126,25 @@ fn confine_transcript_path(transcript_path: &str) -> Result<PathBuf, StatusCode>
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    // Resolve the confinement ROOT via the STRICT resolver (R8): unlike the
+    // best-effort live-tail resolver, this NEVER falls back to the process CWD
+    // when HOME/USERPROFILE is unset. An unset-HOME CWD fallback would silently
+    // collapse the security boundary onto the repo tree (exposing `.git` / in-tree
+    // secrets to the arbitrary-file-read primitive), so a `None` here is a server
+    // misconfiguration we REJECT rather than confine against — 500, never CWD.
+    let Some(root) = crate::pty::jsonl_tail::resolve_projects_root_strict() else {
+        tracing::warn!(
+            "session ingest rejected: cannot resolve a confinement root \
+             (HOME/USERPROFILE unset and LUMINA_PTY_PROJECTS_ROOT not set)"
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+
     // Canonicalise the transcript root once. Resolving `..`/symlinks here and on
     // the candidate makes the prefix check a faithful confinement test. If the
-    // root itself does not exist we cannot confine anything → 500 (a server-side
+    // root is resolvable but the dir does not exist on disk yet (a fresh machine
+    // that has never run `claude`), canonicalize fails → 500 (a server-side
     // misconfiguration, not caller input).
-    let root = crate::pty::jsonl_tail::resolve_projects_root();
     let canonical_root = std::fs::canonicalize(&root).map_err(|e| {
         tracing::warn!(
             root = %root.display(),
@@ -184,8 +210,19 @@ async fn ingest_session(
             return;
         };
 
-        let path = canonical_path.to_string_lossy();
-        if let Err(e) = repo::ingest_transcript(pool.as_ref(), &session_id, &path, &cwd).await {
+        // R17: pass the canonical path as a faithful `&str`, NOT a lossy string.
+        // A non-UTF-8 path mangled to U+FFFD would never re-read, wasting the
+        // confinement work — so a non-UTF-8 canonical path is logged and the
+        // best-effort task returns WITHOUT calling ingest (the 202 already went
+        // out; the hook fires-and-forgets, so dropping this one is safe).
+        let Some(path) = canonical_path.to_str() else {
+            tracing::warn!(
+                session_id = %session_id,
+                "session ingest skipped: canonical transcript path is not valid UTF-8"
+            );
+            return;
+        };
+        if let Err(e) = repo::ingest_transcript(pool.as_ref(), &session_id, path, &cwd).await {
             // Best-effort: a down/garbage/unreadable transcript or a DB error is
             // logged and swallowed — the 202 already went out, and re-ingest is
             // idempotent, so loss is tolerated (the hook fires-and-forgets).
@@ -272,6 +309,43 @@ mod tests {
         let err = confine_transcript_path(ghost.to_str().unwrap())
             .expect_err("a non-existent path must be rejected");
         assert_eq!(err, StatusCode::BAD_REQUEST);
+        unsafe {
+            std::env::remove_var("LUMINA_PTY_PROJECTS_ROOT");
+        }
+    }
+
+    /// THE load-bearing confinement guarantee: a symlink that lives INSIDE the
+    /// root but POINTS OUTSIDE it must be rejected. `std::fs::canonicalize`
+    /// resolves the link to its outside target, so the canonical path fails the
+    /// `starts_with` check and we return `403 FORBIDDEN` — proving the symlink
+    /// cannot be used to escape the `~/.claude/projects` confinement boundary.
+    #[cfg(unix)]
+    #[test]
+    fn symlink_escaping_root_is_rejected() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        let outside = tempfile::tempdir().expect("outside tempdir");
+
+        // A real secret file OUTSIDE the confinement root.
+        let outside_file = outside.path().join("secret.txt");
+        std::fs::write(&outside_file, "secret").expect("write outside file");
+
+        // A symlink INSIDE the root whose target is the outside secret. The link
+        // path itself starts_with the root lexically, but canonicalize follows it
+        // to the outside target — which is exactly the escape we must block.
+        let link_inside = root.path().join("escape.jsonl");
+        std::os::unix::fs::symlink(&outside_file, &link_inside).expect("create escaping symlink");
+
+        // SAFETY: process-per-test isolation under nextest.
+        unsafe {
+            std::env::set_var("LUMINA_PTY_PROJECTS_ROOT", root.path());
+        }
+        let err = confine_transcript_path(link_inside.to_str().unwrap())
+            .expect_err("a symlink whose target escapes the root must be rejected");
+        assert_eq!(
+            err,
+            StatusCode::FORBIDDEN,
+            "an in-root symlink pointing outside the root canonicalises out and is 403"
+        );
         unsafe {
             std::env::remove_var("LUMINA_PTY_PROJECTS_ROOT");
         }

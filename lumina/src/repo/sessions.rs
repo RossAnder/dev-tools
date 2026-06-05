@@ -9,11 +9,15 @@
 //! materialises ONLY `aggregate_type="work_item"` events, so a `"session"`
 //! event is recorded-but-never-rendered.
 //!
-//! These helpers take an in-flight `&mut dyn DbTx` (NOT a `DbClient`) because
-//! the T6 ingest composer (`ingest_transcript`, out of THIS task's scope) drives
-//! one transaction across the session-row upsert + the per-line record inserts +
-//! the single coarse event, committing or rolling back the whole ingest
-//! atomically. Mirrors the `record_event`/`record_inert_event` contract: the
+//! The per-row write helpers take an in-flight `&mut dyn DbTx` (NOT a
+//! `DbClient`) so the T6 ingest composer (`ingest_transcript`) can compose
+//! them. The composer is NOT one atomic transaction: it writes in CHUNKED
+//! short txns (each `INGEST_CHUNK_ROWS` records committed independently, every
+//! insert `ON CONFLICT DO NOTHING` so partial progress is safe and re-ingest is
+//! idempotent), with the `pty_sessions` upsert riding the FIRST chunk's txn and
+//! the single coarse `session.ingested` event emitted in its OWN final small
+//! txn AFTER the chunk loop — and only when net-new corpus rows actually
+//! landed. Mirrors the `record_event`/`record_inert_event` contract: the
 //! borrowed `&str` params are `.to_owned()`'d before binding so the bound args
 //! are owned/`'static`.
 //!
@@ -80,10 +84,12 @@ pub enum IngestOutcome {
     Dropped,
     /// The transcript was lumina-correlatable and was ingested.
     Ingested {
-        /// The number of `session_records` rows the ingest attempted to insert
-        /// (the non-empty-line count). NOTE this is the attempted count, not the
-        /// net-new count — an idempotent re-ingest reports the SAME number even
-        /// though every per-row insert collapses on the `ON CONFLICT` no-op.
+        /// The number of NET-NEW `session_records` rows this ingest actually
+        /// inserted — summed from each insert's `rows_affected`, so an
+        /// idempotent re-ingest (every per-row insert collapsing on the
+        /// `ON CONFLICT` no-op) reports `0`. This is also the count carried in
+        /// the coarse `session.ingested` event, which is emitted ONLY when this
+        /// value is `> 0`.
         records_inserted: usize,
         /// The harvested correlation.
         correlation: Correlation,
@@ -98,6 +104,44 @@ pub enum IngestOutcome {
 /// pty_sessions upsert + the single coarse inert event ride the FIRST chunk's
 /// txn; the inert event stays COARSE — exactly one per ingest.
 const INGEST_CHUNK_ROWS: usize = 500;
+
+/// Maximum transcript size (bytes) `ingest_transcript` will read into memory.
+///
+/// 64 MiB is FAR above any real `claude` session JSONL (the largest observed
+/// transcripts are single-digit MiB), so this never rejects a legitimate
+/// ingest — it is purely a DoS/OOM ceiling on a hostile or corrupt file placed
+/// under the confined projects root. The composer stats the file FIRST and
+/// refuses (without reading) when the length exceeds this cap.
+const MAX_TRANSCRIPT_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Derive the per-line corpus `dedup_key` from the best-effort record index,
+/// the SINGLE source of truth shared by the ingest path
+/// ([`ingest_transcript`]) and the live-tail spawned consumer
+/// (`crate::pty::spawn`), so the two paths can never drift on the key scheme.
+///
+/// The two key namespaces are PREFIXED so they cannot collide: a record's own
+/// `record_uuid` (when present) yields `u:<uuid>`, while a record with no uuid
+/// falls back to the synthetic `o:<ordinal>` (the lossless-at-rest contract: a
+/// record with no uuid still gets a stable per-line key). Without the `u:` /
+/// `o:` prefixes a record whose uuid was literally e.g. `o:5` could collide
+/// with line-5's synthetic key.
+pub fn corpus_dedup_key(index: &SessionRecordIndex, ordinal: i64) -> String {
+    match &index.record_uuid {
+        Some(uuid) => format!("u:{uuid}"),
+        None => format!("o:{ordinal}"),
+    }
+}
+
+/// The VERBATIM raw JSONL line carried on either parsed variant — that string
+/// IS the lossless-at-rest corpus payload. Shared by the ingest path and the
+/// spawned consumer so the raw-extraction match lives in exactly one place.
+pub(crate) fn corpus_raw(parsed: &JsonlRecordParsed) -> &str {
+    match parsed {
+        JsonlRecordParsed::Known { raw, .. } | JsonlRecordParsed::UnknownRaw { raw, .. } => {
+            raw.as_str()
+        }
+    }
+}
 
 /// Render a Rust-side ISO-8601 timestamp string for the corpus TEXT timestamp
 /// columns. Matches the convention used across the `pty_*` write paths
@@ -132,6 +176,11 @@ fn now_string() -> String {
 /// for an ingest batch is recorded once by [`record_session_ingested_event`],
 /// NOT per row, so a multi-thousand-line transcript does not emit a matching
 /// flood of outbox rows.
+///
+/// Returns the number of rows actually inserted: `1` on a fresh row, `0` when
+/// the `ON CONFLICT(session_id, dedup_key) DO NOTHING` collapsed a duplicate.
+/// The ingest composer sums these to derive the NET-NEW row count (and to gate
+/// the coarse event on net-new `> 0`).
 pub async fn insert_session_record(
     tx: &mut dyn crate::db::DbTx,
     session_id: &str,
@@ -139,11 +188,11 @@ pub async fn insert_session_record(
     raw: &str,
     index: &SessionRecordIndex,
     dedup_key: &str,
-) -> Result<(), AppError> {
+) -> Result<u64, AppError> {
     let id = Uuid::now_v7().to_string();
     let created_at = now_string();
 
-    tx.execute(
+    let rows_affected = tx.execute(
         r#"
         INSERT INTO session_records (
             id, session_id, line_ordinal, record_type, record_uuid,
@@ -169,7 +218,7 @@ pub async fn insert_session_record(
     )
     .await?;
 
-    Ok(())
+    Ok(rows_affected)
 }
 
 /// Upsert the `pty_sessions` row for an ingested (or pre-existing spawned)
@@ -281,6 +330,11 @@ fn flatten_tool_result_content(content: &serde_json::Value) -> serde_json::Value
         serde_json::Value::String(s) => Some(s.clone()),
         serde_json::Value::Array(items) => {
             // Concatenate the `text` of every `{type:"text", text:"…"}` block.
+            // NOTE this is a best-effort recovery: if the result was split
+            // across multiple text blocks in a way that does not reconstruct
+            // the original JSON when naively concatenated, the downstream
+            // `from_str` reparse simply fails and the task_id is not recovered
+            // (the decode-fail branch below logs that gap).
             let mut buf = String::new();
             for item in items {
                 if let Some(t) = item.get("text").and_then(|t| t.as_str()) {
@@ -300,9 +354,20 @@ fn flatten_tool_result_content(content: &serde_json::Value) -> serde_json::Value
     match text {
         // Step 2: the inner text is itself a JSON-encoded string — parse once
         // more to recover the result object. On failure, keep the raw string as
-        // a Value (the caller simply won't find a `task_id` in it).
-        Some(s) => serde_json::from_str::<serde_json::Value>(&s)
-            .unwrap_or(serde_json::Value::String(s)),
+        // a Value (the caller simply won't find a `task_id` in it) and emit a
+        // debug diagnostic so an operator can distinguish "no claim at all"
+        // from "claim result shape changed and the reparse silently failed".
+        Some(s) => match serde_json::from_str::<serde_json::Value>(&s) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::debug!(
+                    error = %e,
+                    "session harvest: tool_result inner text did not reparse as JSON — \
+                     correlation may be missed for this record"
+                );
+                serde_json::Value::String(s)
+            }
+        },
         None => serde_json::Value::Null,
     }
 }
@@ -483,30 +548,61 @@ pub fn harvest_correlation(records: &[(i64, JsonlRecordParsed)]) -> Correlation 
 /// Ingest one harness-session JSONL transcript into the corpus.
 ///
 /// Pipeline:
-///   1. Read `transcript_path` (UTF-8) and split into NON-EMPTY lines, enumerated
-///      1-BASED (the T4 ordinal contract — identical to the live tail, so dedup
-///      keys match between live-tail and ingest).
+///   1. Stat `transcript_path` and refuse (without reading) when it exceeds
+///      [`MAX_TRANSCRIPT_BYTES`]; otherwise read it (UTF-8) and split into
+///      NON-EMPTY lines via the SHARED [`crate::pty::jsonl_tail::is_corpus_blank`]
+///      predicate, enumerated 1-BASED (the T4 ordinal contract — identical to
+///      the live tail, so dedup keys match between live-tail and ingest).
 ///   2. Parse each line via [`parse_line`] and [`harvest_correlation`] over the
 ///      `(ordinal, parsed)` slice.
 ///   3. If `!correlation.has_lumina` → return [`IngestOutcome::Dropped`] and
 ///      PERSIST NOTHING (no `pty_sessions` row, no records, no event).
 ///   4. Else resolve the project floor via [`super::resolve_cwd_to_project`]
 ///      (may be `None` — binds NULL), then WRITE in CHUNKED short txns: the first
-///      chunk's txn carries the `pty_sessions` upsert + the per-line record
-///      inserts + the ONE coarse inert event; subsequent chunks each carry only
-///      their per-line record inserts. Every insert is `ON CONFLICT DO NOTHING`,
-///      so re-calling this fn inserts ZERO new `session_records` (idempotent).
+///      chunk's txn carries the `pty_sessions` upsert (the `session_records` FK
+///      needs it) + that chunk's per-line record inserts; subsequent chunks each
+///      carry only their per-line record inserts. Every insert is
+///      `ON CONFLICT DO NOTHING`, so re-calling this fn inserts ZERO new
+///      `session_records` (idempotent).
+///   5. AFTER the chunk loop, in its OWN final small txn, record the ONE coarse
+///      export-inert `session.ingested` event — but ONLY when net-new corpus
+///      rows actually landed (summed from each insert's `rows_affected`). A
+///      re-ingest that inserts zero new rows therefore writes NO event, so
+///      repeated (re)ingests cannot accumulate never-drained export-inert rows.
 ///
-/// `dedup_key` = the record's `record_uuid` (off the best-effort index) when
-/// present, else `format!("l{ordinal}")` (the lossless-at-rest contract: a
-/// record with no uuid still gets a stable per-line key).
+/// `dedup_key` is derived by the shared [`corpus_dedup_key`] helper (the
+/// record's `record_uuid` namespaced `u:<uuid>`, else the synthetic
+/// `o:<ordinal>`), identical to the spawned consumer in `crate::pty::spawn`.
+///
+/// SECURITY CONTRACT: the CALLER MUST confine `transcript_path` to a trusted
+/// root before calling — this fn does NOT itself sandbox the path. The HTTP
+/// caller (`http/sessions.rs`) does so via `confine_transcript_path` (canonicalise
+/// + `starts_with` the `~/.claude/projects` root, rejecting `..`/symlink escape).
+/// A FUTURE caller MUST uphold the same confinement, or it bypasses the only
+/// gate keeping ingest reads inside the projects corpus. (The
+/// [`MAX_TRANSCRIPT_BYTES`] cap here is a DoS ceiling, NOT a substitute for that
+/// confinement.)
 pub async fn ingest_transcript(
     db: &impl DbClient,
     session_id: &str,
     transcript_path: &str,
     cwd: &str,
 ) -> Result<IngestOutcome, AppError> {
-    // Step 1: read + split into non-empty lines, 1-based ordinal.
+    // Step 1: stat-then-cap BEFORE reading — refuse an oversized file without
+    // pulling it into memory (DoS/OOM ceiling on a hostile file under the
+    // confined root; see MAX_TRANSCRIPT_BYTES).
+    let meta = tokio::fs::metadata(transcript_path).await.map_err(|e| {
+        AppError::Other(anyhow::anyhow!(
+            "stat transcript '{transcript_path}': {e}"
+        ))
+    })?;
+    if meta.len() > MAX_TRANSCRIPT_BYTES {
+        return Err(AppError::Validation(format!(
+            "transcript '{transcript_path}' is {} bytes, exceeding the {MAX_TRANSCRIPT_BYTES}-byte ingest cap",
+            meta.len()
+        )));
+    }
+
     let body = tokio::fs::read_to_string(transcript_path)
         .await
         .map_err(|e| {
@@ -515,11 +611,13 @@ pub async fn ingest_transcript(
             ))
         })?;
 
-    // Parse only the NON-EMPTY (non-whitespace-only) lines; the 1-based ordinal
-    // counts ONLY those lines (T4 contract — identical to the live tail).
+    // Parse only the NON-EMPTY lines; the 1-based ordinal counts ONLY those
+    // lines. The filter uses the SHARED `is_corpus_blank` predicate so this
+    // path and the live tail agree on exactly which lines advance the ordinal
+    // (a whitespace-only line counts on BOTH paths).
     let parsed: Vec<(i64, JsonlRecordParsed)> = body
         .lines()
-        .filter(|l| !l.trim().is_empty())
+        .filter(|l| !crate::pty::jsonl_tail::is_corpus_blank(l))
         .enumerate()
         .map(|(i, line)| ((i as i64) + 1, parse_line(line)))
         .collect();
@@ -533,13 +631,15 @@ pub async fn ingest_transcript(
     // Step 4: resolve the project floor (may be None → NULL).
     let project_id = super::resolve_cwd_to_project(db, cwd).await?;
 
-    let records_inserted = parsed.len();
     let started_at = now_string();
 
     // CHUNKED writes. The FIRST chunk's txn also carries the pty_sessions upsert
-    // and the single coarse inert event; later chunks carry only record inserts.
+    // (the session_records FK needs it); later chunks carry only record inserts.
     // Each insert is ON CONFLICT DO NOTHING, so partial progress is safe and the
-    // whole ingest is idempotent on re-call.
+    // whole ingest is idempotent on re-call. We sum each insert's rows_affected
+    // to derive the NET-NEW count: a re-ingest collapses every insert and lands
+    // zero new rows, so it must NOT re-emit the coarse event (R5/R6).
+    let mut net_new: u64 = 0;
     let mut first_chunk = true;
     for chunk in parsed.chunks(INGEST_CHUNK_ROWS) {
         let mut tx = db.begin().await?;
@@ -557,47 +657,45 @@ pub async fn ingest_transcript(
                 None,
             )
             .await?;
+            first_chunk = false;
         }
 
         for (ordinal, p) in chunk {
             let index = record_index_fields(p);
-            let dedup_key = index
-                .record_uuid
-                .clone()
-                .unwrap_or_else(|| format!("l{ordinal}"));
-            let raw = match p {
-                JsonlRecordParsed::Known { raw, .. }
-                | JsonlRecordParsed::UnknownRaw { raw, .. } => raw.as_str(),
-            };
-            insert_session_record(tx.as_mut(), session_id, *ordinal, raw, &index, &dedup_key)
-                .await?;
-        }
-
-        if first_chunk {
-            // The ONE coarse, export-inert event for this ingest.
-            record_session_ingested_event(
-                tx.as_mut(),
-                session_id,
-                serde_json::json!({
-                    "records": records_inserted,
-                    "has_lumina": true,
-                }),
-            )
-            .await?;
-            first_chunk = false;
+            let dedup_key = corpus_dedup_key(&index, *ordinal);
+            let raw = corpus_raw(p);
+            net_new +=
+                insert_session_record(tx.as_mut(), session_id, *ordinal, raw, &index, &dedup_key)
+                    .await?;
         }
 
         tx.commit().await?;
     }
 
-    // Edge case: an empty (zero non-empty-line) transcript that nonetheless
-    // somehow set has_lumina is impossible (has_lumina requires a parsed
-    // tool_use), so `parsed` is always non-empty here and the loop ran at least
-    // once. If `parsed` were empty the for-chunks loop would not run and no row
-    // would be written — but `!has_lumina` already returned Dropped above.
+    // The ONE coarse, export-inert `session.ingested` event — emitted AFTER the
+    // chunk loop in its own final small txn, and ONLY when net-new corpus rows
+    // actually landed. A re-ingest (net_new == 0) writes no event, so repeated
+    // (re)ingests can never accumulate never-drained export-inert outbox rows.
+    if net_new > 0 {
+        let mut tx = db.begin().await?;
+        record_session_ingested_event(
+            tx.as_mut(),
+            session_id,
+            serde_json::json!({
+                "records": net_new,
+                "has_lumina": true,
+            }),
+        )
+        .await?;
+        tx.commit().await?;
+    }
+
+    // Note: `parsed` is always non-empty here (has_lumina requires a parsed
+    // tool_use, so the chunk loop ran and the pty_sessions row was upserted);
+    // the `!has_lumina` early-return above handles the empty-transcript case.
 
     Ok(IngestOutcome::Ingested {
-        records_inserted,
+        records_inserted: net_new as usize,
         correlation,
     })
 }
@@ -1073,14 +1171,29 @@ mod tests {
 
         // Re-call: the per-line inserts are idempotent — ON CONFLICT(session_id,
         // dedup_key) DO NOTHING + the pty_sessions ON CONFLICT(id) DO NOTHING ⇒
-        // ZERO new session_records and no clobber of the existing row. (The coarse
-        // inert event IS re-emitted per ingest — it is observational provenance,
-        // not corpus data, so re-ingest provenance is intentional and is NOT part
-        // of the per-line idempotency contract the task pins.)
+        // ZERO new session_records and no clobber of the existing row. The coarse
+        // inert event is now gated on net-new > 0 (R5/R6): a re-ingest that lands
+        // zero new corpus rows writes NO new event, so the event count stays at 1.
         let outcome2 = ingest_transcript(&db, "sess-keep", path.to_str().unwrap(), "/dev/proj")
             .await
             .expect("second ingest");
-        assert!(matches!(outcome2, IngestOutcome::Ingested { .. }));
+        let IngestOutcome::Ingested { records_inserted: net_new2, .. } = outcome2 else {
+            panic!("expected Ingested, got {outcome2:?}");
+        };
+        assert_eq!(net_new2, 0, "re-ingest reports ZERO net-new rows");
         assert_eq!(count_records().await, 2, "re-ingest inserts ZERO new session_records");
+
+        // And it did NOT re-emit the coarse inert event (still exactly one).
+        let events_after_reingest: i64 = scalar_one(
+            &db,
+            "SELECT COUNT(*) FROM events WHERE aggregate_type = 'session' AND aggregate_id = $1",
+            args!["sess-keep".to_owned()],
+        )
+        .await
+        .expect("count events after re-ingest");
+        assert_eq!(
+            events_after_reingest, 1,
+            "a zero-net-new re-ingest writes no new session.ingested event"
+        );
     }
 }

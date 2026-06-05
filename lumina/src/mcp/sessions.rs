@@ -81,12 +81,28 @@ impl LuminaTools {
         // NULL parent. The 5-level hierarchy bounds the walk; classify each
         // visited row by `kind` to fill in the project/epic/story ids. Composes
         // `get_work_item_detail` only — no new ancestry SQL.
+        //
+        // `parent_id` is a plain self-FK with no DB-level acyclicity constraint,
+        // so a corrupt cycle (A→B→A, or a self-parent, from a buggy `move` or a
+        // manual edit) would otherwise spin this read-only tool in an infinite
+        // loop of DB reads, holding a connection. Bound the climb with a hop
+        // counter set well above the real 5-level depth; exceeding it is treated
+        // as a probable `parent_id` cycle and surfaced as an error.
+        const MAX_ANCESTRY_DEPTH: usize = 16;
         let mut project_id = None;
         let mut epic_id = None;
         let mut story_id = None;
 
         let mut cursor = Some(work_item_id.clone());
+        let mut hops = 0usize;
         while let Some(id) = cursor {
+            if hops >= MAX_ANCESTRY_DEPTH {
+                return Err(app_error_to_mcp(AppError::Validation(
+                    "ancestry walk exceeded max depth — possible parent_id cycle"
+                        .to_owned(),
+                )));
+            }
+            hops += 1;
             let detail = repo::get_work_item_detail(&self.pool, &id)
                 .await
                 .map_err(app_error_to_mcp)?;
@@ -103,9 +119,12 @@ impl LuminaTools {
         // accessor. A single read-only `scalar_opt` probe of the `sprint_tasks`
         // junction (only `kind='task'` rows are ever members); LIMIT 1 because a
         // task is attached to at most one sprint for this context's purpose.
+        // `sprint_tasks` carries no recency column (PK is `(sprint_id, task_id)`),
+        // so `ORDER BY rowid DESC` makes a multi-sprint task bind deterministically
+        // to its most-recent attachment (SQLite rowid is insertion-monotonic).
         let sprint_id: Option<String> = crate::db::scalar_opt::<String>(
             &*self.pool,
-            "SELECT sprint_id FROM sprint_tasks WHERE task_id = $1 LIMIT 1",
+            "SELECT sprint_id FROM sprint_tasks WHERE task_id = $1 ORDER BY rowid DESC LIMIT 1",
             crate::args![work_item_id.clone()],
         )
         .await
@@ -183,6 +202,82 @@ mod tests {
             payload.get("sprint_id").and_then(|v| v.as_str()),
             Some(sprint.as_str()),
             "sprint_id resolves to the attached sprint"
+        );
+    }
+
+    /// The ancestry walk classifies the `epic` row too: a task under a full
+    /// `project > epic > focus > story > task` chain resolves a populated
+    /// `epic_id` (the `"epic" =>` arm has no other coverage).
+    #[tokio::test]
+    async fn resolves_epic_id_in_full_chain() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let tools = LuminaTools::new(pool.clone());
+
+        let story = seed_chain_to_story(&tools).await;
+        let task_id = create_item(&tools, "task", Some(&story)).await;
+
+        let result = tools
+            .get_session_context(Parameters(GetSessionContextParams {
+                work_item_id: task_id.clone(),
+            }))
+            .await
+            .expect("get_session_context succeeds");
+        assert_eq!(result.is_error, Some(false), "read tool is not an error");
+
+        let payload = result
+            .structured_content
+            .expect("structured session-context payload");
+        assert!(
+            payload.get("epic_id").and_then(|v| v.as_str()).is_some(),
+            "epic_id resolves to the chain's epic ancestor: {payload}"
+        );
+    }
+
+    /// A task with no `sprint_tasks` row is not a sprint member, so `sprint_id`
+    /// is omitted from the structured payload (every id is optional).
+    #[tokio::test]
+    async fn omits_sprint_id_when_task_not_in_a_sprint() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let tools = LuminaTools::new(pool.clone());
+
+        // Seed a task but attach it to NO sprint.
+        let story = seed_chain_to_story(&tools).await;
+        let task_id = create_item(&tools, "task", Some(&story)).await;
+
+        let result = tools
+            .get_session_context(Parameters(GetSessionContextParams {
+                work_item_id: task_id.clone(),
+            }))
+            .await
+            .expect("get_session_context succeeds");
+        assert_eq!(result.is_error, Some(false), "read tool is not an error");
+
+        let payload = result
+            .structured_content
+            .expect("structured session-context payload");
+        // `skip_serializing_if = "Option::is_none"` drops an absent sprint_id, so
+        // the key must be wholly absent (not present-and-null).
+        assert!(
+            payload.get("sprint_id").is_none(),
+            "sprint_id is omitted for a task with no sprint binding: {payload}"
+        );
+    }
+
+    /// A missing `work_item_id` surfaces an error: the initial
+    /// `get_work_item_detail` 404s the unknown id and the tool propagates it.
+    #[tokio::test]
+    async fn errors_on_missing_work_item_id() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let tools = LuminaTools::new(pool.clone());
+
+        let result = tools
+            .get_session_context(Parameters(GetSessionContextParams {
+                work_item_id: "no-such-work-item".to_owned(),
+            }))
+            .await;
+        assert!(
+            result.is_err(),
+            "an unknown work_item_id surfaces an error from the ancestry fetch"
         );
     }
 }
