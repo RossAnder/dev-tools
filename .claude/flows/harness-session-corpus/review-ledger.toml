@@ -1,0 +1,698 @@
+schema_version = 1
+last_updated = 2026-06-05
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R1"
+file = "lumina/src/repo/sessions.rs"
+line = 522
+symbol = "ingest_transcript"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Empty-line filter diverges from the live tail (trim().is_empty() vs is_empty()), breaking the documented cross-path ordinal/dedup parity"
+description = "ingest skips lines with `!l.trim().is_empty()` (sessions.rs:522) but the live tail skips only strictly-empty lines via `line.is_empty()` (jsonl_tail/mod.rs:373). A whitespace-only line is counted by the live tail yet skipped by ingest, so the 1-based non-empty-line ordinal (and the synthetic `l{ordinal}` dedup_key for uuid-less records) drifts by one between the two paths for the rest of the transcript. The migration and module docs pin this ordinal as identical in both paths, so it is a real parity defect, not a documented trade-off. Fix: align both on one shared predicate."
+evidence = [
+    "lumina/src/repo/sessions.rs:520-525",
+    "lumina/src/pty/jsonl_tail/mod.rs:373",
+]
+related = [
+    "R2",
+    "R10",
+]
+dedup_id = "32e8d97a215b9f80"
+resolved = 2026-06-05
+resolution = "Aligned ingest empty-line filter to the live tail via a shared is_corpus_blank() predicate in jsonl_tail/mod.rs; both paths now call it"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R2"
+file = "lumina/src/pty/spawn.rs"
+line = 325
+symbol = "spawn corpus consumer / ingest_transcript"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "dedup_key + raw-extraction logic is copy-pasted across the ingest and spawned-corpus paths with no shared helper, inviting silent drift"
+description = "The dedup_key rule (record_uuid else format!(l{ordinal})) and the raw-from-parsed-variant match are hand-duplicated in ingest_transcript (sessions.rs:564-571) and the spawned consumer (spawn.rs:316-328). The spawn.rs comment itself warns that diverging breaks cross-path dedup, yet the rule lives in two unconnected copies kept byte-identical only by convention. R1 is exactly the drift this duplication enables. Extract a shared `dedup_key_for(index, ordinal)` + `raw_of(parsed)` on the repo layer so the cross-path identity is structural."
+evidence = [
+    "lumina/src/repo/sessions.rs:564-571",
+    "lumina/src/pty/spawn.rs:316-328",
+]
+related = [
+    "R1",
+    "R10",
+]
+dedup_id = "745803f131533502"
+resolved = 2026-06-05
+resolution = "Extracted shared corpus_dedup_key()/corpus_raw() helpers in repo/sessions.rs; ingest + spawned consumer both call them"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "wontfix"
+flow = "harness-session-corpus"
+id = "R3"
+file = "lumina/src/pty/spawn.rs"
+line = 302
+symbol = "spawn corpus consumer"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Spawned-session corpus path never runs harvest_correlation, so spawned pty_sessions rows never get sprint_id/agent_id"
+description = "The ingest path runs harvest_correlation and backfills sprint_id/agent_id/project on the pty_sessions row (sessions.rs:528-559), but the spawned consumer only calls insert_session_record per line (spawn.rs:302-388) and never harvests. A spawned agent that calls claim_next_task lands a lossless corpus but its pty_sessions correlation columns stay NULL forever — an asymmetric, partial implementation of the uniform-correlation goal. The corpus rows match across paths; the harvested-hint contract does not."
+evidence = [
+    "lumina/src/pty/spawn.rs:302-388",
+    "lumina/src/repo/sessions.rs:527-559",
+]
+related = [
+    "R9",
+    "R25",
+]
+dedup_id = "f23b377f93192df4"
+wontfix_rationale = "Deferred refactor (agent skip): correlating spawned sessions needs end-of-session record accumulation + a pty_sessions correlation-update path in repo/pty.rs (cross-file). Track as a follow-up architectural item; re-open via /review if prioritised."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R4"
+file = "lumina/src/mcp/sessions.rs"
+line = 89
+symbol = "get_session_context"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Ancestry walk has no cycle guard or depth cap; a corrupt parent_id cycle loops forever issuing DB reads"
+description = "The walk climbs parent_id with `while let Some(id) = cursor` (mcp/sessions.rs:88-100) relying solely on the prose claim that the 5-level hierarchy bounds it. parent_id is a plain self-FK with no DB-level acyclicity constraint, so a buggy move_work_item or a manual edit producing A->B->A spins an infinite loop of get_work_item_detail reads inside the read-only tool, holding a connection. A `for _ in 0..MAX_DEPTH` bound or a visited-set HashSet makes the structural assumption defensive rather than load-bearing on data integrity."
+evidence = ["lumina/src/mcp/sessions.rs:88-100"]
+related = [
+    "R11",
+    "R26",
+]
+dedup_id = "6b474964f5e9ee72"
+resolved = 2026-06-05
+resolution = "Bounded get_session_context ancestry walk with MAX_ANCESTRY_DEPTH=16 hop cap; errors on exceed (parent_id cycle guard)"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R5"
+file = "lumina/src/repo/sessions.rs"
+line = 543
+symbol = "ingest_transcript"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "Chunked ingest is non-atomic across chunks AND the module docstring still claims it commits the whole ingest atomically"
+description = "ingest_transcript commits the pty_sessions upsert + the coarse session.ingested event in the FIRST chunk tx, then commits later chunks separately (sessions.rs:543-591). If a later chunk errors, the session row and its event claiming N records are already durable while only the first chunk's rows landed. Re-ingest is idempotent so it self-heals IF the fire-and-forget hook re-fires — but nothing guarantees it does. Separately, the module docstring (sessions.rs:12-18) still asserts the composer drives one transaction committing/rolling back the whole ingest atomically, which the chunked implementation contradicts. Defer the event to the LAST chunk and fix the docstring."
+evidence = [
+    "lumina/src/repo/sessions.rs:543-591",
+    "lumina/src/repo/sessions.rs:12-18",
+]
+related = ["R6"]
+dedup_id = "374822c87c41f3a0"
+resolved = 2026-06-05
+resolution = "Moved the single session.ingested event to a final post-loop txn; corrected the stale commits-atomically module docstring"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R6"
+file = "lumina/src/repo/sessions.rs"
+line = 578
+symbol = "record_session_ingested_event"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "session.ingested event is non-idempotent and export-inert: re-ingest writes another zero-work event that is never drained, growing the outbox unbounded"
+description = "session_records dedup on UNIQUE(session_id, dedup_key) but the coarse event is unconditionally re-emitted each call. A SessionEnd hook can legitimately re-fire on the same transcript, so every re-ingest appends another session.ingested event with zero new corpus rows. Because session events are export-inert they never drain via the work_item filter, are never stamped exported_at, and accumulate in the events table forever with no reaper. The payload `records` count is also the attempted (parsed.len()) not net-new count, so any consumer summing these events over-counts corpus size."
+evidence = ["lumina/src/repo/sessions.rs:576-588"]
+related = ["R5"]
+dedup_id = "a5368543bdecf3fa"
+resolved = 2026-06-05
+resolution = "insert_session_record returns rows_affected; event emitted only when net-new>0 with payload records=net_new; no zero-work event on re-ingest"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R7"
+file = "lumina/src/repo/sessions.rs"
+line = 510
+symbol = "ingest_transcript"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Unbounded transcript read into memory (read_to_string + full parsed Vec, no size/line cap) is an OOM/DoS vector on the ingest path"
+description = "ingest reads the entire confined transcript via tokio::fs::read_to_string (sessions.rs:510) with NO size cap, then collects every non-empty line into a parsed Vec (520-525). Confinement bounds the path to ~/.claude/projects but not the file size. Under the accepted unauthenticated-loopback posture a local caller can point transcript_path at a multi-GB file under the root and POST repeatedly; each request returns 202 and spawns a task (http/sessions.rs:179) that loads the whole file plus parsed records into RAM. The 4-permit semaphore bounds concurrency but not file size nor the spawned-task backlog. Cap upfront via metadata().len() or stream line-by-line; the chunking only bounds tx-hold time, not memory."
+evidence = [
+    "lumina/src/repo/sessions.rs:510-525",
+    "lumina/src/http/sessions.rs:179-188",
+]
+dedup_id = "8dd6c638bb7a6309"
+resolved = 2026-06-05
+resolution = "Added MAX_TRANSCRIPT_BYTES=64MiB metadata stat-then-reject guard before read_to_string (OOM/DoS ceiling)"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R8"
+file = "lumina/src/pty/jsonl_tail/parse.rs"
+line = 368
+symbol = "resolve_projects_root"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Confinement root falls back to CWD when HOME is unset (and is env-overridable), silently widening the arbitrary-file-read boundary"
+description = "confine_transcript_path uses resolve_projects_root() as the confinement root (http/sessions.rs:121), but that function (1) takes LUMINA_PTY_PROJECTS_ROOT verbatim (parse.rs:359-360) so a stray/hostile env value such as / collapses confinement, and (2) when HOME/USERPROFILE is unset falls back to std::env::current_dir() (parse.rs:370-376). In that case confinement means anywhere under the process CWD — for a server launched at a repo root that exposes the whole tree (.git, in-tree .env/secrets) to the file-read primitive. The fallback only logs at warn and proceeds. A convenience resolver is now load-bearing as a security boundary; ingest should refuse to confine (reject the request) when home cannot be resolved."
+evidence = [
+    "lumina/src/pty/jsonl_tail/parse.rs:358-378",
+    "lumina/src/http/sessions.rs:121",
+]
+dedup_id = "2b0544d5a26f579d"
+resolved = 2026-06-05
+resolution = "Added resolve_projects_root_strict() with no CWD fallback; confine_transcript_path rejects an unresolvable root with 500 instead of confining to CWD"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "wontfix"
+flow = "harness-session-corpus"
+id = "R9"
+file = "lumina/src/pty/spawn.rs"
+line = 375
+symbol = "spawn corpus consumer"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "The lossless spawned corpus rides a lossy bounded broadcast: a Lagged drop is unrecoverable, and the per-record write tx maximises lag risk"
+description = "The corpus consumer shares the bounded broadcast ring with the render bridge; a slow corpus writer that falls behind a burst gets RecvError::Lagged and those JSONL lines are gone from the corpus with no replay source (spawn.rs:375-383). The code correctly logs this as corpus loss, but a lossless substrate built on a lossy transport is a latent defect, and the per-record begin/commit design (spawn.rs:330-360) maximises the chance of falling behind. Ingested transcripts read the file directly and are genuinely lossless; spawned sessions are only best-effort lossless — an asymmetry the always-captured wording understates. Consider a small batching window or an unbounded/backpressured channel for the corpus consumer."
+evidence = ["lumina/src/pty/spawn.rs:330-383"]
+related = ["R3"]
+dedup_id = "55f40cfdfa110ea5"
+wontfix_rationale = "Deferred refactor (agent skip): fixing the lossless-on-lossy-broadcast needs a batching window or backpressured channel (a deliberate concurrency-model change). Lagged-as-loss logging retained; R25's extracted seam eases a future fix. Re-open via /review if prioritised."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R10"
+file = "lumina/src/repo/sessions.rs"
+line = 564
+symbol = "ingest_transcript"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "dedup_key namespace overlap: a record whose record_uuid is literally 'l{n}' collides with line-n's synthetic key, silently dropping a corpus line"
+description = "When a record has no uuid the dedup_key is format!(l{ordinal}); otherwise it is the raw record_uuid with no prefix (sessions.rs:564-567, mirrored in spawn.rs:325-328). The two namespaces are not disjoint: a record carrying uuid==l5 collides on UNIQUE(session_id, dedup_key) with the uuid-less line at ordinal 5, and ON CONFLICT DO NOTHING silently discards the loser — a hole in a lossless corpus. Very narrow with real claude uuids, but trivially closed by namespacing the two forms (u: + uuid vs o: + ordinal)."
+evidence = [
+    "lumina/src/repo/sessions.rs:564-567",
+    "lumina/migrations/0015_session_corpus.sql:87-89",
+]
+related = [
+    "R1",
+    "R2",
+]
+dedup_id = "7b32c0670351e570"
+resolved = 2026-06-05
+resolution = "Namespaced dedup_key as u:<uuid>/o:<ordinal> inside corpus_dedup_key, removing the uuid/ordinal collision"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "wontfix"
+flow = "harness-session-corpus"
+id = "R11"
+file = "lumina/src/mcp/sessions.rs"
+line = 90
+symbol = "get_session_context"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Ancestry walk is N+1 (full get_work_item_detail per level) and inlines raw SQL into the MCP layer, bypassing the repo seam"
+description = "Each ancestry level calls get_work_item_detail, loading the full WorkItemDetail (acceptance criteria, research notes, repo_links, etc.) only to read kind/id/parent_id — up to 5 heavy fetches to recover three id strings (mcp/sessions.rs:90-99). Separately the sprint_tasks probe is a raw scalar_opt SQL string embedded directly in the MCP tool (106-110), the only read in the crate that bypasses a repo::* accessor. Both belong in repo:: as a lightweight ancestry-id query and a repo::sprint_for_task accessor, keeping the MCP layer SQL-free."
+evidence = ["lumina/src/mcp/sessions.rs:90-112"]
+related = ["R12"]
+dedup_id = "769bcf1334a91cb9"
+wontfix_rationale = "Deferred refactor (agent skip): removing the N+1 + raw SQL needs a repo::sprint_for_task accessor + lightweight ancestry query in repo/*.rs (cross-file). The R4 depth cap bounds the walk meanwhile. Re-open via /review if prioritised."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R12"
+file = "lumina/src/mcp/sessions.rs"
+line = 108
+symbol = "get_session_context"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "sprint_tasks membership probe uses LIMIT 1 with no ORDER BY, so a multi-sprint task binds to a non-deterministic sprint"
+description = "The probe is SELECT sprint_id FROM sprint_tasks WHERE task_id = $1 LIMIT 1 with no ORDER BY (mcp/sessions.rs:106-110). The comment asserts a task is attached to at most one sprint for this purpose, but nothing in the schema enforces single membership (add_tasks_to_sprint uses ON CONFLICT DO NOTHING per (sprint,task) pair). If a task is re-sprinted, two rows exist and LIMIT 1 returns an arbitrary sprint_id, so the harvested correlation hint may bind to the wrong (old) sprint. Enforce single membership or ORDER BY a recency column."
+evidence = ["lumina/src/mcp/sessions.rs:106-110"]
+related = ["R11"]
+dedup_id = "fb5b948f53e09289"
+resolved = 2026-06-05
+resolution = "Added ORDER BY rowid DESC to the sprint_tasks probe (deterministic most-recent-binding pick)"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R13"
+file = "lumina/src/cli.rs"
+line = 148
+symbol = "init_hooks_cmd"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "init-hooks writes settings.json non-atomically (truncate-write), risking corruption of the operator's existing settings on interruption"
+description = "init_hooks_cmd writes the merged settings via a single std::fs::write(&settings_path, serialized) (cli.rs:148) — a non-atomic truncate-then-write to the live file. An interruption mid-write (crash, Ctrl-C, disk-full) leaves .claude/settings.json truncated/corrupt; the next init-hooks run then hard-errors on the unparseable file (the deliberate refuse-to-clobber guard at 126-134) and any other tooling reading settings.json sees a partial file. The read-modify-merge is otherwise careful never to clobber sibling keys but discards that guarantee on interruption. Write to a temp sibling then atomically rename."
+evidence = [
+    "lumina/src/cli.rs:148",
+    "lumina/src/cli.rs:126-134",
+]
+dedup_id = "639640fe1100b1de"
+resolved = 2026-06-05
+resolution = "Atomic settings.json write via tempfile::NamedTempFile::persist (tempfile already a dep; no new dependency)"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R14"
+file = "lumina/src/repo/sessions.rs"
+line = 503
+symbol = "ingest_transcript"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Path confinement lives in the http layer while ingest_transcript takes a raw path string, so a second caller would bypass the security gate"
+description = "confine_transcript_path (the security boundary) is in http/sessions.rs:103-155 while drop-if-no-lumina + correlation is in repo::ingest_transcript, which accepts a raw transcript_path: &str (sessions.rs:503-508). The confinement is therefore a property of one caller, not of the ingest API: a future caller (e.g. a `lumina import-session` CLI) would read any file. Either document ingest_transcript as caller-must-confine (mirroring the existing project_id-validation contract note in the repo) or move a path-trust parameter into the repo signature."
+evidence = [
+    "lumina/src/http/sessions.rs:103-155",
+    "lumina/src/repo/sessions.rs:503-508",
+]
+dedup_id = "0b95804800b58151"
+resolved = 2026-06-05
+resolution = "Added caller-must-confine security-contract note to ingest_transcript docstring (no signature change)"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "wontfix"
+flow = "harness-session-corpus"
+id = "R15"
+file = "lumina/src/repo/sessions.rs"
+line = 1
+symbol = "repo/sessions.rs module"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "repo/sessions.rs (~1086 lines) mixes persistence helpers, JSON-flatten parsing, correlation harvest, and ingest orchestration in one module"
+description = "flatten_tool_result_content / extract_claim_task_id / harvest_correlation are pure transcript-parsing logic with no DB dependency, sitting next to insert/upsert/event writers and the ingest_transcript orchestrator. The harvest logic is conceptually a sibling of pty/jsonl_tail/parse.rs (which already owns parse_line / record_index_fields), not of the repo write layer. Splitting harvest into jsonl_tail (or a repo/sessions/harvest.rs submodule) would let the spawned path reuse it (see R3) and shrink the god-module."
+evidence = [
+    "lumina/src/repo/sessions.rs:277-477",
+    "lumina/src/repo/sessions.rs:503-603",
+]
+related = ["R3"]
+dedup_id = "18350e8bc5864793"
+wontfix_rationale = "Deferred refactor (agent skip): the 1086-line module split (extract harvest/parse into a submodule) is out of scope for point-fixes. Re-open via /review if prioritised."
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R16"
+file = "lumina/src/repo/sessions.rs"
+line = 304
+symbol = "flatten_tool_result_content"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Harvest degrades silently (infallible-by-swallowing) with no diagnostic on decode-fail; multi-text-block concat re-parse can lose task_id"
+description = "flatten_tool_result_content and extract_claim_task_id deliberately never error (good for untrusted transcript data), but there is no tracing when a paired claim result is present yet un-decodable: an operator debugging a session that should have correlated but did not gets no signal distinguishing no-claim from claim-result-shape-changed. Additionally the array-content branch concatenates multiple text blocks then re-parses once (sessions.rs:282-307), so two individually-valid JSON blocks whose concatenation is not valid JSON silently fall back to a String and lose the task_id. Add a tracing::debug on the decode-fail branch."
+evidence = [
+    "lumina/src/repo/sessions.rs:277-307",
+    "lumina/src/repo/sessions.rs:450-462",
+]
+dedup_id = "da1d6b92fe5c5626"
+resolved = 2026-06-05
+resolution = "Added tracing::debug on the harvest decode-fail branch; softened the concat-recovery comment"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R17"
+file = "lumina/src/http/sessions.rs"
+line = 187
+symbol = "ingest_session"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Validated canonical path is passed to ingest as to_string_lossy(); a non-UTF-8 path is mangled and the re-read fails, wasting the confinement work"
+description = "The validated canonical PathBuf is converted via to_string_lossy() (http/sessions.rs:187) before being passed as &str to repo::ingest_transcript, which re-opens it with tokio::fs::read_to_string. On a path with non-UTF-8 bytes (rare under the confined root but possible on Linux) to_string_lossy substitutes U+FFFD, so the string no longer names the validated file and the read fails. Pass the PathBuf / &Path through to ingest_transcript instead of a lossy string — that also tightens the path-trust seam noted in R14."
+evidence = ["lumina/src/http/sessions.rs:170-188"]
+related = ["R14"]
+dedup_id = "490dedfba078f07d"
+resolved = 2026-06-05
+resolution = "Replaced to_string_lossy with to_str(); a non-UTF-8 path is now rejected (logged) instead of mangled"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R18"
+file = "lumina/migrations/0015_session_corpus.sql"
+line = 79
+symbol = "session_records.session_id CASCADE"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "FK ON DELETE CASCADE is dead-but-armed (deletes are soft); a future hard-delete or prune would silently destroy the lossless corpus"
+description = "The migration flags the CASCADE never fires because delete_pty_session soft-deletes. Keeping an armed CASCADE that becomes destructive the moment someone adds a real DELETE FROM pty_sessions is a trap: the lossless-at-rest contract would be violated with no code change to session_records. Either drop the CASCADE (NO ACTION, so a future hard-delete fails loudly) or add a guard test asserting no hard-delete path exists. (Note: the migration comment's pty.rs:381 line-ref has drifted; the soft-delete is now elsewhere in repo/pty.rs.)"
+evidence = [
+    "lumina/migrations/0015_session_corpus.sql:50-55",
+    "lumina/migrations/0015_session_corpus.sql:79",
+]
+dedup_id = "f28a7872e9bc0441"
+resolved = 2026-06-05
+resolution = "Changed session_records.session_id FK ON DELETE CASCADE to RESTRICT so a future hard-delete fails loudly (protects the lossless corpus)"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R19"
+file = "lumina/migrations/0015_session_corpus.sql"
+line = 95
+symbol = "session_records indexes"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "idx_session_records_type is unused by the in-memory harvest scan, which filters the parsed Vec in Rust rather than querying by record_type"
+description = "harvest_correlation operates on the in-memory parsed Vec built during ingest and never queries session_records by record_type, so idx_session_records_type buys nothing for the documented harvest pattern; only the ordinal index is exercised on the hot path. The type index may be intended for a future egress/replay query, but as shipped it is dead weight. Re-check the index set against the actual query plans before relying on it; drop it if no consumer queries by type."
+evidence = [
+    "lumina/migrations/0015_session_corpus.sql:93-98",
+    "lumina/src/repo/sessions.rs:519-528",
+]
+dedup_id = "4717838635b2a557"
+resolved = 2026-06-05
+resolution = "Documented idx_session_records_type as harvest-unused / reserved-for-future-egress; index retained"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R20"
+file = "lumina/src/cli.rs"
+line = 154
+symbol = "init_hooks_cmd"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "init-hooks gate warning fires on every gate-less project (the common case), overstating the SILENTLY BLOCKED risk"
+description = "local_gate_extended is false both when a gate exists upstream (real risk) and when no gate exists anywhere (no risk) — cli.rs maps None to false. The warning at 154-163 then fires for every fresh project with no allowedHttpHookUrls, and although the text is hedged with 'If a gate is set in managed or user settings', the prominent SILENTLY BLOCKED phrasing trains operators to ignore a warning that is usually a false alarm (no gate anywhere means http hooks are allowed by default). init-hooks cannot read managed/user settings, but the warning should distinguish gate-present-elsewhere from gate-absent rather than firing identically for both."
+evidence = [
+    "lumina/src/cli.rs:154-163",
+    "lumina/src/cli.rs:191-199",
+]
+dedup_id = "7649a6cb75240f9c"
+resolved = 2026-06-05
+resolution = "Reworded the allowedHttpHookUrls gate warning from a SILENTLY-BLOCKED certainty to a conditional informational note"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R21"
+file = "lumina/src/http/sessions.rs"
+line = 122
+symbol = "confine_transcript_path"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "A missing ~/.claude/projects root turns every ingest into a logged 500, undocumented and noisy on machines that never ran claude"
+description = "confine_transcript_path returns 500 INTERNAL_SERVER_ERROR if the projects root fails to canonicalise (http/sessions.rs:122-129). This is asymmetric with the feature's best-effort, fire-and-forget posture: a missing root makes every hook POST a logged 500 with no operator signal that init-hooks succeeded but ingest can never work, and the CLAUDE.md HTTP-routes doc lists only 202 + 4xx, not the 500. Either document the 500 or treat a missing root as a soft 4xx so monitoring is not polluted."
+evidence = ["lumina/src/http/sessions.rs:122-129"]
+dedup_id = "e73dfdccd0e5a306"
+resolved = 2026-06-05
+resolution = "Documented both 500 paths (unresolvable root, dir-absent) in confine_transcript_path doc; coordinated with R8"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R22"
+file = "lumina/src/http/sessions.rs"
+line = 199
+symbol = "confine_transcript_path tests"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Symlink-escape rejection — the named security control — is never directly tested"
+description = "The module docs make symlink-escape the load-bearing confinement guarantee (a symlink inside the root pointing out canonicalises to its outside target and must fail starts_with), but no test creates a symlink. The in-module tests cover only a literal `..` component, a real out-of-root file, a non-existent path, and an in-root happy path. The actual symlink-traversal scenario the code claims to defeat is unverified — a regression replacing canonicalize with a lexical join would pass every existing test. Add a cfg(unix) test using std::os::unix::fs::symlink."
+evidence = [
+    "lumina/src/http/sessions.rs:99-102",
+    "lumina/src/http/sessions.rs:199-278",
+]
+dedup_id = "0fd5f43dca8c806c"
+resolved = 2026-06-05
+resolution = "Added cfg(unix) symlink_escaping_root_is_rejected test: in-root symlink to out-of-root target asserts 403"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R23"
+file = "lumina/src/cli.rs"
+line = 126
+symbol = "init_hooks_cmd / merge_session_end_http_hook"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "init-hooks safety edges untested: unparseable-settings hard-error (never-clobber), preservation of a pre-existing SessionEnd group, malformed gate"
+description = "Three safety-relevant branches have zero coverage: (1) the present-but-unparseable settings.json hard-error path (cli.rs:126-134) — the highest-risk edge, where a parse-then-overwrite regression would silently destroy an operator's settings; (2) a settings.json that ALREADY has a SessionEnd group (e.g. a command hook) — the never-clobber-on-existing-hook case, asserting the existing hook survives and the http entry is appended alongside; (3) a non-array allowedHttpHookUrls left-untouched branch. Add tests writing malformed input, a pre-existing SessionEnd command hook, and a malformed gate."
+evidence = [
+    "lumina/src/cli.rs:126-134",
+    "lumina/src/cli.rs:201-303",
+]
+dedup_id = "2820b4a5dadb8f4a"
+resolved = 2026-06-05
+resolution = "Added init-hooks tests: unparseable-settings never-clobber, pre-existing SessionEnd preservation, non-array gate left untouched"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R24"
+file = "lumina/tests/sessions_e2e.rs"
+line = 174
+symbol = "ingest e2e"
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "The route->spawn->ingest->DB leg has zero e2e coverage; the 4-permit back-pressure semaphore is an un-injectable seam"
+description = "ingest_session tokio::spawns a fire-and-forget ingest, so the e2e deliberately asserts only the synchronous 202 (sessions_e2e.rs:174-197) and never the spawned DB effect — the permit acquire, the warn-and-swallow error path, and the actual corpus persist are all uncovered end-to-end. The 4-permit count is hard-wired in AppState with no seam to inject a smaller semaphore, so back-pressure (>4 concurrent ingests queue rather than 500) cannot be proven deterministically. Expose the permit count via AppState construction and drive a synchronous repo::ingest_transcript test to cover the persist leg."
+evidence = [
+    "lumina/src/http/sessions.rs:179-194",
+    "lumina/tests/sessions_e2e.rs:174-197",
+]
+dedup_id = "d589c920ad893f18"
+resolved = 2026-06-05
+resolution = "partial: added route persist-leg + >500-line chunk-boundary + cwd-project-bind + cross-path-collapse coverage / pending: semaphore-permit-count injection seam (would ripple across AppState constructors) tracked as R29"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R25"
+file = "lumina/tests/sessions_e2e.rs"
+line = 499
+symbol = "spawned_session_persists_a_corpus_record"
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "Spawned-path parity test bypasses the real broadcast consumer (seeds rows directly), so spawn.rs ordinal derivation and the Lagged loss path are untested"
+description = "The spawned-path test admits (lines 499-502) it does not drive the live-tail loop; it manually seeds a pty_sessions row and calls insert_session_record directly — re-testing the SAME primitive the ingest path covers, not the spawn.rs broadcast consumer (spawn.rs:302-388). That consumer's line_ordinal derivation and the RecvError::Lagged corpus-loss path (R9) have no in-process seam: there is no way to feed a synthetic broadcast::Sender without spawning a real claude PTY. Extract the consumer body into a fn taking a broadcast::Receiver so the seam is injectable."
+evidence = [
+    "lumina/tests/sessions_e2e.rs:499-540",
+    "lumina/src/pty/spawn.rs:302-388",
+]
+related = [
+    "R3",
+    "R9",
+]
+dedup_id = "60a021d018efa3f7"
+resolved = 2026-06-05
+resolution = "Extracted persist_corpus_record() seam from the spawn broadcast loop + a unit test driving it with a synthetic BroadcastRecord"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R26"
+file = "lumina/src/mcp/sessions.rs"
+line = 141
+symbol = "get_session_context tests"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "get_session_context branch coverage gaps: epic_id, not-in-sprint (None), missing-id 404, and the harvest ctx-fallback path are untested"
+description = "The single test asserts story_id/project_id/sprint_id for a fully-seeded task in a sprint. Untested: (a) epic_id resolution (the `epic =>` arm has no coverage); (b) the not-in-a-sprint case where the probe returns None and sprint_id is omitted — the common planning-item shape; (c) a missing work_item_id surfacing the get_work_item_detail 404; (d) the harvest_correlation get_session_context fallback (fill sprint from ctx when no claim; never override a claim). All are cheap structured-content / pure-function assertions on the existing harness."
+evidence = [
+    "lumina/src/mcp/sessions.rs:141-187",
+    "lumina/src/repo/sessions.rs:457-469",
+]
+related = ["R4"]
+dedup_id = "2c3e39ebc77fa62a"
+resolved = 2026-06-05
+resolution = "Added get_session_context tests: epic_id resolution, not-in-sprint None, missing-id error"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R27"
+file = "lumina/tests/sessions_e2e.rs"
+line = 0
+symbol = "ingest internals tests"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Ingest internals untested: >500-line chunk boundary (one-event invariant), cwd->project floor binding, flatten/extract fallbacks, cross-path dedup parity"
+description = "Several behaviours go unexercised: (1) the multi-chunk path (INGEST_CHUNK_ROWS=500) where only the first chunk carries the upsert+event — every test transcript is <=4 lines, so the second-chunk path and the still-exactly-one-event invariant are unproven; (2) resolve_cwd_to_project binding a non-NULL project_id (no ingest test seeds a repo_link/local_path); (3) flatten/extract defensive fallbacks (reparse-fail, claimed:null); (4) a cross-path scenario where the SAME uuid-less line is both spawned-captured and re-ingested and must collapse to one row (would lock the R1/R2 parity)."
+evidence = [
+    "lumina/src/repo/sessions.rs:544",
+    "lumina/src/repo/sessions.rs:304-329",
+]
+related = [
+    "R1",
+    "R2",
+]
+dedup_id = "aae7d0cb8d3f53eb"
+resolved = 2026-06-05
+resolution = "Added e2e tests: >500-line chunk boundary (one event), cwd->project_id bind, cross-path collapse; exposed corpus_dedup_key as pub so the test computes the canonical key"
+
+[[items]]
+first_flagged = 2026-06-05
+rounds = 1
+status = "fixed"
+flow = "harness-session-corpus"
+id = "R28"
+file = "lumina/tests/sessions_e2e.rs"
+line = 116
+symbol = "set_projects_root"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Confinement e2e tests rely on nextest process-per-test env isolation; under plain cargo test the shared-process env mutations can bleed"
+description = "Confinement tests steer LUMINA_PTY_PROJECTS_ROOT via unsafe env::set_var (sessions_e2e.rs:116-121) and never remove_var on exit — sound under nextest's process-per-test isolation but, under the still-supported `cargo test` (shared process), the four confinement tests' env mutations can race/bleed in an ordering-dependent flake. The in-module http/sessions.rs tests DO remove_var; the e2e diverges. Pair each set with a remove_var or assert the override is set, to make the isolation explicit rather than nextest-implicit."
+evidence = ["lumina/tests/sessions_e2e.rs:116-121"]
+dedup_id = "b1887a2df64d1886"
+resolved = 2026-06-05
+resolution = "Replaced leaky set_projects_root with an RAII ProjectsRootGuard that remove_var's on drop (cargo test isolation)"
+
+[[items]]
+id = "R29"
+file = "lumina/src/http/sessions.rs"
+line = 179
+symbol = "ingest_session"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "pending parts of R24: 4-permit semaphore back-pressure injection seam"
+description = "R24 added the persist-leg coverage but the 4-permit semaphore count is hard-wired in AppState with no injection seam; exposing it ripples across AppState constructors. A deterministic back-pressure test (>4 concurrent ingests queue rather than 500) needs that seam. Split out of R24."
+first_flagged = 2026-06-05
+rounds = 1
+related = ["R24"]
+status = "open"
+flow = "harness-session-corpus"
+dedup_id = "add97a437133942f"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 5
+dropped_count = 2
+downgraded_count = 0
+rationale = "research-deep. Spot-checked F1 (trim vs is_empty divergence, sessions.rs:522 + jsonl_tail/mod.rs:373), F2 (dedup_key duplication), F8 (to_string_lossy), F9 (cycle guard), F12 (semaphore silent return) — all matched cited file:line. Dropped 2 pure-style nits with no behavioural effect: the >= vs > operator on unique ordinals, and the sprint_id fallback wording clarification. Kept findings consolidated into R1,R2,R4,R16,R17."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "research-lite, returned 3 (under the 5-cap, sampled all). Verified all: F1 unbounded read_to_string (sessions.rs:510, no size cap), F2 resolve_projects_root CWD fallback + env override (parse.rs:358-378), F3 init-hooks non-atomic fs::write (cli.rs:148). The confinement logic itself (confine_transcript_path) was inspected and is SOUND — Agent-2 correctly did not flag it as broken. Mapped to R7,R8,R13."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 1
+rationale = "research-deep. Verified F1 (spawned path no harvest), F2 (dedup duplication), F3 (non-idempotent event), F5 (dedup_key uuid collision — downgraded warning->suggestion, extremely narrow with real claude uuids), F7 (cycle guard), F9 (chunked non-atomic + stale docstring confirmed at sessions.rs:12-18), F10 (dead CASCADE — agent accurately caught a drifted line-ref in the migration comment). All cited lines matched. Mapped to R3,R2,R6,R10,R4,R5,R9,R11,R14,R15,R18,R19."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 0
+rationale = "research-lite. Verified F1 (trim divergence — dup of A1), F4 (cycle guard), F5 (500 on missing root, http/sessions.rs:122), F6 (chunked non-atomic + stale docstring), F7 (event attempted-count payload), F8 (gate warning — note the text IS hedged with 'If a gate is set', so the certainty is slightly overstated; kept as suggestion R20), F10 (sprint LIMIT 1). Deferred test-gaps to Agent-5 correctly. Mapped to R5,R6,R20,R21 (+merged into R1,R4,R12)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-05T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "research-lite. Verified the seams/gaps against real code: F1 (symlink test absent), F2 (unparseable-settings hard-error path exists, untested), F6 (fire-and-forget spawn + hard-wired 4-permit sem = untestable leg), F7 (spawned test quotes its own LIMITATION comment, bypasses broadcast consumer). Consolidated 12 findings -> R22-R28 (init-hooks edges merged into R23; get_session_context branches into R26; ingest internals into R27)."
+dedup_id = "45ca31c3315a5978"
