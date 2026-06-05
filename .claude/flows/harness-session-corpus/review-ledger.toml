@@ -322,7 +322,7 @@ resolution = "Added caller-must-confine security-contract note to ingest_transcr
 [[items]]
 first_flagged = 2026-06-05
 rounds = 1
-status = "wontfix"
+status = "fixed"
 flow = "harness-session-corpus"
 id = "R15"
 file = "lumina/src/repo/sessions.rs"
@@ -339,7 +339,8 @@ evidence = [
 ]
 related = ["R3"]
 dedup_id = "18350e8bc5864793"
-wontfix_rationale = "Deferred refactor (agent skip): the 1086-line module split (extract harvest/parse into a submodule) is out of scope for point-fixes. Re-open via /review if prioritised."
+resolved = 2026-06-05
+resolution = "Split repo/sessions.rs: carved the pure DB-free harvest/parse half (tool-name consts, Correlation, flatten_tool_result_content/extract_claim_task_id, CorrelationAccumulator, harvest_correlation + the 8 harvest unit tests) into a new repo/sessions/harvest.rs submodule, leaving persistence helpers + the ingest orchestrator in sessions.rs. pub use harvest::* keeps every repo::* path unchanged (corpus_dedup_key, Correlation, CorrelationAccumulator, harvest_correlation). Behaviour-preserving; also cleaned the 4 pre-existing doc_lazy_continuation clippy warnings on the ingest_transcript security-contract doc. 418 tests pass, clippy clean."
 
 [[items]]
 first_flagged = 2026-06-05
