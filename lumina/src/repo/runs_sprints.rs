@@ -41,8 +41,8 @@ use super::events::{record_event, record_inert_event};
 use crate::args;
 use crate::db::{DbClient, Scalar};
 use crate::domain::{
-    Disposition, FindingDecisionKind, NewFindingDecision, NewRun, NewSprint, TargetKind,
-    TriageState,
+    Disposition, FindingDecisionKind, NewFindingDecision, NewRun, NewSprint, SprintStatus,
+    TargetKind, TriageState,
 };
 use crate::error::AppError;
 
@@ -127,29 +127,184 @@ pub async fn create_run(db: &impl DbClient, run: &NewRun) -> Result<Uuid, AppErr
 }
 
 /// Create a new (previously-ephemeral) [`sprint`](crate::domain::NewSprint)
-/// grouping (migration 0011, B23). Single-mutation-path: one `sprints` INSERT
-/// (`title` nullable from the input; `status` left to the column DEFAULT
-/// `'open'`, omitted from the column list) + EXACTLY ONE export-inert
-/// `sprint.created` event (`aggregate_type="sprint"`; R-B4 — never
-/// `"work_item"`). Returns the sprint id.
+/// grouping (migration 0011, B23; widened migration 0016). Single-mutation-path:
+/// one `sprints` INSERT (`title` nullable from the input; `status` written
+/// EXPLICITLY as `'draft'` — the pre-0016 column DEFAULT `'open'` is now
+/// vestigial — plus the optional `worktree_id` / `predecessor_sprint_id`
+/// run-chaining columns) + EXACTLY ONE export-inert `sprint.created` event
+/// (`aggregate_type="sprint"`; R-B4 — never `"work_item"`). Returns the sprint
+/// id.
+///
+/// The two new FK columns are VALIDATED to reference existing rows BEFORE the tx
+/// opens so a dangling reference is a clean [`AppError::Validation`] (→ 422)
+/// rather than a dangling-FK 500 (mirroring [`create_run`]'s target check):
+/// a `Some(worktree_id)` must name a `worktrees` row; a
+/// `Some(predecessor_sprint_id)` must name a `sprints` row.
 pub async fn create_sprint(db: &impl DbClient, sprint: &NewSprint) -> Result<Uuid, AppError> {
+    // Validate the optional FK references BEFORE the tx — a clean Validation,
+    // never a dangling-FK 500.
+    if let Some(worktree_id) = sprint.worktree_id.as_deref() {
+        let exists = db
+            .query_opt::<Scalar<i64>>(
+                "SELECT 1 FROM worktrees WHERE id = $1",
+                args![worktree_id.to_owned()],
+            )
+            .await?
+            .is_some();
+        if !exists {
+            return Err(AppError::Validation(format!(
+                "sprint worktree_id '{worktree_id}' does not name an existing worktree"
+            )));
+        }
+    }
+    if let Some(predecessor_id) = sprint.predecessor_sprint_id.as_deref() {
+        let exists = db
+            .query_opt::<Scalar<i64>>(
+                "SELECT 1 FROM sprints WHERE id = $1",
+                args![predecessor_id.to_owned()],
+            )
+            .await?
+            .is_some();
+        if !exists {
+            return Err(AppError::Validation(format!(
+                "sprint predecessor_sprint_id '{predecessor_id}' does not name an existing sprint"
+            )));
+        }
+    }
+
     let id = Uuid::now_v7();
     let id_str = id.to_string();
+    // `status` is written EXPLICITLY as the migration-0016 create-default
+    // `'draft'` (the column DEFAULT 'open' is now vestigial).
+    let status_str = enum_to_str(SprintStatus::Draft);
 
     let mut tx = db.begin().await?;
 
-    // `status` is omitted so the column DEFAULT ('open') applies.
     tx.execute(
-        "INSERT INTO sprints (id, title) VALUES ($1, $2)",
-        args![id_str.clone(), sprint.title.clone()],
+        "INSERT INTO sprints (id, title, status, worktree_id, predecessor_sprint_id) \
+         VALUES ($1, $2, $3, $4, $5)",
+        args![
+            id_str.clone(),
+            sprint.title.clone(),
+            status_str.clone(),
+            sprint.worktree_id.clone(),
+            sprint.predecessor_sprint_id.clone()
+        ],
     )
     .await?;
 
-    let payload = serde_json::json!({ "title": sprint.title });
+    let payload = serde_json::json!({
+        "title": sprint.title,
+        "worktree_id": sprint.worktree_id,
+        "predecessor_sprint_id": sprint.predecessor_sprint_id,
+    });
     record_inert_event(tx.as_mut(), "sprint", &id_str, "sprint.created", payload).await?;
 
     tx.commit().await?;
     Ok(id)
+}
+
+/// Transition a sprint's lifecycle status (migration 0016), enforcing the
+/// [`SprintStatus`] legal-transition table at the REPO layer (the
+/// `sprints.status` column is free TEXT with NO DB CHECK). Single-mutation-path:
+/// one `sprints` status UPDATE + EXACTLY ONE export-inert `sprint.status_changed`
+/// event (`aggregate_type="sprint"`; R-B4 — never `"work_item"`).
+///
+/// Gating, in order:
+///   1. The sprint must exist and be live → else [`AppError::NotFound`].
+///   2. The stored status string must parse to a [`SprintStatus`]; a legacy /
+///      out-of-vocab string is a clean [`AppError::Validation`] (NEVER a parse
+///      panic).
+///   3. `current.can_transition_to(next)` must hold → else
+///      [`AppError::Validation`] naming `current → next`.
+///   4. **Worktree-owner terminal guard.** A terminal transition out of `review`
+///      (`review → done` or `review → cancelled`) is REJECTED when the sprint
+///      OWNS a worktree (`EXISTS worktrees WHERE owning_sprint_id = sprint`):
+///      the worktree's merge AUDIT must be recorded through
+///      `record_worktree_merge` / `record_worktree_rejection`, never skipped via
+///      a bare status flip. A worktree-LESS sprint transitions normally.
+pub async fn set_sprint_status(
+    db: &impl DbClient,
+    sprint_id: &str,
+    next: SprintStatus,
+) -> Result<(), AppError> {
+    // 1. Read the current status → NotFound if absent. (The `sprints` table has
+    //    no soft-delete column — rows are never tombstoned — so there is no
+    //    `deleted_at IS NULL` filter, unlike the `work_items` reads.)
+    let current_str: String = match crate::db::scalar_opt::<String>(
+        db,
+        "SELECT status FROM sprints WHERE id = $1",
+        args![sprint_id.to_owned()],
+    )
+    .await?
+    {
+        Some(s) => s,
+        None => return Err(AppError::NotFound(format!("sprint '{sprint_id}' not found"))),
+    };
+
+    // 2. Parse the stored string into the typed enum — an unrecognised / legacy
+    //    value is a clean Validation, never a parse panic/unwrap.
+    let current: SprintStatus =
+        serde_json::from_value(serde_json::Value::String(current_str.clone())).map_err(|_| {
+            AppError::Validation(format!(
+                "sprint '{sprint_id}' has unrecognised status '{current_str}'"
+            ))
+        })?;
+
+    let next_str = enum_to_str(next);
+
+    // 3. Legal-transition gate.
+    if !current.can_transition_to(next) {
+        return Err(AppError::Validation(format!(
+            "illegal sprint status transition '{current_str}' → '{next_str}'"
+        )));
+    }
+
+    // 4. Worktree-owner terminal guard: a `review → done|cancelled` transition on
+    //    a worktree-OWNING sprint must go through the merge/rejection audit path.
+    if matches!(current, SprintStatus::Review)
+        && matches!(next, SprintStatus::Done | SprintStatus::Cancelled)
+    {
+        let owns_worktree = db
+            .query_opt::<Scalar<i64>>(
+                "SELECT 1 FROM worktrees WHERE owning_sprint_id = $1",
+                args![sprint_id.to_owned()],
+            )
+            .await?
+            .is_some();
+        if owns_worktree {
+            return Err(AppError::Validation(format!(
+                "sprint '{sprint_id}' owns a worktree; use record_worktree_merge / \
+                 record_worktree_rejection to take it terminal, not set_sprint_status"
+            )));
+        }
+    }
+
+    // 5. One BEGIN IMMEDIATE tx: the status UPDATE + EXACTLY ONE export-inert
+    //    `sprint.status_changed` event.
+    let mut tx = db.begin().await?;
+
+    // NOTE: `sprints` has no `updated_at` column (only `created_at`), so the
+    // status flip updates `status` alone — adding `updated_at = CURRENT_TIMESTAMP`
+    // would reference a non-existent column and fail at runtime.
+    tx.execute(
+        "UPDATE sprints SET status = $2 WHERE id = $1",
+        args![sprint_id.to_owned(), next_str.clone()],
+    )
+    .await?;
+
+    let payload = serde_json::json!({ "from": current_str, "to": next_str });
+    record_inert_event(
+        tx.as_mut(),
+        "sprint",
+        sprint_id,
+        "sprint.status_changed",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Add one or more tasks to a sprint via the `sprint_tasks` junction (migration
@@ -1171,11 +1326,12 @@ mod tests {
         );
     }
 
-    /// R21: `create_sprint` lands a `sprints` row whose `status` is the documented
-    /// column DEFAULT `'open'` (mirrors `create_run_accepts_live_story_with_open_status`,
-    /// which reads back `run_status`). The prior test only asserted COUNT(*)==1.
+    /// `create_sprint` lands a `sprints` row whose `status` is the migration-0016
+    /// create-default `'draft'` (written EXPLICITLY — the pre-0016 column DEFAULT
+    /// `'open'` is now vestigial). Renamed from the pre-0016
+    /// `create_sprint_persists_default_open_status`, which asserted `'open'`.
     #[tokio::test]
-    async fn create_sprint_persists_default_open_status() {
+    async fn create_sprint_persists_default_draft_status() {
         let pool = connect_in_memory().await.expect("pool");
         let id = create_sprint(
             &pool,
@@ -1194,6 +1350,225 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("select sprint status");
-        assert_eq!(status, "open", "sprint persists the column-default 'open' status");
+        assert_eq!(status, "draft", "sprint persists the migration-0016 default 'draft' status");
+    }
+
+    /// Read a `sprints` row's `status` string via the runtime query API.
+    async fn sprint_status(pool: &SqlitePool, id: &str) -> String {
+        sqlx::query_scalar::<_, String>("SELECT status FROM sprints WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("select sprint status")
+    }
+
+    /// INSERT a `worktrees` row owned by `sprint` directly via the runtime sqlx
+    /// API — the guard tests must not depend on task 4's `create_worktree` (lands
+    /// in parallel). Returns the new worktree id.
+    async fn seed_worktree_owned_by(pool: &SqlitePool, sprint: &str) -> String {
+        let wt_id = Uuid::now_v7().to_string();
+        sqlx::query("INSERT INTO worktrees (id, owning_sprint_id, path) VALUES ($1, $2, $3)")
+            .bind(&wt_id)
+            .bind(sprint)
+            .bind("/tmp/wt")
+            .execute(pool)
+            .await
+            .expect("insert worktree");
+        wt_id
+    }
+
+    /// `set_sprint_status` walks the full legal happy path
+    /// `draft → ready → active → review → done`, each step succeeding and
+    /// persisting the new status.
+    #[tokio::test]
+    async fn set_sprint_status_legal_path_succeeds() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint = seed_sprint(&pool).await; // status starts 'draft'
+
+        for next in [
+            SprintStatus::Ready,
+            SprintStatus::Active,
+            SprintStatus::Review,
+            SprintStatus::Done,
+        ] {
+            set_sprint_status(&pool, &sprint, next)
+                .await
+                .unwrap_or_else(|e| panic!("legal transition to {next:?} should succeed: {e:?}"));
+            assert_eq!(sprint_status(&pool, &sprint).await, enum_to_str(next));
+        }
+    }
+
+    /// `set_sprint_status` rejects an illegal transition (`draft → done`) with a
+    /// clean `Validation`, leaving the status unchanged.
+    #[tokio::test]
+    async fn set_sprint_status_illegal_transition_is_validation() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint = seed_sprint(&pool).await; // 'draft'
+
+        let res = set_sprint_status(&pool, &sprint, SprintStatus::Done).await;
+        assert!(
+            matches!(res, Err(AppError::Validation(_))),
+            "draft → done is illegal, got {res:?}"
+        );
+        assert_eq!(
+            sprint_status(&pool, &sprint).await,
+            "draft",
+            "an illegal transition leaves the status unchanged"
+        );
+    }
+
+    /// `set_sprint_status` against a missing sprint id is a clean `NotFound`.
+    #[tokio::test]
+    async fn set_sprint_status_missing_sprint_is_not_found() {
+        let pool = connect_in_memory().await.expect("pool");
+        let res = set_sprint_status(&pool, "no-such-sprint", SprintStatus::Ready).await;
+        assert!(
+            matches!(res, Err(AppError::NotFound(_))),
+            "a missing sprint id is NotFound, got {res:?}"
+        );
+    }
+
+    /// WORKTREE-OWNER GUARD: a worktree-OWNING sprint at `review` is REJECTED from
+    /// `review → done` via `set_sprint_status` (the merge audit must go through
+    /// record_worktree_merge/rejection). The sprint is walked to `review` along
+    /// the legal path, then a `worktrees` row is inserted naming it as owner.
+    #[tokio::test]
+    async fn set_sprint_status_worktree_owner_terminal_is_rejected() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint = seed_sprint(&pool).await;
+
+        // Walk the legal path to 'review' (exercising set_sprint_status).
+        for next in [SprintStatus::Ready, SprintStatus::Active, SprintStatus::Review] {
+            set_sprint_status(&pool, &sprint, next).await.expect("legal step");
+        }
+        // Now the sprint OWNS a worktree.
+        seed_worktree_owned_by(&pool, &sprint).await;
+
+        let to_done = set_sprint_status(&pool, &sprint, SprintStatus::Done).await;
+        assert!(
+            matches!(to_done, Err(AppError::Validation(_))),
+            "review → done on a worktree-owning sprint must be rejected, got {to_done:?}"
+        );
+        let to_cancelled = set_sprint_status(&pool, &sprint, SprintStatus::Cancelled).await;
+        assert!(
+            matches!(to_cancelled, Err(AppError::Validation(_))),
+            "review → cancelled on a worktree-owning sprint must be rejected, got {to_cancelled:?}"
+        );
+        assert_eq!(
+            sprint_status(&pool, &sprint).await,
+            "review",
+            "the rejected terminal transitions leave the sprint at 'review'"
+        );
+    }
+
+    /// A worktree-LESS sprint at `review` transitions `review → done` normally
+    /// (the guard applies only to worktree-OWNING sprints).
+    #[tokio::test]
+    async fn set_sprint_status_worktreeless_review_to_done_succeeds() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint = seed_sprint(&pool).await;
+        for next in [SprintStatus::Ready, SprintStatus::Active, SprintStatus::Review] {
+            set_sprint_status(&pool, &sprint, next).await.expect("legal step");
+        }
+
+        set_sprint_status(&pool, &sprint, SprintStatus::Done)
+            .await
+            .expect("a worktree-less review → done succeeds");
+        assert_eq!(sprint_status(&pool, &sprint).await, "done");
+    }
+
+    /// `set_sprint_status` maps an UNRECOGNISED stored status string to a clean
+    /// `Validation`, never a parse panic. The bad value is written directly via
+    /// the runtime sqlx API (no production path writes it).
+    #[tokio::test]
+    async fn set_sprint_status_unrecognised_current_is_validation() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint = seed_sprint(&pool).await;
+        sqlx::query("UPDATE sprints SET status = 'legacy-open' WHERE id = $1")
+            .bind(&sprint)
+            .execute(&pool)
+            .await
+            .expect("force a legacy status");
+
+        let res = set_sprint_status(&pool, &sprint, SprintStatus::Ready).await;
+        assert!(
+            matches!(res, Err(AppError::Validation(_))),
+            "an unrecognised stored status is a Validation, got {res:?}"
+        );
+    }
+
+    /// `create_sprint` persists `worktree_id` + `predecessor_sprint_id` for a
+    /// chained sprint, validating both reference existing rows. The predecessor is
+    /// a real sprint; its worktree is inserted directly (no dependency on task 4).
+    #[tokio::test]
+    async fn create_sprint_persists_chaining_columns() {
+        let pool = connect_in_memory().await.expect("pool");
+        let predecessor = seed_sprint(&pool).await;
+        let worktree = seed_worktree_owned_by(&pool, &predecessor).await;
+
+        let chained = create_sprint(
+            &pool,
+            &NewSprint {
+                title: Some("fix sprint".into()),
+                worktree_id: Some(worktree.clone()),
+                predecessor_sprint_id: Some(predecessor.clone()),
+            },
+        )
+        .await
+        .expect("chained sprint")
+        .to_string();
+
+        let (wt, pred): (Option<String>, Option<String>) = {
+            use sqlx::Row as _;
+            let r = sqlx::query(
+                "SELECT worktree_id, predecessor_sprint_id FROM sprints WHERE id = $1",
+            )
+            .bind(&chained)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            (r.try_get("worktree_id").unwrap(), r.try_get("predecessor_sprint_id").unwrap())
+        };
+        assert_eq!(wt.as_deref(), Some(worktree.as_str()), "worktree_id persisted");
+        assert_eq!(
+            pred.as_deref(),
+            Some(predecessor.as_str()),
+            "predecessor_sprint_id persisted"
+        );
+    }
+
+    /// `create_sprint` rejects a dangling `worktree_id` / `predecessor_sprint_id`
+    /// with a clean `Validation` (never a dangling-FK 500).
+    #[tokio::test]
+    async fn create_sprint_rejects_dangling_chaining_refs() {
+        let pool = connect_in_memory().await.expect("pool");
+
+        let bad_worktree = create_sprint(
+            &pool,
+            &NewSprint {
+                title: None,
+                worktree_id: Some("no-such-worktree".into()),
+                predecessor_sprint_id: None,
+            },
+        )
+        .await;
+        assert!(
+            matches!(bad_worktree, Err(AppError::Validation(_))),
+            "a dangling worktree_id is a Validation, got {bad_worktree:?}"
+        );
+
+        let bad_pred = create_sprint(
+            &pool,
+            &NewSprint {
+                title: None,
+                worktree_id: None,
+                predecessor_sprint_id: Some("no-such-sprint".into()),
+            },
+        )
+        .await;
+        assert!(
+            matches!(bad_pred, Err(AppError::Validation(_))),
+            "a dangling predecessor_sprint_id is a Validation, got {bad_pred:?}"
+        );
     }
 }

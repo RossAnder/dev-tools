@@ -3,8 +3,8 @@
 //! `release_task` / `renew_lease`, and the `complete_task` done→review CASCADE
 //! (the documented COMPOSER exception to the per-mutator single-tx rule). The
 //! private claim-scan row decoders (`ClaimCandidateRow`, `OverlapScanRow`), the
-//! `files_touched_*` helpers, the `NON_RUNNABLE_SPRINT_STATUSES` guard set, and
-//! the `CompleteTaskResult` output struct move with them.
+//! `files_touched_*` helpers, and the `CompleteTaskResult` output struct move
+//! with them.
 //!
 //! `pub use team_execution::*` in `repo/mod.rs` PRESERVES the public surface —
 //! every `pub` fn here + `CompleteTaskResult` stays reachable at its existing
@@ -21,21 +21,13 @@ use crate::error::AppError;
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------
-// claim_next_task (team-execution migration 0013, plan §C). The atomic
-// work-queue claim primitive: one BEGIN IMMEDIATE txn does lazy-reclaim →
-// sprint-status guard → candidate select → lease, then a cheap post-commit
+// claim_next_task (team-execution migration 0013; sprint-status + checkpoint
+// guards tightened in migration 0016, plan §C). The atomic work-queue claim
+// primitive: one BEGIN IMMEDIATE txn does lazy-reclaim → sprint-status guard →
+// checkpoint-freeze guard → candidate select → lease, then a cheap post-commit
 // read computes the advisory file-overlap report. Race-safe under SQLite's
 // single writer (the SELECT→UPDATE share one RESERVED-locked txn).
 // ---------------------------------------------------------------------------
-
-/// Sprint statuses that make a sprint NON-runnable (the claim returns
-/// `Ok(None)` immediately). `sprints.status` is FREE TEXT (migration 0011 —
-/// `status TEXT NOT NULL DEFAULT 'open'`, NO CHECK), so this set is the
-/// repo-layer source of truth for the layer-1 guard: anything NOT in this set
-/// (incl. `'open'`/`'running'`) is treated as runnable. The full
-/// `composed → queued → running → merged` lifecycle and a stricter,
-/// CHECK-backed guard are the layer-2 follow-up (ADR-0002).
-const NON_RUNNABLE_SPRINT_STATUSES: &[&str] = &["cancelled", "closed", "merged"];
 
 /// Normalise one raw `attributes.files_touched` entry to its canonical
 /// `(repo, path)` overlap KEY. Bare string `p` → `(None, p)` (the legacy form,
@@ -91,8 +83,14 @@ fn files_touched_from_attributes(attributes: Option<&str>) -> Vec<Value> {
 ///      export-INERT `leases.reclaimed` event is recorded (mirrors the
 ///      migration-0011 Part-B coarse-event idiom — `aggregate_type="sprint"`,
 ///      never `"work_item"`). Zero reclaimed ⇒ no event.
-///   2. **Sprint-status guard** — `Ok(None)` if the sprint's status is in
-///      [`NON_RUNNABLE_SPRINT_STATUSES`] (layer-1 rule).
+///   2. **Sprint-status guard** — `Ok(None)` unless the sprint's status is
+///      exactly `'active'` (migration-0016 layer-2 rule: a sprint's tasks are
+///      claimable ⟺ the sprint is `active`; `draft`/`ready`/`review`/terminal
+///      states are all non-runnable). A missing sprint is likewise `Ok(None)`.
+///   2b. **Checkpoint-freeze guard** — `Ok(None)` while ANY checkpoint task
+///      (`work_items.checkpoint = 1`, migration 0016) in the sprint is
+///      `in_progress`: a checkpoint freezes its whole sprint (a sprint-wide
+///      barrier) until that checkpoint task leaves `in_progress`.
 ///   3. **Candidate select** — the first ready task (status=`todo`, unleased,
 ///      matching lane + optional tier, not blocked on a question, live, with
 ///      every task-dependency `done`), ordered by the `compute_task_batches`
@@ -153,20 +151,49 @@ pub async fn claim_next_task(
     }
 
     // --- Step 2: sprint-status guard. --------------------------------------
-    // A missing sprint OR a non-runnable status ⇒ Ok(None). The lazy-reclaim
-    // above still committed if it fired (a sprint may legitimately be reclaimed
-    // and then found non-runnable); commit the reclaim and return None.
+    // A missing sprint OR a non-`active` status ⇒ Ok(None) (migration-0016
+    // layer-2 rule: a sprint's tasks are claimable ⟺ the sprint is `active`;
+    // `draft`/`ready`/`review`/`done`/`cancelled` are all non-runnable). The
+    // lazy-reclaim above still committed if it fired (a sprint may legitimately
+    // be reclaimed and then found non-runnable); commit the reclaim and return
+    // None. NB this is the SPRINT-status guard — wholly separate from the
+    // TASK-readiness predicate (`status IN ('todo','open')`) at Step 3/4.
     let sprint_status: Option<String> = crate::db::tx_scalar_opt::<String>(
         tx.as_mut(),
         "SELECT status FROM sprints WHERE id = $1",
         args![sprint_id.to_owned()],
     )
     .await?;
-    let runnable = match sprint_status.as_deref() {
-        None => false, // no such sprint
-        Some(s) => !NON_RUNNABLE_SPRINT_STATUSES.contains(&s),
-    };
+    let runnable = sprint_status.as_deref() == Some("active");
     if !runnable {
+        tx.commit().await?;
+        return Ok(None);
+    }
+
+    // --- Step 2b: checkpoint-freeze guard (sprint-wide barrier). -----------
+    // A checkpoint task (`work_items.checkpoint = 1`, migration 0016) freezes
+    // its WHOLE sprint while it runs: as long as ANY live checkpoint task bound
+    // to this sprint is `in_progress`, the claim yields Ok(None) so nothing else
+    // is dispatched until the barrier clears. Like the status guard, this is a
+    // pre-candidate-select gate that returns None (the reclaim, if any, still
+    // commits). The freeze lifts the moment that checkpoint task leaves
+    // `in_progress` (e.g. transitions to `done`).
+    let frozen: Option<i64> = crate::db::tx_scalar_opt::<i64>(
+        tx.as_mut(),
+        r#"
+        SELECT 1
+        FROM sprint_tasks st
+        JOIN work_items c ON c.id = st.task_id
+        WHERE st.sprint_id = $1
+          AND c.checkpoint = 1
+          AND c.status = 'in_progress'
+          AND c.deleted_at IS NULL
+        LIMIT 1
+        "#,
+        args![sprint_id.to_owned()],
+    )
+    .await?;
+    if frozen.is_some() {
         tx.commit().await?;
         return Ok(None);
     }
@@ -886,6 +913,18 @@ mod tests {
     use crate::repo::test_support::*;
     use sqlx::SqlitePool;
 
+    /// Activate a sprint directly (migration-0016: `seed_sprint` now mints a
+    /// `'draft'` sprint, but the claim only runs against an `'active'` one).
+    /// These in-module tests exercise the CLAIM, not the sprint lifecycle, so a
+    /// direct status set is cleaner than walking draft→ready→active.
+    async fn activate_sprint(pool: &SqlitePool, sprint_id: &str) {
+        sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
+            .bind(sprint_id)
+            .execute(pool)
+            .await
+            .expect("activate sprint");
+    }
+
     /// Team-execution plan §E review→rework loop: a `spawn_task` on a
     /// STORY-hosted finding, where the story already has a sprint-bound task,
     /// yields a rework task that is `lane='implement'`, `tier=NULL`, bound into
@@ -900,6 +939,7 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
 
         // An existing sprint-bound impl task under the story — its sprint
         // membership is what the rework spawn's host-story FALLBACK inherits.
@@ -1012,6 +1052,7 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
 
         // dep_task is an in-progress task sharing src/shared.rs with the claimable
         // task. It is already leased by another agent.
@@ -1132,7 +1173,10 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
         // One implement-lane task exists, but we claim the REVIEW lane → none.
+        // (The sprint is active so the None is genuinely the empty-lane path,
+        // not the sprint-status guard.)
         seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
 
         let claimed = claim_next_task(&db, &sprint, Lane::Review, None, "agent-r", 1800)
@@ -1156,6 +1200,7 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
         let task =
             seed_queue_task(&pool, &story, &sprint, "STALE", Some("implement"), Some("deep")).await;
 
@@ -1221,7 +1266,9 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
-        // A task with lane = NULL, bound to the sprint, todo + unleased.
+        activate_sprint(&pool, &sprint).await;
+        // A task with lane = NULL, bound to the sprint, todo + unleased. The
+        // sprint is active so the None is the null-lane path, not the guard.
         seed_queue_task(&pool, &story, &sprint, "LEGACY", None, None).await;
 
         let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
@@ -1230,40 +1277,117 @@ mod tests {
         assert!(claimed.is_none(), "a lane=NULL task is invisible to the claim");
     }
 
-    /// (e) The sprint-status guard returns `Ok(None)` for a terminal /
-    /// non-runnable sprint even when a ready task exists.
+    /// (e) The sprint-status guard returns `Ok(None)` unless the sprint is
+    /// EXACTLY `'active'` (migration-0016 layer-2 rule) — even when a ready task
+    /// exists. `seed_sprint` now mints a `'draft'` sprint, so the claim is
+    /// blocked until we activate it; the non-runnable vocab (`draft`/`ready`/
+    /// `review`/`cancelled`) is all guarded.
     #[tokio::test]
     async fn claim_honours_sprint_status_guard() {
         let pool = connect_in_memory().await.expect("pool");
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
-        let sprint = seed_sprint(&pool).await;
+        let sprint = seed_sprint(&pool).await; // starts 'draft'
         seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
 
-        // Mark the sprint non-runnable (terminal). 'closed' ∈ the layer-1
-        // NON_RUNNABLE set.
-        sqlx::query("UPDATE sprints SET status = 'closed' WHERE id = $1")
-            .bind(&sprint)
-            .execute(&pool)
-            .await
-            .expect("close sprint");
-
+        // A 'draft' sprint (the create-default) is NOT runnable under the
+        // migration-0016 rule ⇒ Ok(None) despite a ready task.
         let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
             .await
             .expect("claim runs");
-        assert!(claimed.is_none(), "a closed sprint is not runnable ⇒ Ok(None)");
+        assert!(claimed.is_none(), "a draft sprint is not runnable ⇒ Ok(None)");
 
-        // Sanity: re-open and the same task IS claimable, proving the guard (not a
-        // missing task) caused the None above.
-        sqlx::query("UPDATE sprints SET status = 'open' WHERE id = $1")
+        // Every other non-`active` status is likewise non-runnable.
+        for status in ["ready", "review", "cancelled"] {
+            sqlx::query("UPDATE sprints SET status = $2 WHERE id = $1")
+                .bind(&sprint)
+                .bind(status)
+                .execute(&pool)
+                .await
+                .expect("set sprint status");
+            let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+                .await
+                .expect("claim runs");
+            assert!(
+                claimed.is_none(),
+                "a '{status}' sprint is not runnable ⇒ Ok(None)"
+            );
+        }
+
+        // Activate the sprint and the same task IS claimable, proving the guard
+        // (not a missing task) caused the None above.
+        sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
             .bind(&sprint)
             .execute(&pool)
             .await
-            .expect("reopen sprint");
+            .expect("activate sprint");
         let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
             .await
             .expect("claim runs");
-        assert!(claimed.is_some(), "the task is claimable once the sprint is runnable");
+        assert!(claimed.is_some(), "the task is claimable once the sprint is active");
+    }
+
+    /// (g) A checkpoint task (`work_items.checkpoint = 1`, migration 0016)
+    /// freezes its whole sprint: while it is `in_progress` the claim yields
+    /// `Ok(None)` (a sprint-wide barrier) even for an unrelated ready task, and
+    /// the claim resumes the moment that checkpoint task leaves `in_progress`.
+    #[tokio::test]
+    async fn claim_honours_checkpoint_freeze() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        // Activate the sprint so only the checkpoint freeze (not the status
+        // guard) gates the claim.
+        sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
+            .bind(&sprint)
+            .execute(&pool)
+            .await
+            .expect("activate sprint");
+
+        // A normal ready implement task and a SEPARATE checkpoint task, both
+        // bound to the sprint.
+        let ready =
+            seed_queue_task(&pool, &story, &sprint, "READY", Some("implement"), Some("deep")).await;
+        let checkpoint =
+            seed_queue_task(&pool, &story, &sprint, "CKPT", Some("implement"), Some("deep")).await;
+
+        // Mark the checkpoint task as a checkpoint AND put it in_progress (the
+        // freeze condition). A direct UPDATE keeps the test self-contained.
+        sqlx::query(
+            "UPDATE work_items SET checkpoint = 1, status = 'in_progress', \
+             assignee = 'agent-ckpt', lease_expires_at = datetime('now', '+1800 seconds') \
+             WHERE id = $1",
+        )
+        .bind(&checkpoint)
+        .execute(&pool)
+        .await
+        .expect("seed in-progress checkpoint");
+
+        // The sprint is frozen → no claim, even though `ready` is dispatchable.
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs");
+        assert!(
+            claimed.is_none(),
+            "an in_progress checkpoint task freezes the whole sprint ⇒ Ok(None)"
+        );
+
+        // Flip the checkpoint task out of in_progress (→ done): the freeze lifts.
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&checkpoint)
+            .execute(&pool)
+            .await
+            .expect("complete checkpoint");
+
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("the ready task is claimable once the checkpoint clears");
+        assert_eq!(
+            claimed.task_id, ready,
+            "the ready task is dispatched once the sprint-wide freeze lifts"
+        );
     }
 
     /// (f, real-world path) A task left at the `create_work_item` DEFAULT
@@ -1278,6 +1402,9 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        // Activate the sprint so the claim isn't blocked by the sprint-status
+        // guard — this test isolates the TASK-status 'open' predicate (E5).
+        activate_sprint(&pool, &sprint).await;
         // Created exactly the way create_work_item leaves it: status='open'.
         let task =
             seed_queue_task_open(&pool, &story, &sprint, "OPEN", Some("implement"), Some("deep"))
@@ -1320,6 +1447,7 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
         let task =
             seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
 
@@ -1440,6 +1568,7 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
         let task =
             seed_queue_task(&pool, &story, &sprint, "T", Some("implement"), Some("deep")).await;
 
@@ -1550,6 +1679,7 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
         let task =
             seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
 
@@ -1663,6 +1793,7 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
         let review =
             seed_queue_task(&pool, &story, &sprint, "REVIEW", Some("review"), None).await;
 
@@ -1713,6 +1844,7 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
         let task =
             seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
 

@@ -260,6 +260,14 @@ mod tests {
             .await
             .expect("sprint")
             .to_string();
+        // migration-0016: claim_next_task is runnable ⟺ the sprint is 'active'
+        // (create_sprint now defaults to 'draft'). Activate before any claim so
+        // the stricter guard lets the test proceed (direct UPDATE, not a macro).
+        sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
+            .bind(&sprint_id)
+            .execute(&pool)
+            .await
+            .expect("activate sprint");
         let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
@@ -307,6 +315,14 @@ mod tests {
             .await
             .expect("sprint")
             .to_string();
+        // migration-0016: claim_next_task is runnable ⟺ the sprint is 'active'
+        // (create_sprint now defaults to 'draft'). Activate before any claim so
+        // the stricter guard lets the test proceed (direct UPDATE, not a macro).
+        sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
+            .bind(&sprint_id)
+            .execute(&pool)
+            .await
+            .expect("activate sprint");
         repo::add_tasks_to_sprint(&pool, &sprint_id, &[task_id.as_str()])
             .await
             .expect("bind task to sprint");
@@ -446,6 +462,14 @@ mod tests {
             .await
             .expect("sprint")
             .to_string();
+        // migration-0016: claim_next_task is runnable ⟺ the sprint is 'active'
+        // (create_sprint now defaults to 'draft'). Activate before any claim so
+        // the stricter guard lets the test proceed (direct UPDATE, not a macro).
+        sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
+            .bind(&sprint_id)
+            .execute(&pool)
+            .await
+            .expect("activate sprint");
         repo::add_tasks_to_sprint(&pool, &sprint_id, &[task_id.as_str()])
             .await
             .expect("bind task to sprint");

@@ -13,7 +13,7 @@
 
 use super::*;
 
-use crate::domain::Origin;
+use crate::domain::{Origin, SprintStatus};
 
 /// Arguments for the `add_tasks_to_sprint` write tool →
 /// `repo::add_tasks_to_sprint` (B23). Idempotent at the junction: a
@@ -76,6 +76,19 @@ pub struct NewWorkItemInput {
 pub struct CreateWorkItemsParams {
     /// The work-item specs to create (in input order).
     pub items: Vec<NewWorkItemInput>,
+}
+
+/// Arguments for the `set_sprint_status` write tool → `repo::set_sprint_status`
+/// (migration 0016). The typed [`SprintStatus`] enum advertises the legal
+/// lifecycle vocab (`draft|ready|active|review|done|cancelled`); a bogus value
+/// fails deserialisation (rmcp → invalid_params). The repo layer enforces the
+/// legal-transition table and the worktree-owner terminal guard.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetSprintStatusParams {
+    /// The sprint id to transition.
+    pub sprint_id: String,
+    /// The target lifecycle status.
+    pub status: SprintStatus,
 }
 
 #[tool_router(router = tool_router_runs_sprints, vis = "pub(crate)")]
@@ -155,6 +168,27 @@ impl LuminaTools {
             .await
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::json!({ "sprint_id": id.to_string() }))
+    }
+
+    /// Transition a sprint's lifecycle status (single repo call →
+    /// `repo::set_sprint_status`, migration 0016). The repo enforces the
+    /// [`SprintStatus`] legal-transition table and the worktree-owner terminal
+    /// guard (`review → done|cancelled` on a worktree-OWNING sprint is rejected —
+    /// use the merge/rejection audit path instead). Non-idempotent: a repeated
+    /// transition is illegal and surfaces `invalid_params`. Returns `{ ok: true }`.
+    #[tool(
+        description = "Transition a sprint's lifecycle status. `status` is one of draft|ready|active|review|done|cancelled; the legal transitions are draft→ready, ready→{active,cancelled}, active→{review,done,cancelled}, review→{done,cancelled} (done/cancelled terminal). An illegal/no-op transition or an unknown sprint is rejected (invalid_params). A worktree-OWNING sprint cannot go review→done|cancelled here — record the merge/rejection audit instead. Returns { ok: true }. Records one event.",
+        annotations(open_world_hint = false)
+    )]
+    async fn set_sprint_status(
+        &self,
+        Parameters(SetSprintStatusParams { sprint_id, status }): Parameters<SetSprintStatusParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_sprint_status", "mcp tool invoked");
+        repo::set_sprint_status(&self.pool, &sprint_id, status)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "ok": true }))
     }
 
     /// Attach a batch of tasks to a sprint (single repo call →
@@ -300,6 +334,31 @@ mod tests {
             "task_ids": []
         }));
         assert!(empty.is_ok(), "an empty task list deserialises");
+    }
+
+    /// A legal `set_sprint_status` payload deserialises into the bespoke param
+    /// struct (a sprint id + a typed `SprintStatus`); an out-of-set `status` is
+    /// REJECTED at the deserialise boundary (rmcp → invalid_params). The
+    /// legal-transition / worktree-owner gating itself lives in (and is tested at)
+    /// the repo layer — `repo::set_sprint_status` — so the MCP-surface test only
+    /// covers the param-shape contract here.
+    #[tokio::test]
+    async fn set_sprint_status_params_deserialise_and_reject_bad_enum() {
+        let ok = serde_json::from_value::<SetSprintStatusParams>(serde_json::json!({
+            "sprint_id": "sp1",
+            "status": "review"
+        }));
+        assert!(ok.is_ok(), "a legal set_sprint_status payload deserialises");
+
+        let err = serde_json::from_value::<SetSprintStatusParams>(serde_json::json!({
+            "sprint_id": "sp1",
+            "status": "bogus"
+        }))
+        .expect_err("an invalid sprint status must fail to deserialize");
+        assert!(
+            err.to_string().contains("status") || err.to_string().contains("variant"),
+            "deserialization error should concern the sprint-status enum: {err}"
+        );
     }
 
     /// A legal `record_finding_decision` payload deserialises into the reused

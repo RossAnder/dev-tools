@@ -143,7 +143,10 @@ async fn seed_queue_task(
     task
 }
 
-/// Open a sprint via the public repo API; returns its id.
+/// Open a sprint via the public repo API; returns its id. Post-migration-0016
+/// `create_sprint` stamps the create-default `status='draft'`, and
+/// `claim_next_task` is runnable ⟺ the sprint is `'active'` — so every test that
+/// then drives a claim MUST [`activate_sprint`] the returned sprint first.
 async fn seed_sprint(pool: &SqlitePool) -> String {
     repo::create_sprint(
         pool,
@@ -156,6 +159,22 @@ async fn seed_sprint(pool: &SqlitePool) -> String {
         .await
         .expect("legal sprint")
         .to_string()
+}
+
+/// Activate a seeded (`'draft'`) sprint so `claim_next_task`'s migration-0016
+/// sprint-status guard (runnable ⟺ `status='active'`) lets the claims proceed.
+/// A DIRECT `UPDATE sprints SET status='active'` (raw runtime sqlx — NOT a
+/// compile-time macro, so the macro-eradication gate stays at 0) is used rather
+/// than walking `draft → ready → active`: these tests exercise the claim's
+/// CONCURRENCY, not the sprint lifecycle, so the single status set is the
+/// minimal, deterministic seed. No sleep — the seeded-past-lease lazy-reclaim
+/// idiom is left untouched.
+async fn activate_sprint(pool: &SqlitePool, sprint_id: &str) {
+    sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
+        .bind(sprint_id)
+        .execute(pool)
+        .await
+        .expect("activate sprint");
 }
 
 /// **The correctness gate.** N=8 agents (distinct ids) concurrently drain a
@@ -177,6 +196,10 @@ async fn concurrent_claims_never_double_claim() {
     // contending agents (seeding is sequential; only the claims race).
     let story = seed_chain_to_story(&pool).await;
     let sprint = seed_sprint(&pool).await;
+    // ACTIVATE the sprint BEFORE the concurrent claims: post-migration-0016 a
+    // claim only runs against an `'active'` sprint (seed mints `'draft'`). This
+    // happens during the sequential seed phase — only the claims below race.
+    activate_sprint(&pool, &sprint).await;
     let mut seeded_ids = Vec::with_capacity(READY_TASKS);
     for i in 0..READY_TASKS {
         let id = seed_queue_task(
@@ -319,6 +342,11 @@ async fn claim_lazily_reclaims_seeded_past_lease_without_sleep() {
     let (_tmp, pool) = open_on_disk_pool().await;
     let story = seed_chain_to_story(&pool).await;
     let sprint = seed_sprint(&pool).await;
+    // Active sprint: the migration-0016 claim guard runs only against `'active'`.
+    // (The lazy-reclaim leg under test is a SEPARATE guard — it fires before the
+    // status gate inside claim_next_task — but the subsequent re-claim still needs
+    // a runnable sprint to hand the reclaimed task to the live agent.)
+    activate_sprint(&pool, &sprint).await;
     let task = seed_queue_task(&pool, &story, &sprint, "Stale", "implement", Some("deep")).await;
 
     // Seed an ALREADY-EXPIRED lease: in_progress, owned by a dead agent, with a

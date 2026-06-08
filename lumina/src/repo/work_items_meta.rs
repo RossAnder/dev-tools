@@ -259,6 +259,47 @@ pub async fn set_closure_gate(
     Ok(())
 }
 
+/// Set a task's `checkpoint` barrier flag (migration 0016). Task-scoped: the
+/// flag, when `on`, makes `claim_next_task` freeze the whole sprint while this
+/// task is `in_progress` (the freeze is the consumer; this setter only flips the
+/// bit). A non-`task` kind is rejected with a typed [`AppError::Validation`],
+/// mirroring [`set_effort`]/[`set_complexity`]. The bool is stored as the
+/// nullable `INTEGER` 0/1 column (`on as i64`). Kind read first; `NotFound` via
+/// `rows_affected()==0`; one EXPORTED event (`record_event` — a `work_items`
+/// mutation is git-exported, unlike the worktree/sprint mutators).
+pub async fn set_task_checkpoint(
+    db: &impl DbClient,
+    task_id: &str,
+    on: bool,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(db, task_id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "checkpoint is settable only on a task, not on '{kind}'"
+        )));
+    }
+    let value = on as i64;
+
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET checkpoint = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"#,
+            args![task_id.to_owned(), value],
+        )
+        .await?;
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "task_id": task_id, "checkpoint": on });
+    record_event(tx.as_mut(), "work_item", task_id, "work_item.checkpoint_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Append ONE `work_item_activity` row under the single-mutation-path discipline.
 /// `seq` is allocated as `MAX(seq)+1` for the item WITHIN the transaction; the
 /// `UNIQUE(work_item_id, seq)` constraint makes a race surface as a constraint
@@ -684,6 +725,44 @@ mod tests {
         let err = set_closure_gate(&pool, &task, ClosureGate::Hard)
             .await
             .expect_err("gate on task rejects");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    /// `set_task_checkpoint` (migration 0016) is task-scoped: setting then
+    /// clearing the flag round-trips through `get_work_item_detail`
+    /// (`Some(true)` → `Some(false)`), emits exactly one event per change, and a
+    /// non-`task` target (a story) is rejected with the same typed `Validation`
+    /// `set_effort`/`set_complexity` return.
+    #[tokio::test]
+    async fn set_task_checkpoint_roundtrip_event_and_scope() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        // Fresh task: checkpoint is NULL.
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert!(detail.item.checkpoint.is_none(), "checkpoint NULL on create");
+
+        // Set the flag → Some(true); exactly one event.
+        let ev_before = count_events(&pool).await;
+        set_task_checkpoint(&pool, &task, true).await.expect("set checkpoint on");
+        assert_eq!(count_events(&pool).await, ev_before + 1, "+1 event on set");
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.item.checkpoint, Some(true), "flag set true");
+
+        // Clear the flag → Some(false); exactly one more event.
+        set_task_checkpoint(&pool, &task, false).await.expect("clear checkpoint");
+        assert_eq!(count_events(&pool).await, ev_before + 2, "+1 event on clear");
+        let detail = get_work_item_detail(&pool, &task).await.expect("detail");
+        assert_eq!(detail.item.checkpoint, Some(false), "flag cleared to false");
+
+        // A non-task target (story) is rejected with typed Validation.
+        let err = set_task_checkpoint(&pool, &story, true)
+            .await
+            .expect_err("checkpoint on story rejects");
         assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
     }
 }

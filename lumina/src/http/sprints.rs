@@ -12,11 +12,12 @@ use axum::Router;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::post;
+use axum::routing::{patch, post};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
+use crate::domain::SprintStatus;
 use crate::error::AppError;
 use crate::repo;
 
@@ -29,6 +30,18 @@ struct AddTasksBody {
     pub task_ids: Vec<String>,
 }
 
+/// Body for `PATCH /sprints/{sprint_id}/status` (migration 0016). The typed
+/// [`SprintStatus`] field name mirrors the MCP `set_sprint_status` tool's `status`
+/// param (rather than the structured-patch `value` convention — `sprints.rs` has
+/// no `value`-shaped scalar PATCH to be consistent with, and `status` is the
+/// self-documenting field the MCP surface already advertises). An illegal
+/// transition / worktree-owner terminal guard is enforced by the repo layer and
+/// surfaces as a 422 `Validation`.
+#[derive(Debug, Deserialize)]
+struct SetSprintStatusBody {
+    pub status: SprintStatus,
+}
+
 /// Build the sprints sub-router. Returned as `Router<AppState>` so `http::router`
 /// can `.merge` it with the other per-family sub-routers.
 pub fn router() -> Router<AppState> {
@@ -37,6 +50,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/sprints/{sprint_id}/tasks",
             post(add_tasks_to_sprint_handler),
+        )
+        .route(
+            "/sprints/{sprint_id}/status",
+            patch(set_sprint_status_handler),
         )
 }
 
@@ -68,6 +85,22 @@ async fn add_tasks_to_sprint_handler(
     let refs: Vec<&str> = body.task_ids.iter().map(String::as_str).collect();
     let count = repo::add_tasks_to_sprint(state.pool.as_ref(), &sprint_id, &refs).await?;
     Ok(Json(json!({ "added": count })))
+}
+
+/// `PATCH /sprints/{sprint_id}/status` — transition a sprint's lifecycle status
+/// (migration 0016). Delegates to `repo::set_sprint_status`, which enforces the
+/// legal-transition table and the worktree-owner terminal guard. A missing sprint
+/// is 404; an illegal transition (or a `review → done|cancelled` flip on a
+/// worktree-owning sprint) is a `Validation` → 422 (both free via `AppError`'s
+/// `IntoResponse`). Returns 200 + `{ "ok": true }`.
+async fn set_sprint_status_handler(
+    State(state): State<AppState>,
+    Path(sprint_id): Path<String>,
+    Json(body): Json<SetSprintStatusBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(sprint_id = %sprint_id, status = ?body.status, "http: PATCH /sprints/{{sprint_id}}/status");
+    repo::set_sprint_status(state.pool.as_ref(), &sprint_id, body.status).await?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[cfg(test)]
@@ -243,5 +276,70 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY,
             "a non-task member is a Validation → 422"
         );
+    }
+
+    /// `PATCH /api/sprints/{sid}/status` (migration 0016): a legal `draft → ready`
+    /// transition is 200 + `{ ok: true }`; an illegal `draft → active` (no such
+    /// edge in the transition table) is a `Validation` → 422 envelope.
+    #[tokio::test]
+    async fn set_sprint_status_legal_and_illegal_http() {
+        let pool = connect_in_memory().await.expect("pool");
+        // A sprint is created at 'draft'.
+        let sprint_id = repo::create_sprint(
+            &pool,
+            &crate::domain::NewSprint {
+                title: None,
+                worktree_id: None,
+                predecessor_sprint_id: None,
+            },
+        )
+        .await
+        .expect("sprint")
+        .to_string();
+        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let router = build_router(state);
+
+        // Legal: draft → ready (200 + ok:true). Non-404 also proves the new
+        // route landed in the sprints router.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/sprints/{sprint_id}/status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "ready" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["ok"], true);
+
+        // Illegal: ready → done is not a legal edge (ready only → active|cancelled)
+        // → 422 validation envelope.
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/sprints/{sprint_id}/status"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "status": "done" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "an illegal sprint status transition is a Validation → 422"
+        );
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "validation");
     }
 }

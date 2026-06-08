@@ -48,15 +48,34 @@ use serde_json::Value;
 ///     NOT NULL`, live).
 ///   * `terminal` — `status IN ('done','cancelled')`, live.
 ///
+/// **Sprint-level claim gating (migration 0016, plan §C).** `claim_next_task`
+/// returns `Ok(None)` for a sprint that is NOT `active` OR is FROZEN (any live
+/// checkpoint task is `in_progress`), regardless of how many tasks satisfy the
+/// per-task readiness predicate. To keep `claimable` BYTE-CONSISTENT with that
+/// guard, after the per-task `claimable` count is computed it is FORCED to 0
+/// whenever the sprint is non-`active` or frozen. The two extra reads — the
+/// sprint's `status` and a checkpoint-in_progress EXISTS probe — mirror
+/// `claim_next_task`'s step-2 / step-2b guards exactly.
+///
 /// Verdict (computed in Rust from the counts):
-///   * `done` ⇔ `claimable == 0 && in_progress == 0 && blocked_on_question == 0`
-///     (every task is terminal or there are no tasks — nothing left to do).
-///   * `stalled` ⇔ `blocked_on_question > 0 && claimable == 0 && in_progress == 0`
-///     (the only non-terminal work is parked on a question — needs an arbiter
-///     before progress can resume).
+///   * `done` ⇔ EVERY sprint task is terminal (`terminal == total`, total =
+///     terminal + in_progress + blocked_on_question + the raw-claimable count
+///     before any freeze/non-active zeroing). Deliberately NOT derived from the
+///     gated `claimable`: a freeze / non-`active` status zeroes `claimable`
+///     while real non-terminal work remains, so a `claimable == 0`-based `done`
+///     would falsely report a merely-frozen sprint as complete. Basing it on
+///     actual task completion keeps `done` honest under a freeze. An empty / all-
+///     terminal sprint reads `done=true` as before.
+///   * `stalled` ⇔ `blocked_on_question > 0 && claimable == 0 && in_progress ==
+///     0 && !done` — the only non-terminal work is parked on a question (needs an
+///     arbiter). The `!done` clause and the requirement of at least one
+///     question-blocked task mean a frozen / non-`active` sprint with pending
+///     (but un-parked) work is NEITHER `done` NOR `stalled` — its work is simply
+///     gated, not stalled, and resumes when the sprint activates / unfreezes.
 ///
 /// A missing / unknown `sprint_id` is NOT an error: the join yields zero rows,
-/// every count is 0, and the verdict is `done=true, stalled=false` (an empty
+/// every count is 0, the sprint-status read is `None` (non-`active`), so
+/// `claimable` is 0 and — with no tasks — `done=true, stalled=false` (an empty
 /// sprint is trivially quiescent). Read-only — no transaction, no events.
 pub async fn get_sprint_quiescence(
     db: &impl DbClient,
@@ -122,13 +141,68 @@ pub async fn get_sprint_quiescence(
         )
         .await?;
 
-    let done =
-        counts.claimable == 0 && counts.in_progress == 0 && counts.blocked_on_question == 0;
+    // --- Sprint-level claim gating (mirror of `claim_next_task` step 2/2b). ---
+    // `claim_next_task` returns Ok(None) for a non-`active` sprint OR a frozen
+    // one (any live checkpoint task is `in_progress`), regardless of per-task
+    // readiness. We read the same two signals so the `claimable` count below can
+    // be forced to 0 under those conditions — keeping it byte-consistent with
+    // what a claimer would actually find.
+    //
+    // 1. Sprint status — a missing sprint reads back `None` (non-`active`),
+    //    matching the claim's "missing sprint ⇒ Ok(None)" edge.
+    let sprint_status: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT status FROM sprints WHERE id = $1",
+        args![sprint_id.to_owned()],
+    )
+    .await?;
+    let sprint_active = sprint_status.as_deref() == Some("active");
+
+    // 2. Checkpoint-freeze probe — identical in shape to the claim's step-2b
+    //    guard: a live checkpoint task `in_progress` freezes the whole sprint.
+    let frozen: Option<i64> = crate::db::scalar_opt::<i64>(
+        db,
+        r#"
+        SELECT 1
+        FROM sprint_tasks st
+        JOIN work_items c ON c.id = st.task_id
+        WHERE st.sprint_id = $1
+          AND c.checkpoint = 1
+          AND c.status = 'in_progress'
+          AND c.deleted_at IS NULL
+        LIMIT 1
+        "#,
+        args![sprint_id.to_owned()],
+    )
+    .await?;
+    let frozen = frozen.is_some();
+
+    // `done` reflects ACTUAL task completion (every sprint task terminal), read
+    // off the RAW counts BEFORE any freeze/non-active zeroing — otherwise a
+    // freeze that forces `claimable` to 0 could masquerade as completion. Total
+    // live tasks = the four mutually-exclusive count buckets summed; `done` ⇔
+    // there are tasks (or none) and all of them are terminal.
+    let total = counts.claimable + counts.in_progress + counts.blocked_on_question + counts.terminal;
+    let done = counts.terminal == total;
+
+    // Gate `claimable` to 0 when the sprint is non-`active` OR frozen — the
+    // claim yields nothing under either condition. Applied AFTER `done` is
+    // derived so the artificial zero cannot fake completion.
+    let claimable = if sprint_active && !frozen {
+        counts.claimable
+    } else {
+        0
+    };
+
+    // `stalled` ⇔ the only non-terminal work is parked on a question. The added
+    // `!done` clause + the `blocked_on_question > 0` requirement mean a frozen /
+    // non-`active` sprint with pending (un-parked) work is NEITHER done NOR
+    // stalled — its work is gated, not stalled, and resumes on activate/unfreeze.
     let stalled =
-        counts.blocked_on_question > 0 && counts.claimable == 0 && counts.in_progress == 0;
+        counts.blocked_on_question > 0 && claimable == 0 && counts.in_progress == 0 && !done;
 
     Ok(SprintQuiescence {
-        claimable: counts.claimable,
+        claimable,
         in_progress: counts.in_progress,
         blocked_on_question: counts.blocked_on_question,
         terminal: counts.terminal,
@@ -419,6 +493,21 @@ mod tests {
     use crate::db::connect_in_memory;
     use crate::domain::Lane;
     use crate::repo::test_support::*;
+    use sqlx::SqlitePool;
+
+    /// Activate a sprint directly (migration-0016: `seed_sprint` mints a
+    /// `'draft'` sprint, but the quiescence claim-gating — like the claim
+    /// itself — only counts tasks claimable for an `'active'`, unfrozen sprint).
+    /// A direct status set is cleaner than walking draft→ready→active for tests
+    /// that exercise the count, not the sprint lifecycle. Mirrors the
+    /// `team_execution.rs` test helper of the same name.
+    async fn activate_sprint(pool: &SqlitePool, sprint_id: &str) {
+        sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
+            .bind(sprint_id)
+            .execute(pool)
+            .await
+            .expect("activate sprint");
+    }
 
     // =======================================================================
     // get_sprint_quiescence + list_open_questions_for_sprint (T7, plan §F).
@@ -493,6 +582,9 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        // Active + unfrozen: claimable reverts to the real per-task count (the
+        // sprint-status gate would otherwise zero it on the 'draft' default).
+        activate_sprint(&pool, &sprint).await;
 
         // One ready (claimable) task + an in-progress task to exercise both counts.
         let _ready =
@@ -556,6 +648,96 @@ mod tests {
         );
     }
 
+    /// T8 (migration 0016, plan §C): `get_sprint_quiescence.claimable` is
+    /// byte-consistent with `claim_next_task`'s sprint-level gating — it reads 0
+    /// for a NON-`active` sprint AND while the sprint is FROZEN (a checkpoint task
+    /// is `in_progress`), and a frozen-but-incomplete sprint does NOT report
+    /// `done`. The real per-task claimable count returns once the sprint is both
+    /// `active` AND unfrozen.
+    #[tokio::test]
+    async fn quiescence_claimable_is_gated_by_status_and_freeze() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+
+        // One genuinely ready task + a checkpoint task (also ready). Two tasks,
+        // both per-task claimable, so the RAW claimable count is 2.
+        let _ready =
+            seed_queue_task(&pool, &story, &sprint, "READY", Some("implement"), Some("deep")).await;
+        let checkpoint =
+            seed_queue_task(&pool, &story, &sprint, "CKPT", Some("implement"), Some("deep")).await;
+        set_task_checkpoint(&db, &checkpoint, true)
+            .await
+            .expect("mark checkpoint");
+
+        // (1) Sprint is still 'draft' (non-active) → claimable gated to 0, and
+        // NOT done (two non-terminal tasks remain). Mirrors claim returning None.
+        let draft = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence on draft sprint");
+        assert_eq!(draft.claimable, 0, "a non-'active' sprint exposes no claimable work");
+        assert!(!draft.done, "a non-active sprint with pending work is not done");
+        assert!(!draft.stalled, "gated-by-status is not 'stalled' (no question-park)");
+        // claim agrees: nothing claimable against a draft sprint.
+        assert!(
+            claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+                .await
+                .expect("claim runs")
+                .is_none(),
+            "claim_next_task returns None for a draft sprint — matches claimable=0"
+        );
+
+        // (2) Activate the sprint → the real claimable count (2) returns.
+        activate_sprint(&pool, &sprint).await;
+        let active = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence on active sprint");
+        assert_eq!(active.claimable, 2, "active+unfrozen exposes the real claimable count");
+        assert!(!active.done, "two ready tasks ⇒ not done");
+
+        // (3) Freeze the sprint: put the checkpoint task in_progress. claimable
+        // gates back to 0, and the sprint is NOT falsely 'done' despite the
+        // forced-zero claimable (a 'ready' task still awaits the barrier).
+        sqlx::query("UPDATE work_items SET status = 'in_progress' WHERE id = $1")
+            .bind(&checkpoint)
+            .execute(&pool)
+            .await
+            .expect("checkpoint in_progress");
+        let frozen = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence on frozen sprint");
+        assert_eq!(frozen.claimable, 0, "a frozen sprint exposes no claimable work");
+        assert_eq!(frozen.in_progress, 1, "the checkpoint task is the one in_progress row");
+        assert!(
+            !frozen.done,
+            "a frozen-but-incomplete sprint must NOT report done despite claimable=0"
+        );
+        assert!(!frozen.stalled, "a freeze is not a 'stalled' (no question-park)");
+        // claim agrees: the freeze blocks every claim.
+        assert!(
+            claim_next_task(&db, &sprint, Lane::Implement, None, "agent-b", 1800)
+                .await
+                .expect("claim runs")
+                .is_none(),
+            "claim_next_task returns None during a freeze — matches claimable=0"
+        );
+
+        // (4) Lift the freeze (checkpoint task → done): claimable reverts to the
+        // remaining ready task (1).
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&checkpoint)
+            .execute(&pool)
+            .await
+            .expect("checkpoint done");
+        let thawed = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence after thaw");
+        assert_eq!(thawed.claimable, 1, "the remaining ready task is claimable once unfrozen");
+        assert_eq!(thawed.terminal, 1, "the checkpoint task is now terminal");
+        assert!(!thawed.done, "one ready task remains ⇒ not done");
+    }
+
     /// A sprint whose only non-terminal task is parked on an open question is
     /// STALLED: `blocked_on_question>0 && claimable==0 && in_progress==0`. Such a
     /// sprint is neither done nor progress-able without an arbiter.
@@ -565,6 +747,10 @@ mod tests {
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
+        // Active + unfrozen: isolate the STALL on the question-park, not on the
+        // sprint-status gate (a 'draft' sprint also zeroes claimable, which would
+        // conflate the two reasons a task is unclaimable).
+        activate_sprint(&pool, &sprint).await;
 
         // One task, parked on an open question (todo → blocked via the prod path).
         let task =

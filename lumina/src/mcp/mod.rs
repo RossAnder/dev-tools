@@ -88,6 +88,7 @@ mod sessions;
 mod task_graph;
 mod team_execution;
 mod work_items;
+mod worktrees;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -108,6 +109,7 @@ pub use sessions::*;
 pub use task_graph::*;
 pub use team_execution::*;
 pub use work_items::*;
+pub use worktrees::*;
 
 /// Map the crate-wide [`AppError`] into rmcp's tool-error currency.
 ///
@@ -235,7 +237,8 @@ impl LuminaTools {
                 + Self::tool_router_risks_alts()
                 + Self::tool_router_task_graph()
                 + Self::tool_router_team_execution()
-                + Self::tool_router_sessions(),
+                + Self::tool_router_sessions()
+                + Self::tool_router_worktrees(),
         }
     }
 }
@@ -444,6 +447,19 @@ mod tests {
             "list_open_questions_for_sprint",
             // session-context read tool (harness-session-corpus, ADR-0004 / T8)
             "get_session_context",
+            // worktree / checkpoint / commit-provenance tools (migration 0016,
+            // sprint-lifecycle & worktree substrate, ADR-0002 layer 2)
+            "create_worktree",
+            "record_worktree_merge",
+            "record_worktree_rejection",
+            "set_task_checkpoint",
+            "record_task_commits",
+            "get_worktree",
+            "list_worktrees",
+            "list_task_commits",
+            // sprint-status transition tool (migration 0016; defined in
+            // mcp/runs_sprints.rs — counted/listed/annotated here)
+            "set_sprint_status",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -453,7 +469,7 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 74 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 83 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
         //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
         //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
@@ -467,27 +483,33 @@ mod tests {
         //      list_open_questions_for_sprint).
         //    + 1 get_session_context (harness-session-corpus, ADR-0004 / T8:
         //      read-only ancestry/sprint-context resolver).
+        //    + 9 migration-0016 sprint-lifecycle & worktree tools (ADR-0002
+        //      layer 2): the 8-tool worktree/checkpoint/commit family
+        //      (create_worktree, record_worktree_merge, record_worktree_rejection,
+        //      set_task_checkpoint, record_task_commits, get_worktree,
+        //      list_worktrees, list_task_commits) + set_sprint_status (defined in
+        //      mcp/runs_sprints.rs, counted here).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            74,
-            "advertised tool count must be exactly 74, got {}: {names:?}",
+            83,
+            "advertised tool count must be exactly 83, got {}: {names:?}",
             names.len()
         );
 
-        // Name-uniqueness guard (router-split risk mitigation): the ten
+        // Name-uniqueness guard (router-split risk mitigation): the eleven
         // per-family `tool_router_*` sub-routers are summed with
         // `ToolRouter::merge`, which is NAME-KEYED — a duplicate tool name
         // across two families would be silently absorbed while KEEPING the
-        // count at 74 (the second registration overwrites the first). Collect
-        // the names into a set and assert it ALSO has 74 entries, so a
+        // count at 83 (the second registration overwrites the first). Collect
+        // the names into a set and assert it ALSO has 83 entries, so a
         // collision is caught rather than masked by the bare count check above.
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            74,
-            "advertised tool names must be UNIQUE (74 distinct), got {} distinct of {}: {names:?}",
+            83,
+            "advertised tool names must be UNIQUE (83 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
@@ -602,6 +624,11 @@ mod tests {
             "get_story_finding_queue",
             // session-context read tool (harness-session-corpus, ADR-0004 / T8).
             "get_session_context",
+            // worktree / commit-provenance read tools (migration 0016, ADR-0002
+            // layer 2).
+            "get_worktree",
+            "list_worktrees",
+            "list_task_commits",
         ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,
@@ -663,6 +690,11 @@ mod tests {
             // migration 0011 Part-B batch-write tool (B18): the triage update is
             // COALESCE-shaped, so re-applying the same updates is idempotent.
             "batch_update_findings",
+            // migration 0016 (ADR-0002 layer 2): setting the same checkpoint flag
+            // twice is a no-op. (set_sprint_status is NEITHER idempotent — a
+            // repeated transition is illegal — NOR read-only, so it appears in
+            // neither hint list.)
+            "set_task_checkpoint",
         ] {
             assert_eq!(
                 annotations_of(&tools, idem).idempotent_hint,

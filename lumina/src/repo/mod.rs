@@ -63,6 +63,7 @@ mod task_graph;
 mod team_execution;
 mod work_items;
 mod work_items_meta;
+mod worktrees;
 // PTY-session CRUD carved to `repo/pty.rs` (R5). Declared `pub mod pty;` — NOT
 // `pub use pty::*` — so the 27 nested call sites keep reaching these fns by the
 // module path `repo::pty::FOO` (`pub use pty::*` would flatten the path and
@@ -144,6 +145,15 @@ pub use readiness::*;
 pub use task_dependencies::*;
 pub use task_graph::*;
 pub use team_execution::*;
+// Worktree + task-commit provenance mutators/reads (`worktrees.rs`, migration
+// 0016 sprint-lifecycle & worktree substrate, T4). The glob `pub use` exposes
+// the worktree lifecycle/merge-audit fns (`create_worktree`, `get_worktree`,
+// `list_worktrees`, `record_worktree_merge`, `record_worktree_rejection`) + the
+// commit-provenance fns (`record_task_commits`, `list_task_commits`) at their
+// `crate::repo::*` paths (the HTTP handlers / MCP tools added by sibling tasks
+// call them by path). All mutators are export-INERT ("worktree" aggregate) — the
+// export drain renders only `work_item` aggregates, so worktrees never export.
+pub use worktrees::*;
 
 /// Hard upper bound on the number of elements a single batch-write call may
 /// carry (R3 — resource-limit / DoS guard). The batch paths (`add_findings`,

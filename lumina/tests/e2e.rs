@@ -2672,7 +2672,28 @@ async fn seed_implement_sprint(
         .execute(pool.sqlite())
         .await
         .expect("stamp implement lane + todo status on the seed task");
+    // Migration-0016 stricter claim guard: a sprint is runnable (its tasks
+    // claimable) ONLY when status='active'. `create_sprint` now defaults to
+    // 'draft', so walk the lifecycle draft→ready→active before any claim or
+    // the claim returns Ok(None) and every claim assertion below would fail.
+    activate_sprint(pool, &sprint_id).await;
     sprint_id
+}
+
+/// Walk a freshly-created sprint through the migration-0016 lifecycle
+/// `draft → ready → active` via the real `repo::set_sprint_status` (the same
+/// fn the MCP `set_sprint_status` tool + the HTTP `PATCH /sprints/{id}/status`
+/// route wrap 1:1). After this the sprint's tasks are claimable under the
+/// stricter guard. Used by every create-then-claim sequence in this file.
+async fn activate_sprint(pool: &Arc<lumina::db::AnyPool>, sprint_id: &str) {
+    for next in [
+        lumina::domain::SprintStatus::Ready,
+        lumina::domain::SprintStatus::Active,
+    ] {
+        lumina::repo::set_sprint_status(pool, sprint_id, next)
+            .await
+            .expect("legal sprint-lifecycle transition");
+    }
 }
 
 /// The full team-execution thread: claim → complete (review spawned +
@@ -3108,5 +3129,560 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
         review_detail["item"]["reviews_work_item_id"].as_str(),
         Some(impl_task.as_str()),
         "the HTTP work-item detail surfaces the reviews_work_item_id back-link — full thread closed"
+    );
+}
+
+// =====================================================================
+// migration-0016 sprint-lifecycle & worktree substrate (layer 2) — T12 of
+// docs/plans/sprint-lifecycle-worktree-substrate.md.
+//
+// This thread walks the FULL worktree/sprint lifecycle through ALL layers in
+// ONE in-process test over ONE shared pool, sleep-free + socket-free (oneshot
+// HTTP + a direct `export_pending` drain), exactly mirroring the threads above:
+//
+//   create owning sprint S1 → set_sprint_status draft→ready→active →
+//   create_worktree(S1) → W1 → claim+complete an impl task → set_task_checkpoint
+//   a 2nd task + claim it (in_progress) → assert the sprint-wide claim FREEZES
+//   (Ok(None)) while that checkpoint task is in_progress → complete it →
+//   assert the claim RESUMES → record_task_commits(sha, [tasks], Some(S1)) →
+//   S1 active→review → create_run(review, S1) + add_findings +
+//   record_finding_decision(spawn_task) → fix sprint S2 (worktree_id=W1,
+//   predecessor_sprint_id=S1) → S2 draft→ready→active → claim+complete the
+//   rework → S2 active→done → record_worktree_merge(W1) asserts W1.merged_at set
+//   + owner S1 flips review→done → HTTP reads (worktree effective_status /
+//   sprint-status path / task_commits) → export drain still SUCCEEDS and the
+//   inert worktree/sprint events render NO TOML file (only work_item snapshots).
+//
+// Lane-stamping limitation (layer-1, unchanged): no tool stamps lane='implement'
+// on a FRESH task, so initial claimable impl tasks are seeded with a test-only
+// raw `UPDATE` (the same idiom as `seed_implement_sprint` above and the
+// http/execution.rs route tests).
+// =====================================================================
+
+/// Seed one fresh implement-lane task under `story`, bind it into `sprint`, and
+/// stamp lane='implement' + status='todo' so it satisfies the §C claim-readiness
+/// predicate (no tool stamps lane on a fresh task — the accepted layer-1 limit).
+/// Returns the task id. The sprint must already be (or later become) `active` for
+/// the task to be claimable under the migration-0016 guard.
+async fn seed_impl_task_in_sprint(
+    tools: &LuminaTools,
+    pool: &Arc<lumina::db::AnyPool>,
+    story: &str,
+    sprint_id: &str,
+    title: &str,
+) -> String {
+    let task = mcp_create(tools, "task", Some(story), title).await;
+    lumina::repo::add_tasks_to_sprint(pool, sprint_id, &[task.as_str()])
+        .await
+        .expect("bind impl task to sprint");
+    sqlx::query("UPDATE work_items SET lane = 'implement', status = 'todo' WHERE id = ?1")
+        .bind(&task)
+        .execute(pool.sqlite())
+        .await
+        .expect("stamp implement lane + todo status");
+    task
+}
+
+/// The full worktree/sprint-lifecycle thread: S1 lifecycle + worktree create +
+/// checkpoint-freeze + commit provenance + run-chained fix sprint S2 on the same
+/// worktree + merge audit + HTTP reads + a clean (inert-event-free) export drain.
+#[tokio::test]
+async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
+    // One shared pool across the MCP handler, the export drain, and the router.
+    let pool = Arc::new(lumina::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Build a legal chain to a story, then create the owning sprint S1 and
+    //    walk it draft → ready → active via the real set_sprint_status.
+    let project = mcp_create(&tools, "project", None, "WT-Lifecycle Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "WT-Lifecycle Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "WT-Lifecycle Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "WT-Lifecycle Story").await;
+
+    let s1 = lumina::repo::create_sprint(
+        &pool,
+        &lumina::domain::NewSprint {
+            title: Some("S1 implementation sprint".to_owned()),
+            worktree_id: None,
+            predecessor_sprint_id: None,
+        },
+    )
+    .await
+    .expect("create owning sprint S1")
+    .to_string();
+
+    // create_sprint defaults to 'draft' (migration 0016).
+    let s1_status: String = sqlx::query_scalar("SELECT status FROM sprints WHERE id = ?1")
+        .bind(&s1)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("read S1 status");
+    assert_eq!(s1_status, "draft", "create_sprint defaults to draft");
+
+    activate_sprint(&pool, &s1).await;
+    let s1_active: String = sqlx::query_scalar("SELECT status FROM sprints WHERE id = ?1")
+        .bind(&s1)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("read S1 status after activation");
+    assert_eq!(s1_active, "active", "S1 walked draft→ready→active");
+
+    // 2. create_worktree(owning_sprint_id=S1) → W1. The owner now RUNS IN it; the
+    //    worktree's effective_status is JOIN-derived (= the owner's 'active').
+    let w1 = lumina::repo::create_worktree(
+        &pool,
+        &lumina::domain::NewWorktree {
+            owning_sprint_id: s1.clone(),
+            path: "/tmp/worktrees/s1".to_owned(),
+            base_ref: Some("main".to_owned()),
+            branch: Some("sprint/s1".to_owned()),
+        },
+    )
+    .await
+    .expect("create_worktree(S1)")
+    .to_string();
+
+    let w1_detail = lumina::repo::get_worktree(&pool, &w1)
+        .await
+        .expect("get_worktree(W1)");
+    assert_eq!(w1_detail.owning_sprint_id, s1, "W1 owned by S1");
+    assert_eq!(
+        w1_detail.effective_status,
+        lumina::domain::SprintStatus::Active,
+        "W1.effective_status is JOIN-derived from the active owner"
+    );
+    assert!(w1_detail.merged_at.is_none(), "W1 not yet merged");
+    // The owner now points its worktree_id at W1.
+    let s1_worktree: Option<String> =
+        sqlx::query_scalar("SELECT worktree_id FROM sprints WHERE id = ?1")
+            .bind(&s1)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read S1 worktree_id");
+    assert_eq!(
+        s1_worktree.as_deref(),
+        Some(w1.as_str()),
+        "the owner runs in the worktree it owns"
+    );
+
+    // 3. Seed + claim + complete one implement task in S1 (proves the activated
+    //    sprint is claimable under the stricter guard).
+    let impl_task = seed_impl_task_in_sprint(&tools, &pool, &story, &s1, "S1 Impl Task").await;
+    let claimed = lumina::repo::claim_next_task(
+        &pool,
+        &s1,
+        lumina::domain::Lane::Implement,
+        None,
+        "impl-agent",
+        300,
+    )
+    .await
+    .expect("claim_next_task on the active S1")
+    .expect("the activated sprint is claimable — stricter guard satisfied");
+    assert_eq!(claimed.task_id, impl_task, "claim returns the seeded impl task");
+    lumina::repo::complete_task(&pool, &impl_task, "impl-agent")
+        .await
+        .expect("complete the impl task");
+
+    // 4. Checkpoint freeze. Seed a SECOND implement task, flag it as a checkpoint,
+    //    and claim it (→ in_progress). While it is in_progress the sprint-wide
+    //    claim FREEZES: a fresh claim returns Ok(None) even with other ready work
+    //    present. Completing the checkpoint task resumes the claim.
+    let checkpoint_task =
+        seed_impl_task_in_sprint(&tools, &pool, &story, &s1, "S1 Checkpoint Task").await;
+    // A third ready implement task that WOULD be claimable but for the freeze.
+    let frozen_out_task =
+        seed_impl_task_in_sprint(&tools, &pool, &story, &s1, "S1 Frozen-Out Task").await;
+
+    lumina::repo::set_task_checkpoint(&pool, &checkpoint_task, true)
+        .await
+        .expect("flag the checkpoint task");
+
+    // Claim the checkpoint task → it goes in_progress. (The freeze guard only
+    // bites for a checkpoint task that is ALREADY in_progress, so this first claim
+    // succeeds and is what arms the freeze.)
+    let claimed_checkpoint = lumina::repo::claim_next_task(
+        &pool,
+        &s1,
+        lumina::domain::Lane::Implement,
+        None,
+        "impl-agent",
+        300,
+    )
+    .await
+    .expect("claim while no checkpoint is yet in_progress")
+    .expect("a ready implement task is claimable");
+    // The claim selects the checkpoint task (oldest ready), arming the freeze.
+    assert_eq!(
+        claimed_checkpoint.task_id, checkpoint_task,
+        "the oldest ready task (the checkpoint task) is claimed first, arming the freeze"
+    );
+    let checkpoint_in_progress: String =
+        sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+            .bind(&checkpoint_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read checkpoint task status");
+    assert_eq!(checkpoint_in_progress, "in_progress", "the checkpoint task is in_progress");
+
+    // FREEZE: with a checkpoint task in_progress, the sprint-wide claim returns
+    // Ok(None) even though `frozen_out_task` is a ready implement task.
+    let frozen = lumina::repo::claim_next_task(
+        &pool,
+        &s1,
+        lumina::domain::Lane::Implement,
+        None,
+        "impl-agent-2",
+        300,
+    )
+    .await
+    .expect("claim under freeze does not error");
+    assert!(
+        frozen.is_none(),
+        "the claim FREEZES (Ok(None)) while a checkpoint task is in_progress, got {frozen:?}"
+    );
+    // get_sprint_quiescence mirrors the freeze: claimable=0 during the freeze, and
+    // the sprint does NOT falsely report done while work remains.
+    let q_frozen = lumina::repo::get_sprint_quiescence(&pool, &s1)
+        .await
+        .expect("quiescence during freeze");
+    assert_eq!(q_frozen.claimable, 0, "quiescence reports claimable=0 during freeze: {q_frozen:?}");
+    assert!(!q_frozen.done, "a frozen-but-incomplete sprint is not done: {q_frozen:?}");
+
+    // Complete the checkpoint task → the freeze lifts. (Completing an implement
+    // task spawns a review task; we leave it — the frozen-out task is now claimable.)
+    lumina::repo::complete_task(&pool, &checkpoint_task, "impl-agent")
+        .await
+        .expect("complete the checkpoint task — lifts the freeze");
+    let resumed = lumina::repo::claim_next_task(
+        &pool,
+        &s1,
+        lumina::domain::Lane::Implement,
+        None,
+        "impl-agent-2",
+        300,
+    )
+    .await
+    .expect("claim after the freeze lifts")
+    .expect("the claim RESUMES once the checkpoint task completes");
+    assert_eq!(
+        resumed.task_id, frozen_out_task,
+        "the previously frozen-out task is now claimable — the freeze lifted"
+    );
+    lumina::repo::complete_task(&pool, &frozen_out_task, "impl-agent-2")
+        .await
+        .expect("complete the frozen-out task");
+
+    // 5. record_task_commits — one commit covering the impl + checkpoint tasks,
+    //    scoped to S1. Idempotent on a re-record (the second insert collapses).
+    let recorded = lumina::repo::record_task_commits(
+        &pool,
+        "sha-deadbeef",
+        &[impl_task.as_str(), checkpoint_task.as_str()],
+        Some(&s1),
+    )
+    .await
+    .expect("record_task_commits");
+    assert_eq!(recorded, 2, "two genuinely-new commit→task edges recorded");
+    let re_recorded = lumina::repo::record_task_commits(
+        &pool,
+        "sha-deadbeef",
+        &[impl_task.as_str(), checkpoint_task.as_str()],
+        Some(&s1),
+    )
+    .await
+    .expect("re-record_task_commits");
+    assert_eq!(re_recorded, 0, "re-recording the same (commit, task) pairs is idempotent");
+
+    // 6. S1 active → review (the worktree-merge path: the owner stays in 'review'
+    //    until a merge/rejection verdict). Legal via set_sprint_status — the
+    //    worktree-owner guard only blocks a TERMINAL review→done|cancelled flip.
+    lumina::repo::set_sprint_status(&pool, &s1, lumina::domain::SprintStatus::Review)
+        .await
+        .expect("S1 active→review");
+    // A worktree-owning sprint CANNOT terminal-transition via set_sprint_status —
+    // it must go through record_worktree_merge/rejection so the merge audit is
+    // never skipped.
+    let direct_done = lumina::repo::set_sprint_status(
+        &pool,
+        &s1,
+        lumina::domain::SprintStatus::Done,
+    )
+    .await;
+    assert!(
+        matches!(direct_done, Err(lumina::error::AppError::Validation(_))),
+        "a worktree-owning sprint's review→done via set_sprint_status is rejected, got {direct_done:?}"
+    );
+
+    // 7. Run-chaining: open a review Run over S1, add a finding on the story, and
+    //    record a spawn_task decision → a rework task (lane='implement').
+    let _run_id = lumina::repo::create_run(
+        &pool,
+        &lumina::domain::NewRun {
+            kind: lumina::domain::RunKind::Review,
+            target_id: s1.clone(),
+            target_kind: lumina::domain::TargetKind::Sprint,
+        },
+    )
+    .await
+    .expect("create_run(review, target=S1)")
+    .to_string();
+
+    let batch = lumina::repo::add_findings(
+        &pool,
+        None,
+        &[(
+            story.as_str(),
+            lumina::repo::NewFinding {
+                kind: Some("review"),
+                severity: Some(lumina::domain::Severity::Major),
+                summary: Some("rework: tighten the worktree guard"),
+                ..lumina::repo::NewFinding::default()
+            },
+        )],
+    )
+    .await
+    .expect("add_findings on the story");
+    assert_eq!(batch.added, 1, "one review finding added on the story");
+    let finding_id: String =
+        sqlx::query_scalar("SELECT id FROM findings WHERE work_item_id = ?1")
+            .bind(&story)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read the story-hosted finding id");
+
+    let (_decision_id, spawned) = lumina::repo::record_finding_decision(
+        &pool,
+        &lumina::domain::NewFindingDecision {
+            finding_id: finding_id.clone(),
+            decision: lumina::domain::FindingDecisionKind::SpawnTask,
+            decided_by: Some("review-agent".to_owned()),
+        },
+    )
+    .await
+    .expect("record_finding_decision(spawn_task)");
+    let rework_task = spawned
+        .expect("spawn_task creates a rework work item")
+        .to_string();
+    let rework_lane: Option<String> =
+        sqlx::query_scalar("SELECT lane FROM work_items WHERE id = ?1")
+            .bind(&rework_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read rework lane");
+    assert_eq!(rework_lane.as_deref(), Some("implement"), "rework task is lane='implement'");
+
+    // 8. Create the FIX sprint S2 targeting the SAME worktree W1 and recording the
+    //    predecessor provenance (the widened create_sprint). S2 TARGETS but does
+    //    NOT own W1 (W1.owning_sprint_id is still S1). Walk S2 draft→ready→active,
+    //    bind + claim + complete the rework, then S2 active→done (legal: S2 owns
+    //    no worktree, so the terminal guard does not bite).
+    let s2 = lumina::repo::create_sprint(
+        &pool,
+        &lumina::domain::NewSprint {
+            title: Some("S2 fix sprint".to_owned()),
+            worktree_id: Some(w1.clone()),
+            predecessor_sprint_id: Some(s1.clone()),
+        },
+    )
+    .await
+    .expect("create fix sprint S2 chained to S1 on W1")
+    .to_string();
+    // S2 records the chain provenance + the shared worktree.
+    let (s2_worktree, s2_pred): (Option<String>, Option<String>) = {
+        let wt: Option<String> =
+            sqlx::query_scalar("SELECT worktree_id FROM sprints WHERE id = ?1")
+                .bind(&s2)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read S2 worktree_id");
+        let pred: Option<String> =
+            sqlx::query_scalar("SELECT predecessor_sprint_id FROM sprints WHERE id = ?1")
+                .bind(&s2)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read S2 predecessor_sprint_id");
+        (wt, pred)
+    };
+    assert_eq!(s2_worktree.as_deref(), Some(w1.as_str()), "S2 runs in the predecessor's worktree");
+    assert_eq!(s2_pred.as_deref(), Some(s1.as_str()), "S2 records its predecessor sprint");
+    // W1 ownership is unchanged — S2 targets but does not own it.
+    assert_eq!(
+        lumina::repo::get_worktree(&pool, &w1).await.expect("get W1").owning_sprint_id,
+        s1,
+        "W1 is still owned by S1 (S2 only targets it)"
+    );
+
+    activate_sprint(&pool, &s2).await;
+    // Bind the rework task into S2 (it was spawned under the story → sprint-bound
+    // to S1; bind it into S2 too so the fix sprint can claim it).
+    lumina::repo::add_tasks_to_sprint(&pool, &s2, &[rework_task.as_str()])
+        .await
+        .expect("bind rework task into S2");
+    let claimed_rework = lumina::repo::claim_next_task(
+        &pool,
+        &s2,
+        lumina::domain::Lane::Implement,
+        None,
+        "fix-agent",
+        300,
+    )
+    .await
+    .expect("claim the rework task in S2")
+    .expect("the rework task is claimable in the active fix sprint");
+    assert_eq!(claimed_rework.task_id, rework_task, "S2 claims the rework task");
+    lumina::repo::complete_task(&pool, &rework_task, "fix-agent")
+        .await
+        .expect("complete the rework task in S2");
+    // S2 active → done (legal — S2 owns no worktree).
+    lumina::repo::set_sprint_status(&pool, &s2, lumina::domain::SprintStatus::Done)
+        .await
+        .expect("S2 active→done (no worktree owned → terminal guard does not bite)");
+    let s2_done: String = sqlx::query_scalar("SELECT status FROM sprints WHERE id = ?1")
+        .bind(&s2)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("read S2 status");
+    assert_eq!(s2_done, "done", "S2 reached done via set_sprint_status");
+
+    // 9. record_worktree_merge(W1) → stamps the merge audit AND flips the owner S1
+    //    review→done (the only legal terminal path for a worktree-owning sprint).
+    lumina::repo::record_worktree_merge(&pool, &w1, Some("merge-ref-s1"))
+        .await
+        .expect("record_worktree_merge(W1)");
+    let w1_merged = lumina::repo::get_worktree(&pool, &w1)
+        .await
+        .expect("get W1 after merge");
+    assert!(w1_merged.merged_at.is_some(), "W1.merged_at is stamped after merge");
+    assert_eq!(
+        w1_merged.outcome,
+        Some(lumina::domain::WorktreeOutcome::Merged),
+        "W1.outcome='merged'"
+    );
+    assert_eq!(
+        w1_merged.merge_ref.as_deref(),
+        Some("merge-ref-s1"),
+        "W1.merge_ref round-trips"
+    );
+    // The owner S1 flipped review→done; W1.effective_status follows (JOIN-derived).
+    let s1_final: String = sqlx::query_scalar("SELECT status FROM sprints WHERE id = ?1")
+        .bind(&s1)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("read S1 status after merge");
+    assert_eq!(s1_final, "done", "the merge flipped owner S1 review→done");
+    assert_eq!(
+        w1_merged.effective_status,
+        lumina::domain::SprintStatus::Done,
+        "W1.effective_status tracks the now-done owner"
+    );
+
+    // 10. HTTP reads (oneshot, no socket bind) of the new surface.
+    let state = AppState::new(pool.clone());
+
+    // 10a. GET /api/worktrees/{W1} — effective_status is 'done' (owner-derived).
+    let wt_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/worktrees/{w1}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET /api/worktrees/{id}");
+    assert_eq!(wt_resp.status(), StatusCode::OK, "worktree read returns 200");
+    let wt_body = json_body(wt_resp).await;
+    assert_eq!(wt_body["id"].as_str(), Some(w1.as_str()), "the HTTP worktree id matches");
+    assert_eq!(
+        wt_body["effective_status"].as_str(),
+        Some("done"),
+        "the HTTP worktree detail surfaces the owner-derived effective_status"
+    );
+    assert_eq!(wt_body["outcome"].as_str(), Some("merged"), "the merge outcome round-trips over HTTP");
+
+    // 10b. PATCH /api/sprints/{S2-less}/status would be a write; instead read the
+    //      sprint status by listing worktrees filtered on the owner's 'done'
+    //      status — exercises the GET /api/worktrees?status= owner-status filter.
+    let list_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/worktrees?status=done")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET /api/worktrees?status=done");
+    assert_eq!(list_resp.status(), StatusCode::OK, "filtered worktree list returns 200");
+    let list_body = json_body(list_resp).await;
+    let list_arr = list_body.as_array().expect("list returns a JSON array");
+    assert_eq!(list_arr.len(), 1, "exactly one done-owned worktree (W1)");
+    assert_eq!(list_arr[0]["id"].as_str(), Some(w1.as_str()), "the filtered list carries W1");
+
+    // 10c. GET /api/commits?commit_sha= — the task_commits read surfaces the two
+    //      edges recorded under sha-deadbeef.
+    let commits_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/commits?commit_sha=sha-deadbeef")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET /api/commits?commit_sha=");
+    assert_eq!(commits_resp.status(), StatusCode::OK, "commits read returns 200");
+    let commits_body = json_body(commits_resp).await;
+    let commits_arr = commits_body.as_array().expect("commits returns a JSON array");
+    assert_eq!(commits_arr.len(), 2, "sha-deadbeef covers two task edges");
+    assert!(
+        commits_arr
+            .iter()
+            .all(|c| c["commit_sha"].as_str() == Some("sha-deadbeef")),
+        "every returned edge carries the queried commit sha"
+    );
+    let covered: std::collections::HashSet<&str> = commits_arr
+        .iter()
+        .map(|c| c["task_id"].as_str().expect("task_id is a string"))
+        .collect();
+    assert!(
+        covered.contains(impl_task.as_str()) && covered.contains(checkpoint_task.as_str()),
+        "both committed tasks are covered, got {covered:?}"
+    );
+
+    // 11. Drain the export DIRECTLY (no sleep / no background loop). The drain must
+    //     SUCCEED and the inert worktree/sprint events must render NO TOML file
+    //     (export materialises ONLY work_item aggregates). We assert that no
+    //     `worktree/` or `sprint/` snapshot directory was written, while a known
+    //     work_item snapshot (the story) IS present.
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+        .await
+        .expect("export drain succeeds despite the inert worktree/sprint events");
+    assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
+
+    // The inert worktree/sprint events render NO files: no `worktree/` or `sprint/`
+    // snapshot directory exists under the export root.
+    assert!(
+        !export_dir.path().join("worktree").exists(),
+        "inert worktree events render no TOML snapshot directory"
+    );
+    assert!(
+        !export_dir.path().join("sprint").exists(),
+        "inert sprint events render no TOML snapshot directory"
+    );
+    // A work_item snapshot (the story) IS rendered — the drain is genuinely working.
+    let story_snapshot = export_dir.path().join("story").join(format!("{story}.toml"));
+    assert!(
+        story_snapshot.exists(),
+        "the story work_item snapshot is rendered at {}",
+        story_snapshot.display()
+    );
+    // The committed tasks ARE work_items and DO render — confirming only the
+    // worktree/sprint AGGREGATES (not the work_items they touch) are inert.
+    let impl_snapshot = export_dir.path().join("task").join(format!("{impl_task}.toml"));
+    assert!(
+        impl_snapshot.exists(),
+        "the impl task work_item snapshot is rendered — full thread closed"
     );
 }
