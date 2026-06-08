@@ -365,6 +365,28 @@ Note: `compute_task_batches` (the task-graph read above) considers ONLY task→t
 | `get_sprint_quiescence` | `{ sprint_id } → { claimable, in_progress, blocked_on_question, terminal, done, stalled }` — counts across the sprint (all lanes) + a verdict: `done = (claimable==0 && in_progress==0 && blocked==0)`; `stalled = (blocked>0 && claimable==0 && in_progress==0)` → needs an arbiter. The lead polls this to terminate or escalate. Read-only. |
 | `list_open_questions_for_sprint` | `{ sprint_id } → [{ question_id, story_id, text, options, age_secs }]` — unresolved open questions across the stories owning the sprint's tasks. Lets an arbiter agent resolve code/convention questions and escalate product calls to the human (who answers via `POST /open-questions/{id}/resolve`). Read-only. |
 
+## Sprint-lifecycle / worktree / commit-provenance tools (migration 0016)
+
+Migration 0016 ([ADR-0005](../../../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md), building on [ADR-0003](../../../../../docs/adr/0003-commit-checkpoint-provenance.md)) added a first-class sprint lifecycle, single-owner worktrees, and explicit commit provenance — nine tools, taking the surface from 74 to 83. lumina is **record-only** here: it tracks worktree/merge/commit facts but NEVER shells to git.
+
+A worktree is owned by EXACTLY ONE sprint (`worktrees.owning_sprint_id`, UNIQUE) and its status is WHOLLY DERIVED from that owner — there is no `worktrees.status` column; `effective_status` is JOIN-derived from the owning sprint. Follow-up sprints TARGET a worktree (sharing `sprints.worktree_id`) but never own it; merge audit (`merged_at` / `merge_ref` / `outcome`) is recorded on the worktree.
+
+The `SprintStatus` lifecycle is `{ draft, ready, active, review, done, cancelled }`, repo-enforced over the free-TEXT `sprints.status`. Transitions: `draft→ready`; `ready→{active, cancelled}`; `active→{review, done, cancelled}`; `review→{done, cancelled}`; `done` / `cancelled` are terminal. `create_sprint` defaults to `draft`. `set_sprint_status` REJECTS a terminal `review→done|cancelled` flip on a worktree-OWNING sprint — drive that via `record_worktree_merge` / `record_worktree_rejection` instead, so the merge/rejection audit is recorded atomically with the owner transition.
+
+The claim guard (see the team-execution tools above) is now stricter: a task is claimable ⟺ its sprint is `active` (migration backfills legacy `open`→`active`) AND the sprint is not FROZEN. An `in_progress` checkpoint task (`work_items.checkpoint=1`) freezes the WHOLE sprint — this is a runtime freeze, NOT a task→task dependency.
+
+| Tool | When to use |
+|------|-------------|
+| `create_worktree` | `{ owning_sprint_id, path, base_ref?, branch? } → { worktree_id }` — register a worktree owned by exactly one sprint. Records only; does not create the on-disk worktree. |
+| `get_worktree` | `{ worktree_id } → Worktree` — fetch a worktree including its JOIN-derived `effective_status` (from the owning sprint). Read-only. |
+| `list_worktrees` | `{ status? } → [Worktree]` — list worktrees, optionally filtered by `effective_status`. Read-only. |
+| `record_worktree_merge` | `{ worktree_id, merge_ref? } → ok` — record a successful merge: stamps `merged_at` / `merge_ref` / `outcome` and drives the OWNING sprint `review→done`. Use instead of `set_sprint_status` for a worktree-owning sprint's terminal flip. |
+| `record_worktree_rejection` | `{ worktree_id, reason? } → ok` — record a rejected/abandoned worktree: stamps the audit fields and drives the OWNING sprint `review→cancelled`. The reject counterpart to `record_worktree_merge`. |
+| `set_task_checkpoint` | `{ task_id, on } → ok` — set/clear `work_items.checkpoint`. While a checkpoint task is `in_progress`, it FREEZES the whole sprint (no claims), so use it for serialising barrier work (e.g. a shared-file migration). |
+| `record_task_commits` | `{ commit_sha, task_ids: string[], sprint_id? } → { recorded }` — bind one commit to the task ids it implements (explicit provenance). Idempotent via `UNIQUE(commit_sha, task_id)`; records one inert `worktree` aggregate event (never git-exported). |
+| `list_task_commits` | `{ task_id? \| commit_sha? \| story_id? }` (EXACTLY ONE) `→ [TaskCommit]` — read commit provenance by task, by commit, or rolled up across a story's tasks. Read-only. |
+| `set_sprint_status` | `{ sprint_id, status } → ok` — drive a sprint through `{ draft, ready, active, review, done, cancelled }`. Rejects illegal transitions and rejects a terminal `review→done|cancelled` on a worktree-owning sprint (use the worktree merge/rejection tools there). |
+
 ## Notes
 
 - Every write records exactly one event in the same transaction (drained to the

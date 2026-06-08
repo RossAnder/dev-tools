@@ -87,7 +87,7 @@ fn files_touched_from_attributes(attributes: Option<&str>) -> Vec<Value> {
 ///      exactly `'active'` (migration-0016 layer-2 rule: a sprint's tasks are
 ///      claimable ⟺ the sprint is `active`; `draft`/`ready`/`review`/terminal
 ///      states are all non-runnable). A missing sprint is likewise `Ok(None)`.
-///   2b. **Checkpoint-freeze guard** — `Ok(None)` while ANY checkpoint task
+///      2b. **Checkpoint-freeze guard** — `Ok(None)` while ANY checkpoint task
 ///      (`work_items.checkpoint = 1`, migration 0016) in the sprint is
 ///      `in_progress`: a checkpoint freezes its whole sprint (a sprint-wide
 ///      barrier) until that checkpoint task leaves `in_progress`.
