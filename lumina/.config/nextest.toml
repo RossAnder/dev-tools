@@ -15,3 +15,13 @@ failure-output = "immediate-final"
 
 [profile.ci.junit]
 path = "junit.xml"
+
+# Fast inner-loop profile for agents / the `cargo check + lint + narrow test`
+# flow. Excludes the two e2e binaries that spawn a REAL nested `claude` from
+# PATH (very slow — see CLAUDE.md). Narrow further on the command line with
+# `-E 'test(<area>)'`. The orchestrator's full verification keeps using
+# `--profile ci`, which runs everything including these.
+#   cargo nextest run --manifest-path lumina/Cargo.toml --profile quick
+[profile.quick]
+retries = 0
+default-filter = "not (binary(pty_e2e) | binary(conpty_minimal_repro))"

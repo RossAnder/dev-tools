@@ -57,12 +57,12 @@ cargo install cargo-insta                  # snapshot review CLI (optional but r
 
 ### Nextest config
 
-`lumina/.config/nextest.toml` defines two profiles: `default` (no retries) and `ci` (one retry, JUnit XML emit, immediate failure output).
+`lumina/.config/nextest.toml` defines three profiles: `default` (no retries), `ci` (one retry, JUnit XML emit, immediate failure output), and `quick` (an agent inner-loop profile whose `default-filter` excludes the two nested-`claude` e2e binaries `pty_e2e`/`conpty_minimal_repro`; the orchestrator's `--profile ci` still runs everything).
 <!-- TEST-BOOTSTRAP:STACK END -->
 
 ## Build discipline in flows
 
-lumina is the heaviest crate here to compile, so the repo-wide **Build discipline in multi-agent flows** rule (root `CLAUDE.md`) bites hardest in this subtree: a sub-agent in `/implement` / `/optimise-apply` / `/review-apply` / `/tdd` must NOT run `cargo build` / `cargo test` / `cargo nextest` to self-verify. Reach for `cargo check --manifest-path lumina/Cargo.toml` (or `cargo clippy`) **sparingly** — at most once near the end of a cluster — and leave the full build + nextest run to the orchestrator's single `verification` pass. Parallel sub-agents each rebuilding the whole crate against the shared `lumina/target` lock is exactly the waste to avoid.
+lumina is the heaviest crate here to compile, so the repo-wide **Build discipline in multi-agent flows** rule (root `CLAUDE.md`) bites hardest in this subtree: a sub-agent in `/implement` / `/optimise-apply` / `/review-apply` / `/tdd` may run `cargo check`/`cargo clippy --manifest-path lumina/Cargo.toml` and its task's own narrow test (`cargo nextest --manifest-path lumina/Cargo.toml --profile quick -E 'test(<area>)'`, or a single-binary `cargo test --test <name>`), but leaves the full `cargo build` + the whole nextest suite to the orchestrator's single `verification` pass. N parallel sub-agents each rebuilding the whole crate against the shared `lumina/target` lock is exactly the waste to avoid.
 
 ## Transactions
 

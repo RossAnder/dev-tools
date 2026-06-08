@@ -24,7 +24,7 @@
 
 ### Build discipline in flows
 
-The repo-wide **Build discipline in multi-agent flows** rule (root `CLAUDE.md`) applies to the SPA too: a sub-agent in `/implement` / `/optimise-apply` / `/review-apply` / `/tdd` must NOT run the full `bun run build` (it composes `type-check` + a Vite production bundle) or `bun test` to self-verify. Reach for the cheap `bun run type-check` (`vue-tsc --build`) **sparingly** — at most once near the end of a cluster — and leave the bundle build and test run to the orchestrator's single `verification` pass.
+The repo-wide **Build discipline in multi-agent flows** rule (root `CLAUDE.md`) applies to the SPA too: a sub-agent in `/implement` / `/optimise-apply` / `/review-apply` / `/tdd` may run the cheap `bun run type-check` (`vue-tsc --build`) and its task's own narrow `bun test <file>`, but leaves the full `bun run build` (it composes `type-check` + a Vite production bundle) and the whole test run to the orchestrator's single `verification` pass.
 
 ### Scope and limits
 
