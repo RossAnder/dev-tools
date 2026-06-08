@@ -1,0 +1,437 @@
+schema_version = 1
+last_updated = 2026-06-08
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-08
+agent = "implement"
+summary = "Flow execution started; status draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "8ee97eaac1edbe1b"
+
+[[items]]
+id = "E2"
+type = "verification"
+date = 2026-06-08
+agent = "implement"
+summary = "cargo build (lumina) passed at G1 checkpoint"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "migration-0016-sprint-lifecycle-worktrees"
+dedup_id = "2ffc7b30750afdc1"
+
+[[items]]
+id = "E3"
+type = "verification"
+date = 2026-06-08
+agent = "implement"
+summary = "cargo nextest (lumina, excl pty_e2e/conpty) passed: 421 tests"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "migration-0016-sprint-lifecycle-worktrees"
+dedup_id = "07cc333de3e4cb60"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-06-08
+agent = "implement"
+summary = "Added worktree_id/predecessor_sprint_id:None to 10 existing NewSprint construction sites"
+task_ref = "domain-sprintstatus-worktree-types"
+original_intent = "Widen NewSprint with serde(default) worktree_id/predecessor_sprint_id fields (plan task 2)"
+rationale = "serde(default) supplies only deserialization defaults, not Rust struct-literal defaults; 10 existing NewSprint construction sites across 8 files (claim_concurrency, http/execution x3, e2e, mcp/sessions, repo/reads, repo/runs_sprints x2, repo/test_support) failed to compile. The orchestrator added explicit None fields to each to restore the build. The plan under-specified this mechanical consequence."
+commits = ["108bbcc"]
+dedup_id = "f6b44e0c6a76e8ef"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "migration-0016-sprint-lifecycle-worktrees"
+status = "done"
+summary = "Migration 0016 (worktrees, sprints.worktree_id+predecessor_sprint_id, work_items.checkpoint, task_commits, indexes, open->active backfill) + migration_0016 test"
+files = [
+    "lumina/migrations/0016_sprint_lifecycle_worktrees.sql",
+    "lumina/tests/migration_0016.rs",
+]
+commits = ["108bbcc"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "6be8eb60cb36f878"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "domain-sprintstatus-worktree-types"
+status = "done"
+summary = "SprintStatus/WorktreeOutcome enums (+can_transition_to), Worktree/NewWorktree/TaskCommit/TaskCommitQuery structs, widened NewSprint, WorkItem.checkpoint"
+files = [
+    "lumina/src/domain/enums.rs",
+    "lumina/src/domain/planning.rs",
+    "lumina/src/domain/work_items.rs",
+]
+commits = ["108bbcc"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "285aa90a46988346"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "thread-checkpoint-row-mapping"
+status = "done"
+summary = "Threaded work_items.checkpoint through WorkItemRow/FromRow, work_item_from_row, both SELECT lists, and the export.rs WorkItem fixture"
+files = [
+    "lumina/src/repo/shared.rs",
+    "lumina/src/repo/reads.rs",
+    "lumina/src/export.rs",
+]
+commits = ["108bbcc"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "3cb6b9e266877aac"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E8"
+type = "verification"
+summary = "cargo build (lumina) passed at G2 checkpoint"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "repo-worktrees-mutators"
+dedup_id = "47c75dec02bfb9ba"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E9"
+type = "verification"
+summary = "cargo nextest (lumina, excl pty) passed at G2: 458 tests"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "repo-worktrees-mutators"
+dedup_id = "5273306b90255b65"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E10"
+type = "deviation"
+summary = "Activated sprint in http/execution.rs in-module claim tests for the stricter guard"
+task_ref = "repo-claim-guard-checkpoint-freeze"
+original_intent = "Plan enumerated team_execution/e2e/claim_concurrency/readiness as the test files to repair for the active-only claim guard"
+rationale = "http/execution.rs in-module HTTP claim tests (claim_complete_and_reads_http, release_non_owner_http, claim_next_task_none_http) also seed-then-claim and were not enumerated by the plan; the orchestrator added a direct UPDATE sprints SET status=active activation to all three so the G2 suite is green."
+commits = ["3f87d3a"]
+dedup_id = "77ecf250203a6857"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E11"
+type = "deviation"
+summary = "Aligned set_sprint_status SQL to the actual sprints schema (no updated_at/deleted_at)"
+task_ref = "repo-sprint-lifecycle-set-status"
+original_intent = "set_sprint_status reads the sprint status then UPDATEs it within one txn"
+rationale = "The implementer mirrored other tables soft-delete/updated_at idiom, but the sprints table has only id/title/status/created_at plus the 0016 FK columns -- no deleted_at and no updated_at. Runtime sqlx surfaced the bad columns only at test time (cargo check cannot catch column existence). The orchestrator removed the deleted_at filter from the SELECT and the updated_at write from the UPDATE."
+commits = ["3f87d3a"]
+dedup_id = "c9251d75003b07af"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E12"
+type = "deviation"
+summary = "Fixed http/worktrees.rs to use crate::domain::TaskCommit not repo::TaskCommit"
+task_ref = "http-worktree-mirrors"
+original_intent = "list_task_commits_handler returns Json<Vec<TaskCommit>>"
+rationale = "TaskCommit is a domain type imported privately into repo/worktrees.rs and not re-exported under repo::, so repo::TaskCommit did not resolve. T11 self cargo check was blocked by a Bash fork flake (shipped vet-recommended); the G2 gate caught the compile error and the orchestrator changed the path to crate::domain::TaskCommit."
+commits = ["3f87d3a"]
+dedup_id = "341262238eeb5dd4"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E13"
+type = "task-completion"
+task_ref = "repo-worktrees-mutators"
+status = "done"
+summary = "repo/worktrees.rs: create/get/list_worktrees, record_worktree_merge/rejection, record/list_task_commits (inert worktree events)"
+files = [
+    "lumina/src/repo/worktrees.rs",
+    "lumina/src/repo/mod.rs",
+]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "d8fe83097d06343c"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E14"
+type = "task-completion"
+task_ref = "repo-sprint-lifecycle-set-status"
+status = "done"
+summary = "set_sprint_status (legal transitions + worktree-owner terminal guard) + create_sprint defaults draft + persists chaining FKs"
+files = ["lumina/src/repo/runs_sprints.rs"]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "94d4c72fb8eba6ef"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E15"
+type = "task-completion"
+task_ref = "repo-set-task-checkpoint"
+status = "done"
+summary = "set_task_checkpoint scalar setter (exported work_item event)"
+files = ["lumina/src/repo/work_items_meta.rs"]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "16c7871e7d8e73ab"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E16"
+type = "task-completion"
+task_ref = "repo-claim-guard-checkpoint-freeze"
+status = "done"
+summary = "claim_next_task runnable iff sprint active + checkpoint freeze; preserved E5 todo/open predicate; repaired in-module claim tests"
+files = ["lumina/src/repo/team_execution.rs"]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "a388b1f829ec92ab"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E17"
+type = "task-completion"
+task_ref = "repo-quiescence-status-freeze"
+status = "done"
+summary = "get_sprint_quiescence: claimable=0 when non-active or frozen; done derived from real terminal counts; repaired readiness tests"
+files = ["lumina/src/repo/readiness.rs"]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "a64d9501d663eda0"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E18"
+type = "task-completion"
+task_ref = "mcp-worktree-family"
+status = "done"
+summary = "8-tool MCP worktree family + count bump 74->83 + membership/annotation bookkeeping for all 9 tools"
+files = [
+    "lumina/src/mcp/worktrees.rs",
+    "lumina/src/mcp/mod.rs",
+]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "46085aef1823ced9"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E19"
+type = "task-completion"
+task_ref = "mcp-set-sprint-status"
+status = "done"
+summary = "MCP set_sprint_status tool; create_sprint widening satisfied transitively by widened NewSprint"
+files = ["lumina/src/mcp/runs_sprints.rs"]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "a9de61cd45b88aba"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E20"
+type = "task-completion"
+task_ref = "http-worktree-mirrors"
+status = "done"
+summary = "HTTP mirrors: http/worktrees.rs 8 routes + PATCH /sprints/{id}/status + mod mount"
+files = [
+    "lumina/src/http/worktrees.rs",
+    "lumina/src/http/sprints.rs",
+    "lumina/src/http/mod.rs",
+]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "365f3ebefb129098"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E21"
+type = "task-completion"
+task_ref = "e2e-thread-extension"
+status = "done"
+summary = "e2e thread extended through full worktree/sprint lifecycle (freeze, commits, chained fix sprint, merge, HTTP reads, clean export drain)"
+files = ["lumina/tests/e2e.rs"]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "7c9240d37e386be2"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E22"
+type = "task-completion"
+task_ref = "lifecycle-guard-tests"
+status = "done"
+summary = "sprint_lifecycle.rs guard suite (8 tests) + claim_concurrency activation under the stricter guard"
+files = [
+    "lumina/tests/sprint_lifecycle.rs",
+    "lumina/tests/claim_concurrency.rs",
+]
+commits = ["3f87d3a"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "cc30415849a462f1"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E23"
+type = "verification"
+summary = "Phase 3 final: cargo build (lumina) passed"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "docs-lumina-claude-md"
+dedup_id = "d05b59d0acb717e9"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E24"
+type = "verification"
+summary = "Phase 3 final: cargo nextest (lumina, excl pty) passed: 458 tests"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+task_ref = "docs-lumina-claude-md"
+dedup_id = "7c2700d07aae58a0"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E25"
+type = "verification"
+summary = "Phase 3 final: cargo clippy clean after fixing one doc_lazy_continuation warning in team_execution.rs"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+task_ref = "docs-lumina-claude-md"
+dedup_id = "813d810dd07aeac4"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E26"
+type = "verification"
+summary = "Phase 3 final: macro-eradication smoke gate clean (0 bang-macro matches)"
+command = '''rg -c 'sqlx::query(_as|_scalar)?!\(' lumina/src lumina/tests'''
+outcome = "pass"
+task_ref = "docs-lumina-claude-md"
+dedup_id = "106eadf897b71e43"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E27"
+type = "verification"
+summary = "Phase 3 final: cargo audit clean (1 pre-existing allowed advisory: serial 0.4.0 via portable-pty; no new RUSTSEC advisory, no deps added by this flow)"
+command = "cargo audit --file lumina/Cargo.lock"
+outcome = "pass"
+task_ref = "docs-lumina-claude-md"
+dedup_id = "bc667b88c7758aa2"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E28"
+type = "deviation"
+summary = "Corrected ADR cross-reference filenames in lumina/CLAUDE.md migration-0016 block"
+task_ref = "docs-lumina-claude-md"
+original_intent = "Link the migration-0016 surface block to the governing ADRs"
+rationale = "The docs agent (T14) could not read docs/adr/ and guessed the link target 0003-sprint-execution-architecture.md for both the layer-2 reference and the runtime-freeze reference. The layer-2 architecture is ADR-0002 (0002-sprint-execution-architecture.md) and the runtime-freeze decision is ADR-0003 (0003-commit-checkpoint-provenance.md). Orchestrator corrected both links and added an ADR-0005 pointer; confirmed independently by the T15 agent which owns docs/adr/."
+commits = ["cdd1716"]
+dedup_id = "1bdda98466dc7aa7"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E29"
+type = "task-completion"
+task_ref = "docs-lumina-claude-md"
+status = "done"
+summary = "lumina/CLAUDE.md: migration-0016 MCP + HTTP surface blocks, 74->83 current-count update, corrected ADR links"
+files = ["lumina/CLAUDE.md"]
+commits = ["cdd1716"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "e465b9817a315861"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E30"
+type = "task-completion"
+task_ref = "docs-context-adr-0005"
+status = "done"
+summary = "CONTEXT.md Worktree/Sprint/Merge/Checkpoint glossary resolved to the decided model; ADR-0005 created (Accepted) + linked from ADR-0002/0003"
+files = [
+    "lumina/CONTEXT.md",
+    "docs/adr/0005-sprint-lifecycle-worktree-ownership.md",
+    "docs/adr/0002-sprint-execution-architecture.md",
+    "docs/adr/0003-commit-checkpoint-provenance.md",
+]
+commits = ["cdd1716"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "55ce3497c7d81e06"
+
+[[items]]
+date = 2026-06-08
+agent = "implement"
+id = "E31"
+type = "task-completion"
+task_ref = "docs-root-claude-skill-md"
+status = "done"
+summary = "Root CLAUDE.md current count 74->83 + migration-0016 family summary; plugin SKILL.md 9-tool worktree/sprint-lifecycle/commit-provenance table"
+files = [
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+commits = ["cdd1716"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "4764970f1ac58449"
+
+[[items]]
+id = "E32"
+type = "status-transition"
+date = 2026-06-08
+agent = "plan-update"
+summary = "All 16 plan tasks complete and verified (458 tests pass); status in-progress -> review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "940528279f5d301e"

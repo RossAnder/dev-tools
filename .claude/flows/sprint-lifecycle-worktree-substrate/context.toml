@@ -1,0 +1,27 @@
+slug = "sprint-lifecycle-worktree-substrate"
+plan_path = "docs/plans/sprint-lifecycle-worktree-substrate.md"
+status = "review"
+created = 2026-06-08
+updated = 2026-06-08
+branch = "main"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/**",
+    "lumina/tests/**",
+    "lumina/CLAUDE.md",
+    "lumina/CONTEXT.md",
+    "CLAUDE.md",
+    "docs/adr/**",
+    "claude/plugins/lumina-story-blocks/skills/**",
+]
+
+[tasks]
+total = 16
+completed = 16
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/sprint-lifecycle-worktree-substrate/review-ledger.toml"
+optimise_findings = ".claude/flows/sprint-lifecycle-worktree-substrate/optimise-findings.toml"
+execution_record = ".claude/flows/sprint-lifecycle-worktree-substrate/execution-record.toml"
+plan_review_findings = ".claude/flows/sprint-lifecycle-worktree-substrate/plan-review-findings.toml"

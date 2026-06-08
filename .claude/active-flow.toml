@@ -345,3 +345,21 @@ scope = [
     "CLAUDE.md",
     "claude/plugins/lumina-story-blocks/skills/**",
 ]
+
+[[active]]
+slug = "sprint-lifecycle-worktree-substrate"
+last_used = "2026-06-08T05:22:44.8596159Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/migrations/**",
+    "lumina/src/**",
+    "lumina/tests/**",
+    "lumina/CLAUDE.md",
+    "lumina/CONTEXT.md",
+    "CLAUDE.md",
+    "docs/adr/**",
+    "claude/plugins/lumina-story-blocks/skills/**",
+]

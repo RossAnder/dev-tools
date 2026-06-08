@@ -1,0 +1,195 @@
+schema_version = 1
+last_updated = 2026-06-08
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 7. Tighten claim guard + add checkpoint-freeze in `repo/team_execution.rs` [M]"
+summary = "Stricter guard breaks the IN-MODULE team_execution.rs claim tests the plan never enumerates for repair"
+description = "Verified: the new runnable-iff-active rule breaks more than the two test files the plan repairs (tasks 12/13 name only e2e.rs + claim_concurrency.rs). team_execution.rs's own #[cfg(test)] suite seeds sprints via seed_sprint at the create-default status='open' (runs_sprints.rs:141 omits status -> column DEFAULT 'open'). Two in-module tests will FAIL: (a) claim_returns_open_status_task (team_execution.rs:1276) seeds an 'open' sprint and asserts the task IS claimed -- this is the very E5 'open'-status test task 7's Acceptance claims 'still passes'; under runnable<=>active the sprint is 'open' not 'active' so the claim returns None and the assertion fails; (b) claim_honours_sprint_status_guard (1245-1266) flips the sprint to 'open' and asserts it IS runnable (L1266) -- a direct contradiction of the new guard. Fix: task 7 must own repairing its own in-module tests (activate the seeded sprint draft->ready->active before each claim, and rewrite the 'open'-is-runnable assertion). The plan's claim that the E5 test 'still passes' is factually wrong as written. Note: the related 'closed'/'merged' statuses appear ONLY in the NON_RUNNABLE const (team_execution.rs:38) and this test fixture -- no production path writes them, so the 'open'->'active' backfill is correct for real data (see P10)."
+dedup_id = "9367ed5a27fd2349"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 8. Mirror the guard + freeze in `get_sprint_quiescence` [S]"
+summary = "Task 8 is mis-scoped as a 'mirror' -- get_sprint_quiescence does not read sprints.status today, so this is a structural change"
+description = "Verified (readiness.rs:61-138): get_sprint_quiescence computes claimable as a single COALESCE(SUM(CASE...)) over sprint_tasks JOIN work_items and never reads sprints.status at all; the done/stalled verdicts (L125-128) derive purely from those counts. Making claimable=0 when the sprint isn't 'active' or a checkpoint is in-flight therefore requires ADDING (a) a SELECT status FROM sprints read and (b) a checkpoint-in_progress EXISTS probe, then zeroing claimable in Rust -- not a CASE tweak. It also forces a semantics decision the plan omits: should a FROZEN sprint (claimable=0) report done=true (since done = claimable==0 && in_progress==0 && blocked==0)? That would emit a false 'sprint complete' signal to the lead's poll loop. The [S] sizing is optimistic; flag the done/stalled-during-freeze behaviour as an explicit design point in task 8's detail and a task-13 assertion."
+dedup_id = "77942a5d6ab7b27c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "executability"
+plan_section = "#### 3. Thread `work_items.checkpoint` through the row mapping + export fixture [S]"
+summary = "Task 3's 'BEFORE created_at to satisfy the tables-last gate' rationale rests on two false premises"
+description = """Verified two facts that contradict task 3's stated rationale: (1) WorkItemRow's FromRow decodes columns by NAME via row.try_get("col") (shared.rs:84-99), so SELECT column ORDER is irrelevant to decoding -- checkpoint can sit anywhere in the SELECT. (2) The tables-last gate (export.rs:873-881, open_questions_round_trip_gates_tables_last_ordering) fails only when a scalar is declared AFTER a Vec/table field on the Rust struct, and its own comment says 'the fix belongs in domain.rs declaration order (NOT this file)'. WorkItem is entirely flat scalars (no Vec; see the literal at export.rs:886-913), so a new scalar cannot trigger the gate regardless of position. The real, load-bearing work task 3 understates: when task 2 adds WorkItem.checkpoint, the export.rs WorkItem struct LITERAL at export.rs:886-913 must gain checkpoint: None or the crate won't compile (and any other WorkItem struct literal in tests likewise). Reword to drop the false gate rationale and name the struct-literal compile fix."""
+anchor_old = "add `checkpoint` to `LIST_WORK_ITEMS_SQL` + `GET_WORK_ITEM_DETAIL_SQL` (`reads.rs:54-66`) BEFORE `created_at` to satisfy the tables-last export-ordering gate; update the `export.rs` tables-last fixture if it pins the column set."
+anchor_new = "add `checkpoint` to `LIST_WORK_ITEMS_SQL` + `GET_WORK_ITEM_DETAIL_SQL` (`reads.rs:54-66`) — column position is immaterial (`WorkItemRow`'s `FromRow` decodes by name via `try_get`). The tables-last gate is the `WorkItem` field-declaration order (task 2), and `WorkItem` is all-scalar so the gate cannot fire for `checkpoint` regardless. Add `checkpoint: None` to the `export.rs` `WorkItem` struct literal in `open_questions_round_trip_gates_tables_last_ordering` (export.rs:886-913) so the crate compiles after task 2 widens the struct."
+dedup_id = "8cf5909f13ef2b1f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 15. CONTEXT.md glossary + ADR-0005 [M]"
+summary = "Task 15 must edit docs/adr/0002 and 0003 to add the ADR-0005 cross-link, but neither is in its Files list"
+description = "Verified: task 15's Acceptance requires 'ADR-0005 ... is linked from ADR-0002/0003's layer-2 references', but its Files line names only lumina/CONTEXT.md + docs/adr/0005-...md (new). ADR-0002 (docs/adr/0002-sprint-execution-architecture.md:34) and ADR-0003 (docs/adr/0003-commit-checkpoint-provenance.md:39) each have a layer-2 reference slot that names only the PLAN path -- adding the ADR-0005 backlink means editing both files, which are not in task 15's Files (the per-task Files list is what an implement agent reads; the top-level 'Affected areas' docs/adr/ is too coarse). Add both ADR paths to task 15's Files. No overlap with any other task, so it stays a clean parallel task."
+anchor_old = "- **Files**: `lumina/CONTEXT.md`, `docs/adr/0005-sprint-lifecycle-worktree-ownership.md` (new)"
+anchor_new = "- **Files**: `lumina/CONTEXT.md`, `docs/adr/0005-sprint-lifecycle-worktree-ownership.md` (new), `docs/adr/0002-sprint-execution-architecture.md`, `docs/adr/0003-commit-checkpoint-provenance.md`"
+dedup_id = "8c0691ca3914b250"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "executability"
+plan_section = "#### 10. MCP `set_sprint_status` + `create_sprint` widening in `mcp/runs_sprints.rs` [S]"
+summary = "Tasks 9 and 10 share the 74->83 count assertion across two files but sit in the same parallel batch"
+description = "Verified: the count-invariant test (mcp/mod.rs:474, currently 74) is hard-bumped to 83 by task 9 counting BOTH families' 9 tools, but task 10's set_sprint_status lands in a DIFFERENT file (mcp/runs_sprints.rs). The plan expresses 'task 10 must land with 9' only as prose, not as a Blocked-by edge. Per project CLAUDE.md the count test runs at the orchestrator's post-batch verification (after both land), which mitigates a pure parallel race -- but a partial/interleaved batch commit (commit 9 before 10, or split the batch) reds the count test and blocks the checkpoint. Make task 10 Blocked-by 9 (or state Batch 5 commits as a single non-splittable checkpoint). This is a clarity/ordering hardening, not a redesign."
+anchor_old = """
+- **Depends on**: 5
+- **Action**: Add `set_sprint_status` to the existing `tool_router_runs_sprints` family and thread the new `create_sprint` params."""
+anchor_new = """
+- **Depends on**: 5, 9
+- **Action**: Add `set_sprint_status` to the existing `tool_router_runs_sprints` family and thread the new `create_sprint` params. (Blocked-by 9 because task 9 hard-codes the 83 count assertion counting THIS tool — landing after 9 keeps the count test from going red on a partial Batch-5 landing; alternatively commit Batch 5 as one checkpoint.)"""
+dedup_id = "764751d8a32d2d10"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "#### 11. HTTP mirrors: new `http/worktrees.rs` + sprint-status route in `http/sprints.rs` [M]"
+summary = "Task 11 leaves the HTTP route shapes hedged ('e.g.') and TaskCommitQuery (used by task 4) is never defined"
+description = "Two executor-time decisions left open. (1) Task 11's route list is prefixed 'e.g.' -- a suggestion, not a contract -- so a parallel executor of task 9 (MCP) and task 11 (HTTP) plus task 12's e2e (which does 'HTTP reads of worktree/sprint-status/task_commits') could diverge on URLs; pin the exact 8 routes + methods. (2) Task 4 introduces list_task_commits(db, by: TaskCommitQuery) with three directions (task_id|commit_sha|story_id), but TaskCommitQuery is never defined: task 2's struct list (Worktree/NewWorktree/TaskCommit) omits it, leaving the executor to invent the type and its home. Add TaskCommitQuery (an enum with the three variants) to task 2 with its home file (recommend domain/planning.rs beside TaskCommit), and have task 4 reference it as defined-by-task-2. Also note (minor): http/sprints.rs:48 already takes Json<crate::domain::NewSprint>, so widening NewSprint (task 2, with serde(default)) auto-widens the HTTP create body -- task 11's 'thread the widened create body' is a no-op for create; its only real new work is the PATCH /sprints/{id}/status route."
+dedup_id = "0f285d2aed23c43e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Stricter guard is a breaking change to the shipped claim_next_task (silent Ok(None)); consumer/doc audit understated"
+description = "Verified: today a freshly-created sprint is immediately claimable ('open' is runnable; NON_RUNNABLE = cancelled/closed/merged at team_execution.rs:38). After this plan a new sprint is 'draft' (task 5 writes 'draft' explicitly) and claim_next_task returns Ok(None) -- NOT an error -- until someone drives draft->ready->active. This is a behaviour change to a migration-0013 SHIPPED tool + its HTTP mirror, and the silent-null contract (claim returns {claimed:null} with no error) makes the regression invisible to a consumer that can't tell 'no ready work' from 'sprint not activated'. The plan's Risks section treats external consumers as a one-line doc note (task 14). Add an explicit task to grep claude/plugins/** and the plugin SKILL.md for create_sprint-then-claim sequences and update them; the agent-teams workflow and /lumina:* skills are the at-risk consumers."
+dedup_id = "979bc5b70362d597"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### 4. Worktree + task_commits mutators/reads in `repo/worktrees.rs` [L]"
+summary = "Task 4's 'add worktree to record_inert_event's vocab (one-line widen)' is a no-op -- there is no allow-list"
+description = """Verified (events.rs:79-86): record_inert_event rejects ONLY aggregate_type=="work_item"; every other string (including a brand-new "worktree") is accepted and delegated verbatim to record_event. There is NO run|sprint|finding|batch|session allow-list in executable code -- that enumeration lives only in the doc-comment at events.rs:56-71. So the implementer should just call record_inert_event(tx, "worktree", ...); the only optional touch is updating that doc-comment to mention worktree (cosmetic). Likewise export.rs filters by a positive aggregate_type=="work_item" rule, so any non-work_item aggregate is inert automatically -- no export.rs change is needed. Drop the 'one-line widen to events.rs:72' instruction so the implementer doesn't hunt for a non-existent vocab list."""
+anchor_old = "all single-`BEGIN IMMEDIATE` + coarse inert `worktree` events (add `worktree` to `record_inert_event`'s inert-aggregate vocab in `repo/events.rs:72` — one-line widen, like 0015's `session`)."
+anchor_new = 'all single-`BEGIN IMMEDIATE` + coarse inert `worktree` events. NOTE: `record_inert_event` (events.rs:79) rejects ONLY `aggregate_type="work_item"` — any other aggregate already passes, so there is NO vocab allow-list to widen; just call `record_inert_event(tx, "worktree", …)`. The only optional touch is the doc-comment enumeration at events.rs:56-71. `export.rs` needs no change (it renders only `work_item` aggregates).'
+dedup_id = "4abd47692f625ee2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 4. Worktree + task_commits mutators/reads in `repo/worktrees.rs` [L]"
+summary = "list_worktrees(status_filter) filters on JOIN-derived effective_status -- no in-repo precedent, no acceptance test, no index"
+description = "Verified: effective_status is derived by JOINing the owning sprint (Approach: 'no worktrees.status column'), so list_worktrees(Some(status)) must do ... JOIN sprints s ON s.id=w.owning_sprint_id WHERE s.status=? -- but every existing list_*/filter read in repo/ filters on a REAL column or junction key; there is no precedent for filtering on a computed JOIN column, and the implementer could reach for a non-existent worktrees.status. Task 4's Acceptance tests create/get/merge/reject/idempotency but never exercises the status_filter path at all. Add one line of Detail pinning the JOIN-filter SQL shape, and an acceptance bullet asserting list_worktrees(Some(SprintStatus::Review)) returns only review-owned worktrees. Minor perf note (defer, don't build): sprints.status is un-indexed free TEXT so the filter is a SCAN -- fine at v1 volumes."
+dedup_id = "c4bd2edf48acdc63"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 1. Add migration `0016_sprint_lifecycle_worktrees.sql` + migration test [M]"
+summary = "Backfill 'open'->'active' is an unremarked semantic choice; add a post-migration out-of-vocab assertion"
+description = "The UPDATE sprints SET status='active' WHERE status='open' promotes every legacy sprint straight to runnable 'active' (vs the safer 'draft', which matches what create_sprint now writes). Verified 'open' is the only value any PRODUCTION path writes (create_sprint omits status -> DEFAULT 'open' at runs_sprints.rs:141; 'closed'/'merged' exist only in the NON_RUNNABLE const + a test fixture), so 'open'->'active' is a faithful map for real data and the choice is defensible to preserve layer-1's 'open was runnable' behaviour -- but it is currently unremarked. Two cheap hardenings: (1) document the 'active' vs 'draft' decision + rationale in task 1's detail and ADR-0005; (2) add a migration_0016 assertion that SELECT COUNT(*) FROM sprints WHERE status NOT IN ('draft','ready','active','review','done','cancelled') == 0 after 0016 applies -- this mechanically gates the backfill and converts the 'backfill is correct' assertion into a verified gate. Also have set_sprint_status map an unparseable current status to a clean Validation rather than a parse panic."
+dedup_id = "c822f381e06ffc86"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 9. MCP worktree/checkpoint/commit family in `mcp/worktrees.rs` + register in `mcp/mod.rs` [L]"
+summary = "Count bump touches more than mcp/mod.rs:474; and task 16 [S] under-sizes the SKILL.md family-table work"
+description = "Verified: the count lives in TWO assertions in mcp/mod.rs -- the bare count at L474 AND the unique-names count at L489 -- plus an explanatory arithmetic breakdown comment at L456-471 ('74 = 39 baseline + ...'). A find-replace of L474 alone leaves L489 and the breakdown comment stale; task 9 must bump all three (add a '+9 migration-0016 worktree/sprint-lifecycle tools' line to the breakdown). Separately (task 16): the plugin SKILL.md carries NO numeric tool count (verified: it catalogues by per-family tables, no running total), so task 16's real work is AUTHORING a new 9-tool family table -- non-trivial prose, not a number bump. Re-size task 16 from [S] to [M] (or split the SKILL.md table from the one-line root CLAUDE.md count bump)."
+anchor_old = "**bump the count assertion 74→83** (count ALL 9 new tools incl. task 10's `set_sprint_status`)"
+anchor_new = "**bump the count assertion 74→83** at BOTH `mcp/mod.rs:474` (bare count) and `:489` (unique-names count), AND update the arithmetic breakdown comment at `:456-471` to add a `+9 migration-0016` line (count ALL 9 new tools incl. task 10's `set_sprint_status`)"
+dedup_id = "66ad1996fd65ffe1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 9. MCP worktree/checkpoint/commit family in `mcp/worktrees.rs` + register in `mcp/mod.rs` [L]"
+summary = "Annotation lists must be assigned per-tool: set_sprint_status is NOT idempotent and must be omitted from the idempotent list"
+description = "The annotations test (mcp/mod.rs:569-673) asserts hardcoded membership: a read_only_hint list and an idempotent_hint list, and every tool's #[tool] annotation must match. Task 9 lumps these as 'the read/idempotent annotation lists' without distinguishing, which risks a guessed annotation reding the test. Per-tool: the 3 reads (get_worktree, list_worktrees, list_task_commits) -> read-only list (+ each must carry read_only_hint(true) in its def); set_task_checkpoint IS idempotent -> idempotent list; but set_sprint_status is NOT idempotent (a second review->done is an ILLEGAL transition -> 422) so it must be OMITTED from the idempotent list. Spell this out in task 9's detail."
+anchor_old = "add the 9 names to the membership loop (L356-451) + the read/idempotent annotation lists (L569-673)."
+anchor_new = "add the 9 names to the membership loop (L356-451); then the annotation lists (L569-673) PER TOOL — `get_worktree`/`list_worktrees`/`list_task_commits` → read-only list (each carrying `read_only_hint(true)`); `set_task_checkpoint` → idempotent list; `set_sprint_status` → NEITHER (a repeated transition is illegal → 422, so it is non-idempotent). Mis-annotating reds the annotations test."
+dedup_id = "f211a0c65ada4db6"
+
+[[vet_events]]
+timestamp = "2026-06-08T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified the load-bearing claims by direct read: get_sprint_quiescence (readiness.rs:61-138) genuinely does NOT read sprints.status -> task-8-is-a-mirror finding stands (P2); the in-module tests claim_returns_open_status_task (team_execution.rs:1276) + claim_honours_sprint_status_guard (1245-1266) both seed 'open' sprints and break under the new guard -> P1 confirmed; tables-last gate is struct-decl order on flat-scalar WorkItem (export.rs:873-913), FromRow decodes by name (shared.rs:84) -> P3 confirmed. Line-number anchors throughout were accurate. 0 dropped, 0 downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-08T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified: record_inert_event (events.rs:79-86) rejects ONLY work_item with no allow-list -> the 'widen vocab' instruction is a no-op (P8 confirmed). ADR-0002:34 + ADR-0003:39 carry a layer-2 slot naming only the plan path, no ADR-0005 link, and task 15's Files omits both ADRs -> P4 confirmed. mcp/mod.rs:456 breakdown comment + L489 second assertion exist -> P11 confirmed. The agent's own ruled-out list (WorkItemDetail folding, create-then-claim test scan, export allow-list, route-count test) was sound. 0 dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-08T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified: http/sprints.rs:48 takes Json<crate::domain::NewSprint> so widening NewSprint auto-widens the create body -> P6 minor note confirmed; TaskCommitQuery is absent from task 2's struct list while task 4 uses it -> P6 confirmed from plan text. Task-3 by-name-decode/flat-scalar finding duplicates Agent 1 F4 -> merged into P3. Agent's parallel-batch file-overlap analysis (all five batches clean) was independently consistent with the plan's Files lines. 0 dropped, 0 downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-08T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 1
+rationale = "DOWNGRADED Agent 4 Finding 1: its premise ('layer-1 PRODUCTION code writes closed/merged, the backfill misses them') is inaccurate -- 'closed'/'merged' appear ONLY in the NON_RUNNABLE const (team_execution.rs:38) and a test fixture (1245), never a production writer (create_sprint omits status -> DEFAULT 'open', runs_sprints.rs:141). So the 'open'->'active' backfill is correct for real data. Reframed the salvageable parts into P1 (in-module test repair) + P10 (document the backfill choice + add a post-migration out-of-vocab assertion + handle unknown current-status). create_sprint-draft-breaking-change (P7) and count-test 9/10 coordination (P5) verified and kept. rmcp/sqlx/SQLite API claims via Context7 were sound (ruled-out)."
+dedup_id = "45ca31c3315a5978"
