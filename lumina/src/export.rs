@@ -495,7 +495,7 @@ mod tests {
         // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
         let epic = repo::create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None, lane: None },
         )
         .await
         .unwrap()
@@ -505,7 +505,7 @@ mod tests {
             .unwrap();
         let focus = repo::create_work_item_full(
             &pool, "focus", Some(&epic), "FO", None,
-            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice"), lane: None },
         )
         .await
         .unwrap()
@@ -556,7 +556,7 @@ mod tests {
         // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
         let epic = repo::create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None, lane: None },
         )
         .await
         .unwrap()
@@ -566,7 +566,7 @@ mod tests {
             .unwrap();
         let focus = repo::create_work_item_full(
             &pool, "focus", Some(&epic), "FO", None,
-            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice"), lane: None },
         )
         .await
         .unwrap()
@@ -688,7 +688,7 @@ mod tests {
             .to_string();
         let epic = repo::create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None, lane: None },
         )
         .await
         .unwrap()
@@ -698,7 +698,7 @@ mod tests {
             .unwrap();
         let focus = repo::create_work_item_full(
             &pool, "focus", Some(&epic), "FO", None,
-            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice"), lane: None },
         )
         .await
         .unwrap()
@@ -760,7 +760,7 @@ mod tests {
         // migration-0010 valid chain: epic outcome, focus shape, epic close-criterion.
         let epic = repo::create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None, lane: None },
         )
         .await
         .unwrap()
@@ -770,7 +770,7 @@ mod tests {
             .unwrap();
         let focus = repo::create_work_item_full(
             &pool, "focus", Some(&epic), "FO", None,
-            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice"), lane: None },
         )
         .await
         .unwrap()

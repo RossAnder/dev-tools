@@ -14,7 +14,7 @@ use super::*;
 use super::events::record_event;
 use crate::args;
 use crate::db::DbClient;
-use crate::domain::{BatchEntry, TaskKind, Tier};
+use crate::domain::{BatchEntry, Lane, TaskKind, Tier};
 use crate::error::AppError;
 use serde_json::Value;
 
@@ -498,6 +498,58 @@ pub async fn set_task_tier(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// set_task_lane (team-execution). Single-mutation-path write to the
+// `work_items.lane` column. Task-scope: rejects non-task rows at the Rust
+// layer (mirroring `set_task_tier` / `set_task_kind`). `lane` already has a
+// create-time default of `'implement'` for tasks (see
+// `create_work_item_full_tx`); this setter is the explicit re-stamp / clear
+// path (the HTTP `PATCH /work-items/{id}/lane` + the MCP `set_task_lane` tool).
+// The CHECK constraint accepts `NULL OR ('implement' | 'review')` — the typed
+// [`Lane`] enum is the single source of the legal non-NULL values; we do NOT
+// widen the vocab here (other lanes are a FUTURE migration).
+// ---------------------------------------------------------------------------
+
+/// Set or clear a task's work-queue [`Lane`] (team-execution). Task-scoped: a
+/// non-`task` kind is rejected with a typed [`AppError::Validation`] (mirrors
+/// [`set_task_tier`] / [`set_task_kind`]). `lane == None` CLEARS the column to
+/// NULL (a laneless task is invisible to `claim_next_task` and never cascades a
+/// review — the same composer-friendly nullable convention as `tier`/`task_kind`).
+/// One event `work_item.lane_set`.
+pub async fn set_task_lane(
+    db: &impl DbClient,
+    task_id: &str,
+    lane: Option<Lane>,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(db, task_id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "lane is settable only on a task, not on '{kind}'"
+        )));
+    }
+
+    let value: Option<String> = lane.map(enum_to_str);
+
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET lane = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"#,
+            args![task_id.to_owned(), value.clone()],
+        )
+        .await?;
+
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("work_item '{task_id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "task_id": task_id, "lane": value });
+    record_event(tx.as_mut(), "work_item", task_id, "work_item.lane_set", payload).await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -565,5 +617,118 @@ mod tests {
         // Defensive: every input at its null-equivalent still falls through
         // to the residual Lite branch (the wire surface gates None upstream).
         assert_eq!(compute_tier(None, None, 0, false), Tier::Lite);
+    }
+
+    // -----------------------------------------------------------------------
+    // lane as a first-class task field (team-execution): the create-time
+    // default + the `set_task_lane` setter. These need a DB, so they pull in
+    // the in-memory pool + the seed-chain helper (mirroring team_execution.rs).
+    // -----------------------------------------------------------------------
+
+    use crate::db::AnyPool;
+    use crate::db::connect_in_memory;
+    use crate::repo::test_support::seed_chain_to_story;
+
+    /// Read a single work item's `lane` column for assertions.
+    async fn lane_of(pool: &sqlx::SqlitePool, id: &str) -> Option<String> {
+        sqlx::query_scalar::<_, Option<String>>("SELECT lane FROM work_items WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("lane select")
+    }
+
+    /// (a) A freshly-created TASK defaults to `lane='implement'` (the default
+    /// lives in the shared INSERT). An explicit `lane='review'` override is
+    /// honoured. A NON-task kind (a story here) keeps `lane=NULL` (lane is
+    /// task-only). The simple `create_work_item` helper (no opts) inherits the
+    /// default WITHOUT any signature change.
+    #[tokio::test]
+    async fn create_default_lane_is_implement_for_tasks_only() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        // A task created via the simple no-opts helper defaults to 'implement'.
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        assert_eq!(
+            lane_of(&pool, &task).await.as_deref(),
+            Some("implement"),
+            "a fresh task defaults to lane='implement'"
+        );
+
+        // An explicit lane override (via the full opts path) is honoured.
+        let review_task = create_work_item_full(
+            &pool,
+            "task",
+            Some(&story),
+            "R",
+            None,
+            CreateOpts {
+                origin: None,
+                outcome: None,
+                shape: None,
+                lane: Some(Lane::Review),
+            },
+        )
+        .await
+        .expect("review-lane task")
+        .to_string();
+        assert_eq!(
+            lane_of(&pool, &review_task).await.as_deref(),
+            Some("review"),
+            "an explicit lane override is honoured at create"
+        );
+
+        // A non-task kind (the story itself) keeps lane=NULL.
+        assert_eq!(
+            lane_of(&pool, &story).await,
+            None,
+            "a non-task kind keeps lane=NULL (lane is task-only)"
+        );
+    }
+
+    /// (b) `set_task_lane` sets a task's lane, clears it to NULL on `None`, and
+    /// rejects a non-task target with `Validation`.
+    #[tokio::test]
+    async fn set_task_lane_sets_clears_and_kind_gates() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        // Re-stamp to 'review'.
+        set_task_lane(&db, &task, Some(Lane::Review))
+            .await
+            .expect("set lane");
+        assert_eq!(lane_of(&pool, &task).await.as_deref(), Some("review"));
+
+        // Clear to NULL.
+        set_task_lane(&db, &task, None).await.expect("clear lane");
+        assert_eq!(lane_of(&pool, &task).await, None, "None clears the lane");
+
+        // Kind gate: a non-task (the story) is rejected with Validation.
+        let err = set_task_lane(&db, &story, Some(Lane::Implement))
+            .await
+            .expect_err("non-task lane set must error");
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "a non-task lane set is a Validation error, got {err:?}"
+        );
+
+        // A missing id is NotFound (the task_id must reference a row). The kind
+        // read fails first with NotFound for an absent id.
+        let missing = set_task_lane(&db, "no-such-id", Some(Lane::Implement))
+            .await
+            .expect_err("missing id must error");
+        assert!(
+            matches!(missing, AppError::NotFound(_)),
+            "a missing id is NotFound, got {missing:?}"
+        );
     }
 }

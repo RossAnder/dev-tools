@@ -329,6 +329,13 @@ pub struct CreateWorkItemRequest {
     /// `repo::create_work_item_full`.
     #[serde(default)]
     pub shape: Option<String>,
+    /// Work-queue lane (team-execution): an OPTIONAL create-time lane override
+    /// for a `task`. When absent, a task defaults to `lane='implement'` (the
+    /// default lives in the shared INSERT in `repo::create_work_item_full_tx`),
+    /// so every freshly-planned task is claimable by `claim_next_task`. A
+    /// non-task kind ignores `lane` (it stays NULL). Pass `review` to override.
+    #[serde(default)]
+    pub lane: Option<Lane>,
 }
 
 /// Revise-later plan body for an epic (migration 0010). Both fields are

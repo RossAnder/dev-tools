@@ -32,6 +32,7 @@ pub(crate) async fn seed_chain_to_story(tools: &LuminaTools) -> String {
                 origin: None,
                 outcome: outcome.map(str::to_owned),
                 shape: shape.map(str::to_owned),
+                lane: None,
             }))
             .await
             .expect("legal create");
@@ -65,6 +66,7 @@ pub(crate) async fn create_item(tools: &LuminaTools, kind: &str, parent: Option<
             origin: None,
             outcome: None,
             shape: None,
+            lane: None,
         }))
         .await
         .expect("legal create");

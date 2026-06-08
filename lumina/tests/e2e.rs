@@ -78,6 +78,7 @@ async fn mcp_create(
             origin: None,
             outcome,
             shape,
+            lane: None,
         }))
         .await
         .expect("create_work_item tool succeeds");
@@ -2627,15 +2628,17 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
 //   new work_items columns (lane / assignee / lease_expires_at /
 //   reviews_work_item_id) → HTTP read of the new /api routes.
 //
-// LANE-STAMPING NOTE (accepted layer-1 limitation): there is NO tool or
-// migration in this plan that stamps `lane='implement'` on a FRESH
-// (non-cascade) task — `create_work_item` does not set `lane`, and the only
-// lane-stamping paths are `complete_task` (spawns lane='review') and
-// `record_finding_decision` spawn_task (spawns lane='implement'). So the
-// INITIAL claimable implement task is seeded via a test-only raw
-// `sqlx::query` UPDATE (the same idiom the repo-layer claim tests and the
-// http/execution.rs route tests use). Initial-task lane-stamping is the
-// deferred composer's job (layer 3).
+// LANE-STAMPING NOTE (RESOLVED — lane is now a first-class task field): the
+// former accepted layer-1 limitation is GONE. `create_work_item` now defaults a
+// freshly-created task to `lane='implement'` (the default lives in the shared
+// INSERT in `repo::create_work_item_full_tx`), so every planned task is
+// claimable by `claim_next_task` WITHOUT a lane-stamping UPDATE. The cascade
+// lane-stampers (`complete_task` → 'review', `record_finding_decision` spawn →
+// 'implement') still explicitly re-stamp after create. The `seed_implement_sprint`
+// helper below therefore no longer needs to stamp `lane` — it relies on the
+// create-time default and only moves the task to the queue-ready `status='todo'`
+// (the claim's ready set is {todo, open}, so this status step is itself
+// optional, but kept for an explicit, self-documenting fixture).
 //
 // The repo-layer `#[tool]` methods for the queue (claim/complete/etc.) are
 // drivable as PUBLIC `repo::*` fns; this thread drives them through `repo::*`
@@ -2643,9 +2646,10 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
 // the new HTTP routes via `oneshot`.
 // =====================================================================
 
-/// Drain a sprint-id from `repo::create_sprint`, bind a task, and stamp the
-/// implement lane + a claimable status on the task via a test-only raw query
-/// (see the LANE-STAMPING NOTE above). Returns the bound sprint id.
+/// Drain a sprint-id from `repo::create_sprint`, bind a task, and move it to a
+/// queue-ready status. The task is created with the lane default 'implement' (see
+/// the LANE-STAMPING NOTE above — lane is now a first-class task field), so no
+/// lane UPDATE is needed. Returns the bound sprint id.
 async fn seed_implement_sprint(
     pool: &Arc<lumina::db::AnyPool>,
     task_id: &str,
@@ -2664,14 +2668,14 @@ async fn seed_implement_sprint(
     lumina::repo::add_tasks_to_sprint(pool, &sprint_id, &[task_id])
         .await
         .expect("bind task to sprint");
-    // Stamp lane='implement' + status='todo' so the initial task satisfies the
-    // §C claim-readiness predicate (no tool stamps lane on a fresh task — the
-    // accepted layer-1 limitation). Mirrors the http/execution.rs seed idiom.
-    sqlx::query("UPDATE work_items SET lane = 'implement', status = 'todo' WHERE id = ?1")
+    // The task already carries the create-time default lane='implement'. Move it
+    // to the queue-ready 'todo' status (the claim's ready set is {todo, open}) so
+    // the fixture is explicit about the task being staged-ready.
+    sqlx::query("UPDATE work_items SET status = 'todo' WHERE id = ?1")
         .bind(task_id)
         .execute(pool.sqlite())
         .await
-        .expect("stamp implement lane + todo status on the seed task");
+        .expect("stage the seed task to a queue-ready 'todo' status");
     // Migration-0016 stricter claim guard: a sprint is runnable (its tasks
     // claimable) ONLY when status='active'. `create_sprint` now defaults to
     // 'draft', so walk the lifecycle draft→ready→active before any claim or
@@ -3153,17 +3157,18 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
 //   sprint-status path / task_commits) → export drain still SUCCEEDS and the
 //   inert worktree/sprint events render NO TOML file (only work_item snapshots).
 //
-// Lane-stamping limitation (layer-1, unchanged): no tool stamps lane='implement'
-// on a FRESH task, so initial claimable impl tasks are seeded with a test-only
-// raw `UPDATE` (the same idiom as `seed_implement_sprint` above and the
-// http/execution.rs route tests).
+// Lane-stamping (RESOLVED — lane is a first-class task field): a fresh task now
+// defaults to lane='implement' at create, so initial claimable impl tasks need no
+// lane UPDATE (the seed helper below only stages the task to 'todo'). See the
+// LANE-STAMPING NOTE above the team-execution thread.
 // =====================================================================
 
 /// Seed one fresh implement-lane task under `story`, bind it into `sprint`, and
-/// stamp lane='implement' + status='todo' so it satisfies the §C claim-readiness
-/// predicate (no tool stamps lane on a fresh task — the accepted layer-1 limit).
-/// Returns the task id. The sprint must already be (or later become) `active` for
-/// the task to be claimable under the migration-0016 guard.
+/// stage it to status='todo' so it satisfies the §C claim-readiness predicate.
+/// The task inherits the create-time default lane='implement' (lane is now a
+/// first-class task field — no lane UPDATE needed). Returns the task id. The
+/// sprint must already be (or later become) `active` for the task to be claimable
+/// under the migration-0016 guard.
 async fn seed_impl_task_in_sprint(
     tools: &LuminaTools,
     pool: &Arc<lumina::db::AnyPool>,
@@ -3175,11 +3180,11 @@ async fn seed_impl_task_in_sprint(
     lumina::repo::add_tasks_to_sprint(pool, sprint_id, &[task.as_str()])
         .await
         .expect("bind impl task to sprint");
-    sqlx::query("UPDATE work_items SET lane = 'implement', status = 'todo' WHERE id = ?1")
+    sqlx::query("UPDATE work_items SET status = 'todo' WHERE id = ?1")
         .bind(&task)
         .execute(pool.sqlite())
         .await
-        .expect("stamp implement lane + todo status");
+        .expect("stage the seed task to a queue-ready 'todo' status");
     task
 }
 
@@ -3521,6 +3526,18 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     lumina::repo::add_tasks_to_sprint(&pool, &s2, &[rework_task.as_str()])
         .await
         .expect("bind rework task into S2");
+    // The add_tasks_to_sprint binding actually landed the junction row — the claim
+    // below depends on this membership (the §C claim JOIN keys on sprint_tasks), so
+    // make the pre-claim binding explicit rather than implicit in the claim's success.
+    let rework_bound: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = ?1 AND task_id = ?2",
+    )
+    .bind(&s2)
+    .bind(&rework_task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("read the rework task's S2 binding");
+    assert_eq!(rework_bound, 1, "the rework task is bound into S2 before the claim");
     let claimed_rework = lumina::repo::claim_next_task(
         &pool,
         &s2,
@@ -3577,6 +3594,26 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
         w1_merged.effective_status,
         lumina::domain::SprintStatus::Done,
         "W1.effective_status tracks the now-done owner"
+    );
+
+    // 9a. Terminal quiescence on the merged owner S1. With S1 now in the terminal
+    //     `done` status (non-`active`), the claim-gating mirror in
+    //     get_sprint_quiescence forces `claimable` to 0 — the NON-ACTIVE gating
+    //     path, distinct from the freeze path asserted at q_frozen above. Note S1
+    //     is NOT itself `done`: completing each implement task spawned a review
+    //     task (left un-drained in this thread), so review tasks remain `todo`
+    //     (non-terminal) and `done` reflects RAW task completion, not the merged
+    //     sprint status. (Deviation from the plan's Gap-1 wording — see report.)
+    let q_merged = lumina::repo::get_sprint_quiescence(&pool, &s1)
+        .await
+        .expect("quiescence on the merged owner S1");
+    assert_eq!(
+        q_merged.claimable, 0,
+        "the merged (non-active) owner exposes no claimable work — non-active gating: {q_merged:?}"
+    );
+    assert!(
+        !q_merged.done,
+        "S1 is NOT task-done: the un-drained spawned review tasks remain non-terminal: {q_merged:?}"
     );
 
     // 10. HTTP reads (oneshot, no socket bind) of the new surface.

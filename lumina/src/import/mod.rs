@@ -129,6 +129,7 @@ async fn ensure_scaffold(
             origin: None,
             outcome,
             shape,
+            lane: None,
         },
     )
     .await

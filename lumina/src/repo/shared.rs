@@ -688,6 +688,7 @@ pub async fn create_work_item_full_tx(
         origin,
         outcome,
         shape,
+        lane,
     } = opts;
     // Resolve the parent's kind (if any) for the pre-check, INSIDE the tx so the
     // read shares the writer-lock snapshot with the INSERT below. A non-NULL
@@ -758,6 +759,23 @@ pub async fn create_work_item_full_tx(
         _ => None,
     };
 
+    // Lane is a TASK-ONLY field (team-execution). The single source of the
+    // create-time default lives HERE so every create path (the simple
+    // `create_work_item` test helper, `create_work_item_with_origin`, the MCP
+    // `create_work_item` tool, and the bulk `create_work_items`) inherits it:
+    //   * `kind == "task"`: use the caller-provided `lane` if present, ELSE
+    //     default to `'implement'` — so every freshly-planned task is claimable
+    //     by `claim_next_task` (whose candidate select is `lane = 'implement'`)
+    //     without a separate setter call.
+    //   * any non-task kind: `lane` stays NULL (a caller-supplied `lane` on a
+    //     non-task is silently ignored — lane has no meaning off a task, and the
+    //     `lane` setter / claim path only ever read it for tasks).
+    let lane_value: Option<String> = if kind == "task" {
+        Some(lane.map(enum_to_str).unwrap_or_else(|| "implement".to_owned()))
+    } else {
+        None
+    };
+
     // Build the attributes JSON from `outcome` (epic only). A non-epic carrying
     // `outcome` is rejected by validate_attributes_for_kind, which is correct.
     let attributes_str: Option<String> = match outcome {
@@ -816,7 +834,8 @@ pub async fn create_work_item_full_tx(
             origin.map(str::to_owned),
             default_relevance.map(str::to_owned),
             shape.map(str::to_owned),
-            attributes_str
+            attributes_str,
+            lane_value
         ],
     )
     .await?;

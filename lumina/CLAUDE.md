@@ -123,6 +123,11 @@ The migration-0016 sprint-lifecycle & worktree-substrate pass ([ADR-0002](../doc
 - **Inert-event vocab** widened to include **`worktree`** (now run / sprint / finding / batch / session / **worktree**) — these events are NEVER git-exported (export renders only `work_item` aggregates).
 - **Schema** (`0016_sprint_lifecycle_worktree.sql`): new `worktrees` table; `sprints.worktree_id` + `sprints.predecessor_sprint_id` (run-chaining provenance, both nullable); `work_items.checkpoint`; new `task_commits` table; supporting indexes; and the `'open'`→`'active'` sprint-status backfill. (NEXT migration = 0017.)
 
+The lane-as-first-class-task-field pass (team-execution; NO migration — the `work_items.lane` column already exists from migration 0013, CHECK `lane IS NULL OR lane IN ('implement','review')`) makes the work-queue lane a planned-task property instead of a cascade-only stamp — ONE new MCP tool (`set_task_lane` in `mcp/task_graph.rs`) plus its HTTP mirror, taking the surface **83 → 84** (the count-invariant test in `mcp/mod.rs` now asserts **84**). The accepted layer-1 limitation — "no tool stamps `lane='implement'` on a fresh task, so the deferred composer or a raw test UPDATE must" — is RESOLVED:
+- **Create-time default** (the single source, in `repo::create_work_item_full_tx`'s shared INSERT): when `kind == "task"`, the row is stamped `lane = <caller-provided lane>` if present ELSE `'implement'`; a NON-task kind keeps `lane=NULL` (lane is task-only). So every planned task is claimable by `claim_next_task` (whose candidate select is `lane = 'implement'`) without a separate setter call. The simple `repo::create_work_item(...)` test helper inherits the default WITHOUT a signature change (the default lives in the INSERT, not the wrapper). The MCP `create_work_item` tool + the HTTP `POST /work-items` body gain an optional `lane` (typed `Lane::{Implement, Review}`) override.
+- **Setter** `set_task_lane(db, task_id, lane: Option<Lane>)` (`repo/task_graph.rs`, beside `set_task_tier`/`set_task_kind`) — single-mutation-path (one UPDATE + one `work_item.lane_set` event), kind-gated to `task` (non-task ⇒ `Validation`/422), NULLABLE (`None` clears to NULL, mirroring `set_task_tier`/`set_task_kind`). The MCP `set_task_lane` tool + the HTTP `PATCH /work-items/{id}/lane` (body `{ "value": <"implement"|"review"|null> }`) mirror it 1:1.
+- **Vocabulary unchanged**: the accepted lanes remain `implement` / `review` — the CHECK is NOT widened here (other lanes are a FUTURE migration as they are defined). The cascade lane-stampers (`complete_task` → `'review'`, `record_finding_decision` spawn → `'implement'`) still explicitly re-stamp after create, so they are unaffected by the new default.
+
 ## HTTP routes
 
 The axum API mirrors the MCP write surface so a browser/SPA client (or any HTTP-capable tool) can drive the same store the MCP server drives. Every HTTP write delegates to a single `repo::*` mutation — the single-mutation-path invariant (+1 work_items / +1 events per call) is preserved alongside the MCP layer, and the per-family sub-routers in `lumina/src/http/*.rs` are mounted under `/api` by `app::build_router`. Routes below are listed with their final path (relative to `/api`) and the `repo::*` function each handler calls. The two structured PATCHes (`/story-plan`, `/task-spec`) compose via `repo::set_work_item_attributes` (read-modify-merge JSON-merge) and — for `/task-spec` — a second `repo::set_task_tier` mutation when `tier` is present, exactly mirroring the MCP `set_story_plan` / `set_task_spec` tools. Task-graph cycles surface via the envelope `{"error":{"kind":"cycle","message":...,"edges":[{"task_id":...,"depends_on_id":...},...]}}` (422), produced by `AppError::Cycle`'s `IntoResponse` impl on `POST /work-items/{task_id}/depends-on/{depends_on_id}` and `GET /work-items/{story_id}/task-batches`.
@@ -132,7 +137,7 @@ The axum API mirrors the MCP write surface so a browser/SPA client (or any HTTP-
 - `GET    /health`                          → liveness probe (no DB hit).
 - `GET    /work-items`                      → `repo::list_work_items` (default: full nested tree of roots; with `?parent_id=`/`?kind=`: flat filtered list).
 - `GET    /work-items/{id}`                 → `repo::get_work_item_detail`.
-- `POST   /work-items`                      → `repo::create_work_item_with_origin` (migration 0010: body now carries `outcome` — mandatory for `kind:"epic"` — and `shape` — mandatory for `kind:"focus"`, ∈ `vertical-slice|cross-cutting|foundational`).
+- `POST   /work-items`                      → `repo::create_work_item_with_origin` (migration 0010: body carries `outcome` — mandatory for `kind:"epic"` — and `shape` — mandatory for `kind:"focus"`, ∈ `vertical-slice|cross-cutting|foundational`; team-execution: an optional `lane` ∈ `implement|review` overrides the task-only create-time default `'implement'`).
 - `PATCH  /work-items/{id}`                 → `repo::update_work_item`.
 - `DELETE /work-items/{id}`                 → `repo::delete_work_item` (soft-delete; round-4 T1 closed the "full mirror" gap against the MCP `delete_work_item` tool).
 
@@ -151,7 +156,7 @@ A single read-only, env-driven endpoint surfacing machine-local clone/export roo
 
 ### Structured patches (`http/structured_patches.rs`, round-4 T2)
 
-Six scalar PATCHes — body shape `{ "value": <enum> }`. The four non-nullable scalars reject `{"value": null}` with 422; the two nullable scalars (`task-kind`, `tier`) accept `null` as a clear signal.
+Seven scalar PATCHes — body shape `{ "value": <enum> }`. The four non-nullable scalars reject `{"value": null}` with 422; the three nullable scalars (`task-kind`, `tier`, `lane`) accept `null` as a clear signal.
 
 - `PATCH /work-items/{id}/relevance`      → `repo::set_relevance`.
 - `PATCH /work-items/{id}/effort`         → `repo::set_effort`.
@@ -159,6 +164,7 @@ Six scalar PATCHes — body shape `{ "value": <enum> }`. The four non-nullable s
 - `PATCH /work-items/{id}/closure-gate`   → `repo::set_closure_gate`.
 - `PATCH /work-items/{id}/task-kind`      → `repo::set_task_kind` (nullable).
 - `PATCH /work-items/{id}/tier`           → `repo::set_task_tier` (nullable).
+- `PATCH /work-items/{id}/lane`           → `repo::set_task_lane` (team-execution; nullable; task-only; `implement|review`).
 - `PATCH /work-items/{id}/shape`          → `repo::set_shape` (migration 0010; non-nullable scalar, focus-only; `vertical-slice|cross-cutting|foundational`).
 
 Two structured PATCHes — JSON-merge bodies via `repo::set_work_item_attributes`; `task-spec` additionally calls `repo::set_task_tier` when `tier` is present (two mutations per call, mirroring the MCP `set_task_spec` tool).

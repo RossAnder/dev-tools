@@ -2,15 +2,16 @@
 //! single-column setters and the two structured composite tools
 //! (`set_story_plan` / `set_task_spec`) exposed by the MCP server.
 //!
-//! Eleven routes total, all relative to `/api`:
+//! Twelve routes total, all relative to `/api`:
 //!
-//! Scalar PATCHes (seven) — body shape `{ "value": <enum> }`:
+//! Scalar PATCHes (eight) — body shape `{ "value": <enum> }`:
 //!   * `PATCH /work-items/{id}/relevance`      → `repo::set_relevance`
 //!   * `PATCH /work-items/{id}/effort`         → `repo::set_effort`
 //!   * `PATCH /work-items/{id}/complexity`     → `repo::set_complexity`
 //!   * `PATCH /work-items/{id}/closure-gate`   → `repo::set_closure_gate`
 //!   * `PATCH /work-items/{id}/task-kind`      → `repo::set_task_kind`
 //!   * `PATCH /work-items/{id}/tier`           → `repo::set_task_tier`
+//!   * `PATCH /work-items/{id}/lane`           → `repo::set_task_lane` (team-execution; nullable)
 //!   * `PATCH /work-items/{id}/shape`          → `repo::set_shape` (migration 0010)
 //!
 //! Structured PATCHes (four) — JSON-merge bodies:
@@ -34,9 +35,9 @@
 //!
 //! Null-value semantics: `set_relevance`/`set_effort`/`set_complexity`/
 //! `set_closure_gate` take a non-Option enum at the repo layer — a body
-//! `{"value": null}` is rejected here with 422 `Validation`. `set_task_kind`
-//! and `set_task_tier` take `Option<T>`; `{"value": null}` is legal and
-//! clears the column.
+//! `{"value": null}` is rejected here with 422 `Validation`. `set_task_kind`,
+//! `set_task_tier`, and `set_task_lane` take `Option<T>`; `{"value": null}` is
+//! legal and clears the column.
 
 use axum::Json;
 use axum::Router;
@@ -45,8 +46,8 @@ use serde::Deserialize;
 
 use crate::app::AppState;
 use crate::domain::{
-    Complexity, ClosureGate, Effort, EpicPlanRequest, FocusPlanRequest, Relevance, Shape, TaskKind,
-    Tier, WorkItem, WorkItemDetail,
+    Complexity, ClosureGate, Effort, EpicPlanRequest, FocusPlanRequest, Lane, Relevance, Shape,
+    TaskKind, Tier, WorkItem, WorkItemDetail,
 };
 use crate::error::AppError;
 use crate::mcp::VerificationCommands;
@@ -136,6 +137,7 @@ pub fn router() -> Router<AppState> {
         .route("/work-items/{id}/closure-gate", patch(patch_closure_gate))
         .route("/work-items/{id}/task-kind", patch(patch_task_kind))
         .route("/work-items/{id}/tier", patch(patch_tier))
+        .route("/work-items/{id}/lane", patch(patch_lane))
         .route("/work-items/{id}/story-plan", patch(patch_story_plan))
         .route("/work-items/{id}/task-spec", patch(patch_task_spec))
         .route("/work-items/{id}/shape", patch(patch_shape))
@@ -249,6 +251,22 @@ async fn patch_tier(
     // `tier` is nullable at the repo layer — `value: null` clears the column.
     let pool = state.pool.sqlite();
     repo::set_task_tier(pool, &id, body.value).await?;
+    refetch_item(pool, &id).await
+}
+
+/// `PATCH /work-items/{id}/lane` — set/clear a task's work-queue lane
+/// (team-execution). Nullable like `task-kind`/`tier`: `value: null` (or an
+/// absent `value`) clears the column to NULL, `{"value":"implement"|"review"}`
+/// sets it. The repo setter kind-gates to `task` (non-task → 422 `Validation`).
+async fn patch_lane(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<PatchScalarBody<Lane>>,
+) -> Result<Json<WorkItem>, AppError> {
+    tracing::debug!(id = %id, "http: PATCH /work-items/{{id}}/lane");
+    // `lane` is nullable at the repo layer — `value: null` clears the column.
+    let pool = state.pool.sqlite();
+    repo::set_task_lane(pool, &id, body.value).await?;
     refetch_item(pool, &id).await
 }
 
@@ -439,7 +457,7 @@ mod tests {
         // and a story requires the epic to carry >=1 close-criterion first.
         let epic = repo::create_work_item_full(
             pool, "epic", Some(&project.to_string()), "E", None,
-            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None, lane: None },
         )
         .await
         .expect("epic");
@@ -448,7 +466,7 @@ mod tests {
             .expect("epic close criterion");
         let focus = repo::create_work_item_full(
             pool, "focus", Some(&epic.to_string()), "FO", None,
-            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice"), lane: None },
         )
         .await
         .expect("focus");
@@ -608,6 +626,46 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body = json_body(resp).await;
         assert_eq!(body["tier"], "deep");
+
+        // -- lane (task-scoped, nullable) ------------------------------
+        // The seeded task already defaults to lane='implement' at create; this
+        // PATCH re-stamps it to 'review'.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{task_id}/lane"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "value": "review" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["lane"], "review");
+
+        // Clearing via `value: null` is legal for lane.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/work-items/{task_id}/lane"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "value": null }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert!(body["lane"].is_null(), "lane cleared to NULL");
     }
 
     /// `{"value": null}` is rejected with 422 on each of the five

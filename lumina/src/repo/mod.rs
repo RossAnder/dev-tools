@@ -418,8 +418,8 @@ where
 }
 
 const CREATE_WORK_ITEM_INSERT_SQL: &str = r#"
-        INSERT INTO work_items (id, kind, parent_id, title, body, status, origin, relevance, shape, attributes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO work_items (id, kind, parent_id, title, body, status, origin, relevance, shape, attributes, lane)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#;
 
 /// R23: per-field byte cap for free-text plan-attribute blobs
@@ -804,6 +804,7 @@ mod tests {
                 origin: None,
                 outcome: Some("ship the thing"),
                 shape: None,
+                lane: None,
             },
         )
         .await
@@ -831,7 +832,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -852,6 +853,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("cross-cutting"),
+                lane: None,
             },
         )
         .await
@@ -878,7 +880,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -893,6 +895,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await
@@ -927,7 +930,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -946,6 +949,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await
@@ -1022,7 +1026,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -1037,6 +1041,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await
@@ -1111,7 +1116,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("initial"), shape: None },
+            CreateOpts { origin: None, outcome: Some("initial"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -1164,6 +1169,7 @@ mod tests {
                 origin: None,
                 outcome: Some("the outcome"),
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await
@@ -1205,7 +1211,7 @@ mod tests {
             Some(&project),
             "E",
             None,
-            CreateOpts { origin: None, outcome: Some(&at_cap), shape: None },
+            CreateOpts { origin: None, outcome: Some(&at_cap), shape: None, lane: None },
         )
         .await
         .expect("64-KiB outcome at create is Ok")
@@ -1220,7 +1226,7 @@ mod tests {
             Some(&project),
             "E2",
             None,
-            CreateOpts { origin: None, outcome: Some(&over_cap), shape: None },
+            CreateOpts { origin: None, outcome: Some(&over_cap), shape: None, lane: None },
         )
         .await
         .expect_err("64-KiB+1 outcome at create must error");
@@ -1270,7 +1276,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -1290,6 +1296,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await
@@ -1309,7 +1316,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -1328,6 +1335,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await
@@ -1360,7 +1368,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -1375,6 +1383,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await
@@ -1414,7 +1423,7 @@ mod tests {
             .to_string();
         let epic = create_work_item_full(
             &pool, "epic", Some(&project), "E", None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic")
@@ -1429,6 +1438,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await

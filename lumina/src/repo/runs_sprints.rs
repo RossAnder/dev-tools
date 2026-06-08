@@ -598,6 +598,7 @@ pub async fn record_finding_decision(
                 origin: Some(origin.as_str()),
                 outcome: None,
                 shape: None,
+                lane: None,
             },
         )
         .await?;

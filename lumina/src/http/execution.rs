@@ -211,6 +211,7 @@ mod tests {
                 origin: None,
                 outcome: Some("the epic outcome"),
                 shape: None,
+                lane: None,
             },
         )
         .await
@@ -228,6 +229,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: Some("vertical-slice"),
+                lane: None,
             },
         )
         .await

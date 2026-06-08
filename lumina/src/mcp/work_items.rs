@@ -275,7 +275,7 @@ impl LuminaTools {
     /// Create a new work item under the single-mutation-path discipline (the
     /// repo opens one transaction and records exactly one events-outbox row).
     #[tool(
-        description = "Create a work item (kind, optional parent_id, title, optional body, optional outcome/shape). `outcome` is required for an `epic`; `shape` (vertical-slice/cross-cutting/foundational) is required for a `focus`. Records one event in the same transaction.",
+        description = "Create a work item (kind, optional parent_id, title, optional body, optional outcome/shape/lane). `outcome` is required for an `epic`; `shape` (vertical-slice/cross-cutting/foundational) is required for a `focus`. `lane` (implement/review) is task-only and defaults to `implement` when omitted on a task (so the task is immediately claimable); it is ignored on non-task kinds. Records one event in the same transaction.",
         annotations(open_world_hint = false)
     )]
     pub async fn create_work_item(
@@ -293,6 +293,7 @@ impl LuminaTools {
                 origin: req.origin.as_deref(),
                 outcome: req.outcome.as_deref(),
                 shape: req.shape.as_deref(),
+                lane: req.lane,
             },
         )
         .await

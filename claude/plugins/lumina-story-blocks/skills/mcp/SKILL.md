@@ -103,7 +103,7 @@ store only).
 
 | Tool | When to use |
 |------|-------------|
-| `create_work_item` | Create a new item (kind + optional parent_id + title + optional body). The kind/parent edge is validated against the hierarchy. Migration 0010 added two kind-conditional mandatory fields: `outcome` (MANDATORY for `kind: "epic"`) and `shape` (MANDATORY for `kind: "focus"`, ∈ `vertical-slice \| cross-cutting \| foundational`) — see the Epic/focus tools (migration 0010) section. |
+| `create_work_item` | Create a new item (kind + optional parent_id + title + optional body). The kind/parent edge is validated against the hierarchy. Migration 0010 added two kind-conditional mandatory fields: `outcome` (MANDATORY for `kind: "epic"`) and `shape` (MANDATORY for `kind: "focus"`, ∈ `vertical-slice \| cross-cutting \| foundational`) — see the Epic/focus tools (migration 0010) section. Team-execution added an optional `lane` ∈ `implement \| review` — task-only; when omitted a task defaults to `lane="implement"` (immediately claimable), and a non-task kind ignores it. |
 | `update_work_item` | Partial set-or-leave update of an item (title / body / status / position / attributes); absent fields are left unchanged. |
 | `move_work_item` | Reposition an item among its siblings (new ordering `position`). |
 | `delete_work_item` | DESTRUCTIVE (soft): stamp `deleted_at`; the row and its history are preserved, but it drops out of lists. |
@@ -298,6 +298,7 @@ Constraints:
 Round-3 (migration 0006) added a typed dispatch tier and dispatch-plan composer:
 
 - `set_task_tier { id: <task>, tier: "lite" | "deep" | null }` — direct write to the `work_items.tier` column. Rejects non-task rows. Records one `work_item.tier_set` event.
+- `set_task_lane { id: <task>, lane: "implement" | "review" | null }` — direct write to the `work_items.lane` column (team-execution work-queue lane). Rejects non-task rows. Nullable (omit / `null` clears to NULL, mirroring `set_task_tier`). A task already DEFAULTS to `lane="implement"` at create (so it is immediately claimable by `claim_next_task` without a setter call); this tool is the explicit re-stamp / clear path. Records one `work_item.lane_set` event.
 - `get_task_dispatch_plan { story_id: <story> }` — read-only. Returns `{ story_id, batches: Vec<Vec<BatchEntry>> }` where each `BatchEntry = { task_id, effort, complexity, tier, files_touched_count, has_cross_repo }`. Composes `compute_task_batches` + per-task spec reads + `compute_tier` per row. Tier derivation follows the rule in `CONVENTIONS.md §k.0`: `Deep` if `complexity == "high"` OR `effort == "l"` OR `files_touched_count > 3` OR `has_cross_repo == true`; else `Lite`.
 
 `set_task_spec` was also tightened: the round-2 free-form `dispatch: Option<serde_json::Value>` field is replaced with `tier: Option<Tier>` (typed wire form `"lite"|"deep"`). Callers passing legacy `dispatch:` are silently dropped at deserialise (the field is gone).

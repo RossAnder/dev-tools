@@ -76,6 +76,7 @@ pub async fn create_work_item_with_origin(
             origin,
             outcome: None,
             shape: None,
+            lane: None,
         },
     )
     .await
@@ -102,12 +103,21 @@ pub async fn create_work_item_with_origin(
 /// The migration-0010 create-time option channels for [`create_work_item_full`]:
 /// `origin` (provenance stamp), `outcome` (epic-only, folds into `attributes`),
 /// and `shape` (focus-only, binds the `shape` column). Bundled into a struct so
-/// the three same-typed `Option<&str>` tail params are passed by name rather than
+/// the same-typed `Option<&str>` tail params are passed by name rather than
 /// position (R16 — they were previously mis-order-prone).
+///
+/// `lane` (team-execution): an OPTIONAL caller override for the create-time
+/// work-queue lane. The DEFAULT lives in the shared INSERT
+/// ([`create_work_item_full_tx`]): when `kind == "task"` and `lane` is `None`, a
+/// task is stamped `lane='implement'` so every freshly-planned task is claimable
+/// by `claim_next_task` without a separate setter call. A non-task kind ignores
+/// `lane` entirely (lane is task-only — stays NULL). Pass `Some(Lane::Review)`
+/// (etc.) to override the default for a task.
 pub struct CreateOpts<'a> {
     pub origin: Option<&'a str>,
     pub outcome: Option<&'a str>,
     pub shape: Option<&'a str>,
+    pub lane: Option<crate::domain::Lane>,
 }
 
 pub async fn create_work_item_full(
@@ -148,6 +158,11 @@ pub struct NewWorkItemSpec<'a> {
     pub origin: Option<&'a str>,
     pub outcome: Option<&'a str>,
     pub shape: Option<&'a str>,
+    /// Optional create-time lane override (team-execution). `None` ⇒ the shared
+    /// INSERT applies the task-only `'implement'` default (a non-task kind stays
+    /// NULL). The bulk-spawn callers that want the default need only leave this
+    /// `None`.
+    pub lane: Option<crate::domain::Lane>,
     /// When `Some`, stamp `work_items.spawned_from_finding_id` (migration 0011
     /// nullable FK → `findings(id)`) after the INSERT. `create_work_item_full_tx`
     /// deliberately leaves the column NULL on create — this batch spawn path is
@@ -219,6 +234,7 @@ pub async fn create_work_items(
                 origin: spec.origin,
                 outcome: spec.outcome,
                 shape: spec.shape,
+                lane: spec.lane,
             },
         )
         .await?;
@@ -580,6 +596,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: None,
+                lane: None,
                 spawned_from_finding_id: None,
             },
             NewWorkItemSpec {
@@ -590,6 +607,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: None,
+                lane: None,
                 spawned_from_finding_id: None,
             },
             NewWorkItemSpec {
@@ -600,6 +618,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: None,
+                lane: None,
                 spawned_from_finding_id: None,
             },
         ];
@@ -659,6 +678,7 @@ mod tests {
             origin: None,
             outcome: None,
             shape: None,
+            lane: None,
             spawned_from_finding_id: Some(&finding_id),
         }];
 
@@ -701,6 +721,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: None,
+                lane: None,
                 spawned_from_finding_id: None,
             },
             // Invalid: parent_id names no existing work_item → Validation.
@@ -712,6 +733,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: None,
+                lane: None,
                 spawned_from_finding_id: None,
             },
         ];
@@ -902,7 +924,7 @@ mod tests {
             Some(&project.to_string()),
             "E",
             None,
-            CreateOpts { origin: None, outcome: Some("o"), shape: None },
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
         )
         .await
         .expect("epic");
@@ -915,7 +937,7 @@ mod tests {
             Some(&epic.to_string()),
             "FO",
             None,
-            CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+            CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice"), lane: None },
         )
         .await
         .expect("focus");

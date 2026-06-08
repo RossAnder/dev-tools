@@ -813,6 +813,7 @@ pub async fn complete_task(
             origin: Some("review"),
             outcome: None,
             shape: None,
+            lane: None,
         },
     )
     .await?;

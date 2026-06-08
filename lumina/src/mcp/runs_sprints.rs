@@ -122,6 +122,7 @@ impl LuminaTools {
                 origin: origin_strs[i].as_deref(),
                 outcome: item.outcome.as_deref(),
                 shape: item.shape.as_deref(),
+                lane: None,
                 spawned_from_finding_id: item.spawned_from_finding_id.as_deref(),
             })
             .collect();

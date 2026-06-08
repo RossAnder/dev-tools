@@ -674,7 +674,7 @@ async fn ingest_binds_project_id_when_cwd_matches_a_repo_local_path() {
         None,
         "Match Project",
         None,
-        repo::CreateOpts { origin: None, outcome: None, shape: None },
+        repo::CreateOpts { origin: None, outcome: None, shape: None, lane: None },
     )
     .await
     .expect("create project")

@@ -205,6 +205,7 @@ async fn create_work_item(
             origin: req.origin.as_deref(),
             outcome: req.outcome.as_deref(),
             shape: req.shape.as_deref(),
+            lane: req.lane,
         },
     )
     .await?;
@@ -235,6 +236,7 @@ async fn create_work_items_batch(
             origin: it.origin.as_deref(),
             outcome: it.outcome.as_deref(),
             shape: it.shape.as_deref(),
+            lane: None,
             spawned_from_finding_id: it.spawned_from_finding_id.as_deref(),
         })
         .collect();
@@ -312,7 +314,7 @@ mod tests {
         // and a story requires the epic to carry >=1 close-criterion first.
         let epic = repo::create_work_item_full(
             pool, "epic", Some(&project.to_string()), "E", None,
-            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None },
+            repo::CreateOpts { origin: None, outcome: Some("the epic outcome"), shape: None, lane: None },
         )
         .await
         .expect("epic");
@@ -321,7 +323,7 @@ mod tests {
             .expect("epic close criterion");
         let focus = repo::create_work_item_full(
             pool, "focus", Some(&epic.to_string()), "FO", None,
-            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice") },
+            repo::CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice"), lane: None },
         )
         .await
         .expect("focus");

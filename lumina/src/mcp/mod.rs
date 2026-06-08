@@ -422,6 +422,9 @@ mod tests {
             // task dispatch-plan + tier (migration 0006, round-3 T4)
             "get_task_dispatch_plan",
             "set_task_tier",
+            // task work-queue lane setter (team-execution: lane as a
+            // first-class task field, default 'implement' at create)
+            "set_task_lane",
             // epic/focus shape + plan setters (migration 0010, T6)
             "set_shape",
             "set_epic_plan",
@@ -469,7 +472,7 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 83 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 84 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
         //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
         //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
@@ -489,12 +492,14 @@ mod tests {
         //      set_task_checkpoint, record_task_commits, get_worktree,
         //      list_worktrees, list_task_commits) + set_sprint_status (defined in
         //      mcp/runs_sprints.rs, counted here).
+        //    + 1 set_task_lane (team-execution: lane as a first-class task field,
+        //      default 'implement' at create; defined in mcp/task_graph.rs).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            83,
-            "advertised tool count must be exactly 83, got {}: {names:?}",
+            84,
+            "advertised tool count must be exactly 84, got {}: {names:?}",
             names.len()
         );
 
@@ -502,14 +507,14 @@ mod tests {
         // per-family `tool_router_*` sub-routers are summed with
         // `ToolRouter::merge`, which is NAME-KEYED — a duplicate tool name
         // across two families would be silently absorbed while KEEPING the
-        // count at 83 (the second registration overwrites the first). Collect
+        // count at 84 (the second registration overwrites the first). Collect
         // the names into a set and assert it ALSO has 83 entries, so a
         // collision is caught rather than masked by the bare count check above.
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            83,
-            "advertised tool names must be UNIQUE (83 distinct), got {} distinct of {}: {names:?}",
+            84,
+            "advertised tool names must be UNIQUE (84 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
@@ -543,6 +548,7 @@ mod tests {
                 origin: None,
                 outcome: None,
                 shape: None,
+                lane: None,
             }))
             .await
             .expect("create_work_item tool succeeds");
@@ -687,6 +693,8 @@ mod tests {
             "set_task_kind",
             // migration 0006 / round-3 T4 tier setter.
             "set_task_tier",
+            // team-execution lane setter (re-stamp / clear is a no-op-on-repeat).
+            "set_task_lane",
             // migration 0011 Part-B batch-write tool (B18): the triage update is
             // COALESCE-shaped, so re-applying the same updates is idempotent.
             "batch_update_findings",

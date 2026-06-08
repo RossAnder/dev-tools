@@ -2,15 +2,16 @@
 //! 0006, T4), carved out of the `mcp` module's combined tool router (structural
 //! split; behaviour unchanged).
 //!
-//! The eight tools (`block_task_on_task`, `unblock_task_from_task`,
+//! The nine tools (`block_task_on_task`, `unblock_task_from_task`,
 //! `list_task_dependencies`, `compute_task_batches`, `get_story_readiness`,
-//! `set_task_kind`, `get_task_dispatch_plan`, `set_task_tier`) and their
-//! `*Params` structs live here. They register via the `tool_router_task_graph`
-//! sub-router, summed into the combined field by `LuminaTools::with_state`.
+//! `set_task_kind`, `get_task_dispatch_plan`, `set_task_tier`, `set_task_lane`)
+//! and their `*Params` structs live here. They register via the
+//! `tool_router_task_graph` sub-router, summed into the combined field by
+//! `LuminaTools::with_state`.
 
 use super::*;
 
-use crate::domain::{TaskKind, Tier};
+use crate::domain::{Lane, TaskKind, Tier};
 
 // ---- Task-dependency params (migration 0005, T4) -------------------------
 
@@ -109,6 +110,20 @@ pub struct SetTaskTierParams {
     /// The new dispatch tier; omit to clear back to NULL.
     #[serde(default)]
     pub tier: Option<Tier>,
+}
+
+/// Arguments for the `set_task_lane` write tool → `repo::set_task_lane`
+/// (team-execution). `lane == None` clears the column to NULL. Task-scoped: a
+/// non-task target is rejected with `invalid_params`. A task already defaults to
+/// `lane='implement'` at create — this tool is the explicit re-stamp / clear
+/// path (mirrors the nullable `set_task_tier` / `set_task_kind` setters).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetTaskLaneParams {
+    /// The task work-item id whose `lane` to set or clear.
+    pub id: String,
+    /// The new work-queue lane (`implement`|`review`); omit to clear back to NULL.
+    #[serde(default)]
+    pub lane: Option<Lane>,
 }
 
 #[tool_router(router = tool_router_task_graph, vis = "pub(crate)")]
@@ -273,6 +288,26 @@ impl LuminaTools {
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "set_task_tier", "mcp tool invoked");
         repo::set_task_tier(&self.pool, &id, tier)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "id": id }))
+    }
+
+    /// Set or clear a task's work-queue lane directly (single repo call →
+    /// `repo::set_task_lane`). A task already defaults to `lane='implement'` at
+    /// create (so it is claimable without a setter call); this tool is the
+    /// explicit re-stamp / clear path. Rejects non-task rows at the Rust layer
+    /// (matching `set_task_tier`). `lane == None` clears the column to NULL.
+    #[tool(
+        description = "Set the work-queue lane on a task work-item (`implement|review`, or null to clear). A task defaults to `implement` at create (claimable by `claim_next_task`); use this to re-stamp or clear the lane. Rejects non-task rows. Records one `work_item.lane_set` event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn set_task_lane(
+        &self,
+        Parameters(SetTaskLaneParams { id, lane }): Parameters<SetTaskLaneParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "set_task_lane", "mcp tool invoked");
+        repo::set_task_lane(&self.pool, &id, lane)
             .await
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::json!({ "id": id }))

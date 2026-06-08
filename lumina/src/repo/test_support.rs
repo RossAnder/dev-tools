@@ -69,6 +69,7 @@ pub(crate) async fn seed_chain_to_story(pool: &SqlitePool) -> String {
             origin: None,
             outcome: Some("the epic outcome"),
             shape: None,
+            lane: None,
         },
     )
     .await
@@ -86,6 +87,7 @@ pub(crate) async fn seed_chain_to_story(pool: &SqlitePool) -> String {
             origin: None,
             outcome: None,
             shape: Some("vertical-slice"),
+            lane: None,
         },
     )
     .await
@@ -115,6 +117,7 @@ pub(crate) async fn seed_chain_to_focus(pool: &SqlitePool) -> String {
             origin: None,
             outcome: Some("the epic outcome"),
             shape: None,
+            lane: None,
         },
     )
     .await
@@ -132,6 +135,7 @@ pub(crate) async fn seed_chain_to_focus(pool: &SqlitePool) -> String {
             origin: None,
             outcome: None,
             shape: Some("vertical-slice"),
+            lane: None,
         },
     )
     .await

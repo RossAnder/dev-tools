@@ -61,6 +61,7 @@ async fn mcp_create(tools: &LuminaTools, kind: &str, parent: Option<&str>, title
             origin: None,
             outcome,
             shape,
+            lane: None,
         }))
         .await
         .expect("create_work_item tool succeeds");
@@ -244,6 +245,7 @@ async fn bulk_writes_abort_whole_batch_on_validation() {
             origin: None,
             outcome: None,
             shape: None,
+            lane: None,
             spawned_from_finding_id: None,
         },
         NewWorkItemSpec {
@@ -254,6 +256,7 @@ async fn bulk_writes_abort_whole_batch_on_validation() {
             origin: None,
             outcome: None,
             shape: None,
+            lane: None,
             spawned_from_finding_id: None,
         },
     ];
