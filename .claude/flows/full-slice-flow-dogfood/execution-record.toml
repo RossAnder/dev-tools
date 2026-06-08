@@ -1,0 +1,217 @@
+schema_version = 1
+last_updated = 2026-06-08
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-08
+agent = "implement"
+summary = "Flow status draft to in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "f3dffc77b6e3f334"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "audit-extend-the-e2e-coverage-for-compose-execute-merge"
+status = "done"
+files = ["lumina/tests/e2e.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extended full_thread_worktree_sprint_lifecycle_export_then_http_read with 2 uncovered assertions (post-merge claimable==0; rework sprint-binding); narrow nextest passed; macro gate 0."
+dedup_id = "fbf68877a02ac280"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-06-08
+agent = "implement"
+task_ref = "audit-extend-the-e2e-coverage-for-compose-execute-merge"
+summary = "Asserted post-merge claimable==0 + done==false instead of the plan's candidate done==true."
+original_intent = "Assert terminal get_sprint_quiescence done==true after the final record_worktree_merge."
+rationale = "done derives from raw task-terminal counts (terminal==total), not sprint status; the thread deliberately leaves spawned review tasks undrained, so done stays false post-merge. Asserting done==true would be wrong. Added claimable==0 (real terminal/non-active gating) + done==false (documents the semantics)."
+dedup_id = "4f692fb820c49518"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "live-gap-census-raw-tool-chain-smoke-against-the-running-app"
+status = "done"
+files = ["docs/plans/full-slice-flow-dogfood-CENSUS.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Orchestrator-driven live census: 24 /api calls vs running server. create->compose->worktree->ladder->execute(via finding-spawn)->merge all 2xx. ONE functional blocker (F1: no API lane-stamp; planned-task claim returns null)."
+dedup_id = "d1a7d1543ac40130"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-06-08
+agent = "implement"
+task_ref = "live-gap-census-raw-tool-chain-smoke-against-the-running-app"
+summary = "Census exposed functional blocker: no live API stamps lane=implement on a planned task; claim_next_task returns null. Contradicts the plan 'no Rust additions' note. Fix paused for user decision."
+original_intent = "Run the slice on the existing surface with no new Rust MCP tool / HTTP route (plan Scope: out of scope)."
+rationale = "claim filters lane=implement; create_work_item/add_tasks_to_sprint leave lane=NULL; update_work_item cannot set lane; only complete_task/record_finding_decision stamp lane. A minimal no-migration Rust addition is required to claim planned tasks."
+dedup_id = "6c16ebc3d4466292"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "lane-as-first-class-task-field-blocker-f1-fix"
+status = "done"
+files = [
+    "lumina/src/repo/shared.rs",
+    "lumina/src/repo/task_graph.rs",
+    "lumina/src/repo/work_items.rs",
+    "lumina/src/repo/mod.rs",
+    "lumina/src/mcp/task_graph.rs",
+    "lumina/src/mcp/work_items.rs",
+    "lumina/src/mcp/mod.rs",
+    "lumina/src/http/structured_patches.rs",
+    "lumina/src/http/work_items.rs",
+    "lumina/src/domain/work_items.rs",
+    "lumina/tests/e2e.rs",
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+commits = ["daab496"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "lane first-class task field: create defaults task lane=implement (single source in create INSERT), nullable set_task_lane MCP tool + PATCH /work-items/{id}/lane; count 83->84; +~26 call sites threaded lane:None. Full lumina build+nextest quick green (475). Resolves census blocker F1."
+dedup_id = "d5427ac871d33854"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "author-the-create-project-hierarchy-bootstrap-skill"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/create-project/SKILL.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Authored /lumina:create-project inline orchestrator (project->epic+outcome->epic >=1 AC hard gate->focus+shape+framing->story+problem_statement), composing the five block skills; frontmatter has the four §a keys + disable-model-invocation:true; AC-before-story ordering met."
+dedup_id = "c3864655d38bee3d"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "author-the-compose-sprint-skill"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/compose-sprint/SKILL.md"]
+commits = ["6eb6ede"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Authored /lumina:compose-sprint: readiness/dispatch-plan -> create_sprint -> add_tasks -> record-only worktree -> ladder to active; both verbatim AUQ prompts + worktree-owner terminal guard present; assumes lane defaults implement (no stamping)."
+dedup_id = "b57a1bf92810b040"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "author-the-run-sprint-orchestration-skill"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/run-sprint/SKILL.md"]
+commits = ["6eb6ede"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Authored /lumina:run-sprint agent-layer loop: claim/renew/activity/complete/release, review cascade, checkpoint freeze, lead quiescence, un-wedge, merge-not-set_sprint_status finalize; single-agent canonical + agent-team appendix."
+dedup_id = "63f711a51ffa364d"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "author-the-lifecycle-runbook-advisor"
+status = "done"
+files = [
+    "lumina/docs/runbooks/dogfood-lifecycle.md",
+    "claude/plugins/lumina-story-blocks/skills/lifecycle/SKILL.md",
+]
+commits = ["6eb6ede"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Authored dogfood-lifecycle runbook (legs A-H + all 11 ordering gates) + read-only /lumina:lifecycle advisor (omits disable-model-invocation); cross-linked by slug."
+dedup_id = "1fd8a6def3edd208"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "register-and-cross-link-the-new-skills"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json",
+    "claude/plugins/lumina-story-blocks/README.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md",
+    "lumina/CLAUDE.md",
+]
+commits = ["9b87286"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Registered 4 new lifecycle skills: plugin.json 0.4.0->0.5.0 + count 25->29, README rows + reframe, mcp/SKILL.md catalogue + runbook cross-link + create_sprint open->draft fix + MCP count 83->84, CONVENTIONS §n, lumina/CLAUDE.md count. rg twenty-five = 0."
+dedup_id = "7408bbe8cbc4e9d5"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-06-08
+agent = "implement"
+summary = "lumina build green (lane-fix checkpoint daab496; code unchanged since)"
+command = "cargo build --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "a7a31570355ec5df"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-06-08
+agent = "implement"
+summary = "lumina nextest quick: 475 tests passed (2 nested-claude binaries excluded by profile)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile quick"
+outcome = "pass"
+dedup_id = "1ff456ed0e49d742"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-06-08
+agent = "implement"
+summary = "lumina clippy clean (run at lane-fix; code unchanged since)"
+command = "cargo clippy --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "360c22ecbc249cf0"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-06-08
+agent = "implement"
+summary = "cargo audit: pass with 1 pre-existing allowed warning (RUSTSEC-2017-0008 serial via portable-pty; not introduced this flow, no deps changed)"
+command = "cargo audit --file lumina/Cargo.lock"
+outcome = "pass"
+dedup_id = "542abcb0dd8202a6"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-06-08
+agent = "implement"
+summary = "macro-eradication gate: 0 sqlx bang-macros in lumina/src + lumina/tests"
+command = "rg macro-eradication gate (sqlx query/query_as/query_scalar bang-macros) over lumina/src + lumina/tests"
+outcome = "pass"
+dedup_id = "416f750494ca2269"

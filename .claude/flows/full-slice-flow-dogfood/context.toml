@@ -1,0 +1,23 @@
+slug = "full-slice-flow-dogfood"
+plan_path = "docs/plans/full-slice-flow-dogfood.md"
+status = "in-progress"
+created = 2026-06-08
+updated = 2026-06-08
+branch = "review-apply/sprint-lifecycle-worktrees"
+scope = [
+    "claude/plugins/lumina-story-blocks/**",
+    "lumina/tests/**",
+    "lumina/docs/runbooks/dogfood-lifecycle.md",
+    "docs/plans/**",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 2
+
+[artifacts]
+review_ledger = ".claude/flows/full-slice-flow-dogfood/review-ledger.toml"
+optimise_findings = ".claude/flows/full-slice-flow-dogfood/optimise-findings.toml"
+execution_record = ".claude/flows/full-slice-flow-dogfood/execution-record.toml"
+plan_review_findings = ".claude/flows/full-slice-flow-dogfood/plan-review-findings.toml"

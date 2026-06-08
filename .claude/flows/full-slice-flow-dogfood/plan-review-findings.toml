@@ -1,0 +1,172 @@
+schema_version = 1
+last_updated = 2026-06-08
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 2. Add an e2e regression thread for compose→execute→merge [M]"
+summary = "Task 2's e2e thread substantially already exists (full_thread_worktree_sprint_lifecycle + full_thread_team_execution); the 'half e2e.rs does not exercise' premise is false."
+description = "lumina/tests/e2e.rs:3190 full_thread_worktree_sprint_lifecycle_export_then_http_read already drives create-hierarchy→create_sprint(draft)→ladder→create_worktree→claim→complete(review spawn)→checkpoint-freeze→record_task_commits(idempotent)→active→review-guard→record_worktree_merge(review→done)→HTTP read; e2e.rs:2703 full_thread_team_execution_claim_complete_rework_quiescence_export_http covers claim/complete/rework/quiescence. Re-scope Task 2 (and Context line 9 + the Scope bullet) to AUDIT both threads and extend ONLY genuinely-uncovered assertions (e.g. terminal get_sprint_quiescence==done post-merge), not add a near-duplicate thread."
+dedup_id = "c5e0350eb3ca97f4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "executability"
+plan_section = "#### 2. Add an e2e regression thread for compose→execute→merge [M]"
+summary = "Task 2 + Verification acceptance filter -E 'test(full_thread_sprint)' matches ZERO tests, so it passes vacuously (empty match set exits 0)."
+description = "grep full_thread_sprint in e2e.rs = 0 matches; the real thread is full_thread_worktree_sprint_lifecycle_export_then_http_read (no 'full_thread_sprint' substring). The filter appears at the task Acceptance (line 98) and the Verification block (line 167). A nextest filter matching nothing exits 0, so the acceptance is green even if no thread is added. Pin an exact new fn name and a filter that matches it, and confirm the match set is non-empty."
+anchor_old = "`cargo nextest run --manifest-path lumina/Cargo.toml --profile quick -E 'test(full_thread_sprint)'` passes"
+anchor_new = "`cargo nextest run --manifest-path lumina/Cargo.toml --profile quick -E 'test(full_thread_worktree_sprint_lifecycle)'` passes (confirm the filter matches ≥1 test — an empty match set exits 0 vacuously)"
+dedup_id = "63a72fd3b613cf59"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "risk"
+plan_section = "## Risks"
+summary = "Plan says next migration = 0017+, but lumina/migrations/0017_checkpoint_check.sql already exists and is applied → collision / edit-applied-migration hazard."
+description = "Glob lumina/migrations/ lists 0017_checkpoint_check.sql as the newest applied migration (a checkpoint 0/1 write-guard, review-R12 follow-up to 0016). The Risks line 'any future schema need takes a NEW migration (0017+)' would steer a /plan-update fix task to mint 0017 and collide, or edit the applied 0017 — the sqlx-checksum-break → dev-DB-wipe failure already pushed back on. Correct to 0018+."
+anchor_old = "any future schema need takes a NEW migration (0017+)."
+anchor_new = "any future schema need takes a NEW migration starting at **0018** — 0017 (checkpoint 0/1 write-guard) already exists and is applied; never edit 0017 or any applied migration (an sqlx checksum break forces a dev-DB wipe)."
+dedup_id = "afb02a42acca5f82"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "feasibility"
+plan_section = "## Research Notes"
+summary = "Terminal guard blocks ANY terminal flip (done|cancelled) from any source, not just review→done; Research Notes + Task 5/6 wording understates it."
+description = "runs_sprints.rs:283 gates on matches!(next, Done|Cancelled) regardless of source (comment: 'ANY terminal transition'), so active→cancelled is also blocked for a worktree owner. The Research-Notes framing 'cannot terminal-flip ... transitions it review→done' is narrower than reality. Task 6 runbook ('worktree-owner terminal guard') and Task 5 finalize must document: a worktree-owning sprint can reach a terminal status ONLY via record_worktree_merge/rejection, from any source."
+dedup_id = "c9fcdc8fd3709fd6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "No documented un-wedge path for a sprint stuck 'active' with an owned worktree: active→cancelled is blocked; must go active→review then record_worktree_rejection."
+description = "worktrees.rs:457 record_worktree_rejection calls require_review_owner (Validation unless owner is 'review'); runs_sprints.rs:283 blocks active→cancelled for a worktree owner. So the only recovery for a stalled worktree-owning sprint is set_sprint_status(active→review) THEN record_worktree_rejection → cancelled. Document this un-wedge sequence in the run-sprint skill (Task 5) and the runbook (Task 6); 'dev DB is recreatable' throws away the whole dogfood."
+dedup_id = "75d855790998d11f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 1. Live gap census — raw tool-chain smoke against the running app [M] · *interactive*"
+summary = "Census + dogfood share the dev DB; delete_work_item is soft-delete only, so 'tear down after' is not a true purge and a mid-sequence error orphans rows into the Task 8 store."
+description = "lumina has soft-delete only (DELETE /work-items/{id} → repo::delete_work_item tombstone); worktrees/sprints/commits have no delete tool. Task 1 'Tear down throwaway content after' leaves tombstoned rows + export snapshots, and a mid-sequence census error (which the task explicitly anticipates) is unrecoverable without a full DB recreate (which destroys any dogfood state). Run the census against a THROWAWAY DB (separate file via the DB-path env var, or a cp of lumina.db restored after), not the dev lumina.db that Task 8 populates; or make both tasks check-before-create idempotent and document the recreate path."
+dedup_id = "9a3b4b6b3b278952"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 7. Register and cross-link the new skills [S]"
+summary = "Task 7 understates the registration surface: hardcoded 'twenty-five' counts in plugin.json:5, README ×3, mcp/SKILL.md:36, and lumina/CLAUDE.md all break; new skills are a new (lifecycle) category README's framing doesn't cover."
+description = "Verified counts: plugin.json:5 'Twenty-five', README.md:3/7/101 (incl. the verification line '/help ... should list twenty-five commands'), mcp/SKILL.md:36 '25 composable skills (9+10+2+4)', and lumina/CLAUDE.md § Story-block skills 'twenty-five total'. Adding 4 skills breaks all of these and the mcp/SKILL.md breakdown needs a '+N lifecycle' term. Task 7 must update EVERY occurrence, add 4 README table rows, AND reframe README's 'one per story block' prose to admit the lifecycle/orchestration category. lumina/CLAUDE.md is not in Task 7's Files list."
+dedup_id = "8e1f4828ee050d07"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "executability"
+plan_section = "#### 3. Author the `create-project` hierarchy-bootstrap skill [M]"
+summary = "Tasks 3/4/5 have no standalone mechanical acceptance — '(Smoke-validated in Task 8)' defers real validation to an /implement-excluded interactive task; soft criteria like 'a dry read shows no story-before-epic-AC path' aren't runnable."
+description = "Tasks 3/4/5 acceptance = 'frontmatter parses' + prose checks ('documented sequence matches the live gates', 'a dry read shows no story-before-epic-AC path', 'steps match the compose ordering', 'covers both lanes') + '(Smoke-validated in Task 8)'. None is a runnable command, and Task 8 is interactive/excluded from /implement, so an /implement sub-agent has no standalone pass/fail beyond YAML parsing. Replace the soft criteria with grep-checkable structural checks: assert §a 4-key frontmatter + disable-model-invocation:true present, and that the add_acceptance_criterion(epic) step textually precedes the first create_work_item(kind:story) step."
+dedup_id = "91c1fdadba3321d7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "executability"
+plan_section = "#### 8. Dogfood runthrough — stand up `project = lumina` and run one sprint to merge [L] · *interactive*"
+summary = "Task 8 bundles five procedures (create-project + plan-story + decompose/spec/deps + compose-sprint + run-sprint) under one L tag with one all-or-nothing acceptance — and it is the plan's only real integration test."
+description = "The Action chains five non-trivial interactive skills with a single merged acceptance; a failure at decompose reds the whole task with no resumable checkpoint, and the Verification section names this as THE integration test. Split into 8a (bootstrap hierarchy via create-project; accept: get_tree shows project→epic→focus→story with epic ≥1 AC), 8b (plan+decompose+wire-deps; accept: get_story_readiness.ready_for_decomposition + non-empty get_task_dispatch_plan), 8c (compose-sprint; accept: sprint active + owning worktree exists), 8d (run-sprint to merge; accept: the current four conditions)."
+dedup_id = "259a2e83c3339ebb"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 7. Register and cross-link the new skills [S]"
+summary = "CONVENTIONS has no section for lifecycle/orchestration skills; §b idempotency / §c provenance don't map onto claim/complete/merge tools, so Task 7's 'add a CONVENTIONS note … if warranted' is required, not optional."
+description = "CONVENTIONS §a–§m govern story-planning-block writers (set_story_plan, add_acceptance_criterion, …). §b 5-step check-before-act idempotency and §c 'one record_task_activity per write (work_item_id)' don't map onto claim_next_task/complete_task/record_worktree_merge/set_sprint_status (claiming is txn-idempotent, not supersession; provenance against a sprint_id is undefined in §c). Add a CONVENTIONS §n for the lifecycle/orchestration category: idempotency model (BEGIN IMMEDIATE txn; re-run compose checks existing sprint), sprint- vs work-item-scoped provenance, and that disable-model-invocation:true is MANDATORY (these mutate git + the queue)."
+dedup_id = "e9a12d5062814d8e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 5. Author the `run-sprint` orchestration skill [L]"
+summary = "Task 5 leaves the 'single-agent vs agent-team' canonical choice to the executor; Risk 4 already says single-agent is the safe default — surface that into the Action and make agent-team an appendix."
+description = "Task 5 says 'with single-agent and agent-team variants' and its acceptance 'agent-team variant names the team tools it needs' is a judgement. Risk 4 states 'the single-agent variant is the safe default for the first dogfood' — the decision IS made but not surfaced. State in Task 5 that single-agent is the canonical documented loop and agent-team is a labelled secondary appendix; list the team tools concretely (claim_next_task lane/tier, renew_lease, complete_task, get_sprint_quiescence, list_open_questions_for_sprint, SendMessage, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1). Consider splitting checkpoint-commit + finalize/merge into 5b."
+dedup_id = "666d1506d99bfc89"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 4. Author the `compose-sprint` skill [M]"
+summary = "Task 4 'AUQ-gate the task-set trim and the worktree decision' punts the gate wording to the skill author — specify both AUQ prompts/options verbatim so the authored skill is deterministic."
+description = "'Select task set' and 'the worktree decision' correctly defer to the user via AUQ, but Task 4 doesn't say what the questions/options are, so two authors produce two different gates. Per the §b-supersession verbatim-phrasing precedent, name both: task-set ('Include all ready tasks from the dispatch plan, or trim to a subset?' → All / Trim) and worktree ('Create a new worktree for this sprint, or target an existing one?' → New / Target-existing)."
+dedup_id = "da0e24996b41610a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 6. Author the lifecycle runbook + `lifecycle` advisor [M]"
+summary = "Task 6 gate count is inconsistent — the Detail checklist lists NINE items but the acceptance says 'all eight gates', and it drops the task→done + epic→done closure gates Research Notes documents."
+description = "Task 6 Detail enumerates 9 gates (project NULL parent; epic outcome; epic ≥1 AC; focus shape; sprint ladder; checkpoint freeze; worktree-owner terminal guard; review-lane cascade; record-only git) but the acceptance says 'covers all eight gates from Research Notes'. Research Notes also documents task→done (closure_gate='hard' with unchecked task ACs, shared.rs:895-913) and epic→done (enforce_epic_done_gate, shared.rs:918+), absent from the checklist. Reconcile the count and add the two closure/epic-done gates so the lifecycle advisor's 'next gate X' inventory is complete."
+dedup_id = "11a0abbbc12ecf24"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 8. Dogfood runthrough — stand up `project = lumina` and run one sprint to merge [L] · *interactive*"
+summary = "The live dogfood is captured verbatim into the session_records corpus (migration 0015, egress redaction deferred) — add a one-line 'don't paste secrets' caution."
+description = "Per lumina/CLAUDE.md § Session corpus, every session carrying a mcp__lumina__* call is captured lossless-at-rest with redaction deferred to layer 3; the dogfood, driven through the lumina MCP surface, guarantees capture. Local-only blast radius, but the plan leans on the corpus/export as the durable record — add a caution to Task 8 to avoid pasting secrets/tokens during the interactive run."
+dedup_id = "9acd43870cb9b8a6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "executability"
+plan_section = "**Interactive-task note.**"
+summary = "Interactive tasks (1/8/9) need explicit preconditions: lumina server on 127.0.0.1:24817, MCP registered as `lumina`, and (Task 8) a real on-disk git worktree before the record-only create_worktree."
+description = "The note says 'orchestrator/user-driven (with lumina MCP connected)' but Tasks 1/8 also need the app running (lumina no subcommand, bind 127.0.0.1:24817), a known dev-DB state, and Task 8 a real `git worktree add` before the record-only create_worktree (lumina never shells git). Add an explicit Preconditions line per interactive task so an operator picking one up cold has a clean runnable handoff."
+dedup_id = "b0402fbb5177c0a5"
