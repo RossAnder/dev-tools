@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
-    "build-only": "vite build",
+    "build-only": "bun --bun vite build",
     "type-check": "vue-tsc --build",
     "test": "bun test"
   },
@@ -15,23 +15,23 @@
     "@fontsource/geist-sans": "^5.2.5",
     "@fontsource/instrument-serif": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "vue": "3.6.0-beta.13",
+    "vue": "3.6.0-beta.14",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
     "@tsconfig/node24": "^24.0.4",
     "@types/bun": "^1.3.14",
-    "@types/node": "^25.9.1",
+    "@types/node": "^25.9.2",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
     "fast-check": "^4.8.0",
     "npm-run-all2": "^9.0.1",
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.3",
-    "vite": "^8.0.15",
+    "vite": "^8.0.16",
     "vite-plugin-vue-devtools": "^8.1.2",
-    "vue-tsc": "^3.3.3"
+    "vue-tsc": "^3.3.4"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
