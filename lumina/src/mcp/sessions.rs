@@ -125,7 +125,14 @@ mod tests {
         let task_id = create_item(&tools, "task", Some(&story)).await;
 
         // Bind the task into a sprint so the membership probe returns it.
-        let sprint = repo::create_sprint(&*pool, &NewSprint { title: None })
+        let sprint = repo::create_sprint(
+            &*pool,
+            &NewSprint {
+                title: None,
+                worktree_id: None,
+                predecessor_sprint_id: None,
+            },
+        )
             .await
             .expect("create sprint")
             .to_string();

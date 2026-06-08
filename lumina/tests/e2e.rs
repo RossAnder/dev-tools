@@ -2650,7 +2650,14 @@ async fn seed_implement_sprint(
     pool: &Arc<lumina::db::AnyPool>,
     task_id: &str,
 ) -> String {
-    let sprint_id = lumina::repo::create_sprint(pool, &lumina::domain::NewSprint { title: None })
+    let sprint_id = lumina::repo::create_sprint(
+        pool,
+        &lumina::domain::NewSprint {
+            title: None,
+            worktree_id: None,
+            predecessor_sprint_id: None,
+        },
+    )
         .await
         .expect("create sprint")
         .to_string();

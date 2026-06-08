@@ -179,7 +179,14 @@ pub(crate) async fn count_events_of_type(pool: &SqlitePool, event_type: &str) ->
 /// claim/complete tests (`team_execution.rs`) + the readiness/quiescence tests
 /// (`readiness.rs`).
 pub(crate) async fn seed_sprint(pool: &SqlitePool) -> String {
-    create_sprint(pool, &NewSprint { title: Some("S1".into()) })
+    create_sprint(
+        pool,
+        &NewSprint {
+            title: Some("S1".into()),
+            worktree_id: None,
+            predecessor_sprint_id: None,
+        },
+    )
         .await
         .expect("legal sprint")
         .to_string()

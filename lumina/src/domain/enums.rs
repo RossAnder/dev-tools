@@ -444,6 +444,70 @@ pub enum SessionSource {
     Ingested,
 }
 
+/// Sprint lifecycle status (migration 0016) — stored on the FREE-TEXT
+/// `sprints.status` column (NO DB CHECK; SQLite cannot `ALTER … ADD CONSTRAINT`,
+/// so the vocab is enforced at the repo layer, mirroring `work_items.status`).
+/// The pre-0016 column wrote only `'open'`; migration 0016 backfills
+/// `'open' → 'active'` to preserve layer-1's "open was runnable" behaviour and
+/// `create_sprint` now writes `'draft'` explicitly. The wire form is snake_case.
+/// Legal transitions are encoded in [`SprintStatus::can_transition_to`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SprintStatus {
+    /// Composed but not yet submitted for execution (the create default).
+    Draft,
+    /// Submitted / approved for execution; eligible to be activated.
+    Ready,
+    /// Running — the only status under which `claim_next_task` is runnable.
+    Active,
+    /// Work done; the owning worktree is awaiting a merge/rejection decision
+    /// (possibly after one or more review/optimise Runs).
+    Review,
+    /// Terminal — completed (merged, or a worktree-less `active → done`).
+    Done,
+    /// Terminal — abandoned / rejected.
+    Cancelled,
+}
+
+impl SprintStatus {
+    /// Whether a transition from `self` to `next` is legal (migration 0016).
+    /// The table: `draft → ready`; `ready → {active, cancelled}`;
+    /// `active → {review, done, cancelled}`; `review → {done, cancelled}`;
+    /// `done`/`cancelled` are terminal (no outgoing transition). A no-op
+    /// self-transition is NOT legal. The repo layer rejects an illegal
+    /// transition with `AppError::Validation` (→ 422).
+    pub fn can_transition_to(&self, next: SprintStatus) -> bool {
+        use SprintStatus::*;
+        matches!(
+            (self, next),
+            (Draft, Ready)
+                | (Ready, Active)
+                | (Ready, Cancelled)
+                | (Active, Review)
+                | (Active, Done)
+                | (Active, Cancelled)
+                | (Review, Done)
+                | (Review, Cancelled)
+        )
+    }
+}
+
+/// Terminal disposition of a [`Worktree`]'s merge audit (migration 0016) —
+/// CHECK-enforced at the DB layer on the `worktrees.outcome` column
+/// (`merged|rejected`, nullable until a decision is recorded). lumina is
+/// RECORD-ONLY — it never verifies git state; this is the audit verdict a
+/// human/agent records. The wire form matches the SQL CHECK literals
+/// byte-for-byte (snake_case). Set by `record_worktree_merge` /
+/// `record_worktree_rejection`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeOutcome {
+    /// The worktree was merged to its base.
+    Merged,
+    /// The worktree was rejected (not merged); kept for audit.
+    Rejected,
+}
+
 /// The count-by axis for [`crate::repo::query_findings`] (decision D12,
 /// migration 0011): when `QueryFindingsFilter.count_by` is set, the query
 /// returns grouped [`AxisCount`] rows instead of full findings. Currently the
@@ -454,4 +518,57 @@ pub enum SessionSource {
 pub enum FindingAxis {
     /// Group counts by `findings.severity`.
     Severity,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Round-trip an enum value through serde JSON and assert the wire form is
+    /// exactly the expected snake_case string, then deserialise back.
+    fn assert_wire<T>(value: T, expected: &str)
+    where
+        T: Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug + Copy,
+    {
+        let json = serde_json::to_value(value).expect("serialise");
+        assert_eq!(json, serde_json::Value::String(expected.to_owned()), "wire form");
+        let back: T = serde_json::from_value(json).expect("deserialise");
+        assert_eq!(back, value, "round-trip");
+    }
+
+    #[test]
+    fn migration_0016_enums_round_trip_snake_case() {
+        // SprintStatus — wire forms must equal the repo-enforced sprints.status vocab.
+        assert_wire(SprintStatus::Draft, "draft");
+        assert_wire(SprintStatus::Ready, "ready");
+        assert_wire(SprintStatus::Active, "active");
+        assert_wire(SprintStatus::Review, "review");
+        assert_wire(SprintStatus::Done, "done");
+        assert_wire(SprintStatus::Cancelled, "cancelled");
+        // WorktreeOutcome — worktrees.outcome CHECK vocab.
+        assert_wire(WorktreeOutcome::Merged, "merged");
+        assert_wire(WorktreeOutcome::Rejected, "rejected");
+    }
+
+    #[test]
+    fn sprint_status_transition_matrix() {
+        use SprintStatus::*;
+        // Legal transitions.
+        assert!(Draft.can_transition_to(Ready));
+        assert!(Ready.can_transition_to(Active));
+        assert!(Ready.can_transition_to(Cancelled));
+        assert!(Active.can_transition_to(Review));
+        assert!(Active.can_transition_to(Done));
+        assert!(Active.can_transition_to(Cancelled));
+        assert!(Review.can_transition_to(Done));
+        assert!(Review.can_transition_to(Cancelled));
+        // Representative illegal transitions.
+        assert!(!Done.can_transition_to(Active));
+        assert!(!Draft.can_transition_to(Done));
+        assert!(!Draft.can_transition_to(Active));
+        assert!(!Cancelled.can_transition_to(Draft));
+        assert!(!Review.can_transition_to(Active));
+        // Self-transitions are not legal.
+        assert!(!Active.can_transition_to(Active));
+    }
 }

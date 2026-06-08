@@ -93,6 +93,15 @@ pub struct WorkItem {
     /// otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reviews_work_item_id: Option<String>,
+    /// Checkpoint-barrier flag (migration 0016): when set on a task,
+    /// `claim_next_task` FREEZES the whole owning sprint while any checkpoint
+    /// task is `in_progress` (runtime-freeze only — NOT auto-wired as a
+    /// task→task dependency). NULL/`None` on rows that are not checkpoints. A
+    /// scalar placed before the timestamp scalars (NOT after any Vec field) so
+    /// the export tables-last ordering gate stays satisfied. Carried as
+    /// `Option<bool>` mapped from the nullable `INTEGER` 0/1 column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<bool>,
     pub created_at: String,
     pub updated_at: String,
     /// Soft-delete tombstone instant (`None` = live). Carried here off the detail

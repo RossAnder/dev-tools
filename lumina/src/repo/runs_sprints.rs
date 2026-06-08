@@ -758,7 +758,14 @@ mod tests {
     #[tokio::test]
     async fn create_sprint_inserts_row() {
         let pool = connect_in_memory().await.expect("pool");
-        let id = create_sprint(&pool, &NewSprint { title: Some("Sprint 1".into()) })
+        let id = create_sprint(
+            &pool,
+            &NewSprint {
+                title: Some("Sprint 1".into()),
+                worktree_id: None,
+                predecessor_sprint_id: None,
+            },
+        )
             .await
             .expect("create_sprint");
 
@@ -1170,7 +1177,14 @@ mod tests {
     #[tokio::test]
     async fn create_sprint_persists_default_open_status() {
         let pool = connect_in_memory().await.expect("pool");
-        let id = create_sprint(&pool, &NewSprint { title: Some("Sprint 1".into()) })
+        let id = create_sprint(
+            &pool,
+            &NewSprint {
+                title: Some("Sprint 1".into()),
+                worktree_id: None,
+                predecessor_sprint_id: None,
+            },
+        )
             .await
             .expect("create_sprint")
             .to_string();

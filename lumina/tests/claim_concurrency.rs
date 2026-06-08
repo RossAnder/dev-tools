@@ -145,7 +145,14 @@ async fn seed_queue_task(
 
 /// Open a sprint via the public repo API; returns its id.
 async fn seed_sprint(pool: &SqlitePool) -> String {
-    repo::create_sprint(pool, &lumina::domain::NewSprint { title: Some("S1".into()) })
+    repo::create_sprint(
+        pool,
+        &lumina::domain::NewSprint {
+            title: Some("S1".into()),
+            worktree_id: None,
+            predecessor_sprint_id: None,
+        },
+    )
         .await
         .expect("legal sprint")
         .to_string()

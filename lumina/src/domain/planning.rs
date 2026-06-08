@@ -277,15 +277,120 @@ pub struct NewRun {
     pub target_kind: TargetKind,
 }
 
-/// Create input for the `create_sprint` repo path (B23, migration 0011): an
-/// optional sprint title. The sprint id, status (defaults `open`), and timestamp
-/// are minted by the repo. An input struct, so it derives `Deserialize` +
+/// Create input for the `create_sprint` repo path (B23, migration 0011; widened
+/// migration 0016): an optional sprint title plus the optional run-chaining
+/// fields. The sprint id, status (now minted as `'draft'`), and timestamp are
+/// minted by the repo. An input struct, so it derives `Deserialize` +
 /// `JsonSchema` (+ `Debug, Clone`).
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct NewSprint {
     /// Optional sprint title; absent ⇒ NULL.
     #[serde(default)]
     pub title: Option<String>,
+    /// The worktree this sprint RUNS IN (migration 0016): a follow-up fix sprint
+    /// shares its predecessor's `worktree_id` (it TARGETS but does not OWN the
+    /// worktree). Absent ⇒ NULL (the sprint runs in no recorded worktree, or is
+    /// itself a worktree owner wired up via `create_worktree`).
+    /// `#[serde(default)]` so existing callers/JSON bodies that omit it still
+    /// deserialise.
+    #[serde(default)]
+    pub worktree_id: Option<String>,
+    /// Run-chaining provenance (migration 0016): the predecessor sprint this
+    /// sprint chains from (e.g. a fix sprint spawned off a predecessor's
+    /// review/optimise Run). Absent ⇒ NULL (not a chained sprint).
+    /// `#[serde(default)]` so existing callers/JSON bodies that omit it still
+    /// deserialise.
+    #[serde(default)]
+    pub predecessor_sprint_id: Option<String>,
+}
+
+/// A row of `worktrees` (migration 0016) joined with its owning sprint's status:
+/// the inter-sprint isolation + merge unit, owned by EXACTLY ONE sprint. There is
+/// NO independent `worktrees.status` column — `effective_status` is WHOLLY
+/// DERIVED by JOINing the owning sprint (`worktrees.owning_sprint_id`), so the
+/// owner and every follow-up that shares its `worktree_id` track one status. The
+/// terminal `merged_at`/`merge_ref`/`outcome` fields carry merge-AUDIT only;
+/// lumina is RECORD-ONLY and never shells out to git. Read aggregate only —
+/// `Debug, Clone, Serialize` (mirrors [`BatchEntry`]/[`StoryReadiness`]; the MCP
+/// layer wraps it with `Content::json`).
+#[derive(Debug, Clone, Serialize)]
+pub struct Worktree {
+    pub id: String,
+    /// The sprint that OWNS this worktree (1:1 UNIQUE FK → `sprints(id)`).
+    pub owning_sprint_id: String,
+    /// The worktree's checkout path (record-only; lumina never touches it).
+    pub path: String,
+    /// The base ref the worktree branches from; NULL when unrecorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+    /// The worktree's branch name; NULL when unrecorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Merge-audit instant (ISO-8601); NULL until a merge/rejection is recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merged_at: Option<String>,
+    /// The merge ref/commit recorded at merge time; NULL until then.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merge_ref: Option<String>,
+    /// Terminal merge verdict (`merged|rejected`); NULL until a decision lands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<WorktreeOutcome>,
+    /// The owning sprint's status, JOIN-derived (NOT a DB column).
+    pub effective_status: SprintStatus,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Soft-delete tombstone instant (`None` = live).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<String>,
+}
+
+/// Create input for the `create_worktree` repo path (migration 0016): the owning
+/// sprint (validated to exist; becomes the 1:1 owner) plus the worktree's path
+/// and optional base ref / branch. The worktree id and timestamps are minted by
+/// the repo. An input struct, so it derives `Deserialize` + `JsonSchema` (+
+/// `Debug, Clone`).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct NewWorktree {
+    /// The sprint that will OWN this worktree (1:1).
+    pub owning_sprint_id: String,
+    /// The worktree's checkout path (record-only).
+    pub path: String,
+    /// The base ref the worktree branches from; absent ⇒ NULL.
+    #[serde(default)]
+    pub base_ref: Option<String>,
+    /// The worktree's branch name; absent ⇒ NULL.
+    #[serde(default)]
+    pub branch: Option<String>,
+}
+
+/// A row of `task_commits` (migration 0016): one commit→task provenance edge
+/// (pure audit). The committing lead passes an explicit task-id list; one row is
+/// recorded per task, idempotent via `UNIQUE(commit_sha, task_id)`. Read
+/// aggregate only — `Debug, Clone, Serialize` (mirrors the other row aggregates).
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskCommit {
+    pub id: String,
+    pub commit_sha: String,
+    pub task_id: String,
+    /// The sprint the commit was recorded under; NULL when unrecorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sprint_id: Option<String>,
+    pub recorded_at: String,
+}
+
+/// The typed query argument for the `list_task_commits` repo path (migration
+/// 0016): read commit-provenance edges by task, by commit, or by story
+/// (story → its direct task children → their commits). Consumed downstream
+/// (task 4). Mirrors the typed-arg precedent — `Debug, Clone, Serialize,
+/// Deserialize`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TaskCommitQuery {
+    /// All commits recorded against a single task.
+    ByTask(String),
+    /// All task edges recorded against a single commit sha.
+    ByCommit(String),
+    /// All commits across a story's direct task children.
+    ByStory(String),
 }
 
 /// Create input for the `record_finding_decision` repo path (B23, migration

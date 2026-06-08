@@ -249,7 +249,14 @@ mod tests {
     async fn claim_next_task_none_http() {
         let pool = connect_in_memory().await.expect("pool");
         let _ = seed_chain(&pool).await;
-        let sprint_id = repo::create_sprint(&pool, &crate::domain::NewSprint { title: None })
+        let sprint_id = repo::create_sprint(
+            &pool,
+            &crate::domain::NewSprint {
+                title: None,
+                worktree_id: None,
+                predecessor_sprint_id: None,
+            },
+        )
             .await
             .expect("sprint")
             .to_string();
@@ -289,7 +296,14 @@ mod tests {
     async fn claim_complete_and_reads_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let sprint_id = repo::create_sprint(&pool, &crate::domain::NewSprint { title: None })
+        let sprint_id = repo::create_sprint(
+            &pool,
+            &crate::domain::NewSprint {
+                title: None,
+                worktree_id: None,
+                predecessor_sprint_id: None,
+            },
+        )
             .await
             .expect("sprint")
             .to_string();
@@ -421,7 +435,14 @@ mod tests {
     async fn release_non_owner_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let sprint_id = repo::create_sprint(&pool, &crate::domain::NewSprint { title: None })
+        let sprint_id = repo::create_sprint(
+            &pool,
+            &crate::domain::NewSprint {
+                title: None,
+                worktree_id: None,
+                predecessor_sprint_id: None,
+            },
+        )
             .await
             .expect("sprint")
             .to_string();

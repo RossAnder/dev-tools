@@ -62,6 +62,11 @@ pub(crate) struct WorkItemRow {
     pub(crate) lease_expires_at: Option<String>,
     pub(crate) lane: Option<String>,
     pub(crate) reviews_work_item_id: Option<String>,
+    /// Checkpoint-barrier flag (migration 0016): the nullable `INTEGER` 0/1
+    /// column, decoded as `Option<i64>` per the row-struct idiom (SQLite stores
+    /// the bool as INTEGER) and mapped to `Option<bool>` on the public
+    /// [`WorkItem`] in [`work_item_from_row`].
+    pub(crate) checkpoint: Option<i64>,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     /// Soft-delete tombstone instant (NULL = live). Selected by both
@@ -105,6 +110,7 @@ where
             lease_expires_at: row.try_get("lease_expires_at")?,
             lane: row.try_get("lane")?,
             reviews_work_item_id: row.try_get("reviews_work_item_id")?,
+            checkpoint: row.try_get("checkpoint")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             deleted_at: row.try_get("deleted_at")?,
@@ -139,6 +145,7 @@ pub(crate) fn work_item_from_row(r: WorkItemRow) -> Result<WorkItem, AppError> {
         lease_expires_at: r.lease_expires_at,
         lane: r.lane,
         reviews_work_item_id: r.reviews_work_item_id,
+        checkpoint: r.checkpoint.map(|v| v != 0),
         created_at: r.created_at,
         updated_at: r.updated_at,
         deleted_at: r.deleted_at,
