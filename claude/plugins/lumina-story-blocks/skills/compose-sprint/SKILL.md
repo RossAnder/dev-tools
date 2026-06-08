@@ -1,0 +1,204 @@
+---
+name: compose-sprint
+description: Compose a sprint from a planned, decomposed story and ladder it draft→ready→active.
+arguments: [story_id]
+argument-hint: "[story_id]"
+disable-model-invocation: true
+---
+
+# `lumina:compose-sprint`
+
+Composer: turns a planned, decomposed story into a runnable sprint and
+activates it. Reads the story's readiness + tiered dispatch plan, gates the
+task-set selection and worktree choice through two `AskUserQuestion` prompts,
+mints the sprint, attaches the selected tasks, records the worktree (lumina is
+RECORD-ONLY — the agent runs the real `git worktree add`), and ladders the
+sprint `draft→ready→active`. It STOPS at `active`; execution (`run-sprint`) and
+the terminal merge/rejection flip are a SEPARATE skill's job.
+
+This skill MUTATES the store (it mints a sprint, attaches tasks, records a
+worktree, drives status) so it declares `disable-model-invocation: true` per
+§a — ONLY explicit triggers (`/lumina:compose-sprint <story_id>`, UI dispatch,
+explicit `Skill` call) fire it. It stays INLINE (five §a keys, NOT forked):
+the two gates are user-mediated and benefit from the parent context.
+
+Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
+§a (five keys, mutating), §c (one activity row per write), §e (Sentry — skill =
+orchestration, MCP = state; the local `detail.kind == "story"` check at Step 1
+is the §e-blessed exception), §j (the dispatch plan composes
+`compute_task_batches` downstream — this composer consumes batches, never
+pre-batches), §k (tier derivation is server-side via `get_task_dispatch_plan`).
+
+## MCP tools used by this composer
+
+- `mcp__lumina__get_work_item` — Step 1 kind precondition (`detail.kind`).
+- `mcp__lumina__get_story_readiness` — Step 2 readiness gate (`ready_for_decomposition`).
+- `mcp__lumina__get_task_dispatch_plan` — Step 2 the batched, tiered task waves.
+- `mcp__lumina__create_sprint` — Step 4 mint the sprint (defaults `draft`).
+- `mcp__lumina__add_tasks_to_sprint` — Step 5 attach the selected task ids.
+- `mcp__lumina__create_worktree` — Step 6 record a NEW worktree (after the real `git worktree add`).
+- `mcp__lumina__set_task_lane` — referenced in Step 5 ONLY as the review-lane / clear path (NOT used to make planned tasks claimable — they already default `lane="implement"`).
+- `mcp__lumina__set_sprint_status` — Step 7 ladder `draft→ready→active`.
+- `mcp__lumina__record_task_activity` — §c provenance after each write.
+
+## Body
+
+### Step 1 — kind precondition
+
+`detail = mcp__lumina__get_work_item({ id: "$story_id" })` (or
+`mcp__lumina__get_tree` if you need the task subtree in one read). If
+`detail.kind != "story"`, ABORT: `"compose-sprint requires a story work item;
+got kind=<kind> for id=<id>."` This local check is the §e-blessed exception.
+
+### Step 2 — readiness + dispatch-plan read
+
+```
+readiness = mcp__lumina__get_story_readiness({ story_id: "$story_id" })
+```
+
+If `readiness.ready_for_decomposition != true`, ABORT with a one-line reason
+(`"story not ready_for_decomposition — run /lumina:plan-story first."`) — a
+sprint must compose from a planned, decomposed story, not a bare one.
+
+```
+plan = mcp__lumina__get_task_dispatch_plan({ story_id: "$story_id" })
+```
+
+`plan.batches` is `Vec<Vec<BatchEntry>>` — the batched, tiered task waves
+(`compute_task_batches` + per-task `compute_tier` server-side per §j/§k). If
+`plan.batches` is empty, ABORT: `"story has no dispatchable tasks — run
+/lumina:decompose-tasks + /lumina:set-task-spec first."` Surface the plan to the
+user as phases (`Phase 1: T1[lite], T2[deep] | Phase 2: T3[lite] | …`) so they
+can see the wave/tier shape before selecting.
+
+### Step 3 — task-set selection (AUQ gate)
+
+Gate the task set with this `AskUserQuestion`, VERBATIM:
+
+> **Header**: `Task set`
+> **Body**: `Include all ready tasks from the dispatch plan, or trim to a subset?`
+> **Options** (exactly 2):
+> - `All` — Include every task across `plan.batches` (flatten all waves).
+> - `Trim` — Pick a subset; the composer then asks which task ids to include.
+
+On `All`, `selected_task_ids` = every `task_id` flattened across
+`plan.batches`. On `Trim`, prompt the operator for the subset (by task id /
+title) and set `selected_task_ids` to their picks; the batches/tiers are
+unchanged — trimming only narrows membership, never re-derives tiers.
+
+### Step 4 — mint the sprint
+
+```
+{ sprint_id } = mcp__lumina__create_sprint({ title: "<story title> sprint" })
+```
+
+`create_sprint` defaults `status="draft"` (per the migration-0016 contract).
+Then per §c append one activity row to the story:
+
+```
+mcp__lumina__record_task_activity {
+  work_item_id: "$story_id",
+  entry_type: "execution",
+  origin: "plan",
+  summary: "compose-sprint: created sprint <sprint_id> (draft)",
+  body: "session=${CLAUDE_SESSION_ID}"
+}
+```
+
+Apply the §c substitution guard verbatim (verify `${CLAUDE_SESSION_ID}`
+resolved; on non-substitution write `session=unknown` and warn).
+
+### Step 5 — attach the selected tasks
+
+```
+{ added } = mcp__lumina__add_tasks_to_sprint({ sprint_id, task_ids: selected_task_ids })
+```
+
+Idempotent at the junction (already-attached pairs collapse, not counted in
+`added`). Then per §c append one activity row summarising the attach
+(`summary: "compose-sprint: attached <added> tasks to sprint <sprint_id>"`).
+
+**Lane note (no lane-stamping step needed)**: a planned task created via
+`create_work_item` ALREADY defaults to `lane="implement"`, so once the sprint is
+`active` (Step 7) every attached task is immediately claimable by
+`claim_next_task` — there is NO manual lane-stamp here. Use
+`mcp__lumina__set_task_lane` ONLY if you ever need to move a task to the
+`review` lane or clear it (`lane=null`); it is never part of the compose path.
+
+### Step 6 — worktree (AUQ gate)
+
+Gate the worktree decision with this `AskUserQuestion`, VERBATIM:
+
+> **Header**: `Worktree`
+> **Body**: `Create a new worktree for this sprint, or target an existing one?`
+> **Options** (exactly 2):
+> - `New` — This sprint OWNS a fresh worktree (the agent runs the real `git worktree add` first).
+> - `Target-existing` — Share an existing sprint's worktree (target, do NOT own).
+
+**On `New`** — lumina is RECORD-ONLY, so the agent runs the REAL git command
+FIRST, THEN records provenance:
+
+1. The agent runs `git worktree add <path> -b <branch>` (real git — lumina
+   never shells to git).
+2. `mcp__lumina__create_worktree({ owning_sprint_id: sprint_id, path: "<path>", branch: "<branch>", base_ref: "<base_ref>" })`
+   records it; this sprint OWNS the worktree (`owning_sprint_id` is UNIQUE).
+   `path` is provenance TEXT — lumina does not touch the on-disk tree.
+
+**On `Target-existing`** — do NOT call `create_worktree` (that would mint a
+SECOND owner). Resolve the existing sprint's `worktree_id` (via
+`mcp__lumina__list_worktrees` / `get_worktree`) and share it onto this sprint
+(`sprints.worktree_id`) as a TARGET — follow-up sprints target a worktree but
+never own it.
+
+Per §c append one activity row recording the worktree choice
+(`summary: "compose-sprint: <new worktree <id> | targeted worktree <id>> for sprint <sprint_id>"`).
+
+### Step 7 — ladder draft→ready→active
+
+Drive the sprint up the lifecycle with `set_sprint_status`, in order, STOPPING
+at `active`:
+
+```
+mcp__lumina__set_sprint_status({ sprint_id, status: "ready" })   # draft → ready
+mcp__lumina__set_sprint_status({ sprint_id, status: "active" })  # ready → active
+```
+
+`active` makes the attached `implement`-lane tasks claimable. STOP HERE —
+compose-sprint does NOT execute the sprint. Per §c append one activity row
+(`summary: "compose-sprint: laddered sprint <sprint_id> draft→ready→active"`).
+
+### Worktree-owner terminal guard
+
+compose-sprint MUST NEVER call `set_sprint_status` to a TERMINAL status
+(`done` / `cancelled`) on a worktree-OWNING sprint. `set_sprint_status` itself
+REJECTS a terminal `review→done|cancelled` flip on a worktree-owning sprint;
+those terminal transitions go through `mcp__lumina__record_worktree_merge`
+(drives the owning sprint `review→done`) or
+`mcp__lumina__record_worktree_rejection` (drives `review→cancelled`), so the
+merge/rejection audit is recorded atomically with the owner transition. That is
+`run-sprint`'s job, NOT compose's — this composer's ladder stops at `active`.
+
+### Final summary
+
+```
+compose-sprint: sprint <sprint_id> active; <added> tasks attached
+  (<all|trimmed N-of-M>); worktree <new <id> | targeting <id>>;
+  next: /lumina:run-sprint <sprint_id>.
+```
+
+## Sentry-pattern compliance (per §e)
+
+Composer DECIDES: the compose order (read → select → mint → attach → worktree →
+ladder), the two AUQ prompt shapes, the stop-at-`active` ceiling. Composer MUST
+NOT compute readiness or tiers client-side (always `get_story_readiness` /
+`get_task_dispatch_plan`); MUST NOT pre-batch tasks (§j — batching is
+server-side); MUST NOT lane-stamp planned tasks (they default `implement`); MUST
+NOT drive a worktree-owning sprint to a terminal status (use the worktree
+merge/rejection tools — terminal guard above). Local `detail.kind == "story"` at
+Step 1 is the §e-blessed exception.
+
+## Pointers
+
+- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §c, §e, §j, §k.
+- Chained runner: [`../plan-story/SKILL.md`](../plan-story/SKILL.md) (populates the story this composer consumes).
+- Advisor: [`../next-block/SKILL.md`](../next-block/SKILL.md); MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) (sprint-lifecycle / worktree tools, migration 0016).
