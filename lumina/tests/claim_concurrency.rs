@@ -332,6 +332,157 @@ async fn concurrent_claims_never_double_claim() {
     );
 }
 
+/// **Checkpoint-freeze barrier UNDER CONTENTION (migration 0016).** While ANY
+/// checkpoint task (`work_items.checkpoint = 1`) in the sprint is `in_progress`,
+/// the migration-0016 claim guard freezes the WHOLE sprint — a sprint-wide
+/// barrier that returns `Ok(None)` for every contender. The in-module unit test
+/// `team_execution::claim_honours_checkpoint_freeze` covers the single-threaded
+/// path; this test exercises the barrier under the SAME N-agent contention the
+/// no-double-claim gate uses, proving the freeze holds when N claims race the
+/// barrier concurrently (a frozen sprint must NEVER leak a claim, even to one of
+/// N simultaneous contenders).
+///
+/// Sequence (all deterministic — no sleeps):
+/// 1. Seed an on-disk pool + chain + sprint, ACTIVATE it, seed M ready
+///    implement-lane queue tasks PLUS one extra task driven to a checkpoint
+///    freeze (`checkpoint = 1`, `status = 'in_progress'`) — so only the freeze,
+///    not the status guard, gates the claims.
+/// 2. Spawn N agents that each call `claim_next_task` ONCE concurrently; assert
+///    EVERY one returns `Ok(None)` (no error, no claim) — the sprint is frozen.
+/// 3. Lift the freeze (transition the checkpoint task out of `in_progress`) and
+///    assert a subsequent single claim NOW succeeds — proving the barrier, not an
+///    empty queue, was the cause (the M ready tasks were claimable all along).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn checkpoint_freeze_holds_under_contention() {
+    let (_tmp, pool) = open_on_disk_pool().await;
+
+    // Sequential seed phase (only the claims below race).
+    let story = seed_chain_to_story(&pool).await;
+    let sprint = seed_sprint(&pool).await;
+    // ACTIVATE so the status guard is satisfied — the ONLY thing that should
+    // gate the claims is the checkpoint freeze.
+    activate_sprint(&pool, &sprint).await;
+
+    // M ready implement-lane tasks: each is INDEPENDENTLY claimable (they prove
+    // the queue is non-empty, so a later successful claim isolates the freeze as
+    // the cause of the Ok(None) burst rather than a drained queue).
+    for i in 0..READY_TASKS {
+        seed_queue_task(
+            &pool,
+            &story,
+            &sprint,
+            &format!("Ready Task {i}"),
+            "implement",
+            Some("deep"),
+        )
+        .await;
+    }
+
+    // One CHECKPOINT task driven to the freeze condition: `checkpoint = 1` AND
+    // `status = 'in_progress'`. A direct runtime sqlx UPDATE (NOT a macro) stamps
+    // both the flag and the in_progress lease in one statement — matching how the
+    // in-module `claim_honours_checkpoint_freeze` test seeds the freeze.
+    let checkpoint =
+        seed_queue_task(&pool, &story, &sprint, "Checkpoint", "implement", Some("deep")).await;
+    sqlx::query(
+        "UPDATE work_items SET checkpoint = 1, status = 'in_progress', \
+         assignee = 'agent-ckpt', lease_expires_at = datetime('now', '+1800 seconds') \
+         WHERE id = $1",
+    )
+    .bind(&checkpoint)
+    .execute(&pool)
+    .await
+    .expect("seed in_progress checkpoint freeze");
+
+    let pool = Arc::new(pool);
+    let sprint = Arc::new(sprint);
+
+    // N agents each fire ONE claim concurrently. Every claim must return
+    // `Ok(None)` — the freeze gates the WHOLE sprint, so no contender wins a task
+    // despite M ready tasks sitting in the queue. An `Err` (e.g. SQLITE_BUSY)
+    // propagates out and fails the join below.
+    let mut agents = JoinSet::new();
+    for a in 0..CONCURRENT_AGENTS {
+        let pool = Arc::clone(&pool);
+        let sprint = Arc::clone(&sprint);
+        let agent_id = format!("agent-{a}");
+        agents.spawn(async move {
+            let claimed = repo::claim_next_task(
+                &*pool,
+                &sprint,
+                Lane::Implement,
+                None,
+                &agent_id,
+                LEASE_TTL_SECS,
+            )
+            .await?;
+            Ok::<Option<ClaimedTask>, lumina::error::AppError>(claimed)
+        });
+    }
+
+    let mut none_count = 0usize;
+    while let Some(joined) = agents.join_next().await {
+        let claimed = joined
+            .expect("agent task panicked")
+            .unwrap_or_else(|e| panic!("claim_next_task errored under contention while frozen (no SQLITE_BUSY expected): {e}"));
+        assert!(
+            claimed.is_none(),
+            "a checkpoint-frozen sprint must hand out NO task under contention, got {claimed:?}"
+        );
+        none_count += 1;
+    }
+    assert_eq!(
+        none_count, CONCURRENT_AGENTS,
+        "every one of the {CONCURRENT_AGENTS} contending claims must return Ok(None) while frozen"
+    );
+
+    // Belt-and-braces against the DB: none of the M ready tasks was leased — they
+    // are all still queue-ready `todo` with a NULL assignee (the freeze let none
+    // through). Only the seeded checkpoint task is in_progress. (Raw runtime sqlx.)
+    let leaked: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM work_items \
+         WHERE status = 'in_progress' AND checkpoint IS NOT 1 \
+           AND id IN (SELECT task_id FROM sprint_tasks WHERE sprint_id = $1)",
+    )
+    .bind(sprint.as_str())
+    .fetch_one(&*pool)
+    .await
+    .expect("count leaked-leased non-checkpoint tasks");
+    assert_eq!(
+        leaked, 0,
+        "no non-checkpoint task should be leased while the sprint is frozen"
+    );
+
+    // Lift the freeze: transition the checkpoint task out of `in_progress` (→
+    // done). The barrier clears; a subsequent claim now succeeds — proving the
+    // Ok(None) burst above was the freeze, not an empty queue. No sleep.
+    sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+        .bind(&checkpoint)
+        .execute(&*pool)
+        .await
+        .expect("clear the checkpoint freeze");
+
+    let claimed: ClaimedTask = repo::claim_next_task(
+        &*pool,
+        &sprint,
+        Lane::Implement,
+        None,
+        "agent-after-freeze",
+        LEASE_TTL_SECS,
+    )
+    .await
+    .expect("claim runs without error after the freeze lifts")
+    .expect("a ready task is claimable once the checkpoint-freeze clears — proving the barrier, not an empty queue, caused the Ok(None) burst");
+    assert_eq!(
+        claimed.assignee, "agent-after-freeze",
+        "the post-freeze claim leases a ready task to the claiming agent"
+    );
+    assert_ne!(
+        claimed.task_id, checkpoint,
+        "the post-freeze claim hands out a READY queue task, not the (now done) checkpoint task"
+    );
+}
+
 /// **Lazy-reclaim determinism (no sleep).** A task seeded `in_progress` with a
 /// literal PAST `lease_expires_at` (owned by a now-dead agent) is reclaimed by
 /// the very next claim and re-leased to the live claimer — WITHOUT waiting for

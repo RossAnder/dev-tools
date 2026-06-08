@@ -217,22 +217,37 @@ pub async fn create_sprint(db: &impl DbClient, sprint: &NewSprint) -> Result<Uui
 ///      panic).
 ///   3. `current.can_transition_to(next)` must hold → else
 ///      [`AppError::Validation`] naming `current → next`.
-///   4. **Worktree-owner terminal guard.** A terminal transition out of `review`
-///      (`review → done` or `review → cancelled`) is REJECTED when the sprint
-///      OWNS a worktree (`EXISTS worktrees WHERE owning_sprint_id = sprint`):
-///      the worktree's merge AUDIT must be recorded through
-///      `record_worktree_merge` / `record_worktree_rejection`, never skipped via
-///      a bare status flip. A worktree-LESS sprint transitions normally.
+///   4. **Worktree-owner terminal guard.** ANY terminal transition
+///      (`next ∈ {done, cancelled}`) is REJECTED when the sprint OWNS a worktree
+///      (`EXISTS worktrees WHERE owning_sprint_id = sprint`): the worktree's merge
+///      AUDIT must be recorded through `record_worktree_merge` /
+///      `record_worktree_rejection`, never skipped via a bare status flip. This
+///      closes `active → done|cancelled` and `ready → cancelled` skips for a
+///      worktree owner, not just `review → done|cancelled`. A worktree-LESS
+///      sprint transitions normally.
+///
+/// All four reads/gates run INSIDE the one `BEGIN IMMEDIATE` write transaction
+/// (the RESERVED lock is held from begin-time), so the owns-worktree check shares
+/// the writer-lock snapshot with the UPDATE — a concurrent `create_worktree`
+/// cannot race a worktree row in AFTER the guard but BEFORE the status flip
+/// commits.
 pub async fn set_sprint_status(
     db: &impl DbClient,
     sprint_id: &str,
     next: SprintStatus,
 ) -> Result<(), AppError> {
-    // 1. Read the current status → NotFound if absent. (The `sprints` table has
-    //    no soft-delete column — rows are never tombstoned — so there is no
-    //    `deleted_at IS NULL` filter, unlike the `work_items` reads.)
-    let current_str: String = match crate::db::scalar_opt::<String>(
-        db,
+    // One BEGIN IMMEDIATE tx fronts EVERY read and the write: the RESERVED lock
+    // is taken at begin-time, so the reads below serialise against concurrent
+    // writers (e.g. a racing `create_worktree`) and share the snapshot the
+    // UPDATE commits on. The guard is therefore race-free.
+    let mut tx = db.begin().await?;
+
+    // 1. Read the current status → NotFound if absent, ON THE TX so the guard
+    //    shares the writer-lock snapshot. (The `sprints` table has no soft-delete
+    //    column — rows are never tombstoned — so there is no `deleted_at IS NULL`
+    //    filter, unlike the `work_items` reads.)
+    let current_str: String = match crate::db::tx_scalar_opt::<String>(
+        tx.as_mut(),
         "SELECT status FROM sprints WHERE id = $1",
         args![sprint_id.to_owned()],
     )
@@ -260,18 +275,19 @@ pub async fn set_sprint_status(
         )));
     }
 
-    // 4. Worktree-owner terminal guard: a `review → done|cancelled` transition on
-    //    a worktree-OWNING sprint must go through the merge/rejection audit path.
-    if matches!(current, SprintStatus::Review)
-        && matches!(next, SprintStatus::Done | SprintStatus::Cancelled)
-    {
-        let owns_worktree = db
-            .query_opt::<Scalar<i64>>(
-                "SELECT 1 FROM worktrees WHERE owning_sprint_id = $1",
-                args![sprint_id.to_owned()],
-            )
-            .await?
-            .is_some();
+    // 4. Worktree-owner terminal guard: ANY terminal transition
+    //    (next ∈ {done, cancelled}) on a worktree-OWNING sprint must go through
+    //    the merge/rejection audit path. The owns-worktree read is ON THE TX, so
+    //    a concurrent `create_worktree` cannot slip a worktree row past this
+    //    check before the UPDATE commits.
+    if matches!(next, SprintStatus::Done | SprintStatus::Cancelled) {
+        let owns_worktree = crate::db::tx_scalar_opt::<i64>(
+            tx.as_mut(),
+            "SELECT 1 FROM worktrees WHERE owning_sprint_id = $1",
+            args![sprint_id.to_owned()],
+        )
+        .await?
+        .is_some();
         if owns_worktree {
             return Err(AppError::Validation(format!(
                 "sprint '{sprint_id}' owns a worktree; use record_worktree_merge / \
@@ -280,9 +296,8 @@ pub async fn set_sprint_status(
         }
     }
 
-    // 5. One BEGIN IMMEDIATE tx: the status UPDATE + EXACTLY ONE export-inert
+    // 5. Same tx: the status UPDATE + EXACTLY ONE export-inert
     //    `sprint.status_changed` event.
-    let mut tx = db.begin().await?;
 
     // NOTE: `sprints` has no `updated_at` column (only `created_at`), so the
     // status flip updates `status` alone — adding `updated_at = CURRENT_TIMESTAMP`

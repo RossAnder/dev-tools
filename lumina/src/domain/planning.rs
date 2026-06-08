@@ -393,6 +393,32 @@ pub enum TaskCommitQuery {
     ByStory(String),
 }
 
+impl TaskCommitQuery {
+    /// Build the typed selector from the three OPTIONAL direction fields the
+    /// HTTP query / MCP params surface, enforcing the "EXACTLY ONE of
+    /// `task_id` / `commit_sha` / `story_id`" rule in ONE place (review R18 —
+    /// the HTTP `list_task_commits` handler and the MCP `list_task_commits` tool
+    /// both delegate here instead of hand-rolling the count/match). Zero or more
+    /// than one provided field is a [`crate::error::AppError::Validation`] (→ 422
+    /// at HTTP, `invalid_params` at MCP).
+    pub fn from_optionals(
+        task_id: Option<String>,
+        commit_sha: Option<String>,
+        story_id: Option<String>,
+    ) -> Result<Self, crate::error::AppError> {
+        match (task_id, commit_sha, story_id) {
+            (Some(t), None, None) => Ok(Self::ByTask(t)),
+            (None, Some(c), None) => Ok(Self::ByCommit(c)),
+            (None, None, Some(s)) => Ok(Self::ByStory(s)),
+            _ => Err(crate::error::AppError::Validation(
+                "list_task_commits requires EXACTLY ONE of `task_id`, `commit_sha`, or \
+                 `story_id`"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
 /// Create input for the `record_finding_decision` repo path (B23, migration
 /// 0011): the finding being triaged, the decision recorded, and who decided.
 /// The decision id, the spawned-work-item id (when `decision` is

@@ -39,6 +39,17 @@ use lumina::error::AppError;
 use lumina::repo::{self, CreateOpts};
 use sqlx::SqlitePool;
 
+/// Read a worktree's audit `outcome` string (NULL when no verdict recorded), via
+/// runtime sqlx — used to confirm a rejected NotFound call stamped NO audit.
+async fn worktree_outcome(pool: &SqlitePool, worktree_id: &str) -> Option<String> {
+    sqlx::query_scalar::<_, Option<String>>("SELECT outcome FROM worktrees WHERE id = $1")
+        .bind(worktree_id)
+        .fetch_optional(pool)
+        .await
+        .expect("select worktree outcome")
+        .flatten()
+}
+
 /// Generous lease TTL (seconds): a claimed/seeded-in-progress row stays leased
 /// for the whole test. No test here relies on a lease expiring (no-sleep rule).
 const LEASE_TTL_SECS: i64 = 1800;
@@ -407,8 +418,9 @@ async fn merge_flips_owner_to_done_and_is_consistent_on_repeat() {
 // ===========================================================================
 
 /// `record_worktree_rejection` on a `review` owner stamps `outcome='rejected'`
-/// (and `merged_at` as the decision instant) and flips the owner
-/// `review → cancelled`; `effective_status` follows the owner.
+/// (leaving `merged_at` NULL — the decision instant is `updated_at` + the
+/// `worktree.rejected` event, not the merge-only `merged_at`) and flips the
+/// owner `review → cancelled`; `effective_status` follows the owner.
 #[tokio::test]
 async fn rejection_flips_owner_to_cancelled() {
     let pool = connect_in_memory().await.expect("pool");
@@ -428,7 +440,10 @@ async fn rejection_flips_owner_to_cancelled() {
 
     let got = repo::get_worktree(&pool, &wt).await.expect("get_worktree");
     assert_eq!(got.outcome, Some(WorktreeOutcome::Rejected), "outcome stamped rejected");
-    assert!(got.merged_at.is_some(), "merged_at (decision instant) stamped");
+    assert!(
+        got.merged_at.is_none(),
+        "rejection leaves merged_at NULL — it is not a merge (R11)"
+    );
     assert_eq!(
         sprint_status(&pool, &sprint).await,
         "cancelled",
@@ -598,5 +613,278 @@ async fn worktree_lifecycle_is_record_only_no_git_present() {
         sprint_status(&pool, &sprint).await,
         "done",
         "the owner reached terminal 'done' through the record-only audit path alone"
+    );
+}
+
+// ===========================================================================
+// 9. require_review_owner NotFound arm (R21): an ABSENT worktree id is a clean
+//    NotFound on BOTH the merge and rejection audit paths, stamping no audit.
+// ===========================================================================
+
+/// `record_worktree_merge` and `record_worktree_rejection` on a worktree id that
+/// was NEVER created (or was soft-deleted) take the `require_review_owner`
+/// missing-owner branch and return `AppError::NotFound` — distinct from the
+/// `Validation` arm (a live worktree whose owner is not in `'review'`, already
+/// covered by `worktree_owner_cannot_terminal_transition_via_set_status`). No
+/// `worktrees` row exists for the absent id, so no audit is — or could be —
+/// stamped.
+#[tokio::test]
+async fn worktree_verdict_on_absent_worktree_is_not_found() {
+    let pool = connect_in_memory().await.expect("pool");
+    // An id that was never created via `create_worktree` — no row, no owner.
+    let absent = "00000000-0000-0000-0000-000000000000";
+
+    let merge = repo::record_worktree_merge(&pool, absent, Some("ref")).await;
+    assert!(
+        matches!(merge, Err(AppError::NotFound(_))),
+        "merge on an absent worktree is NotFound (require_review_owner missing arm), got {merge:?}"
+    );
+
+    let reject = repo::record_worktree_rejection(&pool, absent, Some("nope")).await;
+    assert!(
+        matches!(reject, Err(AppError::NotFound(_))),
+        "rejection on an absent worktree is NotFound (require_review_owner missing arm), got {reject:?}"
+    );
+
+    // No audit row exists for the absent id — neither call stamped anything.
+    assert_eq!(
+        worktree_outcome(&pool, absent).await,
+        None,
+        "a NotFound verdict stamps no audit (there is no worktree row at all)"
+    );
+}
+
+// ===========================================================================
+// 10. set_task_checkpoint NotFound branch (R22): a missing / soft-deleted task
+//     (affected==0 under the `deleted_at IS NULL` guard) is a clean NotFound.
+// ===========================================================================
+
+/// `repo::set_task_checkpoint` on an ABSENT task id is `AppError::NotFound` (the
+/// kind read finds no row), and on a SOFT-DELETED task it is likewise NotFound —
+/// the UPDATE carries `AND deleted_at IS NULL`, so a tombstoned task yields
+/// `affected==0` and the typed `work_item '{id}' not found`. (The non-`task`
+/// Validation arm is covered by the repo's in-module
+/// `set_task_checkpoint_roundtrip_event_and_scope`.)
+#[tokio::test]
+async fn set_task_checkpoint_on_missing_or_deleted_task_is_not_found() {
+    let pool = connect_in_memory().await.expect("pool");
+
+    // Absent id: no row at all ⇒ NotFound (the kind read fails first).
+    let absent = repo::set_task_checkpoint(&pool, "no-such-task", true).await;
+    assert!(
+        matches!(absent, Err(AppError::NotFound(_))),
+        "checkpoint on an absent task is NotFound, got {absent:?}"
+    );
+
+    // Soft-deleted task: the kind read succeeds but the UPDATE's `deleted_at IS
+    // NULL` guard matches 0 rows ⇒ NotFound (affected==0 branch).
+    let story = seed_chain_to_story(&pool).await;
+    let task = repo::create_work_item(&pool, "task", Some(&story), "T", None)
+        .await
+        .expect("task")
+        .to_string();
+    sqlx::query("UPDATE work_items SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1")
+        .bind(&task)
+        .execute(&pool)
+        .await
+        .expect("soft-delete the task");
+
+    let deleted = repo::set_task_checkpoint(&pool, &task, true).await;
+    assert!(
+        matches!(deleted, Err(AppError::NotFound(_))),
+        "checkpoint on a soft-deleted task is NotFound (affected==0 under the deleted_at guard), got {deleted:?}"
+    );
+}
+
+// ===========================================================================
+// 11. Legal cancellation edges on a worktree-LESS sprint (R23): ready→cancelled,
+//     active→cancelled, review→cancelled all succeed — the widened worktree-owner
+//     terminal guard fires ONLY for worktree owners, so a worktree-less sprint
+//     cancels freely.
+// ===========================================================================
+
+/// A sprint that owns NO worktree may cancel from every status the legal table
+/// permits — `ready→cancelled`, `active→cancelled`, and `review→cancelled` — via
+/// a bare `set_sprint_status`. This is the COMPLEMENT of
+/// `worktree_owner_cannot_terminal_transition_via_set_status`: the migration-0016
+/// terminal guard is scoped to worktree OWNERS, so a worktree-less sprint reaches
+/// `cancelled` directly. Each edge is exercised on its own freshly-seeded sprint
+/// driven to the required starting status along the legal path.
+#[tokio::test]
+async fn worktree_less_sprint_cancels_from_every_legal_edge() {
+    let pool = connect_in_memory().await.expect("pool");
+
+    // ready → cancelled.
+    let ready_sprint = seed_sprint(&pool).await; // 'draft'
+    repo::set_sprint_status(&pool, &ready_sprint, SprintStatus::Ready)
+        .await
+        .expect("draft → ready");
+    repo::set_sprint_status(&pool, &ready_sprint, SprintStatus::Cancelled)
+        .await
+        .expect("ready → cancelled on a worktree-less sprint is legal");
+    assert_eq!(sprint_status(&pool, &ready_sprint).await, "cancelled");
+
+    // active → cancelled.
+    let active_sprint = seed_sprint(&pool).await;
+    activate_sprint(&pool, &active_sprint).await; // draft → ready → active
+    repo::set_sprint_status(&pool, &active_sprint, SprintStatus::Cancelled)
+        .await
+        .expect("active → cancelled on a worktree-less sprint is legal");
+    assert_eq!(sprint_status(&pool, &active_sprint).await, "cancelled");
+
+    // review → cancelled.
+    let review_sprint = seed_sprint(&pool).await;
+    activate_sprint(&pool, &review_sprint).await;
+    repo::set_sprint_status(&pool, &review_sprint, SprintStatus::Review)
+        .await
+        .expect("active → review");
+    repo::set_sprint_status(&pool, &review_sprint, SprintStatus::Cancelled)
+        .await
+        .expect("review → cancelled on a worktree-less sprint is legal");
+    assert_eq!(sprint_status(&pool, &review_sprint).await, "cancelled");
+}
+
+// ===========================================================================
+// 12. record_task_commits partial idempotency (R24): a batch mixing one NEW pair
+//     with one ALREADY-RECORDED pair returns inserted==1 (the new edge counts,
+//     the duplicate collapses on the ON CONFLICT).
+// ===========================================================================
+
+/// `record_task_commits` returns the count of GENUINELY-new `(commit, task)`
+/// edges. The repo's in-module coverage checks the full re-record → 0 case; this
+/// asserts the PARTIAL/mixed case: a single batch carrying one already-recorded
+/// pair AND one brand-new pair under the SAME commit sha collapses the duplicate
+/// (ON CONFLICT) but inserts the new edge, so `inserted == 1`. Uses REAL task ids
+/// (the post-fix `record_task_commits` validates task existence — a bogus id is
+/// NotFound).
+#[tokio::test]
+async fn record_task_commits_partial_batch_counts_only_new_edges() {
+    let pool = connect_in_memory().await.expect("pool");
+    let story = seed_chain_to_story(&pool).await;
+    let sprint = seed_sprint(&pool).await;
+    let task_a = repo::create_work_item(&pool, "task", Some(&story), "TA", None)
+        .await
+        .expect("task a")
+        .to_string();
+    let task_b = repo::create_work_item(&pool, "task", Some(&story), "TB", None)
+        .await
+        .expect("task b")
+        .to_string();
+
+    // Pre-record (sha-1, task_a).
+    let first = repo::record_task_commits(&pool, "sha-1", &[task_a.as_str()], Some(&sprint))
+        .await
+        .expect("first record");
+    assert_eq!(first, 1, "the initial edge is inserted");
+
+    // A mixed batch under the SAME sha: (sha-1, task_a) is a duplicate (collapses),
+    // (sha-1, task_b) is brand new (inserts) ⇒ inserted == 1.
+    let mixed = repo::record_task_commits(
+        &pool,
+        "sha-1",
+        &[task_a.as_str(), task_b.as_str()],
+        Some(&sprint),
+    )
+    .await
+    .expect("mixed record");
+    assert_eq!(
+        mixed, 1,
+        "the new (sha-1, task_b) edge counts; the duplicate (sha-1, task_a) collapses on ON CONFLICT"
+    );
+}
+
+// ===========================================================================
+// 13. Checkpoint-freeze negative discriminators (R25): the freeze predicate is
+//     sprint-LOCAL and LIVE-only, so a soft-deleted checkpoint task (a) and an
+//     in_progress checkpoint task in a DIFFERENT sprint (b) must NOT freeze THIS
+//     sprint.
+// ===========================================================================
+
+/// (a) A SOFT-DELETED checkpoint task (`checkpoint=1` AND `deleted_at` set) does
+/// NOT freeze its sprint. The freeze SELECT carries `c.deleted_at IS NULL`, so a
+/// tombstoned checkpoint — even one left `in_progress` — is invisible to the
+/// barrier, and `claim_next_task` still returns the ordinary ready task. This is
+/// the live-only discriminator complementing the positive
+/// `in_progress_checkpoint_freezes_then_resumes`.
+#[tokio::test]
+async fn soft_deleted_checkpoint_does_not_freeze_sprint() {
+    let pool = connect_in_memory().await.expect("pool");
+    let story = seed_chain_to_story(&pool).await;
+    let sprint = seed_sprint(&pool).await;
+    activate_sprint(&pool, &sprint).await;
+
+    // A checkpoint task and an ordinary ready implement task in the sprint.
+    let checkpoint = seed_queue_task(&pool, &story, &sprint, "CHECKPOINT").await;
+    repo::set_task_checkpoint(&pool, &checkpoint, true)
+        .await
+        .expect("mark the task a checkpoint");
+    let other = seed_queue_task(&pool, &story, &sprint, "OTHER").await;
+
+    // Drive the checkpoint in_progress AND soft-delete it: a tombstoned checkpoint
+    // is invisible to the `c.deleted_at IS NULL` freeze SELECT, so it must NOT
+    // freeze the sprint (no sleep — a far-future lease keeps it in_progress).
+    sqlx::query(
+        "UPDATE work_items SET status = 'in_progress', assignee = 'agent-cp', \
+         lease_expires_at = datetime('now', '+1800 seconds'), \
+         deleted_at = CURRENT_TIMESTAMP WHERE id = $1",
+    )
+    .bind(&checkpoint)
+    .execute(&pool)
+    .await
+    .expect("checkpoint in_progress + soft-deleted");
+
+    // NOT frozen: the soft-deleted checkpoint is invisible to the barrier, so the
+    // ordinary task is claimable.
+    let claimed = repo::claim_next_task(&pool, &sprint, Lane::Implement, None, "agent-a", LEASE_TTL_SECS)
+        .await
+        .expect("claim runs")
+        .expect("a soft-deleted checkpoint does not freeze the sprint");
+    assert_eq!(
+        claimed.task_id, other,
+        "with the checkpoint soft-deleted, the ordinary task is claimed (no freeze)"
+    );
+}
+
+/// (b) An `in_progress` checkpoint task in a DIFFERENT sprint must NOT freeze
+/// THIS sprint. The freeze SELECT JOINs `sprint_tasks st ... WHERE st.sprint_id =
+/// $1`, so the barrier is sprint-LOCAL — a checkpoint mid-flight in another
+/// sprint is invisible here, and claims in this sprint proceed. This is the
+/// sprint-scope discriminator complementing the positive freeze test.
+#[tokio::test]
+async fn checkpoint_in_other_sprint_does_not_freeze_this_sprint() {
+    let pool = connect_in_memory().await.expect("pool");
+    let story = seed_chain_to_story(&pool).await;
+
+    // THIS sprint: one ordinary ready implement task, no checkpoint of its own.
+    let this_sprint = seed_sprint(&pool).await;
+    activate_sprint(&pool, &this_sprint).await;
+    let mine = seed_queue_task(&pool, &story, &this_sprint, "MINE").await;
+
+    // The OTHER sprint owns an in_progress checkpoint task — a sprint-wide barrier
+    // for ITS sprint only.
+    let other_sprint = seed_sprint(&pool).await;
+    activate_sprint(&pool, &other_sprint).await;
+    let other_checkpoint = seed_queue_task(&pool, &story, &other_sprint, "OTHER-CP").await;
+    repo::set_task_checkpoint(&pool, &other_checkpoint, true)
+        .await
+        .expect("mark the other-sprint task a checkpoint");
+    sqlx::query(
+        "UPDATE work_items SET status = 'in_progress', assignee = 'agent-cp', \
+         lease_expires_at = datetime('now', '+1800 seconds') WHERE id = $1",
+    )
+    .bind(&other_checkpoint)
+    .execute(&pool)
+    .await
+    .expect("other-sprint checkpoint in_progress");
+
+    // THIS sprint is NOT frozen by the OTHER sprint's checkpoint — the freeze JOIN
+    // is keyed on `sprint_tasks.sprint_id = this_sprint`, so the barrier is local.
+    let claimed = repo::claim_next_task(&pool, &this_sprint, Lane::Implement, None, "agent-a", LEASE_TTL_SECS)
+        .await
+        .expect("claim runs")
+        .expect("a checkpoint in another sprint does not freeze this sprint");
+    assert_eq!(
+        claimed.task_id, mine,
+        "this sprint's task is claimed — the other sprint's checkpoint does not freeze it"
     );
 }

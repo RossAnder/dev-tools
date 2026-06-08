@@ -18,8 +18,8 @@
 //!   * `POST  /worktrees/{id}/reject`           — `repo::record_worktree_rejection`
 //!     (body `{reason?}`; owner must be `'review'` → else 422; → `{ ok: true }`).
 //!   * `PATCH /work-items/{task_id}/checkpoint` — `repo::set_task_checkpoint`
-//!     (body `{ "value": <bool> }`, mirroring the structured-patch scalar
-//!     convention; → the refreshed `WorkItem`).
+//!     (body `{ "on": <bool> }`, mirroring the MCP `set_task_checkpoint(on)`
+//!     contract; → `{ ok: true }`).
 //!   * `POST  /commits`                         — `repo::record_task_commits`
 //!     (body `{commit_sha, task_ids: [...], sprint_id?}`; → `{ recorded }` count).
 //!   * `GET   /commits`                         — `repo::list_task_commits`
@@ -39,7 +39,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::domain::{NewWorktree, SprintStatus, TaskCommitQuery, Worktree, WorkItem};
+use crate::domain::{NewWorktree, SprintStatus, TaskCommitQuery, Worktree};
 use crate::error::AppError;
 use crate::repo;
 
@@ -75,22 +75,23 @@ struct RejectBody {
     pub reason: Option<String>,
 }
 
-/// Body for `PATCH /work-items/{task_id}/checkpoint`. Mirrors the structured-patch
-/// scalar convention (`{ "value": <T> }`); `value` is the boolean checkpoint flag
-/// — `true` marks a checkpoint, `false` clears it. The repo setter kind-gates to
+/// Body for `PATCH /work-items/{task_id}/checkpoint`. Mirrors the agent-facing MCP
+/// `set_task_checkpoint(on: bool)` contract — `on` is the boolean checkpoint flag,
+/// `true` marks a checkpoint, `false` clears it. The repo setter kind-gates to
 /// `task` (a non-task ⇒ 422 `Validation`).
 #[derive(Debug, Deserialize)]
 struct CheckpointBody {
-    pub value: bool,
+    pub on: bool,
 }
 
 /// Body for `POST /commits`. Mirrors the `repo::record_task_commits` params: one
 /// `task_commits` row per `(commit_sha, task_id)` pair (idempotent via the UNIQUE
-/// index); `sprint_id` is optional.
+/// index); `sprint_id` is optional. `task_ids` is REQUIRED (no `serde(default)`)
+/// so an absent field is a 422 at the deserialise boundary, matching the MCP tool
+/// (whose `RecordTaskCommitsParams.task_ids` is non-optional).
 #[derive(Debug, Deserialize)]
 struct RecordCommitsBody {
     pub commit_sha: String,
-    #[serde(default)]
     pub task_ids: Vec<String>,
     #[serde(default)]
     pub sprint_id: Option<String>,
@@ -219,18 +220,18 @@ async fn record_worktree_rejection_handler(
 }
 
 /// `PATCH /work-items/{task_id}/checkpoint` — flag (or clear) a task's checkpoint
-/// marker (idempotent). Body `{ "value": <bool> }` per the structured-patch scalar
-/// convention. The repo setter kind-gates to `task` (non-task ⇒ 422). Returns
-/// 200 + the refreshed `WorkItem`.
+/// marker (idempotent). Body `{ "on": <bool> }`, mirroring the agent-facing MCP
+/// `set_task_checkpoint(on)` contract. The repo setter kind-gates to `task`
+/// (non-task ⇒ 422). Returns 200 + `{ ok: true }` (mirrors the MCP tool — no
+/// non-atomic read-after-write).
 async fn set_task_checkpoint_handler(
     State(state): State<AppState>,
     Path(task_id): Path<String>,
     Json(body): Json<CheckpointBody>,
-) -> Result<Json<WorkItem>, AppError> {
-    tracing::debug!(task_id = %task_id, on = body.value, "http: PATCH /work-items/{{task_id}}/checkpoint");
-    repo::set_task_checkpoint(state.pool.as_ref(), &task_id, body.value).await?;
-    let detail = repo::get_work_item_detail(state.pool.sqlite(), &task_id).await?;
-    Ok(Json(detail.item))
+) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(task_id = %task_id, on = body.on, "http: PATCH /work-items/{{task_id}}/checkpoint");
+    repo::set_task_checkpoint(state.pool.as_ref(), &task_id, body.on).await?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 /// `POST /commits` — record commit→task provenance edges (pure AUDIT). One
@@ -263,30 +264,10 @@ async fn list_task_commits_handler(
     Query(query): Query<ListCommitsQuery>,
 ) -> Result<Json<Vec<crate::domain::TaskCommit>>, AppError> {
     tracing::debug!("http: GET /commits");
-    // Validate EXACTLY ONE direction, then construct the typed variant. Count the
-    // provided directions; zero or >1 is a Validation (mirrors the MCP tool).
-    let provided = [
-        query.task_id.is_some(),
-        query.commit_sha.is_some(),
-        query.story_id.is_some(),
-    ]
-    .iter()
-    .filter(|&&p| p)
-    .count();
-    if provided != 1 {
-        return Err(AppError::Validation(
-            "GET /commits requires EXACTLY ONE of `task_id`, `commit_sha`, or `story_id`"
-                .to_owned(),
-        ));
-    }
-    let by = if let Some(task_id) = query.task_id {
-        TaskCommitQuery::ByTask(task_id)
-    } else if let Some(commit_sha) = query.commit_sha {
-        TaskCommitQuery::ByCommit(commit_sha)
-    } else {
-        // The exactly-one guard above proved `story_id` is the sole provided field.
-        TaskCommitQuery::ByStory(query.story_id.expect("exactly-one guard ⇒ story_id present"))
-    };
+    // Validate EXACTLY ONE direction and construct the typed variant via the shared
+    // domain constructor (review R18 — same validation the MCP tool uses; zero or
+    // >1 is a Validation → 422).
+    let by = TaskCommitQuery::from_optionals(query.task_id, query.commit_sha, query.story_id)?;
     let commits = repo::list_task_commits(state.pool.as_ref(), by).await?;
     Ok(Json(commits))
 }
@@ -473,10 +454,11 @@ mod tests {
         assert_eq!(body["error"]["kind"], "validation");
     }
 
-    /// `PATCH /api/work-items/{tid}/checkpoint` flags a task (200 + the refreshed
-    /// WorkItem). `POST /api/commits` records an edge (200 + recorded:1) and a
-    /// re-POST is a dedup no-op (recorded:0). `GET /api/commits?task_id=` reads
-    /// the edge back; a zero-direction `GET /api/commits` is a 422.
+    /// `PATCH /api/work-items/{tid}/checkpoint` flags a task (200 + `{ok:true}`,
+    /// mirroring the MCP tool). `POST /api/commits` records an edge (200 +
+    /// recorded:1) and a re-POST is a dedup no-op (recorded:0).
+    /// `GET /api/commits?task_id=` reads the edge back; a zero-direction
+    /// `GET /api/commits` is a 422.
     #[tokio::test]
     async fn checkpoint_and_commits_http() {
         let pool = connect_in_memory().await.expect("pool");
@@ -485,7 +467,7 @@ mod tests {
         let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
         let router = build_router(state);
 
-        // Checkpoint the task → 200 + WorkItem.
+        // Checkpoint the task → 200 + {ok:true}.
         let resp = router
             .clone()
             .oneshot(
@@ -493,12 +475,14 @@ mod tests {
                     .method("PATCH")
                     .uri(format!("/api/work-items/{task_id}/checkpoint"))
                     .header("content-type", "application/json")
-                    .body(Body::from(serde_json::json!({ "value": true }).to_string()))
+                    .body(Body::from(serde_json::json!({ "on": true }).to_string()))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["ok"], true, "checkpoint mirrors the MCP {{ok:true}} envelope");
 
         // Record a commit edge → 200 + recorded:1.
         let resp = router

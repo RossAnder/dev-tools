@@ -43,8 +43,9 @@ use serde_json::Value;
 /// the database. The owning sprint's `status` is read into `effective_status_raw`
 /// (the JOIN alias) and re-typed into [`SprintStatus`] by the row→aggregate
 /// transform below; `outcome` is read as a raw `Option<String>` and re-typed into
-/// [`WorktreeOutcome`]. Generic over `R: Row` per the canonical [`crate::db`]
-/// FromRow recipe so it rides `query_*<T>` on the SQLite arm today.
+/// [`WorktreeOutcome`]. The struct itself is concrete; only its [`sqlx::FromRow`]
+/// impl is generic over `R: Row` (the canonical [`crate::db`] FromRow recipe), so
+/// it rides `query_*<T>` on the SQLite arm today.
 #[derive(Debug)]
 struct WorktreeRow {
     id: String,
@@ -90,16 +91,20 @@ impl WorktreeRow {
     /// Re-type the raw JOIN row into the public [`Worktree`] aggregate, parsing
     /// the owning sprint's `status` into [`SprintStatus`] and the audit `outcome`
     /// into [`WorktreeOutcome`]. A `status` outside the repo-enforced vocab (the
-    /// column is free TEXT, NO CHECK) is a clean [`AppError::Other`] rather than a
-    /// panic; `outcome` carries a DB CHECK (`merged|rejected`), so a bad value
-    /// there is likewise surfaced as an error, not unwrapped.
+    /// column is free TEXT, NO CHECK) is a clean [`AppError::Validation`] rather
+    /// than a panic — consistent with `set_sprint_status` (runs_sprints.rs), which
+    /// maps the same legacy/out-of-vocab status to `Validation` (→ 422); this keeps
+    /// one stray legacy row from 500-ing the whole `list_worktrees`. `outcome`
+    /// carries a DB CHECK (`merged|rejected`), so a bad value there is likewise
+    /// surfaced as a `Validation`, not unwrapped.
     fn into_worktree(self) -> Result<Worktree, AppError> {
         let effective_status: SprintStatus =
-            serde_json::from_value(Value::String(self.effective_status_raw.clone()))
-                .map_err(|e| AppError::Other(e.into()))?;
+            serde_json::from_value(Value::String(self.effective_status_raw))
+                .map_err(|e| AppError::Validation(e.to_string()))?;
         let outcome: Option<WorktreeOutcome> = match self.outcome {
             Some(s) => Some(
-                serde_json::from_value(Value::String(s)).map_err(|e| AppError::Other(e.into()))?,
+                serde_json::from_value(Value::String(s))
+                    .map_err(|e| AppError::Validation(e.to_string()))?,
             ),
             None => None,
         };
@@ -120,10 +125,47 @@ impl WorktreeRow {
     }
 }
 
-/// SELECT for a single live worktree, JOINing the owning sprint for the
-/// `effective_status` (the worktree has NO status column). `WHERE … deleted_at IS
-/// NULL` so a tombstoned worktree reads as absent (NotFound).
-const SELECT_WORKTREE_BY_ID: &str = r#"
+/// Default bound on the UNPAGINATED list reads (`list_worktrees` /
+/// `list_task_commits`), a memory-exhaustion / DoS guard against an unbounded
+/// result set (review R19). Full offset/cursor pagination is out of scope for this
+/// point-fix — a default cap is the quick win; bump or wire real pagination when a
+/// consumer needs more than this many rows. The list SELECTs below bake the same
+/// `1000` literal into their `LIMIT` clause (`concat!` cannot interpolate a const);
+/// the `list_limit_literal_matches_const` test keeps the two in sync, so this const
+/// is the documented source of truth even though it is referenced only from tests.
+#[cfg_attr(not(test), allow(dead_code))]
+const LIST_LIMIT: i64 = 1000;
+
+/// Per-field byte cap on caller free-text stored by the worktree writers — `path`
+/// / `base_ref` / `branch` (`create_worktree`), `merge_ref` (merge), `reason`
+/// (rejection), and `commit_sha` / each `task_id` (`record_task_commits`). lumina
+/// is RECORD-ONLY so path traversal is moot, but an unbounded string is an
+/// unbounded-growth surface (review R20); an over-cap value is a clean
+/// [`AppError::Validation`], never a silently-stored blob. A quick win — not a
+/// schema constraint.
+const MAX_FREE_TEXT_BYTES: usize = 4096;
+
+/// Reject a single free-text field that exceeds [`MAX_FREE_TEXT_BYTES`] (review
+/// R20). `field` names the offending input in the error; the byte length (not char
+/// count) is the bound, matching how SQLite measures TEXT storage.
+fn check_free_text(field: &str, value: &str) -> Result<(), AppError> {
+    if value.len() > MAX_FREE_TEXT_BYTES {
+        return Err(AppError::Validation(format!(
+            "{field} exceeds the {MAX_FREE_TEXT_BYTES}-byte limit ({} bytes)",
+            value.len()
+        )));
+    }
+    Ok(())
+}
+
+/// The identical 12-column projection + FROM/JOIN shared by all three worktree
+/// SELECTs (review R15). `concat!` only accepts LITERALS (not a `const &str`), so
+/// the single source of truth is this `macro_rules!` that expands the projection
+/// literal into each `concat!` below — the three consts then differ ONLY in their
+/// trailing WHERE/ORDER/LIMIT clause.
+macro_rules! worktree_select_base {
+    () => {
+        r#"
     SELECT
         w.id               AS id,
         w.owning_sprint_id AS owning_sprint_id,
@@ -139,71 +181,65 @@ const SELECT_WORKTREE_BY_ID: &str = r#"
         w.deleted_at       AS deleted_at
     FROM worktrees w
     JOIN sprints s ON s.id = w.owning_sprint_id
-    WHERE w.id = $1 AND w.deleted_at IS NULL
-"#;
+"#
+    };
+}
+
+/// SELECT for a single live worktree, JOINing the owning sprint for the
+/// `effective_status` (the worktree has NO status column). `WHERE … deleted_at IS
+/// NULL` so a tombstoned worktree reads as absent (NotFound). A single-row read —
+/// no `LIMIT` needed (`w.id` is the PK).
+const SELECT_WORKTREE_BY_ID: &str = concat!(
+    worktree_select_base!(),
+    "    WHERE w.id = $1 AND w.deleted_at IS NULL\n"
+);
 
 /// SELECT for all live worktrees (no status constraint), JOIN-deriving each
 /// `effective_status` from the owning sprint. Ordered by `created_at` then `id`
-/// for deterministic output.
-const SELECT_WORKTREES_ALL: &str = r#"
-    SELECT
-        w.id               AS id,
-        w.owning_sprint_id AS owning_sprint_id,
-        w.path             AS path,
-        w.base_ref         AS base_ref,
-        w.branch           AS branch,
-        w.merged_at        AS merged_at,
-        w.merge_ref        AS merge_ref,
-        w.outcome          AS outcome,
-        s.status           AS effective_status,
-        w.created_at       AS created_at,
-        w.updated_at       AS updated_at,
-        w.deleted_at       AS deleted_at
-    FROM worktrees w
-    JOIN sprints s ON s.id = w.owning_sprint_id
-    WHERE w.deleted_at IS NULL
-    ORDER BY w.created_at, w.id
-"#;
+/// for deterministic output, capped at [`LIST_LIMIT`] rows (R19).
+const SELECT_WORKTREES_ALL: &str = concat!(
+    worktree_select_base!(),
+    "    WHERE w.deleted_at IS NULL\n    ORDER BY w.created_at, w.id\n    LIMIT 1000\n"
+);
 
 /// SELECT for live worktrees whose owning sprint holds a given `status` (the
 /// `status_filter` arm). There is NO `worktrees.status` column — the filter is on
-/// the OWNING sprint's status (`s.status`).
-const SELECT_WORKTREES_BY_STATUS: &str = r#"
-    SELECT
-        w.id               AS id,
-        w.owning_sprint_id AS owning_sprint_id,
-        w.path             AS path,
-        w.base_ref         AS base_ref,
-        w.branch           AS branch,
-        w.merged_at        AS merged_at,
-        w.merge_ref        AS merge_ref,
-        w.outcome          AS outcome,
-        s.status           AS effective_status,
-        w.created_at       AS created_at,
-        w.updated_at       AS updated_at,
-        w.deleted_at       AS deleted_at
-    FROM worktrees w
-    JOIN sprints s ON s.id = w.owning_sprint_id
-    WHERE w.deleted_at IS NULL AND s.status = $1
-    ORDER BY w.created_at, w.id
-"#;
+/// the OWNING sprint's status (`s.status`). Capped at [`LIST_LIMIT`] rows (R19).
+const SELECT_WORKTREES_BY_STATUS: &str = concat!(
+    worktree_select_base!(),
+    "    WHERE w.deleted_at IS NULL AND s.status = $1\n    ORDER BY w.created_at, w.id\n    LIMIT 1000\n"
+);
 
 /// Create a [`worktree`](NewWorktree) owned by an existing sprint (migration
-/// 0016). The owning sprint is validated to EXIST before the transaction opens —
-/// an absent owner is a clean [`AppError::NotFound`] (→ 404), never a dangling-FK
-/// 500. Inside ONE `BEGIN IMMEDIATE` tx: INSERT the `worktrees` row (mint a
-/// UUIDv7 id) + UPDATE the owning sprint's `worktree_id` to point at it (the owner
-/// RUNS IN the worktree it owns) + EXACTLY ONE export-inert `worktree.created`
-/// event (`aggregate_type="worktree"`; R-B4 — never `"work_item"`). Returns the
-/// new worktree id.
+/// 0016). Pre-tx validation (all typed errors, never a raw Db 500): caller
+/// free-text (`path`/`base_ref`/`branch`) is byte-bounded ([`MAX_FREE_TEXT_BYTES`],
+/// R20 — [`AppError::Validation`]); the owning sprint must EXIST
+/// ([`AppError::NotFound`] → 404); and the owner must not already own a LIVE
+/// worktree (the 1:1 ownership invariant — a second one is a clean
+/// [`AppError::Validation`] rather than the raw UNIQUE-index 500, R4). Inside ONE
+/// `BEGIN IMMEDIATE` tx: INSERT the `worktrees` row (mint a UUIDv7 id) + UPDATE the
+/// owning sprint's `worktree_id` to point at it (the owner RUNS IN the worktree it
+/// owns) + EXACTLY ONE export-inert `worktree.created` event
+/// (`aggregate_type="worktree"`; R-B4 — never `"work_item"`). The create does NOT
+/// block on a pre-existing (targeted) `worktree_id` on the owner, but surfaces that
+/// prior id in the event payload as `replaced_worktree_id` so the overwrite is
+/// auditable rather than silent (R10). Returns the new worktree id.
 pub async fn create_worktree(
     db: &impl DbClient,
     worktree: &NewWorktree,
 ) -> Result<Uuid, AppError> {
+    // Bound the caller free-text up front (R20) — record-only, so this is an
+    // unbounded-growth guard, not traversal defence.
+    check_free_text("path", &worktree.path)?;
+    if let Some(base_ref) = worktree.base_ref.as_deref() {
+        check_free_text("base_ref", base_ref)?;
+    }
+    if let Some(branch) = worktree.branch.as_deref() {
+        check_free_text("branch", branch)?;
+    }
+
     // Validate the owning sprint exists BEFORE the tx — a clean NotFound, never a
-    // dangling-FK 500. (`worktrees.owning_sprint_id` is a NOT NULL UNIQUE FK; a
-    // second worktree for the same owner would collide on the UNIQUE index and
-    // surface as a Db error — the 1:1 ownership invariant.)
+    // dangling-FK 500. (`worktrees.owning_sprint_id` is a NOT NULL UNIQUE FK.)
     let sprint_exists = db
         .query_opt::<Scalar<i64>>(
             "SELECT 1 FROM sprints WHERE id = $1",
@@ -217,6 +253,37 @@ pub async fn create_worktree(
             worktree.owning_sprint_id
         )));
     }
+
+    // The 1:1 ownership invariant: a second LIVE worktree for the same owner would
+    // collide on the UNIQUE `owning_sprint_id` index and surface as a raw Db 500
+    // (R4). Pre-check for an existing live worktree and return a clean Validation.
+    // (Best-effort: a concurrent create between this read and the INSERT still
+    // bottoms out on the UNIQUE index — by design, the typed pre-check covers the
+    // common case without catching the raw DB error.)
+    let owner_has_worktree = db
+        .query_opt::<Scalar<i64>>(
+            "SELECT 1 FROM worktrees WHERE owning_sprint_id = $1 AND deleted_at IS NULL",
+            args![worktree.owning_sprint_id.clone()],
+        )
+        .await?
+        .is_some();
+    if owner_has_worktree {
+        return Err(AppError::Validation(format!(
+            "sprint '{}' already owns a live worktree (a sprint owns at most one)",
+            worktree.owning_sprint_id
+        )));
+    }
+
+    // The owner's prior `worktree_id` (if any) is about to be repointed at the new
+    // worktree. The owner runs in the worktree it owns, so we do NOT block the
+    // create, but a non-NULL prior value (e.g. a previously-TARGETED worktree) is
+    // surfaced in the event payload so the overwrite is auditable, not silent (R10).
+    let prior_worktree_id: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT worktree_id FROM sprints WHERE id = $1",
+        args![worktree.owning_sprint_id.clone()],
+    )
+    .await?;
 
     let id = Uuid::now_v7();
     let id_str = id.to_string();
@@ -251,6 +318,9 @@ pub async fn create_worktree(
     let payload = serde_json::json!({
         "owning_sprint_id": worktree.owning_sprint_id,
         "path": worktree.path,
+        // `null` when the owner had no prior worktree_id; the prior id otherwise, so
+        // an overwrite of a previously-targeted worktree is observable (R10).
+        "replaced_worktree_id": prior_worktree_id,
     });
     record_inert_event(tx.as_mut(), "worktree", &id_str, "worktree.created", payload).await?;
 
@@ -296,7 +366,7 @@ pub async fn list_worktrees(
 }
 
 /// Validate that a worktree's OWNING SPRINT is in the `'review'` status, returning
-/// `(worktree_id_confirmed, ())` semantics via `?`. Shared by
+/// plain `()` on success (propagating the failure via `?`). Shared by
 /// [`record_worktree_merge`] / [`record_worktree_rejection`]: both record a
 /// merge-audit verdict, which is only meaningful once the sprint's work is done
 /// and awaiting a merge decision (`status='review'`). Reads ON THE TX so the
@@ -333,123 +403,207 @@ async fn require_review_owner(
     }
 }
 
-/// Record a merge of a worktree (migration 0016) — pure AUDIT; lumina NEVER shells
-/// out to git, it only records the verdict a human/agent reports. Validates the
-/// OWNING SPRINT is in `'review'` (else [`AppError::Validation`]), then, in ONE
-/// `BEGIN IMMEDIATE` tx: stamps `merged_at=CURRENT_TIMESTAMP`, the optional
-/// `merge_ref`, and `outcome='merged'` on the worktree; transitions the owner
-/// `'review' → 'done'` via a DIRECT controlled `UPDATE sprints SET status='done'`
-/// (kept self-contained — it does NOT call `set_sprint_status`, which a sibling
-/// task owns); and records EXACTLY ONE export-inert `worktree.merged` event.
-pub async fn record_worktree_merge(
+/// The static descriptors that distinguish the MERGE verdict from the REJECTION
+/// verdict in [`record_worktree_verdict`] (review R7) — bundled so the shared helper
+/// stays within a sane arity.
+struct Verdict {
+    /// The `worktrees.outcome` literal (`"merged"` / `"rejected"`).
+    outcome: &'static str,
+    /// The terminal [`SprintStatus`] the owning sprint flips to.
+    owner_target: SprintStatus,
+    /// `true` only on the MERGE path — stamps `merged_at` (+ `merge_ref`). The
+    /// rejection path passes `false` so `merged_at` stays NULL (R11).
+    stamp_merge: bool,
+    /// The export-inert event id (`"worktree.merged"` / `"worktree.rejected"`).
+    event_name: &'static str,
+}
+
+/// Shared body of the near-identical merge/rejection verdict path (review R7): both
+/// guard the owner is in `'review'`, stamp `outcome` (+ optional merge audit) on the
+/// worktree, flip the owner to a terminal status, and record one export-inert
+/// event. The two `pub` wrappers below differ only in the [`Verdict`] descriptor,
+/// the optional `merge_ref`, and the `payload`.
+///
+/// `Verdict::stamp_merge` is `true` ONLY on the MERGE path: it stamps
+/// `merged_at=CURRENT_TIMESTAMP` and the optional `merge_ref`. The REJECTION path
+/// passes `false` (and `merge_ref=None`) so `merged_at` stays NULL — review R11:
+/// `merged_at` is the MERGE instant only, never overloaded as a generic decision
+/// timestamp on a non-merged worktree; the rejection's decision instant is
+/// `updated_at` + the `worktree.rejected` event. (Keying off `stamp_merge` rather
+/// than `merge_ref.is_some()` keeps a merge with NO ref still stamping `merged_at`.)
+///
+/// The owner flip is routed through [`SprintStatus::can_transition_to`] (review R8)
+/// rather than a bare `UPDATE` so the legal-transition table is the single source of
+/// truth — `require_review_owner` already proved current is `'review'`, so this is a
+/// defensive consistency assert that the `review → owner_target` flip is legal before
+/// the write.
+async fn record_worktree_verdict(
     db: &impl DbClient,
     id: &str,
+    verdict: Verdict,
     merge_ref: Option<&str>,
+    payload: Value,
 ) -> Result<(), AppError> {
+    let Verdict {
+        outcome,
+        owner_target,
+        stamp_merge,
+        event_name,
+    } = verdict;
     let mut tx = db.begin().await?;
 
     // Guard: the owning sprint must be in 'review' (NotFound if the worktree is
     // absent/soft-deleted; Validation if the owner is in any other status).
     require_review_owner(tx.as_mut(), id).await?;
 
-    // Stamp the merge audit on the worktree (merged_at now; outcome='merged').
-    tx.execute(
-        r#"
-        UPDATE worktrees
-        SET merged_at  = CURRENT_TIMESTAMP,
-            merge_ref  = $2,
-            outcome    = 'merged',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-        "#,
-        args![id.to_owned(), merge_ref.map(|s| s.to_owned())],
-    )
-    .await?;
+    // R8: assert the owner flip 'review' -> owner_target is a LEGAL transition via
+    // the canonical table, not a hand-rolled duplicate. The guard proved current is
+    // 'review'; both 'done' and 'cancelled' are legal from there.
+    if !SprintStatus::Review.can_transition_to(owner_target) {
+        return Err(AppError::Validation(format!(
+            "illegal owner transition 'review' → '{}' on worktree '{id}'",
+            enum_to_str(owner_target)
+        )));
+    }
 
-    // Transition the owner 'review' -> 'done' via a DIRECT controlled UPDATE
-    // (self-contained; set_sprint_status is a sibling task's fn). The
-    // require_review_owner guard above proved the owner is in 'review', a legal
-    // 'review' -> 'done' transition.
+    // Stamp the verdict on the worktree. The merge path stamps merged_at + merge_ref;
+    // the rejection path stamps NEITHER (R11) — merged_at stays NULL, the decision
+    // instant is updated_at + the event.
+    if stamp_merge {
+        tx.execute(
+            r#"
+            UPDATE worktrees
+            SET merged_at  = CURRENT_TIMESTAMP,
+                merge_ref  = $2,
+                outcome    = $3,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+            "#,
+            args![
+                id.to_owned(),
+                merge_ref.map(|s| s.to_owned()),
+                outcome.to_owned()
+            ],
+        )
+        .await?;
+    } else {
+        tx.execute(
+            r#"
+            UPDATE worktrees
+            SET outcome    = $2,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+            "#,
+            args![id.to_owned(), outcome.to_owned()],
+        )
+        .await?;
+    }
+
+    // Transition the owner to the terminal status via a DIRECT controlled UPDATE
+    // (self-contained; set_sprint_status is a sibling task's fn). The target status
+    // string is the typed enum's wire form (no hardcoded literal), already validated
+    // legal above.
     tx.execute(
         r#"
         UPDATE sprints
-        SET status = 'done'
+        SET status = $2
         WHERE id = (SELECT owning_sprint_id FROM worktrees WHERE id = $1)
         "#,
-        args![id.to_owned()],
+        args![id.to_owned(), enum_to_str(owner_target)],
     )
     .await?;
 
-    let payload = serde_json::json!({
-        "outcome": "merged",
-        "merge_ref": merge_ref,
-    });
-    record_inert_event(tx.as_mut(), "worktree", id, "worktree.merged", payload).await?;
+    record_inert_event(tx.as_mut(), "worktree", id, event_name, payload).await?;
 
     tx.commit().await?;
     Ok(())
 }
 
+/// Record a merge of a worktree (migration 0016) — pure AUDIT; lumina NEVER shells
+/// out to git, it only records the verdict a human/agent reports. Validates the
+/// OWNING SPRINT is in `'review'` (else [`AppError::Validation`]), then, in ONE
+/// `BEGIN IMMEDIATE` tx (via [`record_worktree_verdict`]): stamps
+/// `merged_at=CURRENT_TIMESTAMP`, the optional `merge_ref`, and `outcome='merged'`
+/// on the worktree; transitions the owner `'review' → 'done'` (routed through
+/// [`SprintStatus::can_transition_to`]; it does NOT call `set_sprint_status`, which
+/// a sibling task owns); and records EXACTLY ONE export-inert `worktree.merged`
+/// event. The `merge_ref` is byte-bounded ([`MAX_FREE_TEXT_BYTES`], R20).
+pub async fn record_worktree_merge(
+    db: &impl DbClient,
+    id: &str,
+    merge_ref: Option<&str>,
+) -> Result<(), AppError> {
+    if let Some(merge_ref) = merge_ref {
+        check_free_text("merge_ref", merge_ref)?;
+    }
+    let payload = serde_json::json!({
+        "outcome": "merged",
+        "merge_ref": merge_ref,
+    });
+    record_worktree_verdict(
+        db,
+        id,
+        Verdict {
+            outcome: "merged",
+            owner_target: SprintStatus::Done,
+            stamp_merge: true, // this IS the merge instant — stamp merged_at (+ merge_ref).
+            event_name: "worktree.merged",
+        },
+        merge_ref,
+        payload,
+    )
+    .await
+}
+
 /// Record a rejection of a worktree (migration 0016) — pure AUDIT; lumina NEVER
 /// shells out to git. Validates the OWNING SPRINT is in `'review'` (consistent
-/// with [`record_worktree_merge`]), then, in ONE `BEGIN IMMEDIATE` tx: stamps
-/// `merged_at=CURRENT_TIMESTAMP` (the decision instant) and `outcome='rejected'`
-/// on the worktree; transitions the owner `'review' → 'cancelled'` via a DIRECT
-/// controlled `UPDATE`; and records EXACTLY ONE export-inert `worktree.rejected`
-/// event. There is NO `worktrees` column for the rejection `reason` (the table
-/// carries only `merged_at`/`merge_ref`/`outcome`), so `reason` is captured in the
-/// event payload for the audit trail.
+/// with [`record_worktree_merge`]), then, in ONE `BEGIN IMMEDIATE` tx (via
+/// [`record_worktree_verdict`]): stamps `outcome='rejected'` on the worktree —
+/// LEAVING `merged_at` NULL (R11: `merged_at` is the merge instant only, never a
+/// generic decision timestamp on a non-merged worktree; the rejection's decision
+/// instant is `updated_at` + the `worktree.rejected` event) — transitions the owner
+/// `'review' → 'cancelled'` (routed through [`SprintStatus::can_transition_to`]),
+/// and records EXACTLY ONE export-inert `worktree.rejected` event. There is NO
+/// `worktrees` column for the rejection `reason` (the table carries only
+/// `merged_at`/`merge_ref`/`outcome`), so `reason` (byte-bounded,
+/// [`MAX_FREE_TEXT_BYTES`], R20) rides the event payload for the audit trail.
 pub async fn record_worktree_rejection(
     db: &impl DbClient,
     id: &str,
     reason: Option<&str>,
 ) -> Result<(), AppError> {
-    let mut tx = db.begin().await?;
-
-    // Guard: the owning sprint must be in 'review' (NotFound if absent; Validation
-    // otherwise) — consistent with record_worktree_merge.
-    require_review_owner(tx.as_mut(), id).await?;
-
-    // Stamp the rejection audit on the worktree (merged_at = decision instant;
-    // outcome='rejected'). The reason has no column — it rides the event payload.
-    tx.execute(
-        r#"
-        UPDATE worktrees
-        SET merged_at  = CURRENT_TIMESTAMP,
-            outcome    = 'rejected',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-        "#,
-        args![id.to_owned()],
-    )
-    .await?;
-
-    // Transition the owner 'review' -> 'cancelled' via a DIRECT controlled UPDATE
-    // (self-contained). The guard proved the owner is in 'review', a legal
-    // 'review' -> 'cancelled' transition.
-    tx.execute(
-        r#"
-        UPDATE sprints
-        SET status = 'cancelled'
-        WHERE id = (SELECT owning_sprint_id FROM worktrees WHERE id = $1)
-        "#,
-        args![id.to_owned()],
-    )
-    .await?;
-
+    if let Some(reason) = reason {
+        check_free_text("reason", reason)?;
+    }
     let payload = serde_json::json!({
         "outcome": "rejected",
         "reason": reason,
     });
-    record_inert_event(tx.as_mut(), "worktree", id, "worktree.rejected", payload).await?;
-
-    tx.commit().await?;
-    Ok(())
+    record_worktree_verdict(
+        db,
+        id,
+        Verdict {
+            outcome: "rejected",
+            owner_target: SprintStatus::Cancelled,
+            stamp_merge: false, // R11: do NOT stamp merged_at on a rejected (non-merged) worktree.
+            event_name: "worktree.rejected",
+        },
+        None,
+        payload,
+    )
+    .await
 }
 
 /// Record commit→task provenance edges (migration 0016) — pure AUDIT: the
-/// committing lead passes the explicit task-id list a single commit covers. One
-/// `task_commits` row is INSERTed per `(commit_sha, task_id)` pair, each
+/// committing lead passes the explicit task-id list a single commit covers.
+/// Pre-tx validation (all typed, never a raw FK/event-for-a-no-op 500): an EMPTY
+/// `task_ids` is a clean [`AppError::Validation`] BEFORE the tx opens, so NO event
+/// is recorded for a zero-row batch (R1/R14); `commit_sha` and each `task_id` are
+/// byte-bounded ([`MAX_FREE_TEXT_BYTES`], R20); the optional `sprint_id` (when
+/// `Some`) must EXIST and every `task_id` must be a LIVE `work_items` row — an
+/// absent id is a clean [`AppError::NotFound`] (→ 404) rather than the raw FK 500
+/// (R1, mirroring `create_worktree`'s owner-exists check). One `task_commits` row
+/// is then INSERTed per `(commit_sha, task_id)` pair, each
 /// `ON CONFLICT(commit_sha, task_id) DO NOTHING` so a re-record of the same pair
 /// collapses on the `ux_task_commits` UNIQUE index rather than duplicating a row
 /// (idempotent). All N inserts + EXACTLY ONE coarse export-inert
@@ -462,6 +616,49 @@ pub async fn record_task_commits(
     task_ids: &[&str],
     sprint_id: Option<&str>,
 ) -> Result<usize, AppError> {
+    // R1/R14: an empty batch is a no-op — reject it BEFORE opening the tx so no
+    // export-inert event is ever recorded for a zero-row batch.
+    if task_ids.is_empty() {
+        return Err(AppError::Validation(
+            "record_task_commits requires at least one task_id".to_owned(),
+        ));
+    }
+
+    // R20: bound the caller free-text (commit_sha + each task_id) — record-only, so
+    // this is an unbounded-growth guard.
+    check_free_text("commit_sha", commit_sha)?;
+    for &task_id in task_ids {
+        check_free_text("task_id", task_id)?;
+    }
+
+    // R1: validate referenced ids BEFORE the tx so a bogus id is a typed 404, not a
+    // raw FK 500. The optional sprint_id must exist; each task_id must be a LIVE
+    // work_items row (mirrors create_worktree's owner-exists check).
+    if let Some(sprint_id) = sprint_id {
+        let sprint_exists = db
+            .query_opt::<Scalar<i64>>(
+                "SELECT 1 FROM sprints WHERE id = $1",
+                args![sprint_id.to_owned()],
+            )
+            .await?
+            .is_some();
+        if !sprint_exists {
+            return Err(AppError::NotFound(format!("sprint '{sprint_id}' not found")));
+        }
+    }
+    for &task_id in task_ids {
+        let task_exists = db
+            .query_opt::<Scalar<i64>>(
+                "SELECT 1 FROM work_items WHERE id = $1 AND deleted_at IS NULL",
+                args![task_id.to_owned()],
+            )
+            .await?
+            .is_some();
+        if !task_exists {
+            return Err(AppError::NotFound(format!("task '{task_id}' not found")));
+        }
+    }
+
     let mut tx = db.begin().await?;
 
     let mut inserted: usize = 0;
@@ -530,21 +727,23 @@ where
 }
 
 /// `task_commits` columns for a single task (`ByTask`), ordered `recorded_at`,
-/// `id` for deterministic output.
+/// `id` for deterministic output, capped at [`LIST_LIMIT`] rows (R19).
 const SELECT_TASK_COMMITS_BY_TASK: &str = r#"
     SELECT id, commit_sha, task_id, sprint_id, recorded_at
     FROM task_commits
     WHERE task_id = $1
     ORDER BY recorded_at, id
+    LIMIT 1000
 "#;
 
 /// `task_commits` columns for a single commit sha (`ByCommit`), ordered
-/// `recorded_at`, `id`.
+/// `recorded_at`, `id`, capped at [`LIST_LIMIT`] rows (R19).
 const SELECT_TASK_COMMITS_BY_COMMIT: &str = r#"
     SELECT id, commit_sha, task_id, sprint_id, recorded_at
     FROM task_commits
     WHERE commit_sha = $1
     ORDER BY recorded_at, id
+    LIMIT 1000
 "#;
 
 /// `task_commits` for every DIRECT task child of a story (`ByStory`): JOIN
@@ -558,6 +757,7 @@ const SELECT_TASK_COMMITS_BY_STORY: &str = r#"
     JOIN work_items t ON t.id = tc.task_id
     WHERE t.parent_id = $1 AND t.kind = 'task'
     ORDER BY tc.recorded_at, tc.id
+    LIMIT 1000
 "#;
 
 /// List commit→task provenance edges (migration 0016) by one of the three typed
@@ -690,6 +890,24 @@ mod tests {
         );
     }
 
+    /// R4: a SECOND `create_worktree` for the same owning sprint is a clean
+    /// Validation (the 1:1 ownership invariant), not a raw UNIQUE-index 500.
+    #[tokio::test]
+    async fn second_worktree_for_same_owner_is_validation() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint = seed_sprint(&pool).await;
+
+        create_worktree(&pool, &new_worktree(&sprint))
+            .await
+            .expect("first create_worktree");
+
+        let res = create_worktree(&pool, &new_worktree(&sprint)).await;
+        assert!(
+            matches!(res, Err(AppError::Validation(_))),
+            "a second worktree for the same owner is a clean Validation, got {res:?}"
+        );
+    }
+
     /// `get_worktree` on an absent id is NotFound.
     #[tokio::test]
     async fn get_worktree_absent_is_not_found() {
@@ -755,7 +973,9 @@ mod tests {
     }
 
     /// `record_worktree_rejection` on a 'review' owner stamps outcome='rejected'
-    /// and flips the owner 'review' -> 'cancelled'.
+    /// and flips the owner 'review' -> 'cancelled'. Per R11, `merged_at` stays NULL
+    /// on a NON-merged worktree (it is the MERGE instant only; the rejection's
+    /// decision instant is captured by `updated_at` + the `worktree.rejected` event).
     #[tokio::test]
     async fn rejection_stamps_audit_and_flips_owner_to_cancelled() {
         let pool = connect_in_memory().await.expect("pool");
@@ -772,7 +992,11 @@ mod tests {
 
         let got = get_worktree(&pool, &wt).await.expect("get_worktree");
         assert_eq!(got.outcome, Some(WorktreeOutcome::Rejected), "outcome=rejected");
-        assert!(got.merged_at.is_some(), "merged_at (decision instant) stamped");
+        assert!(
+            got.merged_at.is_none(),
+            "merged_at is NOT stamped on a rejected (non-merged) worktree (R11)"
+        );
+        assert!(got.merge_ref.is_none(), "rejection stamps no merge_ref");
         assert_eq!(
             sprint_status(&pool, &sprint).await,
             "cancelled",
@@ -883,5 +1107,69 @@ mod tests {
             .await
             .expect("by story");
         assert_eq!(by_story.len(), 3, "story's task children carry three commit edges total");
+    }
+
+    /// R1/R14: an empty `task_ids` batch is a clean Validation BEFORE the tx, so no
+    /// export-inert event is recorded for a no-op batch.
+    #[tokio::test]
+    async fn record_task_commits_empty_list_is_validation() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint = seed_sprint(&pool).await;
+
+        let res = record_task_commits(&pool, "sha-empty", &[], Some(&sprint)).await;
+        assert!(
+            matches!(res, Err(AppError::Validation(_))),
+            "an empty task_ids batch is a clean Validation, got {res:?}"
+        );
+    }
+
+    /// R1: a bogus `task_id` is a clean NotFound (a typed 404), not a raw FK 500.
+    #[tokio::test]
+    async fn record_task_commits_unknown_task_is_not_found() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint = seed_sprint(&pool).await;
+
+        let res = record_task_commits(&pool, "sha-x", &["no-such-task"], Some(&sprint)).await;
+        assert!(
+            matches!(res, Err(AppError::NotFound(_))),
+            "an unknown task_id is a clean NotFound, got {res:?}"
+        );
+    }
+
+    /// R1: a bogus `sprint_id` is a clean NotFound, not a raw FK 500.
+    #[tokio::test]
+    async fn record_task_commits_unknown_sprint_is_not_found() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T1", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        let res =
+            record_task_commits(&pool, "sha-y", &[task.as_str()], Some("no-such-sprint")).await;
+        assert!(
+            matches!(res, Err(AppError::NotFound(_))),
+            "an unknown sprint_id is a clean NotFound, got {res:?}"
+        );
+    }
+
+    /// R19 drift-guard: the `LIST_LIMIT` const and the literal baked into the list
+    /// SELECTs must agree (they cannot be unified — `concat!` rejects a const).
+    #[test]
+    fn list_limit_literal_matches_const() {
+        let needle = format!("LIMIT {LIST_LIMIT}");
+        for sql in [
+            SELECT_WORKTREES_ALL,
+            SELECT_WORKTREES_BY_STATUS,
+            SELECT_TASK_COMMITS_BY_TASK,
+            SELECT_TASK_COMMITS_BY_COMMIT,
+            SELECT_TASK_COMMITS_BY_STORY,
+        ] {
+            assert!(
+                sql.contains(&needle),
+                "list SELECT is missing the `{needle}` cap (drifted from LIST_LIMIT): {sql}"
+            );
+        }
     }
 }

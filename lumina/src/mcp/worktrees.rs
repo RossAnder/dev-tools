@@ -271,21 +271,12 @@ impl LuminaTools {
         >,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "list_task_commits", "mcp tool invoked");
-        // Validate EXACTLY ONE direction is provided, then construct the typed
-        // `TaskCommitQuery` variant (which carries no `JsonSchema`, so it cannot be
-        // a param field directly).
-        let by = match (task_id, commit_sha, story_id) {
-            (Some(t), None, None) => TaskCommitQuery::ByTask(t),
-            (None, Some(c), None) => TaskCommitQuery::ByCommit(c),
-            (None, None, Some(s)) => TaskCommitQuery::ByStory(s),
-            _ => {
-                return Err(app_error_to_mcp(AppError::Validation(
-                    "list_task_commits requires EXACTLY ONE of `task_id`, `commit_sha`, or \
-                     `story_id`"
-                        .to_owned(),
-                )));
-            }
-        };
+        // Validate EXACTLY ONE direction and construct the typed `TaskCommitQuery`
+        // variant via the shared domain constructor (review R18 — same validation
+        // the HTTP handler uses; `TaskCommitQuery` carries no `JsonSchema`, so it
+        // cannot be a param field directly).
+        let by = TaskCommitQuery::from_optionals(task_id, commit_sha, story_id)
+            .map_err(app_error_to_mcp)?;
         let commits = repo::list_task_commits(&self.pool, by)
             .await
             .map_err(app_error_to_mcp)?;

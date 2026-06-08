@@ -1,0 +1,528 @@
+schema_version = 1
+last_updated = 2026-06-08
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R1"
+file = "lumina/src/repo/worktrees.rs"
+line = 459
+symbol = "record_task_commits"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "record_task_commits does not validate task_id/sprint_id before INSERT — a bogus id FK-fails as a raw Db error (500), not a typed 404/422"
+description = "task_commits.task_id/sprint_id are FKs with foreign_keys ON. Unlike create_worktree (validates owner->NotFound) and add_tasks_to_sprint (validates each task->Validation, runs_sprints.rs:328), record_task_commits inserts directly, so an unknown id raises SQLITE_CONSTRAINT_FOREIGNKEY mid-loop -> AppError::Db -> 500 and aborts the batch opaquely. Validate ids up-front for surface consistency."
+related = [
+    "R14",
+    "R24",
+]
+dedup_id = "db00485d4ba30854"
+resolved = 2026-06-08
+resolution = "record_task_commits now validates sprint/task existence (typed NotFound) and rejects an empty task_ids (Validation) before opening the tx, so no inert event for a no-op batch (also covers R14's repo half). repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R2"
+file = "lumina/src/repo/runs_sprints.rs"
+line = 265
+symbol = "set_sprint_status"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Worktree-owner terminal guard only blocks review->done|cancelled, so a worktree-owning sprint can skip the merge audit via a direct active->done|cancelled flip"
+description = "The guard (runs_sprints.rs:265) fires only when current==Review. (Active,Done) and (Active,Cancelled) are legal transitions (enums.rs), so a worktree-OWNING sprint at active can flip straight to done/cancelled via set_sprint_status, bypassing review AND the merge audit the guard exists to enforce — leaving the worktree at a derived terminal status with outcome/merged_at NULL. Decide whether active->terminal should also be guarded for worktree owners."
+related = ["R9"]
+dedup_id = "b42469e070aedffb"
+resolved = 2026-06-08
+resolution = "set_sprint_status worktree-owner terminal guard widened to reject ANY terminal transition (Done|Cancelled) on a worktree-owning sprint, not just review-> ; closes the active->terminal merge-audit skip. repo/runs_sprints.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R3"
+file = "lumina/tests/claim_concurrency.rs"
+line = 0
+symbol = "concurrent_claims_never_double_claim"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Checkpoint-freeze is never exercised under contention — the concurrency suite has no test where an in_progress checkpoint freezes a sprint while N agents contend"
+description = "claim_concurrency.rs contains no checkpoint coverage; the migration-0016 freeze (team_execution.rs:181) is tested only single-threaded (sprint_lifecycle.rs:289). The race that matters — the sprint-wide barrier holding while concurrent claimers hammer the queue, then lifting cleanly when the checkpoint completes under load — is unexercised. The +39 diff to this file is only activate_sprint plumbing."
+related = ["R25"]
+dedup_id = "8ee92b9ef61b55f4"
+resolved = 2026-06-08
+resolution = "added checkpoint_freeze_holds_under_contention (N=8 contenders): an in_progress checkpoint freezes the sprint so every concurrent claim returns Ok(None), then resumes once the checkpoint clears. tests/claim_concurrency.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R4"
+file = "lumina/src/repo/worktrees.rs"
+line = 199
+symbol = "create_worktree"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "create_worktree validates owner existence pre-tx (clean NotFound) but leaves the 1:1 UNIQUE-owner violation + concurrent-delete to surface as a raw Db 500; the dup-owner path is also untested via the repo fn"
+description = "The owner-exists check runs on the autocommit pool BEFORE db.begin() (worktrees.rs:207), so a concurrent sprint delete TOCTOUs to a 500 instead of NotFound; and a second create_worktree for the same owner collides on the UNIQUE index as an opaque AppError::Db -> 500 (the code comment acknowledges this, worktrees.rs:204) with no pre-check returning Validation. Only the raw-INSERT UNIQUE collision is tested (migration_0016.rs), never create_worktree twice via the repo fn. Add a dup-owner pre-check + a repo-level test."
+related = ["R10"]
+dedup_id = "dadd993dd6fdf9f0"
+resolved = 2026-06-08
+resolution = "create_worktree pre-checks the owner has no live worktree -> typed Validation instead of a raw UNIQUE 500; added inline dup-owner test. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R5"
+file = "lumina/src/mcp/worktrees.rs"
+line = 58
+symbol = "SetTaskCheckpointParams"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Checkpoint flag field name diverges across mirrored surfaces: MCP on (mcp/worktrees.rs:58) vs HTTP value (http/worktrees.rs:84)"
+description = "Flagged independently by 3 lenses. The crate invariant is HTTP mirrors the MCP write surface 1:1; merge/reject/commit params kept identical names across both surfaces, only checkpoint diverges (HTTP follows the structured-patch value convention, MCP uses on). Harmless functionally but a client switching surfaces must rename the field. Pick one name for both, or document the exception in the catalogue."
+dedup_id = "aa575e90414f25db"
+resolved = 2026-06-08
+resolution = "aligned the checkpoint flag field across surfaces: renamed HTTP CheckpointBody.value -> on to match MCP set_task_checkpoint(on); verified no SPA consumer of the field. http/worktrees.rs + mcp/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R6"
+file = "lumina/src/http/worktrees.rs"
+line = 232
+symbol = "set_task_checkpoint_handler"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "set_task_checkpoint HTTP handler issues a second read (get_work_item_detail via .sqlite()) after the write — non-atomic read-after-write, and diverges from the MCP tool {ok:true}"
+description = "http/worktrees.rs:231-232 calls repo::set_task_checkpoint then re-reads the full WorkItemDetail via state.pool.sqlite() to shape the response, while every sibling write handler returns a cheap result and the MCP tool returns {ok:true}. The read-after-write is outside the write tx (a concurrent edit could return a row not reflecting only this change) and reaches past the DbClient seam. Return {ok:true} for consistency and to drop the round-trip."
+dedup_id = "c219f72362f39842"
+resolved = 2026-06-08
+resolution = "set_task_checkpoint HTTP handler drops the non-atomic post-write get_work_item_detail read and returns {ok:true}, mirroring the MCP tool. http/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R7"
+file = "lumina/src/repo/worktrees.rs"
+line = 344
+symbol = "record_worktree_merge"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "record_worktree_merge and record_worktree_rejection are near-identical copy-paste (guard -> stamp -> flip owner via subquery -> inert event), differing in ~3 literals"
+description = "Both functions (worktrees.rs:344, :402) share the require_review_owner guard, the same nested-subquery owner flip (UPDATE sprints ... WHERE id=(SELECT owning_sprint_id FROM worktrees WHERE id=$1) — re-resolving the owner require_review_owner already read), and the same event shape; they differ only in outcome/target-status/payload. Extract a shared private helper taking (outcome, target_status) to remove the copy-paste and the drift risk."
+related = [
+    "R8",
+    "R11",
+]
+dedup_id = "536358643cefd757"
+resolved = 2026-06-08
+resolution = "factored record_worktree_merge/record_worktree_rejection into one private record_worktree_verdict helper; both pub fns are thin wrappers. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R8"
+file = "lumina/src/repo/worktrees.rs"
+line = 369
+symbol = "record_worktree_merge"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "merge/reject flip the owner via a raw UPDATE that bypasses SprintStatus::can_transition_to, duplicating the legal-transition table outside set_sprint_status"
+description = "The direct UPDATE sprints SET status='done'/'cancelled' (worktrees.rs:373, :430) is correct today (require_review_owner proves source=review, both targets legal from review) but the transition matrix now lives in two places (enums.rs::can_transition_to and these raw UPDATEs). If the matrix changes, these paths silently diverge. A shared tx helper that asserts the edge would single-source it."
+related = ["R7"]
+dedup_id = "81488fddc885e922"
+resolved = 2026-06-08
+resolution = "merge/reject owner flip now asserts SprintStatus::can_transition_to before the UPDATE, no longer duplicating the legal-transition table outside set_sprint_status. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R9"
+file = "lumina/src/repo/runs_sprints.rs"
+line = 226
+symbol = "set_sprint_status"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "set_sprint_status reads current status + the owns-worktree guard via autocommit reads BEFORE db.begin() — a concurrent create_worktree can race the terminal guard vs the UPDATE"
+description = "Steps 1-4 (read current, parse, transition check, owns-worktree EXISTS) run on the autocommit pool (runs_sprints.rs:234,:268); only step 5 opens BEGIN IMMEDIATE (:285). Between the owns-worktree probe and the UPDATE a concurrent create_worktree could make the sprint a worktree owner, letting a review->done slip past the terminal guard. SQLite single-writer does not help because the guarding reads are not in the writer txn. Move the guard reads onto the tx (the documented R15 pattern)."
+related = ["R2"]
+dedup_id = "3eefd35f906830c3"
+resolved = 2026-06-08
+resolution = "set_sprint_status moves the current-status and owns-worktree reads inside the BEGIN IMMEDIATE tx so the terminal guard shares the writer-lock snapshot, closing the concurrent-create_worktree race. repo/runs_sprints.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R10"
+file = "lumina/src/repo/worktrees.rs"
+line = 245
+symbol = "create_worktree"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "create_worktree unconditionally repoints the owner worktree_id at the new worktree, silently overwriting any prior (targeted) worktree_id with no event/warning"
+description = "UPDATE sprints SET worktree_id=$2 WHERE id=$1 (worktrees.rs:245) has no guard against the owner already targeting a different worktree. The owning_sprint_id UNIQUE prevents OWNING two, but a sprint may legitimately TARGET a predecessor worktree (shared worktree_id, ADR-0005) before owning its own; creating its own then silently retargets worktree_id with no event. Confirm against ADR-0005 owner-vs-target model."
+related = ["R4"]
+dedup_id = "ac1628cd0e0d2774"
+resolved = 2026-06-08
+resolution = "create_worktree records the prior owner worktree_id as replaced_worktree_id in the worktree.created event, so a targeted-worktree overwrite is auditable rather than silent. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R11"
+file = "lumina/src/repo/worktrees.rs"
+line = 418
+symbol = "record_worktree_rejection"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "record_worktree_rejection stamps merged_at=CURRENT_TIMESTAMP for a NON-merged worktree — overloading merged_at as a generic decision-instant"
+description = "worktrees.rs:418 sets merged_at on a worktree with outcome='rejected'. A consumer reading merged_at IS NOT NULL as this-was-merged wrongly includes rejections (must also check outcome). A neutral decided_at, or a separate rejected_at, removes the foot-gun. Minor since outcome disambiguates, but the column-name/value mismatch is a latent reporting bug."
+related = ["R7"]
+dedup_id = "63c082d7ff14e15b"
+resolved = 2026-06-08
+resolution = "record_worktree_rejection no longer stamps merged_at (left NULL; decision instant is updated_at + the worktree.rejected event); updated the inline test, the sprint_lifecycle.rs test, and the docs. No schema change. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R12"
+file = "lumina/migrations/0016_sprint_lifecycle_worktrees.sql"
+line = 117
+symbol = "work_items.checkpoint"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "work_items.checkpoint is bare INTEGER (no CHECK 0/1) and the freeze probe keys on =1, so any out-of-band value other than 1 silently disables the barrier for that task"
+description = "migration:117 adds checkpoint INTEGER with no CHECK (ALTER cannot add one — correctly avoided). The repo writes on-as-i64 (0/1) so the happy path is safe, but the freeze predicate c.checkpoint=1 (team_execution.rs:188) means a stray value (e.g. 2) silently fails to freeze — a safety barrier degrading open. Prefer checkpoint<>0 / IS NOT NULL AND checkpoint!=0 over =1."
+dedup_id = "15d81dbd5c8fd864"
+resolved = 2026-06-08
+resolution = "added migration 0017 (trg_work_items_checkpoint_insert/update) enforcing checkpoint IN (NULL,0,1) at the write boundary via the table-existing validation-trigger idiom — no risky work_items rebuild; applied to dev DB and covered by 3 acceptance tests in tests/migration_0017.rs. lumina/migrations/0017_checkpoint_check.sql"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R13"
+file = "lumina/src/repo/worktrees.rs"
+line = 96
+symbol = "WorktreeRow::into_worktree"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "into_worktree maps an out-of-vocab owner status/outcome to AppError::Other (->500) where set_sprint_status maps the same to Validation (->422); one legacy row 500s the whole list_worktrees"
+description = "worktrees.rs:97-102 does serde_json::from_value(...).map_err(AppError::Other) for effective_status and outcome. sprints.status is free TEXT (no CHECK), so a legacy/out-of-vocab owner status read through get_worktree/list_worktrees 500s — and 500s the ENTIRE list (all rows), not just the offending one — whereas the write path (set_sprint_status, runs_sprints.rs:248) maps the identical parse failure to a clean Validation. Backfill makes it unreachable today, but the read path is less forgiving than the write path. Also: these error arms are untested."
+related = ["R16"]
+dedup_id = "6c1f2e9cdde66811"
+resolved = 2026-06-08
+resolution = "into_worktree maps an out-of-vocab status/outcome to AppError::Validation (was Other/500), consistent with set_sprint_status, so one legacy row no longer 500s the whole list. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R14"
+file = "lumina/src/http/worktrees.rs"
+line = 93
+symbol = "RecordCommitsBody"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "record_task_commits task_ids required-ness drifts (HTTP serde(default) vs MCP required) and an empty list still records an inert event (0 inserts)"
+description = "HTTP RecordCommitsBody.task_ids is #[serde(default)] (http/worktrees.rs:93) so POST /api/commits with no task_ids succeeds inserting zero rows; MCP RecordTaskCommitsParams.task_ids is required (mcp/worktrees.rs:70). And record_task_commits records the coarse worktree.task_commits_recorded event even when task_ids is empty (worktrees.rs:492), so content-free calls accumulate inert outbox rows. Align required-ness across surfaces and short-circuit (return Ok(0), no event) on empty."
+related = ["R1"]
+dedup_id = "ebe886d6423606be"
+resolved = 2026-06-08
+resolution = "removed serde(default) from HTTP RecordCommitsBody.task_ids so it is required (matches MCP); the repo empty-list guard is handled under R1. http/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R15"
+file = "lumina/src/repo/worktrees.rs"
+line = 126
+symbol = "SELECT_WORKTREE_BY_ID"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Three worktree SELECT consts repeat an identical 12-column projection + FROM/JOIN, differing only in WHERE/ORDER"
+description = "SELECT_WORKTREE_BY_ID (:126), SELECT_WORKTREES_ALL (:148), SELECT_WORKTREES_BY_STATUS (:168) duplicate the same projection verbatim; adding a column means editing three byte-identical string literals. Extract a shared const prefix (projection + FROM/JOIN) concatenated with per-query suffixes."
+dedup_id = "39c970864745a728"
+resolved = 2026-06-08
+resolution = "extracted the shared 12-column worktree projection into a macro and composed the three SELECT consts via concat!. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R16"
+file = "lumina/src/repo/worktrees.rs"
+line = 98
+symbol = "WorktreeRow::into_worktree"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Needless .clone() on effective_status_raw in into_worktree, which already consumes self"
+description = "into_worktree takes self by value and reads effective_status_raw once (worktrees.rs:98) before the rest of self is moved; self.effective_status_raw.clone() can be a move. A small allocation on every worktree read."
+related = ["R13"]
+dedup_id = "550b4bfc313a888c"
+resolved = 2026-06-08
+resolution = "removed the needless .clone() on effective_status_raw in into_worktree (self is consumed, so the String is moved). repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R17"
+file = "lumina/src/repo/worktrees.rs"
+line = 42
+symbol = "WorktreeRow"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Two misleading doc comments: WorktreeRow doc says Generic over R:Row (the struct is not generic) and require_review_owner doc claims it returns (worktree_id_confirmed, ()) (it returns plain ())"
+description = "WorktreeRow (worktrees.rs:46) is a plain non-generic struct; only its FromRow impl is generic over R — the doc misdescribes the type. require_review_owner (worktrees.rs:299) is Result<(), AppError> but its doc describes a tuple return shape, reading like a leftover from an earlier design."
+dedup_id = "e8c120b72c3835d0"
+resolved = 2026-06-08
+resolution = "corrected two inaccurate doc comments: WorktreeRow is not generic, and require_review_owner returns plain () not a tuple. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R18"
+file = "lumina/src/domain/planning.rs"
+line = 0
+symbol = "TaskCommitQuery"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The exactly-one-of task_id/commit_sha/story_id selector validation is hand-duplicated (HTTP if/else+expect vs MCP tuple match); fold into a TaskCommitQuery::from_optionals constructor"
+description = "list_task_commits builds TaskCommitQuery from three optionals in two places with two idioms (http/worktrees.rs:261ff counts booleans then chains if/else with .expect(); mcp/worktrees.rs uses an exhaustive tuple match). A single TaskCommitQuery::from_optionals(...) -> Result<Self, AppError> on the domain enum would single-source the validation + error message and drop the HTTP .expect()."
+dedup_id = "1fc2aebd7a9267bb"
+resolved = 2026-06-08
+resolution = "added TaskCommitQuery::from_optionals constructor in domain/planning.rs; HTTP and MCP list_task_commits now delegate the exactly-one-of selector validation to it. domain/planning.rs + http/worktrees.rs + mcp/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R19"
+file = "lumina/src/repo/worktrees.rs"
+line = 148
+symbol = "list_worktrees"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "New list reads (GET /worktrees, GET /commits) have no LIMIT/pagination — unbounded result-set memory/DoS surface"
+description = "SELECT_WORKTREES_ALL (worktrees.rs:148, no LIMIT), SELECT_WORKTREES_BY_STATUS, and the three SELECT_TASK_COMMITS_BY_* reads return every matching row. task_commits grows per (commit x task) edge — the realistic unbounded axis; an automated client can buffer an arbitrarily large Vec into memory and the JSON response. Loopback-only deployment caps blast radius but an agent client can still OOM the process. Add a LIMIT (+ optional cursor), as other reads (?since=&limit=) already do."
+dedup_id = "0f76a00634f2268b"
+resolved = 2026-06-08
+resolution = "added a LIST_LIMIT (1000) cap to the list_worktrees and list_task_commits SELECTs to bound result-set memory (DoS guard) plus a literal/const drift-guard test. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R20"
+file = "lumina/src/repo/worktrees.rs"
+line = 230
+symbol = "create_worktree"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "Caller-supplied free-text (path/base_ref/branch/merge_ref/commit_sha/reason) stored with no length bound (record-only, so traversal is moot; unbounded-growth quick win)"
+description = "The new write paths persist untrusted strings into TEXT columns with no length/charset cap. Correct on the storage-vs-execution boundary the project mandates (lumina is record-only, never shells these to git, so path-traversal is moot), but a single create_worktree/record_task_commits with multi-MB strings bloats the DB and every subsequent read/export. Consider a sane max-length validation at the param/repo boundary."
+dedup_id = "bc6e9cf3dc9b3887"
+resolved = 2026-06-08
+resolution = "added MAX_FREE_TEXT_BYTES (4096) validation on caller free-text (path/base_ref/branch/merge_ref/reason/commit_sha/task_id) across the worktree writers. repo/worktrees.rs"
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R21"
+file = "lumina/src/repo/worktrees.rs"
+line = 307
+symbol = "require_review_owner"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The NotFound arm of merge/reject (record_worktree_merge/rejection on an absent/soft-deleted worktree) is untested — only the non-review Validation arm is"
+description = "require_review_owner (worktrees.rs:324) returns NotFound for an absent/tombstoned worktree and Validation for a non-review owner. Tests cover the Validation arm and the happy review arm, but no test drives record_worktree_merge/rejection against a missing/soft-deleted worktree id to confirm the NotFound (not Validation, not 500) classification."
+related = ["R7"]
+dedup_id = "af64eabb3a19b2df"
+resolved = 2026-06-08
+resolution = "added worktree_verdict_on_absent_worktree_is_not_found: record_worktree_merge and record_worktree_rejection on an absent worktree return NotFound, no audit stamped. Test in tests/sprint_lifecycle.rs."
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R22"
+file = "lumina/src/repo/work_items_meta.rs"
+line = 0
+symbol = "set_task_checkpoint"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "set_task_checkpoint NotFound branch (affected==0 on a missing/soft-deleted task) is untested"
+description = "set_task_checkpoint has three branches: kind-gate Validation (tested), success round-trip (tested), and affected==0 -> NotFound (untested) for a missing/soft-deleted task id. Since checkpoint is a freeze input, a silently-swallowed mis-id would let an operator believe a barrier is set when it is not."
+dedup_id = "550fafe33fb41366"
+resolved = 2026-06-08
+resolution = "added set_task_checkpoint_on_missing_or_deleted_task_is_not_found covering the absent-id and soft-deleted (affected==0) arms. Test in tests/sprint_lifecycle.rs (exercises the work_items_meta.rs symbol)."
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R23"
+file = "lumina/src/repo/runs_sprints.rs"
+line = 0
+symbol = "set_sprint_status"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Legal sprint-status cancellation edges (ready->cancelled, active->cancelled, review->cancelled on a worktree-less sprint) have no repo-level success test"
+description = "The enum matrix is exhaustively unit-tested in enums.rs, but at the repo layer only draft->ready->active->review->done is walked. The legal cancel edges are not asserted to SUCCEED through set_sprint_status (review->cancelled is tested only in its REJECTED worktree-owning form). A regression dropping a cancel edge from the repo guard would pass."
+dedup_id = "7d1ffd837b68cdbb"
+resolved = 2026-06-08
+resolution = "added worktree_less_sprint_cancels_from_every_legal_edge: ready/active/review -> cancelled all succeed on a worktree-less sprint (complement of the widened terminal guard). Test in tests/sprint_lifecycle.rs."
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R24"
+file = "lumina/src/repo/worktrees.rs"
+line = 459
+symbol = "record_task_commits"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "record_task_commits partial-idempotency (a single batch mixing one new + one already-recorded pair -> inserted==1) is untested"
+description = "The idempotency test covers all-new (1) then all-dup (0). The realistic mid-case — one call whose task_ids mix a fresh and an already-recorded pair, expecting inserted==1 with the dup collapsing on ux_task_commits — is untested; it is the only case exercising the per-row affected==1 accumulation within a single batch."
+related = ["R1"]
+dedup_id = "739daff00cc930f2"
+resolved = 2026-06-08
+resolution = "added record_task_commits_partial_batch_counts_only_new_edges: a batch mixing one new and one already-recorded pair returns inserted==1. Test in tests/sprint_lifecycle.rs."
+
+[[items]]
+first_flagged = 2026-06-08
+rounds = 1
+status = "fixed"
+flow = "sprint-lifecycle-worktree-substrate"
+id = "R25"
+file = "lumina/src/repo/team_execution.rs"
+line = 181
+symbol = "claim_next_task"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Checkpoint-freeze negative discriminators (soft-deleted checkpoint must NOT freeze; a checkpoint in a DIFFERENT sprint must NOT freeze this sprint) are untested"
+description = "The freeze probe requires c.checkpoint=1 AND c.status='in_progress' AND c.deleted_at IS NULL scoped via sprint_tasks to THIS sprint (team_execution.rs:186-191). Tests confirm the positive freeze + thaw, but not the negatives: a soft-deleted in_progress checkpoint, or an in_progress checkpoint in another sprint, must not freeze. A regression dropping the deleted_at filter or sprint scoping would pass."
+related = ["R3"]
+dedup_id = "a7be415b9945397c"
+resolved = 2026-06-08
+resolution = "added soft_deleted_checkpoint_does_not_freeze_sprint and checkpoint_in_other_sprint_does_not_freeze_this_sprint, proving the freeze predicate is live-only and sprint-local. Tests in tests/sprint_lifecycle.rs (exercise the team_execution.rs claim path)."
+
+[[vet_events]]
+timestamp = "2026-06-08T12:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 6
+dropped_count = 1
+downgraded_count = 2
+rationale = "Dropped Agent-1 'wasted UUID minted on ON CONFLICT skip' (record_task_commits) — agent self-noted not worth restructuring; benign micro-inefficiency on the dedup path. Downgraded the checkpoint on/value field-name divergence and the merge/reject copy-paste warning->suggestion (correct behaviour; consistency/DRY only). Spot-checked into_worktree clone, the 3 duplicated SELECT consts, the two doc-comment nits, and the status->AppError::Other mapping against worktrees.rs — all confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-08T12:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Both findings sampled (agent returned 2, honest no-pad). Confirmed SELECT_WORKTREES_ALL has no LIMIT (worktrees.rs:165) and the new write paths store free-text without length bounds; both correctly caveated as record-only (traversal moot, loopback-only). Verified all new SQL binds params (no string-interpolated SQL) — no injection finding warranted. Kept both as suggestions."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-08T12:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 8
+dropped_count = 2
+downgraded_count = 4
+rationale = "Dropped (a) the task_commits sprint_id-index finding — speculative, no current consumer and the migration documents the NO ACTION/hard-delete intent; (b) the checkpoint-freeze-timing barrier-only-engages-once-in_progress finding — agent self-acknowledged it matches ADR-0003 runtime-freeze-while-in_progress design. Normalised 4 findings tagged category=concurrency (invalid in the review vocab) to category=architecture. Spot-checked the FK-validation gap, the active->terminal guard gap, the set_sprint_status pre-tx TOCTOU, the merged_at-on-rejection overload, and the create_worktree worktree_id overwrite against the cited code — all confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-08T12:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Honoured the ESCALATE-TO-DEEP on the active->terminal guard gap by verifying it directly (Agent-3/deep had already swept the architecture lens): confirmed at runs_sprints.rs:265 the guard fires only for current==Review, so a worktree-owning sprint can flip active->done|cancelled bypassing the merge audit — kept as warning (R2). Verified the record_task_commits FK gap, the HTTP serde(default) vs MCP-required task_ids drift (http/worktrees.rs:93), the on/value naming, and the dup-owner 500. Note: agents http/worktrees.rs line citations (776/787/918) were wrong (file is 580 lines) but the cited CONTENT was confirmed at the real lines — findings kept, line numbers corrected. The migration-filename doc drift (CLAUDE.md cites singular 0016_sprint_lifecycle_worktree.sql; actual is plural) was confirmed but not persisted as a ledger item (doc-only nit)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-08T12:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped the backfill open->active rewrite untested finding — FALSE: migration_0016.rs:248-260 seeds a fresh legacy open sprint row and re-runs the forward-only backfill UPDATE, asserting the rename to active (the rewrite IS exercised). Confirmed the genuine gaps: claim_concurrency.rs has zero checkpoint coverage (freeze never tested under contention); merge/reject NotFound arm, set_task_checkpoint NotFound branch, set_sprint_status cancel edges, record_task_commits partial-idempotency, and the freeze negatives all lack tests per a read of sprint_lifecycle.rs / migration_0016.rs."
+dedup_id = "45ca31c3315a5978"
