@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "lumina",
-  "version": "0.4.0",
-  "description": "Twenty-five /lumina:<block> skills for filling story planning fields in a lumina work-item one block at a time."
+  "version": "0.5.0",
+  "description": "Twenty-nine /lumina:<block> skills for filling story planning fields and orchestrating the sprint lifecycle in a lumina work-item one block at a time."
 }

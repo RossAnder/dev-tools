@@ -33,7 +33,7 @@ Reach for the lumina MCP tools when you are:
 
 ## Story-block skill family
 
-The plugin at `claude/plugins/lumina-story-blocks/` adds 25 composable skills (round-1's 9 + round-2's 10 + round-3's 2 + migration-0010's 4), one per story block, each independently triggerable via a `/lumina:<block> <id>` slash invocation, each driving the lumina MCP tools catalogued below. The plugin's [`README.md`](../../README.md#skill-list) carries the authoritative skill enumeration; the table below mirrors it.
+The plugin at `claude/plugins/lumina-story-blocks/` adds 29 composable skills (round-1's 9 + round-2's 10 + round-3's 2 + migration-0010's 4 + migration-0016's 4 lifecycle/orchestration), each independently triggerable via a `/lumina:<block> <id>` slash invocation, each driving the lumina MCP tools catalogued below. The first 25 are per-story-block writers (one per story block); the migration-0016 four (create-project, compose-sprint, run-sprint, lifecycle) form a distinct lifecycle/orchestration category that bootstraps the hierarchy, composes a sprint, drives the run loop, and advises on lifecycle state (see [`CONVENTIONS.md §n`](../../CONVENTIONS.md) and the [dogfood-lifecycle runbook](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md)). The plugin's [`README.md`](../../README.md#skill-list) carries the authoritative skill enumeration; the table below mirrors it.
 
 | Skill | Slash invocation | One-line summary |
 |---|---|---|
@@ -62,6 +62,12 @@ The plugin at `claude/plugins/lumina-story-blocks/` adds 25 composable skills (r
 | focus-shape | `/lumina:focus-shape <id>` | Set a focus's `shape` (vertical-slice / cross-cutting / foundational). *(new in migration 0010 — focus-only)* |
 | focus-framing | `/lumina:focus-framing <id>` | Set a focus's `framing`. *(new in migration 0010 — focus-only)* |
 | epic-close-criteria | `/lumina:epic-close-criteria <id>` | Manage an epic's close-criteria. *(new in migration 0010 — epic-only)* |
+| create-project | `/lumina:create-project` | Lifecycle/orchestration: bootstrap a `project → epic → focus → story` hierarchy in one guided pass. *(new in migration 0016 — not a per-story-block writer)* |
+| compose-sprint | `/lumina:compose-sprint <id>` | Lifecycle/orchestration: compose a worktree-owning sprint from a story's ready tasks. *(new in migration 0016 — not a per-story-block writer)* |
+| run-sprint | `/lumina:run-sprint <id>` | Lifecycle/orchestration: drive the team-execution claim→complete→review run loop over a sprint. *(new in migration 0016 — not a per-story-block writer)* |
+| lifecycle | `/lumina:lifecycle <id>` | Lifecycle/orchestration (read-only advisor): report sprint/worktree state and recommend the next lifecycle action. *(new in migration 0016 — read-only, model-discoverable)* |
+
+The final four rows (create-project, compose-sprint, run-sprint, lifecycle) are the migration-0016 lifecycle/orchestration category — they orchestrate the project→sprint→run lifecycle rather than filling a per-story block. The end-to-end dogfood walkthrough threading create-project → compose-sprint → run-sprint → lifecycle is the [dogfood-lifecycle runbook](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md).
 
 Load via `claude --plugin-dir claude/plugins/lumina-story-blocks` — see
 [`../../README.md`](../../README.md)
@@ -345,7 +351,7 @@ Migration 0011 Part B added nine tools across three families: batch-write (B18),
 | Tool | When to use |
 |------|-------------|
 | `create_run` | `{ kind, target_kind, target_id, ... } → { run_id }` — open a review/optimise run. `kind ∈ review|optimise`; `target_kind ∈ sprint|story`. The id, an `open` status, and the timestamp are minted by the store. |
-| `create_sprint` | `{ title? } → { sprint_id }` — open a sprint with an optional title. The id, an `open` status, and the timestamp are minted by the store. |
+| `create_sprint` | `{ title? } → { sprint_id }` — open a sprint with an optional title. The id, a `draft` status (per migration-0016 / ADR-0005 — the `SprintStatus` lifecycle default), and the timestamp are minted by the store. |
 | `add_tasks_to_sprint` | `{ sprint_id, task_ids: string[] } → { added }` — attach tasks to a sprint under ONE transaction. Idempotent at the junction: an already-attached `(task, sprint)` pair is collapsed via `ON CONFLICT DO NOTHING` and NOT counted in `added`. A non-task / missing id aborts the whole batch. |
 | `record_finding_decision` | `{ finding_id, decision, ... } → { decision_id, spawned_work_item_id }` — record a triage verdict. `decision ∈ spawn_task|spawn_story|defer|dismiss|resolve`: a spawn creates a child under the finding's host (its id surfaces as `spawned_work_item_id`, else null); `resolve` delegates to `resolve_finding`; `defer`/`dismiss` set the triage state. (The `spawn_task` path additionally stamps `lane='implement'` + `tier=NULL` on the rework task and binds it to the host finding's sprint, so a reviewer's rework becomes claimable — see the team-execution tools below.) |
 
@@ -368,7 +374,7 @@ Note: `compute_task_batches` (the task-graph read above) considers ONLY task→t
 
 ## Sprint-lifecycle / worktree / commit-provenance tools (migration 0016)
 
-Migration 0016 ([ADR-0005](../../../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md), building on [ADR-0003](../../../../../docs/adr/0003-commit-checkpoint-provenance.md)) added a first-class sprint lifecycle, single-owner worktrees, and explicit commit provenance — nine tools, taking the surface from 74 to 83. lumina is **record-only** here: it tracks worktree/merge/commit facts but NEVER shells to git.
+Migration 0016 ([ADR-0005](../../../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md), building on [ADR-0003](../../../../../docs/adr/0003-commit-checkpoint-provenance.md)) added a first-class sprint lifecycle, single-owner worktrees, and explicit commit provenance — nine tools, taking the surface from 74 to 83 (a later non-migration change added `set_task_lane`, taking it to 84). lumina is **record-only** here: it tracks worktree/merge/commit facts but NEVER shells to git.
 
 A worktree is owned by EXACTLY ONE sprint (`worktrees.owning_sprint_id`, UNIQUE) and its status is WHOLLY DERIVED from that owner — there is no `worktrees.status` column; `effective_status` is JOIN-derived from the owning sprint. Follow-up sprints TARGET a worktree (sharing `sprints.worktree_id`) but never own it; merge audit (`merged_at` / `merge_ref` / `outcome`) is recorded on the worktree.
 
