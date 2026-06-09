@@ -13,7 +13,7 @@
 
 use super::*;
 
-use crate::domain::{
+use lumina_core::domain::{
     ClosureGate, Complexity, Effort, Origin, Relevance, Shape, UpdateResearchNoteRequest,
 };
 
@@ -166,7 +166,7 @@ pub struct UpdateResearchNoteParams {
     /// New lifecycle state; one of `proposed`/`accepted`/`rejected`; absent
     /// leaves it unchanged.
     #[serde(default)]
-    pub state: Option<crate::domain::ResearchState>,
+    pub state: Option<lumina_core::domain::ResearchState>,
     /// New accept/reject rationale; absent leaves it unchanged.
     #[serde(default)]
     pub rationale: Option<String>,
@@ -609,7 +609,7 @@ impl LuminaTools {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::connect_in_memory;
+    use lumina_core::db::connect_in_memory;
     use crate::mcp::test_support::*;
 
     /// Driving the `resolve_open_question` tool handler end-to-end performs the

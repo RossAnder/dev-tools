@@ -1,5 +1,5 @@
 //! `Queue` — thin wrapper around the per-session `pty_queue` SQL table.
-//! Persistence is delegated to `crate::repo::pty::*`; this module is the
+//! Persistence is delegated to `lumina_core::repo::pty::*`; this module is the
 //! ergonomic facade the supervisor (T8) consumes when it dispatches inputs.
 //!
 //! No in-memory state is held here; the table itself is the queue. Each
@@ -9,9 +9,9 @@
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::domain::PtyQueueEntry;
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::domain::PtyQueueEntry;
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 /// Zero-state facade. All methods are associated functions taking the pool
 /// explicitly — the supervisor passes its shared `SqlitePool` clone.
@@ -20,7 +20,7 @@ pub struct Queue;
 impl Queue {
     /// Append a new pending entry for a session. The row id is minted here
     /// as a fresh UUIDv7 (sortable by mint-time, same convention as
-    /// [`crate::pty::protocol::SessionId`]).
+    /// [`lumina_core::protocol::SessionId`]).
     pub async fn enqueue(
         pool: &SqlitePool,
         session_id: &str,
@@ -80,8 +80,8 @@ impl Queue {
 mod tests {
     use super::*;
 
-    use crate::db::connect_in_memory;
-    use crate::repo;
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::repo;
 
     /// Create a parent `pty_sessions` row so the foreign-key from `pty_queue`
     /// resolves. Returns the session id.

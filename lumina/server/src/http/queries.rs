@@ -14,9 +14,9 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 
 use crate::app::AppState;
-use crate::domain::{Finding, QueryFindingsFilter};
-use crate::error::AppError;
-use crate::repo::{self, QueryFindingsResult};
+use lumina_core::domain::{Finding, QueryFindingsFilter};
+use lumina_core::error::AppError;
+use lumina_core::repo::{self, QueryFindingsResult};
 
 /// Build the findings-query sub-router. Returned as `Router<AppState>` so
 /// `http::router` can `.merge` it with the other per-family sub-routers. The
@@ -72,9 +72,9 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::domain::Severity;
-    use crate::repo::{self, NewFinding};
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::domain::Severity;
+    use lumina_core::repo::{self, NewFinding};
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -144,7 +144,7 @@ mod tests {
         seed_finding(&pool, &story_id, "missing null guard", Severity::Minor).await;
         seed_finding(&pool, &story_id, "unbounded retry loop", Severity::Major).await;
         seed_finding(&pool, &story_id, "second major", Severity::Major).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // No filter → {"findings":[...]} with all three live findings.
@@ -212,7 +212,7 @@ mod tests {
         let (story_id, task_id) = seed_chain(&pool).await;
         seed_finding(&pool, &story_id, "story-level finding", Severity::Minor).await;
         seed_finding(&pool, &task_id, "task-level finding", Severity::Major).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router

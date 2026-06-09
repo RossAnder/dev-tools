@@ -22,9 +22,9 @@ use axum::routing::{patch, post};
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::domain::{Disposition, Origin, Severity, UpdateFindingRequest};
-use crate::error::AppError;
-use crate::repo::{self, FindingTriageUpdate, NewFinding};
+use lumina_core::domain::{Disposition, Origin, Severity, UpdateFindingRequest};
+use lumina_core::error::AppError;
+use lumina_core::repo::{self, FindingTriageUpdate, NewFinding};
 
 /// Body for `POST /work-items/{id}/findings`. Mirrors `mcp::AddFindingParams`
 /// minus the `work_item_id` (which arrives on the path).
@@ -364,9 +364,9 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::domain::Severity;
-    use crate::repo::{self, NewFinding};
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::domain::Severity;
+    use lumina_core::repo::{self, NewFinding};
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -412,7 +412,7 @@ mod tests {
     async fn findings_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST /work-items/{id}/findings
@@ -486,7 +486,7 @@ mod tests {
     async fn findings_batch_add_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -541,7 +541,7 @@ mod tests {
             .await
             .expect("seed finding")
             .to_string();
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router

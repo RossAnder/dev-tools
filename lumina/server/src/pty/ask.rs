@@ -65,7 +65,7 @@ use uuid::Uuid;
 
 use crate::app::AppState;
 use crate::pty::emit;
-use crate::pty::protocol::{AskOutcome, AuqAnswer, MessageKind, SessionId, TypedMessage};
+use lumina_core::protocol::{AskOutcome, AuqAnswer, MessageKind, SessionId, TypedMessage};
 use crate::pty::session::Session;
 
 /// How long the tool blocks awaiting an answer before giving up and closing the
@@ -611,7 +611,7 @@ mod tests {
     /// answer is delivered through the oneshot (as the answer endpoint would).
     #[tokio::test]
     async fn ask_tool_broadcasts_blocks_then_returns_on_answer() {
-        use crate::db::{AnyPool, connect_in_memory};
+        use lumina_core::db::{AnyPool, connect_in_memory};
         use crate::pty::session::Session;
         use std::sync::Arc;
         use std::time::Duration;

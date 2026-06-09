@@ -1332,6 +1332,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
+name = "lumina-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "insta",
+ "jiff",
+ "notify",
+ "pretty_assertions",
+ "proptest",
+ "rstest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "toml",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "lumina-server"
 version = "0.1.0"
 dependencies = [
@@ -1344,6 +1369,7 @@ dependencies = [
  "futures",
  "insta",
  "jiff",
+ "lumina-core",
  "mimalloc",
  "notify",
  "portable-pty",

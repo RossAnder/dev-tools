@@ -27,9 +27,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::domain::{Lane, OpenQuestionSummary, SprintQuiescence, Tier};
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::domain::{Lane, OpenQuestionSummary, SprintQuiescence, Tier};
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 /// Body for `POST /sprints/{sprint_id}/claim`. Mirrors the `repo::claim_next_task`
 /// params minus `sprint_id` (which arrives on the path). `tier` is optional — an
@@ -183,8 +183,8 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::repo;
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::repo;
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -253,7 +253,7 @@ mod tests {
         let _ = seed_chain(&pool).await;
         let sprint_id = repo::create_sprint(
             &pool,
-            &crate::domain::NewSprint {
+            &lumina_core::domain::NewSprint {
                 title: None,
                 worktree_id: None,
                 predecessor_sprint_id: None,
@@ -270,7 +270,7 @@ mod tests {
             .execute(&pool)
             .await
             .expect("activate sprint");
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -308,7 +308,7 @@ mod tests {
         let (_story_id, task_id) = seed_chain(&pool).await;
         let sprint_id = repo::create_sprint(
             &pool,
-            &crate::domain::NewSprint {
+            &lumina_core::domain::NewSprint {
                 title: None,
                 worktree_id: None,
                 predecessor_sprint_id: None,
@@ -336,7 +336,7 @@ mod tests {
             .execute(&pool)
             .await
             .expect("stamp lane");
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Claim → 200 + claimed.task_id == our task.
@@ -455,7 +455,7 @@ mod tests {
         let (_story_id, task_id) = seed_chain(&pool).await;
         let sprint_id = repo::create_sprint(
             &pool,
-            &crate::domain::NewSprint {
+            &lumina_core::domain::NewSprint {
                 title: None,
                 worktree_id: None,
                 predecessor_sprint_id: None,
@@ -482,11 +482,11 @@ mod tests {
             .await
             .expect("stamp lane");
         // Claim as agent-a so the task is leased to someone other than agent-b.
-        repo::claim_next_task(&pool, &sprint_id, crate::domain::Lane::Implement, None, "agent-a", 300)
+        repo::claim_next_task(&pool, &sprint_id, lumina_core::domain::Lane::Implement, None, "agent-a", 300)
             .await
             .expect("claim")
             .expect("a claimable task");
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router

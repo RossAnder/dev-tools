@@ -61,9 +61,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt as _; // for `oneshot`
 
-use lumina::app::{AppState, build_router};
-use lumina::db::{DbClient as _, connect_in_memory}; // DbClient brings `begin()` into scope
-use lumina::repo::{self, IngestOutcome};
+use lumina_server::app::{AppState, build_router};
+use lumina_core::db::{DbClient as _, connect_in_memory}; // DbClient brings `begin()` into scope
+use lumina_core::repo::{self, IngestOutcome};
 
 // ---------------------------------------------------------------------------
 // Fixture builders (inline — the co-located `claim_tool_use_line` /
@@ -109,8 +109,8 @@ fn mode_line() -> String {
 /// Build a fresh in-memory pool (one shared `Arc<AnyPool>` across the route's
 /// `AppState`, the direct `repo::*` calls, and the read-back), mirroring the
 /// shared-pool idiom in `tests/e2e.rs`.
-async fn shared_pool() -> Arc<lumina::db::AnyPool> {
-    Arc::new(lumina::db::AnyPool::from(
+async fn shared_pool() -> Arc<lumina_core::db::AnyPool> {
+    Arc::new(lumina_core::db::AnyPool::from(
         connect_in_memory().await.expect("migrated in-memory pool"),
     ))
 }
@@ -554,17 +554,17 @@ async fn spawned_session_persists_a_corpus_record() {
     // The live-tail consumer parses a JSONL line and persists it verbatim via
     // insert_session_record. Reproduce that single-line persistence here.
     let line = claim_tool_use_line("a1", "tu-1", "sprint-spawned", "agent-spawned");
-    let parsed = lumina::pty::jsonl_tail::parse_line(&line);
-    let index = lumina::pty::jsonl_tail::record_index_fields(&parsed);
+    let parsed = lumina_core::jsonl_tail::parse_line(&line);
+    let index = lumina_core::jsonl_tail::record_index_fields(&parsed);
     let raw = match &parsed {
-        lumina::pty::jsonl_tail::JsonlRecordParsed::Known { raw, .. }
-        | lumina::pty::jsonl_tail::JsonlRecordParsed::UnknownRaw { raw, .. } => raw.as_str(),
+        lumina_core::jsonl_tail::JsonlRecordParsed::Known { raw, .. }
+        | lumina_core::jsonl_tail::JsonlRecordParsed::UnknownRaw { raw, .. } => raw.as_str(),
     };
     // Key the row via the SAME canonical helper the live-tail consumer uses
     // (`corpus_dedup_key`) rather than hand-rolling it, so this test pins the REAL
     // spawned-path key. This assistant record carries uuid "a1", so the helper
     // yields the namespaced `u:a1`.
-    let dedup_key = lumina::repo::corpus_dedup_key(&index, 1);
+    let dedup_key = lumina_core::repo::corpus_dedup_key(&index, 1);
     {
         let mut tx = db.begin().await.expect("begin insert");
         repo::insert_session_record(tx.as_mut(), session_id, 1, raw, index, dedup_key, "2026-06-05T00:00:00Z")
@@ -765,18 +765,18 @@ async fn same_line_via_spawn_then_ingest_collapses_to_one_row() {
         tx.commit().await.expect("commit seed");
     }
     {
-        let parsed = lumina::pty::jsonl_tail::parse_line(&claim_line);
-        let index = lumina::pty::jsonl_tail::record_index_fields(&parsed);
+        let parsed = lumina_core::jsonl_tail::parse_line(&claim_line);
+        let index = lumina_core::jsonl_tail::record_index_fields(&parsed);
         let raw = match &parsed {
-            lumina::pty::jsonl_tail::JsonlRecordParsed::Known { raw, .. }
-            | lumina::pty::jsonl_tail::JsonlRecordParsed::UnknownRaw { raw, .. } => raw.as_str(),
+            lumina_core::jsonl_tail::JsonlRecordParsed::Known { raw, .. }
+            | lumina_core::jsonl_tail::JsonlRecordParsed::UnknownRaw { raw, .. } => raw.as_str(),
         };
         // The spawned consumer derives the dedup_key via the SAME canonical helper
         // the ingest path uses (`corpus_dedup_key`), so the two paths key on the
         // SAME value and collapse — computed via the real function rather than
         // hard-coding the namespacing scheme. Ordinal 1 matches the single-line
         // transcript the ingest path enumerates below.
-        let dedup_key = lumina::repo::corpus_dedup_key(&index, 1);
+        let dedup_key = lumina_core::repo::corpus_dedup_key(&index, 1);
         let mut tx = db.begin().await.expect("begin insert");
         repo::insert_session_record(tx.as_mut(), session_id, 1, raw, index, dedup_key, "2026-06-05T00:00:00Z")
             .await

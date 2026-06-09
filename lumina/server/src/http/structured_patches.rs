@@ -45,13 +45,13 @@ use axum::extract::{Path, State};
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::domain::{
+use lumina_core::domain::{
     Complexity, ClosureGate, Effort, EpicPlanRequest, FocusPlanRequest, Lane, Relevance, Shape,
     TaskKind, Tier, WorkItem, WorkItemDetail,
 };
-use crate::error::AppError;
+use lumina_core::error::AppError;
 use crate::mcp::VerificationCommands;
-use crate::repo;
+use lumina_core::repo;
 
 // ---------------------------------------------------------------------------
 // Body types
@@ -408,7 +408,7 @@ mod tests {
     use tower::ServiceExt as _; // for `oneshot`
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
+    use lumina_core::db::connect_in_memory;
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -491,7 +491,7 @@ mod tests {
     async fn scalars_round_trip() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // -- relevance (story-scoped) -----------------------------------
@@ -677,7 +677,7 @@ mod tests {
     async fn scalar_null_value_is_422() {
         let pool = connect_in_memory().await.expect("pool");
         let chain = seed_chain_full(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // (path, work-item-id) pairs — relevance + closure-gate are
@@ -725,7 +725,7 @@ mod tests {
     async fn story_plan_merges_attributes() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -776,7 +776,7 @@ mod tests {
     async fn task_spec_writes_attributes_and_tier() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -832,7 +832,7 @@ mod tests {
             .await
             .expect("seed repo_link");
 
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -872,7 +872,7 @@ mod tests {
     async fn shape_round_trip_and_kind_gate() {
         let pool = connect_in_memory().await.expect("pool");
         let chain = seed_chain_full(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Happy path: re-shape the focus (seeded as `vertical-slice`).
@@ -921,7 +921,7 @@ mod tests {
     async fn epic_plan_round_trip_and_kind_gate() {
         let pool = connect_in_memory().await.expect("pool");
         let chain = seed_chain_full(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Happy path: revise the epic's outcome.
@@ -974,7 +974,7 @@ mod tests {
     async fn focus_plan_round_trip_and_kind_gate() {
         let pool = connect_in_memory().await.expect("pool");
         let chain = seed_chain_full(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Happy path: set the focus's framing.

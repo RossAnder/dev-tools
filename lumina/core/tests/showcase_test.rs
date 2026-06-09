@@ -8,14 +8,14 @@
 //!   proptest          = "1.9"
 //!   tempfile          = "3"   (already a [dependencies] entry in lumina/Cargo.toml)
 
-use lumina::domain::{Severity, Status};
-use lumina::error::AppError;
+use lumina_core::domain::{Severity, Status};
+use lumina_core::error::AppError;
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 use rstest::rstest;
 
 // ---------------------------------------------------------------------------
-// 1. AAA happy path (bound: lumina::error::AppError Display)
+// 1. AAA happy path (bound: lumina_core::error::AppError Display)
 //    Characterized from lumina/src/error.rs:42 — NotFound(m) => "not found: {m}"
 // ---------------------------------------------------------------------------
 #[test]
@@ -31,7 +31,7 @@ fn apperror_not_found_display_returns_prefixed_message() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Parameterised / table-driven (bound: lumina::domain::Severity serde wire form)
+// 2. Parameterised / table-driven (bound: lumina_core::domain::Severity serde wire form)
 //    Uses rstest #[rstest] + #[case(...)]; 4 cases, one per variant.
 //    Wire form confirmed from src/domain.rs: #[serde(rename_all = "snake_case")]
 // ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ fn severity_serialises_to_snake_case(#[case] variant: Severity, #[case] expected
 }
 
 // ---------------------------------------------------------------------------
-// 3. Error-path (bound: lumina::domain::Status serde rejection)
+// 3. Error-path (bound: lumina_core::domain::Status serde rejection)
 //    "nonsense" is not a valid Status variant; serde reports "unknown variant".
 // ---------------------------------------------------------------------------
 #[test]
@@ -118,7 +118,7 @@ fn welcome_delegates_to_real_greeter() {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Property-based (bound: lumina::domain::Severity serde round-trip)
+// 6. Property-based (bound: lumina_core::domain::Severity serde round-trip)
 //    proptest prop_oneof! over all four variants; from_str(to_str(s)) == s.
 // ---------------------------------------------------------------------------
 proptest! {

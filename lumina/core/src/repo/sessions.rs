@@ -29,7 +29,7 @@ use uuid::Uuid;
 use crate::args;
 use crate::db::DbClient;
 use crate::error::AppError;
-use crate::pty::jsonl_tail::{parse_line, record_index_fields, JsonlRecordParsed, SessionRecordIndex};
+use crate::jsonl_tail::{parse_line, record_index_fields, JsonlRecordParsed, SessionRecordIndex};
 
 // The pure, DB-free correlation-HARVEST half (consts, `Correlation`, the
 // flatten/extract helpers, and the `CorrelationAccumulator` / `harvest_correlation`
@@ -101,7 +101,9 @@ pub fn corpus_dedup_key(index: &SessionRecordIndex, ordinal: i64) -> String {
 /// The VERBATIM raw JSONL line carried on either parsed variant — that string
 /// IS the lossless-at-rest corpus payload. Shared by the ingest path and the
 /// spawned consumer so the raw-extraction match lives in exactly one place.
-pub(crate) fn corpus_raw(parsed: &JsonlRecordParsed) -> &str {
+// `pub` (not `pub(crate)`) so the spawned-corpus writer, now in the
+// `lumina-server` crate (`pty::spawn`), can call it across the crate boundary.
+pub fn corpus_raw(parsed: &JsonlRecordParsed) -> &str {
     match parsed {
         JsonlRecordParsed::Known { raw, .. } | JsonlRecordParsed::UnknownRaw { raw, .. } => {
             raw.as_str()
@@ -115,10 +117,11 @@ pub(crate) fn corpus_raw(parsed: &JsonlRecordParsed) -> &str {
 /// `export.rs`); the `session_records.created_at` / `pty_sessions` timestamp
 /// columns are NOT NULL with no SQL default, so the Rust side supplies them.
 ///
-/// `pub(crate)` so the spawned-corpus writer (`crate::pty::spawn`) can hoist ONE
-/// per-batch ingest instant and pass it down to [`insert_session_record`]'s
-/// `created_at` parameter, mirroring this path's once-per-ingest hoist (O3).
-pub(crate) fn now_string() -> String {
+/// `pub` so the spawned-corpus writer (now in `lumina-server`, `pty::spawn`) can
+/// hoist ONE per-batch ingest instant and pass it down to
+/// [`insert_session_record`]'s `created_at` parameter, mirroring this path's
+/// once-per-ingest hoist (O3).
+pub fn now_string() -> String {
     jiff::Timestamp::now().to_string()
 }
 
@@ -293,7 +296,7 @@ pub async fn record_session_ingested_event(
 /// Pipeline:
 ///   1. Stat `transcript_path` and refuse (without reading) when it exceeds
 ///      [`MAX_TRANSCRIPT_BYTES`]; otherwise read it (UTF-8) and split into
-///      NON-EMPTY lines via the SHARED [`crate::pty::jsonl_tail::is_corpus_blank`]
+///      NON-EMPTY lines via the SHARED [`crate::jsonl_tail::is_corpus_blank`]
 ///      predicate, enumerated 1-BASED (the T4 ordinal contract — identical to
 ///      the live tail, so dedup keys match between live-tail and ingest).
 ///   2. Parse each line via [`parse_line`] and [`harvest_correlation`] over the
@@ -370,7 +373,7 @@ pub async fn ingest_transcript(
         // (a whitespace-only line counts on BOTH paths).
         let parsed: Vec<(i64, JsonlRecordParsed)> = body
             .lines()
-            .filter(|l| !crate::pty::jsonl_tail::is_corpus_blank(l))
+            .filter(|l| !crate::jsonl_tail::is_corpus_blank(l))
             .enumerate()
             .map(|(i, line)| ((i as i64) + 1, parse_line(line)))
             .collect();

@@ -16,8 +16,8 @@ use axum::routing::post;
 use serde_json::{Value, json};
 
 use crate::app::AppState;
-use crate::error::AppError;
-use crate::export;
+use lumina_core::error::AppError;
+use lumina_core::export;
 
 /// Build the export sub-router. Returned as `Router<AppState>` so
 /// `http::router` can `.merge` it with the other per-family sub-routers.
@@ -48,8 +48,8 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::{AnyPool, connect_in_memory};
-    use crate::repo;
+    use lumina_core::db::{AnyPool, connect_in_memory};
+    use lumina_core::repo;
 
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)

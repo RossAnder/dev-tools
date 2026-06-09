@@ -63,12 +63,12 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::domain::{PtyMessage, PtyQueueEntry, PtySession};
-use crate::error::AppError;
-use crate::pty::protocol::{InputFrame, InputKind, SessionId};
+use lumina_core::domain::{PtyMessage, PtyQueueEntry, PtySession};
+use lumina_core::error::AppError;
+use lumina_core::protocol::{InputFrame, InputKind, SessionId};
 use crate::pty::queue::Queue;
 use crate::pty::transport::SpawnConfig;
-use crate::repo;
+use lumina_core::repo;
 
 mod ask;
 mod ws;
@@ -399,7 +399,7 @@ async fn cancel_session(
                 })
                 .await;
             session
-                .set_status(crate::pty::protocol::SessionStatus::Cancelled)
+                .set_status(lumina_core::protocol::SessionStatus::Cancelled)
                 .await;
             // Grace-then-hard-kill: an idle `claude` at its prompt ignores the
             // ETX and keeps running, which would otherwise leave the child (and
@@ -429,7 +429,7 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::{AnyPool, connect_in_memory};
+    use lumina_core::db::{AnyPool, connect_in_memory};
 
     fn empty_state(pool: sqlx::SqlitePool) -> AppState {
         AppState::new(Arc::new(AnyPool::from(pool)))

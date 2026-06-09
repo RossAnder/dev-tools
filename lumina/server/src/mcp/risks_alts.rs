@@ -10,7 +10,7 @@
 
 use super::*;
 
-use crate::domain::{AlternativePatch, RiskPatch, RiskSeverity};
+use lumina_core::domain::{AlternativePatch, RiskPatch, RiskSeverity};
 
 // ---- Risk-register params (migration 0005, T4) ---------------------------
 

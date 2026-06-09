@@ -16,8 +16,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::error::AppError;
-use crate::pty::protocol::{AskOutcome, AuqAnswer, InputFrame, InputKind, SessionId};
+use lumina_core::error::AppError;
+use lumina_core::protocol::{AskOutcome, AuqAnswer, InputFrame, InputKind, SessionId};
 
 // =====================================================================
 // Keystroke direct-push (queue/supervisor bypass)
@@ -138,9 +138,9 @@ pub(crate) async fn enqueue_keystrokes(
     let status = session.status().await;
     if matches!(
         status,
-        crate::pty::protocol::SessionStatus::Failed
-            | crate::pty::protocol::SessionStatus::Cancelled
-            | crate::pty::protocol::SessionStatus::Completed
+        lumina_core::protocol::SessionStatus::Failed
+            | lumina_core::protocol::SessionStatus::Cancelled
+            | lumina_core::protocol::SessionStatus::Completed
     ) {
         return Ok((
             StatusCode::CONFLICT,
@@ -296,11 +296,11 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::{AnyPool, connect_in_memory};
+    use lumina_core::db::{AnyPool, connect_in_memory};
 
     use tokio::sync::{broadcast, mpsc};
 
-    use crate::pty::protocol::{InputFrame, InputKind, SessionId, SessionStatus};
+    use lumina_core::protocol::{InputFrame, InputKind, SessionId, SessionStatus};
     use crate::pty::session::Session;
 
     fn empty_state(pool: sqlx::SqlitePool) -> AppState {
@@ -546,7 +546,7 @@ mod tests {
 
         // The oneshot received the Answered outcome with the picked label.
         match rx.await.expect("outcome delivered") {
-            crate::pty::protocol::AskOutcome::Answered(answers) => {
+            lumina_core::protocol::AskOutcome::Answered(answers) => {
                 assert_eq!(answers.len(), 1);
                 assert_eq!(answers[0].selected_labels, vec!["Beta".to_string()]);
             }
@@ -559,7 +559,7 @@ mod tests {
 
         // A closing tool_result was broadcast, paired to the question id.
         let msg = bcast_rx.try_recv().expect("tool_result broadcast");
-        assert_eq!(msg.kind, crate::pty::protocol::MessageKind::ToolResult);
+        assert_eq!(msg.kind, lumina_core::protocol::MessageKind::ToolResult);
         assert_eq!(msg.tool_use_id.as_deref(), Some(qid.as_str()));
     }
 
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         assert!(matches!(
             rx.await.expect("outcome"),
-            crate::pty::protocol::AskOutcome::Cancelled
+            lumina_core::protocol::AskOutcome::Cancelled
         ));
     }
 

@@ -20,9 +20,9 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::domain::AlternativePatch;
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::domain::AlternativePatch;
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 /// Body for `POST /work-items/{id}/rejected-alternatives`. Mirrors
 /// `mcp::AddRejectedAlternativeParams` minus the path-bound `work_item_id`.
@@ -159,8 +159,8 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::repo;
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::repo;
 
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -203,7 +203,7 @@ mod tests {
     async fn rejected_alternatives_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let story = seed_story(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST add → 201 + { id }.

@@ -39,9 +39,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::domain::{NewWorktree, SprintStatus, TaskCommitQuery, Worktree};
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::domain::{NewWorktree, SprintStatus, TaskCommitQuery, Worktree};
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 // ---------------------------------------------------------------------------
 // Body / query types
@@ -262,7 +262,7 @@ async fn record_task_commits_handler(
 async fn list_task_commits_handler(
     State(state): State<AppState>,
     Query(query): Query<ListCommitsQuery>,
-) -> Result<Json<Vec<crate::domain::TaskCommit>>, AppError> {
+) -> Result<Json<Vec<lumina_core::domain::TaskCommit>>, AppError> {
     tracing::debug!("http: GET /commits");
     // Validate EXACTLY ONE direction and construct the typed variant via the shared
     // domain constructor (review R18 — same validation the MCP tool uses; zero or
@@ -285,8 +285,8 @@ mod tests {
     use tower::ServiceExt as _; // for `oneshot`
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::repo;
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::repo;
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -338,7 +338,7 @@ mod tests {
     async fn seed_sprint(pool: &sqlx::SqlitePool) -> String {
         repo::create_sprint(
             pool,
-            &crate::domain::NewSprint {
+            &lumina_core::domain::NewSprint {
                 title: None,
                 worktree_id: None,
                 predecessor_sprint_id: None,
@@ -357,7 +357,7 @@ mod tests {
     async fn create_get_list_worktree_http() {
         let pool = connect_in_memory().await.expect("pool");
         let sprint_id = seed_sprint(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Create.
@@ -423,7 +423,7 @@ mod tests {
         let sprint_id = seed_sprint(&pool).await;
         let wt = repo::create_worktree(
             &pool,
-            &crate::domain::NewWorktree {
+            &lumina_core::domain::NewWorktree {
                 owning_sprint_id: sprint_id,
                 path: "/tmp/wt".to_owned(),
                 base_ref: None,
@@ -433,7 +433,7 @@ mod tests {
         .await
         .expect("create worktree")
         .to_string();
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -464,7 +464,7 @@ mod tests {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
         let sprint_id = seed_sprint(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Checkpoint the task → 200 + {ok:true}.

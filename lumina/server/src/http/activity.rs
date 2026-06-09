@@ -19,8 +19,8 @@ use axum::routing::post;
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 /// Body for `POST /work-items/{id}/activity`. Mirrors the MCP
 /// `RecordTaskActivityParams` surface: `entry_kind` is free TEXT validated by
@@ -104,8 +104,8 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::repo;
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::repo;
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -151,7 +151,7 @@ mod tests {
     async fn activity_log_round_trip_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST /work-items/{id}/activity

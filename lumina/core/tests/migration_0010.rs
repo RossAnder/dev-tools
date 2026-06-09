@@ -26,7 +26,7 @@
 //! this test introduces no `.sqlx/` cache entry — matches `migration_0003.rs` /
 //! `migration_0004.rs`.
 
-use lumina::db::connect_in_memory;
+use lumina_core::db::connect_in_memory;
 use sqlx::SqlitePool;
 
 /// Raw INSERT of a work_item via the runtime query API. Returns the execute

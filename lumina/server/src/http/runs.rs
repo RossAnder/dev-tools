@@ -20,9 +20,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::domain::{FindingDecisionKind, NewFindingDecision};
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::domain::{FindingDecisionKind, NewFindingDecision};
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 /// Body for `POST /findings/{finding_id}/decision`. Mirrors
 /// `domain::NewFindingDecision` minus `finding_id` (which arrives on the path).
@@ -50,7 +50,7 @@ pub fn router() -> Router<AppState> {
 /// `repo::create_run` as a `Validation` → 422. Returns 201 + `{ "run_id": <uuid> }`.
 async fn create_run_handler(
     State(state): State<AppState>,
-    Json(body): Json<crate::domain::NewRun>,
+    Json(body): Json<lumina_core::domain::NewRun>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!(target_id = %body.target_id, "http: POST /runs");
     let id = repo::create_run(state.pool.as_ref(), &body).await?;
@@ -95,9 +95,9 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::domain::Severity;
-    use crate::repo::{self, NewFinding};
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::domain::Severity;
+    use lumina_core::repo::{self, NewFinding};
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -159,7 +159,7 @@ mod tests {
     async fn create_run_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Happy path: a review run over the live story → 201 + run_id.
@@ -223,7 +223,7 @@ mod tests {
     async fn record_finding_decision_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool.clone())));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool.clone())));
         let router = build_router(state);
 
         // dismiss → 201 + decision_id, no spawn.

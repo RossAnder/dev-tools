@@ -33,10 +33,10 @@
 //! `tests/claim_concurrency.rs` / `tests/migration_0013.rs`. The lib + the
 //! migration-0016 repo code have landed; this file only drives them.
 
-use lumina::db::connect_in_memory;
-use lumina::domain::{Lane, NewWorktree, SprintStatus, WorktreeOutcome};
-use lumina::error::AppError;
-use lumina::repo::{self, CreateOpts};
+use lumina_core::db::connect_in_memory;
+use lumina_core::domain::{Lane, NewWorktree, SprintStatus, WorktreeOutcome};
+use lumina_core::error::AppError;
+use lumina_core::repo::{self, CreateOpts};
 use sqlx::SqlitePool;
 
 /// Read a worktree's audit `outcome` string (NULL when no verdict recorded), via
@@ -112,7 +112,7 @@ async fn seed_chain_to_story(pool: &SqlitePool) -> String {
 async fn seed_sprint(pool: &SqlitePool) -> String {
     repo::create_sprint(
         pool,
-        &lumina::domain::NewSprint {
+        &lumina_core::domain::NewSprint {
             title: Some("S1".into()),
             worktree_id: None,
             predecessor_sprint_id: None,

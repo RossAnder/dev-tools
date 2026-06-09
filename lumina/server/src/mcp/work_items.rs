@@ -13,7 +13,7 @@
 
 use super::*;
 
-use crate::domain::{Origin, Status, Tier};
+use lumina_core::domain::{Origin, Status, Tier};
 
 /// Arguments for the `transition_status` write tool (the rename of the former
 /// `update_work_item_status`). A `#[tool]` method takes exactly ONE
@@ -241,7 +241,7 @@ pub struct RecordTaskActivityParams {
     pub origin: Option<Origin>,
 }
 
-/// The execution-facing subset of [`crate::domain::ActivityType`] that
+/// The execution-facing subset of [`lumina_core::domain::ActivityType`] that
 /// `record_task_activity` accepts. Constraining the param to this set (rather
 /// than the full activity enum) advertises only the three legal execution-tool
 /// values; the repo still validates against the full canonical set.
@@ -312,7 +312,7 @@ impl LuminaTools {
         Parameters(p): Parameters<UpdateWorkItemParams>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "update_work_item", "mcp tool invoked");
-        let req = crate::domain::UpdateWorkItemRequest {
+        let req = lumina_core::domain::UpdateWorkItemRequest {
             title: p.title,
             body: p.body,
             status: p.status,
@@ -607,7 +607,7 @@ impl LuminaTools {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::connect_in_memory;
+    use lumina_core::db::connect_in_memory;
     use crate::mcp::test_support::*;
 
     /// A `record_task_activity` call writes exactly +1 activity row and +1 event.

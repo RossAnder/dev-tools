@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 # Library target: lib.rs is the composition root's module graph; the e2e test
 # (Task 10) imports the crate as a library. The binary is the thin entrypoint.
 [lib]
-name = "lumina"
+name = "lumina_server"
 path = "src/lib.rs"
 
 [[bin]]
@@ -30,6 +30,12 @@ name = "pty_stub"
 path = "tests/fixtures/pty_stub.rs"
 
 [dependencies]
+# --- record layer (carved out into lumina-core) ---
+# domain / repo / db / error / export / import + the DB-free jsonl_tail/protocol
+# parsing back-edge. `features = ["axum"]` enables core's `IntoResponse for
+# AppError` impl so handlers keep returning `Result<_, AppError>`.
+lumina-core = { path = "../core", features = ["axum"] }
+
 # --- web / runtime ---
 axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }

@@ -11,7 +11,7 @@
 
 use super::*;
 
-use crate::domain::{Lane, TaskKind, Tier};
+use lumina_core::domain::{Lane, TaskKind, Tier};
 
 // ---- Task-dependency params (migration 0005, T4) -------------------------
 
@@ -64,7 +64,7 @@ pub struct ComputeTaskBatchesParams {
 /// Arguments for the `get_story_readiness` read tool →
 /// `repo::get_story_readiness` (migration 0005). Returns the planning-pipeline
 /// readiness aggregate + the next recommended block per the
-/// [`crate::domain::NextAction`] enum (a UX rollup over the §l six-phase
+/// [`lumina_core::domain::NextAction`] enum (a UX rollup over the §l six-phase
 /// sequence — see the enum docstring for the auto-recommended subset).
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetStoryReadinessParams {

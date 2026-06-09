@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::pty::protocol::SessionId;
+use lumina_core::protocol::SessionId;
 use crate::pty::session::Session;
 
 /// Active-session lookup. `Default`-constructible so callers can build an

@@ -27,9 +27,9 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::domain::{CreateWorkItemRequest, UpdateWorkItemRequest, WorkItem, WorkItemDetail};
-use crate::error::AppError;
-use crate::repo::{self, NewWorkItemSpec};
+use lumina_core::domain::{CreateWorkItemRequest, UpdateWorkItemRequest, WorkItem, WorkItemDetail};
+use lumina_core::error::AppError;
+use lumina_core::repo::{self, NewWorkItemSpec};
 
 /// A node in the nested hierarchy tree returned by the default
 /// `GET /work-items`. The work-item's own fields are flattened in alongside a
@@ -295,7 +295,7 @@ mod tests {
     use tower::ServiceExt as _; // for `oneshot`
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
+    use lumina_core::db::connect_in_memory;
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -342,7 +342,7 @@ mod tests {
     async fn get_work_items_returns_nested_tree() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
 
         let resp = build_router(state)
             .oneshot(
@@ -380,7 +380,7 @@ mod tests {
     async fn get_work_items_filtered_is_flat() {
         let pool = connect_in_memory().await.expect("pool");
         seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
 
         let resp = build_router(state)
             .oneshot(
@@ -405,7 +405,7 @@ mod tests {
     #[tokio::test]
     async fn get_unknown_work_item_is_404() {
         let pool = connect_in_memory().await.expect("pool");
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
 
         let resp = build_router(state)
             .oneshot(
@@ -427,7 +427,7 @@ mod tests {
     #[tokio::test]
     async fn post_work_item_creates_and_validates() {
         let pool = connect_in_memory().await.expect("pool");
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Legal project create → 201 + id.
@@ -487,7 +487,7 @@ mod tests {
         repo::append_activity(&pool, &story_id, "comment", Some("alice"), "noted", None, None)
             .await
             .expect("append activity");
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
 
         let resp = build_router(state)
             .oneshot(
@@ -522,7 +522,7 @@ mod tests {
             .await
             .expect("project")
             .to_string();
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -569,7 +569,7 @@ mod tests {
             .await
             .expect("project")
             .to_string();
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -618,7 +618,7 @@ mod tests {
     /// regression lock that the handler never starts stripping the fields.
     #[tokio::test]
     async fn get_detail_includes_planning_surface() {
-        use crate::domain::{Complexity, Effort, Relevance};
+        use lumina_core::domain::{Complexity, Effort, Relevance};
 
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, task_id) = seed_chain(&pool).await;
@@ -656,7 +656,7 @@ mod tests {
             .await
             .expect("add question option");
 
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
 
         // Detail of the STORY: carries relevance + all three child collections.
         let resp = build_router(state.clone())
@@ -741,7 +741,7 @@ mod tests {
             .await
             .expect("project")
             .to_string();
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // First DELETE → 204 No Content.
@@ -797,7 +797,7 @@ mod tests {
     async fn post_work_items_batch_creates_all() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         let resp = router
@@ -833,7 +833,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_path_serves_index_200() {
         let pool = connect_in_memory().await.expect("pool");
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
 
         let resp = build_router(state)
             .oneshot(

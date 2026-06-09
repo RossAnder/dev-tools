@@ -3,7 +3,7 @@
 //! the CLI dispatcher. Later tasks extend `cli::run` (e.g. the `import-flow`
 //! subcommand) without touching this file.
 
-use lumina::cli;
+use lumina_server::cli;
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[global_allocator]

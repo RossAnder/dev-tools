@@ -8,7 +8,7 @@
 //!
 //! * `outbound`  — a `broadcast::Receiver<TypedMessage>` retained for trait
 //!   compatibility but **unused** after the lumina-pty-jsonl-tail cut (T5):
-//!   the canonical transcript source is now [`crate::pty::jsonl_tail::tail`].
+//!   the canonical transcript source is now [`lumina_core::jsonl_tail::tail`].
 //!   No producer feeds this channel; the bridge in `pty::spawn` consumes the
 //!   JSONL-tail broadcast directly and ignores `handle.outbound`.
 //! * `inbound`   — a `mpsc::Sender<InputFrame>` the supervisor (T8) pushes
@@ -77,8 +77,8 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::error::AppError;
-use crate::pty::protocol::{InputFrame, InputKind, SessionId, TypedMessage};
+use lumina_core::error::AppError;
+use lumina_core::protocol::{InputFrame, InputKind, SessionId, TypedMessage};
 use crate::pty::transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
 
 mod config;

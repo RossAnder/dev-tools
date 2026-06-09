@@ -18,7 +18,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use lumina::{db, repo};
+use lumina_core::{db, repo};
 use sqlx::SqlitePool;
 use tokio::task::JoinSet;
 

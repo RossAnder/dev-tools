@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::pty::protocol::{AskOutcome, InputFrame, SessionId, SessionStatus, TypedMessage};
+use lumina_core::protocol::{AskOutcome, InputFrame, SessionId, SessionStatus, TypedMessage};
 
 /// Per-process runtime state. Holds the broadcast fan-out, the input intake,
 /// the current lifecycle status, and the outstanding-tool-use set and

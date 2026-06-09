@@ -107,8 +107,8 @@ impl LuminaTools {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::connect_in_memory;
-    use crate::domain::NewSprint;
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::domain::NewSprint;
     use crate::mcp::test_support::*;
 
     /// A task seeded under a full `project > epic > focus > story > task` chain

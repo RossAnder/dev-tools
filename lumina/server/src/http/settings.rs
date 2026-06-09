@@ -3,7 +3,7 @@
 //! These are machine-local, env-driven values the browser needs to render
 //! clone/export affordances — there is NO DB hit and NO write surface. The
 //! `clone_root` resolution mirrors the export-root precedent
-//! ([`crate::export::resolve_export_root`]) EXACTLY, except `clone_root` has no
+//! ([`lumina_core::export::resolve_export_root`]) EXACTLY, except `clone_root` has no
 //! default (it is `None` when `LUMINA_CLONE_ROOT` is unset, whereas the export
 //! root falls back to `./.lumina/export`).
 
@@ -21,7 +21,7 @@ use crate::app::AppState;
 const CLONE_ROOT_ENV: &str = "LUMINA_CLONE_ROOT";
 
 /// Resolve the clone root from `LUMINA_CLONE_ROOT`. Mirrors the `var_os` shape
-/// of [`crate::export::resolve_export_root`] but with NO fallback default —
+/// of [`lumina_core::export::resolve_export_root`] but with NO fallback default —
 /// `None` when the var is unset.
 pub fn resolve_clone_root() -> Option<PathBuf> {
     std::env::var_os(CLONE_ROOT_ENV).map(PathBuf::from)
@@ -43,7 +43,7 @@ pub fn router() -> Router<AppState> {
 /// compiled-in default).
 async fn get_settings() -> Json<Value> {
     let clone_root = resolve_clone_root().map(|p| p.to_string_lossy().into_owned());
-    let export_root = crate::export::resolve_export_root()
+    let export_root = lumina_core::export::resolve_export_root()
         .to_string_lossy()
         .into_owned();
     Json(json!({

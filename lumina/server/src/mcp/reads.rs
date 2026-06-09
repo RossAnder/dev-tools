@@ -8,7 +8,7 @@
 
 use super::*;
 
-use crate::domain::{Kind, Status};
+use lumina_core::domain::{Kind, Status};
 
 /// Arguments for the `list_work_items` read tool. All filters are optional;
 /// `parent_id = None` means "no parent filter" (repo semantics), NOT roots-only.

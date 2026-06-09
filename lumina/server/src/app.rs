@@ -15,7 +15,7 @@ use axum::Extension;
 use axum::Router;
 use tokio::sync::Semaphore;
 
-use crate::db::AnyPool;
+use lumina_core::db::AnyPool;
 
 /// Shared application state. Cheap to clone — the pool is `Arc`-wrapped and
 /// sqlx pools are themselves ref-counted, so handlers and the MCP layer all
@@ -148,7 +148,7 @@ pub async fn serve() -> anyhow::Result<()> {
     // embedded migrations on startup — `db::init` (Task 2) is the single entry
     // point that owns both. The runtime server therefore starts on a migrated
     // schema.
-    let pool = crate::db::init(&database_url)
+    let pool = lumina_core::db::init(&database_url)
         .await
         .with_context(|| format!("initialising database at {database_url}"))?;
     let pool = Arc::new(AnyPool::from(pool));

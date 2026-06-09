@@ -10,8 +10,8 @@
 
 use super::*;
 
-use crate::domain::{Disposition, Origin, Severity};
-use crate::repo::NewFinding;
+use lumina_core::domain::{Disposition, Origin, Severity};
+use lumina_core::repo::NewFinding;
 
 /// Arguments for the `add_finding` write tool → `repo::create_finding`. Carries
 /// the work-item id plus the common finding fields; the typed `severity` enum
@@ -304,7 +304,7 @@ impl LuminaTools {
         Parameters(p): Parameters<UpdateFindingParams>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "update_finding", "mcp tool invoked");
-        let req = crate::domain::UpdateFindingRequest {
+        let req = lumina_core::domain::UpdateFindingRequest {
             severity: p.severity,
             effort: p.effort,
             category: p.category,
@@ -466,7 +466,7 @@ impl LuminaTools {
 
     /// Query LIVE findings with a static NULL-guard filter, optionally returning
     /// grouped axis counts instead of full rows (single repo call →
-    /// `repo::query_findings`). Reuses `crate::domain::QueryFindingsFilter`
+    /// `repo::query_findings`). Reuses `lumina_core::domain::QueryFindingsFilter`
     /// directly as the param type (it derives `Deserialize + JsonSchema`).
     /// Read-only.
     #[tool(
@@ -475,7 +475,7 @@ impl LuminaTools {
     )]
     async fn query_findings(
         &self,
-        Parameters(filter): Parameters<crate::domain::QueryFindingsFilter>,
+        Parameters(filter): Parameters<lumina_core::domain::QueryFindingsFilter>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "query_findings", "mcp tool invoked");
         let result = repo::query_findings(&self.pool, &filter)
@@ -505,7 +505,7 @@ impl LuminaTools {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::connect_in_memory;
+    use lumina_core::db::connect_in_memory;
     use crate::mcp::test_support::*;
 
     /// A valid `add_findings` payload deserialises into the params struct; an
@@ -552,12 +552,12 @@ mod tests {
 
     /// A legal `query_findings` payload (a couple of filter fields +
     /// `count_by: "severity"`) deserialises into the reused
-    /// `crate::domain::QueryFindingsFilter` param type; a bogus `count_by`
+    /// `lumina_core::domain::QueryFindingsFilter` param type; a bogus `count_by`
     /// value is REJECTED at the deserialise boundary (rmcp → invalid_params).
     #[tokio::test]
     async fn query_findings_params_deserialise_and_reject_bad_enum() {
         // A legal payload: two filter fields + the grouped count axis.
-        let ok = serde_json::from_value::<crate::domain::QueryFindingsFilter>(serde_json::json!({
+        let ok = serde_json::from_value::<lumina_core::domain::QueryFindingsFilter>(serde_json::json!({
             "work_item_id": "w1",
             "severity": "major",
             "count_by": "severity"
@@ -565,11 +565,11 @@ mod tests {
         assert!(ok.is_ok(), "a legal query_findings payload deserialises");
 
         // An empty payload is also legal — every field is optional.
-        let empty = serde_json::from_value::<crate::domain::QueryFindingsFilter>(serde_json::json!({}));
+        let empty = serde_json::from_value::<lumina_core::domain::QueryFindingsFilter>(serde_json::json!({}));
         assert!(empty.is_ok(), "an empty query_findings payload deserialises");
 
         // A bogus `count_by` axis fails (the FindingAxis enum has only `severity`).
-        let err = serde_json::from_value::<crate::domain::QueryFindingsFilter>(serde_json::json!({
+        let err = serde_json::from_value::<lumina_core::domain::QueryFindingsFilter>(serde_json::json!({
             "count_by": "bogus_axis"
         }))
         .expect_err("an invalid count_by axis must fail to deserialize");

@@ -26,13 +26,13 @@ use axum::http::{Request, StatusCode};
 use rmcp::handler::server::wrapper::Parameters;
 use tower::ServiceExt as _; // for `oneshot`
 
-use lumina::app::{AppState, build_router};
-use lumina::db::{AnyPool, connect_in_memory};
-use lumina::domain::{
+use lumina_server::app::{AppState, build_router};
+use lumina_core::db::{AnyPool, connect_in_memory};
+use lumina_core::domain::{
     CreateWorkItemRequest, FindingDecisionKind, NewFindingDecision, NewRun, Severity, TargetKind,
 };
-use lumina::mcp::LuminaTools;
-use lumina::repo::{self, NewFinding, NewWorkItemSpec};
+use lumina_server::mcp::LuminaTools;
+use lumina_core::repo::{self, NewFinding, NewWorkItemSpec};
 
 /// Build a fresh migrated in-memory pool, wrapped in the erased `AnyPool` and
 /// shared by handle so the MCP handler, the HTTP router, and the raw
@@ -483,14 +483,14 @@ async fn create_run_rejects_mismatched_target_kind() {
     let res = repo::create_run(
         &pool,
         &NewRun {
-            kind: lumina::domain::RunKind::Review,
+            kind: lumina_core::domain::RunKind::Review,
             target_id: task.clone(),
             target_kind: TargetKind::Story,
         },
     )
     .await;
     assert!(
-        matches!(res, Err(lumina::error::AppError::Validation(_))),
+        matches!(res, Err(lumina_core::error::AppError::Validation(_))),
         "a task id passed as a story target is a Validation, got {res:?}"
     );
     let runs_after_repo: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM runs")

@@ -10,7 +10,7 @@
 
 use super::*;
 
-use crate::domain::{Lane, Tier};
+use lumina_core::domain::{Lane, Tier};
 
 // ---- Team-execution work-queue params (team-execution migration, §G) -----
 

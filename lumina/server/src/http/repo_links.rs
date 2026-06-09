@@ -15,8 +15,8 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 /// Body for `POST /work-items/{project_id}/repo-links` — link a GitHub repo to
 /// a project (migration 0004). `slug` is canonicalised inside

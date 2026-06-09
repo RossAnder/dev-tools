@@ -4,7 +4,7 @@
 //! subcommand) preserves the original behaviour — it starts the server via
 //! `crate::app::serve`. `import-flow <slug>` resolves the flow directory as
 //! `.claude/flows/<slug>/` (relative to the CWD), opens a pool via
-//! `crate::db::init`, imports the flow, prints the summary, and returns.
+//! `lumina_core::db::init`, imports the flow, prints the summary, and returns.
 //!
 //! `main.rs` still only calls `cli::run()`; it is not edited by this task.
 
@@ -90,11 +90,11 @@ async fn import_flow_cmd(slug: &str) -> anyhow::Result<()> {
     // local default as `app::serve`.
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://lumina.db".to_string());
-    let pool = crate::db::init(&database_url)
+    let pool = lumina_core::db::init(&database_url)
         .await
         .with_context(|| format!("initialising database at {database_url}"))?;
 
-    let summary = crate::import::import_flow(&pool, &flow_dir)
+    let summary = lumina_core::import::import_flow(&pool, &flow_dir)
         .await
         .with_context(|| format!("importing flow '{slug}'"))?;
 

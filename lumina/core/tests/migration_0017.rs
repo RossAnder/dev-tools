@@ -21,7 +21,7 @@
 //! All assertions use the RUNTIME `sqlx::query` / `query_scalar` string API (no
 //! compile-checked macros), matching `migration_0016.rs`.
 
-use lumina::db::connect_in_memory;
+use lumina_core::db::connect_in_memory;
 use sqlx::SqlitePool;
 
 /// COUNT of `sqlite_master` rows of a given `type`/`name` — 1 when the object

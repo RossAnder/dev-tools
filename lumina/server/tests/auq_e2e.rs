@@ -73,12 +73,13 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt as _;
 
-use lumina::app::{AppState, build_router};
-use lumina::db;
-use lumina::error::AppError;
-use lumina::pty::protocol::{InputFrame, InputKind, SessionId, TypedMessage};
-use lumina::pty::transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
-use lumina::pty::{self, SessionRegistry, jsonl_tail};
+use lumina_server::app::{AppState, build_router};
+use lumina_core::db;
+use lumina_core::error::AppError;
+use lumina_core::protocol::{InputFrame, InputKind, SessionId, TypedMessage};
+use lumina_server::pty::transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
+use lumina_server::pty::{self, SessionRegistry};
+use lumina_core::jsonl_tail;
 
 /// Channel capacities mirroring `pty_transport.rs`'s constants. Inlined
 /// here because the constants are private to that module.

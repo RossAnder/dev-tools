@@ -2,12 +2,12 @@
 //!
 //! Carved out of `jsonl_tail/mod.rs` as the parsing/record-type cluster; the
 //! runtime tail/bind cluster remains in `mod.rs`. Every item here stays
-//! reachable at `crate::pty::jsonl_tail::*` via the `pub use parse::*;` in
+//! reachable at `crate::jsonl_tail::*` via the `pub use parse::*;` in
 //! `mod.rs`.
 
 use std::path::{Path, PathBuf};
 
-use crate::pty::protocol::{MessageKind, TypedMessage};
+use crate::protocol::{MessageKind, TypedMessage};
 
 // ---------------------------------------------------------------------------
 // JSONL record envelope (tolerant deserialise)

@@ -30,9 +30,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use lumina::db;
-use lumina::domain::{ClaimedTask, Lane};
-use lumina::repo::{self, CreateOpts};
+use lumina_core::db;
+use lumina_core::domain::{ClaimedTask, Lane};
+use lumina_core::repo::{self, CreateOpts};
 use sqlx::SqlitePool;
 use tokio::task::JoinSet;
 
@@ -152,7 +152,7 @@ async fn seed_queue_task(
 async fn seed_sprint(pool: &SqlitePool) -> String {
     repo::create_sprint(
         pool,
-        &lumina::domain::NewSprint {
+        &lumina_core::domain::NewSprint {
             title: Some("S1".into()),
             worktree_id: None,
             predecessor_sprint_id: None,
@@ -247,7 +247,7 @@ async fn concurrent_claims_never_double_claim() {
                     None => break, // queue drained for this agent
                 }
             }
-            Ok::<(String, Vec<ClaimedTask>), lumina::error::AppError>((agent_id, mine))
+            Ok::<(String, Vec<ClaimedTask>), lumina_core::error::AppError>((agent_id, mine))
         });
     }
 
@@ -418,7 +418,7 @@ async fn checkpoint_freeze_holds_under_contention() {
                 LEASE_TTL_SECS,
             )
             .await?;
-            Ok::<Option<ClaimedTask>, lumina::error::AppError>(claimed)
+            Ok::<Option<ClaimedTask>, lumina_core::error::AppError>(claimed)
         });
     }
 

@@ -4,23 +4,23 @@
 //!
 //! The five tools (`create_run`, `create_sprint`, `add_tasks_to_sprint`,
 //! `record_finding_decision`, `create_work_items`) and the `*Params` structs
-//! that are NOT reused directly from `crate::domain` (`AddTasksToSprintParams`,
+//! that are NOT reused directly from `lumina_core::domain` (`AddTasksToSprintParams`,
 //! `NewWorkItemInput`, `CreateWorkItemsParams`) live here. The `create_run` /
 //! `create_sprint` / `record_finding_decision` tools reuse the
-//! `crate::domain::New*` input structs directly. They register via the
+//! `lumina_core::domain::New*` input structs directly. They register via the
 //! `tool_router_runs_sprints` sub-router, summed into the combined field by
 //! `LuminaTools::with_state`.
 
 use super::*;
 
-use crate::domain::{Origin, SprintStatus};
+use lumina_core::domain::{Origin, SprintStatus};
 
 /// Arguments for the `add_tasks_to_sprint` write tool →
 /// `repo::add_tasks_to_sprint` (B23). Idempotent at the junction: a
 /// re-attached (id, sprint) pair is collapsed via `ON CONFLICT DO NOTHING`
 /// and NOT counted in the returned `added`. A non-task / missing id aborts the
 /// whole batch (`Validation`). The `create_run` / `create_sprint` /
-/// `record_finding_decision` tools reuse the `crate::domain::New*` input
+/// `record_finding_decision` tools reuse the `lumina_core::domain::New*` input
 /// structs directly (each derives `Deserialize + JsonSchema`), so only the
 /// task-attach tool needs a bespoke param struct.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -33,7 +33,7 @@ pub struct AddTasksToSprintParams {
 }
 
 /// One work-item spec in the `create_work_items` batch. Mirrors
-/// [`crate::repo::NewWorkItemSpec`] (kind/parent/title/body + origin/outcome/shape)
+/// [`lumina_core::repo::NewWorkItemSpec`] (kind/parent/title/body + origin/outcome/shape)
 /// plus the optional spawn provenance `spawned_from_finding_id`. The typed
 /// `origin` enum advertises the legal provenance values; a bogus value fails
 /// deserialisation.
@@ -135,7 +135,7 @@ impl LuminaTools {
     }
 
     /// Open a review/optimise run targeting a sprint or story (single repo call
-    /// → `repo::create_run`). Reuses `crate::domain::NewRun` directly as the
+    /// → `repo::create_run`). Reuses `lumina_core::domain::NewRun` directly as the
     /// param type (it derives `Deserialize + JsonSchema`). Returns
     /// `{ run_id }`.
     #[tool(
@@ -144,7 +144,7 @@ impl LuminaTools {
     )]
     async fn create_run(
         &self,
-        Parameters(run): Parameters<crate::domain::NewRun>,
+        Parameters(run): Parameters<lumina_core::domain::NewRun>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "create_run", "mcp tool invoked");
         let id = repo::create_run(&self.pool, &run)
@@ -154,7 +154,7 @@ impl LuminaTools {
     }
 
     /// Open a sprint (single repo call → `repo::create_sprint`). Reuses
-    /// `crate::domain::NewSprint` directly as the param type. Returns
+    /// `lumina_core::domain::NewSprint` directly as the param type. Returns
     /// `{ sprint_id }`.
     #[tool(
         description = "Open a sprint with an optional title. The sprint id, an `open` status, and the timestamp are minted by the store. Returns { sprint_id }. Records one event.",
@@ -162,7 +162,7 @@ impl LuminaTools {
     )]
     async fn create_sprint(
         &self,
-        Parameters(sprint): Parameters<crate::domain::NewSprint>,
+        Parameters(sprint): Parameters<lumina_core::domain::NewSprint>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "create_sprint", "mcp tool invoked");
         let id = repo::create_sprint(&self.pool, &sprint)
@@ -218,7 +218,7 @@ impl LuminaTools {
     }
 
     /// Record a triage decision on a finding (single repo call →
-    /// `repo::record_finding_decision`). Reuses `crate::domain::NewFindingDecision`
+    /// `repo::record_finding_decision`). Reuses `lumina_core::domain::NewFindingDecision`
     /// directly as the param type. A `spawn_task`/`spawn_story` decision creates
     /// a child under the finding host (its id surfaces as `spawned_work_item_id`);
     /// `resolve` delegates to `resolve_finding`; `defer`/`dismiss` set the
@@ -230,7 +230,7 @@ impl LuminaTools {
     )]
     async fn record_finding_decision(
         &self,
-        Parameters(decision): Parameters<crate::domain::NewFindingDecision>,
+        Parameters(decision): Parameters<lumina_core::domain::NewFindingDecision>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "record_finding_decision", "mcp tool invoked");
         let (decision_id, spawned) = repo::record_finding_decision(&self.pool, &decision)
@@ -267,12 +267,12 @@ mod tests {
     }
 
     /// A legal `create_run` payload deserialises into the reused
-    /// `crate::domain::NewRun` param type; an out-of-set `kind` AND an out-of-set
+    /// `lumina_core::domain::NewRun` param type; an out-of-set `kind` AND an out-of-set
     /// `target_kind` are each REJECTED at the deserialise boundary (rmcp →
     /// invalid_params).
     #[tokio::test]
     async fn create_run_params_deserialise_and_reject_bad_enum() {
-        let ok = serde_json::from_value::<crate::domain::NewRun>(serde_json::json!({
+        let ok = serde_json::from_value::<lumina_core::domain::NewRun>(serde_json::json!({
             "kind": "review",
             "target_id": "s1",
             "target_kind": "story"
@@ -280,7 +280,7 @@ mod tests {
         assert!(ok.is_ok(), "a legal create_run payload deserialises");
 
         // A bogus `kind` fails (RunKind has only review|optimise).
-        let bad_kind = serde_json::from_value::<crate::domain::NewRun>(serde_json::json!({
+        let bad_kind = serde_json::from_value::<lumina_core::domain::NewRun>(serde_json::json!({
             "kind": "bogus",
             "target_id": "s1",
             "target_kind": "story"
@@ -292,7 +292,7 @@ mod tests {
         );
 
         // A bogus `target_kind` fails (TargetKind has only sprint|story).
-        let bad_target = serde_json::from_value::<crate::domain::NewRun>(serde_json::json!({
+        let bad_target = serde_json::from_value::<lumina_core::domain::NewRun>(serde_json::json!({
             "kind": "review",
             "target_id": "s1",
             "target_kind": "bogus"
@@ -306,16 +306,16 @@ mod tests {
     }
 
     /// A `create_sprint` payload deserialises into the reused
-    /// `crate::domain::NewSprint` param type (with and without a title — the
+    /// `lumina_core::domain::NewSprint` param type (with and without a title — the
     /// field is optional).
     #[tokio::test]
     async fn create_sprint_params_deserialise() {
-        let with_title = serde_json::from_value::<crate::domain::NewSprint>(serde_json::json!({
+        let with_title = serde_json::from_value::<lumina_core::domain::NewSprint>(serde_json::json!({
             "title": "Sprint 1"
         }));
         assert!(with_title.is_ok(), "a create_sprint payload with a title deserialises");
 
-        let empty = serde_json::from_value::<crate::domain::NewSprint>(serde_json::json!({}));
+        let empty = serde_json::from_value::<lumina_core::domain::NewSprint>(serde_json::json!({}));
         assert!(empty.is_ok(), "an empty create_sprint payload deserialises (title optional)");
     }
 
@@ -363,11 +363,11 @@ mod tests {
     }
 
     /// A legal `record_finding_decision` payload deserialises into the reused
-    /// `crate::domain::NewFindingDecision` param type; an out-of-set `decision`
+    /// `lumina_core::domain::NewFindingDecision` param type; an out-of-set `decision`
     /// is REJECTED at the deserialise boundary (rmcp → invalid_params).
     #[tokio::test]
     async fn record_finding_decision_params_deserialise_and_reject_bad_enum() {
-        let ok = serde_json::from_value::<crate::domain::NewFindingDecision>(serde_json::json!({
+        let ok = serde_json::from_value::<lumina_core::domain::NewFindingDecision>(serde_json::json!({
             "finding_id": "f1",
             "decision": "spawn_task",
             "decided_by": "ross"
@@ -376,7 +376,7 @@ mod tests {
 
         // `decided_by` is optional.
         let no_decider =
-            serde_json::from_value::<crate::domain::NewFindingDecision>(serde_json::json!({
+            serde_json::from_value::<lumina_core::domain::NewFindingDecision>(serde_json::json!({
                 "finding_id": "f1",
                 "decision": "resolve"
             }));
@@ -384,7 +384,7 @@ mod tests {
 
         // A bogus `decision` fails (FindingDecisionKind has only
         // spawn_task|spawn_story|defer|dismiss|resolve).
-        let err = serde_json::from_value::<crate::domain::NewFindingDecision>(serde_json::json!({
+        let err = serde_json::from_value::<lumina_core::domain::NewFindingDecision>(serde_json::json!({
             "finding_id": "f1",
             "decision": "bogus"
         }))

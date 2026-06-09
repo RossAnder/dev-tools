@@ -22,7 +22,7 @@
 //! `sqlx::query` / `query_scalar` string API (NOT compile-checked macros), so
 //! this test introduces no `.sqlx/` cache entry — matches `migration_0003.rs`.
 
-use lumina::db::connect_in_memory;
+use lumina_core::db::connect_in_memory;
 use sqlx::SqlitePool;
 
 /// Seed the project→epic→focus→story chain and return the story id, so we

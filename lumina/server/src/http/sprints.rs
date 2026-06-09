@@ -17,9 +17,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::domain::SprintStatus;
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::domain::SprintStatus;
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 /// Body for `POST /sprints/{sprint_id}/tasks`. The `task_ids` are validated as
 /// live tasks all-or-nothing by `repo::add_tasks_to_sprint`; an absent list is an
@@ -62,7 +62,7 @@ pub fn router() -> Router<AppState> {
 /// 201 + `{ "sprint_id": <uuid> }`.
 async fn create_sprint_handler(
     State(state): State<AppState>,
-    Json(body): Json<crate::domain::NewSprint>,
+    Json(body): Json<lumina_core::domain::NewSprint>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!("http: POST /sprints");
     let id = repo::create_sprint(state.pool.as_ref(), &body).await?;
@@ -112,8 +112,8 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::repo;
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::repo;
 
     /// Drain a response body into bytes, then parse it as JSON.
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
@@ -161,7 +161,7 @@ mod tests {
     async fn create_sprint_and_add_tasks_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (_story_id, task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Create a sprint → 201 + sprint_id.
@@ -232,7 +232,7 @@ mod tests {
     async fn add_tasks_to_sprint_rejects_non_task_http() {
         let pool = connect_in_memory().await.expect("pool");
         let (story_id, _task_id) = seed_chain(&pool).await;
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Create a sprint → 201 + sprint_id.
@@ -287,7 +287,7 @@ mod tests {
         // A sprint is created at 'draft'.
         let sprint_id = repo::create_sprint(
             &pool,
-            &crate::domain::NewSprint {
+            &lumina_core::domain::NewSprint {
                 title: None,
                 worktree_id: None,
                 predecessor_sprint_id: None,
@@ -296,7 +296,7 @@ mod tests {
         .await
         .expect("sprint")
         .to_string();
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // Legal: draft → ready (200 + ok:true). Non-404 also proves the new

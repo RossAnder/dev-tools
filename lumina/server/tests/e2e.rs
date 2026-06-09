@@ -44,13 +44,13 @@ use axum::http::{Request, StatusCode};
 use rmcp::handler::server::wrapper::Parameters;
 use tower::ServiceExt as _; // for `oneshot`
 
-use lumina::app::{AppState, build_router};
-use lumina::db::connect_in_memory;
-use lumina::domain::{
+use lumina_server::app::{AppState, build_router};
+use lumina_core::db::connect_in_memory;
+use lumina_core::domain::{
     ClosureGate, Complexity, CreateWorkItemRequest, Effort, NextAction, Relevance, ResearchState,
     Severity, TaskKind, Tier, UpdateResearchNoteRequest,
 };
-use lumina::mcp::{
+use lumina_server::mcp::{
     AddFindingParams, LuminaTools, RecordTaskActivityParams, SetStoryPlanParams,
     SetTaskSpecParams, TaskActivityType, VerificationCommands,
 };
@@ -96,7 +96,7 @@ async fn mcp_create(
     // crate-private, so seed it through the public `repo::*` layer over the SAME
     // pool (the tool wraps this 1:1 anyway).
     if kind == "epic" {
-        lumina::repo::add_acceptance_criterion(tools.pool(), &id, "epic close criterion")
+        lumina_core::repo::add_acceptance_criterion(tools.pool(), &id, "epic close criterion")
             .await
             .expect("seed epic close-criterion for the story-create gate");
     }
@@ -172,7 +172,7 @@ async fn json_body(resp: axum::response::Response) -> serde_json::Value {
 async fn full_thread_mcp_write_export_then_http_read() {
     // One shared pool: the MCP handler holds an `Arc<SqlitePool>`, export takes
     // `&SqlitePool`, and the router's `AppState` holds the same `Arc`.
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Drive the MCP create tool to build a legal project→epic→focus→story→
@@ -191,9 +191,9 @@ async fn full_thread_mcp_write_export_then_http_read() {
     //     these 1:1). The epic has exactly one close-criterion (added by
     //     `mcp_create`) which is still UNCHECKED and one non-terminal descendant
     //     story, so `epic→done` MUST be rejected.
-    let denied = lumina::repo::update_work_item_status(pool.sqlite(), &epic, "done").await;
+    let denied = lumina_core::repo::update_work_item_status(pool.sqlite(), &epic, "done").await;
     assert!(
-        matches!(denied, Err(lumina::error::AppError::Validation(_))),
+        matches!(denied, Err(lumina_core::error::AppError::Validation(_))),
         "epic→done rejected while a close-criterion is unchecked and a story is non-terminal, got {denied:?}"
     );
     // Read the epic's single close-criterion id, check it, and make the story
@@ -205,19 +205,19 @@ async fn full_thread_mcp_write_export_then_http_read() {
     .fetch_one(pool.sqlite())
     .await
     .expect("the epic's close-criterion id");
-    lumina::repo::check_acceptance_criterion(pool.sqlite(), &crit_id, Some("e2e"))
+    lumina_core::repo::check_acceptance_criterion(pool.sqlite(), &crit_id, Some("e2e"))
         .await
         .expect("check the epic close-criterion");
     // Criterion checked but the story is still non-terminal ⇒ still rejected.
-    let still_denied = lumina::repo::update_work_item_status(pool.sqlite(), &epic, "done").await;
+    let still_denied = lumina_core::repo::update_work_item_status(pool.sqlite(), &epic, "done").await;
     assert!(
-        matches!(still_denied, Err(lumina::error::AppError::Validation(_))),
+        matches!(still_denied, Err(lumina_core::error::AppError::Validation(_))),
         "epic→done still rejected while a descendant story is non-terminal, got {still_denied:?}"
     );
-    lumina::repo::update_work_item_status(pool.sqlite(), &story, "done")
+    lumina_core::repo::update_work_item_status(pool.sqlite(), &story, "done")
         .await
         .expect("story→done");
-    lumina::repo::update_work_item_status(pool.sqlite(), &epic, "done")
+    lumina_core::repo::update_work_item_status(pool.sqlite(), &epic, "done")
         .await
         .expect("epic→done succeeds once all close-criteria checked and stories terminal");
     let epic_status: String =
@@ -264,7 +264,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
     // 3. Drain the outbox DIRECTLY (no sleep / no background loop) into a temp
     //    export root. Five creates ⇒ five events ⇒ ≥ 1 drained.
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
@@ -335,7 +335,7 @@ async fn full_thread_mcp_write_export_then_http_read() {
 #[tokio::test]
 async fn full_thread_attributes_and_activity_db_export_http() {
     // One shared pool across the MCP handler, the export drain, and the router.
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Build a legal chain to a `story`, set its plan attributes, then add a
@@ -429,7 +429,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
 
     // 3. Drain the outbox DIRECTLY (no sleep / no background loop).
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert_eq!(drained, 8, "every event drained in one pass");
@@ -551,7 +551,7 @@ async fn full_thread_attributes_and_activity_db_export_http() {
 #[tokio::test]
 async fn full_thread_planning_and_decisions_db_export_http() {
     // One shared pool across the MCP handler, the export drain, and the router.
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Build a legal chain to a `story`, then add two branch tasks under it.
@@ -567,46 +567,46 @@ async fn full_thread_planning_and_decisions_db_export_http() {
 
     // 2. Relevance + closure gate on the story (relevance settable only on
     //    epic/focus/story; gate is story-scoped).
-    lumina::repo::set_relevance(&pool, &story, Relevance::Active)
+    lumina_core::repo::set_relevance(&pool, &story, Relevance::Active)
         .await
         .expect("set story relevance=active");
     // Relevance is REJECTED on a task (typed Validation).
-    let task_relevance_err = lumina::repo::set_relevance(&pool, &task, Relevance::Active).await;
+    let task_relevance_err = lumina_core::repo::set_relevance(&pool, &task, Relevance::Active).await;
     assert!(
-        matches!(task_relevance_err, Err(lumina::error::AppError::Validation(_))),
+        matches!(task_relevance_err, Err(lumina_core::error::AppError::Validation(_))),
         "relevance on a task is rejected with Validation, got {task_relevance_err:?}"
     );
-    lumina::repo::set_closure_gate(&pool, &story, ClosureGate::Hard)
+    lumina_core::repo::set_closure_gate(&pool, &story, ClosureGate::Hard)
         .await
         .expect("set story closure_gate=hard");
 
     // 3. Two acceptance criteria on the task; check the gate behaviour.
-    let crit1 = lumina::repo::add_acceptance_criterion(&pool, &task, "compiles")
+    let crit1 = lumina_core::repo::add_acceptance_criterion(&pool, &task, "compiles")
         .await
         .expect("add criterion 1")
         .to_string();
-    let crit2 = lumina::repo::add_acceptance_criterion(&pool, &task, "tests pass")
+    let crit2 = lumina_core::repo::add_acceptance_criterion(&pool, &task, "tests pass")
         .await
         .expect("add criterion 2")
         .to_string();
 
     // task→done is GATED (rejected) while a criterion is unchecked under `hard`.
-    let gated = lumina::repo::update_work_item_status(&pool, &task, "done").await;
+    let gated = lumina_core::repo::update_work_item_status(&pool, &task, "done").await;
     assert!(
-        matches!(gated, Err(lumina::error::AppError::Validation(_))),
+        matches!(gated, Err(lumina_core::error::AppError::Validation(_))),
         "task→done is gated by the hard story while a criterion is unchecked, got {gated:?}"
     );
 
     // Check both criteria (each check also appends a `verification` activity).
-    lumina::repo::check_acceptance_criterion(&pool, &crit1, Some("e2e"))
+    lumina_core::repo::check_acceptance_criterion(&pool, &crit1, Some("e2e"))
         .await
         .expect("check criterion 1");
-    lumina::repo::check_acceptance_criterion(&pool, &crit2, Some("e2e"))
+    lumina_core::repo::check_acceptance_criterion(&pool, &crit2, Some("e2e"))
         .await
         .expect("check criterion 2");
 
     // Now task→done is ALLOWED (all criteria checked).
-    lumina::repo::update_work_item_status(&pool, &task, "done")
+    lumina_core::repo::update_work_item_status(&pool, &task, "done")
         .await
         .expect("task→done allowed once all criteria are checked");
     let task_status: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
@@ -617,7 +617,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     assert_eq!(task_status, "done", "the gated transition committed once unblocked");
 
     // 4. Research notes on the story: add two, accept one, supersede the other.
-    let note_live = lumina::repo::add_research_note(
+    let note_live = lumina_core::repo::add_research_note(
         &pool,
         &story,
         "use the LruCache",
@@ -629,7 +629,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     .await
     .expect("add live research note")
     .to_string();
-    let note_old = lumina::repo::add_research_note(
+    let note_old = lumina_core::repo::add_research_note(
         &pool,
         &story,
         "build a dedicated cache",
@@ -643,7 +643,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     .to_string();
 
     // Accept the live note (proposed→accepted) via the partial-update path.
-    lumina::repo::update_research_note(
+    lumina_core::repo::update_research_note(
         &pool,
         &note_live,
         &UpdateResearchNoteRequest {
@@ -657,43 +657,43 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     .expect("accept the live note");
 
     // Supersede the old note with the live one — it should drop from the live fold.
-    lumina::repo::supersede_research_note(&pool, &note_old, &note_live)
+    lumina_core::repo::supersede_research_note(&pool, &note_old, &note_live)
         .await
         .expect("supersede the old note");
 
     // 5. Open question with two options + a branch task per option, then resolve.
-    let question = lumina::repo::add_open_question(&pool, &story, "Which cache approach?")
+    let question = lumina_core::repo::add_open_question(&pool, &story, "Which cache approach?")
         .await
         .expect("add open question")
         .to_string();
     // add_open_question on a non-story → Validation.
-    let q_on_task = lumina::repo::add_open_question(&pool, &task, "illegal?").await;
+    let q_on_task = lumina_core::repo::add_open_question(&pool, &task, "illegal?").await;
     assert!(
-        matches!(q_on_task, Err(lumina::error::AppError::Validation(_))),
+        matches!(q_on_task, Err(lumina_core::error::AppError::Validation(_))),
         "open question on a task is rejected with Validation, got {q_on_task:?}"
     );
 
-    let opt_a = lumina::repo::add_question_option(&pool, &question, "Option A", Some("reuse"))
+    let opt_a = lumina_core::repo::add_question_option(&pool, &question, "Option A", Some("reuse"))
         .await
         .expect("add option A")
         .to_string();
-    let opt_b = lumina::repo::add_question_option(&pool, &question, "Option B", None)
+    let opt_b = lumina_core::repo::add_question_option(&pool, &question, "Option B", None)
         .await
         .expect("add option B")
         .to_string();
 
     // Block both branch tasks on the question; tie each to its exclusive option.
     for (t, o) in [(&task_a, &opt_a), (&task_b, &opt_b)] {
-        lumina::repo::block_task_on_question(&pool, t, &question)
+        lumina_core::repo::block_task_on_question(&pool, t, &question)
             .await
             .expect("block task on question");
-        lumina::repo::set_enabling_option(&pool, t, o)
+        lumina_core::repo::set_enabling_option(&pool, t, o)
             .await
             .expect("set enabling option");
     }
 
     // Resolve choosing option A: chosen-branch task → todo, other-branch → cancelled.
-    lumina::repo::resolve_open_question(&pool, &question, &opt_a, Some("decider"))
+    lumina_core::repo::resolve_open_question(&pool, &question, &opt_a, Some("decider"))
         .await
         .expect("resolve the open question");
     let status_a: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?")
@@ -710,7 +710,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
     assert_eq!(status_b, "cancelled", "other branch's exclusive task cancelled");
 
     // 6. The live research-notes fold excludes the superseded note (DB check).
-    let live_notes_detail = lumina::repo::get_work_item_detail(&pool, &story)
+    let live_notes_detail = lumina_core::repo::get_work_item_detail(&pool, &story)
         .await
         .expect("story detail");
     assert!(
@@ -730,7 +730,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
 
     // 7. Drain the outbox DIRECTLY (no sleep / no background loop).
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert_eq!(drained, 27, "every event drained in one pass: 7 creates + 1 epic close-criterion (migration-0010 story-create gate) + 2 relevance/gate + 2 criteria + 2 checks + 1 status + 2 notes + 1 update_note + 1 supersede + 1 question + 2 options + 4 block/enable + 1 resolve");
@@ -869,7 +869,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
 #[tokio::test]
 async fn repo_links_flow() {
     // One shared pool across the MCP handler, the export drain, and the router.
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Create a project (top of the hierarchy).
@@ -878,12 +878,12 @@ async fn repo_links_flow() {
     // 2. Add two repo links via `repo::add_repo_link` (the 1:1 wrap-target of
     //    the MCP `add_repo_link` tool). Slugs go in mixed-case to exercise the
     //    `parse_github_slug` lowercasing on both segments.
-    let primary_id = lumina::repo::add_repo_link(&pool, &project, "octocat/Hello-World", true)
+    let primary_id = lumina_core::repo::add_repo_link(&pool, &project, "octocat/Hello-World", true)
         .await
         .expect("add primary repo link")
         .to_string();
     let secondary_id =
-        lumina::repo::add_repo_link(&pool, &project, "octocat/Spoon-Knife", false)
+        lumina_core::repo::add_repo_link(&pool, &project, "octocat/Spoon-Knife", false)
             .await
             .expect("add secondary repo link")
             .to_string();
@@ -933,17 +933,17 @@ async fn repo_links_flow() {
     let story = mcp_create(&tools, "story", Some(&focus), "Repo-Links Story").await;
     let task = mcp_create(&tools, "task", Some(&story), "Repo-Links Task").await;
 
-    let finding_id = lumina::repo::create_finding(
+    let finding_id = lumina_core::repo::create_finding(
         &pool,
         &task,
-        &lumina::repo::NewFinding {
+        &lumina_core::repo::NewFinding {
             kind: Some("review"),
-            severity: Some(lumina::domain::Severity::Minor),
+            severity: Some(lumina_core::domain::Severity::Minor),
             summary: Some("uses a deprecated API"),
             file: Some("src/lib.rs"),
             line: Some(42),
             repo_id: Some(&secondary_id),
-            ..lumina::repo::NewFinding::default()
+            ..lumina_core::repo::NewFinding::default()
         },
     )
     .await
@@ -967,7 +967,7 @@ async fn repo_links_flow() {
     //    repo-link mutation rides `aggregate_type=work_item` with the project
     //    id, so the project snapshot is re-rendered for each one (T2/T3).
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert!(
@@ -1193,14 +1193,14 @@ async fn repo_links_flow() {
 /// shape-invariant branches are what the SPA actually depends on.
 #[tokio::test]
 async fn repo_local_path_and_settings_flow() {
-    let pool = Arc::new(lumina::db::AnyPool::from(
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
         connect_in_memory().await.expect("migrated in-memory pool"),
     ));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Project + one repo link (seeded via the public mutators).
     let project = mcp_create(&tools, "project", None, "Local-Path Project").await;
-    let link_id = lumina::repo::add_repo_link(&pool, &project, "octocat/hello-world", true)
+    let link_id = lumina_core::repo::add_repo_link(&pool, &project, "octocat/hello-world", true)
         .await
         .expect("add repo link")
         .to_string();
@@ -1329,7 +1329,7 @@ async fn seed_story(tools: &LuminaTools, label: &str) -> String {
 /// JSON object.
 #[tokio::test]
 async fn set_story_plan_with_not_doing_preserves_sibling_keys() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Not-Doing-Preserve").await;
 
@@ -1397,7 +1397,7 @@ async fn set_story_plan_with_not_doing_preserves_sibling_keys() {
 /// asserts the contract end-to-end through the public MCP method.
 #[tokio::test]
 async fn set_story_plan_null_does_not_delete_key() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Null-Delete-Guard").await;
 
@@ -1449,12 +1449,12 @@ async fn set_story_plan_null_does_not_delete_key() {
 /// superseded → remove.
 #[tokio::test]
 async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Risks-CRUD").await;
 
     // add
-    let risk_id = lumina::repo::add_risk(
+    let risk_id = lumina_core::repo::add_risk(
         &pool,
         &story,
         "R1",
@@ -1475,14 +1475,14 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
     assert_eq!(row_count, 1, "risk row inserted");
 
     // update — promote severity to high.
-    lumina::repo::update_risk(
+    lumina_core::repo::update_risk(
         &pool,
         &risk_id,
-        &lumina::domain::RiskPatch {
+        &lumina_core::domain::RiskPatch {
             summary: None,
             body: None,
             rationale: None,
-            severity: Some(lumina::domain::RiskSeverity::High),
+            severity: Some(lumina_core::domain::RiskSeverity::High),
             mitigation: None,
         },
     )
@@ -1497,7 +1497,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
     assert_eq!(sev, "high", "severity updated by update_risk");
 
     // supersede — supersede the high-severity row with a critical one.
-    let new_id = lumina::repo::supersede_risk(
+    let new_id = lumina_core::repo::supersede_risk(
         &pool,
         &story,
         &risk_id,
@@ -1530,7 +1530,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
     assert_eq!(new_sev, "critical");
 
     // get_work_item_detail returns ONLY the live (non-superseded) risk.
-    let detail = lumina::repo::get_work_item_detail(&pool, &story)
+    let detail = lumina_core::repo::get_work_item_detail(&pool, &story)
         .await
         .expect("story detail");
     assert_eq!(
@@ -1545,7 +1545,7 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
     );
 
     // remove — hard-delete the new (live) row.
-    lumina::repo::remove_risk(&pool, &new_id)
+    lumina_core::repo::remove_risk(&pool, &new_id)
         .await
         .expect("remove risk");
     let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM risks WHERE id = ?")
@@ -1562,11 +1562,11 @@ async fn risks_crud_and_supersession_filter_superseded_from_live_fold() {
 /// filtering. Mirrors (c) without severity; confidence is free TEXT.
 #[tokio::test]
 async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live_fold() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Alts-CRUD").await;
 
-    let alt_id = lumina::repo::add_rejected_alternative(
+    let alt_id = lumina_core::repo::add_rejected_alternative(
         &pool,
         &story,
         "A1",
@@ -1587,10 +1587,10 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
     assert_eq!(row_count, 1, "alternative row inserted");
 
     // update — bump confidence to high.
-    lumina::repo::update_rejected_alternative(
+    lumina_core::repo::update_rejected_alternative(
         &pool,
         &alt_id,
-        &lumina::domain::AlternativePatch {
+        &lumina_core::domain::AlternativePatch {
             summary: None,
             body: None,
             rationale: None,
@@ -1608,7 +1608,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
             .expect("read confidence");
     assert_eq!(conf.as_deref(), Some("high"));
 
-    let new_id = lumina::repo::supersede_rejected_alternative(
+    let new_id = lumina_core::repo::supersede_rejected_alternative(
         &pool,
         &story,
         &alt_id,
@@ -1629,7 +1629,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
             .expect("read superseded_by");
     assert_eq!(superseded_by.as_deref(), Some(new_id.as_str()));
 
-    let detail = lumina::repo::get_work_item_detail(&pool, &story)
+    let detail = lumina_core::repo::get_work_item_detail(&pool, &story)
         .await
         .expect("story detail");
     assert_eq!(
@@ -1639,7 +1639,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
     );
     assert_eq!(detail.rejected_alternatives[0].id, new_id);
 
-    lumina::repo::remove_rejected_alternative(&pool, &new_id)
+    lumina_core::repo::remove_rejected_alternative(&pool, &new_id)
         .await
         .expect("remove alternative");
     let remaining: i64 =
@@ -1658,7 +1658,7 @@ async fn rejected_alternatives_crud_and_supersession_filter_superseded_from_live
 /// foundation task floats to the earliest phase via the task_kind sort key.
 #[tokio::test]
 async fn compute_task_batches_happy_path_returns_phased_dag() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Batches-Happy").await;
 
@@ -1666,24 +1666,24 @@ async fn compute_task_batches_happy_path_returns_phased_dag() {
     let t_slice_a = mcp_create(&tools, "task", Some(&story), "T-Slice-A").await;
     let t_slice_b = mcp_create(&tools, "task", Some(&story), "T-Slice-B").await;
 
-    lumina::repo::set_task_kind(&pool, &t_foundation, Some(TaskKind::Foundation))
+    lumina_core::repo::set_task_kind(&pool, &t_foundation, Some(TaskKind::Foundation))
         .await
         .expect("foundation task_kind");
-    lumina::repo::set_task_kind(&pool, &t_slice_a, Some(TaskKind::Main))
+    lumina_core::repo::set_task_kind(&pool, &t_slice_a, Some(TaskKind::Main))
         .await
         .expect("slice_a task_kind");
-    lumina::repo::set_task_kind(&pool, &t_slice_b, Some(TaskKind::Main))
+    lumina_core::repo::set_task_kind(&pool, &t_slice_b, Some(TaskKind::Main))
         .await
         .expect("slice_b task_kind");
 
-    lumina::repo::add_task_dependency(&pool, &t_slice_a, &t_foundation, "data")
+    lumina_core::repo::add_task_dependency(&pool, &t_slice_a, &t_foundation, "data")
         .await
         .expect("slice_a depends on foundation");
-    lumina::repo::add_task_dependency(&pool, &t_slice_b, &t_foundation, "data")
+    lumina_core::repo::add_task_dependency(&pool, &t_slice_b, &t_foundation, "data")
         .await
         .expect("slice_b depends on foundation");
 
-    let phases = lumina::repo::compute_task_batches(&pool, &story)
+    let phases = lumina_core::repo::compute_task_batches(&pool, &story)
         .await
         .expect("compute_task_batches");
     assert_eq!(phases.len(), 2, "two-phase batching");
@@ -1697,7 +1697,7 @@ async fn compute_task_batches_happy_path_returns_phased_dag() {
 
     // The two edges round-trip through `list_task_dependencies`, ordered by
     // (task_id, depends_on_id) — the deterministic-output contract.
-    let edges = lumina::repo::list_task_dependencies(&pool, &story)
+    let edges = lumina_core::repo::list_task_dependencies(&pool, &story)
         .await
         .expect("list_task_dependencies");
     assert_eq!(edges.len(), 2, "two edges in the per-story graph");
@@ -1717,7 +1717,7 @@ async fn compute_task_batches_happy_path_returns_phased_dag() {
 /// runs Kahn's. The residue edges include both offending pairs.
 #[tokio::test]
 async fn compute_task_batches_cycle_returns_apperror_cycle() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Batches-Cycle").await;
 
@@ -1725,16 +1725,16 @@ async fn compute_task_batches_cycle_returns_apperror_cycle() {
     let t2 = mcp_create(&tools, "task", Some(&story), "T2").await;
 
     // Two opposing edges form a cycle. The repo does not block insert.
-    lumina::repo::add_task_dependency(&pool, &t1, &t2, "data")
+    lumina_core::repo::add_task_dependency(&pool, &t1, &t2, "data")
         .await
         .expect("t1 depends on t2");
-    lumina::repo::add_task_dependency(&pool, &t2, &t1, "data")
+    lumina_core::repo::add_task_dependency(&pool, &t2, &t1, "data")
         .await
         .expect("t2 depends on t1 — accepted at write time");
 
-    let result = lumina::repo::compute_task_batches(&pool, &story).await;
+    let result = lumina_core::repo::compute_task_batches(&pool, &story).await;
     match result {
-        Err(lumina::error::AppError::Cycle { edges }) => {
+        Err(lumina_core::error::AppError::Cycle { edges }) => {
             // Both offending edges land in the residue (order depends on
             // `list_task_dependencies` sort by (task_id, depends_on_id), but
             // existence is what matters).
@@ -1761,12 +1761,12 @@ async fn compute_task_batches_cycle_returns_apperror_cycle() {
 /// surgically clean.
 #[tokio::test]
 async fn get_story_readiness_cascade_covers_load_bearing_variants() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Empty story → RunProblemStatement.
     let empty = seed_story(&tools, "Readiness-Empty").await;
-    let readiness = lumina::repo::get_story_readiness(&pool, &empty)
+    let readiness = lumina_core::repo::get_story_readiness(&pool, &empty)
         .await
         .expect("empty readiness");
     assert!(
@@ -1792,7 +1792,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         }))
         .await
         .expect("interrog PS");
-    let readiness = lumina::repo::get_story_readiness(&pool, &interrog)
+    let readiness = lumina_core::repo::get_story_readiness(&pool, &interrog)
         .await
         .expect("interrog readiness");
     assert_eq!(
@@ -1814,10 +1814,10 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         }))
         .await
         .expect("resolve PS");
-    let _open_q = lumina::repo::add_open_question(&pool, &resolve, "what cache?")
+    let _open_q = lumina_core::repo::add_open_question(&pool, &resolve, "what cache?")
         .await
         .expect("open question");
-    let readiness = lumina::repo::get_story_readiness(&pool, &resolve)
+    let readiness = lumina_core::repo::get_story_readiness(&pool, &resolve)
         .await
         .expect("resolve readiness");
     assert_eq!(
@@ -1842,7 +1842,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         .await
         .expect("vet PS");
     // Seed an answered question so the cascade clears Phase 1.
-    let vet_q = lumina::repo::add_open_question(&pool, &vet, "decided?")
+    let vet_q = lumina_core::repo::add_open_question(&pool, &vet, "decided?")
         .await
         .expect("vet question")
         .to_string();
@@ -1851,7 +1851,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         .execute(pool.sqlite())
         .await
         .expect("mark vet question answered");
-    let _note = lumina::repo::add_research_note(
+    let _note = lumina_core::repo::add_research_note(
         &pool,
         &vet,
         "proposed note",
@@ -1862,7 +1862,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
     )
     .await
     .expect("proposed note");
-    let readiness = lumina::repo::get_story_readiness(&pool, &vet)
+    let readiness = lumina_core::repo::get_story_readiness(&pool, &vet)
         .await
         .expect("vet readiness");
     assert_eq!(
@@ -1892,7 +1892,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         }))
         .await
         .expect("decomp story plan");
-    let decomp_q = lumina::repo::add_open_question(&pool, &decomp, "interrogated?")
+    let decomp_q = lumina_core::repo::add_open_question(&pool, &decomp, "interrogated?")
         .await
         .expect("decomp question")
         .to_string();
@@ -1901,7 +1901,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         .execute(pool.sqlite())
         .await
         .expect("mark decomp question answered");
-    let note = lumina::repo::add_research_note(
+    let note = lumina_core::repo::add_research_note(
         &pool,
         &decomp,
         "accepted note",
@@ -1913,7 +1913,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
     .await
     .expect("research note")
     .to_string();
-    lumina::repo::update_research_note(
+    lumina_core::repo::update_research_note(
         &pool,
         &note,
         &UpdateResearchNoteRequest {
@@ -1925,11 +1925,11 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
     )
     .await
     .expect("accept the note");
-    lumina::repo::add_risk(&pool, &decomp, "risk", None, None, "low", None)
+    lumina_core::repo::add_risk(&pool, &decomp, "risk", None, None, "low", None)
         .await
         .expect("seed risk");
 
-    let readiness = lumina::repo::get_story_readiness(&pool, &decomp)
+    let readiness = lumina_core::repo::get_story_readiness(&pool, &decomp)
         .await
         .expect("decomp readiness (pre-audit)");
     assert_eq!(
@@ -1939,20 +1939,20 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
     );
 
     // 3b. Add a story-review finding → cascade advances to RunDecomposeTasks.
-    lumina::repo::create_finding(
+    lumina_core::repo::create_finding(
         &pool,
         &decomp,
-        &lumina::repo::NewFinding {
+        &lumina_core::repo::NewFinding {
             kind: Some("story-review"),
-            severity: Some(lumina::domain::Severity::Minor),
+            severity: Some(lumina_core::domain::Severity::Minor),
             summary: Some("audit pass"),
-            ..lumina::repo::NewFinding::default()
+            ..lumina_core::repo::NewFinding::default()
         },
     )
     .await
     .expect("seed story-review finding");
 
-    let readiness = lumina::repo::get_story_readiness(&pool, &decomp)
+    let readiness = lumina_core::repo::get_story_readiness(&pool, &decomp)
         .await
         .expect("decomp readiness");
     assert_eq!(
@@ -1971,17 +1971,17 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
     //    tasks at least one dep edge.)
     let task_a = mcp_create(&tools, "task", Some(&decomp), "Ready Task A").await;
     let task_b = mcp_create(&tools, "task", Some(&decomp), "Ready Task B").await;
-    lumina::repo::add_acceptance_criterion(&pool, &task_a, "task_a ok")
+    lumina_core::repo::add_acceptance_criterion(&pool, &task_a, "task_a ok")
         .await
         .expect("AC on task_a");
-    lumina::repo::add_acceptance_criterion(&pool, &task_b, "task_b ok")
+    lumina_core::repo::add_acceptance_criterion(&pool, &task_b, "task_b ok")
         .await
         .expect("AC on task_b");
-    lumina::repo::add_task_dependency(&pool, &task_b, &task_a, "data")
+    lumina_core::repo::add_task_dependency(&pool, &task_b, &task_a, "data")
         .await
         .expect("task_b depends on task_a");
 
-    let readiness = lumina::repo::get_story_readiness(&pool, &decomp)
+    let readiness = lumina_core::repo::get_story_readiness(&pool, &decomp)
         .await
         .expect("ready readiness");
     assert_eq!(
@@ -1997,13 +1997,13 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
 /// CLEARS the column to NULL (per the tool docstring).
 #[tokio::test]
 async fn set_task_kind_sets_then_clears_to_null() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Task-Kind").await;
     let task = mcp_create(&tools, "task", Some(&story), "Kinded Task").await;
 
     // Set.
-    lumina::repo::set_task_kind(&pool, &task, Some(TaskKind::Foundation))
+    lumina_core::repo::set_task_kind(&pool, &task, Some(TaskKind::Foundation))
         .await
         .expect("set foundation");
     let stored: Option<String> =
@@ -2019,7 +2019,7 @@ async fn set_task_kind_sets_then_clears_to_null() {
     );
 
     // Clear.
-    lumina::repo::set_task_kind(&pool, &task, None)
+    lumina_core::repo::set_task_kind(&pool, &task, None)
         .await
         .expect("clear task_kind");
     let stored_after: Option<String> =
@@ -2046,7 +2046,7 @@ async fn set_task_kind_sets_then_clears_to_null() {
 /// parent's export snapshot.
 #[tokio::test]
 async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Export-Subtables").await;
     // Two tasks so a task→task edge becomes legal.
@@ -2057,15 +2057,15 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
 
     // Baseline drain — all the create events flush; we are about to test that
     // FUTURE sub-table mutations trigger a re-render of their parent.
-    lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("baseline drain");
 
     // ---- (i.a) add_risk re-renders the story's snapshot ----
-    lumina::repo::add_risk(&pool, &story, "exported risk", None, None, "high", None)
+    lumina_core::repo::add_risk(&pool, &story, "exported risk", None, None, "high", None)
         .await
         .expect("add risk");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after add_risk");
     assert_eq!(
@@ -2088,7 +2088,7 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
     assert_eq!(snap_risks[0]["severity"].as_str(), Some("high"));
 
     // ---- (i.b) add_rejected_alternative re-renders the story's snapshot ----
-    lumina::repo::add_rejected_alternative(
+    lumina_core::repo::add_rejected_alternative(
         &pool,
         &story,
         "exported alt",
@@ -2098,7 +2098,7 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
     )
     .await
     .expect("add alternative");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after add_rejected_alternative");
     assert_eq!(
@@ -2123,10 +2123,10 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
     // .task_dependencies` is populated for kind=task rows only, so the task
     // snapshot is where this surfaces — exactly the cross-aggregate routing
     // the plan calls out.
-    lumina::repo::add_task_dependency(&pool, &task_b, &task_a, "data")
+    lumina_core::repo::add_task_dependency(&pool, &task_b, &task_a, "data")
         .await
         .expect("task_b depends on task_a");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after add_task_dependency");
     assert_eq!(
@@ -2173,21 +2173,21 @@ async fn export_trail_picks_up_subtable_mutations_via_work_item_aggregate() {
 /// the other private planning tools.
 #[tokio::test]
 async fn set_task_spec_round_trips_typed_tier() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Tier-Round-Trip").await;
     let task = mcp_create(&tools, "task", Some(&story), "Tier Task").await;
 
     // Mirror the `set_task_spec` composer: outcome → attributes merge;
     // tier → set_task_tier column write.
-    lumina::repo::set_work_item_attributes(
+    lumina_core::repo::set_work_item_attributes(
         &pool,
         &task,
         &serde_json::json!({ "outcome": "ok" }),
     )
     .await
     .expect("set_work_item_attributes with outcome");
-    lumina::repo::set_task_tier(&pool, &task, Some(Tier::Lite))
+    lumina_core::repo::set_task_tier(&pool, &task, Some(Tier::Lite))
         .await
         .expect("set_task_tier with typed Tier::Lite");
 
@@ -2276,7 +2276,7 @@ fn set_task_spec_rejects_legacy_dispatch_field() {
 /// string.
 #[tokio::test]
 async fn add_finding_round_trips_typed_severity() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Severity-Round-Trip").await;
 
@@ -2295,14 +2295,14 @@ async fn add_finding_round_trips_typed_severity() {
     );
 
     // Drive the underlying repo write (what the MCP composer wraps 1:1).
-    lumina::repo::create_finding(
+    lumina_core::repo::create_finding(
         &pool,
         &story,
-        &lumina::repo::NewFinding {
+        &lumina_core::repo::NewFinding {
             kind: parsed.kind.as_deref(),
             severity: parsed.severity,
             summary: parsed.summary.as_deref(),
-            ..lumina::repo::NewFinding::default()
+            ..lumina_core::repo::NewFinding::default()
         },
     )
     .await
@@ -2360,7 +2360,7 @@ fn add_finding_rejects_invalid_severity() {
 /// risks/alternatives threads.
 #[tokio::test]
 async fn get_task_dispatch_plan_returns_batches_with_tier() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
     let story = seed_story(&tools, "Dispatch-Plan").await;
     let task_a = mcp_create(&tools, "task", Some(&story), "Plan Task A").await;
@@ -2368,22 +2368,22 @@ async fn get_task_dispatch_plan_returns_batches_with_tier() {
     let task_c = mcp_create(&tools, "task", Some(&story), "Plan Task C").await;
 
     // A: effort=L → Deep
-    lumina::repo::set_effort(&pool, &task_a, Effort::L)
+    lumina_core::repo::set_effort(&pool, &task_a, Effort::L)
         .await
         .expect("set_effort L on A");
     // B: effort=S + complexity=low → Lite
-    lumina::repo::set_effort(&pool, &task_b, Effort::S)
+    lumina_core::repo::set_effort(&pool, &task_b, Effort::S)
         .await
         .expect("set_effort S on B");
-    lumina::repo::set_complexity(&pool, &task_b, Complexity::Low)
+    lumina_core::repo::set_complexity(&pool, &task_b, Complexity::Low)
         .await
         .expect("set_complexity low on B");
     // C: complexity=high → Deep
-    lumina::repo::set_complexity(&pool, &task_c, Complexity::High)
+    lumina_core::repo::set_complexity(&pool, &task_c, Complexity::High)
         .await
         .expect("set_complexity high on C");
 
-    let batches = lumina::repo::get_task_dispatch_plan(&pool, &story)
+    let batches = lumina_core::repo::get_task_dispatch_plan(&pool, &story)
         .await
         .expect("get_task_dispatch_plan succeeds");
     // No task-on-task edges ⇒ exactly one batch carrying all three tasks.
@@ -2457,7 +2457,7 @@ async fn get_task_dispatch_plan_returns_batches_with_tier() {
 /// DB → events outbox → git-export, sleep-free and socket-free.
 #[tokio::test]
 async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // Build a chain down to a focus: `mcp_create` supplies the mandatory
@@ -2470,14 +2470,14 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
 
     // Baseline drain — flush all the create/criterion events so each setter's
     // event count is measured in isolation below.
-    lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("baseline drain");
 
     // ---- (a) set_shape on the focus → exactly one `work_item.shape_set` ----
     // `mcp_create` created the focus with shape=vertical-slice; revise it to a
     // DIFFERENT value so the column write is observably distinct.
-    lumina::repo::set_shape(pool.sqlite(), &focus, lumina::domain::Shape::Foundational)
+    lumina_core::repo::set_shape(pool.sqlite(), &focus, lumina_core::domain::Shape::Foundational)
         .await
         .expect("set focus shape=foundational");
 
@@ -2507,7 +2507,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "set_shape emitted exactly one (single-mutation-path) event"
     );
 
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after set_shape");
     assert_eq!(
@@ -2526,7 +2526,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
     );
 
     // ---- (b) set_epic_plan on the epic → exactly one `work_item.updated` ----
-    lumina::repo::set_epic_plan(
+    lumina_core::repo::set_epic_plan(
         &pool,
         &epic,
         Some("the revised epic outcome"),
@@ -2547,7 +2547,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "set_epic_plan emits a work_item.updated event (via set_work_item_attributes)"
     );
 
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after set_epic_plan");
     assert_eq!(
@@ -2570,7 +2570,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
     );
 
     // ---- (c) set_focus_plan on the focus → exactly one `work_item.updated` ----
-    lumina::repo::set_focus_plan(&pool, &focus, Some("the focus framing"))
+    lumina_core::repo::set_focus_plan(&pool, &focus, Some("the focus framing"))
         .await
         .expect("set focus plan");
 
@@ -2586,7 +2586,7 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
         "set_focus_plan emits a work_item.updated event (via set_work_item_attributes)"
     );
 
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("drain after set_focus_plan");
     assert_eq!(
@@ -2651,12 +2651,12 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
 /// the LANE-STAMPING NOTE above — lane is now a first-class task field), so no
 /// lane UPDATE is needed. Returns the bound sprint id.
 async fn seed_implement_sprint(
-    pool: &Arc<lumina::db::AnyPool>,
+    pool: &Arc<lumina_core::db::AnyPool>,
     task_id: &str,
 ) -> String {
-    let sprint_id = lumina::repo::create_sprint(
+    let sprint_id = lumina_core::repo::create_sprint(
         pool,
-        &lumina::domain::NewSprint {
+        &lumina_core::domain::NewSprint {
             title: None,
             worktree_id: None,
             predecessor_sprint_id: None,
@@ -2665,7 +2665,7 @@ async fn seed_implement_sprint(
         .await
         .expect("create sprint")
         .to_string();
-    lumina::repo::add_tasks_to_sprint(pool, &sprint_id, &[task_id])
+    lumina_core::repo::add_tasks_to_sprint(pool, &sprint_id, &[task_id])
         .await
         .expect("bind task to sprint");
     // The task already carries the create-time default lane='implement'. Move it
@@ -2689,12 +2689,12 @@ async fn seed_implement_sprint(
 /// fn the MCP `set_sprint_status` tool + the HTTP `PATCH /sprints/{id}/status`
 /// route wrap 1:1). After this the sprint's tasks are claimable under the
 /// stricter guard. Used by every create-then-claim sequence in this file.
-async fn activate_sprint(pool: &Arc<lumina::db::AnyPool>, sprint_id: &str) {
+async fn activate_sprint(pool: &Arc<lumina_core::db::AnyPool>, sprint_id: &str) {
     for next in [
-        lumina::domain::SprintStatus::Ready,
-        lumina::domain::SprintStatus::Active,
+        lumina_core::domain::SprintStatus::Ready,
+        lumina_core::domain::SprintStatus::Active,
     ] {
-        lumina::repo::set_sprint_status(pool, sprint_id, next)
+        lumina_core::repo::set_sprint_status(pool, sprint_id, next)
             .await
             .expect("legal sprint-lifecycle transition");
     }
@@ -2706,7 +2706,7 @@ async fn activate_sprint(pool: &Arc<lumina::db::AnyPool>, sprint_id: &str) {
 #[tokio::test]
 async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http() {
     // One shared pool across the MCP handler, the export drain, and the router.
-    let pool = Arc::new(lumina::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
+    let pool = Arc::new(lumina_core::db::AnyPool::from(connect_in_memory().await.expect("migrated in-memory pool")));
     let tools = LuminaTools::new(pool.clone());
 
     // 1. Build a legal chain to a story, then create ONE implement task. Bind it
@@ -2721,10 +2721,10 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
 
     // 2. claim_next_task(lane=implement) → a task is claimed/leased: assignee +
     //    lease_expires_at set, and the claimed id is our seeded impl task.
-    let claimed = lumina::repo::claim_next_task(
+    let claimed = lumina_core::repo::claim_next_task(
         &pool,
         &sprint_id,
-        lumina::domain::Lane::Implement,
+        lumina_core::domain::Lane::Implement,
         None,
         "impl-agent",
         300,
@@ -2769,7 +2769,7 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     // 3. complete_task on the claimed impl task → done AND a review task spawned,
     //    parented under the story, back-linked via reviews_work_item_id, and
     //    bound into the sprint.
-    let completed = lumina::repo::complete_task(&pool, &impl_task, "impl-agent")
+    let completed = lumina_core::repo::complete_task(&pool, &impl_task, "impl-agent")
         .await
         .expect("complete_task(impl)");
     assert_eq!(completed.task_id, impl_task, "complete echoes the impl task id");
@@ -2846,10 +2846,10 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     // 4. claim_next_task(lane=review) → claim the spawned review task. Its
     //    depends_on edge on the impl task is satisfied (impl is now done), so it
     //    is claimable on the review lane.
-    let claimed_review = lumina::repo::claim_next_task(
+    let claimed_review = lumina_core::repo::claim_next_task(
         &pool,
         &sprint_id,
-        lumina::domain::Lane::Review,
+        lumina_core::domain::Lane::Review,
         None,
         "review-agent",
         300,
@@ -2862,7 +2862,7 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
         "the review-lane claim returns the spawned review task"
     );
     assert!(
-        matches!(claimed_review.lane, lumina::domain::Lane::Review),
+        matches!(claimed_review.lane, lumina_core::domain::Lane::Review),
         "the claimed review task carries the review lane"
     );
 
@@ -2870,16 +2870,16 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     //    task-hosted finding's spawn_task would parent a task under a task and
     //    fail the hierarchy trigger), then record_finding_decision(spawn_task) →
     //    a rework task spawned lane='implement', sprint-bound, and claimable.
-    let batch = lumina::repo::add_findings(
+    let batch = lumina_core::repo::add_findings(
         &pool,
         None,
         &[(
             story.as_str(),
-            lumina::repo::NewFinding {
+            lumina_core::repo::NewFinding {
                 kind: Some("review"),
-                severity: Some(lumina::domain::Severity::Major),
+                severity: Some(lumina_core::domain::Severity::Major),
                 summary: Some("needs rework: missing error handling"),
-                ..lumina::repo::NewFinding::default()
+                ..lumina_core::repo::NewFinding::default()
             },
         )],
     )
@@ -2895,11 +2895,11 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
             .await
             .expect("read the story-hosted finding id");
 
-    let (_decision_id, spawned) = lumina::repo::record_finding_decision(
+    let (_decision_id, spawned) = lumina_core::repo::record_finding_decision(
         &pool,
-        &lumina::domain::NewFindingDecision {
+        &lumina_core::domain::NewFindingDecision {
             finding_id: finding_id.clone(),
-            decision: lumina::domain::FindingDecisionKind::SpawnTask,
+            decision: lumina_core::domain::FindingDecisionKind::SpawnTask,
             decided_by: Some("review-agent".to_owned()),
         },
     )
@@ -2946,10 +2946,10 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     );
 
     // The loop closes: the rework task is itself claimable on the implement lane.
-    let claimed_rework = lumina::repo::claim_next_task(
+    let claimed_rework = lumina_core::repo::claim_next_task(
         &pool,
         &sprint_id,
-        lumina::domain::Lane::Implement,
+        lumina_core::domain::Lane::Implement,
         None,
         "impl-agent-2",
         300,
@@ -2966,7 +2966,7 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     //    task done (terminal); review task still in_progress (claimed by
     //    review-agent, never completed); rework task in_progress (just claimed).
     //    So NOT done (in_progress > 0), and NOT stalled (nothing blocked).
-    let q_mid = lumina::repo::get_sprint_quiescence(&pool, &sprint_id)
+    let q_mid = lumina_core::repo::get_sprint_quiescence(&pool, &sprint_id)
         .await
         .expect("quiescence mid-flight");
     assert!(!q_mid.done, "sprint is not done while tasks are in_progress: {q_mid:?}");
@@ -2980,20 +2980,20 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     // we then complete that review too to fully quiesce). Simpler: complete the
     // review task, then complete the rework task (which spawns a 2nd review), then
     // complete that 2nd review. We assert the flip to `done` after quiescing all.
-    lumina::repo::complete_task(&pool, &review_task, "review-agent")
+    lumina_core::repo::complete_task(&pool, &review_task, "review-agent")
         .await
         .expect("complete the review task (review lane → done, no spawn)");
-    let rework_complete = lumina::repo::complete_task(&pool, &rework_task, "impl-agent-2")
+    let rework_complete = lumina_core::repo::complete_task(&pool, &rework_task, "impl-agent-2")
         .await
         .expect("complete the rework task (implement lane → spawns a 2nd review)");
     let second_review = rework_complete
         .review_task_id
         .expect("completing the rework impl task spawns a second review task");
     // Claim + complete the second review to drain the cascade to quiescence.
-    let claimed_second_review = lumina::repo::claim_next_task(
+    let claimed_second_review = lumina_core::repo::claim_next_task(
         &pool,
         &sprint_id,
-        lumina::domain::Lane::Review,
+        lumina_core::domain::Lane::Review,
         None,
         "review-agent",
         300,
@@ -3002,11 +3002,11 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     .expect("claim the second review task")
     .expect("the second review task is claimable");
     assert_eq!(claimed_second_review.task_id, second_review);
-    lumina::repo::complete_task(&pool, &second_review, "review-agent")
+    lumina_core::repo::complete_task(&pool, &second_review, "review-agent")
         .await
         .expect("complete the second review task (review lane → done)");
 
-    let q_done = lumina::repo::get_sprint_quiescence(&pool, &sprint_id)
+    let q_done = lumina_core::repo::get_sprint_quiescence(&pool, &sprint_id)
         .await
         .expect("quiescence after draining the cascade");
     assert!(
@@ -3023,7 +3023,7 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     //    the columns into the row mapping/SELECTs), so the snapshots carry them
     //    without any export-code change.
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain");
     assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
@@ -3171,13 +3171,13 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
 /// under the migration-0016 guard.
 async fn seed_impl_task_in_sprint(
     tools: &LuminaTools,
-    pool: &Arc<lumina::db::AnyPool>,
+    pool: &Arc<lumina_core::db::AnyPool>,
     story: &str,
     sprint_id: &str,
     title: &str,
 ) -> String {
     let task = mcp_create(tools, "task", Some(story), title).await;
-    lumina::repo::add_tasks_to_sprint(pool, sprint_id, &[task.as_str()])
+    lumina_core::repo::add_tasks_to_sprint(pool, sprint_id, &[task.as_str()])
         .await
         .expect("bind impl task to sprint");
     sqlx::query("UPDATE work_items SET status = 'todo' WHERE id = ?1")
@@ -3194,7 +3194,7 @@ async fn seed_impl_task_in_sprint(
 #[tokio::test]
 async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     // One shared pool across the MCP handler, the export drain, and the router.
-    let pool = Arc::new(lumina::db::AnyPool::from(
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
         connect_in_memory().await.expect("migrated in-memory pool"),
     ));
     let tools = LuminaTools::new(pool.clone());
@@ -3206,9 +3206,9 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     let focus = mcp_create(&tools, "focus", Some(&epic), "WT-Lifecycle Focus").await;
     let story = mcp_create(&tools, "story", Some(&focus), "WT-Lifecycle Story").await;
 
-    let s1 = lumina::repo::create_sprint(
+    let s1 = lumina_core::repo::create_sprint(
         &pool,
-        &lumina::domain::NewSprint {
+        &lumina_core::domain::NewSprint {
             title: Some("S1 implementation sprint".to_owned()),
             worktree_id: None,
             predecessor_sprint_id: None,
@@ -3236,9 +3236,9 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
 
     // 2. create_worktree(owning_sprint_id=S1) → W1. The owner now RUNS IN it; the
     //    worktree's effective_status is JOIN-derived (= the owner's 'active').
-    let w1 = lumina::repo::create_worktree(
+    let w1 = lumina_core::repo::create_worktree(
         &pool,
-        &lumina::domain::NewWorktree {
+        &lumina_core::domain::NewWorktree {
             owning_sprint_id: s1.clone(),
             path: "/tmp/worktrees/s1".to_owned(),
             base_ref: Some("main".to_owned()),
@@ -3249,13 +3249,13 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     .expect("create_worktree(S1)")
     .to_string();
 
-    let w1_detail = lumina::repo::get_worktree(&pool, &w1)
+    let w1_detail = lumina_core::repo::get_worktree(&pool, &w1)
         .await
         .expect("get_worktree(W1)");
     assert_eq!(w1_detail.owning_sprint_id, s1, "W1 owned by S1");
     assert_eq!(
         w1_detail.effective_status,
-        lumina::domain::SprintStatus::Active,
+        lumina_core::domain::SprintStatus::Active,
         "W1.effective_status is JOIN-derived from the active owner"
     );
     assert!(w1_detail.merged_at.is_none(), "W1 not yet merged");
@@ -3275,10 +3275,10 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     // 3. Seed + claim + complete one implement task in S1 (proves the activated
     //    sprint is claimable under the stricter guard).
     let impl_task = seed_impl_task_in_sprint(&tools, &pool, &story, &s1, "S1 Impl Task").await;
-    let claimed = lumina::repo::claim_next_task(
+    let claimed = lumina_core::repo::claim_next_task(
         &pool,
         &s1,
-        lumina::domain::Lane::Implement,
+        lumina_core::domain::Lane::Implement,
         None,
         "impl-agent",
         300,
@@ -3287,7 +3287,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     .expect("claim_next_task on the active S1")
     .expect("the activated sprint is claimable — stricter guard satisfied");
     assert_eq!(claimed.task_id, impl_task, "claim returns the seeded impl task");
-    lumina::repo::complete_task(&pool, &impl_task, "impl-agent")
+    lumina_core::repo::complete_task(&pool, &impl_task, "impl-agent")
         .await
         .expect("complete the impl task");
 
@@ -3301,17 +3301,17 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     let frozen_out_task =
         seed_impl_task_in_sprint(&tools, &pool, &story, &s1, "S1 Frozen-Out Task").await;
 
-    lumina::repo::set_task_checkpoint(&pool, &checkpoint_task, true)
+    lumina_core::repo::set_task_checkpoint(&pool, &checkpoint_task, true)
         .await
         .expect("flag the checkpoint task");
 
     // Claim the checkpoint task → it goes in_progress. (The freeze guard only
     // bites for a checkpoint task that is ALREADY in_progress, so this first claim
     // succeeds and is what arms the freeze.)
-    let claimed_checkpoint = lumina::repo::claim_next_task(
+    let claimed_checkpoint = lumina_core::repo::claim_next_task(
         &pool,
         &s1,
-        lumina::domain::Lane::Implement,
+        lumina_core::domain::Lane::Implement,
         None,
         "impl-agent",
         300,
@@ -3334,10 +3334,10 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
 
     // FREEZE: with a checkpoint task in_progress, the sprint-wide claim returns
     // Ok(None) even though `frozen_out_task` is a ready implement task.
-    let frozen = lumina::repo::claim_next_task(
+    let frozen = lumina_core::repo::claim_next_task(
         &pool,
         &s1,
-        lumina::domain::Lane::Implement,
+        lumina_core::domain::Lane::Implement,
         None,
         "impl-agent-2",
         300,
@@ -3350,7 +3350,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     );
     // get_sprint_quiescence mirrors the freeze: claimable=0 during the freeze, and
     // the sprint does NOT falsely report done while work remains.
-    let q_frozen = lumina::repo::get_sprint_quiescence(&pool, &s1)
+    let q_frozen = lumina_core::repo::get_sprint_quiescence(&pool, &s1)
         .await
         .expect("quiescence during freeze");
     assert_eq!(q_frozen.claimable, 0, "quiescence reports claimable=0 during freeze: {q_frozen:?}");
@@ -3358,13 +3358,13 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
 
     // Complete the checkpoint task → the freeze lifts. (Completing an implement
     // task spawns a review task; we leave it — the frozen-out task is now claimable.)
-    lumina::repo::complete_task(&pool, &checkpoint_task, "impl-agent")
+    lumina_core::repo::complete_task(&pool, &checkpoint_task, "impl-agent")
         .await
         .expect("complete the checkpoint task — lifts the freeze");
-    let resumed = lumina::repo::claim_next_task(
+    let resumed = lumina_core::repo::claim_next_task(
         &pool,
         &s1,
-        lumina::domain::Lane::Implement,
+        lumina_core::domain::Lane::Implement,
         None,
         "impl-agent-2",
         300,
@@ -3376,13 +3376,13 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
         resumed.task_id, frozen_out_task,
         "the previously frozen-out task is now claimable — the freeze lifted"
     );
-    lumina::repo::complete_task(&pool, &frozen_out_task, "impl-agent-2")
+    lumina_core::repo::complete_task(&pool, &frozen_out_task, "impl-agent-2")
         .await
         .expect("complete the frozen-out task");
 
     // 5. record_task_commits — one commit covering the impl + checkpoint tasks,
     //    scoped to S1. Idempotent on a re-record (the second insert collapses).
-    let recorded = lumina::repo::record_task_commits(
+    let recorded = lumina_core::repo::record_task_commits(
         &pool,
         "sha-deadbeef",
         &[impl_task.as_str(), checkpoint_task.as_str()],
@@ -3391,7 +3391,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     .await
     .expect("record_task_commits");
     assert_eq!(recorded, 2, "two genuinely-new commit→task edges recorded");
-    let re_recorded = lumina::repo::record_task_commits(
+    let re_recorded = lumina_core::repo::record_task_commits(
         &pool,
         "sha-deadbeef",
         &[impl_task.as_str(), checkpoint_task.as_str()],
@@ -3404,47 +3404,47 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     // 6. S1 active → review (the worktree-merge path: the owner stays in 'review'
     //    until a merge/rejection verdict). Legal via set_sprint_status — the
     //    worktree-owner guard only blocks a TERMINAL review→done|cancelled flip.
-    lumina::repo::set_sprint_status(&pool, &s1, lumina::domain::SprintStatus::Review)
+    lumina_core::repo::set_sprint_status(&pool, &s1, lumina_core::domain::SprintStatus::Review)
         .await
         .expect("S1 active→review");
     // A worktree-owning sprint CANNOT terminal-transition via set_sprint_status —
     // it must go through record_worktree_merge/rejection so the merge audit is
     // never skipped.
-    let direct_done = lumina::repo::set_sprint_status(
+    let direct_done = lumina_core::repo::set_sprint_status(
         &pool,
         &s1,
-        lumina::domain::SprintStatus::Done,
+        lumina_core::domain::SprintStatus::Done,
     )
     .await;
     assert!(
-        matches!(direct_done, Err(lumina::error::AppError::Validation(_))),
+        matches!(direct_done, Err(lumina_core::error::AppError::Validation(_))),
         "a worktree-owning sprint's review→done via set_sprint_status is rejected, got {direct_done:?}"
     );
 
     // 7. Run-chaining: open a review Run over S1, add a finding on the story, and
     //    record a spawn_task decision → a rework task (lane='implement').
-    let _run_id = lumina::repo::create_run(
+    let _run_id = lumina_core::repo::create_run(
         &pool,
-        &lumina::domain::NewRun {
-            kind: lumina::domain::RunKind::Review,
+        &lumina_core::domain::NewRun {
+            kind: lumina_core::domain::RunKind::Review,
             target_id: s1.clone(),
-            target_kind: lumina::domain::TargetKind::Sprint,
+            target_kind: lumina_core::domain::TargetKind::Sprint,
         },
     )
     .await
     .expect("create_run(review, target=S1)")
     .to_string();
 
-    let batch = lumina::repo::add_findings(
+    let batch = lumina_core::repo::add_findings(
         &pool,
         None,
         &[(
             story.as_str(),
-            lumina::repo::NewFinding {
+            lumina_core::repo::NewFinding {
                 kind: Some("review"),
-                severity: Some(lumina::domain::Severity::Major),
+                severity: Some(lumina_core::domain::Severity::Major),
                 summary: Some("rework: tighten the worktree guard"),
-                ..lumina::repo::NewFinding::default()
+                ..lumina_core::repo::NewFinding::default()
             },
         )],
     )
@@ -3458,11 +3458,11 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
             .await
             .expect("read the story-hosted finding id");
 
-    let (_decision_id, spawned) = lumina::repo::record_finding_decision(
+    let (_decision_id, spawned) = lumina_core::repo::record_finding_decision(
         &pool,
-        &lumina::domain::NewFindingDecision {
+        &lumina_core::domain::NewFindingDecision {
             finding_id: finding_id.clone(),
-            decision: lumina::domain::FindingDecisionKind::SpawnTask,
+            decision: lumina_core::domain::FindingDecisionKind::SpawnTask,
             decided_by: Some("review-agent".to_owned()),
         },
     )
@@ -3484,9 +3484,9 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     //    NOT own W1 (W1.owning_sprint_id is still S1). Walk S2 draft→ready→active,
     //    bind + claim + complete the rework, then S2 active→done (legal: S2 owns
     //    no worktree, so the terminal guard does not bite).
-    let s2 = lumina::repo::create_sprint(
+    let s2 = lumina_core::repo::create_sprint(
         &pool,
-        &lumina::domain::NewSprint {
+        &lumina_core::domain::NewSprint {
             title: Some("S2 fix sprint".to_owned()),
             worktree_id: Some(w1.clone()),
             predecessor_sprint_id: Some(s1.clone()),
@@ -3515,7 +3515,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     assert_eq!(s2_pred.as_deref(), Some(s1.as_str()), "S2 records its predecessor sprint");
     // W1 ownership is unchanged — S2 targets but does not own it.
     assert_eq!(
-        lumina::repo::get_worktree(&pool, &w1).await.expect("get W1").owning_sprint_id,
+        lumina_core::repo::get_worktree(&pool, &w1).await.expect("get W1").owning_sprint_id,
         s1,
         "W1 is still owned by S1 (S2 only targets it)"
     );
@@ -3523,7 +3523,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     activate_sprint(&pool, &s2).await;
     // Bind the rework task into S2 (it was spawned under the story → sprint-bound
     // to S1; bind it into S2 too so the fix sprint can claim it).
-    lumina::repo::add_tasks_to_sprint(&pool, &s2, &[rework_task.as_str()])
+    lumina_core::repo::add_tasks_to_sprint(&pool, &s2, &[rework_task.as_str()])
         .await
         .expect("bind rework task into S2");
     // The add_tasks_to_sprint binding actually landed the junction row — the claim
@@ -3538,10 +3538,10 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     .await
     .expect("read the rework task's S2 binding");
     assert_eq!(rework_bound, 1, "the rework task is bound into S2 before the claim");
-    let claimed_rework = lumina::repo::claim_next_task(
+    let claimed_rework = lumina_core::repo::claim_next_task(
         &pool,
         &s2,
-        lumina::domain::Lane::Implement,
+        lumina_core::domain::Lane::Implement,
         None,
         "fix-agent",
         300,
@@ -3550,11 +3550,11 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     .expect("claim the rework task in S2")
     .expect("the rework task is claimable in the active fix sprint");
     assert_eq!(claimed_rework.task_id, rework_task, "S2 claims the rework task");
-    lumina::repo::complete_task(&pool, &rework_task, "fix-agent")
+    lumina_core::repo::complete_task(&pool, &rework_task, "fix-agent")
         .await
         .expect("complete the rework task in S2");
     // S2 active → done (legal — S2 owns no worktree).
-    lumina::repo::set_sprint_status(&pool, &s2, lumina::domain::SprintStatus::Done)
+    lumina_core::repo::set_sprint_status(&pool, &s2, lumina_core::domain::SprintStatus::Done)
         .await
         .expect("S2 active→done (no worktree owned → terminal guard does not bite)");
     let s2_done: String = sqlx::query_scalar("SELECT status FROM sprints WHERE id = ?1")
@@ -3566,16 +3566,16 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
 
     // 9. record_worktree_merge(W1) → stamps the merge audit AND flips the owner S1
     //    review→done (the only legal terminal path for a worktree-owning sprint).
-    lumina::repo::record_worktree_merge(&pool, &w1, Some("merge-ref-s1"))
+    lumina_core::repo::record_worktree_merge(&pool, &w1, Some("merge-ref-s1"))
         .await
         .expect("record_worktree_merge(W1)");
-    let w1_merged = lumina::repo::get_worktree(&pool, &w1)
+    let w1_merged = lumina_core::repo::get_worktree(&pool, &w1)
         .await
         .expect("get W1 after merge");
     assert!(w1_merged.merged_at.is_some(), "W1.merged_at is stamped after merge");
     assert_eq!(
         w1_merged.outcome,
-        Some(lumina::domain::WorktreeOutcome::Merged),
+        Some(lumina_core::domain::WorktreeOutcome::Merged),
         "W1.outcome='merged'"
     );
     assert_eq!(
@@ -3592,7 +3592,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     assert_eq!(s1_final, "done", "the merge flipped owner S1 review→done");
     assert_eq!(
         w1_merged.effective_status,
-        lumina::domain::SprintStatus::Done,
+        lumina_core::domain::SprintStatus::Done,
         "W1.effective_status tracks the now-done owner"
     );
 
@@ -3604,7 +3604,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     //     task (left un-drained in this thread), so review tasks remain `todo`
     //     (non-terminal) and `done` reflects RAW task completion, not the merged
     //     sprint status. (Deviation from the plan's Gap-1 wording — see report.)
-    let q_merged = lumina::repo::get_sprint_quiescence(&pool, &s1)
+    let q_merged = lumina_core::repo::get_sprint_quiescence(&pool, &s1)
         .await
         .expect("quiescence on the merged owner S1");
     assert_eq!(
@@ -3693,7 +3693,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     //     `worktree/` or `sprint/` snapshot directory was written, while a known
     //     work_item snapshot (the story) IS present.
     let export_dir = tempfile::tempdir().expect("export tempdir");
-    let drained = lumina::export::export_pending(pool.sqlite(), export_dir.path())
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
         .await
         .expect("export drain succeeds despite the inert worktree/sprint events");
     assert!(drained >= 1, "the drain stamped at least one event, got {drained}");

@@ -1,0 +1,84 @@
+[package]
+name = "lumina-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+authors = ["Ross Anderson"]
+description = "lumina record layer: SQLite-canonical domain/repo/db + git-export + DB-free JSONL parsing"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# --- async runtime ---
+# jsonl_tail uses tokio::io / tokio::sync::{broadcast,mpsc}; repo uses
+# tokio::task::spawn_blocking / time / try_join. "full" copied verbatim from
+# the server manifest (behaviour-neutral; a later workspace-hygiene pass may
+# trim the feature set).
+tokio = { version = "1", features = ["full"] }
+
+# --- file-watcher (jsonl_tail's transcript tailer) ---
+# notify is the cross-platform file-watcher used to tail the per-session JSONL
+# transcript. Pinned 8.2.0 (MSRV 1.95 compatible). No `serde` feature.
+notify = "8.2.0"
+
+# --- persistence ---
+# PINNED to 0.9 for the runtime query API (`sqlx::query*` behind the DbClient
+# seam). `macros` feature dropped (no offline cache); `migrate` is kept for the
+# compile-time `sqlx::migrate!("./migrations")` in db.rs. No TLS feature: sqlite
+# is a local file.
+sqlx = { version = "0.9", features = [
+    "runtime-tokio",
+    "sqlite",
+    "migrate",
+] }
+
+# async-trait gives the DbClient/DbTx seam (db/client.rs, db/erased.rs) async
+# trait methods.
+async-trait = "0.1"
+
+# --- serialization / domain support ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+anyhow = "1"
+jiff = "0.2"
+uuid = { version = "1", features = ["v7", "serde"] }
+
+# Content-hash dep for finding dedup.
+sha2 = "0.10"
+
+# Atomic snapshot writes in export.rs (tempfile → fsync → rename).
+tempfile = "3"
+
+# tool-parameter JSON schemas: the 26 domain enums derive schemars::JsonSchema,
+# referenced cross-crate by server's rmcp #[tool] parameter schemas. Load-bearing
+# in core despite being a derive crate — do not strip in a later purity pass.
+schemars = "1"
+
+# --- structured logging ---
+# jsonl_tail's watcher emits tracing::warn!/error! via path (no `use` line).
+# Core needs `tracing` only — NOT tracing-subscriber (that's the server's
+# main.rs init).
+tracing = "0.1"
+
+# --- optional axum (AppError IntoResponse impl, behind the `axum` feature) ---
+# Core is axum-free by default; lumina-server enables `lumina-core/axum` so the
+# IntoResponse impl on AppError compiles (kept in core under the orphan rule).
+axum = { version = "0.8", optional = true }
+
+[features]
+axum = ["dep:axum"]
+
+[dev-dependencies]
+# Core integration tests use #[tokio::test] (the normal tokio "full" dep) and
+# sqlx::query_scalar assertions (the normal sqlx dep). The test-stack ergonomics
+# below are scaffolded by /test-bootstrap (versions verbatim from the server
+# manifest). They do NOT need assert_cmd / tokio-tungstenite / tower (server
+# e2e/PTY deps). `tempfile` is already a normal dependency (export.rs), so it is
+# not repeated here.
+rstest = "0.26"
+pretty_assertions = "1.4"
+proptest = "1"
+insta = "1.47"

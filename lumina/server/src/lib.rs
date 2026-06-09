@@ -16,15 +16,12 @@
 //! This is what makes the later waves parallelisable. (Git-export is driven
 //! on-demand through `POST /api/export`, not a background task.)
 
+// The record layer (`db`, `domain`, `error`, `repo`, `export`, `import`) was
+// carved into the `lumina-core` crate; this crate depends on it and re-uses its
+// modules as `lumina_core::*`. The web/server layer stays here.
 pub mod app;
 pub mod cli;
-pub mod db;
-pub mod domain;
-pub mod error;
-pub mod repo;
 pub mod http;
 pub mod assets;
 pub mod mcp;
-pub mod export;
-pub mod import;
 pub mod pty;

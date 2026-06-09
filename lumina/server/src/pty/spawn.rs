@@ -17,9 +17,9 @@
 //!   4. Construct an `Arc<Session>` over a freshly-built registry-side
 //!      `broadcast` pair and insert it into `state.pty_registry` (the registry
 //!      keeps an `Arc<Session>`; the bridge task below retains its own clone).
-//!   5. Bind the JSONL transcript path via [`crate::pty::jsonl_tail::bind_jsonl_path`]
+//!   5. Bind the JSONL transcript path via [`lumina_core::jsonl_tail::bind_jsonl_path`]
 //!      (snapshot-then-poll for up to 5s), persist it onto the session row,
-//!      spawn the [`crate::pty::jsonl_tail::tail`] watcher, then spawn the
+//!      spawn the [`lumina_core::jsonl_tail::tail`] watcher, then spawn the
 //!      JSONL→TypedMessage bridge that (a) updates the session's
 //!      outstanding-tool-use set + `last_record_at`, (b) persists each
 //!      mapped `TypedMessage` to `pty_messages`, (c) flips the session
@@ -58,15 +58,15 @@ use std::path::{Path, PathBuf};
 use tokio::sync::broadcast;
 
 use crate::app::AppState;
-use crate::db::{AnyPool, DbClient};
-use crate::domain::PtySession;
-use crate::error::AppError;
-use crate::pty::jsonl_tail;
-use crate::pty::protocol::{MessageKind, SessionStatus, TypedMessage};
+use lumina_core::db::{AnyPool, DbClient};
+use lumina_core::domain::PtySession;
+use lumina_core::error::AppError;
+use lumina_core::jsonl_tail;
+use lumina_core::protocol::{MessageKind, SessionStatus, TypedMessage};
 use crate::pty::session::Session;
 use crate::pty::supervisor::SessionRegistration;
 use crate::pty::transport::SpawnConfig;
-use crate::repo;
+use lumina_core::repo;
 
 /// Broadcast capacity for the registry-side fan-out. Matches the value the
 /// HTTP / MCP handlers used before this refactor (1024 messages of headroom
@@ -677,8 +677,8 @@ async fn backfill_spawned_correlation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{connect_in_memory, scalar_one, AnyPool};
-    use crate::pty::jsonl_tail::{self, BroadcastRecord};
+    use lumina_core::db::{connect_in_memory, scalar_one, AnyPool};
+    use lumina_core::jsonl_tail::{self, BroadcastRecord};
 
     /// Seed a bare `pty_sessions` row so the `session_records.session_id` FK is
     /// satisfiable, mirroring the spawned-session row that exists at step 3 of
@@ -724,7 +724,7 @@ mod tests {
         let (ordinal, dedup_key): (i64, String) = db
             .query_one(
                 "SELECT line_ordinal, dedup_key FROM session_records WHERE session_id = $1",
-                crate::args!["sess-spawn".to_owned()],
+                lumina_core::args!["sess-spawn".to_owned()],
             )
             .await
             .expect("read row");
@@ -746,7 +746,7 @@ mod tests {
         let synthetic_key: String = scalar_one(
             &db,
             "SELECT dedup_key FROM session_records WHERE session_id = $1 AND line_ordinal = $2",
-            crate::args!["sess-spawn".to_owned(), 6_i64],
+            lumina_core::args!["sess-spawn".to_owned(), 6_i64],
         )
         .await
         .expect("read synthetic key");
@@ -785,7 +785,7 @@ mod tests {
         let count: i64 = scalar_one(
             &db,
             "SELECT COUNT(*) FROM session_records WHERE session_id = $1",
-            crate::args!["sess-batch".to_owned()],
+            lumina_core::args!["sess-batch".to_owned()],
         )
         .await
         .expect("count rows");
@@ -798,7 +798,7 @@ mod tests {
         let count_again: i64 = scalar_one(
             &db,
             "SELECT COUNT(*) FROM session_records WHERE session_id = $1",
-            crate::args!["sess-batch".to_owned()],
+            lumina_core::args!["sess-batch".to_owned()],
         )
         .await
         .expect("re-count rows");
@@ -836,7 +836,7 @@ mod tests {
         let count: i64 = scalar_one(
             &db,
             "SELECT COUNT(*) FROM session_records WHERE session_id = $1",
-            crate::args!["sess-drain".to_owned()],
+            lumina_core::args!["sess-drain".to_owned()],
         )
         .await
         .expect("count rows");
@@ -849,7 +849,7 @@ mod tests {
         let max_ordinal: i64 = scalar_one(
             &db,
             "SELECT MAX(line_ordinal) FROM session_records WHERE session_id = $1",
-            crate::args!["sess-drain".to_owned()],
+            lumina_core::args!["sess-drain".to_owned()],
         )
         .await
         .expect("max ordinal");
@@ -907,7 +907,7 @@ mod tests {
         let (sprint, agent): (Option<String>, Option<String>) = db
             .query_one(
                 "SELECT sprint_id, agent_id FROM pty_sessions WHERE id = $1",
-                crate::args!["sess-corr".to_owned()],
+                lumina_core::args!["sess-corr".to_owned()],
             )
             .await
             .expect("read correlation");
@@ -926,7 +926,7 @@ mod tests {
         let count: i64 = scalar_one(
             &db,
             "SELECT COUNT(*) FROM session_records WHERE session_id = $1",
-            crate::args!["sess-corr".to_owned()],
+            lumina_core::args!["sess-corr".to_owned()],
         )
         .await
         .expect("count records");
@@ -950,7 +950,7 @@ mod tests {
         let (sprint, agent): (Option<String>, Option<String>) = db
             .query_one(
                 "SELECT sprint_id, agent_id FROM pty_sessions WHERE id = $1",
-                crate::args!["sess-nocorr".to_owned()],
+                lumina_core::args!["sess-nocorr".to_owned()],
             )
             .await
             .expect("read correlation");

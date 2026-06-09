@@ -19,9 +19,9 @@
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::pty::protocol::TypedMessage;
+use lumina_core::protocol::TypedMessage;
 use crate::pty::session::Session;
-use crate::repo;
+use lumina_core::repo;
 
 /// Persist `tm` as a `pty_messages` row (stamping a fresh per-session sequence)
 /// and broadcast it to the session's WS subscribers. Returns the allocated

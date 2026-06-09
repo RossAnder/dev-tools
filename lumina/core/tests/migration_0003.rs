@@ -18,7 +18,7 @@
 //! references it via `prompting_note_id`; the open_question before its
 //! question_options) so the insert-time FK check is genuinely exercised.
 
-use lumina::db::connect_in_memory;
+use lumina_core::db::connect_in_memory;
 use sqlx::SqlitePool;
 
 /// Build the legal project→epic→focus→story chain and return the story id.

@@ -31,9 +31,9 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::domain::TaskDependency;
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::domain::TaskDependency;
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 /// Body for `POST /work-items/{task_id}/depends-on/{depends_on_id}`. The
 /// `kind` field defaults to `"data"` when absent (mirrors
@@ -135,8 +135,8 @@ mod tests {
     use tower::ServiceExt as _;
 
     use crate::app::{AppState, build_router};
-    use crate::db::connect_in_memory;
-    use crate::repo;
+    use lumina_core::db::connect_in_memory;
+    use lumina_core::repo;
 
     async fn json_body(resp: axum::response::Response) -> serde_json::Value {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -194,7 +194,7 @@ mod tests {
         let (story_id, tasks) = seed_story_with_tasks(&pool, 3).await;
         let (t0, t1, _t2) = (&tasks[0], &tasks[1], &tasks[2]);
 
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // POST edge: t1 depends on t0.
@@ -277,7 +277,7 @@ mod tests {
         let (story_id, tasks) = seed_story_with_tasks(&pool, 2).await;
         let (t0, t1) = (&tasks[0], &tasks[1]);
 
-        let state = AppState::new(Arc::new(crate::db::AnyPool::from(pool)));
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
         let router = build_router(state);
 
         // First edge: t1 depends on t0 (legal in isolation).

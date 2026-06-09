@@ -18,9 +18,9 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::db::AnyPool;
-use crate::error::AppError;
-use crate::pty::protocol::SessionId;
+use lumina_core::db::AnyPool;
+use lumina_core::error::AppError;
+use lumina_core::protocol::SessionId;
 use crate::pty::queue::Queue;
 
 use super::validate_input_kind;

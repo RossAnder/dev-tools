@@ -6,7 +6,7 @@
 //!
 //! This module holds NO persistence: it has no `DbClient`/`DbTx` dependency and
 //! never touches the database — conceptually it is a sibling of
-//! `crate::pty::jsonl_tail::parse` (record parsing), not of the corpus write
+//! `crate::jsonl_tail::parse` (record parsing), not of the corpus write
 //! layer. Both corpus paths feed the ONE harvester here — the batch ingest
 //! composer (`super::ingest_transcript`) via [`harvest_correlation`], and the live
 //! spawned tail (`crate::pty::spawn::drain_and_persist_corpus`) via
@@ -15,7 +15,7 @@
 //! (`Correlation` / `CorrelationAccumulator` / `harvest_correlation`) at
 //! `crate::repo::*`, so existing call sites are unchanged.
 
-use crate::pty::jsonl_tail::{
+use crate::jsonl_tail::{
     AssistantContentBlock, JsonlRecord, JsonlRecordParsed, UserContent, UserContentBlock,
 };
 
@@ -423,7 +423,7 @@ pub fn harvest_correlation(records: &[(i64, JsonlRecordParsed)]) -> Correlation 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pty::jsonl_tail::parse_line;
+    use crate::jsonl_tail::parse_line;
 
     /// Build a one-block `assistant` JSONL line carrying a `tool_use` for
     /// `mcp__lumina__claim_next_task` with the given input fields.

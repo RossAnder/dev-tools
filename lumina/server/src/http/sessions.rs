@@ -30,7 +30,7 @@
 //!
 //! The control is [`confine_transcript_path`]: BEFORE the 202, and BEFORE any
 //! spawn, the handler canonicalises both the allowed transcript root
-//! (`~/.claude/projects`, via [`crate::pty::jsonl_tail::resolve_projects_root`])
+//! (`~/.claude/projects`, via [`lumina_core::jsonl_tail::resolve_projects_root`])
 //! and the caller's path, then requires the canonical path to live INSIDE the
 //! canonical root. `std::fs::canonicalize` resolves `..` and symlinks and
 //! requires the target to exist, so a symlink whose target is outside the root
@@ -50,7 +50,7 @@ use axum::routing::post;
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::repo;
+use lumina_core::repo;
 
 /// Body of `POST /api/sessions/ingest`, matching the Claude Code `SessionEnd`
 /// http-hook payload. `hook_event_name` and `reason` are accepted-and-IGNORED
@@ -133,7 +133,7 @@ fn confine_transcript_path(transcript_path: &str) -> Result<PathBuf, StatusCode>
     // collapse the security boundary onto the repo tree (exposing `.git` / in-tree
     // secrets to the arbitrary-file-read primitive), so a `None` here is a server
     // misconfiguration we REJECT rather than confine against — 500, never CWD.
-    let Some(root) = crate::pty::jsonl_tail::resolve_projects_root_strict() else {
+    let Some(root) = lumina_core::jsonl_tail::resolve_projects_root_strict() else {
         tracing::warn!(
             "session ingest rejected: cannot resolve a confinement root \
              (HOME/USERPROFILE unset and LUMINA_PTY_PROJECTS_ROOT not set)"
@@ -198,7 +198,7 @@ async fn ingest_session(
 
     // Move owned data into the 'static spawned future: a cloned pool Arc, the
     // semaphore Arc, the validated canonical path, and the two string fields.
-    let pool: Arc<crate::db::AnyPool> = state.pool.clone();
+    let pool: Arc<lumina_core::db::AnyPool> = state.pool.clone();
     let sem = state.session_ingest_sem.clone();
     let session_id = body.session_id;
     let cwd = body.cwd;

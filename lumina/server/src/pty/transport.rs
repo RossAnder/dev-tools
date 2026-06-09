@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::error::AppError;
-use crate::pty::protocol::{InputFrame, SessionId, TypedMessage};
+use lumina_core::error::AppError;
+use lumina_core::protocol::{InputFrame, SessionId, TypedMessage};
 
 /// Spawn-time configuration for a transport session. Fields cover everything a
 /// `claude` REPL spawn needs to know — working directory, CLI args, optional

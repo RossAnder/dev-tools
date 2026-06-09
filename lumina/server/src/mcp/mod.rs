@@ -73,10 +73,10 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::app::AppState;
-use crate::db::AnyPool;
-use crate::domain::CreateWorkItemRequest;
-use crate::error::AppError;
-use crate::repo;
+use lumina_core::db::AnyPool;
+use lumina_core::domain::CreateWorkItemRequest;
+use lumina_core::error::AppError;
+use lumina_core::repo;
 
 mod findings;
 mod planning;
@@ -250,7 +250,7 @@ impl LuminaTools {
     /// recursion is `Box::pin`-ed because an `async fn` cannot recurse by value.
     fn build_subtree<'a>(
         &'a self,
-        item: crate::domain::WorkItem,
+        item: lumina_core::domain::WorkItem,
         max_depth: Option<u32>,
         depth: u32,
     ) -> std::pin::Pin<
@@ -338,7 +338,7 @@ pub fn service_with_state(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::connect_in_memory;
+    use lumina_core::db::connect_in_memory;
     use crate::mcp::test_support::*;
 
     /// Driving the `create_work_item` tool handler DIRECTLY writes one

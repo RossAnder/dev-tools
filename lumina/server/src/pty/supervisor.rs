@@ -30,12 +30,12 @@ use sqlx::SqlitePool;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::db::AnyPool;
-use crate::pty::protocol::{InputFrame, InputKind, SessionId, SessionStatus};
+use lumina_core::db::AnyPool;
+use lumina_core::protocol::{InputFrame, InputKind, SessionId, SessionStatus};
 use crate::pty::queue::Queue;
 use crate::pty::registry::SessionRegistry;
 use crate::pty::transport::SessionExit;
-use crate::repo;
+use lumina_core::repo;
 
 /// Tick cadence for the periodic dispatch / idle-check pass.
 const TICK_PERIOD: Duration = Duration::from_millis(250);
@@ -291,9 +291,9 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
     // up after re-entering the session and re-fetching the message list).
     // `send` returns Err only when there are zero subscribers, which is
     // benign during a no-WS test/spawn — discard.
-    let typed = crate::pty::protocol::TypedMessage {
+    let typed = lumina_core::protocol::TypedMessage {
         sequence: seq,
-        kind: crate::pty::protocol::MessageKind::UserInput,
+        kind: lumina_core::protocol::MessageKind::UserInput,
         content: serde_json::json!({ "text": entry.payload }),
         raw_text: Some(entry.payload.clone()),
         created_at: jiff::Timestamp::now().to_string(),
@@ -465,7 +465,7 @@ mod tests {
 
     use tokio::sync::{broadcast, mpsc as tokio_mpsc};
 
-    use crate::db::connect_in_memory;
+    use lumina_core::db::connect_in_memory;
     use crate::pty::session::Session;
 
     #[tokio::test]

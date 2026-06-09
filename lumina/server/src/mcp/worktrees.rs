@@ -9,7 +9,7 @@
 //! and returns `structured_result(json!{..})`; each READ returns `json_result(..)`
 //! with `read_only_hint = true, open_world_hint = false`.
 //!
-//! `create_worktree` reuses `crate::domain::NewWorktree` directly as its param
+//! `create_worktree` reuses `lumina_core::domain::NewWorktree` directly as its param
 //! type (it derives `Deserialize + JsonSchema`), exactly as `create_run` /
 //! `create_sprint` reuse their `New*` input structs. The bespoke param structs
 //! here are the ones with no reusable domain twin: the worktree-id / merge-ref /
@@ -20,7 +20,7 @@
 
 use super::*;
 
-use crate::domain::{NewWorktree, SprintStatus, TaskCommitQuery};
+use lumina_core::domain::{NewWorktree, SprintStatus, TaskCommitQuery};
 
 /// Arguments for the `record_worktree_merge` write tool →
 /// `repo::record_worktree_merge`. Records a merge-AUDIT verdict (lumina never
@@ -113,7 +113,7 @@ pub struct ListTaskCommitsParams {
 #[tool_router(router = tool_router_worktrees, vis = "pub(crate)")]
 impl LuminaTools {
     /// Create a worktree owned by an existing sprint (single repo call →
-    /// `repo::create_worktree`). Reuses `crate::domain::NewWorktree` directly as
+    /// `repo::create_worktree`). Reuses `lumina_core::domain::NewWorktree` directly as
     /// the param type. The owner is validated to exist (else NotFound); the new
     /// worktree id and timestamps are minted by the store, and the owner's
     /// `worktree_id` is pointed at the new row. Returns `{ worktree_id }`.
@@ -333,7 +333,7 @@ mod tests {
     /// fields is a Validation; exactly one maps to the right `TaskCommitQuery`.
     #[tokio::test]
     async fn list_task_commits_exactly_one_direction() {
-        use crate::db::connect_in_memory;
+        use lumina_core::db::connect_in_memory;
         let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
         let tools = LuminaTools::new(pool);
 

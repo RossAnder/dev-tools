@@ -20,9 +20,13 @@
 //!   body: the response carries only a generic message so DB internals and
 //!   arbitrary `anyhow` chains do not leak to clients.
 
+#[cfg(feature = "axum")]
 use axum::Json;
+#[cfg(feature = "axum")]
 use axum::http::StatusCode;
+#[cfg(feature = "axum")]
 use axum::response::{IntoResponse, Response};
+#[cfg(feature = "axum")]
 use serde_json::json;
 
 /// The crate-wide error type. `Db` wraps the raw `sqlx::Error` and `Other`
@@ -108,6 +112,10 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
+// These three helpers feed only the axum `IntoResponse` impl below (and
+// `status` returns axum's `StatusCode`), so the whole block is gated behind the
+// optional `axum` feature alongside it. They stay private.
+#[cfg(feature = "axum")]
 impl AppError {
     /// The stable `kind` string used in the JSON envelope (matches tomlctl's
     /// taxonomy slugs).
@@ -145,6 +153,7 @@ impl AppError {
     }
 }
 
+#[cfg(feature = "axum")]
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         // Build the body before consuming `self.kind()` / `self.client_message()`

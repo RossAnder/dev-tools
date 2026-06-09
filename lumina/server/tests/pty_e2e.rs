@@ -65,9 +65,10 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt as _;
 
-use lumina::app::{AppState, build_router};
-use lumina::db;
-use lumina::pty::{self, SessionRegistry, jsonl_tail};
+use lumina_server::app::{AppState, build_router};
+use lumina_core::db;
+use lumina_server::pty::{self, SessionRegistry};
+use lumina_core::jsonl_tail;
 
 /// Drain a `oneshot` response body into bytes, then parse it as JSON.
 async fn json_body(resp: axum::response::Response) -> serde_json::Value {
