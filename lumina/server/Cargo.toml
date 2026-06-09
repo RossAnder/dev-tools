@@ -1,11 +1,11 @@
 [package]
 name = "lumina-server"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.95"
-authors = ["Ross Anderson"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 description = "Flow-tracking platform: SQLite-canonical store with MCP + axum + Vue, git-export audit trail"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 # Library target: lib.rs is the composition root's module graph; the e2e test
 # (Task 10) imports the crate as a library. The binary is the thin entrypoint.
@@ -37,7 +37,7 @@ path = "tests/fixtures/pty_stub.rs"
 lumina-core = { path = "../core", features = ["axum"] }
 
 # --- web / runtime ---
-axum = { version = "0.8", features = ["ws"] }
+axum = { workspace = true, features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs"] }
@@ -75,7 +75,7 @@ notify = "8.2.0"
 # `cargo sqlx prepare`. `migrate` is kept for the compile-time
 # `sqlx::migrate!("./migrations")` in db.rs. No TLS feature: sqlite is a local
 # file, no transport security needed.
-sqlx = { version = "0.9", features = [
+sqlx = { workspace = true, features = [
     "runtime-tokio",
     "sqlite",
     "migrate",
@@ -87,7 +87,7 @@ rmcp = { version = "1.7", features = [
     "transport-streamable-http-server",
     "macros",
 ] }
-schemars = "1" # tool-parameter JSON schemas for rmcp #[tool] methods
+schemars.workspace = true # tool-parameter JSON schemas for rmcp #[tool] methods
 
 # --- CLI (Task 7: the `import-flow` subcommand; bare invocation still serves) ---
 # Trimmed defaults: no `color` / `suggestions` / `error-context` — lumina's CLI
@@ -101,11 +101,11 @@ clap = { version = "4", default-features = false, features = [
 ] }
 
 # --- serialization / domain support ---
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 toml = "1"
-anyhow = "1"
-jiff = "0.2"
+anyhow.workspace = true
+jiff.workspace = true
 
 # --- structured logging ---
 # tracing emits structured events; tracing-subscriber renders them with the
@@ -113,7 +113,7 @@ jiff = "0.2"
 # `EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("lumina=info"))`
 # in main.rs. Set `RUST_LOG=lumina=debug` for more verbose tracing across
 # the PTY pipeline; `RUST_LOG=lumina::pty=trace` narrows to one subsystem.
-tracing = "0.1"
+tracing.workspace = true
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "env-filter",
     "fmt",
@@ -121,8 +121,8 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "smallvec",
 ] }
 
-tempfile = "3"
-uuid = { version = "1", features = ["v7", "serde"] }
+tempfile.workspace = true
+uuid = { workspace = true, features = ["v7", "serde"] }
 
 # Content-hash dep for finding dedup (first consumed by B16's finding_dedup_hash).
 sha2 = "0.10"
@@ -167,13 +167,3 @@ insta = "1.47"
 # library or binary crate.
 assert_cmd = "2"
 tokio-tungstenite = "0.29"
-
-[profile.release]
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-strip = true
-
-[profile.dev.package."*"]
-opt-level = 2

@@ -1,10 +1,10 @@
 [package]
 name = "lumina-companion"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.95"
-authors = ["Ross Anderson"]
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "lumina-companion: the git-execution-plane companion (populated in Step 1b)"
 
 [[bin]]

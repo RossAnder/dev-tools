@@ -1,3 +1,41 @@
 [workspace]
 resolver = "3"
 members = ["server", "core", "protocol", "companion"]
+
+# --- shared package metadata (members inherit via `field.workspace = true`) ---
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+authors = ["Ross Anderson"]
+license = "MIT OR Apache-2.0"
+
+# --- shared / version-pinned dependencies (version ONLY; members opt into
+# features). Only crates genuinely shared between `core` and `server` (or
+# pinned across them) live here; single-member deps stay member-local to keep
+# ownership legible (portable-pty, vt100, rmcp, static-serve, mimalloc, clap,
+# notify, tower*, bytes, async-trait, futures, tokio-util, toml, sha2 — and
+# tokio, deliberately kept member-local). ---
+[workspace.dependencies]
+serde = "1"
+serde_json = "1"
+schemars = "1"
+anyhow = "1"
+axum = "0.8"
+sqlx = "0.9"
+jiff = "0.2"
+uuid = "1"
+tempfile = "3"
+tracing = "0.1"
+
+# --- build profiles (member `[profile.*]` are IGNORED in a workspace — they
+# MUST live at the root). The machine-local `~/.cargo/config.toml` profiles
+# still win on this machine; this root profile is the CI / other-machine
+# fallback. The dead `[profile.dev.package."*"] opt-level = 2` was dropped (the
+# config-file `opt-level = 1` for deps overrides any Cargo.toml profile). ---
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
