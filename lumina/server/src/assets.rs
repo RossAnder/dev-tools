@@ -45,8 +45,11 @@ pub fn spa_fallback() -> Router {
 
         // `.fallback` (not `.not_found_service`) keeps the served file's status
         // at 200 for unknown paths — the SPA history-fallback contract.
-        let service =
-            ServeDir::new("web/dist").fallback(ServeFile::new("web/dist/index.html"));
+        let service = ServeDir::new(concat!(env!("CARGO_MANIFEST_DIR"), "/web/dist"))
+            .fallback(ServeFile::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/web/dist/index.html"
+            )));
         Router::new().fallback_service(service)
     }
 

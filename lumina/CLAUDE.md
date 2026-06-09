@@ -49,11 +49,13 @@ cargo install cargo-insta                  # snapshot review CLI (optional but r
 
 ### Local commands
 
-- `cargo nextest run --manifest-path lumina/Cargo.toml` — run the full test suite (smoke + showcase + e2e + migration tests + in-module tests) with process-per-test isolation
+> `lumina/Cargo.toml` is now a four-member Cargo workspace (`core` = `lumina-core`, `server` = `lumina-server` shipping the `lumina` + `pty_stub` bins, plus the `protocol`/`companion` Step-1b stubs). Whole-workspace commands take `--workspace`; scope a single member with `-p lumina-core` / `-p lumina-server`. `cargo nextest run` from the root manifest runs every member by default.
+
+- `cargo nextest run --manifest-path lumina/Cargo.toml` — run the full test suite (smoke + showcase + e2e + migration tests + in-module tests) with process-per-test isolation; the root manifest is the workspace, so this runs every member
 - `cargo nextest run --manifest-path lumina/Cargo.toml --profile ci` — same with JUnit XML output at `target/nextest/ci/junit.xml`
-- `cargo test --manifest-path lumina/Cargo.toml` — still works; the `#[test]` functions are the same; `cargo test` runs them under rustc's built-in runner
-- `cargo llvm-cov --manifest-path lumina/Cargo.toml nextest --html --output-dir target/coverage/html` — HTML coverage report (llvm-cov composes with nextest natively via the `nextest` subcommand)
-- `cargo llvm-cov --manifest-path lumina/Cargo.toml nextest --lcov --output-path lcov.info --fail-under-lines 80 --fail-under-regions 70` — lcov export with the recommended gate
+- `cargo test --workspace --manifest-path lumina/Cargo.toml` — still works; the `#[test]` functions are the same; `cargo test` runs them under rustc's built-in runner
+- `cargo llvm-cov --workspace --manifest-path lumina/Cargo.toml nextest --html --output-dir target/coverage/html` — HTML coverage report (llvm-cov composes with nextest natively via the `nextest` subcommand)
+- `cargo llvm-cov --workspace --manifest-path lumina/Cargo.toml nextest --lcov --output-path lcov.info --fail-under-lines 80 --fail-under-regions 70` — lcov export with the recommended gate
 
 ### Nextest config
 
@@ -62,7 +64,7 @@ cargo install cargo-insta                  # snapshot review CLI (optional but r
 
 ## Build discipline in flows
 
-lumina is the heaviest crate here to compile, so the repo-wide **Build discipline in multi-agent flows** rule (root `CLAUDE.md`) bites hardest in this subtree: a sub-agent in `/implement` / `/optimise-apply` / `/review-apply` / `/tdd` may run `cargo check`/`cargo clippy --manifest-path lumina/Cargo.toml` and its task's own narrow test (`cargo nextest --manifest-path lumina/Cargo.toml --profile quick -E 'test(<area>)'`, or a single-binary `cargo test --test <name>`), but leaves the full `cargo build` + the whole nextest suite to the orchestrator's single `verification` pass. N parallel sub-agents each rebuilding the whole crate against the shared `lumina/target` lock is exactly the waste to avoid.
+lumina is the heaviest crate here to compile, so the repo-wide **Build discipline in multi-agent flows** rule (root `CLAUDE.md`) bites hardest in this subtree: a sub-agent in `/implement` / `/optimise-apply` / `/review-apply` / `/tdd` may run `cargo check`/`cargo clippy --workspace --manifest-path lumina/Cargo.toml` (or scope to `-p lumina-core` / `-p lumina-server`) and its task's own narrow test (`cargo nextest --manifest-path lumina/Cargo.toml --profile quick -E 'test(<area>)'`, or a single-binary `cargo test --test <name>`), but leaves the full `cargo build --workspace` + the whole nextest suite to the orchestrator's single `verification` pass. N parallel sub-agents each rebuilding the whole crate against the shared `lumina/target` lock is exactly the waste to avoid.
 
 ## Transactions
 

@@ -88,7 +88,7 @@ Every skill follows the check-before-act sequence documented in [CONVENTIONS.md 
 
 ## Prerequisites
 
-- [ ] **Lumina server running.** Lumina serves the MCP endpoint at `/mcp`. See the `## lumina` section of the repo `CLAUDE.md` for the build/run commands (`cargo build --manifest-path lumina/Cargo.toml`, then run the lumina binary — note the bound port, you'll need it for the next step).
+- [ ] **Lumina server running.** Lumina serves the MCP endpoint at `/mcp`. See the `## lumina` section of the repo `CLAUDE.md` for the build/run commands (`cargo build --workspace --manifest-path lumina/Cargo.toml`, then run the server with `cargo run -p lumina-server` — note the bound port, you'll need it for the next step).
 
 - [ ] **Lumina registered as an MCP server named `lumina` in Claude Code.** The canonical registration command (from [`./skills/mcp/SKILL.md`](./skills/mcp/SKILL.md) §Connecting):
 

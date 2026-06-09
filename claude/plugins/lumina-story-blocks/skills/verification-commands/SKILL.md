@@ -33,9 +33,9 @@ mcp__lumina__set_story_plan {
 
 The four keys map to the canonical commands a verifier runs against a story's slice (matching the plan-file `## Verification Commands` block and `/test-bootstrap`'s output):
 
-1. **`build`** — the canonical build command (e.g. `cargo build --manifest-path lumina/Cargo.toml`).
+1. **`build`** — the canonical build command (e.g. `cargo build --workspace --manifest-path lumina/Cargo.toml`).
 2. **`test`** — the canonical test command (e.g. `cargo nextest run --manifest-path lumina/Cargo.toml`).
-3. **`lint`** — the canonical lint command (e.g. `cargo clippy --manifest-path lumina/Cargo.toml --all-targets`).
+3. **`lint`** — the canonical lint command (e.g. `cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets`).
 4. **`smoke`** — an optional one-line smoke check (e.g. `cargo run -- --help`); the only key that is intentionally optional.
 
 ## Body — 5-step check-before-act (per §b, §b-per-element across the four keys)

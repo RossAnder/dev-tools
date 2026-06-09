@@ -74,7 +74,7 @@ Each sub-prompt is its own `AskUserQuestion` so the user can stage one field at 
 
 **4c. `outcome`** — dual-track per R23. Two sequential prompts:
 
-- First `AskUserQuestion`: `automated` track. Options `Provide automated outcome` / `Skip automated track`. On `Provide`, free-text — typically executable commands / scripted verifiers / test assertions. Example: `cargo test --manifest-path lumina/Cargo.toml -p lumina --test e2e -- migration_0007`.
+- First `AskUserQuestion`: `automated` track. Options `Provide automated outcome` / `Skip automated track`. On `Provide`, free-text — typically executable commands / scripted verifiers / test assertions. Example: `cargo test --manifest-path lumina/Cargo.toml -p lumina-server --test e2e -- migration_0007`.
 
 - Second `AskUserQuestion`: `manual` track. Options `Provide manual outcome` / `Skip manual track`. On `Provide`, free-text — typically human checks the automation can't cover. Example: `SPA detail panel renders the new column; eyeball ordering against design mock`.
 
