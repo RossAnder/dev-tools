@@ -1,0 +1,173 @@
+[package]
+name = "lumina-server"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+authors = ["Ross Anderson"]
+description = "Flow-tracking platform: SQLite-canonical store with MCP + axum + Vue, git-export audit trail"
+license = "MIT OR Apache-2.0"
+
+# Library target: lib.rs is the composition root's module graph; the e2e test
+# (Task 10) imports the crate as a library. The binary is the thin entrypoint.
+[lib]
+name = "lumina"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lumina"
+path = "src/main.rs"
+
+# Test fixture binary: a tiny stub that stands in for the real `claude` CLI
+# in `tests/pty_e2e.rs`. The test prepends a tempdir containing this binary
+# (renamed to `claude` / `claude.exe`) to PATH before invoking the spawn
+# handler, so `PtyTransport`'s hard-coded `CommandBuilder::new("claude")`
+# resolves to the stub. `env!("CARGO_BIN_EXE_pty_stub")` lets the test
+# locate it at runtime without an `escargot`-style runtime build. The
+# stub is dep-free (std only) so it doesn't pull anyhow/tokio/sqlx into
+# the fixture's compile graph.
+[[bin]]
+name = "pty_stub"
+path = "tests/fixtures/pty_stub.rs"
+
+[dependencies]
+# --- web / runtime ---
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs"] }
+tokio-util = "0.7"                                  # CancellationToken for the export-loop shutdown seam (Task 6)
+futures = "0.3"                                     # FuturesUnordered for the PTY supervisor's exit-reap branch (T8)
+
+# --- PTY supervisor (interactive `claude` REPL sessions, migration 0008) ---
+# portable-pty gives cross-platform PTY (Unix98 + Windows ConPTY) with a
+# synchronous Read/Write API bridged to tokio via spawn_blocking workers.
+# vt100 maintains a virtual screen we *don't render* — we only use it to
+# extract typed message blocks (assistant text, tool-call, prompt) from
+# Claude's interactive TUI byte stream. async-trait gives the Transport
+# trait async methods so PtyTransport / future AcpTransport can both
+# satisfy the same shape. bytes is the standard zero-copy buffer type
+# used on the read/write channels between the blocking PTY workers and
+# the parser pipeline.
+portable-pty = "=0.8.1"
+vt100 = "0.16.2"
+async-trait = "0.1"
+bytes = "1"
+
+# --- file-watcher (T4 of lumina-pty-jsonl-tail) ---
+# notify is the cross-platform file-watcher; T4 uses it to tail the per-session
+# JSONL transcript Claude Code writes under ~/.claude/projects/<sanitised-cwd>/.
+# Pinned 8.2.0 (MSRV 1.95 compatible; 9.0.0-rc skipped). No `serde` feature —
+# we don't serialise notify::Event values.
+notify = "8.2.0"
+
+# --- persistence ---
+# PINNED to 0.9 for the runtime query API (`sqlx::query*` behind the DbClient
+# seam). 0.9.0's SqlSafeStr change makes `query*()` take `impl SqlSafeStr`,
+# satisfied by the `&'static str` literal SQL lumina uses (composed SQL wraps
+# `AssertSqlSafe`). The `macros` feature and the committed `.sqlx/` offline
+# cache were dropped once every site became a runtime query — no more
+# `cargo sqlx prepare`. `migrate` is kept for the compile-time
+# `sqlx::migrate!("./migrations")` in db.rs. No TLS feature: sqlite is a local
+# file, no transport security needed.
+sqlx = { version = "0.9", features = [
+    "runtime-tokio",
+    "sqlite",
+    "migrate",
+] }
+
+# --- MCP server (rmcp, Streamable-HTTP transport) ---
+rmcp = { version = "1.7", features = [
+    "server",
+    "transport-streamable-http-server",
+    "macros",
+] }
+schemars = "1" # tool-parameter JSON schemas for rmcp #[tool] methods
+
+# --- CLI (Task 7: the `import-flow` subcommand; bare invocation still serves) ---
+# Trimmed defaults: no `color` / `suggestions` / `error-context` — lumina's CLI
+# surface is a single `import-flow` subcommand plus bare-invocation server start,
+# so the rich error-rendering features are dead weight.
+clap = { version = "4", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+] }
+
+# --- serialization / domain support ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+anyhow = "1"
+jiff = "0.2"
+
+# --- structured logging ---
+# tracing emits structured events; tracing-subscriber renders them with the
+# EnvFilter (driven by RUST_LOG) to stderr. Default level is INFO via
+# `EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("lumina=info"))`
+# in main.rs. Set `RUST_LOG=lumina=debug` for more verbose tracing across
+# the PTY pipeline; `RUST_LOG=lumina::pty=trace` narrows to one subsystem.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "env-filter",
+    "fmt",
+    "ansi",
+    "smallvec",
+] }
+
+tempfile = "3"
+uuid = { version = "1", features = ["v7", "serde"] }
+
+# Content-hash dep for finding dedup (first consumed by B16's finding_dedup_hash).
+sha2 = "0.10"
+
+# mimalloc as the global allocator (mirrors tomlctl O56). lumina's hot paths are
+# small-allocation-heavy: every MCP tool call round-trips JSON through serde,
+# every sqlx Row materialises a handful of Strings, and the git-export drain
+# serialises work-item trees to TOML. Microsoft's benchmarks show ~5× faster
+# small-alloc throughput vs system malloc. `default-features = false` skips the
+# optional `secure` mode (~10% guard-page/encrypted-free-list overhead).
+mimalloc = { version = "0.1", default-features = false }
+
+# --- SPA embedding (release builds bake web/dist into the binary) ---
+# `static-serve` precompresses each asset at compile time with zstd + gzip,
+# negotiates Accept-Encoding per request, and serves ETag/If-None-Match (304)
+# + Range requests (206) out of the box. The compress heuristic ("if
+# beneficial") keeps a compressed variant only when its size is < 90% of the
+# original, which acts as the de-facto cutoff for tiny/incompressible files.
+static-serve = "0.6"
+
+[dev-dependencies]
+# `ServiceExt::oneshot` drives the router in-process (no socket bind) for the
+# health smoke test, the downstream handler tests, and the Task 10 e2e thread.
+# (The e2e drives every layer IN-PROCESS — MCP tool call + router oneshot +
+# direct export drain — so no HTTP client / bound socket is needed.)
+tower = { version = "0.5", features = ["util"] }
+
+# Test-stack ergonomics (scaffolded by /test-bootstrap, 2026-05-25):
+# Runner: cargo nextest (binary; install via `cargo install cargo-nextest --locked`)
+#   rstest            — #[rstest] + #[case(...)] for table-driven tests
+#   pretty_assertions — readable colored diffs on assert_eq! failures
+#   proptest          — property-based testing
+#   insta             — snapshot testing (review with `cargo install cargo-insta`)
+rstest = "0.26"
+pretty_assertions = "1.4"
+proptest = "1"
+insta = "1.47"
+
+# PTY e2e test (Task 16): assert_cmd drives a stub `claude`-replacement binary
+# fixture (no real claude required); tokio-tungstenite drives the WebSocket
+# endpoint as a client. Both are dev-only — neither is reachable from the
+# library or binary crate.
+assert_cmd = "2"
+tokio-tungstenite = "0.29"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2

@@ -1,0 +1,7 @@
+# Keep SQL migrations byte-identical and host-independent so sqlx::migrate!
+# compile-time checksums stay stable across machines (LF everywhere). The
+# committed (index) form of every migration is already LF; this pins the
+# working-tree form to LF too. Path-agnostic on purpose: the migrations dir
+# moves under the lumina workspace carve (lumina/migrations -> later
+# lumina/core/migrations), so a fixed path would go stale.
+*.sql text eol=lf
