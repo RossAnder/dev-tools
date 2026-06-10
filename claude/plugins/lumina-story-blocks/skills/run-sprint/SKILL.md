@@ -1,6 +1,6 @@
 ---
 name: run-sprint
-description: Drive an active sprint to a recorded merge — single-agent worker loop over the team-execution work-queue, then the real git merge with lumina recording provenance.
+description: Drive an active sprint to a recorded merge — single-agent worker loop over the team-execution work-queue, then the companion-executed merge with lumina recording provenance.
 arguments: [sprint_id]
 argument-hint: "[sprint_id]"
 disable-model-invocation: true
@@ -12,10 +12,13 @@ Execution-loop runner: drives ONE sprint from `active` to a recorded merge of
 its shared worktree. The runner claims, works, and completes tasks against the
 durable team-execution work-queue (migration 0013), honours the migration-0016
 sprint-lifecycle + checkpoint-freeze + worktree-ownership rules, and ends by
-performing the REAL `git` merge itself — lumina is **record-only** and NEVER
-shells to git (it records provenance via `record_task_commits` /
-`record_worktree_merge`; the agent runs the actual `git worktree add`, commits,
-and merge).
+triggering the merge via `execute_worktree_merge` — the companion now merges
+for you. The SERVER stays **record-only** and never shells to git; the git
+itself runs in the separate `lumina-companion` process (ADR-0006), which
+merges on lumina's behalf and records the audit with the companion's
+ground-truth sha. (The agent still runs its own commits in the shared
+worktree; manual `git merge` + `record_worktree_merge` remains the
+no-companion fallback/audit path — see Step 6.)
 
 The **single-agent worker loop (Steps 2–6) is the CANONICAL path** — the safe
 default. An agent-team variant is a clearly-labelled SECONDARY appendix at the
@@ -56,7 +59,13 @@ Sprint lifecycle / worktree / commit provenance (migration 0016):
 - `get_worktree` / `list_worktrees` — assert the one shared worktree.
 - `set_task_checkpoint { task_id, on }` — (read at claim time) a `checkpoint=1` task freezes the sprint.
 - `record_task_commits { commit_sha, task_ids, sprint_id }` — bind a real commit to the tasks it implements.
-- `record_worktree_merge { worktree_id, merge_ref }` — record the merge; drives the owner `review→done`.
+- `execute_worktree_merge { worktree_id }` — EXECUTE the merge via the connected
+  `lumina-companion` (ADR-0006); on success it records the audit itself (through
+  the same `record_worktree_merge` mutation, with the companion's ground-truth
+  sha) and drives the owner `review→done`. The PRIMARY merge path.
+- `record_worktree_merge { worktree_id, merge_ref }` — FALLBACK/audit path only:
+  record a merge the agent performed manually with real `git merge` (no
+  companion connected); drives the owner `review→done`.
 - `record_worktree_rejection { worktree_id, reason }` — the reject counterpart; drives the owner `review→cancelled`.
 
 The runner ALSO invokes the repo-wide `commit-conventions` skill (NOT a
@@ -76,10 +85,12 @@ clean git messages. Keep commit↔task cross-refs in lumina (via
 2. Assert EXACTLY ONE shared worktree exists for the sprint:
    `list_worktrees` (or `get_worktree` on a known id) → confirm one worktree
    whose `owning_sprint_id == $sprint_id`. There is ONE shared sprint worktree,
-   never a per-worker worktree. Confirm the on-disk worktree exists too — the
-   agent created it earlier with the real `git worktree add`; lumina only
-   recorded it via `create_worktree`. If zero or more than one, ABORT and ask
-   the user to reconcile (lumina does not create on-disk worktrees).
+   never a per-worker worktree. Confirm the on-disk worktree exists too —
+   compose-sprint minted it earlier via the companion's
+   `execute_worktree_create` (or, on the no-companion fallback, the agent ran
+   the real `git worktree add` and recorded it via `create_worktree`). If zero
+   or more than one, ABORT and ask the user to reconcile (the SERVER does not
+   create on-disk worktrees itself; only the companion does, on its behalf).
 3. Mint a stable `agent_id` for this run (e.g. `run-sprint-<short-uuid>`) and a
    `lease_ttl_secs` (the default 30 min is generous; pick a shorter value for a
    chatty loop). Hold both for every `claim_next_task` / `renew_lease` /
@@ -187,22 +198,52 @@ When the worker loop drains (both lanes return null), poll
 
 Re-poll after each resolution; only a terminal `done` verdict gates Step 6.
 
-### Step 6 — finalize / merge (the REAL git merge)
+### Step 6 — finalize / merge (companion-executed)
 
 Only AFTER quiescence reports `done`:
 
 1. `set_sprint_status({ sprint_id, status: "review" })` — flip `active→review`.
    (This is the LAST `set_sprint_status` call the runner makes; the terminal
-   `review→done` flip is driven by `record_worktree_merge`, NOT by
-   `set_sprint_status` — see the un-wedge note for why.)
-2. The AGENT performs the REAL merge: `git` merge of the worktree branch into
-   the integration branch (lumina NEVER merges for you). Draft the merge /
-   commit message with the `commit-conventions` skill. Keep commit↔task
-   cross-refs in lumina (`record_task_commits`), NOT in commit-message trailers.
-3. `record_worktree_merge({ worktree_id, merge_ref: <the merge commit sha/ref> })`
-   — records `merged_at` / `merge_ref` / `outcome` AND drives the OWNING sprint
-   `review→done`. Use this INSTEAD of `set_sprint_status` for the terminal flip
-   of a worktree-owning sprint.
+   `review→done` flip is driven by the merge RECORD — `execute_worktree_merge`
+   records it for you, or `record_worktree_merge` on the manual fallback — NOT
+   by `set_sprint_status`; see the un-wedge note for why.)
+2. `execute_worktree_merge({ worktree_id })` — the PRIMARY merge path. The
+   connected `lumina-companion` performs the merge in a DETACHED integration
+   worktree, so a checked-out target does NOT block it (no "move your primary
+   checkout off the target branch" dance — that constraint is obsolete). On
+   `outcome ∈ merged | already_up_to_date`, lumina records the audit itself
+   with the companion's ground-truth sha and drives the owning sprint
+   `review→done` — do NOT call `record_worktree_merge` afterwards. Branch on
+   the response:
+   - **`merged` / `already_up_to_date`** — done; the sprint is `done` with a
+     recorded merge (`already_up_to_date` makes re-runs idempotent).
+   - **`conflicted`** — the companion already ABORTED the merge and restored
+     its worktree; NO DB write happened (`recorded: false`). Record the
+     structured conflict `paths` as a finding (`add_finding`) or an open
+     question and STOP — re-run only after the conflict is resolved.
+   - **lease rejection ("merge already in flight" on the target)** — the
+     per-target merge lease REJECTS, it does NOT queue. Retry same-target
+     merges in dependency order, one at a time.
+   - **`TargetMoved`** (the target branch moved or was deleted between
+     tip-resolve and the atomic ref advance) — simply RE-RUN; the next attempt
+     resolves the new tip. No rollback is needed.
+   - **stale-primary hint** — when the response carries a `target_checkout`
+     field and a human `hint` string (the target branch was checked out in
+     another worktree, e.g. the operator's primary), surface the `hint` string
+     to the operator VERBATIM: the stale checkout shows spurious
+     "undo-the-merge" diffs until refreshed with `git reset --keep
+     <merge_sha>`, and committing there would revert the merge.
+3. **No-companion FALLBACK/audit path only**: if no companion is connected
+   (`execute_worktree_merge` rejects with "no companion connected"), the AGENT
+   performs the merge manually with real `git merge`, then records it via
+   `record_worktree_merge({ worktree_id, merge_ref: <the merge commit
+   sha/ref> })` — stamps `merged_at` / `merge_ref` / `outcome` AND drives the
+   OWNING sprint `review→done`. Never reach for this while a companion is
+   connected.
+
+Draft any merge / commit message with the `commit-conventions` skill. Keep
+commit↔task cross-refs in lumina (`record_task_commits`), NOT in
+commit-message trailers.
 
 The sprint is now `done` with a recorded merge.
 
@@ -248,10 +289,13 @@ quiescence poll cadence, and the un-wedge two-step. Runner MUST NOT replicate
 server-owned state: leasing + reclaim (`claim_next_task` / `renew_lease`), the
 done→review→rework cascade (`complete_task` / `record_finding_decision`), the
 sprint-lifecycle transition legality and the terminal-flip guard
-(`set_sprint_status` / `record_worktree_merge` / `record_worktree_rejection`),
-and commit-provenance idempotency (`record_task_commits`) all live in lumina.
-The runner runs the REAL git operations (worktree, commits, merge) — lumina
-records the facts but never shells to git.
+(`set_sprint_status` / `execute_worktree_merge` / the fallback
+`record_worktree_merge` / `record_worktree_rejection`), and commit-provenance
+idempotency (`record_task_commits`) all live in lumina. The runner runs its
+own git commits in the shared worktree; the MERGE is executed by the
+`lumina-companion` process via `execute_worktree_merge` (the SERVER stays
+record-only and never shells to git — ADR-0006), with manual `git merge` + the
+fallback `record_worktree_merge` reserved for the no-companion case.
 
 ## Appendix — agent-team variant (SECONDARY, opt-in)
 
@@ -263,8 +307,8 @@ records the facts but never shells to git.
 
 Enable with the experimental flag `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. The
 team shares ONE sprint worktree on disk — NEVER a per-worker worktree (the
-checkpoint barrier and the single `record_worktree_merge` both assume one
-shared worktree).
+checkpoint barrier and the single Step-6 merge both assume one shared
+worktree).
 
 Team tools used:
 
@@ -296,4 +340,4 @@ freeze for the whole team.
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — team-execution work-queue
   (migration 0013) + sprint-lifecycle / worktree / commit-provenance (migration 0016) sections.
 - Commit messages: the repo-wide `commit-conventions` skill at `claude/skills/commit-conventions/`.
-- ADRs: [`docs/adr/0002-sprint-execution-architecture.md`](../../../../docs/adr/0002-sprint-execution-architecture.md) (advisory file-overlap), [`docs/adr/0003-commit-checkpoint-provenance.md`](../../../../docs/adr/0003-commit-checkpoint-provenance.md), [`docs/adr/0005-sprint-lifecycle-worktree-ownership.md`](../../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md).
+- ADRs: [`docs/adr/0002-sprint-execution-architecture.md`](../../../../docs/adr/0002-sprint-execution-architecture.md) (advisory file-overlap), [`docs/adr/0003-commit-checkpoint-provenance.md`](../../../../docs/adr/0003-commit-checkpoint-provenance.md), [`docs/adr/0005-sprint-lifecycle-worktree-ownership.md`](../../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md), [`docs/adr/0006-git-execution-companion.md`](../../../../../docs/adr/0006-git-execution-companion.md) (the companion execution plane behind `execute_worktree_merge`).

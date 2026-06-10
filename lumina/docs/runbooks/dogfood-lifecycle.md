@@ -1,9 +1,13 @@
 # Runbook — dogfood lifecycle (create → plan → decompose → compose → execute → merge)
 
 > Canonical end-to-end runbook for driving one slice of work through lumina's
-> MCP surface. lumina is **record-only for git**: it NEVER shells to git. The
-> agent runs the real `git worktree add` / commits / merge; lumina records the
-> provenance (`record_task_commits`, `record_worktree_merge`).
+> MCP surface. The lumina SERVER is **record-only for git**: it never shells to
+> git. Git executes either in the `lumina-companion` process (PREFERRED — the
+> `execute_worktree_create` / `execute_worktree_merge` tools create/merge AND
+> record in one call, per [ADR-0006](../../../docs/adr/0006-git-execution-companion.md))
+> or in the agent's own shell (the no-companion FALLBACK — real git + the
+> record-only provenance verbs `create_worktree`, `record_task_commits`,
+> `record_worktree_merge`).
 >
 > Tool names below are cited from the authoritative catalogue at
 > [`../../../claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`](../../../claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md).
@@ -95,22 +99,45 @@ chosen task ids under one transaction (an already-attached pair is collapsed and
 not re-counted). Composition is a COMPOSITION step, NOT an execution trigger —
 the sprint does not start running just because tasks are attached.
 
-## E. Register the worktree (record-only) — the agent runs git
+## E. Create the worktree — `execute_worktree_create` (companion), record-only fallback
 
-A sprint OWNS exactly one worktree. The AGENT creates the on-disk worktree with
-real git (`git worktree add <path> <base_ref>`); lumina only RECORDS it:
+A sprint OWNS exactly one worktree. PREFER the companion execute path — one
+call creates the on-disk worktree AND records it:
 
 ```
-create_worktree { owning_sprint_id: <sprint>, path: "…", base_ref?: "…", branch?: "…" } → { worktree_id }
+execute_worktree_create { sprint_id: <sprint>, branch: "…", base_ref: "…" } → { worktree_id, path, head }
 ```
 
-- **Gate (11) — record-only git.** lumina NEVER shells to git. `create_worktree`
-  records the worktree row; it does NOT create the on-disk worktree. Likewise
-  the merge and commit-provenance tools (leg G/H) RECORD facts the agent's git
-  commands produced. A worktree is owned by EXACTLY ONE sprint
-  (`worktrees.owning_sprint_id` UNIQUE); follow-up sprints TARGET a worktree
-  (sharing `sprints.worktree_id`) but never own it, and its `effective_status`
-  is JOIN-derived from the owning sprint (there is no `worktrees.status` column).
+The companion runs `git worktree add -b <branch> <path> <base>` (`base_ref` is
+any committish, resolved companion-side; the new worktree comes up ATTACHED to
+the new branch at the base tip) and the server records the row via the same
+`repo::create_worktree` mutation the record-only tool uses. Pre-flights: the
+sprint must exist (404), be non-terminal and not already own a live worktree
+(422), `branch`/`base_ref` must be non-empty (422), and a companion must be
+connected (502 otherwise).
+
+- **Unique-live-branch constraint (migration 0018).** At most one LIVE worktree
+  (`outcome IS NULL`) may record a given branch; a merged/rejected worktree
+  frees the branch. In the execute path a same-branch duplicate usually fails
+  earlier in git itself (`worktree add -b` on an existing branch → 502
+  `BranchInUse`); the index catches record-layer races and record-only
+  collisions ("a live worktree already records branch …" → 422).
+- **No-companion fallback (record-only).** The AGENT creates the on-disk
+  worktree with real git and lumina only RECORDS it:
+
+  ```
+  git worktree add <path> -b <branch> <base_ref>        # agent-run git
+  create_worktree { owning_sprint_id: <sprint>, path: "…", base_ref?: "…", branch?: "…" } → { worktree_id }
+  ```
+
+- **Gate (11) — the server never runs git.** `create_worktree` records the
+  worktree row; it does NOT create the on-disk worktree (that is the companion's
+  or the agent's job). Likewise the merge and commit-provenance record verbs
+  (legs G/H) RECORD facts that git produced. A worktree is owned by EXACTLY ONE
+  sprint (`worktrees.owning_sprint_id` UNIQUE); follow-up sprints TARGET a
+  worktree (sharing `sprints.worktree_id`) but never own it, and its
+  `effective_status` is JOIN-derived from the owning sprint (there is no
+  `worktrees.status` column).
 
 ## F. Drive the sprint ladder + execute — `/lumina:run-sprint`
 
@@ -187,18 +214,58 @@ aggregate event (never git-exported). Read it back with `list_task_commits`.
   the descendant-story rollup is the structural gate. Both must hold — there is
   no `hard`/`soft` mode at the epic level (the done-rule is unconditional).
 
-## H. Merge (or reject) the worktree — record-only terminal flip
+## H. Merge (or reject) the worktree — `execute_worktree_merge` (companion)
 
-The agent performs the real merge with git; lumina RECORDS it AND drives the
-owning sprint's terminal transition atomically. Before merging, move the sprint
-into review:
+Move the sprint into review, then PREFER the companion execute path — one call
+performs the merge AND records it, driving the owning sprint `review → done`
+with the companion's ground-truth SHA:
 
 ```
 set_sprint_status { sprint_id, status: "review" }                  # active → review
-record_worktree_merge     { worktree_id, merge_ref?: "<ref>" }     # stamps merged_at/merge_ref/outcome; drives owning sprint review → done
-# — or —
+execute_worktree_merge { worktree_id, target_branch?, no_ff? }     # companion merges; server records review → done
+# — rejection, or the no-companion fallback after an agent-run git merge —
+record_worktree_merge     { worktree_id, merge_ref?: "<ref>" }     # record-only fallback / audit verb; drives owning sprint review → done
 record_worktree_rejection { worktree_id, reason?: "…" }            # stamps audit fields; drives owning sprint review → cancelled
 ```
+
+The companion merges inside a DETACHED integration worktree (it never checks a
+branch out) and advances the target branch with an atomic compare-and-swap
+(`git update-ref … <new> <expected_old>`); the reachability gate — every
+recorded task commit must remain reachable — runs BEFORE any ref move. Outcomes
+to handle:
+
+- **Merged** → recorded (`review → done`) with the ground-truth `merge_sha`.
+  The response may carry a `target_checkout {path, dirty}` field + human
+  `hint`: the target branch is checked out in another worktree (typically the
+  operator's stale primary), which now shows spurious "undo-the-merge" diffs —
+  refresh it with `git reset --keep <merge_sha>` as the hint says; committing
+  on the stale checkout would revert the merge.
+- **Conflicted** → a structured SUCCESS payload (the conflicting paths) with
+  **NO DB write** — the companion has already aborted the merge and restored
+  the worktree. Surface it as an open question / finding and STOP; do not
+  retry blindly.
+- **AlreadyUpToDate** → early return, no ref move; re-runs are idempotent
+  (the crash/disconnect recovery path — git already holds the merge, the
+  record catches up).
+- **TargetMoved** → the target branch moved (or was deleted) between
+  tip-resolve and the CAS advance. Nothing was rolled back and nothing needs
+  to be — re-run, and the next attempt resolves the new tip (a deleted ref
+  then surfaces as NotFound).
+- **"merge already in flight"** → the per-target in-memory lease rejected the
+  call; it does NOT queue. Retry same-target merges one at a time, in
+  dependency order.
+
+**Lifecycle invariants:**
+
+- **A worktree merges EXACTLY ONCE.** The pre-flight requires the owning
+  sprint in `review`, and the merge records it `done` (terminal). Follow-up
+  work after a merge = a NEW sprint + a NEW worktree off the updated base —
+  never reuse the merged worktree.
+- **The "never check out the integration/target branch" rule is RELAXED for
+  merges.** The detached integration worktree means the companion never needs
+  the target branch checked out anywhere, and the ref-CAS catches a concurrent
+  move — so a checked-out target is now safe. The stale-primary refresh remedy
+  above still applies.
 
 - **Gate (9) — the worktree-owner terminal guard.** A worktree-OWNING sprint may
   reach a terminal state (`done`/`cancelled`) ONLY via `record_worktree_merge` /
@@ -254,8 +321,10 @@ the canonical list — the legs A–H above cite it.
     reviewer findings spawn rework via `record_finding_decision { decision:
     "spawn_task" }` (stamps `lane='implement'`, binds to the sprint → claimable).
     A `review`/NULL-lane completion spawns nothing. *(Leg F.)*
-11. **Record-only git.** lumina NEVER shells to git. The agent runs `git worktree
-    add` / commits / merge; lumina records provenance via `create_worktree`,
+11. **The lumina server never runs git.** Git executes in the `lumina-companion`
+    process (preferred — `execute_worktree_create` / `execute_worktree_merge`
+    create/merge AND record in one call) or in the agent's own shell (the
+    no-companion fallback), with provenance recorded via `create_worktree`,
     `record_task_commits`, and `record_worktree_merge` / `record_worktree_rejection`.
     *(Legs E, G, H.)*
 
@@ -275,5 +344,7 @@ the canonical list — the legs A–H above cite it.
   [`../../../claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`](../../../claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md).
 - Plugin conventions:
   [`../../../claude/plugins/lumina-story-blocks/CONVENTIONS.md`](../../../claude/plugins/lumina-story-blocks/CONVENTIONS.md).
-- Architecture: [ADR-0005 sprint-lifecycle & worktree-ownership](../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md),
+- Architecture: [ADR-0006 git-execution companion](../../../docs/adr/0006-git-execution-companion.md)
+  (incl. the 2026-06-10 detached-integration + ref-CAS amendment),
+  [ADR-0005 sprint-lifecycle & worktree-ownership](../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md),
   building on [ADR-0003 commit-checkpoint-provenance](../../../docs/adr/0003-commit-checkpoint-provenance.md).

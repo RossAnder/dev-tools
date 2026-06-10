@@ -11,10 +11,13 @@ disable-model-invocation: true
 Composer: turns a planned, decomposed story into a runnable sprint and
 activates it. Reads the story's readiness + tiered dispatch plan, gates the
 task-set selection and worktree choice through two `AskUserQuestion` prompts,
-mints the sprint, attaches the selected tasks, records the worktree (lumina is
-RECORD-ONLY — the agent runs the real `git worktree add`), and ladders the
-sprint `draft→ready→active`. It STOPS at `active`; execution (`run-sprint`) and
-the terminal merge/rejection flip are a SEPARATE skill's job.
+mints the sprint, attaches the selected tasks, mints the worktree via the
+companion (`execute_worktree_create` — the SERVER stays record-only; the git
+runs in the separate `lumina-companion` process per ADR-0006, with manual
+`git worktree add` + record-only `create_worktree` as the no-companion
+fallback), and ladders the sprint `draft→ready→active`. It STOPS at `active`;
+execution (`run-sprint`) and the terminal merge/rejection flip are a SEPARATE
+skill's job.
 
 This skill MUTATES the store (it mints a sprint, attaches tasks, records a
 worktree, drives status) so it declares `disable-model-invocation: true` per
@@ -36,7 +39,8 @@ pre-batches), §k (tier derivation is server-side via `get_task_dispatch_plan`).
 - `mcp__lumina__get_task_dispatch_plan` — Step 2 the batched, tiered task waves.
 - `mcp__lumina__create_sprint` — Step 4 mint the sprint (defaults `draft`).
 - `mcp__lumina__add_tasks_to_sprint` — Step 5 attach the selected task ids.
-- `mcp__lumina__create_worktree` — Step 6 record a NEW worktree (after the real `git worktree add`).
+- `mcp__lumina__execute_worktree_create` — Step 6 mint a NEW worktree via the connected `lumina-companion` (PRIMARY — runs the real `git worktree add -b` AND records in one call).
+- `mcp__lumina__create_worktree` — Step 6 record-only FALLBACK when no companion is connected (after a manual `git worktree add`).
 - `mcp__lumina__set_task_lane` — referenced in Step 5 ONLY as the review-lane / clear path (NOT used to make planned tasks claimable — they already default `lane="implement"`).
 - `mcp__lumina__set_sprint_status` — Step 7 ladder `draft→ready→active`.
 - `mcp__lumina__record_task_activity` — §c provenance after each write.
@@ -132,17 +136,31 @@ Gate the worktree decision with this `AskUserQuestion`, VERBATIM:
 > **Header**: `Worktree`
 > **Body**: `Create a new worktree for this sprint, or target an existing one?`
 > **Options** (exactly 2):
-> - `New` — This sprint OWNS a fresh worktree (the agent runs the real `git worktree add` first).
+> - `New` — This sprint OWNS a fresh worktree (minted via the companion's `execute_worktree_create`).
 > - `Target-existing` — Share an existing sprint's worktree (target, do NOT own).
 
-**On `New`** — lumina is RECORD-ONLY, so the agent runs the REAL git command
-FIRST, THEN records provenance:
+**On `New`** — mint via the companion (PRIMARY path):
 
-1. The agent runs `git worktree add <path> -b <branch>` (real git — lumina
-   never shells to git).
-2. `mcp__lumina__create_worktree({ owning_sprint_id: sprint_id, path: "<path>", branch: "<branch>", base_ref: "<base_ref>" })`
-   records it; this sprint OWNS the worktree (`owning_sprint_id` is UNIQUE).
-   `path` is provenance TEXT — lumina does not touch the on-disk tree.
+1. `mcp__lumina__execute_worktree_create({ sprint_id, branch: "<branch>", base_ref: "<base_ref>" })`
+   — the connected `lumina-companion` runs the real `git worktree add -b
+   <branch> <path> <resolved-base>` on the server's behalf (the SERVER never
+   shells to git; `base_ref` is any committish, e.g. `"main"`, resolved
+   companion-side), and the server records the worktree in the same call.
+   Success returns `{ worktree_id, path, head }`; the created worktree is
+   ATTACHED to the new branch at the base tip, and this sprint OWNS it
+   (`owning_sprint_id` is UNIQUE).
+2. **Branch-name constraint (migration 0018)**: at most one LIVE
+   (non-terminal) worktree may record a given branch — pick a branch name that
+   does not collide with any live worktree's branch (terminal merged/rejected
+   worktrees free theirs; a collision is rejected as Validation/422). Avoid
+   POST-SANITISATION collisions too: distinct branches can sanitise to the
+   same directory name (e.g. `feature/auth` → `feature-auth`), so keep the
+   sanitised forms distinct as well.
+3. **No-companion FALLBACK only**: if no companion is connected, the agent
+   runs the real `git worktree add <path> -b <branch>` itself, THEN records it
+   via `mcp__lumina__create_worktree({ owning_sprint_id: sprint_id, path:
+   "<path>", branch: "<branch>", base_ref: "<base_ref>" })` — record-only;
+   `path` is provenance TEXT, lumina does not touch the on-disk tree.
 
 **On `Target-existing`** — do NOT call `create_worktree` (that would mint a
 SECOND owner). Resolve the existing sprint's `worktree_id` (via
@@ -193,9 +211,12 @@ ladder), the two AUQ prompt shapes, the stop-at-`active` ceiling. Composer MUST
 NOT compute readiness or tiers client-side (always `get_story_readiness` /
 `get_task_dispatch_plan`); MUST NOT pre-batch tasks (§j — batching is
 server-side); MUST NOT lane-stamp planned tasks (they default `implement`); MUST
-NOT drive a worktree-owning sprint to a terminal status (use the worktree
-merge/rejection tools — terminal guard above). Local `detail.kind == "story"` at
-Step 1 is the §e-blessed exception.
+NOT shell to git for the worktree mint while a companion is connected (Step 6's
+`execute_worktree_create` is the primary; manual `git worktree add` +
+`create_worktree` is the no-companion fallback); MUST NOT drive a
+worktree-owning sprint to a terminal status (use the worktree merge/rejection
+tools — terminal guard above). Local `detail.kind == "story"` at Step 1 is the
+§e-blessed exception.
 
 ## Pointers
 

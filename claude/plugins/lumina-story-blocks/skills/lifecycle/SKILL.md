@@ -75,7 +75,7 @@ Infer the furthest-advanced leg from the observed state. Use the FIRST row whose
 | B. Plan story             | a `story` exists but is not fully populated (problem_statement/approach/AC) | (5) closure gate set later      | `/lumina:plan-story <story>`   |
 | C. Decompose              | story is planned but has no `task` children (or tasks lack specs)          | tasks default `lane='implement'` | `/lumina:plan-story <story>` (Decompose phase) |
 | D. Compose sprint         | tasks are spec'd but no sprint owns them                                   | (7) ladder starts at `draft`    | `/lumina:compose-sprint <story>` |
-| E. Register worktree      | a `draft`/`ready` sprint exists with no worktree                          | (11) record-only git            | `/lumina:run-sprint <sprint>`  |
+| E. Register worktree      | a `draft`/`ready` sprint exists with no worktree                          | (11) worktree mint (companion)  | `/lumina:run-sprint <sprint>`  |
 | F. Execute                | sprint is `active` (claims open) OR `quiescence.in_progress > 0`           | (8) checkpoint / (10) review-lane | `/lumina:run-sprint <sprint>`  |
 | G. Close out              | `quiescence.done == true` but the sprint is not yet `review`/terminal      | (5) task→done / (6) epic→done   | `/lumina:run-sprint <sprint>`  |
 | H. Merge / reject         | sprint is `review` (worktree-owning) awaiting a terminal flip             | (9) worktree-owner terminal guard | `/lumina:run-sprint <sprint>`  |
@@ -85,13 +85,22 @@ Disambiguation notes:
 - A sprint in `draft`/`ready` with a registered worktree but not yet `active` →
   leg E→F boundary; recommend driving it to `active` (gate 7) via
   `/lumina:run-sprint`.
+- Leg E (worktree mint): the PRIMARY mint path is companion-executed —
+  `execute_worktree_create { sprint_id, branch, base_ref }` runs the real
+  `git worktree add -b` AND records the worktree in one call; manual
+  `git worktree add` + the record-only `create_worktree` is the no-companion
+  fallback. Recommend the execute path when a companion is connected.
 - `quiescence.stalled == true` (blocked questions, nothing claimable/in-progress)
   → the sprint needs an ARBITER: recommend resolving open questions
   (`list_open_questions_for_sprint` + the resolve path) before re-claiming.
 - A `review`-status sprint that OWNS a worktree → leg H; the next gate is the
-  **worktree-owner terminal guard (gate 9)** — terminal ONLY via
-  `record_worktree_merge` / `record_worktree_rejection`, never a bare
-  `set_sprint_status`. **Un-wedge:** `active→review` then reject.
+  **worktree-owner terminal guard (gate 9)** — terminal NEVER via a bare
+  `set_sprint_status`. The PRIMARY merge path is companion-executed:
+  `execute_worktree_merge { worktree_id }` (on success it records the audit
+  itself and drives the owner `review→done`; on `conflicted` it records
+  nothing — resolve, then re-run). Rejection goes via
+  `record_worktree_rejection`; manual `git merge` + `record_worktree_merge` is
+  the no-companion fallback. **Un-wedge:** `active→review` then reject.
 
 ### Step 3 — emit the recommendation
 
