@@ -1,0 +1,32 @@
+acceptance_criteria = []
+activity = []
+children = []
+context_blocks = []
+findings = []
+open_questions = []
+rejected_alternatives = []
+repo_links = []
+research_notes = []
+risks = []
+
+[item]
+created_at = "2026-06-08 13:52:53"
+id = "019ea781-fa82-7fb0-a9db-21ab031f1256"
+kind = "task"
+lane = "implement"
+origin = "human"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+status = "done"
+tier = "lite"
+title = "Note the API↔SPA finding contract in the SPA api layer"
+updated_at = "2026-06-08 14:01:15"
+
+[item.attributes]
+execution_detail = "Document the guaranteed finding read-contract (kind/severity/status always present) in the SPA api layer so the client and server agree."
+files_touched = ["lumina/web/src/api.ts"]
+
+[[task_dependencies]]
+created_at = "2026-06-08 13:53:43"
+depends_on_id = "019ea781-ebf4-7532-90f4-27fd1d0d4aec"
+kind = "sequence"
+task_id = "019ea781-fa82-7fb0-a9db-21ab031f1256"

@@ -1,0 +1,30 @@
+acceptance_criteria = []
+activity = []
+children = []
+context_blocks = []
+findings = []
+open_questions = []
+rejected_alternatives = []
+repo_links = []
+research_notes = []
+risks = []
+task_dependencies = []
+
+[item]
+created_at = "2026-06-08 13:52:50"
+id = "019ea781-ebf4-7532-90f4-27fd1d0d4aec"
+kind = "task"
+lane = "implement"
+origin = "human"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+status = "done"
+tier = "deep"
+title = "Default kind/severity/status on the finding read path"
+updated_at = "2026-06-08 14:00:33"
+
+[item.attributes]
+execution_detail = "Default kind/severity/status at the finding read/serialization boundary so every stored or API-created finding satisfies the SPA read-contract (non-null kind, severity ∈ enum, status)."
+files_touched = [
+    "lumina/src/repo/findings.rs",
+    "lumina/src/domain/findings.rs",
+]

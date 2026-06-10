@@ -1,6 +1,6 @@
 slug = "full-slice-flow-dogfood"
 plan_path = "docs/plans/full-slice-flow-dogfood.md"
-status = "in-progress"
+status = "review"
 created = 2026-06-08
 updated = 2026-06-08
 branch = "review-apply/sprint-lifecycle-worktrees"
@@ -12,9 +12,9 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
-in_progress = 2
+total = 9
+completed = 10
+in_progress = 0
 
 [artifacts]
 review_ledger = ".claude/flows/full-slice-flow-dogfood/review-ledger.toml"

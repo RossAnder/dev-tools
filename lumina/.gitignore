@@ -5,6 +5,8 @@
 *.db
 *.db-shm
 *.db-wal
+# Snapshot copies of the dev DB (e.g. lumina.db.census-baseline + its -shm/-wal)
+*.db.*
 
 # Vue toolchain artifacts
 web/node_modules/

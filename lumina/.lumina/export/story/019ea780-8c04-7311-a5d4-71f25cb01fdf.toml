@@ -1,0 +1,136 @@
+acceptance_criteria = []
+activity = []
+context_blocks = []
+findings = []
+open_questions = []
+rejected_alternatives = []
+repo_links = []
+risks = []
+task_dependencies = []
+
+[[children]]
+created_at = "2026-06-08 13:52:50"
+id = "019ea781-ebf4-7532-90f4-27fd1d0d4aec"
+kind = "task"
+lane = "implement"
+origin = "human"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+status = "done"
+tier = "deep"
+title = "Default kind/severity/status on the finding read path"
+updated_at = "2026-06-08 14:00:33"
+
+[children.attributes]
+execution_detail = "Default kind/severity/status at the finding read/serialization boundary so every stored or API-created finding satisfies the SPA read-contract (non-null kind, severity ∈ enum, status)."
+files_touched = [
+    "lumina/src/repo/findings.rs",
+    "lumina/src/domain/findings.rs",
+]
+
+[[children]]
+created_at = "2026-06-08 13:52:52"
+id = "019ea781-f3de-7a20-8f83-9bf4bc72ab54"
+kind = "task"
+lane = "implement"
+origin = "human"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+status = "done"
+tier = "lite"
+title = "Add a regression test for a minimally-specified finding round-trip"
+updated_at = "2026-06-08 14:00:58"
+
+[children.attributes]
+execution_detail = "Regression test: a finding created with only a summary round-trips through the SPA-shaped read with non-null kind/severity/status."
+files_touched = ["lumina/src/http/findings.rs"]
+
+[[children]]
+created_at = "2026-06-08 13:52:53"
+id = "019ea781-fa82-7fb0-a9db-21ab031f1256"
+kind = "task"
+lane = "implement"
+origin = "human"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+status = "done"
+tier = "lite"
+title = "Note the API↔SPA finding contract in the SPA api layer"
+updated_at = "2026-06-08 14:01:15"
+
+[children.attributes]
+execution_detail = "Document the guaranteed finding read-contract (kind/severity/status always present) in the SPA api layer so the client and server agree."
+files_touched = ["lumina/web/src/api.ts"]
+
+[[children]]
+created_at = "2026-06-08 14:00:33"
+id = "019ea788-fc81-7212-9d58-fbfd400726d0"
+kind = "task"
+lane = "review"
+origin = "review"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+reviews_work_item_id = "019ea781-ebf4-7532-90f4-27fd1d0d4aec"
+status = "done"
+title = "Review: 019ea781-ebf4-7532-90f4-27fd1d0d4aec"
+updated_at = "2026-06-08 14:02:07"
+
+[children.attributes]
+files_touched = [
+    "lumina/src/repo/findings.rs",
+    "lumina/src/domain/findings.rs",
+]
+
+[[children]]
+created_at = "2026-06-08 14:00:58"
+id = "019ea789-5f6b-7281-8b4a-dbde13bc5b07"
+kind = "task"
+lane = "review"
+origin = "review"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+reviews_work_item_id = "019ea781-f3de-7a20-8f83-9bf4bc72ab54"
+status = "done"
+title = "Review: 019ea781-f3de-7a20-8f83-9bf4bc72ab54"
+updated_at = "2026-06-08 14:02:10"
+
+[children.attributes]
+files_touched = ["lumina/src/http/findings.rs"]
+
+[[children]]
+created_at = "2026-06-08 14:01:15"
+id = "019ea789-a02f-7580-95de-813afd807439"
+kind = "task"
+lane = "review"
+origin = "review"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+reviews_work_item_id = "019ea781-fa82-7fb0-a9db-21ab031f1256"
+status = "done"
+title = "Review: 019ea781-fa82-7fb0-a9db-21ab031f1256"
+updated_at = "2026-06-08 14:02:12"
+
+[children.attributes]
+files_touched = ["lumina/web/src/api.ts"]
+
+[item]
+created_at = "2026-06-08 13:51:20"
+id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+kind = "story"
+origin = "human"
+parent_id = "019ea780-3a64-7f00-842e-35be3b466c67"
+relevance = "backlog"
+status = "open"
+title = "Harden the findings API↔SPA contract (census gap F3)"
+updated_at = "2026-06-08 13:51:36"
+
+[item.attributes]
+execution_strategy = "Default the three fields at the read/serialization boundary (kind→'review' or a sentinel, severity→a default, status→'open') so existing rows and API-created findings always satisfy the SPA contract; add a regression test asserting a minimally-specified finding round-trips through the SPA-shaped read; note the contract in the SPA api layer."
+problem_statement = """The census found that POST /work-items/{id}/findings permits null kind/severity/status, but the SPA's read-contract requires them as non-null strings/enums — so a finding created via the API (without those fields) breaks the SPA findings refresh ("Stale data — last refresh failed: findings.0.kind/severity/status invalid"). Guarantee these fields on the finding read path (default kind, severity, status) — or relax the SPA contract — so every API-created finding renders in the SPA."""
+
+[[research_notes]]
+body = "The SPA contract break is a read-shape problem: callers may legitimately omit kind/severity/status on create. Guaranteeing them on the read/serialization side (a default-on-None projection) fixes every finding the SPA reads — including rows already in the DB — without tightening the write API or requiring a migration."
+confidence = "medium"
+created_at = "2026-06-08 13:56:00"
+id = "019ea784-d428-7a43-9803-feaaced4e8cb"
+lens = "design"
+origin = "human"
+rationale = "Read-boundary defaulting fixes existing rows and avoids a write-API/migration change; accepted as the approach."
+seq = 1
+state = "accepted"
+summary = "Default at the finding read/serialization boundary (not the write path) so pre-existing rows are fixed too, and the API stays permissive on write."
+work_item_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"

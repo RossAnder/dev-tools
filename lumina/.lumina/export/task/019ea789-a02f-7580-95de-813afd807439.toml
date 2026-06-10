@@ -1,0 +1,31 @@
+acceptance_criteria = []
+activity = []
+children = []
+context_blocks = []
+findings = []
+open_questions = []
+rejected_alternatives = []
+repo_links = []
+research_notes = []
+risks = []
+
+[item]
+created_at = "2026-06-08 14:01:15"
+id = "019ea789-a02f-7580-95de-813afd807439"
+kind = "task"
+lane = "review"
+origin = "review"
+parent_id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+reviews_work_item_id = "019ea781-fa82-7fb0-a9db-21ab031f1256"
+status = "done"
+title = "Review: 019ea781-fa82-7fb0-a9db-21ab031f1256"
+updated_at = "2026-06-08 14:02:12"
+
+[item.attributes]
+files_touched = ["lumina/web/src/api.ts"]
+
+[[task_dependencies]]
+created_at = "2026-06-08 14:01:15"
+depends_on_id = "019ea781-fa82-7fb0-a9db-21ab031f1256"
+kind = "sequence"
+task_id = "019ea789-a02f-7580-95de-813afd807439"

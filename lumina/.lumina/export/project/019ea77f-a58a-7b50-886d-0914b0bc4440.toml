@@ -1,0 +1,33 @@
+acceptance_criteria = []
+activity = []
+context_blocks = []
+findings = []
+open_questions = []
+rejected_alternatives = []
+repo_links = []
+research_notes = []
+risks = []
+task_dependencies = []
+
+[[children]]
+created_at = "2026-06-08 13:50:28"
+id = "019ea77f-c3d8-7871-9f7d-dff99f740225"
+kind = "epic"
+origin = "human"
+parent_id = "019ea77f-a58a-7b50-886d-0914b0bc4440"
+relevance = "backlog"
+status = "open"
+title = "Lifecycle hardening & session-transcript analytics"
+updated_at = "2026-06-08 13:50:28"
+
+[children.attributes]
+outcome = "The create→compose→execute→merge lifecycle runs end-to-end via the live /lumina skills on a robust substrate, and session-transcript analytics begins — the next milestone after the first full-slice dogfood."
+
+[item]
+created_at = "2026-06-08 13:50:21"
+id = "019ea77f-a58a-7b50-886d-0914b0bc4440"
+kind = "project"
+origin = "human"
+status = "open"
+title = "lumina"
+updated_at = "2026-06-08 13:50:21"

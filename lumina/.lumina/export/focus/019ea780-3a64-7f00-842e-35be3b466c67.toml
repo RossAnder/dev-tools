@@ -1,0 +1,40 @@
+acceptance_criteria = []
+activity = []
+context_blocks = []
+findings = []
+open_questions = []
+rejected_alternatives = []
+repo_links = []
+research_notes = []
+risks = []
+task_dependencies = []
+
+[[children]]
+created_at = "2026-06-08 13:51:20"
+id = "019ea780-8c04-7311-a5d4-71f25cb01fdf"
+kind = "story"
+origin = "human"
+parent_id = "019ea780-3a64-7f00-842e-35be3b466c67"
+relevance = "backlog"
+status = "open"
+title = "Harden the findings API↔SPA contract (census gap F3)"
+updated_at = "2026-06-08 13:51:36"
+
+[children.attributes]
+execution_strategy = "Default the three fields at the read/serialization boundary (kind→'review' or a sentinel, severity→a default, status→'open') so existing rows and API-created findings always satisfy the SPA contract; add a regression test asserting a minimally-specified finding round-trips through the SPA-shaped read; note the contract in the SPA api layer."
+problem_statement = """The census found that POST /work-items/{id}/findings permits null kind/severity/status, but the SPA's read-contract requires them as non-null strings/enums — so a finding created via the API (without those fields) breaks the SPA findings refresh ("Stale data — last refresh failed: findings.0.kind/severity/status invalid"). Guarantee these fields on the finding read path (default kind, severity, status) — or relax the SPA contract — so every API-created finding renders in the SPA."""
+
+[item]
+created_at = "2026-06-08 13:50:59"
+id = "019ea780-3a64-7f00-842e-35be3b466c67"
+kind = "focus"
+origin = "human"
+parent_id = "019ea77f-c3d8-7871-9f7d-dff99f740225"
+relevance = "backlog"
+shape = "vertical-slice"
+status = "open"
+title = "Findings & lifecycle robustness"
+updated_at = "2026-06-08 13:51:09"
+
+[item.attributes]
+framing = "Close the concrete gaps the first dogfood surfaced (the API↔SPA finding contract, claim diagnostics) before building session analytics — the smallest vertical slice that proves the lifecycle and hardens the substrate it runs on."

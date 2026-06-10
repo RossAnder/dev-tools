@@ -215,3 +215,37 @@ summary = "macro-eradication gate: 0 sqlx bang-macros in lumina/src + lumina/tes
 command = "rg macro-eradication gate (sqlx query/query_as/query_scalar bang-macros) over lumina/src + lumina/tests"
 outcome = "pass"
 dedup_id = "416f750494ca2269"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "dogfood-runthrough-stand-up-project-lumina-and-run-one-sprint-to-merge"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Orchestrator-driven live dogfood via lumina MCP: project=lumina hierarchy (8a) -> plan+decompose story (8b, ready_for_decomposition true) -> compose sprint + real git worktree (8c) -> execute (8d: claim/complete/review-cascade/record_task_commits/merge). LANE FIX PROVEN: planned task claimable (claim returned it, not null). Sprint done via record_worktree_merge; quiescence done 6/6; 49 events git-exported. Dogfood commits f917d4d/6de0f6e on throwaway dogfood/* branches."
+dedup_id = "f38cfd359a97b620"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-06-08
+agent = "implement"
+task_ref = "capture-the-deferred-gaps-as-lumina-backlog"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Recorded deferred-gap backlog under project=lumina via MCP: 2 epics (Layer-3 composer/overseer, dreaming/retro), 2 focuses (SPA/operator surfaces, session analytics), 7 stories (SPA dashboard/work-queue/merge-review, get_sprint_view aggregate, claim-diagnostics, operator OQ skill, task_groups schema), 4 findings (F4 dispatch-tier, create_sprint docs, egress-redaction security/major, ADR-0004 caveats). Verified via query_findings + list_work_items."
+dedup_id = "c48f787fe9745e2f"
+
+[[items]]
+id = "E19"
+type = "status-transition"
+date = 2026-06-08
+agent = "plan-update"
+summary = "All 9 plan tasks plus the lane-fix complete; implementation finished, awaiting review/optimise sign-off."
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "6f6ab12057545b98"
