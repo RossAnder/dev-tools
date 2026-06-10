@@ -3,24 +3,31 @@
 //! `mcp` module's combined tool router as its own sub-family (structural split;
 //! behaviour mirrors the sibling `runs_sprints` / `team_execution` families).
 //!
-//! The nine tools register via the `tool_router_worktrees` sub-router, summed
+//! The ten tools register via the `tool_router_worktrees` sub-router, summed
 //! into the combined `tool_router` field by `LuminaTools::with_state`. Each WRITE
 //! delegates 1:1 to its Phase-2 `repo::*` mutator via `.map_err(app_error_to_mcp)`
 //! and returns `structured_result(json!{..})`; each READ returns `json_result(..)`
 //! with `read_only_hint = true, open_world_hint = false`.
 //!
-//! The ninth tool, `execute_worktree_merge` (ADR-0006 Step 1b), is the family's
-//! ONE deliberate step beyond record-only: it dispatches a coarse
-//! [`Intent::MergeWorktree`] to the connected git companion through
-//! [`crate::companion::CompanionRegistry`] and, on a `Merged`/`AlreadyUpToDate`
-//! outcome, composes the ONE existing record mutation
-//! (`repo::record_worktree_merge`) — no new SQL writes. The shared flow body
-//! ([`execute_worktree_merge_flow`]) is a free fn so the HTTP mirror
-//! (`http::worktrees`) drives the identical pre-flight → lease → dispatch →
-//! record pipeline (precedent: `http::structured_patches` already imports from
+//! Two tools — `execute_worktree_merge` (ADR-0006 Step 1b) and
+//! `execute_worktree_create` (detached-integration ref-CAS plan, wave 2) — are
+//! the family's deliberate steps beyond record-only: each dispatches ONE coarse
+//! intent ([`Intent::MergeWorktree`] / [`Intent::CreateWorktree`]) to the
+//! connected git companion through [`crate::companion::CompanionRegistry`] and,
+//! on a successful outcome, composes the ONE matching existing record mutation
+//! (`repo::record_worktree_merge` / `repo::create_worktree`) — no new SQL
+//! writes. The shared flow bodies ([`execute_worktree_merge_flow`] /
+//! [`execute_worktree_create_flow`]) are free fns so the HTTP mirrors
+//! (`http::worktrees`) drive the identical pre-flight → dispatch → record
+//! pipeline (precedent: `http::structured_patches` already imports from
 //! `crate::mcp`). NO DB transaction is ever held across the companion
 //! round-trip — the pre-flight reads are auto-commit, and the record write
-//! opens its own tx only after the outcome arrives.
+//! opens its own tx only after the outcome arrives. The create flow's
+//! pre-flight issues three READ-ONLY scalar SELECTs through the
+//! `lumina_core::db` seam (sprint status, prior live-worktree ownership, the
+//! sprint→task binding for the split-brain guard) because no `repo::*` read
+//! exposes a sprint by id — reads only, so the single-mutation-path invariant
+//! is untouched.
 //!
 //! `create_worktree` reuses `lumina_core::domain::NewWorktree` directly as its param
 //! type (it derives `Deserialize + JsonSchema`), exactly as `create_run` /
@@ -34,6 +41,8 @@
 use super::*;
 
 use crate::companion::{CompanionError, CompanionRegistry};
+use lumina_core::args;
+use lumina_core::db::scalar_opt;
 use lumina_core::domain::{NewWorktree, SprintStatus, TaskCommitQuery};
 use lumina_protocol::{FailureKind, Intent, Outcome, Sha};
 
@@ -148,10 +157,27 @@ pub struct ExecuteWorktreeMergeParams {
     pub no_ff: bool,
 }
 
-/// Why an [`execute_worktree_merge_flow`] run failed. The companion-side
-/// failures deliberately do NOT ride a new core `AppError` variant (plan
-/// decision): each entry layer maps them itself — the MCP tool via
-/// [`merge_flow_error_to_mcp`], the HTTP mirror via its 502 envelope arm.
+/// Arguments for the `execute_worktree_create` EXECUTE tool →
+/// [`execute_worktree_create_flow`] (detached-integration ref-CAS plan, wave
+/// 2): the public server trigger for [`Intent::CreateWorktree`]. All three
+/// fields are REQUIRED — `base_ref` is any COMMITTISH string (a branch name,
+/// `HEAD~2`, a tag, a full SHA, …); the record-only server cannot resolve
+/// refs, so the COMPANION resolves it and reports the resolved head back.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ExecuteWorktreeCreateParams {
+    /// The sprint that will OWN the created worktree (1:1).
+    pub sprint_id: String,
+    /// The NEW branch the worktree is created on.
+    pub branch: String,
+    /// The committish the new branch starts at (companion-resolved).
+    pub base_ref: String,
+}
+
+/// Why an [`execute_worktree_merge_flow`] / [`execute_worktree_create_flow`]
+/// run failed. The companion-side failures deliberately do NOT ride a new core
+/// `AppError` variant (plan decision): each entry layer maps them itself — the
+/// MCP tools via [`flow_error_to_mcp`], the HTTP mirrors via their 502
+/// envelope arms.
 #[derive(Debug)]
 pub enum MergeFlowError {
     /// A pre-flight violation or record-write failure — an ordinary typed
@@ -180,17 +206,85 @@ impl From<AppError> for MergeFlowError {
 /// module-wide [`app_error_to_mcp`] discipline; the companion-side failures
 /// surface as `internal_error` with the engine-neutral category + message (DB
 /// internals never ride here — these strings come from the protocol layer).
-fn merge_flow_error_to_mcp(err: MergeFlowError) -> ErrorData {
+/// `op` labels which execute flow failed (`"merge"` / `"worktree create"`) so
+/// the terminal-`Failed` message keeps its operation context now that two
+/// flows share this mapper.
+fn flow_error_to_mcp(op: &str, err: MergeFlowError) -> ErrorData {
     match err {
         MergeFlowError::App(e) => app_error_to_mcp(e),
         MergeFlowError::Companion(e) => {
             ErrorData::internal_error(format!("companion execution failed: {e}"), None)
         }
         MergeFlowError::Failed { kind, message } => ErrorData::internal_error(
-            format!("companion merge failed ({kind:?}): {message}"),
+            format!("companion {op} failed ({kind:?}): {message}"),
             None,
         ),
     }
+}
+
+/// Pre-flight: a companion is CONNECTED and its `Hello.repo_root` matches the
+/// resolved project binding's primary clone dir WHEN that column is set — the
+/// split-brain guard shared by [`execute_worktree_merge_flow`] and
+/// [`execute_worktree_create_flow`]. `binding` is the
+/// `(project_id, primary local_path)` pair (worktree-keyed via
+/// `repo::get_worktree_primary_repo_binding`, or sprint-keyed via
+/// [`sprint_primary_repo_binding`]); `None` (no resolvable project) or an
+/// unset `local_path` SKIPS the comparison. The match runs through the
+/// migration-0014 normaliser ([`repo::select_longest_prefix_project`]) so
+/// Windows case/separator differences never false-negative.
+fn guard_companion_repo_root(
+    state: &AppState,
+    binding: Option<(String, Option<String>)>,
+) -> Result<(), MergeFlowError> {
+    // `repo_root()` doubles as the connected check (None ⇔ empty slot).
+    let Some(repo_root) = state.companion.repo_root() else {
+        return Err(AppError::Validation(
+            "no git companion is connected — the execution plane is unavailable".to_owned(),
+        )
+        .into());
+    };
+    if let Some((project_id, Some(local_path))) = binding {
+        let candidate = [(project_id, local_path.clone())];
+        if repo::select_longest_prefix_project(&repo_root, &candidate).is_none() {
+            return Err(AppError::Validation(format!(
+                "split-brain guard: the connected companion's repo_root '{repo_root}' does \
+                 not match the project's primary clone dir '{local_path}'"
+            ))
+            .into());
+        }
+    }
+    // (No resolvable project binding, or `local_path` unset ⇒ check skipped.)
+    Ok(())
+}
+
+/// Resolve the project a SPRINT's work belongs to, plus that project's PRIMARY
+/// repo-link `local_path` — the sprint-keyed twin of
+/// `repo::get_worktree_primary_repo_binding` (which is keyed by an EXISTING
+/// worktree; the create flow has no worktree row yet). Resolution path: any
+/// `sprint_tasks` task (lowest id, for determinism) →
+/// `repo::find_project_ancestor` → `repo::list_repo_links` primary. `Ok(None)`
+/// when no task is bound to the sprint (no project resolvable — the guard is
+/// skipped). Read-only.
+async fn sprint_primary_repo_binding(
+    db: &AnyPool,
+    sprint_id: &str,
+) -> Result<Option<(String, Option<String>)>, AppError> {
+    let task_id: Option<String> = scalar_opt::<String>(
+        db,
+        "SELECT task_id FROM sprint_tasks WHERE sprint_id = $1 ORDER BY task_id LIMIT 1",
+        args![sprint_id.to_owned()],
+    )
+    .await?;
+    let Some(task_id) = task_id else {
+        return Ok(None);
+    };
+    let project_id = repo::find_project_ancestor(db, &task_id).await?;
+    let primary_local_path = repo::list_repo_links(db, &project_id)
+        .await?
+        .into_iter()
+        .find(|l| l.is_primary == 1)
+        .and_then(|l| l.local_path);
+    Ok(Some((project_id, primary_local_path)))
 }
 
 /// Drop-guard releasing the merge lease on EVERY exit path of
@@ -232,11 +326,16 @@ impl Drop for LeaseGuard<'_> {
 /// [`repo::list_worktree_reachable_shas`], take the merge lease on the TARGET
 /// branch (a held lease ⇒ "already in flight" Validation), and dispatch ONE
 /// coarse [`Intent::MergeWorktree`]. Outcomes:
-///   * `Merged { merge_sha }` / `AlreadyUpToDate { tip }` — record the
+///   * `Merged { merge_sha, .. }` / `AlreadyUpToDate { tip }` — record the
 ///     ground-truth sha via the EXISTING `repo::record_worktree_merge` (owner
 ///     flips `'review' → 'done'`). `AlreadyUpToDate` is what makes a re-run
 ///     after a mid-merge disconnect idempotent: git already contains the merge,
-///     the record catches up (ground truth is git).
+///     the record catches up (ground truth is git). When `Merged` carries the
+///     `target_checkout` operator hint (the target branch was checked out in
+///     another worktree, now stale relative to the advanced ref) the success
+///     payload includes it as a structured `target_checkout` field plus a
+///     human `hint` remedy string (`git reset --keep <merge_sha>`); absent
+///     hint ⇒ both fields omitted. `AlreadyUpToDate` never carries a hint.
 ///   * `Conflicted { paths }` — NO DB write; the structured conflict returns as
 ///     a SUCCESS payload for the CALLER to surface as an open question/finding
 ///     (the companion has already aborted and restored the worktree).
@@ -265,32 +364,12 @@ pub async fn execute_worktree_merge_flow(
         .into());
     }
 
-    // ---- Pre-flight (3): companion connected + repo_root split-brain guard. ----
-    // `repo_root()` doubles as the connected check (None ⇔ empty slot).
-    let Some(repo_root) = state.companion.repo_root() else {
-        return Err(AppError::Validation(
-            "no git companion is connected — the execution plane is unavailable".to_owned(),
-        )
-        .into());
-    };
-    if let Some((project_id, Some(local_path))) =
-        repo::get_worktree_primary_repo_binding(db, worktree_id).await?
-    {
-        // Compare through the migration-0014 normaliser: a single-candidate
-        // longest-prefix match applies the same separator-fold + Windows case
-        // fold the cwd→project resolver uses, so `C:\work\Repo` matches
-        // `c:/work/repo` (and a repo_root nested under the clone dir matches on
-        // a component boundary).
-        let candidate = [(project_id, local_path.clone())];
-        if repo::select_longest_prefix_project(&repo_root, &candidate).is_none() {
-            return Err(AppError::Validation(format!(
-                "split-brain guard: the connected companion's repo_root '{repo_root}' does \
-                 not match the project's primary clone dir '{local_path}'"
-            ))
-            .into());
-        }
-    }
-    // (No resolvable project binding, or `local_path` unset ⇒ check skipped.)
+    // ---- Pre-flight (3): companion connected + repo_root split-brain guard
+    // (shared helper; the binding is worktree-keyed here, sprint-keyed in the
+    // create flow). The comparison runs through the migration-0014 normaliser
+    // so `C:\work\Repo` matches `c:/work/repo`.
+    let binding = repo::get_worktree_primary_repo_binding(db, worktree_id).await?;
+    guard_companion_repo_root(state, binding)?;
 
     // ---- Pre-flight (4): source branch + resolvable target. ----
     let Some(source_branch) = wt.branch.clone() else {
@@ -352,16 +431,34 @@ pub async fn execute_worktree_merge_flow(
         .map_err(MergeFlowError::Companion)?;
 
     match outcome {
-        Outcome::Merged { merge_sha, fast_forward } => {
+        Outcome::Merged { merge_sha, fast_forward, target_checkout } => {
             // Record the ground-truth sha via the EXISTING record mutation
             // (its own tx; owner flips 'review' -> 'done').
             repo::record_worktree_merge(db, worktree_id, Some(&merge_sha.0)).await?;
-            Ok(serde_json::json!({
+            let mut value = serde_json::json!({
                 "outcome": "merged",
-                "merge_sha": merge_sha.0,
+                "merge_sha": merge_sha.0.clone(),
                 "fast_forward": fast_forward,
                 "recorded": true,
-            }))
+            });
+            // Operator hint: the merge TARGET branch was checked out in another
+            // worktree (typically the operator's primary checkout) when the ref
+            // was advanced — that checkout is now STALE (`git status` shows
+            // spurious diffs). Surface the structured hint PLUS a human remedy
+            // string; when the companion sent no hint, BOTH fields are omitted.
+            if let Some(hint) = target_checkout {
+                let dirty_clause = if hint.dirty { ", with uncommitted changes" } else { "" };
+                value["hint"] = serde_json::Value::String(format!(
+                    "target branch was checked out at `{}`{dirty_clause}; refresh it with \
+                     `git reset --keep {}`",
+                    hint.path, merge_sha.0
+                ));
+                value["target_checkout"] = serde_json::json!({
+                    "path": hint.path,
+                    "dirty": hint.dirty,
+                });
+            }
+            Ok(value)
         }
         Outcome::AlreadyUpToDate { tip } => {
             // The idempotent re-run path: git already contains the merge (e.g.
@@ -388,6 +485,147 @@ pub async fn execute_worktree_merge_flow(
             kind: FailureKind::Internal,
             message: format!(
                 "companion answered MergeWorktree with an unexpected outcome: {other:?}"
+            ),
+        }),
+    }
+}
+
+/// The shared `execute_worktree_create` pipeline (detached-integration ref-CAS
+/// plan, wave 2) — called by BOTH the MCP tool and the HTTP mirror
+/// (`POST /sprints/{sprint_id}/worktree/execute`). Mirrors the merge flow's
+/// shape: **pre-flight, then dispatch, then record**, with NO DB transaction
+/// held across the companion round-trip (pre-flight reads are auto-commit;
+/// the record write opens its own tx after the outcome arrives). There is NO
+/// merge lease here: the companion's executor is sequential and a worktree
+/// creation moves no refs.
+///
+/// Pre-flight (violations are typed `AppError`s → 404/invalid_params/422):
+///   1. the sprint exists (`NotFound` otherwise) and its status is
+///      NON-TERMINAL (a `done`/`cancelled` sprint cannot acquire a worktree);
+///   2. the sprint does not ALREADY own a live worktree — an explicit
+///      pre-check returning a clean Validation instead of letting the
+///      `owning_sprint_id` UNIQUE constraint surface as a 500 at record time
+///      (after the git work already ran);
+///   3. a companion is connected + the repo_root split-brain guard
+///      ([`guard_companion_repo_root`], binding resolved sprint-keyed via
+///      [`sprint_primary_repo_binding`]);
+///   4. `branch` and `base_ref` are non-empty after trimming (`base_ref` is
+///      any committish — the COMPANION resolves it; an empty string would
+///      otherwise round-trip to a misleading 502).
+///
+/// Then: dispatch ONE coarse [`Intent::CreateWorktree`]. Outcomes:
+///   * `WorktreeCreated { path, branch, head }` — record via the EXISTING
+///     `repo::create_worktree` with the companion's GROUND-TRUTH `path` and
+///     `branch` (a migration-0018 duplicate-live-branch `Validation`
+///     propagates as invalid_params/422). Success payload:
+///     `{ worktree_id, path, head }`.
+///   * `Failed { .. }` / transport errors — [`MergeFlowError`] for the entry
+///     layer to map (MCP `internal_error` / HTTP 502); nothing recorded.
+pub async fn execute_worktree_create_flow(
+    state: &AppState,
+    sprint_id: &str,
+    branch: &str,
+    base_ref: &str,
+) -> Result<serde_json::Value, MergeFlowError> {
+    let db = state.pool.as_ref();
+
+    // ---- Pre-flight (1): the sprint exists (NotFound) and is non-terminal. ----
+    let Some(status_str) = scalar_opt::<String>(
+        db,
+        "SELECT status FROM sprints WHERE id = $1",
+        args![sprint_id.to_owned()],
+    )
+    .await?
+    else {
+        return Err(AppError::NotFound(format!("sprint '{sprint_id}' not found")).into());
+    };
+    // Parse the stored string into the typed enum — an unrecognised / legacy
+    // value is a clean Validation (mirroring `repo::set_sprint_status`).
+    let status: SprintStatus =
+        serde_json::from_value(serde_json::Value::String(status_str.clone())).map_err(|_| {
+            AppError::Validation(format!(
+                "sprint '{sprint_id}' has unrecognised status '{status_str}'"
+            ))
+        })?;
+    if matches!(status, SprintStatus::Done | SprintStatus::Cancelled) {
+        return Err(AppError::Validation(format!(
+            "sprint '{sprint_id}' cannot execute a worktree create: its status \
+             '{status_str}' is terminal"
+        ))
+        .into());
+    }
+
+    // ---- Pre-flight (2): the sprint must not already own a live worktree
+    // (the 1:1 ownership invariant — same pre-check `repo::create_worktree`
+    // runs at record time, lifted HERE so the violation surfaces BEFORE any
+    // git work is dispatched).
+    let owner_has_worktree = scalar_opt::<i64>(
+        db,
+        "SELECT 1 FROM worktrees WHERE owning_sprint_id = $1 AND deleted_at IS NULL",
+        args![sprint_id.to_owned()],
+    )
+    .await?
+    .is_some();
+    if owner_has_worktree {
+        return Err(AppError::Validation(format!(
+            "sprint '{sprint_id}' already owns a live worktree (a sprint owns at most one)"
+        ))
+        .into());
+    }
+
+    // ---- Pre-flight (3): companion connected + repo_root split-brain guard
+    // (shared helper; binding resolved via the sprint, not a worktree).
+    let binding = sprint_primary_repo_binding(db, sprint_id).await?;
+    guard_companion_repo_root(state, binding)?;
+
+    // ---- Pre-flight (4): non-empty branch + base_ref. ----
+    let branch = branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::Validation("branch must be non-empty".to_owned()).into());
+    }
+    let base_ref = base_ref.trim();
+    if base_ref.is_empty() {
+        return Err(AppError::Validation("base_ref must be non-empty".to_owned()).into());
+    }
+
+    // ---- Dispatch ONE coarse intent; NO DB tx is held across this await,
+    // and NO lease is taken (creation moves no refs; the executor is
+    // sequential). ----
+    let outcome = state
+        .companion
+        .execute(Intent::CreateWorktree {
+            branch: branch.to_owned(),
+            base: base_ref.to_owned(),
+        })
+        .await
+        .map_err(MergeFlowError::Companion)?;
+
+    match outcome {
+        Outcome::WorktreeCreated { path, branch, head } => {
+            // Record via the EXISTING record mutation (its own tx) with the
+            // companion's GROUND-TRUTH path/branch. A migration-0018
+            // duplicate-live-branch hit is a typed Validation → 422.
+            let id = repo::create_worktree(
+                db,
+                &NewWorktree {
+                    owning_sprint_id: sprint_id.to_owned(),
+                    path: path.clone(),
+                    base_ref: Some(base_ref.to_owned()),
+                    branch: Some(branch),
+                },
+            )
+            .await?;
+            Ok(serde_json::json!({
+                "worktree_id": id.to_string(),
+                "path": path,
+                "head": head.0,
+            }))
+        }
+        Outcome::Failed { kind, message } => Err(MergeFlowError::Failed { kind, message }),
+        other => Err(MergeFlowError::Failed {
+            kind: FailureKind::Internal,
+            message: format!(
+                "companion answered CreateWorktree with an unexpected outcome: {other:?}"
             ),
         }),
     }
@@ -572,7 +810,7 @@ impl LuminaTools {
     /// `Merged`/`AlreadyUpToDate` outcome it composes the ONE existing record
     /// mutation (`repo::record_worktree_merge`) — no new SQL writes.
     #[tool(
-        description = "EXECUTE a worktree merge via the connected git companion (ADR-0006 Step 1b) — the one tool that goes beyond record-only. Pre-flight (violations are invalid_params): the worktree must exist; its OWNING sprint must be in 'review'; a companion must be connected, with its repo_root matching the project's primary repo-link local_path WHEN that is set (check skipped when unset); and the worktree must carry a `branch` plus a resolvable target (`base_ref`, or the `target_branch` override). Every commit recorded against the worktree's sprints must remain reachable after the merge (the companion refuses otherwise). On Merged / AlreadyUpToDate the ground-truth sha is recorded via record_worktree_merge (the owner flips 'review' -> 'done'); AlreadyUpToDate makes a RE-RUN after a mid-merge disconnect idempotent — git is the ground truth. On Conflicted NOTHING is recorded: the structured { outcome: 'conflicted', paths } returns as a SUCCESS payload for the CALLER to surface as an open question / finding (the companion has already aborted and restored the worktree). `no_ff` defaults to true — a true merge commit is the auditable default.",
+        description = "EXECUTE a worktree merge via the connected git companion (ADR-0006 Step 1b) — the one tool that goes beyond record-only. Pre-flight (violations are invalid_params): the worktree must exist; its OWNING sprint must be in 'review'; a companion must be connected, with its repo_root matching the project's primary repo-link local_path WHEN that is set (check skipped when unset); and the worktree must carry a `branch` plus a resolvable target (`base_ref`, or the `target_branch` override). Every commit recorded against the worktree's sprints must remain reachable after the merge (the companion refuses otherwise). On Merged / AlreadyUpToDate the ground-truth sha is recorded via record_worktree_merge (the owner flips 'review' -> 'done'); AlreadyUpToDate makes a RE-RUN after a mid-merge disconnect idempotent — git is the ground truth. When the target branch was checked out in another worktree (typically the operator's primary checkout) the Merged payload carries a structured `target_checkout` { path, dirty } field plus a human `hint` string — that checkout is now STALE and `git reset --keep <merge_sha>` run there refreshes it; both fields are omitted when no such checkout exists. On Conflicted NOTHING is recorded: the structured { outcome: 'conflicted', paths } returns as a SUCCESS payload for the CALLER to surface as an open question / finding (the companion has already aborted and restored the worktree). `no_ff` defaults to true — a true merge commit is the auditable default.",
         annotations(open_world_hint = false)
     )]
     async fn execute_worktree_merge(
@@ -589,7 +827,30 @@ impl LuminaTools {
             no_ff,
         )
         .await
-        .map_err(merge_flow_error_to_mcp)?;
+        .map_err(|e| flow_error_to_mcp("merge", e))?;
+        structured_result(value)
+    }
+
+    /// EXECUTE a worktree creation via the connected git companion
+    /// (detached-integration ref-CAS plan, wave 2) — the public server trigger
+    /// for [`Intent::CreateWorktree`]. The shared pipeline lives in
+    /// [`execute_worktree_create_flow`]; on a `WorktreeCreated` outcome it
+    /// composes the ONE existing record mutation (`repo::create_worktree`)
+    /// with the companion's ground-truth path — no new SQL writes.
+    #[tool(
+        description = "EXECUTE a worktree creation via the connected git companion — the create-side execute->record tool (sibling of execute_worktree_merge). Pre-flight (violations are resource_not_found / invalid_params): the sprint must exist with a NON-terminal status; it must not already own a live worktree (a sprint owns at most one); a companion must be connected, with its repo_root matching the project's primary repo-link local_path WHEN that is set (check skipped when unset); and `branch` + `base_ref` must be non-empty. `base_ref` is any COMMITTISH string (a branch name, HEAD~2, a tag, a full SHA, ...) — the COMPANION resolves it; the record-only server passes it through verbatim. On WorktreeCreated the companion-chosen ground-truth path is recorded via create_worktree (a duplicate live branch is invalid_params per migration 0018) and { worktree_id, path, head } returns, `head` being the RESOLVED base sha. Companion transport failures / terminal Failed outcomes are tool errors; nothing is recorded.",
+        annotations(open_world_hint = false)
+    )]
+    async fn execute_worktree_create(
+        &self,
+        Parameters(ExecuteWorktreeCreateParams { sprint_id, branch, base_ref }): Parameters<
+            ExecuteWorktreeCreateParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "execute_worktree_create", "mcp tool invoked");
+        let value = execute_worktree_create_flow(&self.state, &sprint_id, &branch, &base_ref)
+            .await
+            .map_err(|e| flow_error_to_mcp("worktree create", e))?;
         structured_result(value)
     }
 }
@@ -908,13 +1169,20 @@ mod tests {
             rx.recv().await.expect("intent on the wire");
         reg.complete(
             id,
-            Outcome::Merged { merge_sha: Sha("feedc0de".to_owned()), fast_forward: false },
+            Outcome::Merged {
+                merge_sha: Sha("feedc0de".to_owned()),
+                fast_forward: false,
+                target_checkout: None,
+            },
         );
 
         let value = handle.await.expect("join").expect("merged flow succeeds");
         assert_eq!(value["outcome"], "merged");
         assert_eq!(value["merge_sha"], "feedc0de");
         assert_eq!(value["recorded"], true);
+        // No hint from the companion ⇒ BOTH hint fields are omitted.
+        assert!(value.get("target_checkout").is_none(), "no hint ⇒ no structured field");
+        assert!(value.get("hint").is_none(), "no hint ⇒ no remedy string");
 
         // The EXISTING record mutation ran: audit stamped, owner 'review' → 'done'.
         let row = repo::get_worktree(pool.as_ref(), &wt).await.expect("get_worktree");
@@ -926,5 +1194,233 @@ mod tests {
             reg.acquire_lease("main"),
             "the target lease must be released after a merged run"
         );
+    }
+
+    /// The Merged path WITH the `target_checkout` operator hint: the payload
+    /// carries the structured field plus the human remedy string, with the
+    /// ", with uncommitted changes" clause present iff `dirty`.
+    #[tokio::test]
+    async fn execute_merge_merged_surfaces_target_checkout_hint() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let (_sprint, wt) = seed_review_worktree(&pool, Some("sprint/1")).await;
+
+        let reg = Arc::new(crate::companion::CompanionRegistry::new());
+        let (tx, mut rx) = mpsc::channel(8);
+        let _token = reg.register(tx, "/work/repo".to_owned()).expect("slot free");
+        let state = state_with_registry(pool.clone(), reg.clone());
+
+        let handle = tokio::spawn({
+            let state = state.clone();
+            let wt = wt.clone();
+            async move { execute_worktree_merge_flow(&state, &wt, None, true).await }
+        });
+
+        let ServerToCompanion::IntentRequest { id, .. } =
+            rx.recv().await.expect("intent on the wire");
+        reg.complete(
+            id,
+            Outcome::Merged {
+                merge_sha: Sha("feedc0de".to_owned()),
+                fast_forward: false,
+                target_checkout: Some(lumina_protocol::TargetCheckoutHint {
+                    path: "/work/repo".to_owned(),
+                    dirty: true,
+                }),
+            },
+        );
+
+        let value = handle.await.expect("join").expect("merged flow succeeds");
+        assert_eq!(value["outcome"], "merged");
+        assert_eq!(value["target_checkout"]["path"], "/work/repo");
+        assert_eq!(value["target_checkout"]["dirty"], true);
+        let hint = value["hint"].as_str().expect("hint string present");
+        assert_eq!(
+            hint,
+            "target branch was checked out at `/work/repo`, with uncommitted changes; \
+             refresh it with `git reset --keep feedc0de`"
+        );
+    }
+
+    // =====================================================================
+    // execute_worktree_create (detached-integration ref-CAS plan, wave 2)
+    // =====================================================================
+
+    /// All three create params are REQUIRED — a missing `base_ref` fails at
+    /// the deserialise boundary (rmcp → invalid_params).
+    #[test]
+    fn execute_create_params_all_required() {
+        let full: ExecuteWorktreeCreateParams = serde_json::from_value(serde_json::json!({
+            "sprint_id": "sp1",
+            "branch": "sprint/1",
+            "base_ref": "main"
+        }))
+        .expect("a full payload deserialises");
+        assert_eq!(full.base_ref, "main");
+
+        serde_json::from_value::<ExecuteWorktreeCreateParams>(serde_json::json!({
+            "sprint_id": "sp1",
+            "branch": "sprint/1"
+        }))
+        .expect_err("base_ref is required");
+    }
+
+    /// Pre-flight (1): a missing sprint is NotFound; a TERMINAL sprint
+    /// ('cancelled' here) is a clean Validation — both BEFORE any companion
+    /// involvement (no registry needed).
+    #[tokio::test]
+    async fn execute_create_preflight_rejects_missing_or_terminal_sprint() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let state = AppState::new(pool.clone());
+
+        let res = execute_worktree_create_flow(&state, "no-such-sprint", "b", "main").await;
+        assert!(
+            matches!(res, Err(MergeFlowError::App(AppError::NotFound(_)))),
+            "a missing sprint is NotFound, got {res:?}"
+        );
+
+        let sprint = repo::create_sprint(
+            pool.as_ref(),
+            &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
+        )
+        .await
+        .expect("sprint")
+        .to_string();
+        sqlx::query("UPDATE sprints SET status = 'cancelled' WHERE id = $1")
+            .bind(&sprint)
+            .execute(pool.sqlite())
+            .await
+            .expect("flip to terminal");
+
+        let res = execute_worktree_create_flow(&state, &sprint, "b", "main").await;
+        match res {
+            Err(MergeFlowError::App(AppError::Validation(msg))) => assert!(
+                msg.contains("terminal"),
+                "the Validation names the terminal status: {msg}"
+            ),
+            other => panic!("a terminal sprint is a pre-flight Validation, got {other:?}"),
+        }
+    }
+
+    /// Pre-flight (2): a sprint that already owns a live worktree is a clean
+    /// Validation BEFORE any companion involvement — the violation must
+    /// surface before git work is dispatched, not as a record-time 500.
+    #[tokio::test]
+    async fn execute_create_preflight_rejects_duplicate_owner() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let (sprint, _wt) = seed_review_worktree(&pool, Some("sprint/1")).await;
+        let state = AppState::new(pool);
+
+        let res = execute_worktree_create_flow(&state, &sprint, "sprint/2", "main").await;
+        match res {
+            Err(MergeFlowError::App(AppError::Validation(msg))) => assert!(
+                msg.contains("already owns"),
+                "the Validation names the 1:1 ownership invariant: {msg}"
+            ),
+            other => panic!("a duplicate owner is a pre-flight Validation, got {other:?}"),
+        }
+    }
+
+    /// Pre-flight (3)/(4): with NO companion connected the flow is a clean
+    /// Validation; with a companion connected, an empty `branch` is a clean
+    /// Validation (checks 1-3 all pass first) — nothing is dispatched.
+    #[tokio::test]
+    async fn execute_create_preflight_rejects_disconnected_or_empty_branch() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let sprint = repo::create_sprint(
+            pool.as_ref(),
+            &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
+        )
+        .await
+        .expect("sprint")
+        .to_string();
+
+        // (a) No companion connected → Validation (the plane is unavailable).
+        let state = AppState::new(pool.clone());
+        let res = execute_worktree_create_flow(&state, &sprint, "sprint/2", "main").await;
+        assert!(
+            matches!(res, Err(MergeFlowError::App(AppError::Validation(_)))),
+            "a disconnected companion is a pre-flight Validation, got {res:?}"
+        );
+
+        // (b) Companion connected, empty branch → Validation naming `branch`.
+        let reg = Arc::new(crate::companion::CompanionRegistry::new());
+        let (tx, _rx) = mpsc::channel(8);
+        let _token = reg.register(tx, "/work/repo".to_owned()).expect("slot free");
+        let state = state_with_registry(pool, reg);
+        let res = execute_worktree_create_flow(&state, &sprint, "  ", "main").await;
+        match res {
+            Err(MergeFlowError::App(AppError::Validation(msg))) => assert!(
+                msg.contains("branch"),
+                "the Validation names the empty branch: {msg}"
+            ),
+            other => panic!("an empty branch is a pre-flight Validation, got {other:?}"),
+        }
+    }
+
+    /// The WorktreeCreated path, driven through the TOOL (param plumbing
+    /// covered): one CreateWorktree intent with the verbatim committish base
+    /// reaches the wire, and the companion's GROUND-TRUTH path/branch is
+    /// recorded via the existing `repo::create_worktree`.
+    #[tokio::test]
+    async fn execute_create_records_ground_truth_path() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let sprint = repo::create_sprint(
+            pool.as_ref(),
+            &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
+        )
+        .await
+        .expect("sprint")
+        .to_string();
+
+        let reg = Arc::new(crate::companion::CompanionRegistry::new());
+        let (tx, mut rx) = mpsc::channel(8);
+        let _token = reg.register(tx, "/work/repo".to_owned()).expect("slot free");
+        let state = state_with_registry(pool.clone(), reg.clone());
+
+        let tools = LuminaTools::with_state(state);
+        let handle = tokio::spawn({
+            let sprint = sprint.clone();
+            async move {
+                tools
+                    .execute_worktree_create(Parameters(ExecuteWorktreeCreateParams {
+                        sprint_id: sprint,
+                        branch: "sprint/9".to_owned(),
+                        base_ref: "HEAD~2".to_owned(),
+                    }))
+                    .await
+            }
+        });
+
+        // The intent reaches the wire with the verbatim committish base.
+        let ServerToCompanion::IntentRequest { id, intent } =
+            rx.recv().await.expect("intent on the wire");
+        match &intent {
+            Intent::CreateWorktree { branch, base } => {
+                assert_eq!(branch, "sprint/9");
+                assert_eq!(base, "HEAD~2", "the committish rides verbatim");
+            }
+            other => panic!("expected CreateWorktree, got {other:?}"),
+        }
+        reg.complete(
+            id,
+            Outcome::WorktreeCreated {
+                path: "/work/repo/.lumina/worktrees/sprint-9".to_owned(),
+                branch: "sprint/9".to_owned(),
+                head: Sha("0123abcd".to_owned()),
+            },
+        );
+
+        let result = handle.await.expect("join").expect("create flow succeeds");
+        let value = result.structured_content.expect("structured payload");
+        assert_eq!(value["path"], "/work/repo/.lumina/worktrees/sprint-9");
+        assert_eq!(value["head"], "0123abcd", "the RESOLVED base sha returns");
+        let worktree_id = value["worktree_id"].as_str().expect("worktree_id").to_owned();
+
+        // The EXISTING record mutation ran with the GROUND-TRUTH path/branch.
+        let row = repo::get_worktree(pool.as_ref(), &worktree_id).await.expect("get_worktree");
+        assert_eq!(row.path, "/work/repo/.lumina/worktrees/sprint-9");
+        assert_eq!(row.branch.as_deref(), Some("sprint/9"));
+        assert_eq!(row.base_ref.as_deref(), Some("HEAD~2"), "the committish is recorded");
+        assert_eq!(row.owning_sprint_id, sprint);
     }
 }

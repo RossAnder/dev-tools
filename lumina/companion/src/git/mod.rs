@@ -19,6 +19,15 @@
 //! EXISTING target branch (ADR-0006 User Decision 1) — every pre-existing
 //! item is byte-compatible with the frozen Task-2 shape.
 //!
+//! The detached-integration ref-CAS pass widened the surface a SECOND time,
+//! again as a coordinated inter-wave change: [`GitBackend::resolve_branch_tip`],
+//! [`GitBackend::resolve_committish`], [`GitBackend::attach_worktree_detached`],
+//! [`GitBackend::detach_worktree`], and [`GitBackend::update_branch_ref`] were
+//! added, and [`GitBackend::merge`] SHRANK (the `target` parameter and the
+//! in-merge checked-out-branch guard are gone — merges now run on a DETACHED
+//! integration checkout and the branch ref advances afterwards via the
+//! `update_branch_ref` compare-and-swap).
+//!
 //! ## Addressing model
 //! A backend instance fronts ONE repository (constructed per repo root; all
 //! linked worktrees share that object DB). Methods that act *inside* a
@@ -186,10 +195,14 @@ pub enum GitError {
     Invalid(String),
     /// The repository or worktree is in the wrong state for the operation
     /// (e.g. `resolve`/`abort_merge` with no merge in progress; a dirty
-    /// worktree where the operation requires clean; `merge` with the wrong
-    /// branch checked out).
+    /// worktree where the operation requires clean).
     #[error("state: {0}")]
     State(String),
+    /// The [`GitBackend::update_branch_ref`] compare-and-swap lost: the ref
+    /// no longer points at the expected old tip (it moved underneath us, or
+    /// was deleted). No ref was touched; the caller decides the retry policy.
+    #[error("ref cas lost: {0}")]
+    RefCasLost(String),
     /// The engine failed in a way the caller cannot fix. The message is
     /// pre-rendered text — it MAY embed engine output verbatim for
     /// diagnostics, but the variant SHAPE stays engine-free.
@@ -227,6 +240,26 @@ pub trait GitBackend: Send + Sync {
     /// [`GitBackend::create_worktree`] stays new-branch-only.
     async fn attach_worktree(&self, branch: &str, path: &Path) -> Result<Sha, GitError>;
 
+    /// Create a linked worktree at `path` as a DETACHED checkout of
+    /// `committish`, returning the new worktree's HEAD. Because no branch is
+    /// involved, git's "already checked out elsewhere" refusal can never
+    /// trigger — this is the integration-worktree primitive of the
+    /// detached-integration merge choreography. An occupied `path` (e.g. an
+    /// on-disk-but-unregistered leftover dir) is an `Engine` error; an
+    /// unresolvable `committish` is `NotFound`.
+    async fn attach_worktree_detached(
+        &self,
+        path: &Path,
+        committish: &str,
+    ) -> Result<Sha, GitError>;
+
+    /// Detach `worktree`'s HEAD at `committish` (`git checkout --detach`),
+    /// returning the resulting HEAD. Fails safe on dirty state (a `State` /
+    /// `Engine` error — git refuses rather than clobbers); never moves any
+    /// branch ref, which is what migrates a legacy ON-BRANCH integration
+    /// worktree to the detached model without touching the branch.
+    async fn detach_worktree(&self, worktree: &Path, committish: &str) -> Result<Sha, GitError>;
+
     /// Remove the worktree at `path` (and prune its metadata). `force`
     /// discards uncommitted changes; without it a dirty worktree is a
     /// `State` error.
@@ -237,19 +270,35 @@ pub trait GitBackend: Send + Sync {
     /// a normal idempotent-re-run outcome, not an error.
     async fn commit_all(&self, worktree: &Path, message: &str) -> Result<Option<Sha>, GitError>;
 
-    /// Merge committish `source` into branch `target`, running inside
-    /// `worktree` (the integration worktree). Implementations MUST verify
-    /// `worktree` has `target` checked out — a mismatch is a `State` error —
-    /// so a merge can never land on the wrong branch. `no_ff` forces a merge
-    /// commit even when a fast-forward is possible. A conflict comes back as
+    /// Merge committish `source` into whatever `worktree` has checked out —
+    /// under the detached-integration choreography that is a DETACHED HEAD
+    /// pinned at the target tip, so the merge commit lands ON HEAD and no
+    /// branch ref moves (the executor advances the branch afterwards via
+    /// [`GitBackend::update_branch_ref`]). `no_ff` forces a merge commit even
+    /// when a fast-forward is possible. A conflict comes back as
     /// [`MergeResult::Conflict`], never as a `GitError`.
     async fn merge(
         &self,
         worktree: &Path,
         source: &str,
-        target: &str,
         no_ff: bool,
     ) -> Result<MergeResult, GitError>;
+
+    /// Atomically advance branch `branch` from `expected_old` to `new`
+    /// (3-arg `git update-ref` — a verify-and-swap under the ref lock, no
+    /// TOCTOU window), stamping `reflog_msg` as the branch reflog message.
+    /// A lost swap — the ref moved underneath us, or was deleted — is
+    /// [`GitError::RefCasLost`]; the ref is left untouched in that case.
+    /// Deliberately bypasses porcelain's checked-out-branch guard: advancing
+    /// a branch that is checked out in ANOTHER worktree is exactly the
+    /// designed behaviour (the operator hint covers the stale checkout).
+    async fn update_branch_ref(
+        &self,
+        branch: &str,
+        new: &Sha,
+        expected_old: &Sha,
+        reflog_msg: &str,
+    ) -> Result<(), GitError>;
 
     /// Abort the in-progress merge in `worktree`, restoring the pre-merge
     /// HEAD. No merge in progress is a `State` error.
@@ -266,6 +315,21 @@ pub trait GitBackend: Send + Sync {
 
     /// Does `sha` name a commit present in this repository's object DB?
     async fn commit_exists(&self, sha: &Sha) -> Result<bool, GitError>;
+
+    /// The commit at the tip of LOCAL branch `branch` (`refs/heads/` only —
+    /// never a remote-tracking ref or a tag). A missing branch is `NotFound`.
+    /// This is the CAS anchor read of the detached-integration choreography.
+    async fn resolve_branch_tip(&self, branch: &str) -> Result<Sha, GitError>;
+
+    /// Resolve any committish (`main`, `HEAD~2`, a tag, a full or abbreviated
+    /// SHA, …) to the commit it names, evaluated against the repo root
+    /// (`rev-parse <committish>^{commit}` semantics — the peel guarantees a
+    /// commit object). Unresolvable input is `NotFound`. This is how the
+    /// companion resolves [`Intent::CreateWorktree`]'s widened committish
+    /// `base` — the record-only server passes the string through verbatim.
+    ///
+    /// [`Intent::CreateWorktree`]: lumina_protocol::Intent::CreateWorktree
+    async fn resolve_committish(&self, committish: &str) -> Result<Sha, GitError>;
 
     /// Observe every checkout of this repository (the main worktree plus all
     /// linked ones) — the Reconcile input.

@@ -2,6 +2,12 @@
 //! deterministic, no git binary, no real repository. The only filesystem
 //! touch is the `.git/info/exclude` registration, exercised against a
 //! fabricated `<tempdir>/.git/info/` per test.
+//!
+//! The merge tests pin the DETACHED-integration ref-CAS choreography:
+//! resolve target tip -> observe worktrees -> ensure a detached integration
+//! checkout at that tip (attach-detached when missing; abort-then-detach when
+//! present) -> HEAD sanity guard -> merge -> reachability gate -> atomic
+//! `update_branch_ref` compare-and-swap -> `target_checkout` operator hint.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,7 +19,9 @@ use lumina_companion::git::{
     GitError, MergeResult, Sha, WorktreeState, WorktreeStatus,
     fake::{FakeCall, FakeGitBackend},
 };
-use lumina_protocol::{FailureKind, Intent, Outcome, Sha as WireSha, WorktreeSnapshot};
+use lumina_protocol::{
+    FailureKind, Intent, Outcome, Sha as WireSha, TargetCheckoutHint, WorktreeSnapshot,
+};
 
 /// A fresh fabricated repo root: `<temp>/.git/info/` exists, nothing else.
 /// Removed up front so a stale dir from a prior run can't pollute the
@@ -55,6 +63,10 @@ fn merge_intent(reachable: &[&str]) -> Intent {
     }
 }
 
+/// The reflog message the choreography stamps on the CAS for
+/// [`merge_intent`]'s source branch.
+const REFLOG_MSG: &str = "lumina-companion: merge sprint/serene-1";
+
 fn exclude_contents(root: &Path) -> String {
     std::fs::read_to_string(root.join(".git").join("info").join("exclude")).unwrap()
 }
@@ -62,9 +74,12 @@ fn exclude_contents(root: &Path) -> String {
 // --- the three simple intents -------------------------------------------
 
 #[tokio::test]
-async fn create_worktree_translates_and_registers_exclude() {
+async fn create_worktree_resolves_committish_base_and_registers_exclude() {
     let (exec, fake, root) = executor("create");
     let expected_path = exec.worktree_path_for_branch("sprint/serene-1");
+    // `base` rides the wire as a COMMITTISH string ("main") and the companion
+    // resolves it to a commit before any worktree is touched.
+    fake.push_resolve_committish(Ok(Sha::new("base-1")));
     fake.push_create_worktree(Ok(wt(
         &expected_path,
         Some("sprint/serene-1"),
@@ -75,7 +90,7 @@ async fn create_worktree_translates_and_registers_exclude() {
     let outcome = exec
         .execute(Intent::CreateWorktree {
             branch: "sprint/serene-1".to_owned(),
-            base: WireSha("base-1".to_owned()),
+            base: "main".to_owned(),
         })
         .await;
 
@@ -92,13 +107,48 @@ async fn create_worktree_translates_and_registers_exclude() {
     assert!(expected_path.ends_with("sprint-serene-1"));
     assert_eq!(
         fake.calls(),
-        vec![FakeCall::CreateWorktree {
-            path: expected_path,
-            branch: "sprint/serene-1".to_owned(),
-            start_point: Sha::new("base-1"),
-        }]
+        vec![
+            FakeCall::ResolveCommittish {
+                committish: "main".to_owned(),
+            },
+            FakeCall::CreateWorktree {
+                path: expected_path,
+                branch: "sprint/serene-1".to_owned(),
+                start_point: Sha::new("base-1"),
+            },
+        ]
     );
     assert!(exclude_contents(&root).contains(WORKTREES_EXCLUDE_ENTRY));
+}
+
+#[tokio::test]
+async fn create_worktree_fails_not_found_on_unresolvable_base() {
+    let (exec, fake, _root) = executor("create-bad-base");
+    fake.push_resolve_committish(Err(GitError::NotFound(
+        "resolve_committish: 'no-such-rev' does not name a commit".to_owned(),
+    )));
+
+    let outcome = exec
+        .execute(Intent::CreateWorktree {
+            branch: "sprint/serene-1".to_owned(),
+            base: "no-such-rev".to_owned(),
+        })
+        .await;
+
+    assert!(matches!(
+        outcome,
+        Outcome::Failed {
+            kind: FailureKind::NotFound,
+            ..
+        }
+    ));
+    // Resolution failed before any worktree call.
+    assert_eq!(
+        fake.calls(),
+        vec![FakeCall::ResolveCommittish {
+            committish: "no-such-rev".to_owned(),
+        }]
+    );
 }
 
 #[tokio::test]
@@ -181,19 +231,26 @@ async fn commit_checkpoint_reports_commit_or_already_up_to_date() {
 // --- merge choreography ---------------------------------------------------
 
 #[tokio::test]
-async fn merge_happy_path_runs_gate_and_reports_merged() {
+async fn merge_happy_detached_path_attaches_merges_and_advances_the_ref() {
     let (exec, fake, root) = executor("merge-happy");
     let integ = exec.integration_worktree_path("main");
-    fake.push_worktree_states(Ok(vec![
-        wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
-        wt(&integ, Some("main"), "tip-0", WorktreeStatus::Clean),
-    ]));
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
+    // No integration worktree yet; the primary checkout is on another branch
+    // (so no target_checkout hint either).
+    fake.push_worktree_states(Ok(vec![wt(
+        &root,
+        Some("dev"),
+        "dev-tip",
+        WorktreeStatus::Clean,
+    )]));
+    fake.push_attach_worktree_detached(Ok(Sha::new("tip-0")));
     fake.push_head_of(Ok(Sha::new("tip-0")));
     fake.push_merge(Ok(MergeResult::Merged {
         merge_sha: Sha::new("merge-1"),
     }));
     fake.push_is_ancestor(Ok(true));
     fake.push_is_ancestor(Ok(true));
+    fake.push_update_branch_ref(Ok(()));
 
     let outcome = exec.execute(merge_intent(&["keep-1", "keep-2"])).await;
 
@@ -202,19 +259,27 @@ async fn merge_happy_path_runs_gate_and_reports_merged() {
         Outcome::Merged {
             merge_sha: WireSha("merge-1".to_owned()),
             fast_forward: false,
+            target_checkout: None,
         }
     );
+    // The FULL choreography, in order, CAS included.
     assert_eq!(
         fake.calls(),
         vec![
+            FakeCall::ResolveBranchTip {
+                branch: "main".to_owned(),
+            },
             FakeCall::WorktreeStates,
+            FakeCall::AttachWorktreeDetached {
+                path: integ.clone(),
+                committish: "tip-0".to_owned(),
+            },
             FakeCall::HeadOf {
                 worktree: integ.clone(),
             },
             FakeCall::Merge {
                 worktree: integ,
                 source: "sprint/serene-1".to_owned(),
-                target: "main".to_owned(),
                 no_ff: true,
             },
             FakeCall::IsAncestor {
@@ -225,23 +290,34 @@ async fn merge_happy_path_runs_gate_and_reports_merged() {
                 ancestor: Sha::new("keep-2"),
                 descendant: Sha::new("merge-1"),
             },
+            FakeCall::UpdateBranchRef {
+                branch: "main".to_owned(),
+                new: Sha::new("merge-1"),
+                expected_old: Sha::new("tip-0"),
+                reflog_msg: REFLOG_MSG.to_owned(),
+            },
         ]
     );
 }
 
 #[tokio::test]
-async fn merge_fast_forward_reports_fast_forward_true() {
+async fn merge_fast_forward_repins_existing_worktree_and_reports_fast_forward() {
     let (exec, fake, root) = executor("merge-ff");
     let integ = exec.integration_worktree_path("main");
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
+    // The integration worktree already exists, DETACHED at an older tip — it
+    // is re-pinned to the freshly-resolved tip before merging.
     fake.push_worktree_states(Ok(vec![
         wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
-        wt(&integ, Some("main"), "tip-0", WorktreeStatus::Clean),
+        wt(&integ, None, "tip-old", WorktreeStatus::Clean),
     ]));
+    fake.push_detach_worktree(Ok(Sha::new("tip-0")));
     fake.push_head_of(Ok(Sha::new("tip-0")));
     fake.push_merge(Ok(MergeResult::FastForward {
         new_tip: Sha::new("ff-1"),
     }));
     fake.push_is_ancestor(Ok(true));
+    fake.push_update_branch_ref(Ok(()));
 
     let outcome = exec.execute(merge_intent(&["keep-1"])).await;
     assert_eq!(
@@ -249,21 +325,40 @@ async fn merge_fast_forward_reports_fast_forward_true() {
         Outcome::Merged {
             merge_sha: WireSha("ff-1".to_owned()),
             fast_forward: true,
+            target_checkout: None,
         }
+    );
+    let calls = fake.calls();
+    assert!(calls.contains(&FakeCall::DetachWorktree {
+        worktree: integ,
+        committish: "tip-0".to_owned(),
+    }));
+    assert_eq!(
+        calls.last(),
+        Some(&FakeCall::UpdateBranchRef {
+            branch: "main".to_owned(),
+            new: Sha::new("ff-1"),
+            expected_old: Sha::new("tip-0"),
+            reflog_msg: REFLOG_MSG.to_owned(),
+        })
     );
 }
 
 #[tokio::test]
-async fn merge_already_up_to_date_maps_through_with_pre_merge_tip() {
+async fn merge_already_up_to_date_skips_the_cas_entirely() {
     let (exec, fake, root) = executor("merge-noop");
     let integ = exec.integration_worktree_path("main");
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
     fake.push_worktree_states(Ok(vec![
         wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
-        wt(&integ, Some("main"), "tip-0", WorktreeStatus::Clean),
+        wt(&integ, None, "tip-0", WorktreeStatus::Clean),
     ]));
+    fake.push_detach_worktree(Ok(Sha::new("tip-0")));
     fake.push_head_of(Ok(Sha::new("tip-0")));
     fake.push_merge(Ok(MergeResult::AlreadyUpToDate));
-    // NOTE: no is_ancestor scripted — the gate must not run on a no-op.
+    // NOTE: no is_ancestor and no update_branch_ref scripted — with HEAD
+    // pinned at the tip, "unmoved" ⟺ source already reachable: neither the
+    // gate nor the CAS may run on a no-op.
 
     let outcome = exec.execute(merge_intent(&["keep-1"])).await;
     assert_eq!(
@@ -272,16 +367,25 @@ async fn merge_already_up_to_date_maps_through_with_pre_merge_tip() {
             tip: WireSha("tip-0".to_owned()),
         }
     );
+    let calls = fake.calls();
+    assert!(
+        !calls
+            .iter()
+            .any(|c| matches!(c, FakeCall::UpdateBranchRef { .. })),
+        "AlreadyUpToDate must skip the CAS, got {calls:?}"
+    );
 }
 
 #[tokio::test]
 async fn merge_conflict_aborts_locally_then_reports_conflicted() {
     let (exec, fake, root) = executor("merge-conflict");
     let integ = exec.integration_worktree_path("main");
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
     fake.push_worktree_states(Ok(vec![
         wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
-        wt(&integ, Some("main"), "tip-0", WorktreeStatus::Clean),
+        wt(&integ, None, "tip-0", WorktreeStatus::Clean),
     ]));
+    fake.push_detach_worktree(Ok(Sha::new("tip-0")));
     fake.push_head_of(Ok(Sha::new("tip-0")));
     fake.push_merge(Ok(MergeResult::Conflict {
         paths: vec!["src/lib.rs".to_owned(), "Cargo.toml".to_owned()],
@@ -296,7 +400,7 @@ async fn merge_conflict_aborts_locally_then_reports_conflicted() {
         }
     );
     // The coarse-protocol rule: abort_merge ran AFTER the merge, before the
-    // outcome was reported.
+    // outcome was reported — and the branch ref was never touched.
     let calls = fake.calls();
     assert_eq!(
         calls.last(),
@@ -307,19 +411,26 @@ async fn merge_conflict_aborts_locally_then_reports_conflicted() {
     assert!(calls.contains(&FakeCall::Merge {
         worktree: integ,
         source: "sprint/serene-1".to_owned(),
-        target: "main".to_owned(),
         no_ff: true,
     }));
+    assert!(
+        !calls
+            .iter()
+            .any(|c| matches!(c, FakeCall::UpdateBranchRef { .. })),
+        "a conflicted merge must not move the ref"
+    );
 }
 
 #[tokio::test]
-async fn merge_gate_violation_rolls_back_to_pre_merge_tip() {
+async fn merge_gate_violation_rolls_back_before_any_ref_move() {
     let (exec, fake, root) = executor("merge-gate");
     let integ = exec.integration_worktree_path("main");
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
     fake.push_worktree_states(Ok(vec![
         wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
-        wt(&integ, Some("main"), "tip-0", WorktreeStatus::Clean),
+        wt(&integ, None, "tip-0", WorktreeStatus::Clean),
     ]));
+    fake.push_detach_worktree(Ok(Sha::new("tip-0")));
     fake.push_head_of(Ok(Sha::new("tip-0")));
     fake.push_merge(Ok(MergeResult::Merged {
         merge_sha: Sha::new("merge-1"),
@@ -336,23 +447,75 @@ async fn merge_gate_violation_rolls_back_to_pre_merge_tip() {
             ..
         }
     ));
-    // The rollback went through the backend, to the recorded pre-merge tip.
+    // The rollback went through the backend, to the resolved pre-merge tip —
+    // and the gate fired BEFORE the CAS, so the real branch never moved.
+    let calls = fake.calls();
     assert_eq!(
-        fake.calls().last(),
+        calls.last(),
         Some(&FakeCall::ResetHard {
             worktree: integ,
             to: Sha::new("tip-0"),
         })
     );
+    assert!(
+        !calls
+            .iter()
+            .any(|c| matches!(c, FakeCall::UpdateBranchRef { .. })),
+        "a failed gate must never reach the CAS"
+    );
+}
+
+#[tokio::test]
+async fn merge_cas_lost_reports_target_moved_without_rollback() {
+    let (exec, fake, root) = executor("merge-cas-lost");
+    let integ = exec.integration_worktree_path("main");
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
+    fake.push_worktree_states(Ok(vec![
+        wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
+        wt(&integ, None, "tip-0", WorktreeStatus::Clean),
+    ]));
+    fake.push_detach_worktree(Ok(Sha::new("tip-0")));
+    fake.push_head_of(Ok(Sha::new("tip-0")));
+    fake.push_merge(Ok(MergeResult::Merged {
+        merge_sha: Sha::new("merge-1"),
+    }));
+    fake.push_is_ancestor(Ok(true));
+    // The operator committed to `main` between tip-resolve and the CAS.
+    fake.push_update_branch_ref(Err(GitError::RefCasLost(
+        "update_branch_ref: error: cannot lock ref 'refs/heads/main': \
+         is at operator-tip but expected tip-0"
+            .to_owned(),
+    )));
+
+    let outcome = exec.execute(merge_intent(&["keep-1"])).await;
+    assert!(matches!(
+        outcome,
+        Outcome::Failed {
+            kind: FailureKind::TargetMoved,
+            ..
+        }
+    ));
+    // NO rollback after a lost CAS: no ref was touched and the orphan merge
+    // commit stays reflog-protected; the next run re-detaches at the new tip.
+    let calls = fake.calls();
+    assert!(
+        !calls.iter().any(|c| matches!(c, FakeCall::ResetHard { .. })),
+        "a lost CAS must not trigger reset_hard, got {calls:?}"
+    );
+    assert!(matches!(
+        calls.last(),
+        Some(FakeCall::UpdateBranchRef { .. })
+    ));
 }
 
 #[tokio::test]
 async fn merge_refuses_dirty_integration_worktree_before_merging() {
     let (exec, fake, root) = executor("merge-dirty");
     let integ = exec.integration_worktree_path("main");
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
     fake.push_worktree_states(Ok(vec![
         wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
-        wt(&integ, Some("main"), "tip-0", WorktreeStatus::Dirty),
+        wt(&integ, None, "tip-old", WorktreeStatus::Dirty),
     ]));
 
     let outcome = exec.execute(merge_intent(&["keep-1"])).await;
@@ -363,24 +526,37 @@ async fn merge_refuses_dirty_integration_worktree_before_merging() {
             ..
         }
     ));
-    // Refused on the ground-truth observation alone — no merge, no head_of.
-    assert_eq!(fake.calls(), vec![FakeCall::WorktreeStates]);
+    // Refused on the ground-truth observation alone — no detach, no merge.
+    assert_eq!(
+        fake.calls(),
+        vec![
+            FakeCall::ResolveBranchTip {
+                branch: "main".to_owned(),
+            },
+            FakeCall::WorktreeStates,
+        ]
+    );
 }
 
 #[tokio::test]
-async fn merge_self_heals_an_interrupted_merge_before_retrying() {
-    let (exec, fake, root) = executor("merge-heal");
+async fn merge_migrates_legacy_on_branch_worktree_with_abort_then_detach() {
+    let (exec, fake, root) = executor("merge-legacy");
     let integ = exec.integration_worktree_path("main");
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
+    // A LEGACY integration worktree: ON the target branch, with an
+    // interrupted merge left behind by a crashed prior run.
     fake.push_worktree_states(Ok(vec![
         wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
         wt(&integ, Some("main"), "tip-0", WorktreeStatus::Conflicted),
     ]));
-    fake.push_abort_merge(Ok(())); // the self-heal
+    fake.push_abort_merge(Ok(())); // the self-heal: lands back ON the branch
+    fake.push_detach_worktree(Ok(Sha::new("tip-0"))); // then migrate off it
     fake.push_head_of(Ok(Sha::new("tip-0")));
     fake.push_merge(Ok(MergeResult::Merged {
         merge_sha: Sha::new("merge-1"),
     }));
     fake.push_is_ancestor(Ok(true));
+    fake.push_update_branch_ref(Ok(()));
 
     let outcome = exec.execute(merge_intent(&["keep-1"])).await;
     assert_eq!(
@@ -388,69 +564,73 @@ async fn merge_self_heals_an_interrupted_merge_before_retrying() {
         Outcome::Merged {
             merge_sha: WireSha("merge-1".to_owned()),
             fast_forward: false,
+            // The integration worktree's own (legacy) `main` checkout is
+            // EXCLUDED from the hint — only OTHER worktrees count.
+            target_checkout: None,
         }
     );
-    // abort_merge healed the leftover state BEFORE the new merge attempt.
+    // abort-THEN-detach, in that order: an aborted legacy worktree lands
+    // back ON the branch, and `checkout --detach` migrates it without moving
+    // the branch ref.
     let calls = fake.calls();
     assert_eq!(
-        &calls[..3],
+        &calls[..4],
         &[
+            FakeCall::ResolveBranchTip {
+                branch: "main".to_owned(),
+            },
             FakeCall::WorktreeStates,
             FakeCall::AbortMerge {
                 worktree: integ.clone(),
             },
-            FakeCall::HeadOf { worktree: integ },
+            FakeCall::DetachWorktree {
+                worktree: integ,
+                committish: "tip-0".to_owned(),
+            },
         ]
     );
 }
 
 #[tokio::test]
-async fn merge_lazily_attaches_the_integration_worktree() {
-    let (exec, fake, root) = executor("merge-lazy");
+async fn merge_hints_when_target_is_checked_out_in_another_worktree() {
+    let (exec, fake, root) = executor("merge-hint");
     let integ = exec.integration_worktree_path("main");
-    // No integration worktree yet — and no checkout of `main` anywhere
-    // either: attach_worktree checks the EXISTING branch out directly, so no
-    // base resolution from another checkout is needed.
-    fake.push_worktree_states(Ok(vec![wt(
-        &root,
-        Some("dev"),
-        "dev-tip",
-        WorktreeStatus::Clean,
-    )]));
-    fake.push_attach_worktree(Ok(Sha::new("tip-0")));
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
+    // The operator's PRIMARY checkout sits on the target branch, dirty —
+    // exactly the stale-checkout case the hint exists for.
+    fake.push_worktree_states(Ok(vec![
+        wt(&root, Some("main"), "tip-0", WorktreeStatus::Dirty),
+        wt(&integ, None, "tip-0", WorktreeStatus::Clean),
+    ]));
+    fake.push_detach_worktree(Ok(Sha::new("tip-0")));
     fake.push_head_of(Ok(Sha::new("tip-0")));
-    fake.push_merge(Ok(MergeResult::AlreadyUpToDate));
+    fake.push_merge(Ok(MergeResult::Merged {
+        merge_sha: Sha::new("merge-1"),
+    }));
+    fake.push_is_ancestor(Ok(true));
+    fake.push_update_branch_ref(Ok(()));
 
-    let outcome = exec.execute(merge_intent(&[])).await;
+    let outcome = exec.execute(merge_intent(&["keep-1"])).await;
     assert_eq!(
         outcome,
-        Outcome::AlreadyUpToDate {
-            tip: WireSha("tip-0".to_owned()),
-        }
-    );
-    assert_eq!(
-        fake.calls()[1],
-        FakeCall::AttachWorktree {
-            branch: "main".to_owned(),
-            path: integ,
+        Outcome::Merged {
+            merge_sha: WireSha("merge-1".to_owned()),
+            fast_forward: false,
+            target_checkout: Some(TargetCheckoutHint {
+                path: root.display().to_string(),
+                dirty: true,
+            }),
         }
     );
 }
 
 #[tokio::test]
 async fn merge_fails_not_found_when_target_branch_is_missing() {
-    // No integration worktree and the target branch does not exist: the
-    // attach reports NotFound, which maps straight through the kind table.
-    let (exec, fake, root) = executor("merge-no-target");
-    let integ = exec.integration_worktree_path("main");
-    fake.push_worktree_states(Ok(vec![wt(
-        &root,
-        Some("dev"),
-        "dev-tip",
-        WorktreeStatus::Clean,
-    )]));
-    fake.push_attach_worktree(Err(GitError::NotFound(
-        "attach_worktree: invalid reference: main".to_owned(),
+    // The up-front tip resolution is the clean early NotFound — nothing else
+    // runs when the target branch does not exist.
+    let (exec, fake, _root) = executor("merge-no-target");
+    fake.push_resolve_branch_tip(Err(GitError::NotFound(
+        "resolve_branch_tip: branch 'main' does not exist".to_owned(),
     )));
 
     let outcome = exec.execute(merge_intent(&[])).await;
@@ -463,14 +643,36 @@ async fn merge_fails_not_found_when_target_branch_is_missing() {
     ));
     assert_eq!(
         fake.calls(),
-        vec![
-            FakeCall::WorktreeStates,
-            FakeCall::AttachWorktree {
-                branch: "main".to_owned(),
-                path: integ,
-            },
-        ]
+        vec![FakeCall::ResolveBranchTip {
+            branch: "main".to_owned(),
+        }]
     );
+}
+
+#[tokio::test]
+async fn merge_fails_internal_when_integration_head_diverges_from_the_tip() {
+    // The executor-side sanity guard (the replacement for the old in-merge
+    // checked-out-branch guard): HEAD must sit exactly at the resolved tip.
+    let (exec, fake, root) = executor("merge-head-divergence");
+    let integ = exec.integration_worktree_path("main");
+    fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
+    fake.push_worktree_states(Ok(vec![
+        wt(&root, Some("dev"), "dev-tip", WorktreeStatus::Clean),
+        wt(&integ, None, "tip-0", WorktreeStatus::Clean),
+    ]));
+    fake.push_detach_worktree(Ok(Sha::new("tip-0")));
+    fake.push_head_of(Ok(Sha::new("somewhere-else")));
+
+    let outcome = exec.execute(merge_intent(&[])).await;
+    assert!(matches!(
+        outcome,
+        Outcome::Failed {
+            kind: FailureKind::Internal,
+            ..
+        }
+    ));
+    // Refused before the merge ran.
+    assert!(matches!(fake.calls().last(), Some(FakeCall::HeadOf { .. })));
 }
 
 // --- reconcile -------------------------------------------------------------
@@ -490,6 +692,9 @@ async fn reconcile_reports_managed_worktrees_and_primary_head_as_target_tip() {
             "head-1",
             WorktreeStatus::Clean,
         ),
+        // A DETACHED managed record (branch: None — the integration
+        // worktree's normal state under the detached choreography) flows
+        // through the snapshot untouched.
         wt(&managed_conflicted, None, "head-2", WorktreeStatus::Conflicted),
     ]));
     fake.push_head_of(Ok(Sha::new("tip-9")));

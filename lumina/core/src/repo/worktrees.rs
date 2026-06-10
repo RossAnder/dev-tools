@@ -210,6 +210,23 @@ const SELECT_WORKTREES_BY_STATUS: &str = concat!(
     "    WHERE w.deleted_at IS NULL AND s.status = $1\n    ORDER BY w.created_at, w.id\n    LIMIT 1000\n"
 );
 
+/// `true` when a (code-2067-gated) UNIQUE violation's message names the
+/// `worktrees.branch` column — disambiguating WHICH of the two UNIQUE
+/// constraints on the `worktrees` INSERT fired: the migration-0018 partial
+/// live-branch index (`idx_worktrees_live_branch`) vs the migration-0016
+/// `owning_sprint_id` UNIQUE. SQLite's violation message lists the COLUMN
+/// path(s) (`UNIQUE constraint failed: worktrees.branch`), never the index
+/// NAME, so the column path is the only in-error discriminator. The primary
+/// gate stays the backend-aware code matcher [`is_unique_violation`]
+/// (`DatabaseError::code()` == "2067"/"1555"); this is a secondary refinement
+/// applied only after that gate passes.
+fn unique_violation_names_branch(e: &sqlx::Error) -> bool {
+    match e {
+        sqlx::Error::Database(db_err) => db_err.message().contains("worktrees.branch"),
+        _ => false,
+    }
+}
+
 /// Create a [`worktree`](NewWorktree) owned by an existing sprint (migration
 /// 0016). Pre-tx validation (all typed errors, never a raw Db 500): caller
 /// free-text (`path`/`base_ref`/`branch`) is byte-bounded ([`MAX_FREE_TEXT_BYTES`],
@@ -224,6 +241,14 @@ const SELECT_WORKTREES_BY_STATUS: &str = concat!(
 /// block on a pre-existing (targeted) `worktree_id` on the owner, but surfaces that
 /// prior id in the event payload as `replaced_worktree_id` so the overwrite is
 /// auditable rather than silent (R10). Returns the new worktree id.
+///
+/// Live-branch uniqueness (migration 0018): at most one LIVE (`outcome IS NULL`)
+/// worktree may record a given `branch` — the partial UNIQUE index
+/// `idx_worktrees_live_branch` enforces it structurally, and a hit is mapped at
+/// the INSERT (code-2067 gate via [`is_unique_violation`] +
+/// [`unique_violation_names_branch`] column-path disambiguation) into a clean
+/// [`AppError::Validation`] rather than a raw 500. A worktree whose outcome
+/// turns terminal (`merged`/`rejected`) frees its branch for reuse.
 pub async fn create_worktree(
     db: &impl DbClient,
     worktree: &NewWorktree,
@@ -288,24 +313,48 @@ pub async fn create_worktree(
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
+    let backend = db.backend();
     let mut tx = db.begin().await?;
 
     // INSERT the worktree (created_at/updated_at left to the column DEFAULT
     // CURRENT_TIMESTAMP; merged_at/merge_ref/outcome NULL until a merge/rejection).
-    tx.execute(
-        r#"
+    // Two UNIQUE constraints sit on this INSERT: the 0016 `owning_sprint_id`
+    // UNIQUE (pre-checked above; a concurrent-race residual deliberately stays a
+    // raw Db error, R4) and the 0018 partial live-branch index. A hit on the
+    // LATTER — code-2067 gate + the column-path disambiguation (SQLite names
+    // `worktrees.branch`, never the index name) — is a clean typed Validation.
+    match tx
+        .execute(
+            r#"
         INSERT INTO worktrees (id, owning_sprint_id, path, base_ref, branch)
         VALUES ($1, $2, $3, $4, $5)
         "#,
-        args![
-            id_str.clone(),
-            worktree.owning_sprint_id.clone(),
-            worktree.path.clone(),
-            worktree.base_ref.clone(),
-            worktree.branch.clone()
-        ],
-    )
-    .await?;
+            args![
+                id_str.clone(),
+                worktree.owning_sprint_id.clone(),
+                worktree.path.clone(),
+                worktree.base_ref.clone(),
+                worktree.branch.clone()
+            ],
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(AppError::Db(ref sqlx_err))
+            if is_unique_violation(backend, sqlx_err)
+                && unique_violation_names_branch(sqlx_err) =>
+        {
+            // The index predicate (`branch IS NOT NULL`) means this arm is only
+            // reachable with a Some(branch); the unwrap_or is belt-and-braces.
+            return Err(AppError::Validation(format!(
+                "a live worktree already records branch '{}' (at most one live \
+                 worktree per branch; resolve it via record_worktree_merge / \
+                 record_worktree_rejection first)",
+                worktree.branch.as_deref().unwrap_or("<unset>")
+            )));
+        }
+        Err(e) => return Err(e),
+    }
 
     // The owner RUNS IN the worktree it owns — point its `worktree_id` at the new
     // row (the owner is the one sprint where worktrees.owning_sprint_id = sprint.id).
@@ -914,14 +963,22 @@ mod tests {
         .expect("select sprint worktree_id")
     }
 
-    /// Build a `NewWorktree` owned by `sprint`, with a representative path.
-    fn new_worktree(sprint: &str) -> NewWorktree {
+    /// Build a `NewWorktree` owned by `sprint`, with a representative path and an
+    /// explicit `branch`. Migration 0018 enforces at most one LIVE worktree per
+    /// branch, so a test needing two CONCURRENT live worktrees must give them
+    /// distinct branches via this variant.
+    fn new_worktree_on_branch(sprint: &str, branch: &str) -> NewWorktree {
         NewWorktree {
             owning_sprint_id: sprint.to_owned(),
             path: "/tmp/wt".to_owned(),
             base_ref: Some("main".to_owned()),
-            branch: Some("sprint/1".to_owned()),
+            branch: Some(branch.to_owned()),
         }
+    }
+
+    /// Build a `NewWorktree` owned by `sprint`, on the default fixture branch.
+    fn new_worktree(sprint: &str) -> NewWorktree {
+        new_worktree_on_branch(sprint, "sprint/1")
     }
 
     /// `create_worktree` → `get_worktree`: the worktree is created, the owner's
@@ -997,6 +1054,71 @@ mod tests {
             matches!(res, Err(AppError::Validation(_))),
             "a second worktree for the same owner is a clean Validation, got {res:?}"
         );
+    }
+
+    /// Migration 0018: a SECOND LIVE worktree recording the same `branch` (under a
+    /// DIFFERENT owning sprint, so the 1:1-owner pre-check passes) hits the partial
+    /// `idx_worktrees_live_branch` UNIQUE index and surfaces as a clean Validation
+    /// naming the branch — not a raw UNIQUE-index 500.
+    #[tokio::test]
+    async fn duplicate_live_branch_is_validation() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint_a = seed_sprint(&pool).await;
+        let sprint_b = seed_sprint(&pool).await;
+
+        // Both fixtures record branch "sprint/1" (see `new_worktree`).
+        create_worktree(&pool, &new_worktree(&sprint_a))
+            .await
+            .expect("first live worktree on the branch");
+
+        let res = create_worktree(&pool, &new_worktree(&sprint_b)).await;
+        match res {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("sprint/1"),
+                "the Validation names the conflicting branch, got: {msg}"
+            ),
+            other => panic!(
+                "a second LIVE worktree on the same branch is a clean Validation, got {other:?}"
+            ),
+        }
+    }
+
+    /// Migration 0018: the live-branch UNIQUE index is PARTIAL over `outcome IS
+    /// NULL`, so a TERMINAL outcome (merged or rejected) frees the branch for reuse
+    /// by a new live worktree. Chains both terminal paths on one branch: create →
+    /// merge frees it → create again → reject frees it → create a third time.
+    #[tokio::test]
+    async fn terminal_outcome_frees_branch_for_reuse() {
+        let pool = connect_in_memory().await.expect("pool");
+
+        // First live worktree on the branch; merge it (owner must be 'review').
+        let sprint_a = seed_sprint(&pool).await;
+        let wt_a = create_worktree(&pool, &new_worktree(&sprint_a))
+            .await
+            .expect("first live worktree")
+            .to_string();
+        set_sprint_status_raw(&pool, &sprint_a, "review").await;
+        record_worktree_merge(&pool, &wt_a, Some("merge-ref-a"))
+            .await
+            .expect("merge frees the branch");
+
+        // The merged (terminal) worktree no longer holds the branch.
+        let sprint_b = seed_sprint(&pool).await;
+        let wt_b = create_worktree(&pool, &new_worktree(&sprint_b))
+            .await
+            .expect("branch reusable after a merged outcome")
+            .to_string();
+
+        // Reject the second one; the branch frees again.
+        set_sprint_status_raw(&pool, &sprint_b, "review").await;
+        record_worktree_rejection(&pool, &wt_b, Some("superseded"))
+            .await
+            .expect("rejection frees the branch");
+
+        let sprint_c = seed_sprint(&pool).await;
+        create_worktree(&pool, &new_worktree(&sprint_c))
+            .await
+            .expect("branch reusable after a rejected outcome");
     }
 
     /// `get_worktree` on an absent id is NotFound.
@@ -1111,9 +1233,11 @@ mod tests {
             .to_string();
         set_sprint_status_raw(&pool, &review_sprint, "review").await;
 
-        // A draft-owned worktree (should be excluded by the Review filter).
+        // A draft-owned worktree (should be excluded by the Review filter). On a
+        // DISTINCT branch: both worktrees here are concurrently LIVE, and 0018
+        // permits at most one live worktree per branch.
         let draft_sprint = seed_sprint(&pool).await;
-        let _draft_wt = create_worktree(&pool, &new_worktree(&draft_sprint))
+        let _draft_wt = create_worktree(&pool, &new_worktree_on_branch(&draft_sprint, "sprint/2"))
             .await
             .expect("create draft wt")
             .to_string();

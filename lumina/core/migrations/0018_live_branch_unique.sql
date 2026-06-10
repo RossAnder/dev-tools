@@ -1,0 +1,33 @@
+-- lumina migration 0018: at most one LIVE worktree per branch (partial UNIQUE index).
+--
+-- ## Why (ADR-0006 detached-integration ref-CAS pass)
+-- The companion's integration worktree becomes a DETACHED checkout that advances
+-- the target branch ref via an atomic compare-and-swap. That model assumes a
+-- branch maps to at most ONE live worktree at a time: two live worktrees
+-- recording the same `branch` would race their ref-CAS merges against each
+-- other. This index makes the invariant structural — a worktree is LIVE while
+-- its terminal disposition is unset (`outcome IS NULL`; `outcome` flips to
+-- 'merged'/'rejected' via record_worktree_merge / record_worktree_rejection),
+-- so a terminal worktree FREES its branch for reuse by a new live one.
+--
+-- ## Index-only — NO dedupe/pre-clean SQL
+-- `CREATE UNIQUE INDEX` validates EXISTING rows and fails the statement on a
+-- violation, and sqlx runs each migration file in one transaction, so the file
+-- is all-or-nothing. On a dirty dev DB already holding duplicate live branches
+-- this migration FAILS LOUDLY at startup (`UNIQUE constraint failed:
+-- worktrees.branch`); the remedy is resolving the duplicates so all but one
+-- carry a terminal outcome (record_worktree_rejection — or record_worktree_merge
+-- if one genuinely merged) or recreating the gitignored dev DB (db::init
+-- rebuilds it from the embedded migration set).
+--
+-- ## Predicate notes
+-- NULLs are pairwise distinct in SQLite UNIQUE indexes, so `branch IS NOT NULL`
+-- in the partial predicate is self-documenting rather than load-bearing — kept
+-- anyway. Same partial-UNIQUE shape as idx_repo_links_one_primary
+-- (0004_repo_links.sql). A violating write raises SQLITE_CONSTRAINT_UNIQUE
+-- (extended code 2067) naming the COLUMN path `worktrees.branch`, NOT the index
+-- name — the repo layer (`create_worktree`) keys its typed-Validation mapping
+-- off that. Forward-only; no down-migration.
+
+CREATE UNIQUE INDEX idx_worktrees_live_branch
+    ON worktrees(branch) WHERE outcome IS NULL AND branch IS NOT NULL;

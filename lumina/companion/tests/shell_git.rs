@@ -228,7 +228,7 @@ async fn clean_fast_forward_merge() {
     let tip = commit_in(&wt, "feature work").await;
 
     let res = g
-        .merge(&repo.root, "feature", "main", false)
+        .merge(&repo.root, "feature", false)
         .await
         .expect("merge");
     assert_eq!(
@@ -253,7 +253,7 @@ async fn no_ff_merge_creates_a_true_merge_commit() {
     let tip = commit_in(&wt, "feature work").await;
 
     let res = g
-        .merge(&repo.root, "feature", "main", true)
+        .merge(&repo.root, "feature", true)
         .await
         .expect("merge --no-ff");
     let MergeResult::Merged { merge_sha } = res else {
@@ -278,31 +278,91 @@ async fn merge_of_an_already_merged_source_is_already_up_to_date() {
         .expect("create_worktree");
 
     let res = g
-        .merge(&repo.root, "feature", "main", false)
+        .merge(&repo.root, "feature", false)
         .await
         .expect("merge");
     assert_eq!(res, MergeResult::AlreadyUpToDate);
     assert_eq!(repo.head().await, base, "HEAD must not move");
 }
 
+/// The regression assertion of the detached-integration choreography: the
+/// old in-merge checked-out-branch guard is GONE, so a merge in a DETACHED
+/// integration worktree succeeds even while the target branch is checked out
+/// in the primary checkout — previously a guaranteed `BranchInUse` refusal.
+/// End-to-end: detached attach at the target tip → merge → CAS ref advance →
+/// the primary checkout is left as a stale checkout, untouched on disk.
 #[tokio::test]
-async fn merge_requires_target_checked_out_in_worktree() {
+async fn merge_in_detached_worktree_succeeds_while_target_checked_out_in_primary() {
     let repo = TestRepo::new().await;
     let g = repo.backend();
     let base = repo.head().await;
-    let wt = repo.wt_path("wt-wrong");
-    g.create_worktree(&wt, "feature", &Sha::new(base.as_str()))
+
+    // Diverge: `feature` adds a file in its own worktree; `main` (checked
+    // out in the PRIMARY checkout the whole time) moves on `file.txt`.
+    let wt_feature = repo.wt_path("wt-feature");
+    g.create_worktree(&wt_feature, "feature", &Sha::new(base.as_str()))
         .await
-        .expect("create_worktree");
+        .expect("create feature worktree");
+    std::fs::write(wt_feature.join("feature.txt"), "f\n").expect("write feature side");
+    let feature_tip = commit_in(&wt_feature, "feature work").await;
+    repo.write("file.txt", "main change\n");
+    let main_tip = repo.commit("main change").await;
 
-    // `wt` has `feature` checked out — merging into target `main` there must
-    // be refused before any engine call.
-    let err = g.merge(&wt, "main", "main", false).await.unwrap_err();
-    assert!(matches!(err, GitError::State(_)), "expected State, got {err:?}");
+    // Attach a DETACHED integration worktree at the target tip — no branch
+    // involved, so git's "already checked out" refusal cannot trigger.
+    let wt_int = repo.wt_path("wt-integration");
+    let int_head = g
+        .attach_worktree_detached(&wt_int, "main")
+        .await
+        .expect("detached integration attach while main is checked out in the primary");
+    assert_eq!(int_head.as_str(), main_tip);
 
-    // A missing source classifies as NotFound (checked after the branch gate).
+    // The merge lands on the detached HEAD; no branch ref moves yet.
+    let res = g.merge(&wt_int, "feature", true).await.expect("merge --no-ff");
+    let MergeResult::Merged { merge_sha } = res else {
+        panic!("expected Merged, got {res:?}");
+    };
+    assert_eq!(git_in(&wt_int, &["rev-parse", "HEAD^1"]).await, main_tip);
+    assert_eq!(git_in(&wt_int, &["rev-parse", "HEAD^2"]).await, feature_tip);
+    assert_eq!(
+        git_in(&repo.root, &["rev-parse", "refs/heads/main"]).await,
+        main_tip,
+        "the merge itself must not move the target branch ref"
+    );
+
+    // The CAS advances the branch ref afterwards.
+    g.update_branch_ref(
+        "main",
+        &merge_sha,
+        &Sha::new(main_tip.as_str()),
+        "companion merge of feature",
+    )
+    .await
+    .expect("CAS ref advance");
+    assert_eq!(
+        git_in(&repo.root, &["rev-parse", "refs/heads/main"]).await,
+        merge_sha.as_str()
+    );
+
+    // The primary checkout is untouched ON DISK — the designed stale-checkout
+    // effect: pre-merge contents, the merged-in file never materialised.
+    assert_eq!(
+        std::fs::read_to_string(repo.root.join("file.txt")).expect("read"),
+        "main change\n"
+    );
+    assert!(
+        !repo.root.join("feature.txt").exists(),
+        "the ref advance must not touch the primary checkout's files"
+    );
+}
+
+#[tokio::test]
+async fn merge_missing_source_is_not_found() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+
     let err = g
-        .merge(&repo.root, "no-such-branch", "main", false)
+        .merge(&repo.root, "no-such-branch", false)
         .await
         .unwrap_err();
     assert!(
@@ -318,7 +378,7 @@ async fn conflicting_merge_reports_paths_and_abort_restores_pre_state() {
     let (_wt, main_tip) = conflicted_fixture(&repo, &g).await;
 
     let res = g
-        .merge(&repo.root, "feature", "main", false)
+        .merge(&repo.root, "feature", false)
         .await
         .expect("conflicting merge is an Ok(MergeResult), not a GitError");
     assert_eq!(
@@ -362,7 +422,7 @@ async fn resolve_take_theirs_then_continue_completes_the_merge() {
     let (_wt, _main_tip) = conflicted_fixture(&repo, &g).await;
 
     let res = g
-        .merge(&repo.root, "feature", "main", false)
+        .merge(&repo.root, "feature", false)
         .await
         .expect("merge");
     assert!(matches!(res, MergeResult::Conflict { .. }), "got {res:?}");
@@ -516,4 +576,324 @@ async fn worktree_states_derives_detached_head() {
         .find(|s| s.branch.as_deref() == Some("main"))
         .expect("main worktree entry");
     assert_eq!(main_state.status, WorktreeStatus::Clean);
+}
+
+#[tokio::test]
+async fn resolve_branch_tip_returns_the_branch_tip_not_head() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let base = repo.head().await;
+    // `side` stays at the initial commit while `main` moves on — the lookup
+    // must land on the BRANCH tip, not wherever HEAD happens to be.
+    git_in(&repo.root, &["branch", "side"]).await;
+    repo.write("file.txt", "main moved\n");
+    let main_tip = repo.commit("main moved").await;
+
+    assert_eq!(
+        g.resolve_branch_tip("side").await.expect("side tip").as_str(),
+        base
+    );
+    assert_eq!(
+        g.resolve_branch_tip("main").await.expect("main tip").as_str(),
+        main_tip
+    );
+}
+
+#[tokio::test]
+async fn resolve_branch_tip_misses_unknown_branches_and_tags() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+
+    let err = g.resolve_branch_tip("no-such-branch").await.unwrap_err();
+    assert!(
+        matches!(err, GitError::NotFound(_)),
+        "expected NotFound, got {err:?}"
+    );
+
+    // refs/heads/ only: a TAG of the requested name must not satisfy the
+    // lookup (the CAS anchor read may never bind to a non-branch ref).
+    git_in(&repo.root, &["tag", "tag-not-branch"]).await;
+    let err = g.resolve_branch_tip("tag-not-branch").await.unwrap_err();
+    assert!(
+        matches!(err, GitError::NotFound(_)),
+        "expected NotFound, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn resolve_committish_contract() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let c1 = repo.head().await;
+    repo.write("file.txt", "second\n");
+    let c2 = repo.commit("second").await;
+
+    assert_eq!(
+        g.resolve_committish("HEAD~1").await.expect("HEAD~1").as_str(),
+        c1
+    );
+    assert_eq!(g.resolve_committish("main").await.expect("main").as_str(), c2);
+    assert_eq!(
+        g.resolve_committish(c2.as_str()).await.expect("full sha").as_str(),
+        c2
+    );
+
+    let err = g.resolve_committish("no-such-committish").await.unwrap_err();
+    assert!(
+        matches!(err, GitError::NotFound(_)),
+        "expected NotFound, got {err:?}"
+    );
+    // The `^{commit}` peel forces an object read, so a well-formed but
+    // missing full sha cannot false-positive either.
+    let err = g.resolve_committish(MISSING_SHA).await.unwrap_err();
+    assert!(
+        matches!(err, GitError::NotFound(_)),
+        "expected NotFound, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn attach_worktree_detached_coexists_with_branch_checked_out_in_primary() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let base = repo.head().await;
+
+    // `main` is checked out in the primary worktree. A BRANCH attach of main
+    // would be refused ("already used by worktree") — the detached attach
+    // must succeed: no branch is involved, so the refusal cannot trigger.
+    // This is the operation that was impossible before the choreography.
+    let wt = repo.wt_path("wt-int");
+    let head = g
+        .attach_worktree_detached(&wt, "main")
+        .await
+        .expect("detached attach while main is checked out in the primary");
+    assert_eq!(head.as_str(), base);
+
+    let states = g.worktree_states().await.expect("worktree_states");
+    let int = states
+        .iter()
+        .find(|s| s.path.ends_with("wt-int"))
+        .expect("integration worktree entry");
+    assert_eq!(int.branch, None, "detached attach must derive branch=None");
+    assert_eq!(int.head.as_str(), base);
+    // ... and main stayed checked out in the primary, untouched.
+    let main_state = states
+        .iter()
+        .find(|s| s.branch.as_deref() == Some("main"))
+        .expect("main worktree entry");
+    assert_eq!(main_state.head.as_str(), base);
+}
+
+#[tokio::test]
+async fn attach_worktree_detached_classifies_bad_committish_and_occupied_path() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+
+    let err = g
+        .attach_worktree_detached(&repo.wt_path("wt-x"), MISSING_SHA)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::NotFound(_)),
+        "expected NotFound, got {err:?}"
+    );
+
+    // An on-disk-but-UNREGISTERED leftover dir is companion-internal
+    // breakage under the choreography, classified Engine (not State).
+    let occupied = repo.wt_path("wt-occupied");
+    std::fs::create_dir(&occupied).expect("mkdir occupied");
+    std::fs::write(occupied.join("junk.txt"), "j\n").expect("write junk");
+    let err = g.attach_worktree_detached(&occupied, "main").await.unwrap_err();
+    assert!(
+        matches!(err, GitError::Engine(_)),
+        "expected Engine, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn detach_worktree_migrates_an_on_branch_worktree_without_moving_the_branch() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let base = repo.head().await;
+    // The legacy shape: an integration worktree with a branch checked out.
+    let wt = repo.wt_path("wt-legacy");
+    g.create_worktree(&wt, "legacy", &Sha::new(base.as_str()))
+        .await
+        .expect("create legacy on-branch worktree");
+    repo.write("file.txt", "main moved\n");
+    let main_tip = repo.commit("main moved").await;
+
+    let before = git_in(&repo.root, &["rev-parse", "refs/heads/legacy"]).await;
+    let head = g
+        .detach_worktree(&wt, main_tip.as_str())
+        .await
+        .expect("detach_worktree");
+    assert_eq!(head.as_str(), main_tip);
+
+    // The worktree is now detached at the committish ...
+    let states = g.worktree_states().await.expect("worktree_states");
+    let legacy = states
+        .iter()
+        .find(|s| s.path.ends_with("wt-legacy"))
+        .expect("legacy worktree entry");
+    assert_eq!(legacy.branch, None, "migrated worktree must be detached");
+    assert_eq!(legacy.head.as_str(), main_tip);
+
+    // ... and the branch ref did NOT move.
+    let after = git_in(&repo.root, &["rev-parse", "refs/heads/legacy"]).await;
+    assert_eq!(before, after, "detach must never move the branch ref");
+    assert_eq!(after, base);
+}
+
+#[tokio::test]
+async fn detach_worktree_repoints_an_already_detached_checkout() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let base = repo.head().await;
+    let wt = repo.wt_path("wt-det2");
+    g.attach_worktree_detached(&wt, base.as_str())
+        .await
+        .expect("detached attach");
+    repo.write("file.txt", "second\n");
+    let c2 = repo.commit("second").await;
+
+    let head = g.detach_worktree(&wt, c2.as_str()).await.expect("re-point");
+    assert_eq!(head.as_str(), c2);
+    assert_eq!(git_in(&wt, &["rev-parse", "HEAD"]).await, c2);
+    assert_eq!(
+        std::fs::read_to_string(wt.join("file.txt")).expect("read"),
+        "second\n"
+    );
+}
+
+#[tokio::test]
+async fn detach_worktree_fails_safe_on_dirty_state_and_unknown_committish() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let base = repo.head().await;
+    let wt = repo.wt_path("wt-dirty-det");
+    g.create_worktree(&wt, "dirty-det", &Sha::new(base.as_str()))
+        .await
+        .expect("create_worktree");
+    repo.write("file.txt", "main moved\n");
+    let main_tip = repo.commit("main moved").await;
+    // A local edit to the same file the target commit changes — git must
+    // refuse ("would be overwritten by checkout") rather than clobber.
+    std::fs::write(wt.join("file.txt"), "uncommitted\n").expect("write dirty");
+
+    let err = g.detach_worktree(&wt, main_tip.as_str()).await.unwrap_err();
+    assert!(matches!(err, GitError::State(_)), "expected State, got {err:?}");
+    assert_eq!(
+        std::fs::read_to_string(wt.join("file.txt")).expect("read"),
+        "uncommitted\n",
+        "refused detach must leave the dirty content in place"
+    );
+
+    // KNOWN CLASSIFICATION GAP (characterization, not endorsement): under
+    // `checkout --detach`, git reports an unresolvable committish as
+    // "--detach does not take a path argument '…'" (non-hex name) or
+    // "unable to read tree (…)" (missing full sha) — neither matches
+    // shell.rs's NotFound arms ("invalid reference" / "did not match any
+    // file" / "not a valid object name", which are non-detach checkout
+    // shapes), so today this classifies Engine. If the classifier learns
+    // the --detach messages, flip this assertion to NotFound.
+    let err = g.detach_worktree(&wt, "no-such-committish").await.unwrap_err();
+    assert!(
+        matches!(err, GitError::Engine(_)),
+        "expected Engine (see classification-gap note), got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn update_branch_ref_happy_cas_advances_and_stamps_the_reflog() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let c1 = repo.head().await;
+    git_in(&repo.root, &["branch", "adv"]).await; // `adv` parked at c1
+    repo.write("file.txt", "second\n");
+    let c2 = repo.commit("second").await;
+
+    g.update_branch_ref(
+        "adv",
+        &Sha::new(c2.as_str()),
+        &Sha::new(c1.as_str()),
+        "companion: advance adv after merge",
+    )
+    .await
+    .expect("CAS advance");
+    assert_eq!(git_in(&repo.root, &["rev-parse", "refs/heads/adv"]).await, c2);
+
+    // The newest reflog entry carries the CAS message and the companion's
+    // stamped identity (a reflog entry records a committer).
+    assert_eq!(
+        git_in(
+            &repo.root,
+            &["log", "-g", "-1", "--format=%gs", "refs/heads/adv"]
+        )
+        .await,
+        "companion: advance adv after merge"
+    );
+    assert_eq!(
+        git_in(
+            &repo.root,
+            &["log", "-g", "-1", "--format=%gn <%ge>", "refs/heads/adv"]
+        )
+        .await,
+        "lumina-companion <companion@lumina.local>"
+    );
+}
+
+#[tokio::test]
+async fn update_branch_ref_cas_lost_when_the_target_moved() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let c1 = repo.head().await;
+    repo.write("file.txt", "second\n");
+    let c2 = repo.commit("second").await;
+    // Out-of-band move: the operator commits in the primary checkout while
+    // the companion still holds c1 as its expected-old anchor.
+    repo.write("file.txt", "third\n");
+    let c3 = repo.commit("third").await;
+
+    let err = g
+        .update_branch_ref(
+            "main",
+            &Sha::new(c2.as_str()),
+            &Sha::new(c1.as_str()),
+            "stale CAS",
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::RefCasLost(_)),
+        "expected RefCasLost, got {err:?}"
+    );
+    // The lost swap touched nothing: the ref still sits where it moved to.
+    assert_eq!(git_in(&repo.root, &["rev-parse", "refs/heads/main"]).await, c3);
+}
+
+#[tokio::test]
+async fn update_branch_ref_cas_lost_when_the_ref_was_deleted() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let c1 = repo.head().await;
+    git_in(&repo.root, &["branch", "doomed"]).await;
+    git_in(&repo.root, &["branch", "-D", "doomed"]).await;
+
+    // A deleted ref classifies from "unable to resolve" — still CAS-lost.
+    let err = g
+        .update_branch_ref(
+            "doomed",
+            &Sha::new(c1.as_str()),
+            &Sha::new(c1.as_str()),
+            "CAS on deleted ref",
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::RefCasLost(_)),
+        "expected RefCasLost, got {err:?}"
+    );
+    // The failed CAS must not have resurrected the branch.
+    assert_eq!(git_in(&repo.root, &["branch", "--list", "doomed"]).await, "");
 }

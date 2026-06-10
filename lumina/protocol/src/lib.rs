@@ -66,6 +66,20 @@ pub struct WorktreeSnapshot {
     pub dirty: bool,
 }
 
+/// Operator hint riding [`Outcome::Merged`]: the merge TARGET branch was
+/// checked out in another worktree (typically the operator's primary
+/// checkout) when the branch ref was advanced. That checkout is now STALE
+/// relative to the advanced ref — `git status` there shows spurious diffs —
+/// and the remedy is `git reset --keep <merge_sha>` run in that worktree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetCheckoutHint {
+    /// Absolute path of the worktree the target branch is checked out in.
+    pub path: String,
+    /// `true` when that checkout has uncommitted changes (staged or
+    /// unstaged) — surface extra caution before any reset.
+    pub dirty: bool,
+}
+
 /// A coarse git operation the server asks the companion to perform. Each
 /// intent resolves to exactly one [`Outcome`].
 ///
@@ -76,11 +90,12 @@ pub struct WorktreeSnapshot {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Intent {
     /// Create a worktree on a NEW branch `branch` starting at `base`. The
-    /// base is a ground-truth SHA the server already holds (from a prior
-    /// [`Outcome::Reconciled`] `target_tip` or a recorded checkpoint commit);
-    /// requiring it keeps the intent deterministic across retries.
-    /// Success: [`Outcome::WorktreeCreated`].
-    CreateWorktree { branch: String, base: Sha },
+    /// base is any COMMITTISH string (a full SHA, a branch name like `main`,
+    /// `HEAD~2`, a tag, …): the COMPANION resolves it against the repository
+    /// — the record-only server cannot resolve refs, so it passes the string
+    /// through verbatim. [`Outcome::WorktreeCreated`] reports the RESOLVED
+    /// `head` SHA back. Success: [`Outcome::WorktreeCreated`].
+    CreateWorktree { branch: String, base: String },
     /// Remove the worktree at `path` (as previously reported by the
     /// companion). A dirty worktree fails with
     /// [`FailureKind::DirtyWorktree`] unless `force` is set.
@@ -131,7 +146,18 @@ pub enum Outcome {
     Checkpointed { commit_sha: Sha },
     /// [`Intent::MergeWorktree`] produced a merge: `merge_sha` is the new
     /// target tip; `fast_forward` is `true` when no merge commit was created.
-    Merged { merge_sha: Sha, fast_forward: bool },
+    /// `target_checkout` is an OPTIONAL operator hint, present when the
+    /// target branch was checked out in another worktree at merge time (that
+    /// checkout is now stale relative to the advanced ref — see
+    /// [`TargetCheckoutHint`]). `#[serde(default)]` keeps frames without the
+    /// field deserialising to `None`, and a `None` hint is omitted on
+    /// serialise, so a hint-less frame is byte-identical to the prior shape.
+    Merged {
+        merge_sha: Sha,
+        fast_forward: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_checkout: Option<TargetCheckoutHint>,
+    },
     /// No-op success: the target already contained the source
     /// ([`Intent::MergeWorktree`]) or there was nothing to commit
     /// ([`Intent::CommitCheckpoint`]). `tip` is the relevant unchanged HEAD.
@@ -164,6 +190,9 @@ pub enum FailureKind {
     NotFound,
     /// The merge would leave a `must_remain_reachable` SHA unreachable.
     ReachabilityViolation,
+    /// target branch ref moved or was deleted between tip-resolve and the
+    /// CAS advance; re-run to retry against the new tip.
+    TargetMoved,
     /// The git engine reported an error not covered by a finer category.
     GitFailure,
     /// A companion-internal error (I/O, executor, bug) — not a git verdict.
@@ -223,6 +252,13 @@ mod tests {
         }
     }
 
+    fn sample_hint() -> TargetCheckoutHint {
+        TargetCheckoutHint {
+            path: "/work/repo".to_string(),
+            dirty: true,
+        }
+    }
+
     #[test]
     fn scalar_types_roundtrip() {
         roundtrip(&RequestId(0));
@@ -235,14 +271,25 @@ mod tests {
             dirty: true,
             ..sample_snapshot()
         });
+        roundtrip(&sample_hint());
     }
 
     #[test]
     fn every_intent_variant_roundtrips() {
         let intents = vec![
+            // `base` is any committish, resolved companion-side: a branch
+            // name, a relative rev, or a full SHA all ride the wire verbatim.
             Intent::CreateWorktree {
                 branch: "sprint/serene-1".to_string(),
-                base: sha("0123abcd"),
+                base: "main".to_string(),
+            },
+            Intent::CreateWorktree {
+                branch: "sprint/serene-2".to_string(),
+                base: "HEAD~2".to_string(),
+            },
+            Intent::CreateWorktree {
+                branch: "sprint/serene-3".to_string(),
+                base: "0123abcd".to_string(),
             },
             Intent::RemoveWorktree {
                 path: "/work/repo/.worktrees/sprint-1".to_string(),
@@ -280,6 +327,12 @@ mod tests {
             Outcome::Merged {
                 merge_sha: sha("feedc0de"),
                 fast_forward: false,
+                target_checkout: None,
+            },
+            Outcome::Merged {
+                merge_sha: sha("feedc0de"),
+                fast_forward: true,
+                target_checkout: Some(sample_hint()),
             },
             Outcome::AlreadyUpToDate {
                 tip: sha("0123abcd"),
@@ -308,6 +361,7 @@ mod tests {
             FailureKind::BranchInUse,
             FailureKind::NotFound,
             FailureKind::ReachabilityViolation,
+            FailureKind::TargetMoved,
             FailureKind::GitFailure,
             FailureKind::Internal,
         ];
@@ -322,6 +376,23 @@ mod tests {
                 },
             });
         }
+    }
+
+    /// Back-compat guarantee for [`Outcome::Merged`]'s `#[serde(default)]`
+    /// `target_checkout`: a frame predating the hint — the field ABSENT, not
+    /// `null` — still deserialises, with the hint as `None`.
+    #[test]
+    fn merged_without_target_checkout_deserialises_to_none() {
+        let legacy = r#"{"type":"merged","merge_sha":"feedc0de","fast_forward":true}"#;
+        let outcome: Outcome = serde_json::from_str(legacy).expect("legacy frame deserialises");
+        assert_eq!(
+            outcome,
+            Outcome::Merged {
+                merge_sha: sha("feedc0de"),
+                fast_forward: true,
+                target_checkout: None,
+            }
+        );
     }
 
     #[test]
@@ -378,11 +449,14 @@ mod tests {
             hello
         );
 
+        // A hint-less Merged frame: `skip_serializing_if` keeps these bytes
+        // IDENTICAL to the pre-target_checkout wire shape.
         let outcome = CompanionToServer::Outcome {
             id: RequestId(7),
             outcome: Outcome::Merged {
                 merge_sha: sha("feedc0de"),
                 fast_forward: false,
+                target_checkout: None,
             },
         };
         let pinned_outcome = r#"{"type":"outcome","id":7,"outcome":{"type":"merged","merge_sha":"feedc0de","fast_forward":false}}"#;
@@ -390,6 +464,25 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<CompanionToServer>(pinned_outcome).unwrap(),
             outcome
+        );
+
+        // A Merged frame carrying the operator hint.
+        let outcome_with_hint = CompanionToServer::Outcome {
+            id: RequestId(8),
+            outcome: Outcome::Merged {
+                merge_sha: sha("feedc0de"),
+                fast_forward: false,
+                target_checkout: Some(sample_hint()),
+            },
+        };
+        let pinned_with_hint = r#"{"type":"outcome","id":8,"outcome":{"type":"merged","merge_sha":"feedc0de","fast_forward":false,"target_checkout":{"path":"/work/repo","dirty":true}}}"#;
+        assert_eq!(
+            serde_json::to_string(&outcome_with_hint).unwrap(),
+            pinned_with_hint
+        );
+        assert_eq!(
+            serde_json::from_str::<CompanionToServer>(pinned_with_hint).unwrap(),
+            outcome_with_hint
         );
     }
 }

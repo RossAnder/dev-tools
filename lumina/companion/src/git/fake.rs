@@ -34,6 +34,14 @@ pub enum FakeCall {
         branch: String,
         path: PathBuf,
     },
+    AttachWorktreeDetached {
+        path: PathBuf,
+        committish: String,
+    },
+    DetachWorktree {
+        worktree: PathBuf,
+        committish: String,
+    },
     RemoveWorktree {
         path: PathBuf,
         force: bool,
@@ -45,8 +53,13 @@ pub enum FakeCall {
     Merge {
         worktree: PathBuf,
         source: String,
-        target: String,
         no_ff: bool,
+    },
+    UpdateBranchRef {
+        branch: String,
+        new: Sha,
+        expected_old: Sha,
+        reflog_msg: String,
     },
     AbortMerge {
         worktree: PathBuf,
@@ -61,6 +74,12 @@ pub enum FakeCall {
     },
     CommitExists {
         sha: Sha,
+    },
+    ResolveBranchTip {
+        branch: String,
+    },
+    ResolveCommittish {
+        committish: String,
     },
     WorktreeStates,
     HeadOf {
@@ -80,13 +99,18 @@ pub struct FakeGitBackend {
     calls: Mutex<Vec<FakeCall>>,
     create_worktree: Mutex<VecDeque<Result<WorktreeState, GitError>>>,
     attach_worktree: Mutex<VecDeque<Result<Sha, GitError>>>,
+    attach_worktree_detached: Mutex<VecDeque<Result<Sha, GitError>>>,
+    detach_worktree: Mutex<VecDeque<Result<Sha, GitError>>>,
     remove_worktree: Mutex<VecDeque<Result<(), GitError>>>,
     commit_all: Mutex<VecDeque<Result<Option<Sha>, GitError>>>,
     merge: Mutex<VecDeque<Result<MergeResult, GitError>>>,
+    update_branch_ref: Mutex<VecDeque<Result<(), GitError>>>,
     abort_merge: Mutex<VecDeque<Result<(), GitError>>>,
     resolve: Mutex<VecDeque<Result<ResolveOutcome, GitError>>>,
     is_ancestor: Mutex<VecDeque<Result<bool, GitError>>>,
     commit_exists: Mutex<VecDeque<Result<bool, GitError>>>,
+    resolve_branch_tip: Mutex<VecDeque<Result<Sha, GitError>>>,
+    resolve_committish: Mutex<VecDeque<Result<Sha, GitError>>>,
     worktree_states: Mutex<VecDeque<Result<Vec<WorktreeState>, GitError>>>,
     head_of: Mutex<VecDeque<Result<Sha, GitError>>>,
     reset_hard: Mutex<VecDeque<Result<(), GitError>>>,
@@ -132,6 +156,14 @@ impl FakeGitBackend {
         self.attach_worktree.lock().unwrap().push_back(r);
     }
 
+    pub fn push_attach_worktree_detached(&self, r: Result<Sha, GitError>) {
+        self.attach_worktree_detached.lock().unwrap().push_back(r);
+    }
+
+    pub fn push_detach_worktree(&self, r: Result<Sha, GitError>) {
+        self.detach_worktree.lock().unwrap().push_back(r);
+    }
+
     pub fn push_remove_worktree(&self, r: Result<(), GitError>) {
         self.remove_worktree.lock().unwrap().push_back(r);
     }
@@ -142,6 +174,10 @@ impl FakeGitBackend {
 
     pub fn push_merge(&self, r: Result<MergeResult, GitError>) {
         self.merge.lock().unwrap().push_back(r);
+    }
+
+    pub fn push_update_branch_ref(&self, r: Result<(), GitError>) {
+        self.update_branch_ref.lock().unwrap().push_back(r);
     }
 
     pub fn push_abort_merge(&self, r: Result<(), GitError>) {
@@ -158,6 +194,14 @@ impl FakeGitBackend {
 
     pub fn push_commit_exists(&self, r: Result<bool, GitError>) {
         self.commit_exists.lock().unwrap().push_back(r);
+    }
+
+    pub fn push_resolve_branch_tip(&self, r: Result<Sha, GitError>) {
+        self.resolve_branch_tip.lock().unwrap().push_back(r);
+    }
+
+    pub fn push_resolve_committish(&self, r: Result<Sha, GitError>) {
+        self.resolve_committish.lock().unwrap().push_back(r);
     }
 
     pub fn push_worktree_states(&self, r: Result<Vec<WorktreeState>, GitError>) {
@@ -197,6 +241,26 @@ impl GitBackend for FakeGitBackend {
         pop(&self.attach_worktree, "attach_worktree")
     }
 
+    async fn attach_worktree_detached(
+        &self,
+        path: &Path,
+        committish: &str,
+    ) -> Result<Sha, GitError> {
+        self.record(FakeCall::AttachWorktreeDetached {
+            path: path.to_path_buf(),
+            committish: committish.to_owned(),
+        });
+        pop(&self.attach_worktree_detached, "attach_worktree_detached")
+    }
+
+    async fn detach_worktree(&self, worktree: &Path, committish: &str) -> Result<Sha, GitError> {
+        self.record(FakeCall::DetachWorktree {
+            worktree: worktree.to_path_buf(),
+            committish: committish.to_owned(),
+        });
+        pop(&self.detach_worktree, "detach_worktree")
+    }
+
     async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), GitError> {
         self.record(FakeCall::RemoveWorktree {
             path: path.to_path_buf(),
@@ -217,16 +281,30 @@ impl GitBackend for FakeGitBackend {
         &self,
         worktree: &Path,
         source: &str,
-        target: &str,
         no_ff: bool,
     ) -> Result<MergeResult, GitError> {
         self.record(FakeCall::Merge {
             worktree: worktree.to_path_buf(),
             source: source.to_owned(),
-            target: target.to_owned(),
             no_ff,
         });
         pop(&self.merge, "merge")
+    }
+
+    async fn update_branch_ref(
+        &self,
+        branch: &str,
+        new: &Sha,
+        expected_old: &Sha,
+        reflog_msg: &str,
+    ) -> Result<(), GitError> {
+        self.record(FakeCall::UpdateBranchRef {
+            branch: branch.to_owned(),
+            new: new.clone(),
+            expected_old: expected_old.clone(),
+            reflog_msg: reflog_msg.to_owned(),
+        });
+        pop(&self.update_branch_ref, "update_branch_ref")
     }
 
     async fn abort_merge(&self, worktree: &Path) -> Result<(), GitError> {
@@ -255,6 +333,20 @@ impl GitBackend for FakeGitBackend {
     async fn commit_exists(&self, sha: &Sha) -> Result<bool, GitError> {
         self.record(FakeCall::CommitExists { sha: sha.clone() });
         pop(&self.commit_exists, "commit_exists")
+    }
+
+    async fn resolve_branch_tip(&self, branch: &str) -> Result<Sha, GitError> {
+        self.record(FakeCall::ResolveBranchTip {
+            branch: branch.to_owned(),
+        });
+        pop(&self.resolve_branch_tip, "resolve_branch_tip")
+    }
+
+    async fn resolve_committish(&self, committish: &str) -> Result<Sha, GitError> {
+        self.record(FakeCall::ResolveCommittish {
+            committish: committish.to_owned(),
+        });
+        pop(&self.resolve_committish, "resolve_committish")
     }
 
     async fn worktree_states(&self) -> Result<Vec<WorktreeState>, GitError> {
@@ -306,12 +398,17 @@ mod tests {
             WorktreeStatus::Clean,
         )));
         fake.push_attach_worktree(Ok(Sha::new("base-1")));
+        fake.push_attach_worktree_detached(Ok(Sha::new("tip-0")));
+        fake.push_detach_worktree(Ok(Sha::new("tip-0")));
         fake.push_commit_all(Ok(Some(Sha::new("commit-1"))));
         fake.push_merge(Ok(MergeResult::Merged {
             merge_sha: Sha::new("merge-1"),
         }));
+        fake.push_update_branch_ref(Ok(()));
         fake.push_is_ancestor(Ok(true));
         fake.push_commit_exists(Ok(true));
+        fake.push_resolve_branch_tip(Ok(Sha::new("tip-0")));
+        fake.push_resolve_committish(Ok(Sha::new("base-1")));
         fake.push_worktree_states(Ok(vec![wt_state(
             "/repo",
             Some("main"),
@@ -340,15 +437,38 @@ mod tests {
             Sha::new("base-1")
         );
         assert_eq!(
+            backend
+                .attach_worktree_detached(Path::new("/wt/integration-main"), "tip-0")
+                .await
+                .unwrap(),
+            Sha::new("tip-0")
+        );
+        assert_eq!(
+            backend
+                .detach_worktree(Path::new("/wt/integration-main"), "tip-0")
+                .await
+                .unwrap(),
+            Sha::new("tip-0")
+        );
+        assert_eq!(
             backend.commit_all(wt, "checkpoint").await.unwrap(),
             Some(Sha::new("commit-1"))
         );
         assert_eq!(
-            backend.merge(wt, "sprint-1", "main", true).await.unwrap(),
+            backend.merge(wt, "sprint-1", true).await.unwrap(),
             MergeResult::Merged {
                 merge_sha: Sha::new("merge-1")
             }
         );
+        backend
+            .update_branch_ref(
+                "main",
+                &Sha::new("merge-1"),
+                &Sha::new("tip-0"),
+                "lumina-companion: merge sprint-1",
+            )
+            .await
+            .unwrap();
         assert!(
             backend
                 .is_ancestor(&Sha::new("commit-1"), &Sha::new("merge-1"))
@@ -356,6 +476,14 @@ mod tests {
                 .unwrap()
         );
         assert!(backend.commit_exists(&Sha::new("merge-1")).await.unwrap());
+        assert_eq!(
+            backend.resolve_branch_tip("main").await.unwrap(),
+            Sha::new("tip-0")
+        );
+        assert_eq!(
+            backend.resolve_committish("main~1").await.unwrap(),
+            Sha::new("base-1")
+        );
         assert_eq!(backend.worktree_states().await.unwrap().len(), 1);
         assert_eq!(backend.head_of(wt).await.unwrap(), Sha::new("merge-1"));
         assert_eq!(
@@ -380,11 +508,11 @@ mod tests {
         let backend: Box<dyn GitBackend> = Box::new(fake);
         let wt = Path::new("/wt");
         assert_eq!(
-            backend.merge(wt, "feature", "main", false).await.unwrap(),
+            backend.merge(wt, "feature", false).await.unwrap(),
             MergeResult::AlreadyUpToDate
         );
         assert_eq!(
-            backend.merge(wt, "feature", "main", false).await.unwrap(),
+            backend.merge(wt, "feature", false).await.unwrap(),
             MergeResult::Conflict {
                 paths: vec!["src/a.rs".to_owned()]
             }

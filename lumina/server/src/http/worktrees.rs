@@ -26,18 +26,31 @@
 //!     (EXACTLY ONE of `?task_id=` / `?commit_sha=` / `?story_id=` → the typed
 //!     `TaskCommitQuery`; zero or >1 → 422 `Validation`).
 //!
-//! Plus the ONE route that goes beyond record-only (ADR-0006 Step 1b):
+//! Plus the TWO routes that go beyond record-only (the execute→record pair):
 //!   * `POST  /worktrees/{id}/execute-merge`    — the HTTP mirror of the
-//!     `execute_worktree_merge` MCP tool (body `{target_branch?, no_ff?}`,
-//!     `no_ff` defaulting TRUE). Both entry points drive the SAME shared
-//!     pipeline, [`crate::mcp::execute_worktree_merge_flow`] (pre-flight →
-//!     lease → companion dispatch → record/no-record) — precedent for the
-//!     http→mcp import: `http::structured_patches`. Pre-flight violations are
-//!     422; companion transport failures / terminal `Failed` outcomes map to a
-//!     502 `{"error":{"kind":"companion",...}}` envelope HERE (no new core
+//!     `execute_worktree_merge` MCP tool (ADR-0006 Step 1b; body
+//!     `{target_branch?, no_ff?}`, `no_ff` defaulting TRUE). Both entry points
+//!     drive the SAME shared pipeline,
+//!     [`crate::mcp::execute_worktree_merge_flow`] (pre-flight → lease →
+//!     companion dispatch → record/no-record) — precedent for the http→mcp
+//!     import: `http::structured_patches`. Pre-flight violations are 422;
+//!     companion transport failures / terminal `Failed` outcomes map to a 502
+//!     `{"error":{"kind":"companion",...}}` envelope HERE (no new core
 //!     `AppError` variant); a Conflicted outcome is a 200 SUCCESS payload
 //!     (`{outcome:"conflicted", paths, recorded:false}`) for the caller to
-//!     surface as an open question / finding.
+//!     surface as an open question / finding. A Merged payload may carry the
+//!     `target_checkout` operator hint + human `hint` remedy string (the
+//!     target branch was checked out elsewhere — stale checkout; remedy
+//!     `git reset --keep <merge_sha>`), both omitted when absent.
+//!   * `POST  /sprints/{sprint_id}/worktree/execute` — the HTTP mirror of the
+//!     `execute_worktree_create` MCP tool (detached-integration ref-CAS plan,
+//!     wave 2; body `{branch, base_ref}`, both REQUIRED — `base_ref` is any
+//!     committish, companion-resolved). Drives
+//!     [`crate::mcp::execute_worktree_create_flow`] (pre-flight → companion
+//!     dispatch → record via `repo::create_worktree` with the ground-truth
+//!     path) and returns 200 + `{worktree_id, path, head}`; the same
+//!     404/422/502 mapping as the merge mirror applies (shared via
+//!     [`flow_error_response`]).
 //!
 //! Path shapes follow the sibling conventions (mirroring `execution.rs`): the
 //! worktree create hangs off `/sprints/{sprint_id}/…`; the task-scoped checkpoint
@@ -54,7 +67,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::mcp::{MergeFlowError, execute_worktree_merge_flow};
+use crate::mcp::{MergeFlowError, execute_worktree_create_flow, execute_worktree_merge_flow};
 use lumina_core::domain::{NewWorktree, SprintStatus, TaskCommitQuery, Worktree};
 use lumina_core::error::AppError;
 use lumina_core::repo;
@@ -111,6 +124,19 @@ struct ExecuteMergeBody {
     pub no_ff: bool,
 }
 
+/// Body for `POST /sprints/{sprint_id}/worktree/execute`. Mirrors the MCP
+/// `execute_worktree_create` params minus `sprint_id` (which arrives on the
+/// path). BOTH fields are REQUIRED (no `serde(default)`): an absent field is a
+/// 422 at the deserialise boundary, matching the MCP tool. `base_ref` is any
+/// COMMITTISH string — the companion resolves it.
+#[derive(Debug, Deserialize)]
+struct ExecuteCreateBody {
+    /// The NEW branch the worktree is created on.
+    pub branch: String,
+    /// The committish the new branch starts at (companion-resolved).
+    pub base_ref: String,
+}
+
 /// Body for `PATCH /work-items/{task_id}/checkpoint`. Mirrors the agent-facing MCP
 /// `set_task_checkpoint(on: bool)` contract — `on` is the boolean checkpoint flag,
 /// `true` marks a checkpoint, `false` clears it. The repo setter kind-gates to
@@ -165,6 +191,10 @@ struct ListCommitsQuery {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/sprints/{sprint_id}/worktree", post(create_worktree_handler))
+        .route(
+            "/sprints/{sprint_id}/worktree/execute",
+            post(execute_worktree_create_handler),
+        )
         .route("/worktrees/{id}", get(get_worktree_handler))
         .route("/worktrees", get(list_worktrees_handler))
         .route("/worktrees/{id}/merge", post(record_worktree_merge_handler))
@@ -282,12 +312,51 @@ async fn execute_worktree_merge_handler(
         .await
     {
         Ok(value) => Json(value).into_response(),
+        Err(err) => flow_error_response("merge", err),
+    }
+}
+
+/// `POST /sprints/{sprint_id}/worktree/execute` — EXECUTE a worktree creation
+/// via the connected git companion (detached-integration ref-CAS plan, wave 2),
+/// the create-side sibling of `/worktrees/{id}/execute-merge`. Delegates to the
+/// SAME shared pipeline the MCP tool drives
+/// ([`execute_worktree_create_flow`]): pre-flight (sprint exists with a
+/// non-terminal status, no live worktree already owned, companion connected +
+/// repo_root guard, non-empty `branch`/`base_ref` — violations 404/422) →
+/// coarse `CreateWorktree` dispatch (the companion resolves the committish
+/// `base_ref`) → record via `repo::create_worktree` with the GROUND-TRUTH
+/// path (a migration-0018 duplicate live branch is 422). Returns 200 +
+/// `{worktree_id, path, head}`; companion transport failures / terminal
+/// `Failed` outcomes map to the shared 502 companion envelope
+/// ([`flow_error_response`]).
+async fn execute_worktree_create_handler(
+    State(state): State<AppState>,
+    Path(sprint_id): Path<String>,
+    Json(body): Json<ExecuteCreateBody>,
+) -> Response {
+    tracing::debug!(sprint_id = %sprint_id, "http: POST /sprints/{{sprint_id}}/worktree/execute");
+    match execute_worktree_create_flow(&state, &sprint_id, &body.branch, &body.base_ref).await {
+        Ok(value) => Json(value).into_response(),
+        Err(err) => flow_error_response("worktree create", err),
+    }
+}
+
+/// Map a [`MergeFlowError`] from either execute flow into the HTTP response
+/// currency — shared by the merge and create handlers. `App` errors take the
+/// ordinary typed envelope (NotFound → 404, Validation → 422, …); companion
+/// transport failures and terminal `Failed` outcomes map to a 502 Bad Gateway
+/// with the `{"error":{"kind":"companion",...}}` envelope (the handler-layer
+/// mapping the plan prescribes instead of a new core `AppError` variant). `op`
+/// labels which flow failed (`"merge"` / `"worktree create"`) so the terminal
+/// message keeps its operation context.
+fn flow_error_response(op: &str, err: MergeFlowError) -> Response {
+    match err {
         // Pre-flight / record-write failures: the ordinary typed AppError
         // envelope (NotFound → 404, Validation → 422, …).
-        Err(MergeFlowError::App(e)) => e.into_response(),
+        MergeFlowError::App(e) => e.into_response(),
         // Companion transport / terminal git failures: 502 Bad Gateway with the
         // error-envelope shape the rest of /api uses (kind = "companion").
-        Err(MergeFlowError::Companion(e)) => (
+        MergeFlowError::Companion(e) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({
                 "error": {
@@ -297,12 +366,12 @@ async fn execute_worktree_merge_handler(
             })),
         )
             .into_response(),
-        Err(MergeFlowError::Failed { kind, message }) => (
+        MergeFlowError::Failed { kind, message } => (
             StatusCode::BAD_GATEWAY,
             Json(json!({
                 "error": {
                     "kind": "companion",
-                    "message": format!("companion merge failed ({kind:?}): {message}"),
+                    "message": format!("companion {op} failed ({kind:?}): {message}"),
                 }
             })),
         )
@@ -601,6 +670,60 @@ mod tests {
                     .uri(format!("/api/worktrees/{wt}/execute-merge"))
                     .header("content-type", "application/json")
                     .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "validation");
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .expect("message string")
+                .contains("companion"),
+            "the 422 names the missing companion: {body}"
+        );
+    }
+
+    /// `POST /api/sprints/{sid}/worktree/execute` pre-flight over HTTP: a
+    /// missing sprint is 404; on a live ('draft' = non-terminal) sprint with
+    /// NO companion connected the flow is a 422 pre-flight validation (the
+    /// execution plane is unavailable) — nothing dispatched, nothing recorded.
+    /// A non-404 on the second call also proves the route registration landed.
+    #[tokio::test]
+    async fn execute_create_preflight_http_is_404_then_422() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint_id = seed_sprint(&pool).await;
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
+        let router = build_router(state);
+
+        let body_json = serde_json::json!({ "branch": "sprint/1", "base_ref": "main" });
+
+        // (a) Missing sprint → pre-flight (1) fires → 404 not_found envelope.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sprints/no-such-sprint/worktree/execute")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        // (b) Live sprint, NO companion connected → pre-flight (3) fires →
+        // 422 validation (the AppState above carries an empty registry).
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/sprints/{sprint_id}/worktree/execute"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body_json.to_string()))
                     .unwrap(),
             )
             .await

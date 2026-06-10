@@ -398,6 +398,70 @@ impl GitBackend for ShellGit {
         self.rev_parse_head(path).await
     }
 
+    async fn attach_worktree_detached(
+        &self,
+        path: &Path,
+        committish: &str,
+    ) -> Result<Sha, GitError> {
+        // `--detach`: a branch-less checkout, so the "already checked out
+        // elsewhere" refusal can never trigger. `worktree add` stays atomic.
+        let mut cmd = self.base_command(None);
+        cmd.args(["worktree", "add", "--detach"])
+            .arg(path)
+            .arg(committish);
+        let out = cmd.output().await?;
+        if !out.status.success() {
+            // C-locale messages:
+            //   "'…' already exists" (occupied path — e.g. an on-disk but
+            //     UNREGISTERED leftover dir)                  -> Engine
+            //   "invalid reference: …" / "not a valid object
+            //     name" (unresolvable committish)             -> NotFound
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+            let lower = stderr.to_lowercase();
+            return Err(
+                if lower.contains("invalid reference") || lower.contains("not a valid object name")
+                {
+                    GitError::NotFound(format!("attach_worktree_detached: {stderr}"))
+                } else {
+                    // Occupied paths included: under the choreography the
+                    // managed integration dir existing on disk WITHOUT a
+                    // worktree registration is companion-internal breakage,
+                    // not a user-fixable state.
+                    engine("attach_worktree_detached", &out)
+                },
+            );
+        }
+        self.rev_parse_head(path).await
+    }
+
+    async fn detach_worktree(&self, worktree: &Path, committish: &str) -> Result<Sha, GitError> {
+        // Fails safe on dirty state (git refuses rather than clobbers) and
+        // never moves any branch ref — the legacy on-branch integration
+        // worktree migrates to detached without the branch budging.
+        let mut cmd = self.base_command(Some(worktree));
+        cmd.args(["checkout", "--detach", committish]);
+        let out = cmd.output().await?;
+        if !out.status.success() {
+            // C-locale messages:
+            //   "…would be overwritten by checkout" (dirty)   -> State
+            //   "invalid reference: …" / "did not match any
+            //     file(s) known to git" (unresolvable)        -> NotFound
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+            let lower = stderr.to_lowercase();
+            return Err(if lower.contains("would be overwritten") {
+                GitError::State(format!("detach_worktree: {stderr}"))
+            } else if lower.contains("invalid reference")
+                || lower.contains("did not match any file")
+                || lower.contains("not a valid object name")
+            {
+                GitError::NotFound(format!("detach_worktree: {stderr}"))
+            } else {
+                engine("detach_worktree", &out)
+            });
+        }
+        self.rev_parse_head(worktree).await
+    }
+
     async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), GitError> {
         let mut cmd = self.base_command(None);
         cmd.args(["worktree", "remove"]);
@@ -445,25 +509,14 @@ impl GitBackend for ShellGit {
         &self,
         worktree: &Path,
         source: &str,
-        target: &str,
         no_ff: bool,
     ) -> Result<MergeResult, GitError> {
-        // Contract: the merge can never land on the wrong branch.
-        match self.checked_out_branch(worktree).await? {
-            Some(b) if b == target => {}
-            Some(b) => {
-                return Err(GitError::State(format!(
-                    "merge: worktree {} has '{b}' checked out, not target '{target}'",
-                    worktree.display()
-                )));
-            }
-            None => {
-                return Err(GitError::State(format!(
-                    "merge: worktree {} is on a detached HEAD, not target '{target}'",
-                    worktree.display()
-                )));
-            }
-        }
+        // No checked-out-branch guard here any more: under the
+        // detached-integration choreography the worktree is a DETACHED
+        // checkout of the target tip, the merge lands on HEAD, and the
+        // EXECUTOR owns the "HEAD == expected target tip" sanity check
+        // before calling in.
+        //
         // Resolve the source tip up front: it is both the NotFound pre-check
         // and the fast-forward discriminator below.
         let Some(src) = self.resolve_commit(worktree, source).await? else {
@@ -507,6 +560,52 @@ impl GitBackend for ShellGit {
             }
         }
         Err(engine("merge", &out))
+    }
+
+    async fn update_branch_ref(
+        &self,
+        branch: &str,
+        new: &Sha,
+        expected_old: &Sha,
+        reflog_msg: &str,
+    ) -> Result<(), GitError> {
+        // 3-arg update-ref: an atomic verify-and-swap under the ref lock —
+        // no TOCTOU window. It deliberately does NOT carry porcelain's
+        // checked-out-branch guard, which is exactly what lets the companion
+        // advance a branch checked out in the operator's primary checkout.
+        // Identity is stamped because the reflog entry records a committer.
+        let refname = format!("refs/heads/{branch}");
+        let mut cmd = self.base_command(None);
+        with_identity(&mut cmd);
+        cmd.args([
+            "update-ref",
+            "-m",
+            reflog_msg,
+            &refname,
+            new.as_str(),
+            expected_old.as_str(),
+        ]);
+        let out = cmd.output().await?;
+        if out.status.success() {
+            return Ok(());
+        }
+        // C-locale CAS-lost shapes (LC_ALL=C pinned in base_command, so the
+        // string-match is stable):
+        //   "cannot lock ref '…': is at <actual> but expected <old>"
+        //     (the ref moved underneath us)
+        //   "cannot lock ref '…': unable to resolve reference '…'"
+        //     (the ref was deleted)
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        let lower = stderr.to_lowercase();
+        Err(
+            if (lower.contains("is at") && lower.contains("but expected"))
+                || lower.contains("unable to resolve")
+            {
+                GitError::RefCasLost(format!("update_branch_ref: {stderr}"))
+            } else {
+                engine("update_branch_ref", &out)
+            },
+        )
     }
 
     async fn abort_merge(&self, worktree: &Path) -> Result<(), GitError> {
@@ -583,6 +682,40 @@ impl GitBackend for ShellGit {
 
     async fn commit_exists(&self, sha: &Sha) -> Result<bool, GitError> {
         self.commit_present(sha).await
+    }
+
+    async fn resolve_branch_tip(&self, branch: &str) -> Result<Sha, GitError> {
+        // Fully-qualified `refs/heads/` so a tag or remote-tracking ref of
+        // the same name can never satisfy the lookup; `^{commit}` peels to
+        // the commit object. `-q --verify` exits 1 quietly when the branch
+        // does not exist.
+        let spec = format!("refs/heads/{branch}^{{commit}}");
+        let mut cmd = self.base_command(None);
+        cmd.args(["rev-parse", "-q", "--verify", &spec]);
+        let out = cmd.output().await?;
+        if out.status.success() {
+            Ok(Sha::new(
+                String::from_utf8_lossy(&out.stdout).trim().to_owned(),
+            ))
+        } else if out.status.code() == Some(1) {
+            Err(GitError::NotFound(format!(
+                "resolve_branch_tip: branch '{branch}' does not exist"
+            )))
+        } else {
+            Err(engine("resolve_branch_tip", &out))
+        }
+    }
+
+    async fn resolve_committish(&self, committish: &str) -> Result<Sha, GitError> {
+        // Reuses the private rev-parse helper against the repo root; the
+        // `^{commit}` peel means a full sha resolves fine and a non-commit
+        // object cannot false-positive.
+        match self.resolve_commit(&self.repo_root, committish).await? {
+            Some(sha) => Ok(sha),
+            None => Err(GitError::NotFound(format!(
+                "resolve_committish: '{committish}' does not name a commit"
+            ))),
+        }
     }
 
     async fn worktree_states(&self) -> Result<Vec<WorktreeState>, GitError> {

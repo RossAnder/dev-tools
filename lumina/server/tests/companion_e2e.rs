@@ -25,10 +25,13 @@
 //!
 //!   * the feature branch lives in a LINKED worktree sibling to the repo, with
 //!     its commits made by test-side git plumbing;
-//!   * the PRIMARY checkout is DETACHED before a merge scenario starts — the
-//!     executor merges inside a dedicated integration worktree it attaches to
-//!     the EXISTING target branch, and git refuses to attach a branch that is
-//!     checked out elsewhere (the primary sitting on `main` would block it);
+//!   * the PRIMARY checkout STAYS on the target branch (`main`) throughout —
+//!     the executor merges inside a DETACHED integration worktree and advances
+//!     the branch ref via the post-merge compare-and-swap, so the operator's
+//!     checkout never blocks a merge. The merge scenario asserts this
+//!     REGRESSION directly (the old attach-to-target choreography failed here
+//!     with `Failed{BranchInUse}`) plus the resulting stale-checkout operator
+//!     hint (`target_checkout` + the `git reset --keep` remedy string);
 //!   * NO repo-link `local_path` is seeded, BY CHOICE: the execute-merge
 //!     pre-flight's repo-root split-brain guard is SKIPPED when the project's
 //!     primary repo-link `local_path` is unset, which keeps the temp-repo root
@@ -153,13 +156,6 @@ impl TestRepo {
         git_in(&self.root, &["worktree", "add", "-b", "feature", &wt_str, "main"]).await;
         wt
     }
-
-    /// Detach the PRIMARY checkout's HEAD so `main` is checked out NOWHERE —
-    /// the executor's integration worktree can then attach the target branch
-    /// (git refuses to check a branch out twice).
-    async fn detach_primary(&self) {
-        git_in(&self.root, &["checkout", "--detach"]).await;
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -226,21 +222,21 @@ impl Stack {
     }
 }
 
-/// `POST /api/worktrees/{id}/execute-merge` with an empty body (`no_ff`
-/// defaults true, target defaults to the recorded `base_ref`), driven via
-/// `oneshot` on a clone of the live router. Returns (status, JSON body).
-async fn execute_merge(
+/// POST `uri` with a JSON `body`, driven via `oneshot` on a clone of the live
+/// router. Returns (status, JSON body).
+async fn post_json(
     router: &axum::Router,
-    worktree_id: &str,
+    uri: &str,
+    body: serde_json::Value,
 ) -> (StatusCode, serde_json::Value) {
     let resp = router
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/worktrees/{worktree_id}/execute-merge"))
+                .uri(uri)
                 .header("content-type", "application/json")
-                .body(Body::from("{}"))
+                .body(Body::from(body.to_string()))
                 .unwrap(),
         )
         .await
@@ -251,6 +247,36 @@ async fn execute_merge(
         .expect("read body");
     let body = serde_json::from_slice(&bytes).expect("parse json body");
     (status, body)
+}
+
+/// `POST /api/worktrees/{id}/execute-merge` with an empty body (`no_ff`
+/// defaults true, target defaults to the recorded `base_ref`).
+async fn execute_merge(
+    router: &axum::Router,
+    worktree_id: &str,
+) -> (StatusCode, serde_json::Value) {
+    post_json(
+        router,
+        &format!("/api/worktrees/{worktree_id}/execute-merge"),
+        serde_json::json!({}),
+    )
+    .await
+}
+
+/// `POST /api/sprints/{sprint_id}/worktree/execute` — the execute-create
+/// mirror (`branch` + `base_ref` both REQUIRED by the body contract).
+async fn execute_create(
+    router: &axum::Router,
+    sprint_id: &str,
+    branch: &str,
+    base_ref: &str,
+) -> (StatusCode, serde_json::Value) {
+    post_json(
+        router,
+        &format!("/api/sprints/{sprint_id}/worktree/execute"),
+        serde_json::json!({ "branch": branch, "base_ref": base_ref }),
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -301,6 +327,17 @@ async fn seed_story_with_tasks(pool: &sqlx::SqlitePool, task_titles: &[&str]) ->
     tasks
 }
 
+/// Create one bare sprint (left at its `'draft'` default); returns its id.
+async fn seed_sprint(pool: &sqlx::SqlitePool) -> String {
+    repo::create_sprint(
+        pool,
+        &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
+    )
+    .await
+    .expect("sprint")
+    .to_string()
+}
+
 /// Create a sprint plus the worktree it owns (`branch="feature"`,
 /// `base_ref="main"`, `path` = the linked feature worktree); returns
 /// `(sprint_id, worktree_id)`. The sprint is left at its `'draft'` default.
@@ -308,13 +345,7 @@ async fn seed_sprint_with_worktree(
     pool: &sqlx::SqlitePool,
     feature_wt: &Path,
 ) -> (String, String) {
-    let sprint = repo::create_sprint(
-        pool,
-        &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
-    )
-    .await
-    .expect("sprint")
-    .to_string();
+    let sprint = seed_sprint(pool).await;
     let wt = repo::create_worktree(
         pool,
         &NewWorktree {
@@ -341,20 +372,25 @@ async fn walk_sprint_to_review(pool: &sqlx::SqlitePool, sprint_id: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 1: clean merge — outcome carries the ground-truth sha, git agrees,
-// DB records merged + owner flips to done.
+// Scenario 1: clean merge WITH the primary checkout sitting ON the target
+// branch — the detached-integration ref-CAS regression (the old attach-to-
+// target choreography failed this exact setup with `Failed{BranchInUse}`).
+// The outcome carries the ground-truth sha + the stale-checkout operator
+// hint, git agrees, DB records merged + owner flips to done, and the primary
+// WORKING TREE is untouched (ref moved, files didn't).
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn execute_merge_e2e_records_ground_truth_and_git_agrees() {
-    // Git: main@initial; feature worktree with TWO commits; primary detached.
+    // Git: main@initial; feature worktree with TWO commits. The PRIMARY
+    // checkout deliberately STAYS on `main` (the merge target) — the
+    // regression under test: this used to be the BranchInUse wall.
     let repo = TestRepo::new().await;
     let feature_wt = repo.add_feature_worktree("wt-feature").await;
     std::fs::write(feature_wt.join("feature-a.txt"), "a\n").expect("write a");
     let sha_a = commit_in(&feature_wt, "feature a").await;
     std::fs::write(feature_wt.join("feature-b.txt"), "b\n").expect("write b");
     let sha_b = commit_in(&feature_wt, "feature b").await;
-    repo.detach_primary().await;
 
     // DB: story + two tasks, sprint owning the worktree, walked to 'review'.
     let pool = connect_in_memory().await.expect("pool");
@@ -400,6 +436,45 @@ async fn execute_merge_e2e_records_ground_truth_and_git_agrees() {
     assert!(is_ancestor(&repo.root, &sha_a, &merge_sha).await, "sha_a reachable");
     assert!(is_ancestor(&repo.root, &sha_b, &merge_sha).await, "sha_b reachable");
 
+    // The stale-checkout operator hint: the target branch was checked out in
+    // the primary checkout when the ref advanced, so the payload carries the
+    // structured `target_checkout` field naming that checkout (clean here)
+    // plus the human remedy string.
+    let hint_path = body["target_checkout"]["path"]
+        .as_str()
+        .unwrap_or_else(|| panic!("structured target_checkout.path present: {body}"));
+    assert_eq!(
+        std::fs::canonicalize(hint_path).expect("canonicalize hint path"),
+        std::fs::canonicalize(&repo.root).expect("canonicalize repo root"),
+        "the hint names the primary checkout"
+    );
+    assert_eq!(
+        body["target_checkout"]["dirty"], false,
+        "the primary checkout was clean at the pre-merge snapshot: {body}"
+    );
+    let hint = body["hint"].as_str().expect("human hint string present");
+    assert!(
+        hint.contains("git reset --keep") && hint.contains(&merge_sha),
+        "the hint carries the `git reset --keep <merge_sha>` remedy: {hint}"
+    );
+
+    // Stale-checkout effect on disk: the REF moved, the primary WORKING TREE
+    // did not — still attached to `main`, files exactly as before the merge.
+    assert_eq!(
+        git_in(&repo.root, &["symbolic-ref", "--short", "HEAD"]).await,
+        "main",
+        "the primary checkout stayed attached to main"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.root.join("file.txt")).expect("read file.txt"),
+        "base\n",
+        "primary working-tree content untouched"
+    );
+    assert!(
+        !repo.root.join("feature-a.txt").exists() && !repo.root.join("feature-b.txt").exists(),
+        "merged files did NOT materialise in the primary working tree"
+    );
+
     // DB caught up with ground truth: audit stamped, owner 'review' → 'done'.
     let row = repo::get_worktree(&pool, &wt_id).await.expect("get_worktree");
     assert_eq!(row.merge_ref.as_deref(), Some(merge_sha.as_str()), "ground-truth sha recorded");
@@ -418,13 +493,14 @@ async fn execute_merge_e2e_records_ground_truth_and_git_agrees() {
 #[tokio::test]
 async fn execute_merge_e2e_conflict_records_nothing_and_releases_lease() {
     // Git: diverge main and feature on the SAME file so the merge conflicts.
+    // The primary checkout stays ON `main` — under the detached-integration
+    // choreography that no longer affects conflict semantics either.
     let repo = TestRepo::new().await;
     let feature_wt = repo.add_feature_worktree("wt-feature").await;
     std::fs::write(feature_wt.join("file.txt"), "feature change\n").expect("write feature side");
     commit_in(&feature_wt, "feature change").await;
     repo.write("file.txt", "main change\n");
     let main_tip = repo.commit("main change").await;
-    repo.detach_primary().await;
 
     // DB: sprint + worktree at 'review'. No tasks / recorded commits — an
     // empty must_remain_reachable set is fine, and with no sprint-bound task
@@ -480,13 +556,7 @@ async fn commit_checkpoint_e2e_inverts_into_recorded_provenance() {
     // the sprint can stay at its 'draft' default).
     let pool = connect_in_memory().await.expect("pool");
     let tasks = seed_story_with_tasks(&pool, &["T1"]).await;
-    let sprint = repo::create_sprint(
-        &pool,
-        &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
-    )
-    .await
-    .expect("sprint")
-    .to_string();
+    let sprint = seed_sprint(&pool).await;
 
     let stack = Stack::spawn(pool.clone(), &repo.root).await;
 
@@ -541,6 +611,121 @@ async fn commit_checkpoint_e2e_inverts_into_recorded_provenance() {
         Outcome::AlreadyUpToDate { tip: lumina_protocol::Sha(sha) },
         "clean-tree checkpoint reports AlreadyUpToDate with the unchanged tip"
     );
+
+    stack.shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 4: execute-create — the companion creates the worktree on disk
+// (resolving the committish base itself), the server records the GROUND-TRUTH
+// path; a duplicate live branch is refused on BOTH planes (git's BranchInUse
+// → 502 companion envelope; the migration-0018 partial UNIQUE index → 422).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn execute_create_e2e_records_ground_truth_and_rejects_duplicate_branch() {
+    let repo = TestRepo::new().await;
+    let main_tip = git_in(&repo.root, &["rev-parse", "main"]).await;
+
+    // DB: a bare sprint at its 'draft' default — non-terminal, so the create
+    // pre-flight admits it. No tasks / repo-links, so the split-brain
+    // repo-root guard resolves no project binding and is skipped.
+    let pool = connect_in_memory().await.expect("pool");
+    let sprint_a = seed_sprint(&pool).await;
+
+    let stack = Stack::spawn(pool.clone(), &repo.root).await;
+
+    // (a) Happy path: 200 + { worktree_id, path, head }.
+    let (status, body) = execute_create(&stack.router, &sprint_a, "sprint/alpha", "main").await;
+    assert_eq!(status, StatusCode::OK, "execute-create failed: {body}");
+    let worktree_id = body["worktree_id"].as_str().expect("worktree_id string").to_owned();
+    let path = body["path"].as_str().expect("path string").to_owned();
+    let head = body["head"].as_str().expect("head string").to_owned();
+
+    // Git ground truth: `head` is the companion-RESOLVED `main` tip, and the
+    // worktree sits on disk at the SANITISED companion-managed location
+    // (`sprint/alpha` → `.lumina/worktrees/sprint-alpha`), checked out on the
+    // NEW branch at that tip.
+    assert_eq!(head, main_tip, "head == git rev-parse main");
+    let wt_path = PathBuf::from(&path);
+    assert_eq!(
+        std::fs::canonicalize(&wt_path).expect("worktree exists on disk"),
+        std::fs::canonicalize(repo.root.join(".lumina").join("worktrees").join("sprint-alpha"))
+            .expect("canonicalize expected managed path"),
+        "the companion-chosen path is the sanitised managed location"
+    );
+    assert_eq!(
+        git_in(&wt_path, &["rev-parse", "HEAD"]).await,
+        main_tip,
+        "the new worktree's HEAD commit is main's tip"
+    );
+    assert_eq!(
+        git_in(&wt_path, &["symbolic-ref", "--short", "HEAD"]).await,
+        "sprint/alpha",
+        "the worktree is checked out on the NEW branch (started at the resolved base)"
+    );
+
+    // DB ground truth: the row records the companion's path + the owner link.
+    let row = repo::get_worktree(&pool, &worktree_id).await.expect("get_worktree");
+    assert_eq!(row.path, path, "the GROUND-TRUTH path is what got recorded");
+    assert_eq!(row.owning_sprint_id, sprint_a, "owned by the requesting sprint");
+    assert_eq!(row.branch.as_deref(), Some("sprint/alpha"));
+    assert_eq!(row.base_ref.as_deref(), Some("main"));
+    assert_eq!(row.effective_status, SprintStatus::Draft, "derived from the owner");
+
+    // (b) A SECOND create for a DIFFERENT sprint with the SAME branch: the
+    // EXECUTION plane refuses first — `sprint/alpha` already exists in git,
+    // so the companion reports Failed{BranchInUse} and the handler maps it to
+    // the 502 companion envelope. (The migration-0018 DB index cannot be
+    // reached on this path: git fails before any record write.)
+    let sprint_b = seed_sprint(&pool).await;
+    let (status, body) = execute_create(&stack.router, &sprint_b, "sprint/alpha", "main").await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY, "duplicate git branch is 502: {body}");
+    assert_eq!(body["error"]["kind"], "companion");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .expect("message string")
+            .contains("BranchInUse"),
+        "the envelope names the BranchInUse failure: {body}"
+    );
+
+    // (c) The migration-0018 RECORD-side guard through the SAME flow: a
+    // record-only row (no git branch behind it) already holds `sprint/gamma`,
+    // so the companion's git create SUCCEEDS but the record write hits the
+    // partial live-branch UNIQUE index → a clean 422 validation envelope.
+    let sprint_c = seed_sprint(&pool).await;
+    repo::create_worktree(
+        &pool,
+        &NewWorktree {
+            owning_sprint_id: sprint_c,
+            path: repo.wt_path("recorded-only").display().to_string(),
+            base_ref: Some("main".to_owned()),
+            branch: Some("sprint/gamma".to_owned()),
+        },
+    )
+    .await
+    .expect("record-only worktree row");
+    let sprint_d = seed_sprint(&pool).await;
+    let (status, body) = execute_create(&stack.router, &sprint_d, "sprint/gamma", "main").await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "duplicate LIVE branch record is 422: {body}"
+    );
+    assert_eq!(body["error"]["kind"], "validation");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .expect("message string")
+            .contains("already records branch"),
+        "the validation names the live-branch invariant: {body}"
+    );
+
+    // Neither failed create recorded anything: exactly TWO live rows exist —
+    // sprint A's executed worktree and sprint C's record-only seed.
+    let rows = repo::list_worktrees(&pool, None).await.expect("list_worktrees");
+    assert_eq!(rows.len(), 2, "failed creates recorded nothing: {rows:?}");
 
     stack.shutdown();
 }
