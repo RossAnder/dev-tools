@@ -86,16 +86,13 @@ pub enum Intent {
     /// [`FailureKind::DirtyWorktree`] unless `force` is set.
     /// Success: [`Outcome::WorktreeRemoved`].
     RemoveWorktree { path: String, force: bool },
-    /// Commit a checkpoint in the worktree at `path` with `message`.
-    /// `stage_paths: None` stages every tracked modification; `Some` stages
-    /// exactly the named repo-relative paths. Success:
+    /// Commit a checkpoint in the worktree at `path` with `message`. A
+    /// checkpoint stages ALL modifications in the worktree, untracked files
+    /// included (commit-all semantics) — selective staging never crosses the
+    /// wire in v1; a future protocol version may reintroduce it. Success:
     /// [`Outcome::Checkpointed`]; nothing-to-commit reports
     /// [`Outcome::AlreadyUpToDate`] with the worktree's current HEAD.
-    CommitCheckpoint {
-        path: String,
-        message: String,
-        stage_paths: Option<Vec<String>>,
-    },
+    CommitCheckpoint { path: String, message: String },
     /// Merge `source_branch` into `target_branch`. Every SHA in
     /// `must_remain_reachable` must stay reachable from the target tip after
     /// the merge, else the companion refuses with
@@ -254,12 +251,6 @@ mod tests {
             Intent::CommitCheckpoint {
                 path: "/work/repo/.worktrees/sprint-1".to_string(),
                 message: "checkpoint: batch 2".to_string(),
-                stage_paths: Some(vec!["src/lib.rs".to_string()]),
-            },
-            Intent::CommitCheckpoint {
-                path: "/work/repo/.worktrees/sprint-1".to_string(),
-                message: "checkpoint: stage-all".to_string(),
-                stage_paths: None,
             },
             Intent::MergeWorktree {
                 source_branch: "sprint/serene-1".to_string(),

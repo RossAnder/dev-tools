@@ -30,6 +30,10 @@ pub enum FakeCall {
         branch: String,
         start_point: Sha,
     },
+    AttachWorktree {
+        branch: String,
+        path: PathBuf,
+    },
     RemoveWorktree {
         path: PathBuf,
         force: bool,
@@ -75,6 +79,7 @@ pub enum FakeCall {
 pub struct FakeGitBackend {
     calls: Mutex<Vec<FakeCall>>,
     create_worktree: Mutex<VecDeque<Result<WorktreeState, GitError>>>,
+    attach_worktree: Mutex<VecDeque<Result<Sha, GitError>>>,
     remove_worktree: Mutex<VecDeque<Result<(), GitError>>>,
     commit_all: Mutex<VecDeque<Result<Option<Sha>, GitError>>>,
     merge: Mutex<VecDeque<Result<MergeResult, GitError>>>,
@@ -121,6 +126,10 @@ impl FakeGitBackend {
 
     pub fn push_create_worktree(&self, r: Result<WorktreeState, GitError>) {
         self.create_worktree.lock().unwrap().push_back(r);
+    }
+
+    pub fn push_attach_worktree(&self, r: Result<Sha, GitError>) {
+        self.attach_worktree.lock().unwrap().push_back(r);
     }
 
     pub fn push_remove_worktree(&self, r: Result<(), GitError>) {
@@ -178,6 +187,14 @@ impl GitBackend for FakeGitBackend {
             start_point: start_point.clone(),
         });
         pop(&self.create_worktree, "create_worktree")
+    }
+
+    async fn attach_worktree(&self, branch: &str, path: &Path) -> Result<Sha, GitError> {
+        self.record(FakeCall::AttachWorktree {
+            branch: branch.to_owned(),
+            path: path.to_path_buf(),
+        });
+        pop(&self.attach_worktree, "attach_worktree")
     }
 
     async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), GitError> {
@@ -288,6 +305,7 @@ mod tests {
             "base-1",
             WorktreeStatus::Clean,
         )));
+        fake.push_attach_worktree(Ok(Sha::new("base-1")));
         fake.push_commit_all(Ok(Some(Sha::new("commit-1"))));
         fake.push_merge(Ok(MergeResult::Merged {
             merge_sha: Sha::new("merge-1"),
@@ -314,6 +332,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(created.branch.as_deref(), Some("sprint-1"));
+        assert_eq!(
+            backend
+                .attach_worktree("main", Path::new("/wt/integration-main"))
+                .await
+                .unwrap(),
+            Sha::new("base-1")
+        );
         assert_eq!(
             backend.commit_all(wt, "checkpoint").await.unwrap(),
             Some(Sha::new("commit-1"))

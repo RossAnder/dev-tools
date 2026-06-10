@@ -77,3 +77,8 @@ clap = { version = "4", default-features = false, features = [
 # mimalloc as the global allocator (mirrors the lumina server bin; small-alloc
 # heavy paths: JSON frame round-trips + git porcelain parsing).
 mimalloc = { version = "0.1", default-features = false }
+
+[dev-dependencies]
+# Temp real-repo fixtures for the ShellGit integration tests
+# (tests/shell_git.rs). Dev-only — the shipped binary never creates repos.
+tempfile.workspace = true

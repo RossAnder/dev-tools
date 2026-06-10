@@ -13,7 +13,11 @@
 //! ## Surface freeze
 //! The trait below is FROZEN after Task 2: ShellGit (Task 3) and the executor
 //! (Task 4) build against it in parallel next wave. Do not add, remove, or
-//! re-sign methods without coordinating both.
+//! re-sign methods without coordinating both. The surface was widened ONCE,
+//! between waves, as a coordinated change: [`GitBackend::attach_worktree`]
+//! was added so the executor can attach the integration worktree to the
+//! EXISTING target branch (ADR-0006 User Decision 1) — every pre-existing
+//! item is byte-compatible with the frozen Task-2 shape.
 //!
 //! ## Addressing model
 //! A backend instance fronts ONE repository (constructed per repo root; all
@@ -29,6 +33,8 @@ use async_trait::async_trait;
 
 pub mod fake;
 pub use fake::FakeGitBackend;
+pub mod shell;
+pub use shell::ShellGit;
 
 /// An opaque commit id. Deliberately UNVALIDATED (no hex/length check): the
 /// engine mints real values via rev-parse, and test doubles may use readable
@@ -208,6 +214,18 @@ pub trait GitBackend: Send + Sync {
         branch: &str,
         start_point: &Sha,
     ) -> Result<WorktreeState, GitError>;
+
+    /// Create a linked worktree at `path` with the EXISTING branch `branch`
+    /// checked out, returning the new worktree's HEAD (= the branch tip).
+    /// The branch must exist (`NotFound` if not); a branch already checked
+    /// out in another worktree is a `State` error (git refuses to check a
+    /// branch out twice); an occupied `path` is likewise a `State` error.
+    ///
+    /// The inter-wave widening of the frozen surface (see the module doc):
+    /// added so the executor can lazily attach the integration worktree to
+    /// the existing merge target (ADR-0006 User Decision 1) —
+    /// [`GitBackend::create_worktree`] stays new-branch-only.
+    async fn attach_worktree(&self, branch: &str, path: &Path) -> Result<Sha, GitError>;
 
     /// Remove the worktree at `path` (and prune its metadata). `force`
     /// discards uncommitted changes; without it a dirty worktree is a

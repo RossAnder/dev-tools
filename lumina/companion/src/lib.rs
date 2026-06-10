@@ -8,8 +8,9 @@
 //! `cargo tree` gate in the Step-1b plan keeps this honest.
 //!
 //! Module map: [`git`] holds the engine-neutral `GitBackend` seam (+ the
-//! `FakeGitBackend` double). The intent->outcome executor and the WS dial
-//! loop land in later tasks — deliberately NO empty stub modules for them
-//! here.
+//! `FakeGitBackend` double); [`executor`] maps one protocol `Intent` to one
+//! `Outcome` over that seam. The WS dial loop lands in Task 6 — deliberately
+//! NO empty stub module for it here.
 
+pub mod executor;
 pub mod git;

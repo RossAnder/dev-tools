@@ -36,6 +36,14 @@ path = "tests/fixtures/pty_stub.rs"
 # AppError` impl so handlers keep returning `Result<_, AppError>`.
 lumina-core = { path = "../core", features = ["axum"] }
 
+# --- control <-> execution plane wire types (ADR-0006 Step 1b) ---
+# The ONLY companion-facing dep the server takes: serde-shaped wire types
+# (Intent/Outcome envelopes). The git-executing side lives in the separate
+# `lumina-companion` bin — the server's zero-git-deps invariant stays
+# linker-enforced (`cargo tree -p lumina-server -e normal` must never show
+# git2/gix).
+lumina-protocol = { path = "../protocol" }
+
 # --- web / runtime ---
 axum = { workspace = true, features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
@@ -144,6 +152,12 @@ mimalloc = { version = "0.1", default-features = false }
 static-serve = "0.6"
 
 [dev-dependencies]
+# `test-util` enables `#[tokio::test(start_paused = true)]` (paused-clock
+# tests) — used by the companion-registry execute-timeout test so the 50ms
+# deadline elapses instantly instead of sleeping. Test builds only; the
+# library/binary tokio stays on `full`.
+tokio = { version = "1", features = ["test-util"] }
+
 # `ServiceExt::oneshot` drives the router in-process (no socket bind) for the
 # health smoke test, the downstream handler tests, and the Task 10 e2e thread.
 # (The e2e drives every layer IN-PROCESS — MCP tool call + router oneshot +

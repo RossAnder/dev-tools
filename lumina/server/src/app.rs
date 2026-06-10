@@ -54,6 +54,15 @@ pub struct AppState {
     /// [`AppState::with_ingest_permits`] so a 1-permit instance can assert the
     /// back-pressure (queue-not-reject) contract deterministically.
     pub session_ingest_sem: Arc<Semaphore>,
+    /// Companion seam (ADR-0006 Step 1b): the single-slot registry the
+    /// git-executing companion registers into via `GET /api/companion/ws`,
+    /// and through which server-side callers `execute(Intent)` coarse git
+    /// operations. Defaults to an EMPTY registry — no companion connected,
+    /// so `execute` returns `CompanionUnavailable` — mirroring how
+    /// `pty_register_tx` defaults to `None` until its wire-up runs. Unlike
+    /// that field this needs no later mutation: the WS handler registers
+    /// connections into the same shared registry at runtime.
+    pub companion: Arc<crate::companion::CompanionRegistry>,
 }
 
 /// Default number of concurrent session-transcript ingests — the
@@ -94,6 +103,7 @@ impl AppState {
             pty_transport: Arc::new(crate::pty::pty_transport::PtyTransport),
             pty_register_tx: None,
             session_ingest_sem: Arc::new(Semaphore::new(ingest_permits)),
+            companion: Arc::new(crate::companion::CompanionRegistry::new()),
         }
     }
 }
@@ -184,10 +194,20 @@ pub async fn serve() -> anyhow::Result<()> {
         .with_context(|| format!("binding listener on {addr}"))?;
     println!("lumina listening on http://{addr}");
 
-    let serve_result = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("axum server error");
+    // `into_make_service_with_connect_info` threads the peer `SocketAddr`
+    // into every request so the companion WS handler (`http::companion`) can
+    // enforce its loopback-only rule IN CODE via `ConnectInfo<SocketAddr>` —
+    // the `HOST=0.0.0.0` escape hatch above must not expose the git-execution
+    // channel. (In-process `oneshot` router tests bypass `serve` and carry no
+    // ConnectInfo; only the companion WS route extracts it, so every other
+    // route is unaffected.)
+    let serve_result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .context("axum server error");
 
     // Shutdown ordering: HTTP server has already drained above.
     //

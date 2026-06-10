@@ -15,6 +15,7 @@ use axum::Router;
 
 use crate::app::AppState;
 
+pub mod companion;
 pub mod work_items;
 pub mod repo_links;
 pub mod structured_patches;
@@ -43,6 +44,7 @@ pub mod worktrees;
 /// so paths declared inside each family module are relative to `/api`.
 pub fn router() -> Router<AppState> {
     Router::new()
+        .merge(companion::router())
         .merge(work_items::router())
         .merge(repo_links::router())
         .merge(structured_patches::router())

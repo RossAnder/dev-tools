@@ -21,6 +21,7 @@
 // modules as `lumina_core::*`. The web/server layer stays here.
 pub mod app;
 pub mod cli;
+pub mod companion;
 pub mod http;
 pub mod assets;
 pub mod mcp;
