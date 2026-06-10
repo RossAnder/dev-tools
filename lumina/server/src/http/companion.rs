@@ -148,7 +148,7 @@ async fn companion_loop(mut socket: WebSocket, registry: Arc<CompanionRegistry>)
 
     // ---- Single-slot registration (second concurrent connection refused) ----
     let (out_tx, mut out_rx) = mpsc::channel::<ServerToCompanion>(OUTBOUND_BUFFER);
-    let Some(token) = registry.register(out_tx) else {
+    let Some(token) = registry.register(out_tx, hello.repo_root.clone()) else {
         tracing::error!(
             companion_id = %hello.companion_id,
             repo_root = %hello.repo_root,

@@ -784,6 +784,97 @@ pub async fn list_task_commits(
     }
 }
 
+/// Every DISTINCT `task_commits.commit_sha` recorded against a sprint sharing
+/// this worktree (`sprints.worktree_id = $1` — the OWNER and any TARGETING
+/// follow-up sprints alike), via either join path:
+///   (i)  rows whose `sprint_id` binds them to such a sprint directly;
+///   (ii) rows whose `sprint_id` is NULL but whose `task_id` belongs to such a
+///        sprint through the `sprint_tasks` junction.
+/// `UNION` (not `UNION ALL`) dedups a sha reachable via both arms; ordered for
+/// deterministic output. The id is bound twice (`$1`/`$2`) — one per arm.
+const SELECT_WORKTREE_REACHABLE_SHAS: &str = r#"
+    SELECT tc.commit_sha AS commit_sha
+    FROM task_commits tc
+    JOIN sprints s ON s.id = tc.sprint_id
+    WHERE s.worktree_id = $1
+    UNION
+    SELECT tc.commit_sha AS commit_sha
+    FROM task_commits tc
+    JOIN sprint_tasks st ON st.task_id = tc.task_id
+    JOIN sprints s ON s.id = st.sprint_id
+    WHERE s.worktree_id = $2
+    ORDER BY commit_sha
+"#;
+
+/// List the DISTINCT commit shas recorded (via [`record_task_commits`]) against
+/// any sprint on this worktree — the `must_remain_reachable` derivation for the
+/// `execute_worktree_merge` companion intent (ADR-0006 Step 1b): every sha here
+/// must stay reachable from the merge target's tip, else the companion refuses
+/// with a `ReachabilityViolation`. The UNION covers BOTH provenance shapes
+/// (`task_commits.sprint_id` is NULLABLE): rows bound to a sprint directly, and
+/// NULL-sprint rows whose task rides the `sprint_tasks` junction of a sprint
+/// sharing this `worktree_id`. A non-existent worktree id simply yields an
+/// empty Vec (the caller's pre-flight `get_worktree` owns existence).
+/// Read-only, no transaction.
+pub async fn list_worktree_reachable_shas(
+    db: &impl DbClient,
+    worktree_id: &str,
+) -> Result<Vec<String>, AppError> {
+    crate::db::scalar_all::<String>(
+        db,
+        SELECT_WORKTREE_REACHABLE_SHAS,
+        args![worktree_id.to_owned(), worktree_id.to_owned()],
+    )
+    .await
+}
+
+/// Resolve the project a worktree's work belongs to, plus that project's
+/// PRIMARY repo-link `local_path` (migration 0014) — the inputs to the
+/// `execute_worktree_merge` pre-flight split-brain guard (the connected
+/// companion's `Hello.repo_root` must match the primary clone dir WHEN the
+/// column is set). Resolution path: owning sprint → any `sprint_tasks` task
+/// (lowest id, for determinism) → [`find_project_ancestor`] →
+/// [`list_repo_links`] primary. Returns:
+///   * `Ok(None)` — no task is bound to the owning sprint, so no project is
+///     resolvable (the guard is SKIPPED — there is nothing to compare);
+///   * `Ok(Some((project_id, local_path)))` — the resolved project and its
+///     primary link's `local_path` (`None` when the column is unset OR the
+///     project carries no primary link — the guard is likewise skipped).
+///
+/// Read-only, no transaction.
+pub async fn get_worktree_primary_repo_binding(
+    db: &impl DbClient,
+    worktree_id: &str,
+) -> Result<Option<(String, Option<String>)>, AppError> {
+    // Any task bound (via sprint_tasks) to the OWNING sprint of a live
+    // worktree. One row suffices: all of a sprint's tasks share the same
+    // project ancestor under the 0001 hierarchy triggers.
+    let task_id: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        r#"
+        SELECT st.task_id
+        FROM worktrees w
+        JOIN sprint_tasks st ON st.sprint_id = w.owning_sprint_id
+        WHERE w.id = $1 AND w.deleted_at IS NULL
+        ORDER BY st.task_id
+        LIMIT 1
+        "#,
+        args![worktree_id.to_owned()],
+    )
+    .await?;
+    let Some(task_id) = task_id else {
+        return Ok(None);
+    };
+
+    let project_id = find_project_ancestor(db, &task_id).await?;
+    let primary_local_path = list_repo_links(db, &project_id)
+        .await?
+        .into_iter()
+        .find(|l| l.is_primary == 1)
+        .and_then(|l| l.local_path);
+    Ok(Some((project_id, primary_local_path)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1152,6 +1243,119 @@ mod tests {
             matches!(res, Err(AppError::NotFound(_))),
             "an unknown sprint_id is a clean NotFound, got {res:?}"
         );
+    }
+
+    /// `list_worktree_reachable_shas` covers BOTH join paths — a `task_commits`
+    /// row with `sprint_id` set (arm i) AND one with a NULL `sprint_id` whose
+    /// task rides the `sprint_tasks` junction (arm ii) — dedups a sha reachable
+    /// via both arms, and excludes commits on tasks outside the worktree's
+    /// sprints.
+    #[tokio::test]
+    async fn reachable_shas_union_both_join_paths() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task_a = create_work_item(&pool, "task", Some(&story), "TA", None)
+            .await
+            .expect("task a")
+            .to_string();
+        let task_b = create_work_item(&pool, "task", Some(&story), "TB", None)
+            .await
+            .expect("task b")
+            .to_string();
+        let task_c = create_work_item(&pool, "task", Some(&story), "TC", None)
+            .await
+            .expect("task c")
+            .to_string();
+        let sprint = seed_sprint(&pool).await;
+        let wt = create_worktree(&pool, &new_worktree(&sprint))
+            .await
+            .expect("create_worktree")
+            .to_string();
+        // task_a + task_b ride the worktree's sprint; task_c does NOT.
+        add_tasks_to_sprint(&pool, &sprint, &[task_a.as_str(), task_b.as_str()])
+            .await
+            .expect("bind tasks");
+
+        // Arm (i): sprint_id set. (task_a is ALSO in sprint_tasks, so this sha
+        // is reachable via both arms — the UNION must yield it ONCE.)
+        record_task_commits(&pool, "sha-with-sprint", &[task_a.as_str()], Some(&sprint))
+            .await
+            .expect("record with sprint_id");
+        // Arm (ii): sprint_id NULL, task bound via the sprint_tasks junction.
+        record_task_commits(&pool, "sha-null-sprint", &[task_b.as_str()], None)
+            .await
+            .expect("record with NULL sprint_id");
+        // Excluded: NULL sprint_id AND the task is on no sprint of this worktree.
+        record_task_commits(&pool, "sha-unrelated", &[task_c.as_str()], None)
+            .await
+            .expect("record unrelated");
+
+        let shas = list_worktree_reachable_shas(&pool, &wt)
+            .await
+            .expect("reachable shas");
+        assert_eq!(
+            shas,
+            vec!["sha-null-sprint".to_owned(), "sha-with-sprint".to_owned()],
+            "both join paths covered, dual-path sha deduped, unrelated sha excluded"
+        );
+
+        // An unknown worktree yields an empty Vec (existence is the caller's
+        // pre-flight concern).
+        let none = list_worktree_reachable_shas(&pool, "no-such-worktree")
+            .await
+            .expect("empty for an unknown worktree");
+        assert!(none.is_empty());
+    }
+
+    /// `get_worktree_primary_repo_binding`: no sprint-bound task ⇒ `None` (guard
+    /// skipped); with a bound task it resolves the project ancestor and the
+    /// primary link's `local_path` (NULL until `set_repo_local_path` stamps it).
+    #[tokio::test]
+    async fn primary_repo_binding_resolves_via_sprint_task() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T1", None)
+            .await
+            .expect("task")
+            .to_string();
+        let sprint = seed_sprint(&pool).await;
+        let wt = create_worktree(&pool, &new_worktree(&sprint))
+            .await
+            .expect("create_worktree")
+            .to_string();
+
+        // No sprint_tasks row yet ⇒ no project resolvable ⇒ None.
+        let unresolved = get_worktree_primary_repo_binding(&pool, &wt)
+            .await
+            .expect("binding read");
+        assert!(unresolved.is_none(), "no bound task ⇒ no binding");
+
+        add_tasks_to_sprint(&pool, &sprint, &[task.as_str()])
+            .await
+            .expect("bind task");
+        let project = find_project_ancestor(&pool, &task).await.expect("project");
+        let link = add_repo_link(&pool, &project, "octo/repo", true)
+            .await
+            .expect("primary link")
+            .to_string();
+
+        // Primary link exists but local_path is unset ⇒ Some((project, None)).
+        let (got_project, got_path) = get_worktree_primary_repo_binding(&pool, &wt)
+            .await
+            .expect("binding read")
+            .expect("binding resolved");
+        assert_eq!(got_project, project);
+        assert!(got_path.is_none(), "local_path NULL until stamped");
+
+        // Stamp the clone dir; the binding now carries it (normalised form).
+        set_repo_local_path(&pool, &link, Some("/work/repo"))
+            .await
+            .expect("stamp local_path");
+        let (_, got_path) = get_worktree_primary_repo_binding(&pool, &wt)
+            .await
+            .expect("binding read")
+            .expect("binding resolved");
+        assert_eq!(got_path.as_deref(), Some("/work/repo"));
     }
 
     /// R19 drift-guard: the `LIST_LIMIT` const and the literal baked into the list

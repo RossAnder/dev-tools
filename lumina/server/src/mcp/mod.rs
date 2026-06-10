@@ -24,6 +24,11 @@
 //!   optional `link_to` (create-then-link: two independent txns, each its own
 //!   mutation path) and `set_story_plan`/`set_task_spec` (which build ONE
 //!   sub-object then make ONE `set_work_item_attributes` call — itself one txn).
+//!   The execute→record category (ADR-0006 Step 1b) extends the same rule
+//!   across the execution plane: `execute_worktree_merge` composes ONE existing
+//!   record mutation (`record_worktree_merge`) with a companion-executed git
+//!   intent — still no new SQL writes, with NO DB transaction held across the
+//!   companion round-trip.
 //! * Every tool maps the returned `AppError` into rmcp's tool-error type via
 //!   [`app_error_to_mcp`].
 //! * [`service`] builds a [`StreamableHttpService`] from a per-request
@@ -36,7 +41,9 @@
 //! Read tools carry `read_only_hint = true`; `delete_work_item` carries
 //! `destructive_hint = true`; the setters and `transition_status` carry
 //! `idempotent_hint = true`; ALL tools carry `open_world_hint = false` (this
-//! server touches only the local SQLite store, never an open-world resource).
+//! server touches only the local SQLite store — plus, for
+//! `execute_worktree_merge`, the loopback-only local git companion — never an
+//! open-world resource).
 //!
 //! ## Tool-output / tool-error mapping (the riskiest novelty in the slice)
 //!
@@ -182,18 +189,17 @@ fn enum_to_str<T: serde::Serialize>(value: T) -> String {
 /// `pty_register_tx`) used by the HTTP PTY routes. The MCP layer no longer
 /// exposes PTY tools (removed in the lumina-interactive-prompts plan,
 /// 2026-05-28): the PTY service is driven exclusively via the HTTP API +
-/// the SPA. `AppState` is still cloned onto `LuminaTools` so the field
-/// shape matches the composition root, but no tool in this module reaches
-/// into `self.state.pty_*`.
+/// the SPA — no tool in this module reaches into `self.state.pty_*`. The
+/// state's `companion` registry, however, IS read by the
+/// `execute_worktree_merge` tool (ADR-0006 Step 1b), which dispatches a
+/// coarse git intent through it.
 #[derive(Clone)]
 pub struct LuminaTools {
     pool: Arc<AnyPool>,
-    // Held for shape parity with the composition root (`service_with_state`):
-    // the field is currently unread because the MCP layer no longer exposes
-    // PTY tools, but `AppState` is still threaded through both transports so
-    // a future tool that needs cross-cutting state can reach for it without
-    // a constructor churn.
-    #[allow(dead_code)]
+    // Threaded through both transports by the composition root
+    // (`service_with_state`). Read by `execute_worktree_merge`
+    // (mcp/worktrees.rs) for the companion seam (`state.companion`); the PTY
+    // fields stay unread here (PTY is HTTP-only).
     state: AppState,
     tool_router: ToolRouter<Self>,
 }
@@ -463,6 +469,11 @@ mod tests {
             // sprint-status transition tool (migration 0016; defined in
             // mcp/runs_sprints.rs — counted/listed/annotated here)
             "set_sprint_status",
+            // git-execution companion trigger (ADR-0006 Step 1b; defined in
+            // mcp/worktrees.rs — the ONE execute→record tool: it composes the
+            // existing record_worktree_merge mutation with a companion-executed
+            // MergeWorktree intent)
+            "execute_worktree_merge",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -472,7 +483,7 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 84 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 85 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
         //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
         //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
@@ -494,12 +505,16 @@ mod tests {
         //      mcp/runs_sprints.rs, counted here).
         //    + 1 set_task_lane (team-execution: lane as a first-class task field,
         //      default 'implement' at create; defined in mcp/task_graph.rs).
+        //    + 1 execute_worktree_merge (ADR-0006 Step 1b git-execution
+        //      companion trigger; defined in mcp/worktrees.rs — composes the
+        //      ONE existing record_worktree_merge mutation with a
+        //      companion-executed MergeWorktree intent; no new SQL writes).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            84,
-            "advertised tool count must be exactly 84, got {}: {names:?}",
+            85,
+            "advertised tool count must be exactly 85, got {}: {names:?}",
             names.len()
         );
 
@@ -507,14 +522,15 @@ mod tests {
         // per-family `tool_router_*` sub-routers are summed with
         // `ToolRouter::merge`, which is NAME-KEYED — a duplicate tool name
         // across two families would be silently absorbed while KEEPING the
-        // count at 84 (the second registration overwrites the first). Collect
-        // the names into a set and assert it ALSO has 83 entries, so a
-        // collision is caught rather than masked by the bare count check above.
+        // bare count unchanged (the second registration overwrites the first).
+        // Collect the names into a set and assert it has the SAME number of
+        // entries as the list, so a collision is caught rather than masked by
+        // the bare count check above.
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            84,
-            "advertised tool names must be UNIQUE (84 distinct), got {} distinct of {}: {names:?}",
+            85,
+            "advertised tool names must be UNIQUE (85 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );

@@ -9,8 +9,9 @@
 //!
 //! Module map: [`git`] holds the engine-neutral `GitBackend` seam (+ the
 //! `FakeGitBackend` double); [`executor`] maps one protocol `Intent` to one
-//! `Outcome` over that seam. The WS dial loop lands in Task 6 — deliberately
-//! NO empty stub module for it here.
+//! `Outcome` over that seam; [`connection`] is the WS dial loop that feeds
+//! intents to the executor (Task 6).
 
+pub mod connection;
 pub mod executor;
 pub mod git;

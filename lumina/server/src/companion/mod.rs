@@ -94,6 +94,12 @@ struct Connection {
     tx: mpsc::Sender<ServerToCompanion>,
     /// Generation stamp matching the [`ConnectionToken`] handed to the owner.
     epoch: u64,
+    /// The `Hello.repo_root` the companion reported at handshake time — the
+    /// absolute path of the repo it executes git against. Surfaced via
+    /// [`CompanionRegistry::repo_root`] so the `execute_worktree_merge`
+    /// pre-flight can run its split-brain guard (repo_root must match the
+    /// project's primary repo-link `local_path` when that column is set).
+    repo_root: String,
 }
 
 /// Mutex-guarded mutable state. See the module docs for the field semantics.
@@ -147,11 +153,16 @@ impl CompanionRegistry {
         }
     }
 
-    /// Claim the single companion connection slot. Returns `None` when a
-    /// companion is already connected (the caller refuses the new connection
-    /// — loudly); the slot frees only via [`disconnect`](Self::disconnect)
-    /// (socket close or the missed-pong reaper, both of which route there).
-    pub fn register(&self, tx: mpsc::Sender<ServerToCompanion>) -> Option<ConnectionToken> {
+    /// Claim the single companion connection slot, recording the validated
+    /// `Hello.repo_root` alongside it. Returns `None` when a companion is
+    /// already connected (the caller refuses the new connection — loudly); the
+    /// slot frees only via [`disconnect`](Self::disconnect) (socket close or
+    /// the missed-pong reaper, both of which route there).
+    pub fn register(
+        &self,
+        tx: mpsc::Sender<ServerToCompanion>,
+        repo_root: String,
+    ) -> Option<ConnectionToken> {
         let epoch = {
             let mut inner = self.inner.lock().expect("companion registry lock poisoned");
             if inner.conn.is_some() {
@@ -159,7 +170,7 @@ impl CompanionRegistry {
             }
             inner.epoch += 1;
             let epoch = inner.epoch;
-            inner.conn = Some(Connection { tx, epoch });
+            inner.conn = Some(Connection { tx, epoch, repo_root });
             epoch
         };
         self.connected_tx.send_replace(true);
@@ -315,6 +326,19 @@ impl CompanionRegistry {
     pub fn is_connected(&self) -> bool {
         *self.connected_tx.borrow()
     }
+
+    /// The connected companion's `Hello.repo_root` — `None` when no companion
+    /// occupies the slot. Doubles as a connected check for callers that need
+    /// the root anyway (the `execute_worktree_merge` pre-flight split-brain
+    /// guard compares it against the project's primary repo-link `local_path`).
+    pub fn repo_root(&self) -> Option<String> {
+        self.inner
+            .lock()
+            .expect("companion registry lock poisoned")
+            .conn
+            .as_ref()
+            .map(|c| c.repo_root.clone())
+    }
 }
 
 #[cfg(test)]
@@ -340,7 +364,7 @@ mod tests {
     async fn companion_execute_round_trips_an_outcome() {
         let reg = Arc::new(CompanionRegistry::new());
         let (tx, mut rx) = mpsc::channel(8);
-        let _token = reg.register(tx).expect("slot free");
+        let _token = reg.register(tx, "/work/repo".to_string()).expect("slot free");
 
         let exec = tokio::spawn({
             let reg = reg.clone();
@@ -361,7 +385,7 @@ mod tests {
     async fn companion_pending_drained_on_disconnect() {
         let reg = Arc::new(CompanionRegistry::new());
         let (tx, mut rx) = mpsc::channel(8);
-        let token = reg.register(tx).expect("slot free");
+        let token = reg.register(tx, "/work/repo".to_string()).expect("slot free");
 
         let exec = tokio::spawn({
             let reg = reg.clone();
@@ -387,7 +411,7 @@ mod tests {
         assert!(reg.acquire_lease("main"), "released lease is acquirable again");
 
         let (tx, _rx) = mpsc::channel(1);
-        let token = reg.register(tx).expect("slot free");
+        let token = reg.register(tx, "/work/repo".to_string()).expect("slot free");
         reg.disconnect(token);
         assert!(reg.acquire_lease("main"), "disconnect voids all leases");
     }
@@ -398,17 +422,20 @@ mod tests {
     async fn companion_double_connect_is_refused() {
         let reg = CompanionRegistry::new();
         let (tx1, _rx1) = mpsc::channel(1);
-        let token = reg.register(tx1).expect("slot free");
+        let token = reg.register(tx1, "/work/repo".to_string()).expect("slot free");
 
         let (tx2, _rx2) = mpsc::channel(1);
         assert!(
-            reg.register(tx2).is_none(),
+            reg.register(tx2, "/work/repo".to_string()).is_none(),
             "second concurrent connection must be refused"
         );
 
         reg.disconnect(token);
         let (tx3, _rx3) = mpsc::channel(1);
-        assert!(reg.register(tx3).is_some(), "slot frees after disconnect");
+        assert!(
+            reg.register(tx3, "/work/repo".to_string()).is_some(),
+            "slot frees after disconnect"
+        );
     }
 
     /// Execute timeout: the future errs with `Timeout`, the pending entry is
@@ -418,7 +445,7 @@ mod tests {
     async fn companion_execute_times_out_and_late_outcome_is_dropped() {
         let reg = Arc::new(CompanionRegistry::with_execute_timeout(Duration::from_millis(50)));
         let (tx, mut rx) = mpsc::channel(8);
-        let _token = reg.register(tx).expect("slot free");
+        let _token = reg.register(tx, "/work/repo".to_string()).expect("slot free");
 
         let exec = tokio::spawn({
             let reg = reg.clone();
@@ -449,15 +476,22 @@ mod tests {
         let watch_rx = reg.connected();
         assert!(!*watch_rx.borrow());
         assert!(!reg.is_connected());
+        assert_eq!(reg.repo_root(), None, "no repo_root before registration");
 
         let (tx, _rx) = mpsc::channel(1);
-        let token = reg.register(tx).expect("slot free");
+        let token = reg.register(tx, "/work/repo".to_string()).expect("slot free");
         assert!(*watch_rx.borrow());
         assert!(reg.is_connected());
+        assert_eq!(
+            reg.repo_root().as_deref(),
+            Some("/work/repo"),
+            "repo_root surfaces the registered Hello.repo_root"
+        );
 
         reg.disconnect(token);
         assert!(!*watch_rx.borrow());
         assert!(!reg.is_connected());
+        assert_eq!(reg.repo_root(), None, "repo_root clears on disconnect");
     }
 
     /// Epoch guard: a duplicate/late cleanup carrying a PREVIOUS connection's
@@ -467,11 +501,11 @@ mod tests {
     async fn companion_stale_disconnect_token_is_ignored() {
         let reg = CompanionRegistry::new();
         let (tx1, _rx1) = mpsc::channel(1);
-        let token_a = reg.register(tx1).expect("slot free"); // epoch 1
+        let token_a = reg.register(tx1, "/work/repo".to_string()).expect("slot free"); // epoch 1
         reg.disconnect(token_a);
 
         let (tx2, _rx2) = mpsc::channel(1);
-        let _token_b = reg.register(tx2).expect("slot free"); // epoch 2
+        let _token_b = reg.register(tx2, "/work/repo".to_string()).expect("slot free"); // epoch 2
         assert!(reg.acquire_lease("main"));
 
         // Forge a late cleanup from the first connection's generation.
