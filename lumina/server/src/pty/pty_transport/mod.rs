@@ -123,6 +123,84 @@ const DEFAULT_LUMINA_PORT: u16 = 24817;
 /// the server's mcp-config `timeout` field — confirmed via claude-code-guide.)
 const ASK_MCP_TOOL_TIMEOUT_MS: u64 = 1_860_000; // 31 min
 
+/// Env var overriding the `claude` executable lumina spawns into each PTY
+/// session. Must point at an existing file; checked at spawn time.
+const CLAUDE_BIN_ENV: &str = "LUMINA_CLAUDE_BIN";
+
+/// Resolve the `claude` executable to an ABSOLUTE path before handing it to
+/// `CommandBuilder`, instead of letting portable-pty resolve the bare name.
+///
+/// Rationale (2026-06-10 spawn-failure post-mortem): portable-pty 0.9 on
+/// Windows rebuilds the child PATH from the HKLM+HKCU registry hives and
+/// searches it with `dir.join(exe).exists()`. An EMPTY `Path` entry (a stray
+/// `;;` in the registry value) makes that candidate the bare relative name
+/// `claude`, which `.exists()` resolves against the server's cwd — and a cwd
+/// containing a directory literally named `claude` (any checkout of this
+/// repo) then wins the search. portable-pty passes the bare name to
+/// `CreateProcessW` as `lpApplicationName` (no PATH search, no `.exe`
+/// appending, cwd-relative), which resolves it to the DIRECTORY and fails
+/// with `Access is denied (os error 5)`. An absolute path sidesteps
+/// portable-pty's search entirely and is immune to cwd shadowing.
+///
+/// Resolution order: `LUMINA_CLAUDE_BIN` (must exist, used verbatim) → walk
+/// the PROCESS `PATH` (the operator's shell intent, deliberately NOT the
+/// registry), skipping empty and relative entries.
+fn resolve_claude_bin() -> Result<std::path::PathBuf, AppError> {
+    if let Some(override_path) = std::env::var_os(CLAUDE_BIN_ENV) {
+        let p = std::path::PathBuf::from(override_path);
+        if p.is_file() {
+            return Ok(p);
+        }
+        return Err(AppError::Validation(format!(
+            "{CLAUDE_BIN_ENV} is set but does not point at a file: {}",
+            p.display()
+        )));
+    }
+    search_process_path("claude", std::env::var_os("PATH").as_deref(), |p| {
+        p.is_file()
+    })
+    .ok_or_else(|| {
+        AppError::Validation(
+            "claude executable not found on PATH; install Claude Code or set \
+             LUMINA_CLAUDE_BIN to the binary"
+                .into(),
+        )
+    })
+}
+
+/// Pure PATH walk backing [`resolve_claude_bin`] (existence check injected
+/// for tests). Probes `<dir>/<name>` with the platform's executable
+/// extensions (bare name on Unix), skipping empty and relative PATH entries —
+/// an empty entry aliases the cwd, which is the exact footgun this resolver
+/// exists to avoid.
+fn search_process_path(
+    name: &str,
+    path_var: Option<&std::ffi::OsStr>,
+    is_file: impl Fn(&std::path::Path) -> bool,
+) -> Option<std::path::PathBuf> {
+    let path_var = path_var?;
+    for dir in std::env::split_paths(path_var) {
+        if dir.as_os_str().is_empty() || dir.is_relative() {
+            continue;
+        }
+        let bare = dir.join(name);
+        if cfg!(windows) {
+            // .exe first so a native install beats an npm `claude.cmd` shim
+            // (CreateProcessW cannot launch .cmd directly, but resolving it
+            // at least names the real culprit in the spawn error).
+            for ext in ["exe", "cmd", "bat", "com"] {
+                let cand = bare.with_extension(ext);
+                if is_file(&cand) {
+                    return Some(cand);
+                }
+            }
+        } else if is_file(&bare) {
+            return Some(bare);
+        }
+    }
+    None
+}
+
 /// PTY-backed `Transport` implementation. Stateless; one instance per
 /// `Supervisor` is sufficient (each `spawn` call mints a fresh worker fleet).
 #[derive(Debug, Default, Clone, Copy)]
@@ -149,7 +227,8 @@ impl Transport for PtyTransport {
             .map_err(|e| AppError::Validation(format!("openpty failed: {e}")))?;
 
         // ---- 2. Build the command -----------------------------------------
-        let mut cmd = CommandBuilder::new("claude");
+        let claude_bin = resolve_claude_bin()?;
+        let mut cmd = CommandBuilder::new(&claude_bin);
         for arg in &config.claude_args {
             cmd.arg(arg);
         }
@@ -239,6 +318,7 @@ impl Transport for PtyTransport {
         // ---- 3. Spawn the child --------------------------------------------
         tracing::info!(
             cwd = %config.cwd.display(),
+            claude_bin = %claude_bin.display(),
             claude_args = ?config.claude_args,
             "pty transport: spawning claude.exe"
         );
@@ -527,5 +607,103 @@ impl Transport for PtyTransport {
             shutdown,
             completed: completed_rx,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::search_process_path;
+    use std::collections::HashSet;
+    use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+
+    /// Build a PATH-style OsString from raw entries, preserving empties.
+    fn path_var(entries: &[&str]) -> OsString {
+        OsString::from(entries.join(if cfg!(windows) { ";" } else { ":" }))
+    }
+
+    fn abs(p: &str) -> String {
+        if cfg!(windows) {
+            format!("C:\\{p}")
+        } else {
+            format!("/{p}")
+        }
+    }
+
+    /// The candidate filename the platform walk probes for `claude` in `dir`.
+    fn claude_in(dir: &str) -> PathBuf {
+        let name = if cfg!(windows) { "claude.exe" } else { "claude" };
+        Path::new(&abs(dir)).join(name)
+    }
+
+    #[test]
+    fn skips_empty_path_entries_never_probing_cwd_relative_names() {
+        // An empty PATH entry must be skipped outright — NOT probed as the
+        // bare relative name (which resolves against the cwd; the 2026-06-10
+        // spawn-failure root cause).
+        let var = path_var(&["", &abs("bin")]);
+        let mut probed: Vec<PathBuf> = vec![];
+        let hit = {
+            let probed = std::cell::RefCell::new(&mut probed);
+            search_process_path("claude", Some(var.as_os_str()), |p| {
+                probed.borrow_mut().push(p.to_path_buf());
+                p == claude_in("bin")
+            })
+        };
+        assert_eq!(hit, Some(claude_in("bin")));
+        assert!(
+            probed.iter().all(|p| p.is_absolute()),
+            "no relative candidate may ever be probed, got {probed:?}"
+        );
+    }
+
+    #[test]
+    fn skips_relative_path_entries() {
+        let var = path_var(&["relative-dir", &abs("bin")]);
+        let hit = search_process_path("claude", Some(var.as_os_str()), |p| {
+            p == claude_in("bin")
+        });
+        assert_eq!(hit, Some(claude_in("bin")));
+    }
+
+    #[test]
+    fn first_matching_dir_wins() {
+        let var = path_var(&[&abs("first"), &abs("second")]);
+        let everywhere: HashSet<PathBuf> =
+            [claude_in("first"), claude_in("second")].into();
+        let hit = search_process_path("claude", Some(var.as_os_str()), |p| {
+            everywhere.contains(p)
+        });
+        assert_eq!(hit, Some(claude_in("first")));
+    }
+
+    #[test]
+    fn none_when_not_found_or_path_unset() {
+        let var = path_var(&[&abs("bin")]);
+        assert_eq!(
+            search_process_path("claude", Some(var.as_os_str()), |_| false),
+            None
+        );
+        assert_eq!(search_process_path("claude", None, |_| false), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_prefers_exe_over_cmd_shim() {
+        let var = path_var(&[&abs("bin")]);
+        let base = Path::new(&abs("bin")).join("claude");
+        let exe = base.with_extension("exe");
+        let cmd = base.with_extension("cmd");
+        let both: HashSet<PathBuf> = [exe.clone(), cmd.clone()].into();
+        let hit = search_process_path("claude", Some(var.as_os_str()), |p| {
+            both.contains(p)
+        });
+        assert_eq!(hit, Some(exe));
+
+        let only_cmd: HashSet<PathBuf> = [cmd.clone()].into();
+        let hit = search_process_path("claude", Some(var.as_os_str()), |p| {
+            only_cmd.contains(p)
+        });
+        assert_eq!(hit, Some(cmd));
     }
 }
