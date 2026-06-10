@@ -5,8 +5,75 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "lumina-companion: the git-execution-plane companion (populated in Step 1b)"
+description = "lumina-companion: the git-execution-plane companion (ADR-0006 Step 1b)"
+
+# Library target: the engine-neutral git seam (`git::GitBackend` + the
+# `FakeGitBackend` double) and, in later tasks, the executor + WS connection
+# modules. The binary stays a thin entrypoint (populated in Task 6).
+[lib]
+path = "src/lib.rs"
 
 [[bin]]
 name = "lumina-companion"
 path = "src/main.rs"
+
+# The FULL dependency set for Step 1b is declared up front so Tasks 3/4/6
+# (ShellGit / executor / connection loop) never touch this manifest. Several
+# deps (tokio-tungstenite, futures-util, serde_json, clap, tracing-subscriber)
+# are therefore unused until those tasks land — intended, and warning-free
+# (cargo has no unused-dependency lint).
+[dependencies]
+# Wire types ONLY — the companion NEVER depends on lumina-core or any DB type
+# (the ADR-0006 control/execution plane split). First imported when the
+# executor (Task 4) maps intents -> outcomes.
+lumina-protocol = { path = "../protocol" }
+
+# tokio stays member-local (workspace policy — see the root manifest's
+# [workspace.dependencies] note). `process` backs ShellGit's `git` children
+# (Task 3); `sync` + `time` back the dial loop's channels and heartbeat
+# (Task 6); `io-util` plumbs child stdout/stderr.
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "process",
+    "time",
+    "sync",
+    "io-util",
+] }
+
+# --- WS transport (Task 6: companion-dials-server connection loop) ---
+tokio-tungstenite = "0.29" # pinned to the version the server drives in its e2e dev-dep
+futures-util = "0.3"
+
+# --- serialization (protocol frames over the WS transport, Task 6) ---
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+# async methods on the object-safe `GitBackend` seam (same pattern as
+# lumina-core's `DbTx`; 0.1.89's returned futures default to `Send`).
+async-trait = "0.1"
+
+# neutral `GitError` derives (Display + std::error::Error)
+thiserror = "2"
+
+# --- structured logging (mirrors the lumina server bin's stack) ---
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "env-filter",
+    "fmt",
+    "ansi",
+    "smallvec",
+] }
+
+# --- CLI (Task 6) — the same trimmed feature set as lumina-server: no
+# `color` / `suggestions` / `error-context` dead weight for a tiny surface.
+clap = { version = "4", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+] }
+
+# mimalloc as the global allocator (mirrors the lumina server bin; small-alloc
+# heavy paths: JSON frame round-trips + git porcelain parsing).
+mimalloc = { version = "0.1", default-features = false }

@@ -5,7 +5,13 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "lumina wire types for the control <-> execution plane (populated in Step 1b)"
+description = "lumina wire types for the control <-> execution plane (ADR-0006)"
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
