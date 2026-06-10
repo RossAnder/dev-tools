@@ -1396,6 +1396,7 @@ dependencies = [
  "futures",
  "insta",
  "jiff",
+ "lumina-companion",
  "lumina-core",
  "lumina-protocol",
  "mimalloc",

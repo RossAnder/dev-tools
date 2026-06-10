@@ -181,3 +181,11 @@ insta = "1.47"
 # library or binary crate.
 assert_cmd = "2"
 tokio-tungstenite = "0.29"
+
+# Cross-plane e2e (Task 9, ADR-0006 Step 1b): tests/companion_e2e.rs runs the
+# companion library IN-PROCESS (ShellGit + Executor + the WS dial loop against
+# an ephemeral listener). DEV-dependency only: dev-deps never link into the
+# shipped `lumina` bin and leave `[dependencies]` resolution untouched, so the
+# server's zero-git-deps invariant (`cargo tree -p lumina-server -e normal`
+# shows no git engine) holds.
+lumina-companion = { path = "../companion" }

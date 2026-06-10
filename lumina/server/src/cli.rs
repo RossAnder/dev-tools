@@ -1,10 +1,13 @@
-//! CLI dispatch (Task 7).
+//! CLI dispatch (Task 7; `--with-companion` co-launch added by Task 8).
 //!
 //! A clap `derive` `Cli` with an OPTIONAL subcommand. The bare invocation (no
 //! subcommand) preserves the original behaviour — it starts the server via
-//! `crate::app::serve`. `import-flow <slug>` resolves the flow directory as
-//! `.claude/flows/<slug>/` (relative to the CWD), opens a pool via
-//! `lumina_core::db::init`, imports the flow, prints the summary, and returns.
+//! `crate::app::serve`, optionally co-launching the `lumina-companion` binary
+//! when `--with-companion` is set (a launcher convenience that lives entirely
+//! in this cli layer; `app::serve`'s signature is untouched). `import-flow
+//! <slug>` resolves the flow directory as `.claude/flows/<slug>/` (relative to
+//! the CWD), opens a pool via `lumina_core::db::init`, imports the flow,
+//! prints the summary, and returns.
 //!
 //! `main.rs` still only calls `cli::run()`; it is not edited by this task.
 
@@ -26,6 +29,21 @@ const DEFAULT_BIND_PORT: u16 = 24817;
 #[derive(Debug, Parser)]
 #[command(name = "lumina", version, about)]
 struct Cli {
+    /// Co-launch the `lumina-companion` git-execution binary alongside the
+    /// bare server invocation (ADR-0006 Step 1b launcher convenience). Only
+    /// meaningful with NO subcommand; combining it with a subcommand is a
+    /// hard error. The gate lives in code rather than clap's
+    /// `args_conflicts_with_subcommands` (which would also reject the flag on
+    /// the bare path in some arg orders — clap#5353).
+    #[arg(long)]
+    with_companion: bool,
+
+    /// Explicit path to the companion binary. Defaults to the sibling of the
+    /// current executable named `lumina-companion` (`.exe`-suffixed on
+    /// Windows). Requires `--with-companion`.
+    #[arg(long, value_name = "PATH", requires = "with_companion")]
+    companion_bin: Option<PathBuf>,
+
     /// Optional subcommand. With none, lumina starts the axum server (the
     /// original default behaviour).
     #[command(subcommand)]
@@ -58,17 +76,144 @@ enum Command {
     },
 }
 
-/// Parse args and dispatch. No subcommand → serve; `import-flow` → import.
+/// Parse args and dispatch. No subcommand → serve (optionally co-launching
+/// the companion); `import-flow` → import; `init-hooks` → settings merge.
 pub async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    if let Some(msg) = companion_flag_conflict(&cli) {
+        anyhow::bail!(msg);
+    }
     match cli.command {
-        None => crate::app::serve().await,
+        None => {
+            // Spawn the companion BEFORE serve and hold the `Child` binding
+            // across `serve().await` so it drops only when the server returns
+            // — that drop is what fires `kill_on_drop` and terminates the
+            // child on graceful exit. (An underscore-PREFIXED binding still
+            // lives to end of scope; a bare `_` pattern would drop — and kill
+            // — the companion immediately.)
+            let _companion: Option<tokio::process::Child> = if cli.with_companion {
+                Some(spawn_companion(cli.companion_bin)?)
+            } else {
+                None
+            };
+            crate::app::serve().await
+        }
         Some(Command::ImportFlow { slug }) => import_flow_cmd(&slug).await,
         Some(Command::InitHooks { url, project_dir }) => {
             let url = url.unwrap_or_else(default_ingest_url);
             init_hooks_cmd(&project_dir, &url)
         }
     }
+}
+
+/// The in-code gate replacing clap's `args_conflicts_with_subcommands` (per
+/// clap#5353 guidance): the companion flags are launcher conveniences for the
+/// bare server invocation only. Returns the error message when a subcommand
+/// is combined with either flag, `None` when the invocation is fine.
+fn companion_flag_conflict(cli: &Cli) -> Option<String> {
+    if cli.command.is_some() && (cli.with_companion || cli.companion_bin.is_some()) {
+        Some(
+            "--with-companion/--companion-bin apply only to the bare `lumina` server \
+             invocation; they cannot be combined with a subcommand"
+                .to_string(),
+        )
+    } else {
+        None
+    }
+}
+
+/// The platform file name of the companion binary.
+const fn companion_file_name() -> &'static str {
+    if cfg!(windows) {
+        "lumina-companion.exe"
+    } else {
+        "lumina-companion"
+    }
+}
+
+/// Resolve the companion binary path: an explicit `--companion-bin` override
+/// wins; otherwise the sibling of the current executable named
+/// [`companion_file_name`] (cargo places workspace bins side by side under
+/// `target/<profile>/`). A resolved-but-missing path is an actionable error —
+/// the common cause is `cargo run -p lumina-server`, which builds only the
+/// server bin, not the companion.
+///
+/// Pure: the caller injects `current_exe` and the `exists` probe so unit
+/// tests need no real filesystem or executable.
+fn resolve_companion_bin(
+    override_bin: Option<PathBuf>,
+    current_exe: &Path,
+    exists: impl Fn(&Path) -> bool,
+) -> Result<PathBuf, String> {
+    let (candidate, source) = match override_bin {
+        Some(p) => (p, "from --companion-bin"),
+        None => (
+            current_exe.with_file_name(companion_file_name()),
+            "sibling of the current executable",
+        ),
+    };
+    if exists(&candidate) {
+        Ok(candidate)
+    } else {
+        Err(format!(
+            "companion binary not found at {} ({source}). Build it with `cargo build \
+             --workspace --manifest-path lumina/Cargo.toml` (a bare `cargo run -p \
+             lumina-server` does not build the lumina-companion bin), or pass an explicit \
+             --companion-bin <PATH>.",
+            candidate.display()
+        ))
+    }
+}
+
+/// Derive the port the companion should dial, mirroring `app::serve`'s bind
+/// resolution: the `PORT` env var when set AND parseable, else the default
+/// (24817). An unparseable set value falls back exactly like `app.rs`'s
+/// `parse_env_or_default`, so the two layers can never disagree. Pure for
+/// testability — the caller passes the env lookup result.
+///
+/// The HOST is deliberately NOT mirrored: even when the server binds
+/// `0.0.0.0`/`::`, the companion always dials loopback (`127.0.0.1`) — the
+/// companion WS endpoint is loopback-enforced in `http::companion` anyway.
+fn companion_dial_port(env_port: Option<&str>) -> u16 {
+    env_port
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_BIND_PORT)
+}
+
+/// Resolve and spawn the companion binary with `kill_on_drop(true)`.
+///
+/// Lifecycle (the accepted v1 posture from the serene-jumping-kitten plan):
+/// `kill_on_drop` fires only when the in-process `Child` is DROPPED — i.e. on
+/// a graceful server exit. tokio sets up no job-object/process-group tie, so
+/// a parent CRASH (abort, SIGKILL, power loss) orphans the companion; the
+/// orphan then self-terminates once its WS redial loop permanently fails to
+/// reach a server. That pairing — kill_on_drop for graceful exit + companion
+/// self-exit on permanent WS loss — is the whole v1 co-launch contract.
+fn spawn_companion(override_bin: Option<PathBuf>) -> anyhow::Result<tokio::process::Child> {
+    let current_exe =
+        std::env::current_exe().context("resolving the current executable path")?;
+    let bin = resolve_companion_bin(override_bin, &current_exe, |p| p.exists())
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    let port = companion_dial_port(std::env::var("PORT").ok().as_deref());
+    let server_url = format!("ws://127.0.0.1:{port}/api/companion/ws");
+    let cwd = std::env::current_dir().context("resolving the current directory")?;
+
+    let child = tokio::process::Command::new(&bin)
+        .arg("--server-url")
+        .arg(&server_url)
+        .arg("--repo-root")
+        .arg(&cwd)
+        .kill_on_drop(true)
+        .spawn()
+        .with_context(|| format!("spawning companion binary {}", bin.display()))?;
+
+    eprintln!(
+        "lumina: co-launched companion {} (pid {:?}) dialing {server_url}",
+        bin.display(),
+        child.id()
+    );
+    Ok(child)
 }
 
 /// The compile-time default ingest URL, built from [`DEFAULT_BIND_PORT`].
@@ -581,5 +726,126 @@ mod tests {
             default_ingest_url(),
             format!("http://127.0.0.1:{DEFAULT_BIND_PORT}/api/sessions/ingest")
         );
+    }
+
+    // --- Task 8: --with-companion co-launch ---
+
+    #[test]
+    fn companion_bin_override_wins_when_present() {
+        let override_path = PathBuf::from("/custom/companion");
+        let resolved = resolve_companion_bin(
+            Some(override_path.clone()),
+            Path::new("/target/debug/lumina"),
+            |p| p == override_path.as_path(),
+        )
+        .unwrap();
+        assert_eq!(resolved, override_path);
+    }
+
+    #[test]
+    fn companion_bin_missing_override_is_actionable_error() {
+        let err = resolve_companion_bin(
+            Some(PathBuf::from("/nowhere/companion")),
+            Path::new("/target/debug/lumina"),
+            |_| false,
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("/nowhere/companion"),
+            "error must name the missing path: {err}"
+        );
+        assert!(
+            err.contains("cargo build --workspace --manifest-path lumina/Cargo.toml"),
+            "error must name the workspace build command: {err}"
+        );
+    }
+
+    #[test]
+    fn companion_bin_defaults_to_sibling_with_platform_suffix() {
+        let exe = Path::new("/target/debug").join(if cfg!(windows) {
+            "lumina.exe"
+        } else {
+            "lumina"
+        });
+        let expected = Path::new("/target/debug").join(companion_file_name());
+        let resolved = resolve_companion_bin(None, &exe, |p| p == expected.as_path()).unwrap();
+        assert_eq!(resolved, expected);
+        if cfg!(windows) {
+            assert!(
+                resolved.to_string_lossy().ends_with("lumina-companion.exe"),
+                "Windows sibling must carry the .exe suffix: {}",
+                resolved.display()
+            );
+        }
+    }
+
+    #[test]
+    fn companion_bin_missing_sibling_is_actionable_error() {
+        let err =
+            resolve_companion_bin(None, Path::new("/target/debug/lumina"), |_| false)
+                .unwrap_err();
+        assert!(
+            err.contains("sibling of the current executable"),
+            "error must say how the path was derived: {err}"
+        );
+        assert!(
+            err.contains("cargo build --workspace --manifest-path lumina/Cargo.toml"),
+            "error must name the workspace build command: {err}"
+        );
+        assert!(
+            err.contains("--companion-bin"),
+            "error must mention the override escape hatch: {err}"
+        );
+    }
+
+    #[test]
+    fn companion_dial_port_mirrors_serve_resolution() {
+        // Unset → default; parseable → that port; unparseable → default
+        // (matching app.rs's parse_env_or_default fallback).
+        assert_eq!(companion_dial_port(None), DEFAULT_BIND_PORT);
+        assert_eq!(companion_dial_port(Some("9000")), 9000);
+        assert_eq!(companion_dial_port(Some("8080a")), DEFAULT_BIND_PORT);
+    }
+
+    #[test]
+    fn companion_flags_parse_alongside_subcommand_but_gate_rejects() {
+        // clap#5353: flags + optional subcommand COEXIST at parse time (we do
+        // not use args_conflicts_with_subcommands)…
+        let cli =
+            Cli::try_parse_from(["lumina", "--with-companion", "import-flow", "some-slug"])
+                .expect("flags must parse alongside a subcommand");
+        // …and the in-code gate is what rejects the combination.
+        let msg = companion_flag_conflict(&cli).expect("gate must reject subcommand + flag");
+        assert!(msg.contains("--with-companion"), "message names the flag: {msg}");
+        assert!(msg.contains("subcommand"), "message names the conflict: {msg}");
+    }
+
+    #[test]
+    fn companion_flags_on_bare_invocation_pass_the_gate() {
+        let cli = Cli::try_parse_from([
+            "lumina",
+            "--with-companion",
+            "--companion-bin",
+            "/custom/companion",
+        ])
+        .expect("bare invocation with companion flags must parse");
+        assert!(cli.with_companion);
+        assert_eq!(cli.companion_bin, Some(PathBuf::from("/custom/companion")));
+        assert!(companion_flag_conflict(&cli).is_none());
+    }
+
+    #[test]
+    fn bare_invocation_without_flags_passes_the_gate() {
+        let cli = Cli::try_parse_from(["lumina"]).unwrap();
+        assert!(companion_flag_conflict(&cli).is_none());
+    }
+
+    #[test]
+    fn companion_bin_requires_with_companion_at_parse_time() {
+        // The `requires` clap relation: --companion-bin alone is a parse
+        // error, not a silently-ignored flag.
+        let err = Cli::try_parse_from(["lumina", "--companion-bin", "/custom/companion"])
+            .expect_err("--companion-bin without --with-companion must fail to parse");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 }
