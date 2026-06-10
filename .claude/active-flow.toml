@@ -389,3 +389,15 @@ scope = [
     "lumina/**",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "serene-jumping-kitten"
+last_used = "2026-06-10T08:58:43.0490559Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/**",
+    "CLAUDE.md",
+]

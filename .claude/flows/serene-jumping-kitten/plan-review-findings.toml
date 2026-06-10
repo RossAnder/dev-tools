@@ -1,0 +1,288 @@
+schema_version = 1
+last_updated = 2026-06-10
+round = 1
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "plan-new"
+agent_index = 1
+lens = "transport-process-lifecycle"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "research-lite findings on tokio-tungstenite 0.29 / axum 0.8 ws / kill_on_drop / clap derive; manifest pins verified locally against lumina/server/Cargo.toml and Cargo.lock (axum ws feature on, tokio-tungstenite 0.29.0, async-trait 0.1.89); Utf8Bytes and RUSTSEC-2025-0012 claims consistent with versioned docs."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "plan-new"
+agent_index = 2
+lens = "git-cli-semantics"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "research-lite findings on git worktree/merge/merge-base/status porcelain semantics; exit-code contracts and single-checkout-per-branch rule match official git docs; one Grade-C note (per-call core.longpaths) carried into plan Risks for target-build verification."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All file:line claims re-verified (mod.rs stale-83 comment, module doc 20-26, require_review_owner, nullable 0016 columns, sprint_tasks junction exists); reset_hard omission confirmed against plan text; AppState struct-literal sweep accepted at grade A."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "SKILL.md:377 'taking it to 84' + 'NEVER shells to git' verified by grep; root CLAUDE.md:90 and lumina/CLAUDE.md:126 'next migration = 0017' staleness verified; lumina/CLAUDE.md:23 '83 tools' verified; integration-worktree path gap confirmed in plan text."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Trait-freeze hazard converges with feasibility lens (dedup into P1/P2); T8 interactive acceptance, Cargo.lock implied-write, and refusal-retry gap all confirmed against plan text; nextest -E/-p syntax claims accepted; grade-C companion-id nit retained as suggestion."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "HOST=0.0.0.0 opt-in verified at app.rs:108-114 and zero is_loopback call sites confirmed by grep; repo_links.local_path verified in 0014 migration; MERGE_HEAD wedge and stale-RequestId omissions confirmed in plan text; RUSTSEC cross-checks (2023-0065 ≤0.20.0, 2025-0012 backoff) accepted at grade A/B."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 2. `GitBackend` trait, neutral types, `FakeGitBackend`, companion lib scaffolding [M]"
+summary = "T2 trait list omits reset_hard, which T4's rollback choreography requires — the gap is certain, not hypothetical"
+description = "T4 mandates 'reset --hard <pre-merge tip> (via backend, not run_git)' but T2's enumerated trait has no reset method. Found independently by feasibility and executability lenses. Fix: add reset_hard to the T2 trait surface so the trait is complete before wave 2."
+anchor_old = "worktree_states / head_of)"
+anchor_new = "worktree_states / head_of / reset_hard)"
+dedup_id = "4d5ab74d012f29ca"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "executability"
+plan_section = "### 4. Companion executor: intent → backend → outcome [L]"
+summary = "T4's trait-extension licence is wave-unsafe: T3 implements the same trait IN PARALLEL in wave 2, and git/mod.rs is in neither task's file list"
+description = "T4 Detail claims 'sequential waves make this safe' but T3 and T4 are both wave 2. T4 editing git/mod.rs mid-wave breaks T3's in-flight impl GitBackend for ShellGit at compile time and violates the no-file-overlap claim. With P1 applied (reset_hard in T2), the licence must be revoked: trait surface frozen at T2."
+anchor_old = "Add the small backend additions the choreography needs (e.g. `reset_hard(tip)`) to the trait in this task only if missed in Task 2 — coordinate via the trait file being companion-internal (same crate, sequential waves make this safe)."
+anchor_new = "The trait surface is FROZEN by Task 2 (it includes `reset_hard`); do NOT modify `git/mod.rs`/`git/fake.rs` in this task — T3 implements the same trait in parallel this wave. A discovered trait gap is a blocker to surface to the orchestrator (fixed between waves), never patched in-wave."
+dedup_id = "fcc31b7d30ab3bd9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "executability"
+plan_section = "## Risks"
+summary = "Risks section repeats the false 'waves are sequential; T4 may extend the trait' mitigation"
+description = "The last Risks bullet contradicts the wave-2 parallelism of T3∥T4; must align with the P1/P2 trait-freeze fix."
+anchor_old = "trait is companion-internal and waves are sequential; T4 may extend the trait + Fake without cross-crate impact."
+anchor_new = "the trait surface is frozen at Task 2 (it includes `reset_hard`); a gap discovered during T4 is surfaced to the orchestrator and fixed between waves — never patched mid-wave while T3 implements the trait in parallel."
+dedup_id = "b082f893c2624a24"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 7. `execute_worktree_merge` MCP tool + HTTP mirror + reachability query [L]"
+summary = "Pre-flight checks branch non-null but not the merge TARGET — worktrees.base_ref is equally nullable (0016:105-106)"
+description = "With no target_branch override and NULL base_ref, the MergeWorktree intent has no target. Pre-flight must require target resolvable."
+anchor_old = "`branch` non-null — else `invalid_params`/422; target = `base_ref` unless an explicit `target_branch` param overrides"
+anchor_new = "`branch` non-null, AND target resolvable (`base_ref` non-null OR explicit `target_branch` param) — else `invalid_params`/422; target = `base_ref` unless overridden"
+dedup_id = "2e07b70835a6bb0f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "completeness"
+plan_section = "### 10. Documentation updates [M]"
+summary = "T10 omits the self-declared authoritative MCP catalogue: claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md goes stale on count (:377 'taking it to 84') and posture ('NEVER shells to git')"
+description = "lumina/CLAUDE.md names that SKILL.md as the authoritative per-tool catalogue; execute_worktree_merge needs an entry, the 84 needs bumping to 85, and the record-only claim needs scoping to the control plane. Verified at SKILL.md:377."
+anchor_old = "- **Files**: `CLAUDE.md`, `lumina/CLAUDE.md`"
+anchor_new = """- **Files**: `CLAUDE.md`, `lumina/CLAUDE.md`, `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md` (catalogue entry for `execute_worktree_merge`; 84→85 at :377; scope the "NEVER shells to git" claim to the control plane — the companion now executes git on lumina's behalf)"""
+dedup_id = "b66bfd5e80337947"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "completeness"
+plan_section = "### 10. Documentation updates [M]"
+summary = "T10 instructs keeping a 'next migration = 0018' claim that doesn't exist — the docs actually say 0017 (stale) and T10 as written ratifies it"
+description = "Verified: root CLAUDE.md:90 'next migration = 0017' and lumina/CLAUDE.md:126 '(NEXT migration = 0017.)' — both stale since 0017_checkpoint_check.sql landed. T10 must correct them to 0018."
+anchor_old = 'Keep the "next migration = 0018" claim intact (this plan takes no migration).'
+anchor_new = 'Correct the stale "next migration = 0017" claims (root CLAUDE.md § migration-0016 paragraph; lumina/CLAUDE.md schema note) to 0018 — `0017_checkpoint_check.sql` exists; this plan takes no migration.'
+dedup_id = "086f8b02a3eb2d8a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 10. Documentation updates [M]"
+summary = "T10's acceptance grep only hunts '84' — the already-stale '83 tools as of migration 0016' (lumina/CLAUDE.md:23) survives and becomes doubly stale at 85"
+description = "Widen the grep to catch 83 and 84; also fix the :23 claim in T10's action."
+anchor_old = '''rg -n '\b84 tools\b|asserts 84' CLAUDE.md lumina/CLAUDE.md'''
+anchor_new = '''rg -n '\b8[34] tools\b|asserts 8[34]' CLAUDE.md lumina/CLAUDE.md'''
+dedup_id = "9674ed6430179bdb"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "executability"
+plan_section = "## User Decisions"
+summary = "Integration worktree's on-disk location is an executor-time architectural decision — no path, naming, gitignore, or reuse policy anywhere in the plan"
+description = "Two agents (T4 choreography, T9 e2e) could pick incompatible schemes; an in-repo worktree shows up untracked in git status unless excluded. Found by completeness and executability lenses. Resolution: pin <repo_root>/.lumina/worktrees/integration-<target-branch>, companion registers it in .git/info/exclude (repo-local, no tracked .gitignore edit), reuse-if-clean/recreate-if-missing."
+anchor_old = "a dedicated linked worktree with the integration branch checked out and runs merges there."
+anchor_new = "a dedicated linked worktree at `<repo_root>/.lumina/worktrees/integration-<target-branch>` (the companion registers the path in `.git/info/exclude` — repo-local, never a tracked `.gitignore` edit; reused if present and clean, recreated if missing) with the integration branch checked out and runs merges there."
+dedup_id = "c0fbd06ccd3c3055"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "executability"
+plan_section = "### 6. Companion connection loop + binary [M]"
+summary = "Refused-second-connection (T5 'refuse') vs the redial loop is unspecified — if refusal counts as permanent failure the companion exits and never returns after a network blip"
+description = "After a blip the server's stale slot stays occupied until the missed-pong deadline reaps it; the companion's redial gets refused meanwhile. Refusal must be RETRYABLE."
+anchor_old = "exit non-zero only on unrecoverable config errors (bad URL, repo-root not a git repo)"
+anchor_new = "exit non-zero only on unrecoverable config errors (bad URL, repo-root not a git repo); a server slot-occupied refusal is RETRYABLE (keep backing off — the slot frees when the server's missed-pong deadline reaps the stale connection)"
+dedup_id = "811c629cd95bcdf7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "executability"
+plan_section = "### 8. `serve --with-companion` co-launch [M]"
+summary = "T8's acceptance is interactive (run server, observe logs, kill process) — outside the clippy+narrow-nextest sub-agent discipline and duplicated in ## Verification's manual smoke"
+description = "Replace with mechanical acceptance: unit tests for binary-path resolution and clap flag rejection; defer runtime behaviour to the manual smoke item."
+anchor_old = "- **Acceptance**: `cargo run -p lumina-server -- --with-companion` (after a workspace build) logs a companion Hello within seconds; killing the server gracefully terminates the companion; `--with-companion import-flow x` errors cleanly."
+anchor_new = "- **Acceptance**: clippy clean; unit tests cover binary-path resolution (override / sibling-of-current_exe / missing ⇒ actionable error naming the build command) and clap rejection of `--with-companion` alongside a subcommand. Runtime behaviour (Hello logged, graceful child termination) is covered by the manual smoke item in ## Verification — not agent-verifiable."
+dedup_id = "ffc336f8dd8c5386"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "executability"
+plan_section = "## Dependency Graph"
+summary = "'No file overlap within any wave' is false for lumina/Cargo.lock — T1/T2 (wave 1) and T5 (wave 2) all mutate it via manifest edits while siblings run cargo"
+description = "Safe from corruption (cargo's own locking) but agents must expect serialisation on the shared target-dir/lockfile and not flag lockfile churn as interference."
+anchor_old = "No file overlap within any wave (T3/T4/T5"
+anchor_new = "No source-file overlap within any wave; `lumina/Cargo.lock` is a shared IMPLIED write in waves 1–2 (T1/T2/T5 manifest edits) — cargo's own locking makes this safe but serialises parallel check/test runs; agents must not treat lockfile churn as a conflict (T3/T4/T5"
+dedup_id = "71cb4274e126f26c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "risk"
+plan_section = "## Approach"
+summary = "WS loopback posture is doc-only: HOST=0.0.0.0 (app.rs:108-114) exposes the unauthenticated companion slot to the LAN — slot hijack forges Merged outcomes the server records as ground truth"
+description = "Verified: no is_loopback check exists anywhere in server/src; the sessions/ingest 'guard' is doc-comment only. The companion channel drives git execution + store mutation, qualitatively new vs read-mostly ingest. Mandate a code-level ConnectInfo<SocketAddr>.ip().is_loopback() rejection in the WS handler."
+anchor_old = "(loopback posture inherited from the default bind; absent Origin accepted)"
+anchor_new = '(absent Origin accepted; the handler MUST reject non-loopback peers via `ConnectInfo<SocketAddr>.ip().is_loopback()` — the `HOST` env var (app.rs:108-114) permits 0.0.0.0 exposure and the sessions/ingest "posture" is doc-only, not code; this channel drives git execution and store mutation)'
+dedup_id = "cd368fd7823796dd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "risk"
+plan_section = "### 4. Companion executor: intent → backend → outcome [L]"
+summary = "Companion killed mid-merge (the plan's own kill_on_drop happy path) wedges the integration worktree: MERGE_HEAD persists and 'verify clean' refuses forever — no recovery step exists"
+description = "Add self-heal: abort_merge first when MERGE_HEAD exists from an interrupted merge, then verify clean. Add an interrupted-merge case to T4's test list."
+anchor_old = "(User Decision 1) → verify clean"
+anchor_new = "(User Decision 1) → self-heal: if `MERGE_HEAD` exists from an interrupted merge, `abort_merge` first → verify clean"
+dedup_id = "3938affe86fd1ffd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "risk"
+plan_section = "### 7. `execute_worktree_merge` MCP tool + HTTP mirror + reachability query [L]"
+summary = "Nothing binds the connected companion's repo to the worktree's project — a merge intent for project B silently executes branch-name merges in whatever repo the companion sits in, then records it as ground truth"
+description = "Hello carries repo_root but no pre-flight consumes it. repo_links.local_path exists (migration 0014, verified). Cheap pre-flight: companion Hello.repo_root must match the project's primary repo_link local_path when set, else 422. Single-project deployments unaffected (local_path unset ⇒ check skipped)."
+anchor_old = "owning sprint `effective_status == review`; `branch` non-null"
+anchor_new = "owning sprint `effective_status == review`; companion `Hello.repo_root` matches the project's primary repo_link `local_path` when set — else 422; `branch` non-null"
+dedup_id = "798042bfae9ef262"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 5. Server companion seam: registry, lease, WS endpoint [L]"
+summary = "Server-side handling of a stale Outcome (RequestId with no pending entry, e.g. after server restart mid-merge) is unspecified — invites a panic/.expect() in a fresh module"
+description = "Specify log-and-drop, never panic/close; the caller-re-run path (AlreadyUpToDate) is the recovery and Risks should state it."
+anchor_old = "On disconnect: drain pending oneshots with a disconnect error, void all leases."
+anchor_new = "On disconnect: drain pending oneshots with a disconnect error, void all leases. An Outcome whose RequestId has no pending entry (stale reply, e.g. after a server restart mid-merge) is logged and dropped — never a panic or connection close; recovery is caller re-run (AlreadyUpToDate)."
+dedup_id = "22aa90da63052940"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 7. `execute_worktree_merge` MCP tool + HTTP mirror + reachability query [L]"
+summary = "Two line anchors drifted: module-doc invariant is mcp/mod.rs:20-26 (plan says 24-27); the stale comment is :511 'ALSO has 83 entries' (plan says :510 '83 distinct')"
+description = "All other file:line claims in the plan verified exact. Fix the T7 Detail reference and (manual merge) the Research Notes echo."
+anchor_old = "module-doc invariant (`mod.rs:24-27`)"
+anchor_new = "module-doc invariant (`mod.rs:20-26`)"
+dedup_id = "3f96c14785933983"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 6. Companion connection loop + binary [M]"
+summary = "--companion-id 'hostname-pid' format unspecified (separator? uniqueness not load-bearing in 1b)"
+description = 'Specify format!("{hostname}-{pid}") or mark informational-only; advisory, no anchor.'
+dedup_id = "ec04c4429c471cfb"

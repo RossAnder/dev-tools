@@ -1,0 +1,21 @@
+slug = "serene-jumping-kitten"
+plan_path = "docs/plans/serene-jumping-kitten.md"
+status = "review"
+created = 2026-06-10
+updated = 2026-06-10
+branch = "main"
+scope = [
+    "lumina/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 10
+completed = 10
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/serene-jumping-kitten/review-ledger.toml"
+optimise_findings = ".claude/flows/serene-jumping-kitten/optimise-findings.toml"
+execution_record = ".claude/flows/serene-jumping-kitten/execution-record.toml"
+plan_review_findings = ".claude/flows/serene-jumping-kitten/plan-review-findings.toml"

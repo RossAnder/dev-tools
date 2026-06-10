@@ -1,0 +1,400 @@
+schema_version = 1
+last_updated = 2026-06-10
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-10
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "a20818a758714f2f"
+
+[[items]]
+id = "E2"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Wave-1 checkpoint build pass"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "populate-lumina-protocol-wire-types"
+dedup_id = "60d69f19433ccb18"
+
+[[items]]
+id = "E3"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Wave-1 checkpoint test pass (quick profile, 486 tests)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile quick"
+outcome = "pass"
+task_ref = "populate-lumina-protocol-wire-types"
+dedup_id = "661b693a08490784"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "populate-lumina-protocol-wire-types"
+status = "done"
+summary = "Populated lumina-protocol with the full Step-1b wire surface: PROTOCOL_VERSION=1, RequestId/Sha newtypes, WorktreeSnapshot, five-variant Intent, coarse Outcome enum, FailureKind, internally-tagged envelopes; serde round-trip + pinned-JSON snapshot tests (7/7)."
+files = [
+    "lumina/protocol/Cargo.toml",
+    "lumina/protocol/src/lib.rs",
+    "lumina/Cargo.lock",
+]
+commits = ["2433bcc"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "8da192195b0f3afe"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "gitbackend-trait-neutral-types-fakegitbackend-companion-lib-scaffolding"
+status = "done"
+summary = "Converted companion crate to lib+thin bin; engine-neutral object-safe GitBackend trait (11 methods incl. reset_hard/head_of), neutral GitError, ResolveOp/ResolveOutcome, scripted FakeGitBackend neutrality proof (4/4 tests); all Step-1b deps declared; mimalloc wired in main.rs."
+files = [
+    "lumina/companion/Cargo.toml",
+    "lumina/companion/src/lib.rs",
+    "lumina/companion/src/git/mod.rs",
+    "lumina/companion/src/git/fake.rs",
+    "lumina/companion/src/main.rs",
+    "lumina/Cargo.lock",
+]
+commits = ["2433bcc"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "1255e093d612b29e"
+
+[[items]]
+id = "E6"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Wave-2 checkpoint build pass (incl. inter-wave trait-gap fix)"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "shellgit-backend-quarantined-run-git-real-repo-tests"
+dedup_id = "91860117354087f9"
+
+[[items]]
+id = "E7"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Wave-2 checkpoint test pass (quick profile)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile quick"
+outcome = "pass"
+task_ref = "shellgit-backend-quarantined-run-git-real-repo-tests"
+dedup_id = "41cdc4f82ee56d59"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "shellgit-backend-quarantined-run-git-real-repo-tests"
+status = "done"
+summary = "ShellGit implements the full GitBackend surface via tokio::process with one base_command hygiene chokepoint; inherent run_git escape hatch quarantined off the trait; 14 real-repo integration tests (+2 attach_worktree tests from the inter-wave fix)."
+files = [
+    "lumina/companion/src/git/shell.rs",
+    "lumina/companion/tests/shell_git.rs",
+    "lumina/companion/src/git/mod.rs",
+    "lumina/companion/Cargo.toml",
+]
+commits = ["c4dec13"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "3a75206e5c662e1d"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "companion-executor-intent-backend-outcome"
+status = "done"
+summary = "Executor maps the five intents to coarse outcomes over Arc<dyn GitBackend>: integration-worktree merge choreography (lazy attach, MERGE_HEAD self-heal, clean-verify, conflict abort, reachability-gate reset_hard rollback), centralised GitError->FailureKind mapping; 16 FakeGitBackend tests."
+files = [
+    "lumina/companion/src/executor.rs",
+    "lumina/companion/tests/executor.rs",
+    "lumina/companion/src/lib.rs",
+]
+commits = ["c4dec13"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "5b73fc6617d50e1b"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "server-companion-seam-registry-lease-ws-endpoint"
+status = "done"
+summary = "CompanionRegistry (single slot, pending map, in-memory merge leases, 120s tunable execute timeout, watch-based connected signal) + loopback-enforced GET /api/companion/ws with Hello validation, auto-Reconcile, ping/missed-pong reaper; AppState.companion defaulted empty; serve switched to into_make_service_with_connect_info; 9 registry unit tests."
+files = [
+    "lumina/server/Cargo.toml",
+    "lumina/server/src/lib.rs",
+    "lumina/server/src/companion/mod.rs",
+    "lumina/server/src/http/companion.rs",
+    "lumina/server/src/http/mod.rs",
+    "lumina/server/src/app.rs",
+    "lumina/Cargo.lock",
+]
+commits = ["c4dec13"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "c9d29a5bc547c236"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-06-10
+agent = "implement"
+task_ref = "companion-executor-intent-backend-outcome"
+summary = "GitBackend widened with attach_worktree between waves: the frozen create_worktree was new-branch-only, but User Decision 1 requires attaching a worktree to the EXISTING integration target branch."
+original_intent = "Lazily create the integration worktree via the frozen GitBackend::create_worktree surface (11 methods, frozen at Task 2)."
+rationale = "create_worktree is documented and implemented as new-branch-only (git worktree add -b); attaching the existing target branch is a distinct git operation. Fixed via the plan's sanctioned between-waves protocol: one additive object-safe method (attach_worktree) implemented in ShellGit + FakeGitBackend, executor lazy-create arm switched to it, base-resolution workaround deleted."
+commits = ["c4dec13"]
+dedup_id = "af2e1db6afb5e4dc"
+
+[[items]]
+id = "E12"
+type = "deviation"
+date = 2026-06-10
+agent = "implement"
+task_ref = "populate-lumina-protocol-wire-types"
+summary = "CommitCheckpoint.stage_paths removed from the v1 wire: selective staging was inexpressible over the GitBackend trait (commit_all only) and has no Step-1b consumer."
+original_intent = "Task 1 designed Intent::CommitCheckpoint{path, message, stage_paths: Option<Vec<String>>} with Some(paths) staging exactly the named paths."
+rationale = "The trait exposes only commit_all; widening it for a feature with zero 1b consumers violates minimum-change. v1 is unshipped so the field was dropped without a version bump; checkpoint commits are commit-all semantics, selective staging reintroducible in a future protocol version."
+commits = ["c4dec13"]
+dedup_id = "b3c28cccceaeb0c9"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Wave-3 checkpoint build pass"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "companion-connection-loop-binary"
+dedup_id = "929a5c263b034148"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Wave-3 checkpoint test pass (quick profile, 540 tests)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile quick"
+outcome = "pass"
+task_ref = "companion-connection-loop-binary"
+dedup_id = "6fa09dbb9ca1c98d"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "companion-connection-loop-binary"
+status = "done"
+summary = "Dial loop (connect_async -> Hello -> select over inbound frames + 60s silence deadline), sequential intent dispatch via testable handle_text_frame, capped exponential backoff with no-rand jitter; main.rs gains clap args, tracing init, .git validation, ShellGit+Executor wiring; 5 unit tests."
+files = [
+    "lumina/companion/src/connection.rs",
+    "lumina/companion/src/main.rs",
+    "lumina/companion/src/lib.rs",
+]
+commits = ["37cbbf9"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "6df963cd87fa0415"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "execute-worktree-merge-mcp-tool-http-mirror-reachability-query"
+status = "done"
+summary = "execute_worktree_merge MCP tool + POST /api/worktrees/{id}/execute-merge mirror sharing one flow fn: pre-flight -> derive must_remain_reachable (UNION over both task_commits join paths) -> LeaseGuard -> dispatch -> record_worktree_merge with ground-truth SHA on Merged/AlreadyUpToDate, no DB write on Conflicted; count gate 84->85; CompanionRegistry::repo_root() accessor added (sanctioned); 52 scoped tests green. First dispatch was interrupted; retry agent verified all seams and completed."
+files = [
+    "lumina/core/src/repo/worktrees.rs",
+    "lumina/server/src/mcp/worktrees.rs",
+    "lumina/server/src/mcp/mod.rs",
+    "lumina/server/src/http/worktrees.rs",
+    "lumina/server/src/companion/mod.rs",
+]
+commits = ["37cbbf9"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "02d5cf37cec4010a"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Wave-4 checkpoint build pass"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+task_ref = "serve-with-companion-co-launch"
+dedup_id = "2e2eabc607d5502e"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Wave-4 checkpoint test pass (quick profile, 552 tests incl. companion_e2e)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile quick"
+outcome = "pass"
+task_ref = "serve-with-companion-co-launch"
+dedup_id = "3a832364b3492afb"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "serve-with-companion-co-launch"
+status = "done"
+summary = "--with-companion/--companion-bin flags on the bare invocation: pure injectable binary resolution (override -> sibling of current_exe, .exe on Windows, actionable missing error), in-code subcommand gate, kill_on_drop child held across serve().await in cli::run; 9 unit tests."
+files = ["lumina/server/src/cli.rs"]
+commits = ["f06ca26"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "81827abea5e6bcd1"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "cross-plane-e2e-test"
+status = "done"
+summary = "companion_e2e.rs: first ephemeral-listener e2e (port-0 listener + in-process companion over real WS, oneshot for HTTP); scenarios: merged outcome carries ground-truth SHA with git+DB agreement and sprint review->done, conflicted-no-record with lease provably released, CommitCheckpoint->record_task_commits inversion + AlreadyUpToDate re-run; both reachability join paths seeded; no sleeps (connected() watch)."
+files = [
+    "lumina/server/Cargo.toml",
+    "lumina/server/tests/companion_e2e.rs",
+    "lumina/Cargo.lock",
+]
+commits = ["f06ca26"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "a7123e61153c44a9"
+
+[[items]]
+id = "E21"
+type = "deviation"
+date = 2026-06-10
+agent = "implement"
+task_ref = "documentation-updates"
+summary = "Co-launch run invocation corrected in docs: bare cargo run -p lumina-server is ambiguous (two [[bin]] targets, no default-run), so docs use the --bin lumina form."
+original_intent = "Plan T10 suggested documenting the debug co-launch as: cargo run -p lumina-server -- --with-companion"
+rationale = "lumina-server ships two bins (lumina + pty_stub) with no default-run, so the suggested form errors; docs were written with cargo run --manifest-path lumina/Cargo.toml -p lumina-server --bin lumina -- --with-companion, matching the repo's existing disambiguation guidance."
+dedup_id = "4df9e5267104ea5d"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Phase-3 final build pass (incremental off)"
+command = "CARGO_INCREMENTAL=0 cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "1fcaad0c276e98bf"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Phase-3 full test suite pass (ci profile, 554 tests)"
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path lumina/Cargo.toml --profile ci"
+outcome = "pass"
+dedup_id = "2350db0e077d0cf6"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Phase-3 clippy pass, no warnings"
+command = "CARGO_INCREMENTAL=0 cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "a3f3e2f54e4c979d"
+
+[[items]]
+id = "E26"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Server stays git-free at compile time: zero git2/gix in normal dep tree"
+command = "cargo tree -p lumina-server --manifest-path lumina/Cargo.toml -e normal | rg -i git2|gix (inverted: zero matches required)"
+outcome = "pass"
+dedup_id = "e5fa99b7e8aec560"
+
+[[items]]
+id = "E27"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Companion isolation: zero lumina-core/server/sqlx/axum in normal dep tree"
+command = "cargo tree -p lumina-companion --manifest-path lumina/Cargo.toml -e normal | rg 'lumina-(core|server)|sqlx|axum' (inverted: zero matches required)"
+outcome = "pass"
+dedup_id = "23de9774c48b400a"
+
+[[items]]
+id = "E28"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "cargo audit pass (one pre-existing allowed warning: unmaintained serial via portable-pty)"
+command = "cargo audit --file lumina/Cargo.lock"
+outcome = "pass"
+dedup_id = "ff0035ab4b56ac29"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Macro-eradication gate: zero sqlx bang-macro matches"
+command = "rg sqlx-query-bang-pattern lumina/core/src lumina/server/src (inverted: zero matches required; pattern per CLAUDE.md macro gate)"
+outcome = "pass"
+dedup_id = "5c569a98ddf5eb74"
+
+[[items]]
+id = "E29"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "documentation-updates"
+status = "done"
+summary = "Root CLAUDE.md, lumina/CLAUDE.md, and the lumina-story-blocks mcp SKILL.md updated: real protocol/companion crate descriptions, co-launch + install + smoke commands, MCP surface narrated to 85 with execute_worktree_merge, in-memory lease + heartbeat + BranchInUse constraint documented, never-shells-to-git claims scoped to the control plane, migration pointer fixed to 0018; all acceptance greps zero."
+files = [
+    "CLAUDE.md",
+    "lumina/CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "3716917f6018a5fc"
+
+[[items]]
+id = "E30"
+type = "status-transition"
+date = 2026-06-10
+agent = "plan-update"
+summary = "All 10 plan tasks done and Phase-3 verification green; implementation finished, awaiting review sign-off"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "c80dd413a71edaf4"
