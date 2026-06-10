@@ -1,0 +1,21 @@
+slug = "binary-jumping-yao"
+plan_path = "docs/plans/binary-jumping-yao.md"
+status = "review"
+created = 2026-06-09
+updated = 2026-06-09
+branch = "review-apply/sprint-lifecycle-worktrees"
+scope = [
+    "lumina/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 6
+completed = 6
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/binary-jumping-yao/review-ledger.toml"
+optimise_findings = ".claude/flows/binary-jumping-yao/optimise-findings.toml"
+execution_record = ".claude/flows/binary-jumping-yao/execution-record.toml"
+plan_review_findings = ".claude/flows/binary-jumping-yao/plan-review-findings.toml"

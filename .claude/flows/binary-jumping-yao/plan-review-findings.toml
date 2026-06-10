@@ -1,0 +1,213 @@
+schema_version = 1
+last_updated = 2026-06-09
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Research Notes"
+summary = '"Clean cut — no back-edges" is FALSE: repo (→core) imports crate::pty::jsonl_tail, forming a crate cycle T2 cannot compile'
+description = "VERIFIED via Grep: repo/sessions.rs:32 and repo/sessions/harvest.rs:18,426 carry `use crate::pty::jsonl_tail::{parse_line, record_index_fields, JsonlRecordParsed, SessionRecordIndex, AssistantContentBlock, JsonlRecord, UserContent, UserContentBlock}` plus is_corpus_blank at sessions.rs:373. The plan moves repo→core but keeps pty→server, so core would need lumina_server::pty while server already depends on core — a cycle Cargo rejects. The blanket import rewrite rewrites the wrong side and cannot fix it. T2's 'compile once at the end' checkpoint hits this with no remediation in the plan. Resolution (lumina/CLAUDE.md §Session corpus already calls jsonl_tail the conceptual sibling of harvest.rs, DbClient/AppState-free): git mv pty/jsonl_tail/ — confirm whether it drags pty/protocol, imported by jsonl_tail/parse.rs — into lumina-core; rewrite the two core files to crate::jsonl_tail and server pty refs to lumina_core::jsonl_tail; fix the rustdoc link at repo/pty.rs:308. This expands T2's module set beyond the six the Scope names and is the single most important fix for the carve."
+anchor_old = "**Cut is clean — no back-edges** (Explore agent 1). `repo`/`db`/`domain`/`error`/`export`/`import` import nothing from `http`/`mcp`/`app`/`pty`. The only forward edge is `pty/spawn.rs` → `crate::app::AppState` (server→server, fine)."
+anchor_new = "**Cut is ALMOST clean — one real back-edge to resolve** (re-verified against code). `db`/`domain`/`error`/`export`/`import` import nothing from `http`/`mcp`/`app`/`pty`, but `repo` DOES: `repo/sessions.rs:32` and `repo/sessions/harvest.rs:18,426` `use crate::pty::jsonl_tail::{…}`, and `jsonl_tail` itself depends on `crate::pty::protocol`. This is a core→server cycle the sed rewrite cannot fix. RESOLUTION (part of T2): `git mv` the DB-free `pty/jsonl_tail/` (+ `pty/protocol` if needed) into `lumina-core` (the conceptual sibling of `repo/sessions/harvest.rs` per lumina/CLAUDE.md), rewrite the two core files to `crate::jsonl_tail` and server refs to `lumina_core::jsonl_tail`, and fix the rustdoc link at `repo/pty.rs:308`. The forward edge `pty/spawn.rs` → `crate::app::AppState` stays server→server, fine."
+dedup_id = "b4c92d9c7dd49f3b"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "The #1-risk CRLF mitigation is unactionable — there is NO .gitattributes to 'confirm'; one must be ADDED"
+description = "VERIFIED via Glob: the only .gitattributes in the tree is vendored under lumina/web/node_modules; the repo has none at root or lumina/, and .git/config sets no core.autocrlf — so on Windows the unsafe default governs *.sql line endings. sqlx::migrate! hashes file CONTENT (confirmed db/mod.rs:100; sqlx#2659), so a CRLF re-normalisation silently changes the checksum and trips db::init against an existing dev DB while the build stays green. The mitigation 'confirm .gitattributes does not re-normalise' points at a file that does not exist. Fix: ADD a rule pinning migrations to LF before the move."
+anchor_old = "*Mitigation*: `git mv` only, verify pure-rename diffs, confirm `.gitattributes` does not re-normalise `*.sql`. This is the highest-value single check in the carve (T1 acceptance)."
+anchor_new = "*Mitigation*: there is currently NO repo `.gitattributes` (only a vendored one under `web/node_modules`) and no `core.autocrlf` set, so on Windows the unsafe default governs `*.sql`. ADD a repo rule (`lumina/migrations/*.sql text eol=lf`, or `migrations/** -text`) BEFORE the move so checksums are host-independent; `git mv` only; then verify `git diff --stat` shows R100 / zero content delta and `db::init` against an existing dev DB reports no checksum mismatch. This is the highest-value single check in the carve (T1 acceptance)."
+dedup_id = "3df05d2df056029c"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "executability"
+plan_section = "#### T2: Carve `lumina-core` out of `lumina-server`"
+summary = "The import rewrite is described as 'blanket / sed-uniform' but is NOT a global sed — it must be scoped to server files only and run AFTER the core git mv"
+description = "VERIFIED count: crate::{domain,repo,db,error,export,import} = 516 occurrences across 78 files, NOT '~60 server files'. ~270+ of those live inside the core-bound modules (repo/, domain/, db/, error.rs, export.rs, import/) and must STAY crate::; only ~45 server files (http/, mcp/, pty/, app.rs, cli.rs) flip to lumina_core::. A naive global sed would corrupt core's own self-references. T2's literal 'across lumina/server/src/**' is safe ONLY if the six core modules are git mv'd OUT first; the plan never states that ordering as a hard requirement, and the 'sed-uniform' framing invites a mis-scoped run. State the move-before-rewrite ordering and pin the exact command/glob."
+anchor_old = "Blanket-rewrite `crate::{domain,repo,db,error,export,import}` → `lumina_core::{...}` across `lumina/server/src/**`"
+anchor_new = '''AFTER the `git mv` of the six core modules into `lumina/core/` (so `lumina/server/src/**` no longer contains them), blanket-rewrite ONLY the references remaining in `lumina/server/src/**` (the ~45 server files: http/, mcp/, pty/, app.rs, cli.rs) from `crate::{domain,repo,db,error,export,import}` → `lumina_core::{...}` — e.g. `rg -l 'crate::(domain|repo|db|error|export|import)' lumina/server/src | xargs sed -i -E 's/crate::(domain|repo|db|error|export|import)/lumina_core::\1/g'`. The ~33 core files keep their `crate::` self-references unchanged because they were moved out of the glob first (a global sed would corrupt them). Verified count: 516 occurrences across 78 files.'''
+dedup_id = "aefffc47c9373a8b"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T2: Carve `lumina-core` out of `lumina-server`"
+summary = "tests/fixtures/flow-sample/ has no assigned home — import/mod.rs's inline test reads it via CARGO_MANIFEST_DIR and breaks after import→core"
+description = """VERIFIED: import/mod.rs:366 resolves Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("flow-sample"). After import/ moves to core, CARGO_MANIFEST_DIR becomes lumina/core/, so the fixture must land at lumina/core/tests/fixtures/flow-sample/. Neither T1's move list nor T2's test-relocation names the fixture dir, so the build stays green but the test fails at runtime (caught by T2's nextest acceptance, but the executor has to debug a gap the plan could have named)."""
+anchor_old = "Relocate core-only integration tests (`concurrency`, `claim_concurrency`, `migration_*`, `smoke`, `showcase`, `sprint_lifecycle`) to `core/tests/`"
+anchor_new = """Relocate core-only integration tests (`concurrency`, `claim_concurrency`, `migration_*` incl. 0017, `smoke_test`, `showcase_test`, `sprint_lifecycle`) AND the `tests/fixtures/flow-sample/` dir (read by `import/mod.rs:366`'s inline tests via `env!("CARGO_MANIFEST_DIR")/tests/fixtures`) to `core/tests/`"""
+dedup_id = "69306aec422c6d0b"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "completeness"
+plan_section = "#### T6: Update CLAUDE.md verification commands and gate paths"
+summary = "Stale build commands live outside the two CLAUDE.md files, incl. a hard `-p lumina` package break in the lumina-story-blocks plugin skills"
+description = "VERIFIED via Grep: claude/plugins/lumina-story-blocks/skills/verification-commands/SKILL.md:36-38, README.md:91, and set-task-spec/SKILL.md:77 carry `--manifest-path lumina/Cargo.toml` / `-p lumina` examples. `-p lumina` is now `-p lumina-server` (package renamed) — a hard break, not just a path. The verification-commands skill seeds agent-authored verification_commands in future flows, so the staleness propagates. Counter: these are 'e.g.' prose examples that degrade gracefully; the user may scope plugin-doc freshness out of a structural carve, but the package rename is genuine."
+anchor_old = "- **Files**: `CLAUDE.md` (root), `lumina/CLAUDE.md`"
+anchor_new = "- **Files**: `CLAUDE.md` (root), `lumina/CLAUDE.md`, `claude/plugins/lumina-story-blocks/skills/verification-commands/SKILL.md` (canonical command examples), `claude/plugins/lumina-story-blocks/README.md` (prereqs), `claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md` (`-p lumina` → `-p lumina-server`, a hard package-name break)"
+dedup_id = "18fd729952d8883a"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T2: Carve `lumina-core` out of `lumina-server`"
+summary = "Consider decomposing T2 — it now bundles six distinct concerns behind one non-bisectable end-checkpoint"
+description = "T2 conflates module git mvs, the jsonl_tail back-edge carve (P1), error.rs axum cfg-gating, the ~45-file import rewrite, manifest wiring, and test relocation+rewrite, with an admitted non-compiling interior. A failure at the single checkpoint gives no signal about which concern broke. Splitting into T2a (moves incl. the back-edge fix; build expected-red), T2b (scoped rewrite + cfg-gate → green), T2c (test+fixture relocation) keeps each piece independently verifiable and isolates the cycle error from the 45-file rewrite diff. The plan deliberately chose monolithic ('compile once at the end'); the back-edge discovery strengthens the case for at least separating the moves from the rewrite. Advisory — no single anchor."
+dedup_id = "ebda292c268bf3e9"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### T2: Carve `lumina-core` out of `lumina-server`"
+summary = "Pin core's dependency versions + feature lists explicitly — a behaviour-neutral carve must reproduce them exactly"
+description = "T2 lists core's dep NAMES but only axum carries a version ('0.8'). sqlx in particular has a load-bearing feature set (migrate retained, macros dropped); core needs a runtime+migrate subset while web/axum features stay server-side. The plan leaves the executor to reverse-engineer versions and the sqlx feature split from the current server/Cargo.toml — an executor-time decision the plan should pre-make. T5 has the same gap for [workspace.dependencies] version strings."
+anchor_old = "Give `core/Cargo.toml` deps `sqlx, serde, serde_json, toml, anyhow, jiff, uuid, sha2, tempfile, schemars`"
+anchor_new = "Give `core/Cargo.toml` deps by copying each crate's entry VERBATIM (version pin + feature list) from the current `lumina/server/Cargo.toml`: `sqlx` (preserve its version + the runtime-query + `migrate` feature subset; drop axum/web-only features), `serde, serde_json, toml, anyhow, jiff, uuid, sha2, tempfile, schemars`. Do not invent versions — the carve is behaviour-neutral only if pins and features are preserved exactly"
+dedup_id = "f13a9c3713739b66"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Research Notes"
+summary = "'Three manifest-relative path hazards' is an undercount — there are five"
+description = """VERIFIED: beyond sqlx::migrate!, embed_assets!, and build.rs, two more manifest-relative hazards exist — import/mod.rs:366 (env!("CARGO_MANIFEST_DIR")/tests/fixtures, the fixture issue in P4) and repo/findings.rs:1263 (include_str!("../../migrations/0011_runs_sprints_findings_queue.sql")). The findings.rs one resolves correctly post-move (core/src/repo → ../../migrations = core/migrations), but it escapes the note's per-hazard 'string literals stay valid' reasoning if left unenumerated."""
+anchor_old = "**Three compile-time manifest-relative path hazards** (Explore agent 2):"
+anchor_new = '**Five compile-time manifest-relative path hazards** (Explore agent 2 + completeness review — adds `import/mod.rs:366` `env!("CARGO_MANIFEST_DIR")` and `repo/findings.rs:1263` `include_str!("../../migrations/0011_…sql")`; the latter resolves correctly post-move, the former needs the fixture relocation in T2):'
+dedup_id = "07ea735cbfe89486"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Research Notes"
+summary = "Inventory counts are stale: '19 integration tests' is 18 test files, and migration_0017 (core-only) is unlisted"
+description = "VERIFIED via Glob: lumina/tests/ holds 18 .rs files, not 19, and migration_0017.rs exists (the Scope calls migration-0017 'parked' but its test is present and core-only). The test-routing logic itself is sound (e2e/bulk_e2e/auq_e2e/pty_e2e/sessions_e2e → server; migration_*/concurrency/claim_concurrency/smoke_test/showcase_test/sprint_lifecycle → core). Reconcile the count and name 0017 so T2's acceptance is self-checkable."
+anchor_old = "**19 integration tests** import `use lumina::{app,db,domain,mcp,pty,repo,error}` (Explore agent 3)."
+anchor_new = '**18 integration test files** import `use lumina::{app,db,domain,mcp,pty,repo,error}` (verified). (The Scope/Approach "~60 server files" for the import rewrite is likewise stale — the verified figure is 516 `crate::*` occurrences across 78 files, only ~45 of them server.)'
+dedup_id = "88604b02d51a45e3"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### T1: Move the whole crate into `lumina/server/` and create the workspace root"
+summary = "T1's move list omits the disposition of Cargo.lock, rust-toolchain.toml, web/dist"
+description = "T1 enumerates src/, tests/, build.rs, web/, migrations/, .config/ but not Cargo.lock (tracked, version 4). In a workspace the lockfile must live at the workspace root (lumina/Cargo.lock — where it already sits), so it must NOT be git mv'd into server/. web/dist (tracked, the embed_assets! input) rides the web/ move correctly; rust-toolchain.toml/.env stay at root. One explicit line prevents an over-literal 'move everything under lumina/' that would relocate the lockfile wrongly."
+anchor_old = "Leave `[profile.*]`/`[dependencies]` in `server/Cargo.toml` for now (T5 hoists them)."
+anchor_new = "Leave `[profile.*]`/`[dependencies]` in `server/Cargo.toml` for now (T5 hoists them). Do NOT `git mv` `lumina/Cargo.lock`, `lumina/rust-toolchain.toml`, or `lumina/.env` into `server/` — all three stay at the workspace root (`Cargo.lock` is rewritten by the first `--workspace` build; `rust-toolchain.toml` governs all members; `.env` sits beside the run cwd). `web/dist/` (tracked, the `embed_assets!` input) rides the `web/` move."
+dedup_id = "0a6db0ee93e03233"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### T6: Update CLAUDE.md verification commands and gate paths"
+summary = "Post-carve, bare `cargo run`/`cargo install --path` is ambiguous: bin name 'lumina' ≠ package 'lumina-server' across a 4-member workspace"
+description = "VERIFIED (lumina/Cargo.toml:16-30): [[bin]] name='lumina' (and pty_stub) live in package lumina-server. Bare `cargo run` from the new workspace root is ambiguous and fails; `cargo install --path lumina/server` installs both bins. The plan correctly uses `-p lumina-server` in its build/test commands, but T6 doesn't address the install idiom. Forward-looking (Step 1b's `lumina serve` assumes a `lumina` bin on PATH)."
+anchor_old = "Update the macro-eradication gate path to `lumina/core/src lumina/server/src`, and any `lumina/migrations` reference to `lumina/core/migrations`."
+anchor_new = "Update the macro-eradication gate path to `lumina/core/src lumina/server/src`, and any `lumina/migrations` reference to `lumina/core/migrations`. Add a `cargo install --path lumina/server --bin lumina` install idiom (the package now ships two bins — `lumina` + `pty_stub` — so `--bin lumina` is required) and note that bare `cargo run` from the workspace root is now ambiguous (use `-p lumina-server`)."
+dedup_id = "404918c342ccba8b"
+resolved = 2026-06-09
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Dependency Graph"
+summary = "Tighten serial-spine wording: lumina/Cargo.toml is CREATED in T1, only appended-to thereafter (not 'created in T2')"
+description = "VERIFIED: T1's Action authors lumina/Cargo.toml as the [workspace] root; T2 appends member 'core', T4 appends 'protocol'/'companion', T5 lifts profiles/deps. The current 'T2 which also creates it via member-append' wording risks an executor trying to re-create the root in T2. T3/T4/T6 parallel-safety is otherwise airtight (verified disjoint: assets.rs / root-manifest+stubs / CLAUDE.md)."
+anchor_old = "**Serial spine**: T1 → T2 → T4 → T5 (all touch `lumina/Cargo.toml` except T2 which also creates it via member-append; never edited concurrently)."
+anchor_new = '**Serial spine**: T1 → T2 → T4 → T5. `lumina/Cargo.toml` is CREATED in T1 (the `[workspace]` root) and only APPENDED-to thereafter — T2 adds member `"core"`, T4 adds `"protocol"`/`"companion"`, T5 lifts profiles/deps. Because T2→T4→T5 are serial the root manifest is never edited concurrently; T3 (assets.rs) and T6 (CLAUDE.md) touch disjoint files and run alongside T4 safely.'
+dedup_id = "c8d2093346fb162a"
+resolved = 2026-06-09
+
+[[vet_events]]
+timestamp = "2026-06-09T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped F3 ('84-tool gate stale') pre-persist: incoherent — plan says 84, mcp/mod.rs asserts 84 (lumina/CLAUDE.md authoritative), and the agent's own anchor_old==anchor_new. No discrepancy. Verified-and-kept: back-edge (repo/sessions.rs:32, harvest.rs:18,426 → P1), .gitattributes absence (→P2), dep-graph wording (→P12). resolver=3/edition-2024 confirmation folded into report as verified, not a finding."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-09T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All five verified. import/mod.rs:366 CARGO_MANIFEST_DIR fixture confirmed (→P4); repo/findings.rs:1263 include_str! confirmed and resolves post-move (→P8); .gitattributes absence confirmed (merged into P2); plugin stale paths confirmed via Grep incl -p lumina hard break (→P5); Cargo.lock/web-dist/toolchain omission (→P10). No CI exists to update (Glob found only node_modules workflows) — correctly omitted by plan."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-09T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All five verified. Back-edge (→P1, merged with Agent-1 F1). crate::{core-mod} count 516/78 confirmed authoritative — matches this agent exactly (→P3). T2-decompose judgement (→P6); dep-version pinning (→P7); 18 test files + migration_0017 confirmed via Glob (→P9). Parallel-safety T3/T4/T6 disjointness independently confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-09T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 1
+rationale = "Downgraded F2's file-count claim (626/82) — authoritative Grep is 516 across 78 files (matches Agent-3); substance (intra-core refs must stay crate::) merged into P3. F1 bin-name ambiguity verified vs Cargo.toml:16-30 (→P11). F3 CRLF (critical) merged into P2 at warning severity (git mv preserves the index blob; residual is a Windows-checkout hazard + unactionable mitigation wording). F5/F6 external-toolchain confirmations (resolver=3, dep: optional-feature, profiles-at-root, sqlx content-hash, embed manifest-relative) all accurate — folded into the report's verified section, not findings."
+dedup_id = "45ca31c3315a5978"

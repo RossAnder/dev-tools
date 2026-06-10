@@ -1,0 +1,269 @@
+schema_version = 1
+last_updated = 2026-06-09
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-09
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "a20818a758714f2f"
+
+[[items]]
+id = "E2"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "T1 checkpoint: workspace build passed"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "9235fdb5c4ba33dd"
+
+[[items]]
+id = "E3"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "T1 checkpoint: full nextest suite passed (475 tests; pty_e2e/conpty excluded from run)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile ci -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+dedup_id = "8207ee4b87f4acd0"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-09
+agent = "implement"
+task_ref = "t1-move-crate-into-server-and-create-workspace-root"
+status = "done"
+summary = "Carved single-crate lumina into a Cargo workspace; git mv whole crate into lumina/server/, package renamed lumina-server (lib stays lumina), new workspace-root Cargo.toml + repo .gitattributes. All 17 migration .sql byte-identical (R100)."
+files = [
+    "lumina/Cargo.toml",
+    "lumina/server/Cargo.toml",
+    "lumina/Cargo.lock",
+    ".gitattributes",
+    "lumina/server/src/**",
+    "lumina/server/tests/**",
+    "lumina/server/migrations/**",
+    "lumina/server/web/**",
+    "lumina/server/build.rs",
+]
+commits = ["33e079f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "c8fe3d6bcb4cc455"
+
+[[items]]
+id = "E5"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "T2 checkpoint: workspace build passed"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "5debf1543207cec2"
+
+[[items]]
+id = "E6"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "T2 checkpoint: full nextest suite passed (475 tests, unchanged; pty_e2e/conpty excluded from run)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile ci -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+dedup_id = "d1dd2159f5ee466a"
+
+[[items]]
+id = "E7"
+type = "deviation"
+date = 2026-06-09
+agent = "implement"
+task_ref = "t2-carve-lumina-core-out-of-lumina-server"
+summary = "Core dependency set expanded beyond the plan's list; protocol moved with jsonl_tail; two repo helpers widened to pub; tempfile is a core runtime dep."
+original_intent = "Plan T2 listed core deps as sqlx/serde/serde_json/toml/anyhow/jiff/uuid/sha2/tempfile(dev)/schemars and named jsonl_tail as the back-edge move with protocol moving only 'if needed'."
+rationale = "Core additionally requires tokio(full), async-trait, notify, tracing as direct deps (referenced by jsonl_tail/repo/db, tracing via macro path). protocol confirmed it MUST follow jsonl_tail (parse.rs imports it; protocol is leaf-clean std/serde/uuid). tempfile is a RUNTIME dep (export.rs uses NamedTempFile), not dev-only. repo::corpus_raw and repo::now_string widened pub(crate)->pub for the cross-crate spawned-corpus writer in server pty/spawn.rs. All behaviour-neutral; build+475 tests green."
+commits = ["73f6e76"]
+dedup_id = "a55cb43639cf956e"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-09
+agent = "implement"
+task_ref = "t2-carve-lumina-core-out-of-lumina-server"
+status = "done"
+summary = "Carved lumina-core out of lumina-server: moved domain/repo/db/error/export/import/migrations + jsonl_tail + protocol to core; cfg-gated axum IntoResponse in core; scoped crate::->lumina_core:: rewrite across ~46 server files; wired manifests; relocated 12 core tests + flow-sample fixture. Macro gate zero; core axum-free by default."
+files = [
+    "lumina/Cargo.toml",
+    "lumina/core/Cargo.toml",
+    "lumina/core/src/lib.rs",
+    "lumina/core/src/error.rs",
+    "lumina/server/Cargo.toml",
+    "lumina/server/src/lib.rs",
+    "lumina/server/src/pty/mod.rs",
+    "lumina/core/src/**",
+    "lumina/server/src/**",
+    "lumina/core/tests/**",
+]
+commits = ["73f6e76"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "d6131e88b419ad1d"
+
+[[items]]
+id = "E9"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "Batch-3 checkpoint: workspace build (4 members) passed"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "6502f6c97af71506"
+
+[[items]]
+id = "E10"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "Batch-3 checkpoint: full nextest suite passed (475 tests; 1 benign flaky retry on Windows tempfile race; pty_e2e/conpty excluded from run)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile ci -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+dedup_id = "7c27f8aa5e2108d1"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-06-09
+agent = "implement"
+task_ref = "t3-harden-the-debug-spa-path-for-cwd-independence"
+status = "done"
+summary = "Hardened server debug-build SPA path: ServeDir/ServeFile now concat!(env!(CARGO_MANIFEST_DIR), /web/dist) so cargo run -p lumina-server from workspace root serves the SPA cwd-independently. Release embed_assets! untouched."
+files = ["lumina/server/src/assets.rs"]
+commits = ["042ecb5"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "a9f9ade88bcab996"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-06-09
+agent = "implement"
+task_ref = "t4-add-lumina-protocol-and-lumina-companion-stub-members"
+status = "done"
+summary = "Added lumina-protocol (stub lib, doc + one pub const) and lumina-companion (stub bin, fn main(){}) workspace members with no dependencies; members now [server, core, protocol, companion]. cargo metadata lists all four."
+files = [
+    "lumina/protocol/Cargo.toml",
+    "lumina/protocol/src/lib.rs",
+    "lumina/companion/Cargo.toml",
+    "lumina/companion/src/main.rs",
+    "lumina/Cargo.toml",
+    "lumina/Cargo.lock",
+]
+commits = ["042ecb5"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "969f8ee6bc851037"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-06-09
+agent = "implement"
+task_ref = "t6-update-claude-md-verification-commands-and-gate-paths"
+status = "done"
+summary = "Rewrote runnable lumina command inventory to workspace-aware forms across 5 files; macro-gate path -> lumina/core/src lumina/server/src; migrations -> lumina/core/migrations; SPA dir -> lumina/server/web; -p lumina -> -p lumina-server; added cargo install --path lumina/server --bin lumina idiom + workspace note. Architecture-prose lumina/src refs intentionally left."
+files = [
+    "CLAUDE.md",
+    "lumina/CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/README.md",
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/verification-commands/SKILL.md",
+]
+commits = ["042ecb5"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+scope_warning = true
+dedup_id = "b95896254b1fd518"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "Phase-3 final: workspace build passed"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "4c390797526b1336"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "Phase-3 final: full nextest suite passed (475 tests; pty_e2e/conpty excluded from run to avoid nested claude)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile ci -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+dedup_id = "931873e757538a5b"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "Phase-3 final: clippy clean (no errors or warnings)"
+command = "cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "6cb9ec85eff4d7a4"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "Phase-3 final: cargo audit pass; one pre-existing allowed advisory RUSTSEC-2017-0008 (unmaintained serial via portable-pty), not introduced by the carve"
+command = "cargo audit --file lumina/Cargo.lock"
+outcome = "pass"
+dedup_id = "ab7e284391fb52c7"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-06-09
+agent = "implement"
+task_ref = "t5-lift-profiles-dedup-deps-set-workspace-metadata"
+status = "done"
+summary = "Lifted [profile.release] to workspace root, deleted dead [profile.dev.package.*]; added [workspace.package] + [workspace.dependencies] (10 shared/pinned crates); all 4 members inherit metadata + reference shared deps via workspace=true with member-local features. cargo check clean, no profiles-ignored/unused-manifest-key warnings."
+files = [
+    "lumina/Cargo.toml",
+    "lumina/core/Cargo.toml",
+    "lumina/server/Cargo.toml",
+    "lumina/protocol/Cargo.toml",
+    "lumina/companion/Cargo.toml",
+]
+commits = ["d144150"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "07f6aae70f49ee53"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-06-09
+agent = "implement"
+summary = "Phase-3 final: macro-eradication smoke gate reported zero sqlx compile-time query!/query_as!/query_scalar! macros (zero matches = pass)"
+command = "rg sqlx-compile-time-query-macros lumina/core/src lumina/server/src"
+outcome = "pass"
+dedup_id = "aa2d2713799eb22c"
+
+[[items]]
+id = "E20"
+type = "status-transition"
+date = 2026-06-09
+agent = "plan-update"
+summary = "All 6 carve tasks done + Phase-3 verification green; flow in-progress -> review (awaiting /review + /optimise sign-off)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "ff9183b473286205"

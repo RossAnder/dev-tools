@@ -377,3 +377,15 @@ scope = [
     "lumina/docs/runbooks/dogfood-lifecycle.md",
     "docs/plans/**",
 ]
+
+[[active]]
+slug = "binary-jumping-yao"
+last_used = "2026-06-09T11:40:00.3090064Z"
+
+[active.binding]
+branch = "review-apply/sprint-lifecycle-worktrees"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/**",
+    "CLAUDE.md",
+]
