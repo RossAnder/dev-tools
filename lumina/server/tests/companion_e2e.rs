@@ -682,12 +682,18 @@ async fn execute_create_e2e_records_ground_truth_and_rejects_duplicate_branch() 
     let (status, body) = execute_create(&stack.router, &sprint_b, "sprint/alpha", "main").await;
     assert_eq!(status, StatusCode::BAD_GATEWAY, "duplicate git branch is 502: {body}");
     assert_eq!(body["error"]["kind"], "companion");
+    // R7: callers branch on the STRUCTURED snake_case failure_kind field, never
+    // on rendered Debug prose (which no longer appears in the message).
+    assert_eq!(
+        body["error"]["failure_kind"], "branch_in_use",
+        "the envelope carries the structured failure_kind: {body}"
+    );
     assert!(
         body["error"]["message"]
             .as_str()
             .expect("message string")
-            .contains("BranchInUse"),
-        "the envelope names the BranchInUse failure: {body}"
+            .contains("branch_in_use"),
+        "the message names the wire failure kind: {body}"
     );
 
     // (c) The migration-0018 RECORD-side guard through the SAME flow: a

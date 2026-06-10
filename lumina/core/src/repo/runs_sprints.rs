@@ -402,6 +402,89 @@ pub async fn add_tasks_to_sprint(
     Ok(added)
 }
 
+/// A `sprints` row as read by [`get_sprint`] — the typed sprint read the
+/// execute-flow pre-flights consume (review R14: the server layers must not
+/// issue raw `SELECT status FROM sprints` probes; this read is the repo seam).
+/// `status` is parsed into the typed [`SprintStatus`]; an out-of-vocab / legacy
+/// string is a clean [`AppError::Validation`], mirroring [`set_sprint_status`].
+/// (`sprints` has no `updated_at` / soft-delete column — only `created_at`.)
+#[derive(Debug, Clone)]
+pub struct SprintRecord {
+    pub id: String,
+    pub title: Option<String>,
+    pub status: SprintStatus,
+    pub worktree_id: Option<String>,
+    pub predecessor_sprint_id: Option<String>,
+    pub created_at: String,
+}
+
+/// Raw [`SprintRecord`] row as it comes off the database (`status` still the
+/// free-TEXT column value). The generic-`R` [`sqlx::FromRow`] follows the
+/// canonical [`crate::db`] recipe.
+#[derive(Debug)]
+struct SprintRow {
+    id: String,
+    title: Option<String>,
+    status_raw: String,
+    worktree_id: Option<String>,
+    predecessor_sprint_id: Option<String>,
+    created_at: String,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for SprintRow
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(SprintRow {
+            id: row.try_get("id")?,
+            title: row.try_get("title")?,
+            status_raw: row.try_get("status")?,
+            worktree_id: row.try_get("worktree_id")?,
+            predecessor_sprint_id: row.try_get("predecessor_sprint_id")?,
+            created_at: row.try_get("created_at")?,
+        })
+    }
+}
+
+/// Read a single sprint by id (review R14) — the typed read backing the
+/// `execute_worktree_create` pre-flight (and any future sprint-keyed consumer).
+/// A missing sprint is a clean [`AppError::NotFound`]; a stored status outside
+/// the [`SprintStatus`] vocab is a clean [`AppError::Validation`] (NEVER a parse
+/// panic), mirroring [`set_sprint_status`]'s gate 2. Read-only, no transaction.
+pub async fn get_sprint(db: &impl DbClient, sprint_id: &str) -> Result<SprintRecord, AppError> {
+    let row: Option<SprintRow> = db
+        .query_opt::<SprintRow>(
+            "SELECT id, title, status, worktree_id, predecessor_sprint_id, created_at \
+             FROM sprints WHERE id = $1",
+            args![sprint_id.to_owned()],
+        )
+        .await?;
+    let Some(row) = row else {
+        return Err(AppError::NotFound(format!("sprint '{sprint_id}' not found")));
+    };
+    let status: SprintStatus =
+        serde_json::from_value(serde_json::Value::String(row.status_raw.clone())).map_err(
+            |_| {
+                AppError::Validation(format!(
+                    "sprint '{sprint_id}' has unrecognised status '{}'",
+                    row.status_raw
+                ))
+            },
+        )?;
+    Ok(SprintRecord {
+        id: row.id,
+        title: row.title,
+        status,
+        worktree_id: row.worktree_id,
+        predecessor_sprint_id: row.predecessor_sprint_id,
+        created_at: row.created_at,
+    })
+}
+
 /// The sprint a task is bound to via `sprint_tasks`, most-recent attachment
 /// winning, or `None` when the task is not a sprint member. Read-only, no
 /// transaction.

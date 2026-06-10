@@ -3384,7 +3384,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     //    scoped to S1. Idempotent on a re-record (the second insert collapses).
     let recorded = lumina_core::repo::record_task_commits(
         &pool,
-        "sha-deadbeef",
+        "deadbeef",
         &[impl_task.as_str(), checkpoint_task.as_str()],
         Some(&s1),
     )
@@ -3393,7 +3393,7 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     assert_eq!(recorded, 2, "two genuinely-new commit→task edges recorded");
     let re_recorded = lumina_core::repo::record_task_commits(
         &pool,
-        "sha-deadbeef",
+        "deadbeef",
         &[impl_task.as_str(), checkpoint_task.as_str()],
         Some(&s1),
     )
@@ -3658,11 +3658,11 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     assert_eq!(list_arr[0]["id"].as_str(), Some(w1.as_str()), "the filtered list carries W1");
 
     // 10c. GET /api/commits?commit_sha= — the task_commits read surfaces the two
-    //      edges recorded under sha-deadbeef.
+    //      edges recorded under deadbeef.
     let commits_resp = build_router(state.clone())
         .oneshot(
             Request::builder()
-                .uri("/api/commits?commit_sha=sha-deadbeef")
+                .uri("/api/commits?commit_sha=deadbeef")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -3671,11 +3671,11 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     assert_eq!(commits_resp.status(), StatusCode::OK, "commits read returns 200");
     let commits_body = json_body(commits_resp).await;
     let commits_arr = commits_body.as_array().expect("commits returns a JSON array");
-    assert_eq!(commits_arr.len(), 2, "sha-deadbeef covers two task edges");
+    assert_eq!(commits_arr.len(), 2, "deadbeef covers two task edges");
     assert!(
         commits_arr
             .iter()
-            .all(|c| c["commit_sha"].as_str() == Some("sha-deadbeef")),
+            .all(|c| c["commit_sha"].as_str() == Some("deadbeef")),
         "every returned edge carries the queried commit sha"
     );
     let covered: std::collections::HashSet<&str> = commits_arr

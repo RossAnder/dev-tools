@@ -31,12 +31,15 @@
 //!     `execute_worktree_merge` MCP tool (ADR-0006 Step 1b; body
 //!     `{target_branch?, no_ff?}`, `no_ff` defaulting TRUE). Both entry points
 //!     drive the SAME shared pipeline,
-//!     [`crate::mcp::execute_worktree_merge_flow`] (pre-flight → lease →
+//!     [`crate::mcp::execute_worktree_merge_flow`] (pre-flight → leases →
 //!     companion dispatch → record/no-record) — precedent for the http→mcp
 //!     import: `http::structured_patches`. Pre-flight violations are 422;
-//!     companion transport failures / terminal `Failed` outcomes map to a 502
+//!     companion transport failures map to a 502
 //!     `{"error":{"kind":"companion",...}}` envelope HERE (no new core
-//!     `AppError` variant); a Conflicted outcome is a 200 SUCCESS payload
+//!     `AppError` variant); terminal `Failed` outcomes carry a STRUCTURED
+//!     snake_case `failure_kind` field on that envelope (R7), with the
+//!     caller-input kinds (`not_found`/`dirty_worktree`) mapped to 422 and the
+//!     rest to 502; a Conflicted outcome is a 200 SUCCESS payload
 //!     (`{outcome:"conflicted", paths, recorded:false}`) for the caller to
 //!     surface as an open question / finding. A Merged payload may carry the
 //!     `target_checkout` operator hint + human `hint` remedy string (the
@@ -67,7 +70,10 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::mcp::{MergeFlowError, execute_worktree_create_flow, execute_worktree_merge_flow};
+use crate::mcp::{
+    CompanionFlowError, execute_worktree_create_flow, execute_worktree_merge_flow,
+    failure_kind_is_caller_input, failure_kind_wire_name,
+};
 use lumina_core::domain::{NewWorktree, SprintStatus, TaskCommitQuery, Worktree};
 use lumina_core::error::AppError;
 use lumina_core::repo;
@@ -298,10 +304,12 @@ async fn record_worktree_rejection_handler(
 /// → record (`Merged`/`AlreadyUpToDate`, ground-truth sha) or no-record
 /// (`Conflicted` → 200 with `{outcome:"conflicted", paths, recorded:false}`
 /// for the caller to surface as an open question / finding). Companion
-/// transport failures and terminal `Failed` outcomes map to a 502
-/// `{"error":{"kind":"companion","message":…}}` envelope here — the
-/// handler-layer mapping the plan prescribes instead of a new core `AppError`
-/// variant.
+/// transport failures map to a 502
+/// `{"error":{"kind":"companion","message":…}}` envelope here; terminal
+/// `Failed` outcomes additionally carry the structured `failure_kind` field
+/// (R7), with caller-input kinds mapped to 422 — the handler-layer mapping the
+/// plan prescribes instead of a new core `AppError` variant
+/// ([`flow_error_response`]).
 async fn execute_worktree_merge_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -312,7 +320,7 @@ async fn execute_worktree_merge_handler(
         .await
     {
         Ok(value) => Json(value).into_response(),
-        Err(err) => flow_error_response("merge", err),
+        Err(err) => flow_error_response(err),
     }
 }
 
@@ -337,45 +345,63 @@ async fn execute_worktree_create_handler(
     tracing::debug!(sprint_id = %sprint_id, "http: POST /sprints/{{sprint_id}}/worktree/execute");
     match execute_worktree_create_flow(&state, &sprint_id, &body.branch, &body.base_ref).await {
         Ok(value) => Json(value).into_response(),
-        Err(err) => flow_error_response("worktree create", err),
+        Err(err) => flow_error_response(err),
     }
 }
 
-/// Map a [`MergeFlowError`] from either execute flow into the HTTP response
-/// currency — shared by the merge and create handlers. `App` errors take the
-/// ordinary typed envelope (NotFound → 404, Validation → 422, …); companion
-/// transport failures and terminal `Failed` outcomes map to a 502 Bad Gateway
-/// with the `{"error":{"kind":"companion",...}}` envelope (the handler-layer
-/// mapping the plan prescribes instead of a new core `AppError` variant). `op`
-/// labels which flow failed (`"merge"` / `"worktree create"`) so the terminal
-/// message keeps its operation context.
-fn flow_error_response(op: &str, err: MergeFlowError) -> Response {
+/// Map a [`CompanionFlowError`] from either execute flow into the HTTP
+/// response currency — shared by the merge and create handlers (the operation
+/// label rides INSIDE the error, review R15, so this is the layer's ONE
+/// formatting site). `App` errors take the ordinary typed envelope (NotFound →
+/// 404, Validation → 422, …); companion transport failures map to a 502 Bad
+/// Gateway with the `{"error":{"kind":"companion",...}}` envelope (the
+/// handler-layer mapping the plan prescribes instead of a new core `AppError`
+/// variant).
+///
+/// A terminal `Failed` outcome additionally carries the STRUCTURED snake_case
+/// `failure_kind` field on the envelope (review R7 — derived from the protocol
+/// crate's serde representation via [`failure_kind_wire_name`]; callers branch
+/// on it, never on the message prose), and the caller-input kinds
+/// (`not_found` / `dirty_worktree`) map to 422 instead of 502 (R7c — bad
+/// caller input is not a gateway fault).
+fn flow_error_response(err: CompanionFlowError) -> Response {
     match err {
         // Pre-flight / record-write failures: the ordinary typed AppError
         // envelope (NotFound → 404, Validation → 422, …).
-        MergeFlowError::App(e) => e.into_response(),
-        // Companion transport / terminal git failures: 502 Bad Gateway with the
-        // error-envelope shape the rest of /api uses (kind = "companion").
-        MergeFlowError::Companion(e) => (
+        CompanionFlowError::App(e) => e.into_response(),
+        // Companion transport failures: 502 Bad Gateway with the error-envelope
+        // shape the rest of /api uses (kind = "companion").
+        CompanionFlowError::Companion { op, error } => (
             StatusCode::BAD_GATEWAY,
             Json(json!({
                 "error": {
                     "kind": "companion",
-                    "message": format!("companion execution failed: {e}"),
+                    "message": format!("companion {op} execution failed: {error}"),
                 }
             })),
         )
             .into_response(),
-        MergeFlowError::Failed { kind, message } => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({
-                "error": {
-                    "kind": "companion",
-                    "message": format!("companion {op} failed ({kind:?}): {message}"),
-                }
-            })),
-        )
-            .into_response(),
+        // Terminal git failures: the structured `failure_kind` rides the
+        // envelope; caller-input kinds are 422, execution-plane faults 502.
+        CompanionFlowError::Failed { op, kind, message } => {
+            let wire = failure_kind_wire_name(kind);
+            let status = if failure_kind_is_caller_input(kind) {
+                StatusCode::UNPROCESSABLE_ENTITY
+            } else {
+                StatusCode::BAD_GATEWAY
+            };
+            (
+                status,
+                Json(json!({
+                    "error": {
+                        "kind": "companion",
+                        "failure_kind": wire,
+                        "message": format!("companion {op} failed ({wire}): {message}"),
+                    }
+                })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -780,7 +806,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .body(Body::from(
                         serde_json::json!({
-                            "commit_sha": "sha-1",
+                            "commit_sha": "c0ffee01",
                             "task_ids": [task_id],
                             "sprint_id": sprint_id,
                         })
@@ -804,7 +830,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .body(Body::from(
                         serde_json::json!({
-                            "commit_sha": "sha-1",
+                            "commit_sha": "c0ffee01",
                             "task_ids": [task_id],
                         })
                         .to_string(),

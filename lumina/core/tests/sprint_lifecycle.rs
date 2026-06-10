@@ -773,17 +773,17 @@ async fn record_task_commits_partial_batch_counts_only_new_edges() {
         .expect("task b")
         .to_string();
 
-    // Pre-record (sha-1, task_a).
-    let first = repo::record_task_commits(&pool, "sha-1", &[task_a.as_str()], Some(&sprint))
+    // Pre-record (c0ffee01, task_a).
+    let first = repo::record_task_commits(&pool, "c0ffee01", &[task_a.as_str()], Some(&sprint))
         .await
         .expect("first record");
     assert_eq!(first, 1, "the initial edge is inserted");
 
-    // A mixed batch under the SAME sha: (sha-1, task_a) is a duplicate (collapses),
-    // (sha-1, task_b) is brand new (inserts) ⇒ inserted == 1.
+    // A mixed batch under the SAME sha: (c0ffee01, task_a) is a duplicate (collapses),
+    // (c0ffee01, task_b) is brand new (inserts) ⇒ inserted == 1.
     let mixed = repo::record_task_commits(
         &pool,
-        "sha-1",
+        "c0ffee01",
         &[task_a.as_str(), task_b.as_str()],
         Some(&sprint),
     )
@@ -791,7 +791,7 @@ async fn record_task_commits_partial_batch_counts_only_new_edges() {
     .expect("mixed record");
     assert_eq!(
         mixed, 1,
-        "the new (sha-1, task_b) edge counts; the duplicate (sha-1, task_a) collapses on ON CONFLICT"
+        "the new (c0ffee01, task_b) edge counts; the duplicate (c0ffee01, task_a) collapses on ON CONFLICT"
     );
 }
 

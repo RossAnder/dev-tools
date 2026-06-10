@@ -593,12 +593,18 @@ fn normalise_path_structural(p: &str) -> String {
 /// joins against a stored path); the storage path stores the structural form and
 /// matching stays correct because the compare form folds case on BOTH sides.
 ///
+/// PUBLIC (review R13): the server's companion split-brain guard needs a direct
+/// IDENTITY comparison (`normalise(a) == normalise(b)`) rather than the
+/// containment semantics of [`select_longest_prefix_project`] — a nested
+/// vendored/scratch repo under the clone dir must NOT pass the guard. This is
+/// the one sanctioned use beyond the `resolve_*` / `select_*` wrappers.
+///
 /// NOTE the case fold is HOST-keyed, not path-keyed: the same path string
 /// normalises differently on Windows vs Unix. This is correct for the
 /// single-machine-now use case (the cwd and the stored `local_path` were both
 /// produced on the same host) but is the documented limitation in the plan's
 /// Risks note — a future cross-host store would need a path-keyed casing policy.
-fn normalise_path_for_compare(p: &str) -> String {
+pub fn normalise_path_for_compare(p: &str) -> String {
     #[allow(unused_mut)]
     let mut s = normalise_path_structural(p);
 
@@ -799,9 +805,10 @@ mod tests {
     use rstest::rstest;
 
     // =====================================================================
-    // Pure-fn unit tests (T5) — `normalise_path_for_compare` is PRIVATE but
-    // reachable here because this `mod tests` is co-located in the same module
-    // (`super::*` carries the private fn). No DB.
+    // Pure-fn unit tests (T5) — `normalise_path_for_compare` is now PUB (R13:
+    // the companion split-brain guard's identity comparison); the structural
+    // normaliser stays private but is reachable here because this `mod tests`
+    // is co-located in the same module (`super::*`). No DB.
     // =====================================================================
 
     // ---------------------------------------------------------------------

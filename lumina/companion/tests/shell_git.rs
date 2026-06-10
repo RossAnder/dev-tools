@@ -372,6 +372,43 @@ async fn merge_missing_source_is_not_found() {
 }
 
 #[tokio::test]
+async fn merge_refused_by_local_changes_is_engine_not_conflict() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let base = repo.head().await;
+    // `feature` moves file.txt while the merging checkout holds an
+    // UNCOMMITTED local edit to the same file: git refuses up front ("Your
+    // local changes … would be overwritten by merge") WITHOUT starting a
+    // merge — no MERGE_HEAD, no conflict entries — so the non-zero exit must
+    // classify Engine, never Conflict.
+    let wt = repo.wt_path("wt-feature");
+    g.create_worktree(&wt, "feature", &Sha::new(base.as_str()))
+        .await
+        .expect("create feature worktree");
+    std::fs::write(wt.join("file.txt"), "feature change\n").expect("write feature side");
+    commit_in(&wt, "feature change").await;
+    repo.write("file.txt", "uncommitted local edit\n"); // NOT committed
+
+    let err = g.merge(&repo.root, "feature", false).await.unwrap_err();
+    assert!(
+        matches!(err, GitError::Engine(_)),
+        "expected Engine (non-conflict merge failure), got {err:?}"
+    );
+    // The refusal left no in-progress merge behind.
+    let out = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo.root)
+        .args(["rev-parse", "-q", "--verify", "MERGE_HEAD"])
+        .output()
+        .await
+        .expect("spawn git");
+    assert!(
+        !out.status.success(),
+        "no MERGE_HEAD may exist after the refusal"
+    );
+}
+
+#[tokio::test]
 async fn conflicting_merge_reports_paths_and_abort_restores_pre_state() {
     let repo = TestRepo::new().await;
     let g = repo.backend();
@@ -789,18 +826,21 @@ async fn detach_worktree_fails_safe_on_dirty_state_and_unknown_committish() {
         "refused detach must leave the dirty content in place"
     );
 
-    // KNOWN CLASSIFICATION GAP (characterization, not endorsement): under
-    // `checkout --detach`, git reports an unresolvable committish as
-    // "--detach does not take a path argument '…'" (non-hex name) or
-    // "unable to read tree (…)" (missing full sha) — neither matches
-    // shell.rs's NotFound arms ("invalid reference" / "did not match any
-    // file" / "not a valid object name", which are non-detach checkout
-    // shapes), so today this classifies Engine. If the classifier learns
-    // the --detach messages, flip this assertion to NotFound.
+    // Formerly a KNOWN CLASSIFICATION GAP: under `checkout --detach`, git
+    // reports an unresolvable committish as "--detach does not take a path
+    // argument '…'" (non-hex name) or "unable to read tree (…)" (missing
+    // full sha) — NOT the non-detach checkout shapes ("invalid reference" /
+    // "did not match any file"). The classifier now matches the real
+    // --detach shapes, so both classify NotFound.
     let err = g.detach_worktree(&wt, "no-such-committish").await.unwrap_err();
     assert!(
-        matches!(err, GitError::Engine(_)),
-        "expected Engine (see classification-gap note), got {err:?}"
+        matches!(err, GitError::NotFound(_)),
+        "expected NotFound, got {err:?}"
+    );
+    let err = g.detach_worktree(&wt, MISSING_SHA).await.unwrap_err();
+    assert!(
+        matches!(err, GitError::NotFound(_)),
+        "expected NotFound, got {err:?}"
     );
 }
 
@@ -896,4 +936,30 @@ async fn update_branch_ref_cas_lost_when_the_ref_was_deleted() {
     );
     // The failed CAS must not have resurrected the branch.
     assert_eq!(git_in(&repo.root, &["branch", "--list", "doomed"]).await, "");
+}
+
+#[tokio::test]
+async fn update_branch_ref_non_cas_failure_classifies_engine() {
+    let repo = TestRepo::new().await;
+    let g = repo.backend();
+    let c1 = repo.head().await;
+
+    // An INVALID target ref name ("a.." sequences are rejected by
+    // check-ref-format): git fails with "refusing to update ref with bad
+    // name '…'" — neither CAS-lost shape ("is at … but expected" / "unable
+    // to resolve") — so the fallthrough must classify Engine, never
+    // RefCasLost.
+    let err = g
+        .update_branch_ref(
+            "a..b",
+            &Sha::new(c1.as_str()),
+            &Sha::new(c1.as_str()),
+            "CAS on invalid ref name",
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::Engine(_)),
+        "expected Engine, got {err:?}"
+    );
 }

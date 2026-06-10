@@ -4,7 +4,7 @@
 //!
 //! ## Shape
 //!
-//! [`CompanionRegistry`] owns four pieces of purely in-memory state:
+//! [`CompanionRegistry`] owns five pieces of purely in-memory state:
 //!
 //!   * a SINGLE connection slot (an `mpsc::Sender<ServerToCompanion>` feeding
 //!     the WebSocket send task in `http::companion`) — Step 1b is
@@ -19,6 +19,13 @@
 //!   * the merge-lease set keyed by TARGET BRANCH. Leases are IN-MEMORY by
 //!     decision (User Decision 3): they are voided wholesale on disconnect
 //!     and vanish on server restart — there is deliberately no DB table.
+//!   * the merge-lease set keyed by WORKTREE ID (review R8) — same lifecycle
+//!     as the target-keyed set. The target lease alone cannot serialise two
+//!     concurrent merges of the SAME worktree with DIFFERENT `target_branch`
+//!     overrides (disjoint target keys), and the loser of that race would
+//!     record-fail AFTER its ref-CAS already advanced a ref; the
+//!     `execute_worktree_merge_flow` therefore takes BOTH leases (worktree
+//!     first, then target; released in reverse).
 //!
 //! ## Disconnect cleanup
 //!
@@ -111,6 +118,10 @@ struct Inner {
     pending: HashMap<RequestId, oneshot::Sender<Outcome>>,
     /// Merge leases keyed by target branch (User Decision 3: in-memory only).
     leases: HashSet<String>,
+    /// Merge leases keyed by WORKTREE id (review R8) — serialises concurrent
+    /// merges of the same worktree under different target overrides. Same
+    /// in-memory lifecycle as `leases`.
+    worktree_leases: HashSet<String>,
     /// Connection generation counter backing the epoch guard.
     epoch: u64,
 }
@@ -146,6 +157,7 @@ impl CompanionRegistry {
                 next_id: 0,
                 pending: HashMap::new(),
                 leases: HashSet::new(),
+                worktree_leases: HashSet::new(),
                 epoch: 0,
             }),
             connected_tx,
@@ -198,8 +210,10 @@ impl CompanionRegistry {
             // Dropping the senders resolves every waiting `execute` future
             // with a RecvError → mapped to `Disconnected`.
             inner.pending.clear();
-            let voided = inner.leases.len();
+            // BOTH lease spaces void wholesale (target-keyed + worktree-keyed).
+            let voided = inner.leases.len() + inner.worktree_leases.len();
             inner.leases.clear();
+            inner.worktree_leases.clear();
             (drained, voided)
         };
         self.connected_tx.send_replace(false);
@@ -315,6 +329,30 @@ impl CompanionRegistry {
             .remove(target_branch);
     }
 
+    /// Try to take the WORKTREE-keyed merge lease on `worktree_id` (review R8).
+    /// Returns `false` when the lease is already held — not re-entrant; the
+    /// caller maps a refusal to the same "merge already in flight" Validation
+    /// the target lease produces. Same lifecycle as the target-keyed lease:
+    /// released on completion (drop-guard), voided wholesale on disconnect,
+    /// gone on restart.
+    pub fn acquire_worktree_lease(&self, worktree_id: &str) -> bool {
+        self.inner
+            .lock()
+            .expect("companion registry lock poisoned")
+            .worktree_leases
+            .insert(worktree_id.to_string())
+    }
+
+    /// Release the worktree-keyed merge lease on `worktree_id`. Idempotent —
+    /// releasing an unheld lease is a no-op.
+    pub fn release_worktree_lease(&self, worktree_id: &str) {
+        self.inner
+            .lock()
+            .expect("companion registry lock poisoned")
+            .worktree_leases
+            .remove(worktree_id);
+    }
+
     /// Subscribe to the "companion connected" signal (`true` while the slot
     /// is occupied). The e2e awaits `wait_for(|c| *c)` on this receiver to
     /// observe registration deterministically.
@@ -414,6 +452,30 @@ mod tests {
         let token = reg.register(tx, "/work/repo".to_string()).expect("slot free");
         reg.disconnect(token);
         assert!(reg.acquire_lease("main"), "disconnect voids all leases");
+    }
+
+    /// Worktree-keyed lease semantics (R8): not re-entrant, idempotent release,
+    /// independent of the target-keyed space, voided wholesale on disconnect.
+    #[tokio::test]
+    async fn companion_worktree_leases_mirror_target_lease_semantics() {
+        let reg = CompanionRegistry::new();
+        assert!(reg.acquire_worktree_lease("wt-1"));
+        assert!(!reg.acquire_worktree_lease("wt-1"), "worktree leases are not re-entrant");
+        // The two lease key spaces are independent: the SAME string is free in
+        // the target space while held in the worktree space.
+        assert!(reg.acquire_lease("wt-1"), "target space is independent of worktree space");
+        reg.release_lease("wt-1");
+        reg.release_worktree_lease("wt-1");
+        reg.release_worktree_lease("wt-1"); // idempotent — second release is a no-op
+        assert!(reg.acquire_worktree_lease("wt-1"), "released worktree lease is acquirable");
+
+        let (tx, _rx) = mpsc::channel(1);
+        let token = reg.register(tx, "/work/repo".to_string()).expect("slot free");
+        reg.disconnect(token);
+        assert!(
+            reg.acquire_worktree_lease("wt-1"),
+            "disconnect voids the worktree-keyed leases too"
+        );
     }
 
     /// Single-companion slot: a second concurrent registration is refused;

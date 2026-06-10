@@ -336,10 +336,13 @@ impl GitBackend for ShellGit {
         branch: &str,
         start_point: &Sha,
     ) -> Result<WorktreeState, GitError> {
+        // Options first, then `--` (end-of-options): an operand beginning
+        // with `-` can never parse as a git flag (argument-injection
+        // hardening; the executor additionally rejects leading-dash refs at
+        // its boundary).
         let mut cmd = self.base_command(None);
-        cmd.args(["worktree", "add"])
+        cmd.args(["worktree", "add", "-b", branch, "--"])
             .arg(path)
-            .args(["-b", branch])
             .arg(start_point.as_str());
         let out = cmd.output().await?;
         if !out.status.success() {
@@ -369,9 +372,10 @@ impl GitBackend for ShellGit {
 
     async fn attach_worktree(&self, branch: &str, path: &Path) -> Result<Sha, GitError> {
         // No `-b`: checks out the EXISTING branch (the inter-wave widening;
-        // see the trait doc). `worktree add` stays atomic here too.
+        // see the trait doc). `worktree add` stays atomic here too. The `--`
+        // keeps a `-`-leading operand from parsing as a flag.
         let mut cmd = self.base_command(None);
-        cmd.args(["worktree", "add"]).arg(path).arg(branch);
+        cmd.args(["worktree", "add", "--"]).arg(path).arg(branch);
         let out = cmd.output().await?;
         if !out.status.success() {
             // C-locale messages:
@@ -405,8 +409,9 @@ impl GitBackend for ShellGit {
     ) -> Result<Sha, GitError> {
         // `--detach`: a branch-less checkout, so the "already checked out
         // elsewhere" refusal can never trigger. `worktree add` stays atomic.
+        // The `--` keeps a `-`-leading operand from parsing as a flag.
         let mut cmd = self.base_command(None);
-        cmd.args(["worktree", "add", "--detach"])
+        cmd.args(["worktree", "add", "--detach", "--"])
             .arg(path)
             .arg(committish);
         let out = cmd.output().await?;
@@ -442,17 +447,19 @@ impl GitBackend for ShellGit {
         cmd.args(["checkout", "--detach", committish]);
         let out = cmd.output().await?;
         if !out.status.success() {
-            // C-locale messages:
+            // C-locale messages (the `--detach` shapes — NOT the non-detach
+            // checkout shapes "invalid reference" / "did not match any
+            // file", which `checkout --detach` never emits):
             //   "…would be overwritten by checkout" (dirty)   -> State
-            //   "invalid reference: …" / "did not match any
-            //     file(s) known to git" (unresolvable)        -> NotFound
+            //   "--detach does not take a path argument '…'"
+            //     (unresolvable non-hex name) /
+            //   "unable to read tree (…)" (missing full sha)  -> NotFound
             let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
             let lower = stderr.to_lowercase();
             return Err(if lower.contains("would be overwritten") {
                 GitError::State(format!("detach_worktree: {stderr}"))
-            } else if lower.contains("invalid reference")
-                || lower.contains("did not match any file")
-                || lower.contains("not a valid object name")
+            } else if lower.contains("does not take a path argument")
+                || lower.contains("unable to read tree")
             {
                 GitError::NotFound(format!("detach_worktree: {stderr}"))
             } else {
@@ -532,6 +539,7 @@ impl GitBackend for ShellGit {
         if no_ff {
             cmd.arg("--no-ff");
         }
+        cmd.arg("--"); // end-of-options: a `-`-leading source cannot parse as a flag
         cmd.arg(source);
         let out = cmd.output().await?;
 
@@ -735,6 +743,7 @@ impl GitBackend for ShellGit {
             let mut head: Option<String> = None;
             let mut branch: Option<String> = None;
             let mut bare = false;
+            let mut prunable = false;
             for field in record.split('\0').filter(|f| !f.is_empty()) {
                 if let Some(p) = field.strip_prefix("worktree ") {
                     path = Some(PathBuf::from(p));
@@ -744,13 +753,22 @@ impl GitBackend for ShellGit {
                     branch = Some(b.strip_prefix("refs/heads/").unwrap_or(b).to_owned());
                 } else if field == "bare" {
                     bare = true;
+                } else if field == "prunable" || field.starts_with("prunable ") {
+                    prunable = true;
                 }
                 // "detached" needs no handling (branch stays None);
-                // "locked …" / "prunable …" are ignored.
+                // "locked …" is ignored.
             }
             let Some(path) = path else { continue };
             if bare {
                 continue; // a bare entry has no checkout to classify
+            }
+            if prunable {
+                // The checkout's directory is gone (deleted out-of-band, a
+                // routine operator action): `status` against it would fail
+                // and poison the WHOLE observation. Not a usable worktree —
+                // skip it; `git worktree prune` is the operator remedy.
+                continue;
             }
             let head = head.ok_or_else(|| {
                 GitError::Engine(format!(

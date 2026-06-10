@@ -138,7 +138,8 @@ const LIST_LIMIT: i64 = 1000;
 
 /// Per-field byte cap on caller free-text stored by the worktree writers — `path`
 /// / `base_ref` / `branch` (`create_worktree`), `merge_ref` (merge), `reason`
-/// (rejection), and `commit_sha` / each `task_id` (`record_task_commits`). lumina
+/// (rejection), and each `task_id` (`record_task_commits`; its `commit_sha` is
+/// instead SHAPE-validated by [`is_commit_sha_shaped`], R4, which is stricter). lumina
 /// is RECORD-ONLY so path traversal is moot, but an unbounded string is an
 /// unbounded-growth surface (review R20); an over-cap value is a clean
 /// [`AppError::Validation`], never a silently-stored blob. A quick win — not a
@@ -209,6 +210,18 @@ const SELECT_WORKTREES_BY_STATUS: &str = concat!(
     worktree_select_base!(),
     "    WHERE w.deleted_at IS NULL AND s.status = $1\n    ORDER BY w.created_at, w.id\n    LIMIT 1000\n"
 );
+
+/// `true` iff `s` is shaped like a git object id: 7–64 hex digits (an
+/// abbreviated sha through a full SHA-256 oid). Review R4: `commit_sha` feeds
+/// `must_remain_reachable` on the `execute_worktree_merge` companion intent,
+/// where the companion treats an `is_ancestor` NotFound as an UNVERIFIABLE
+/// reachability gate → rollback + `Failed` — so one garbage "sha" recorded
+/// against a worktree's sprints would permanently block every merge of that
+/// worktree. Shape-validating at the single write path keeps garbage out of the
+/// gate. (Bound: git abbreviates to ≥7 by default; 40 = SHA-1, 64 = SHA-256.)
+fn is_commit_sha_shaped(s: &str) -> bool {
+    (7..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
 
 /// `true` when a (code-2067-gated) UNIQUE violation's message names the
 /// `worktrees.branch` column — disambiguating WHICH of the two UNIQUE
@@ -344,12 +357,37 @@ pub async fn create_worktree(
             if is_unique_violation(backend, sqlx_err)
                 && unique_violation_names_branch(sqlx_err) =>
         {
+            // LIVENESS-AXIS DIVERGENCE (review R11 — documented here; index
+            // alignment requires a 0019+ rebuild). The migration-0018 partial
+            // index defines "live" as `outcome IS NULL`, while the repo layer's
+            // liveness predicate everywhere else is `deleted_at IS NULL` (the
+            // soft-delete tombstone). A row that is SOFT-DELETED but still has a
+            // NULL `outcome` therefore keeps SQUATTING its branch under the
+            // index — and the verdict tools cannot free it, because
+            // `record_worktree_merge` / `record_worktree_rejection` read a
+            // tombstoned worktree as NotFound. No production path soft-deletes
+            // worktrees today, so the squat is latent, but aligning the two axes
+            // means rebuilding the index over BOTH predicates
+            // (`outcome IS NULL AND deleted_at IS NULL`) in a NEW migration
+            // (0019+): the applied 0018 file is checksum-pinned by sqlx and must
+            // never be edited in place.
+            //
             // The index predicate (`branch IS NOT NULL`) means this arm is only
             // reachable with a Some(branch); the unwrap_or is belt-and-braces.
+            //
+            // Remedy message (review R16): record_worktree_merge/rejection both
+            // REQUIRE the owning sprint to be in 'review', and CANCELLING the
+            // owner stamps no `outcome` — so the message spells out the full
+            // path rather than naming the verdict tools alone.
             return Err(AppError::Validation(format!(
                 "a live worktree already records branch '{}' (at most one live \
-                 worktree per branch; resolve it via record_worktree_merge / \
-                 record_worktree_rejection first)",
+                 worktree per branch, migration 0018). To free the branch: walk \
+                 the OWNING sprint to 'review' via set_sprint_status, then call \
+                 record_worktree_rejection (or record_worktree_merge if the \
+                 branch genuinely merged) — the terminal outcome is what frees \
+                 the branch. Note: cancelling the owning sprint does NOT free \
+                 the branch (cancellation stamps no worktree outcome, and the \
+                 0018 index keys on `outcome IS NULL`)",
                 worktree.branch.as_deref().unwrap_or("<unset>")
             )));
         }
@@ -647,7 +685,9 @@ pub async fn record_worktree_rejection(
 /// committing lead passes the explicit task-id list a single commit covers.
 /// Pre-tx validation (all typed, never a raw FK/event-for-a-no-op 500): an EMPTY
 /// `task_ids` is a clean [`AppError::Validation`] BEFORE the tx opens, so NO event
-/// is recorded for a zero-row batch (R1/R14); `commit_sha` and each `task_id` are
+/// is recorded for a zero-row batch (R1/R14); `commit_sha` must be SHAPED like a
+/// git object id — 7–64 hex digits ([`is_commit_sha_shaped`], R4: a garbage sha
+/// would poison the `must_remain_reachable` merge gate) — and each `task_id` is
 /// byte-bounded ([`MAX_FREE_TEXT_BYTES`], R20); the optional `sprint_id` (when
 /// `Some`) must EXIST and every `task_id` must be a LIVE `work_items` row — an
 /// absent id is a clean [`AppError::NotFound`] (→ 404) rather than the raw FK 500
@@ -673,9 +713,24 @@ pub async fn record_task_commits(
         ));
     }
 
-    // R20: bound the caller free-text (commit_sha + each task_id) — record-only, so
-    // this is an unbounded-growth guard.
-    check_free_text("commit_sha", commit_sha)?;
+    // R4: shape-validate the commit sha (7–64 hex digits) BEFORE anything is
+    // written. A malformed value would otherwise feed must_remain_reachable and
+    // permanently wedge the worktree's merges (the companion treats an
+    // unresolvable sha as an unverifiable reachability gate). The offending
+    // value is echoed TRUNCATED — it is caller free-text. This subsumes the R20
+    // byte bound for commit_sha (64 < MAX_FREE_TEXT_BYTES).
+    if !is_commit_sha_shaped(commit_sha) {
+        let shown: String = commit_sha.chars().take(40).collect();
+        let ellipsis = if commit_sha.chars().count() > 40 { "…" } else { "" };
+        return Err(AppError::Validation(format!(
+            "commit_sha '{shown}{ellipsis}' is not shaped like a git object id \
+             (expected 7-64 hex characters); a malformed sha would poison the \
+             worktree's must_remain_reachable merge gate"
+        )));
+    }
+
+    // R20: bound the caller free-text (each task_id) — record-only, so this is
+    // an unbounded-growth guard.
     for &task_id in task_ids {
         check_free_text("task_id", task_id)?;
     }
@@ -909,6 +964,44 @@ pub async fn get_worktree_primary_repo_binding(
         LIMIT 1
         "#,
         args![worktree_id.to_owned()],
+    )
+    .await?;
+    let Some(task_id) = task_id else {
+        return Ok(None);
+    };
+
+    let project_id = find_project_ancestor(db, &task_id).await?;
+    let primary_local_path = list_repo_links(db, &project_id)
+        .await?
+        .into_iter()
+        .find(|l| l.is_primary == 1)
+        .and_then(|l| l.local_path);
+    Ok(Some((project_id, primary_local_path)))
+}
+
+/// The SPRINT-keyed twin of [`get_worktree_primary_repo_binding`] (review R14):
+/// resolve the project a sprint's work belongs to, plus that project's PRIMARY
+/// repo-link `local_path` — the inputs to the `execute_worktree_create`
+/// pre-flight split-brain guard, which runs BEFORE any worktree row exists (so
+/// the worktree-keyed read cannot serve it). Resolution path: any
+/// `sprint_tasks` task (lowest id, for determinism — all of a sprint's tasks
+/// share one project ancestor under the 0001 hierarchy triggers) →
+/// [`find_project_ancestor`] → [`list_repo_links`] primary. Returns:
+///   * `Ok(None)` — no task is bound to the sprint, so no project is
+///     resolvable (the guard is SKIPPED — there is nothing to compare);
+///   * `Ok(Some((project_id, local_path)))` — the resolved project and its
+///     primary link's `local_path` (`None` when the column is unset OR the
+///     project carries no primary link — the guard is likewise skipped).
+///
+/// Read-only, no transaction.
+pub async fn get_sprint_primary_repo_binding(
+    db: &impl DbClient,
+    sprint_id: &str,
+) -> Result<Option<(String, Option<String>)>, AppError> {
+    let task_id: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT task_id FROM sprint_tasks WHERE sprint_id = $1 ORDER BY task_id LIMIT 1",
+        args![sprint_id.to_owned()],
     )
     .await?;
     let Some(task_id) = task_id else {
@@ -1267,12 +1360,12 @@ mod tests {
             .to_string();
         let sprint = seed_sprint(&pool).await;
 
-        let first = record_task_commits(&pool, "sha-1", &[task.as_str()], Some(&sprint))
+        let first = record_task_commits(&pool, "c0ffee01", &[task.as_str()], Some(&sprint))
             .await
             .expect("first record");
         assert_eq!(first, 1, "first record inserts one edge");
 
-        let second = record_task_commits(&pool, "sha-1", &[task.as_str()], Some(&sprint))
+        let second = record_task_commits(&pool, "c0ffee01", &[task.as_str()], Some(&sprint))
             .await
             .expect("second record");
         assert_eq!(second, 0, "re-record of the same (commit, task) inserts 0");
@@ -1294,30 +1387,30 @@ mod tests {
             .to_string();
         let sprint = seed_sprint(&pool).await;
 
-        // sha-1 covers task_a + task_b; sha-2 covers task_a only.
-        record_task_commits(&pool, "sha-1", &[task_a.as_str(), task_b.as_str()], Some(&sprint))
+        // c0ffee01 covers task_a + task_b; c0ffee02 covers task_a only.
+        record_task_commits(&pool, "c0ffee01", &[task_a.as_str(), task_b.as_str()], Some(&sprint))
             .await
-            .expect("record sha-1");
-        record_task_commits(&pool, "sha-2", &[task_a.as_str()], Some(&sprint))
+            .expect("record c0ffee01");
+        record_task_commits(&pool, "c0ffee02", &[task_a.as_str()], Some(&sprint))
             .await
-            .expect("record sha-2");
+            .expect("record c0ffee02");
 
-        // ByTask(task_a) -> both sha-1 and sha-2 edges (2 rows).
+        // ByTask(task_a) -> both c0ffee01 and c0ffee02 edges (2 rows).
         let by_task = list_task_commits(&pool, TaskCommitQuery::ByTask(task_a.clone()))
             .await
             .expect("by task");
         assert_eq!(by_task.len(), 2, "task_a has two commit edges");
         assert!(by_task.iter().all(|c| c.task_id == task_a));
 
-        // ByCommit(sha-1) -> two task edges (task_a, task_b).
-        let by_commit = list_task_commits(&pool, TaskCommitQuery::ByCommit("sha-1".to_owned()))
+        // ByCommit(c0ffee01) -> two task edges (task_a, task_b).
+        let by_commit = list_task_commits(&pool, TaskCommitQuery::ByCommit("c0ffee01".to_owned()))
             .await
             .expect("by commit");
-        assert_eq!(by_commit.len(), 2, "sha-1 covers two tasks");
-        assert!(by_commit.iter().all(|c| c.commit_sha == "sha-1"));
+        assert_eq!(by_commit.len(), 2, "c0ffee01 covers two tasks");
+        assert!(by_commit.iter().all(|c| c.commit_sha == "c0ffee01"));
 
         // ByStory(story) -> all edges across the story's direct task children:
-        // task_a (sha-1, sha-2) + task_b (sha-1) = 3 rows.
+        // task_a (c0ffee01, c0ffee02) + task_b (c0ffee01) = 3 rows.
         let by_story = list_task_commits(&pool, TaskCommitQuery::ByStory(story.clone()))
             .await
             .expect("by story");
@@ -1331,7 +1424,7 @@ mod tests {
         let pool = connect_in_memory().await.expect("pool");
         let sprint = seed_sprint(&pool).await;
 
-        let res = record_task_commits(&pool, "sha-empty", &[], Some(&sprint)).await;
+        let res = record_task_commits(&pool, "c0ffee99", &[], Some(&sprint)).await;
         assert!(
             matches!(res, Err(AppError::Validation(_))),
             "an empty task_ids batch is a clean Validation, got {res:?}"
@@ -1344,7 +1437,7 @@ mod tests {
         let pool = connect_in_memory().await.expect("pool");
         let sprint = seed_sprint(&pool).await;
 
-        let res = record_task_commits(&pool, "sha-x", &["no-such-task"], Some(&sprint)).await;
+        let res = record_task_commits(&pool, "abc1234", &["no-such-task"], Some(&sprint)).await;
         assert!(
             matches!(res, Err(AppError::NotFound(_))),
             "an unknown task_id is a clean NotFound, got {res:?}"
@@ -1362,11 +1455,50 @@ mod tests {
             .to_string();
 
         let res =
-            record_task_commits(&pool, "sha-y", &[task.as_str()], Some("no-such-sprint")).await;
+            record_task_commits(&pool, "abc1235", &[task.as_str()], Some("no-such-sprint")).await;
         assert!(
             matches!(res, Err(AppError::NotFound(_))),
             "an unknown sprint_id is a clean NotFound, got {res:?}"
         );
+    }
+
+    /// R4: a `commit_sha` that is not shaped like a git object id (non-hex,
+    /// too short, or too long) is a clean Validation BEFORE any write — a
+    /// garbage sha must never reach `must_remain_reachable`. Boundary lengths
+    /// (7 and 64 hex digits) are accepted.
+    #[tokio::test]
+    async fn record_task_commits_rejects_malformed_sha() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task = create_work_item(&pool, "task", Some(&story), "T1", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        for bad in [
+            "sha-1",                // non-hex separator (the old fixture shape)
+            "abc123",               // 6 chars — below the 7-char abbreviation floor
+            "xyzxyzx",              // right length, not hex
+            &"a".repeat(65),        // above the 64-char SHA-256 ceiling
+            "",                     // empty
+        ] {
+            let res = record_task_commits(&pool, bad, &[task.as_str()], None).await;
+            match res {
+                Err(AppError::Validation(msg)) => assert!(
+                    msg.contains("git object id"),
+                    "the Validation names the sha shape for {bad:?}: {msg}"
+                ),
+                other => panic!("malformed sha {bad:?} must be a Validation, got {other:?}"),
+            }
+        }
+
+        // Boundary shapes are accepted: 7 hex (abbreviated) and 64 hex (SHA-256).
+        record_task_commits(&pool, "abc1234", &[task.as_str()], None)
+            .await
+            .expect("a 7-hex abbreviated sha is accepted");
+        record_task_commits(&pool, &"f".repeat(64), &[task.as_str()], None)
+            .await
+            .expect("a 64-hex SHA-256 oid is accepted");
     }
 
     /// `list_worktree_reachable_shas` covers BOTH join paths — a `task_commits`
@@ -1402,15 +1534,18 @@ mod tests {
 
         // Arm (i): sprint_id set. (task_a is ALSO in sprint_tasks, so this sha
         // is reachable via both arms — the UNION must yield it ONCE.)
-        record_task_commits(&pool, "sha-with-sprint", &[task_a.as_str()], Some(&sprint))
+        // ("feed0002" = the with-sprint sha; "feed0001" = the NULL-sprint sha;
+        // "feed0003" = the unrelated sha — valid hex per R4, ordered so the
+        // ORDER BY commit_sha assertion below stays deterministic.)
+        record_task_commits(&pool, "feed0002", &[task_a.as_str()], Some(&sprint))
             .await
             .expect("record with sprint_id");
         // Arm (ii): sprint_id NULL, task bound via the sprint_tasks junction.
-        record_task_commits(&pool, "sha-null-sprint", &[task_b.as_str()], None)
+        record_task_commits(&pool, "feed0001", &[task_b.as_str()], None)
             .await
             .expect("record with NULL sprint_id");
         // Excluded: NULL sprint_id AND the task is on no sprint of this worktree.
-        record_task_commits(&pool, "sha-unrelated", &[task_c.as_str()], None)
+        record_task_commits(&pool, "feed0003", &[task_c.as_str()], None)
             .await
             .expect("record unrelated");
 
@@ -1419,7 +1554,7 @@ mod tests {
             .expect("reachable shas");
         assert_eq!(
             shas,
-            vec!["sha-null-sprint".to_owned(), "sha-with-sprint".to_owned()],
+            vec!["feed0001".to_owned(), "feed0002".to_owned()],
             "both join paths covered, dual-path sha deduped, unrelated sha excluded"
         );
 

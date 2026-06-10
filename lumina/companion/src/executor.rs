@@ -176,6 +176,11 @@ impl Executor {
     }
 
     async fn create_worktree(&self, branch: &str, base: &str) -> Outcome {
+        for (what, value) in [("branch", branch), ("base", base)] {
+            if let Some(refused) = reject_leading_dash(what, value) {
+                return refused;
+            }
+        }
         if let Err(e) = ensure_worktrees_excluded(&self.repo_root) {
             return exclude_failed(e);
         }
@@ -232,6 +237,11 @@ impl Executor {
         must_remain_reachable: &[WireSha],
         no_ff: bool,
     ) -> Outcome {
+        for (what, value) in [("source branch", source), ("target branch", target)] {
+            if let Some(refused) = reject_leading_dash(what, value) {
+                return refused;
+            }
+        }
         if let Err(e) = ensure_worktrees_excluded(&self.repo_root) {
             return exclude_failed(e);
         }
@@ -256,7 +266,7 @@ impl Executor {
             Ok(s) => s,
             Err(e) => return fail(e, FailureKind::GitFailure),
         };
-        match states.iter().find(|s| s.path == integration) {
+        match states.iter().find(|s| same_path(&s.path, &integration)) {
             None => {
                 // Lazily create the integration worktree as a DETACHED
                 // checkout of the resolved tip. No branch is involved, so
@@ -413,7 +423,7 @@ impl Executor {
         // That checkout is now stale relative to the advanced ref.
         let target_checkout = states
             .iter()
-            .find(|s| s.path != integration && s.branch.as_deref() == Some(target))
+            .find(|s| !same_path(&s.path, &integration) && s.branch.as_deref() == Some(target))
             .map(|s| TargetCheckoutHint {
                 path: s.path.display().to_string(),
                 dirty: s.status != WorktreeStatus::Clean,
@@ -465,7 +475,7 @@ impl Executor {
         let managed_root = self.managed_worktrees_root();
         let worktrees = states
             .into_iter()
-            .filter(|s| s.path.starts_with(&managed_root))
+            .filter(|s| path_starts_with(&s.path, &managed_root))
             .map(snapshot)
             .collect();
         Outcome::Reconciled {
@@ -508,6 +518,45 @@ pub fn ensure_worktrees_excluded(repo_root: &Path) -> std::io::Result<()> {
         .append(true)
         .open(&exclude)?;
     file.write_all(entry.as_bytes())
+}
+
+/// Argument-injection guard at the executor's trust boundary: server-supplied
+/// branch/committish strings reach git argv, and a value beginning with `-`
+/// would parse as a git flag on the paths that cannot take an end-of-options
+/// `--` separator (`checkout --detach`, `rev-parse --verify`). No valid git
+/// ref can begin with `-`, so rejecting up front refuses nothing legitimate.
+fn reject_leading_dash(what: &str, value: &str) -> Option<Outcome> {
+    if value.starts_with('-') {
+        return Some(Outcome::Failed {
+            kind: FailureKind::NotFound,
+            message: format!("{what} '{value}' is not a valid git ref: leading '-'"),
+        });
+    }
+    None
+}
+
+/// Path identity robust to realpath drift: `git worktree list` reports
+/// realpath-resolved paths while the executor constructs lexical ones, so a
+/// symlinked repo root (macOS `/tmp` -> `/private/tmp`, Windows junctions) or
+/// case drift would otherwise defeat the integration-worktree reuse match.
+/// Compares canonicalised forms when BOTH sides canonicalise (on Windows both
+/// gain the `\\?\` prefix, keeping the comparison consistent); falls back to
+/// the lexical comparison when either side fails — the path may not exist yet
+/// (e.g. the integration worktree before first creation, or fake-backend
+/// paths in unit tests).
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => a == b,
+    }
+}
+
+/// Prefix variant of [`same_path`] for the managed-root containment check.
+fn path_starts_with(path: &Path, base: &Path) -> bool {
+    match (std::fs::canonicalize(path), std::fs::canonicalize(base)) {
+        (Ok(cp), Ok(cb)) => cp.starts_with(cb),
+        _ => path.starts_with(base),
+    }
 }
 
 /// A filesystem-safe directory name for `branch`: every char outside
