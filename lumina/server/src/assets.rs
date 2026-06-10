@@ -6,6 +6,9 @@
 //! `index.html` at HTTP **200, not 404**, so `vue-router`'s `createWebHistory`
 //! deep links resolve client-side.
 //!
+//! The SPA lives at the workspace root (`lumina/web`), a sibling of this
+//! crate, so every path below reaches up one level (`../web/dist`).
+//!
 //! Build-profile split:
 //!   * **release** (`#[cfg(not(debug_assertions))]`): the `web/dist` build is
 //!     baked into the binary via `static-serve`'s `embed_assets!` macro. Each
@@ -45,10 +48,10 @@ pub fn spa_fallback() -> Router {
 
         // `.fallback` (not `.not_found_service`) keeps the served file's status
         // at 200 for unknown paths — the SPA history-fallback contract.
-        let service = ServeDir::new(concat!(env!("CARGO_MANIFEST_DIR"), "/web/dist"))
+        let service = ServeDir::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../web/dist"))
             .fallback(ServeFile::new(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/web/dist/index.html"
+                "/../web/dist/index.html"
             )));
         Router::new().fallback_service(service)
     }
@@ -61,6 +64,11 @@ pub fn spa_fallback() -> Router {
         // routes serve every file under `web/dist`. `cache_busted_paths` marks
         // vite's hashed-asset directory as immutable; the index file does NOT
         // belong there (it must revalidate on every load).
+        // Path asymmetry vs the debug branch: static-serve's macros resolve
+        // relative paths against rustc's working directory — the WORKSPACE
+        // root (`lumina/`), not this crate's manifest dir — so the SPA at
+        // `lumina/web` is plain `web/dist` here but `../web/dist` via
+        // CARGO_MANIFEST_DIR above.
         embed_assets!(
             "web/dist",
             compress = true,

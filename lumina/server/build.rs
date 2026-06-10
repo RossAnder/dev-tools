@@ -1,11 +1,13 @@
-//! Build hook: produce `web/dist/` before rustc reaches the `rust-embed` macro
-//! in `src/assets.rs`. Runs on every `cargo build` (debug + release), but the
-//! `cargo:rerun-if-changed` lines below scope re-execution to actual SPA
-//! source changes — pure Rust iteration does not re-invoke bun.
+//! Build hook: produce `../web/dist/` before rustc reaches the `rust-embed`
+//! macro in `src/assets.rs`. The SPA lives at the workspace root
+//! (`lumina/web`), a sibling of this crate. Runs on every `cargo build`
+//! (debug + release), but the `cargo:rerun-if-changed` lines below scope
+//! re-execution to actual SPA source changes — pure Rust iteration does not
+//! re-invoke bun.
 //!
 //! Escape hatch: `LUMINA_SKIP_WEB_BUILD=1` skips bun entirely and drops a
-//! minimal placeholder `web/dist/index.html` so the rust-embed macro can still
-//! compile. Use this on hosts without bun (some CI lanes) or for fast
+//! minimal placeholder `../web/dist/index.html` so the rust-embed macro can
+//! still compile. Use this on hosts without bun (some CI lanes) or for fast
 //! Rust-only rebuilds when you know the existing dist/ is fine to keep.
 
 use std::env;
@@ -19,21 +21,21 @@ fn main() {
     // deliberately excluded — watching them would cause an infinite rebuild
     // loop (this script writes into dist/).
     for path in [
-        "web/src",
-        "web/index.html",
-        "web/public",
-        "web/package.json",
-        "web/bun.lock",
-        "web/vite.config.ts",
-        "web/tsconfig.json",
-        "web/tsconfig.app.json",
-        "web/tsconfig.node.json",
+        "../web/src",
+        "../web/index.html",
+        "../web/public",
+        "../web/package.json",
+        "../web/bun.lock",
+        "../web/vite.config.ts",
+        "../web/tsconfig.json",
+        "../web/tsconfig.app.json",
+        "../web/tsconfig.node.json",
     ] {
         println!("cargo:rerun-if-changed={path}");
     }
     println!("cargo:rerun-if-env-changed={SKIP_ENV}");
 
-    let web_dir = Path::new("web");
+    let web_dir = Path::new("../web");
 
     if env::var_os(SKIP_ENV).is_some() {
         println!("cargo:warning={SKIP_ENV} set — skipping SPA build");
