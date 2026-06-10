@@ -2,7 +2,7 @@
 name: research-deep
 description: Judgement-licensed deep research for flow commands. Used for high-judgement lenses where surface-level fetch-and-summarise produces wrong / harmful / superficial findings — performance reasoning (/optimise all five lenses), architectural / DRY / idiomaticity review (/review Agents 1, 3), and plan critique (/review-plan all four lenses). Returns structured findings with adversarial self-critique and explicit evidence grading. Read-only — no Edit/Write/Bash.
 tools: Glob, Grep, Read, WebSearch, WebFetch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id
-model: opus
+model: fable
 effort: high
 color: purple
 ---

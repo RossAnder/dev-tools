@@ -2,7 +2,7 @@
 name: implement-deep
 description: DEFAULT for apply/implement work in flow commands. Used unless the orchestrator's lite-eligibility gate fires (≤2 files, action fully specified, no cross-file refactor, not security-sensitive, no coupled deep items). Equipped for cross-file refactors, ambiguous-spec arbitration, and security-sensitive code paths. Used by /optimise-apply Step 4, /review-apply Step 4, /implement Phase 2 batches.
 tools: Read, Edit, Write, Glob, Grep, Bash, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id
-model: opus
+model: fable
 effort: high
 color: red
 ---
