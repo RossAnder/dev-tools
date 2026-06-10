@@ -219,4 +219,4 @@ Local `detail.kind == "story"` at step 1 is the §e-blessed exception.
 - Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §i, §j, **§l**.
 - Advisor: [`../next-block/SKILL.md`](../next-block/SKILL.md); MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md).
 - Forked dispatched siblings: [`../research-explore/SKILL.md`](../research-explore/SKILL.md), [`../research-directed/SKILL.md`](../research-directed/SKILL.md), [`../research-notes/SKILL.md`](../research-notes/SKILL.md), [`../story-review/SKILL.md`](../story-review/SKILL.md), [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md).
-- Plans: round-2 [`docs/plans/lumina-story-planning-round-2.md`](../../../../docs/plans/lumina-story-planning-round-2.md) (R1, R5, R6); round-3 [`docs/plans/lumina-story-planning-round-3.md`](../../../../docs/plans/lumina-story-planning-round-3.md) T10 + CONVENTIONS §l.
+- Plans: round-2 [`docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) (R1, R5, R6); round-3 [`docs/plans/lumina-story-planning-round-3.md`](../../../../../docs/plans/lumina-story-planning-round-3.md) T10 + CONVENTIONS §l.

@@ -174,4 +174,4 @@ The skill body decides which rubric checks to run, how to map rubric category to
 - Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §d, §e, §i.
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — see Planning & decision tools, Findings family.
 - Companion forked skill (`research-notes`): [`../research-notes/SKILL.md`](../research-notes/SKILL.md) — mirror its frontmatter shape and inline citation conventions.
-- Round-2 plan: [`../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../docs/plans/lumina-story-planning-round-2.md) — see R25 (pattern-replacement exhaustive `files_touched`) and R27 (complexity-high reliability degradation).
+- Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — see R25 (pattern-replacement exhaustive `files_touched`) and R27 (complexity-high reliability degradation).

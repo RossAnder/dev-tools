@@ -216,5 +216,5 @@ Dual-track `outcome` is JSON-in-string within `SetTaskSpecParams.outcome: Option
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — Planning & decision tools (`set_effort`, `set_complexity`, `set_task_spec`, `record_task_activity`).
 - Upstream: [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md) — creates the tasks; records `task_kind` (step 4b branch) and optional `files_touched_pattern` (step 5).
 - Downstream: `/lumina:wire-task-deps` — consumes tier + complexity for the R27 high-complexity gate; composes Kahn-batches per §j.
-- Round-2 plan: [`../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../docs/plans/lumina-story-planning-round-2.md) — R23 (dual-track outcome), R25 (pattern-replacement `files_touched`), R27 (complexity gate; fires in wire-task-deps).
-- Round-3 plan: [`../../../../docs/plans/lumina-story-planning-round-3.md`](../../../../docs/plans/lumina-story-planning-round-3.md) — T4 (`SetTaskSpecParams.dispatch → tier` rename), §k (tier derivation rule).
+- Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — R23 (dual-track outcome), R25 (pattern-replacement `files_touched`), R27 (complexity gate; fires in wire-task-deps).
+- Round-3 plan: [`../../../../../docs/plans/lumina-story-planning-round-3.md`](../../../../../docs/plans/lumina-story-planning-round-3.md) — T4 (`SetTaskSpecParams.dispatch → tier` rename), §k (tier derivation rule).

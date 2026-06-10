@@ -189,8 +189,8 @@ The skill body decides which prompts to show, which edges to write, and how to h
 - Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §j, §k.
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — see Task graph (block_task_on_task, unblock_task_from_task, list_task_dependencies, compute_task_batches, get_task_dispatch_plan).
 - Upstream skill: [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md) — writes the task children this skill wires.
-- Round-2 plan: [`../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../docs/plans/lumina-story-planning-round-2.md) — see R22 (Kiro wave-batched execution), R27 (complexity-high gate fires here, not in decompose-tasks).
-- Round-3 plan: [`../../../../docs/plans/lumina-story-planning-round-3.md`](../../../../docs/plans/lumina-story-planning-round-3.md) — see R34 (dispatch plan + agent budget render), T12 (this amendment).
+- Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — see R22 (Kiro wave-batched execution), R27 (complexity-high gate fires here, not in decompose-tasks).
+- Round-3 plan: [`../../../../../docs/plans/lumina-story-planning-round-3.md`](../../../../../docs/plans/lumina-story-planning-round-3.md) — see R34 (dispatch plan + agent budget render), T12 (this amendment).
 
 ## Round-3 amendment
 
