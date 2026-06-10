@@ -3,7 +3,7 @@
 //! `mcp` module's combined tool router as its own sub-family (structural split;
 //! behaviour mirrors the sibling `runs_sprints` / `team_execution` families).
 //!
-//! The ten tools register via the `tool_router_worktrees` sub-router, summed
+//! The eleven tools register via the `tool_router_worktrees` sub-router, summed
 //! into the combined `tool_router` field by `LuminaTools::with_state`. Each WRITE
 //! delegates 1:1 to its Phase-2 `repo::*` mutator via `.map_err(app_error_to_mcp)`
 //! and returns `structured_result(json!{..})`; each READ returns `json_result(..)`
@@ -95,6 +95,19 @@ pub struct RecordTaskCommitsParams {
     /// The sprint the commit was recorded under; absent ⇒ NULL.
     #[serde(default)]
     pub sprint_id: Option<String>,
+}
+
+/// Arguments for the `remove_task_commit` write tool →
+/// `repo::remove_task_commit` (review R32): the repair path for a bad
+/// HISTORICAL `task_commits` row — the R4 sha shape-validation only guards NEW
+/// writes. Removes exactly one `(commit_sha, task_id)` edge; an absent pair is
+/// NotFound.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RemoveTaskCommitParams {
+    /// The commit sha of the edge to remove.
+    pub commit_sha: String,
+    /// The task id of the edge to remove.
+    pub task_id: String,
 }
 
 /// Arguments for the `get_worktree` read tool → `repo::get_worktree`.
@@ -603,15 +616,23 @@ pub async fn execute_worktree_merge_flow(
 /// Then: dispatch ONE coarse [`Intent::CreateWorktree`]. Outcomes:
 ///   * `WorktreeCreated { path, branch, head }` — record via the EXISTING
 ///     `repo::create_worktree` with the companion's GROUND-TRUTH `path` and
-///     `branch` (a migration-0018 duplicate-live-branch `Validation`
+///     `branch` (a migration-0018/0019 duplicate-live-branch `Validation`
 ///     propagates as invalid_params/422). Success payload:
 ///     `{ worktree_id, path, head }`. When the RECORD write fails AFTER this
-///     outcome (review R3: the 0018 race, the `owning_sprint_id` UNIQUE, a
-///     transport drop), git and the store have DIVERGED — the branch +
-///     worktree exist on disk but are unrecorded — so the surfaced error
-///     carries explicit orphan-recovery guidance (`git worktree remove` +
-///     `git branch -D`, or adopt via the record-only `create_worktree` tool);
-///     a retry of THIS flow would die on `BranchInUse` (see next bullet).
+///     outcome (review R3: the 0018/0019 race, the `owning_sprint_id` UNIQUE,
+///     a transport drop), git and the store have DIVERGED — the branch +
+///     worktree exist on disk but are unrecorded — so the flow dispatches ONE
+///     best-effort compensating [`Intent::RemoveWorktree`] (review R31;
+///     `force=false` — a just-created worktree is clean, and a dirty one
+///     means someone already worked in it, so it is left alone). The ORIGINAL
+///     record error is ALWAYS what surfaces — a compensation failure never
+///     masks it; it only shapes the appended guidance: on compensation
+///     SUCCESS the worktree is gone and the note covers only the surviving
+///     branch (`git worktree remove` keeps branches — `git branch -D` it
+///     before any retry, which would otherwise die on `BranchInUse`); on
+///     compensation FAILURE / transport drop the full orphan-recovery
+///     guidance applies (`git worktree remove` + `git branch -D`, or adopt
+///     via the record-only `create_worktree` tool).
 ///   * `Failed { .. }` / transport errors — [`CompanionFlowError`] for the
 ///     entry layer to map (R7: caller-input kinds → invalid_params/422, the
 ///     rest → internal_error/502); nothing recorded. A `Failed{BranchInUse}`
@@ -707,29 +728,78 @@ pub async fn execute_worktree_create_flow(
                     "head": head.0,
                 })),
                 Err(record_err) => {
-                    // R3(a): the git work ALREADY succeeded — branch + worktree
-                    // exist on disk but are UNRECORDED. There is no protocol
-                    // RemoveWorktree dispatch on this path (compensation is out
-                    // of scope), so surface explicit orphan-state guidance: the
-                    // caller-facing Validation/NotFound messages carry it
-                    // inline; Db/Other keep their opaque-500 discipline (the
-                    // envelope hides internals), so for those the guidance
-                    // lands in the error log here and re-surfaces on the next
-                    // attempt via the R3(b) BranchInUse hint below.
-                    let guidance = format!(
-                        "the companion ALREADY created branch '{branch}' and worktree \
-                         '{path}' in git, but the record write failed, so git and the \
-                         store have diverged. Recover with `git worktree remove {path}` \
-                         then `git branch -D {branch}`, or adopt the existing checkout \
-                         via the record-only create_worktree tool"
-                    );
+                    // R3(a)/R31: the git work ALREADY succeeded — branch +
+                    // worktree exist on disk but are UNRECORDED. Dispatch ONE
+                    // best-effort compensating RemoveWorktree (R31) before
+                    // surfacing: `force=false` deliberately — a just-created
+                    // worktree is clean, and a DIRTY one means someone already
+                    // worked in it, so the compensation refuses rather than
+                    // destroys. The ORIGINAL record error is ALWAYS what
+                    // surfaces (a compensation error never masks it); the
+                    // compensation verdict only shapes the appended guidance.
+                    let compensated = match state
+                        .companion
+                        .execute(Intent::RemoveWorktree { path: path.clone(), force: false })
+                        .await
+                    {
+                        Ok(Outcome::WorktreeRemoved) => true,
+                        Ok(other) => {
+                            tracing::warn!(
+                                path = %path,
+                                outcome = ?other,
+                                "execute_worktree_create: compensating RemoveWorktree \
+                                 did not succeed; falling back to orphan guidance"
+                            );
+                            false
+                        }
+                        Err(comp_err) => {
+                            tracing::warn!(
+                                path = %path,
+                                error = %comp_err,
+                                "execute_worktree_create: compensating RemoveWorktree \
+                                 transport failure; falling back to orphan guidance"
+                            );
+                            false
+                        }
+                    };
+                    // Compensation SUCCESS: the worktree dir is gone, but
+                    // `git worktree remove` KEEPS branches, so only the branch
+                    // needs a remedy (and a retry of this flow would die on
+                    // BranchInUse until it is deleted). Compensation FAILURE /
+                    // transport drop: the full orphan guidance applies. The
+                    // caller-facing Validation/NotFound messages carry the
+                    // guidance inline; Db/Other keep their opaque-500
+                    // discipline (the envelope hides internals), so for those
+                    // it lands in the error log here and re-surfaces on the
+                    // next attempt via the R3(b) BranchInUse hint below.
+                    let guidance = if compensated {
+                        format!(
+                            "the companion created branch '{branch}' and worktree \
+                             '{path}' in git but the record write failed; a \
+                             compensating RemoveWorktree CLEANED UP the worktree, so \
+                             no orphan checkout remains. The branch '{branch}' itself \
+                             likely survives (git's worktree removal keeps branches) — \
+                             delete it with `git branch -D {branch}` if unwanted, and \
+                             BEFORE any retry of this flow (the retry would otherwise \
+                             refuse with BranchInUse)"
+                        )
+                    } else {
+                        format!(
+                            "the companion ALREADY created branch '{branch}' and worktree \
+                             '{path}' in git, but the record write failed, so git and the \
+                             store have diverged. Recover with `git worktree remove {path}` \
+                             then `git branch -D {branch}`, or adopt the existing checkout \
+                             via the record-only create_worktree tool"
+                        )
+                    };
                     tracing::error!(
                         sprint_id = %sprint_id,
                         branch = %branch,
                         path = %path,
                         error = %record_err,
-                        "execute_worktree_create: ORPHANED branch/worktree — the record \
-                         write failed after a successful WorktreeCreated outcome; {guidance}"
+                        compensated = compensated,
+                        "execute_worktree_create: the record write failed after a \
+                         successful WorktreeCreated outcome; {guidance}"
                     );
                     Err(match record_err {
                         AppError::Validation(m) => {
@@ -893,6 +963,27 @@ impl LuminaTools {
                 .await
                 .map_err(app_error_to_mcp)?;
         structured_result(serde_json::json!({ "recorded": recorded }))
+    }
+
+    /// Remove ONE recorded commit→task provenance edge (single repo call →
+    /// `repo::remove_task_commit`, review R32) — the repair tool for a bad
+    /// historical `task_commits` row. An absent `(commit_sha, task_id)` pair is
+    /// NotFound. Returns `{ ok: true }`.
+    #[tool(
+        description = "Remove ONE recorded commit->task provenance edge — the repair tool for a bad historical task_commits row (shape validation only guards NEW record_task_commits writes). Deletes exactly the (commit_sha, task_id) pair; an absent pair is resource_not_found; sibling edges on the same commit or task are untouched. Returns { ok: true }. Records one coarse export-inert event.",
+        annotations(destructive_hint = true, open_world_hint = false)
+    )]
+    async fn remove_task_commit(
+        &self,
+        Parameters(RemoveTaskCommitParams { commit_sha, task_id }): Parameters<
+            RemoveTaskCommitParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "remove_task_commit", "mcp tool invoked");
+        repo::remove_task_commit(&self.pool, &commit_sha, &task_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "ok": true }))
     }
 
     /// Read a single live worktree by id (single repo call → `repo::get_worktree`),
@@ -1584,5 +1675,190 @@ mod tests {
         assert_eq!(row.branch.as_deref(), Some("sprint/9"));
         assert_eq!(row.base_ref.as_deref(), Some("HEAD~2"), "the committish is recorded");
         assert_eq!(row.owning_sprint_id, sprint);
+
+        // R31: the HAPPY path dispatches exactly ONE intent — no compensating
+        // RemoveWorktree ever reaches the wire when the record succeeds.
+        assert!(
+            rx.try_recv().is_err(),
+            "the happy path must not dispatch a compensating RemoveWorktree"
+        );
+    }
+
+    /// Seed an OCCUPANT record-only live worktree on `branch` (its own owner
+    /// sprint), so a later record write for the same branch hits the
+    /// migration-0018/0019 live-branch index — the record-failure trigger for
+    /// the R31 compensation tests.
+    async fn seed_branch_occupant(pool: &Arc<AnyPool>, branch: &str) {
+        let occupant = repo::create_sprint(
+            pool.as_ref(),
+            &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
+        )
+        .await
+        .expect("occupant sprint")
+        .to_string();
+        repo::create_worktree(
+            pool.as_ref(),
+            &NewWorktree {
+                owning_sprint_id: occupant,
+                path: "/tmp/occupied".to_owned(),
+                base_ref: Some("main".to_owned()),
+                branch: Some(branch.to_owned()),
+            },
+        )
+        .await
+        .expect("occupant worktree");
+    }
+
+    /// R31, compensation SUCCESS: when the record write fails AFTER
+    /// WorktreeCreated, the flow dispatches ONE compensating RemoveWorktree
+    /// (`force=false`, the created path); on WorktreeRemoved the ORIGINAL
+    /// record error surfaces with the cleanup note (branch-only remedy) and
+    /// WITHOUT the orphan `git worktree remove` guidance.
+    #[tokio::test]
+    async fn execute_create_record_failure_compensates_with_remove_worktree() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        seed_branch_occupant(&pool, "sprint/9").await;
+        let sprint = repo::create_sprint(
+            pool.as_ref(),
+            &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
+        )
+        .await
+        .expect("sprint")
+        .to_string();
+
+        let reg = Arc::new(crate::companion::CompanionRegistry::new());
+        let (tx, mut rx) = mpsc::channel(8);
+        let _token = reg.register(tx, "/work/repo".to_owned()).expect("slot free");
+        let state = state_with_registry(pool.clone(), reg.clone());
+
+        let handle = tokio::spawn({
+            let state = state.clone();
+            let sprint = sprint.clone();
+            async move {
+                execute_worktree_create_flow(&state, &sprint, "sprint/9", "main").await
+            }
+        });
+
+        // (1) the CreateWorktree intent; the stub creates "successfully".
+        let ServerToCompanion::IntentRequest { id, intent } =
+            rx.recv().await.expect("create intent on the wire");
+        assert!(matches!(intent, Intent::CreateWorktree { .. }));
+        let created_path = "/work/repo/.lumina/worktrees/sprint-9".to_owned();
+        reg.complete(
+            id,
+            Outcome::WorktreeCreated {
+                path: created_path.clone(),
+                branch: "sprint/9".to_owned(),
+                head: Sha("0123abcd".to_owned()),
+            },
+        );
+
+        // (2) the record write hits the live-branch index (the occupant), so
+        // the COMPENSATING RemoveWorktree reaches the wire: the created path,
+        // force=false (a clean just-created worktree; a dirty one is refused).
+        let ServerToCompanion::IntentRequest { id, intent } =
+            rx.recv().await.expect("compensating intent on the wire");
+        match &intent {
+            Intent::RemoveWorktree { path, force } => {
+                assert_eq!(path, &created_path, "compensation targets the created path");
+                assert!(!force, "compensation never forces (a dirty worktree is left alone)");
+            }
+            other => panic!("expected the compensating RemoveWorktree, got {other:?}"),
+        }
+        reg.complete(id, Outcome::WorktreeRemoved);
+
+        let res = handle.await.expect("join");
+        match res {
+            Err(CompanionFlowError::App(AppError::Validation(msg))) => {
+                assert!(
+                    msg.contains("already records branch"),
+                    "the ORIGINAL record error surfaces: {msg}"
+                );
+                assert!(
+                    msg.contains("CLEANED UP"),
+                    "the cleanup note replaces the orphan guidance: {msg}"
+                );
+                assert!(
+                    msg.contains("git branch -D sprint/9"),
+                    "the surviving-branch remedy is named: {msg}"
+                );
+                assert!(
+                    !msg.contains("git worktree remove"),
+                    "no orphan worktree guidance after a successful compensation: {msg}"
+                );
+            }
+            other => panic!("expected the original Validation, got {other:?}"),
+        }
+    }
+
+    /// R31, compensation FAILURE: when the compensating RemoveWorktree itself
+    /// fails, the ORIGINAL record error still surfaces (never masked by the
+    /// compensation error) with the FULL orphan-recovery guidance.
+    #[tokio::test]
+    async fn execute_create_record_failure_falls_back_to_orphan_guidance() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        seed_branch_occupant(&pool, "sprint/9").await;
+        let sprint = repo::create_sprint(
+            pool.as_ref(),
+            &NewSprint { title: None, worktree_id: None, predecessor_sprint_id: None },
+        )
+        .await
+        .expect("sprint")
+        .to_string();
+
+        let reg = Arc::new(crate::companion::CompanionRegistry::new());
+        let (tx, mut rx) = mpsc::channel(8);
+        let _token = reg.register(tx, "/work/repo".to_owned()).expect("slot free");
+        let state = state_with_registry(pool.clone(), reg.clone());
+
+        let handle = tokio::spawn({
+            let state = state.clone();
+            let sprint = sprint.clone();
+            async move {
+                execute_worktree_create_flow(&state, &sprint, "sprint/9", "main").await
+            }
+        });
+
+        let ServerToCompanion::IntentRequest { id, .. } =
+            rx.recv().await.expect("create intent on the wire");
+        reg.complete(
+            id,
+            Outcome::WorktreeCreated {
+                path: "/work/repo/.lumina/worktrees/sprint-9".to_owned(),
+                branch: "sprint/9".to_owned(),
+                head: Sha("0123abcd".to_owned()),
+            },
+        );
+
+        // The compensation FAILS (e.g. an executor-side error).
+        let ServerToCompanion::IntentRequest { id, intent } =
+            rx.recv().await.expect("compensating intent on the wire");
+        assert!(matches!(intent, Intent::RemoveWorktree { .. }));
+        reg.complete(
+            id,
+            Outcome::Failed {
+                kind: FailureKind::Internal,
+                message: "remove blew up".to_owned(),
+            },
+        );
+
+        let res = handle.await.expect("join");
+        match res {
+            Err(CompanionFlowError::App(AppError::Validation(msg))) => {
+                assert!(
+                    msg.contains("already records branch"),
+                    "the ORIGINAL record error surfaces (never the compensation error): {msg}"
+                );
+                assert!(
+                    msg.contains("git worktree remove"),
+                    "the full orphan guidance applies on compensation failure: {msg}"
+                );
+                assert!(
+                    !msg.contains("remove blew up"),
+                    "the compensation error must not mask/leak into the surfaced error: {msg}"
+                );
+            }
+            other => panic!("expected the original Validation, got {other:?}"),
+        }
     }
 }

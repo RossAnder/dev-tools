@@ -1,13 +1,13 @@
 //! Worktree + task-commit provenance routes (migration 0016, sprint-lifecycle &
 //! worktree substrate, ADR-0002 layer 2).
 //!
-//! Eight routes mirroring the migration-0016 worktree/task-commit MCP tools
+//! Nine routes mirroring the migration-0016 worktree/task-commit MCP tools
 //! (`create_worktree`, `get_worktree`, `list_worktrees`, `record_worktree_merge`,
 //! `record_worktree_rejection`, `set_task_checkpoint`, `record_task_commits`,
-//! `list_task_commits`). Each handler delegates to EXACTLY ONE `repo::*` call —
-//! the repo fn owns the write transaction + the single export-inert event, so the
-//! single-mutation-path invariant holds at the HTTP layer too. Five writes +
-//! three reads:
+//! `list_task_commits`) plus the R32 repair tool (`remove_task_commit`). Each
+//! handler delegates to EXACTLY ONE `repo::*` call — the repo fn owns the write
+//! transaction + the single export-inert event, so the single-mutation-path
+//! invariant holds at the HTTP layer too. Six writes + three reads:
 //!   * `POST  /sprints/{sprint_id}/worktree`   — `repo::create_worktree`
 //!     (body `{path, base_ref?, branch?}`; owner taken from the path; → `{ worktree_id }`).
 //!   * `GET   /worktrees/{id}`                  — `repo::get_worktree`.
@@ -25,6 +25,10 @@
 //!   * `GET   /commits`                         — `repo::list_task_commits`
 //!     (EXACTLY ONE of `?task_id=` / `?commit_sha=` / `?story_id=` → the typed
 //!     `TaskCommitQuery`; zero or >1 → 422 `Validation`).
+//!   * `DELETE /commits`                        — `repo::remove_task_commit`
+//!     (`?commit_sha=&task_id=`, BOTH required — query params, matching the
+//!     `GET /commits` selector style rather than a DELETE body; an absent
+//!     pair → 404; → `{ ok: true }`).
 //!
 //! Plus the TWO routes that go beyond record-only (the execute→record pair):
 //!   * `POST  /worktrees/{id}/execute-merge`    — the HTTP mirror of the
@@ -65,7 +69,7 @@ use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -188,6 +192,17 @@ struct ListCommitsQuery {
     pub story_id: Option<String>,
 }
 
+/// Query for `DELETE /commits` (review R32) — BOTH params are REQUIRED (no
+/// `serde(default)`): an absent param is a query-deserialise rejection (400),
+/// mirroring how the MCP `remove_task_commit` params are both non-optional.
+/// Query params (not a DELETE body) deliberately match the `GET /commits`
+/// selector style — the pair IS the resource address here.
+#[derive(Debug, Deserialize)]
+struct RemoveCommitQuery {
+    pub commit_sha: String,
+    pub task_id: String,
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -218,6 +233,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/commits", post(record_task_commits_handler))
         .route("/commits", get(list_task_commits_handler))
+        .route("/commits", delete(remove_task_commit_handler))
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +472,20 @@ async fn list_task_commits_handler(
     let by = TaskCommitQuery::from_optionals(query.task_id, query.commit_sha, query.story_id)?;
     let commits = repo::list_task_commits(state.pool.as_ref(), by).await?;
     Ok(Json(commits))
+}
+
+/// `DELETE /commits?commit_sha=&task_id=` — remove ONE recorded commit→task
+/// provenance edge (review R32; the repair path for a bad historical row —
+/// shape validation only guards NEW `POST /commits` writes). BOTH query params
+/// are required (an absent one is a 400 at the deserialise boundary); an
+/// absent pair is 404. Returns 200 + `{ ok: true }`.
+async fn remove_task_commit_handler(
+    State(state): State<AppState>,
+    Query(query): Query<RemoveCommitQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(commit_sha = %query.commit_sha, task_id = %query.task_id, "http: DELETE /commits");
+    repo::remove_task_commit(state.pool.as_ref(), &query.commit_sha, &query.task_id).await?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 // ---------------------------------------------------------------------------
@@ -860,6 +890,7 @@ mod tests {
 
         // Zero-direction GET → 422 (exactly-one validation).
         let resp = router
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri("/api/commits")
@@ -871,5 +902,51 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let body = json_body(resp).await;
         assert_eq!(body["error"]["kind"], "validation");
+
+        // R32: DELETE the edge → 200 + {ok:true}; the read-back is now empty;
+        // a re-DELETE of the (gone) pair is 404.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/commits?commit_sha=c0ffee01&task_id={task_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body["ok"], true, "removal mirrors the MCP {{ok:true}} envelope");
+
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/commits?task_id={task_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert!(
+            body.as_array().expect("array").is_empty(),
+            "the removed edge no longer reads back"
+        );
+
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/commits?commit_sha=c0ffee01&task_id={task_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "an absent pair is 404");
     }
 }

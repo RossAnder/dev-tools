@@ -53,6 +53,7 @@ struct WorktreeRow {
     path: String,
     base_ref: Option<String>,
     branch: Option<String>,
+    repo_link_id: Option<String>,
     merged_at: Option<String>,
     merge_ref: Option<String>,
     outcome: Option<String>,
@@ -76,6 +77,7 @@ where
             path: row.try_get("path")?,
             base_ref: row.try_get("base_ref")?,
             branch: row.try_get("branch")?,
+            repo_link_id: row.try_get("repo_link_id")?,
             merged_at: row.try_get("merged_at")?,
             merge_ref: row.try_get("merge_ref")?,
             outcome: row.try_get("outcome")?,
@@ -114,6 +116,7 @@ impl WorktreeRow {
             path: self.path,
             base_ref: self.base_ref,
             branch: self.branch,
+            repo_link_id: self.repo_link_id,
             merged_at: self.merged_at,
             merge_ref: self.merge_ref,
             outcome,
@@ -159,7 +162,7 @@ fn check_free_text(field: &str, value: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// The identical 12-column projection + FROM/JOIN shared by all three worktree
+/// The identical 13-column projection + FROM/JOIN shared by all three worktree
 /// SELECTs (review R15). `concat!` only accepts LITERALS (not a `const &str`), so
 /// the single source of truth is this `macro_rules!` that expands the projection
 /// literal into each `concat!` below — the three consts then differ ONLY in their
@@ -173,6 +176,7 @@ macro_rules! worktree_select_base {
         w.path             AS path,
         w.base_ref         AS base_ref,
         w.branch           AS branch,
+        w.repo_link_id     AS repo_link_id,
         w.merged_at        AS merged_at,
         w.merge_ref        AS merge_ref,
         w.outcome          AS outcome,
@@ -223,21 +227,62 @@ fn is_commit_sha_shaped(s: &str) -> bool {
     (7..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// `true` when a (code-2067-gated) UNIQUE violation's message names the
-/// `worktrees.branch` column — disambiguating WHICH of the two UNIQUE
-/// constraints on the `worktrees` INSERT fired: the migration-0018 partial
-/// live-branch index (`idx_worktrees_live_branch`) vs the migration-0016
-/// `owning_sprint_id` UNIQUE. SQLite's violation message lists the COLUMN
-/// path(s) (`UNIQUE constraint failed: worktrees.branch`), never the index
-/// NAME, so the column path is the only in-error discriminator. The primary
-/// gate stays the backend-aware code matcher [`is_unique_violation`]
-/// (`DatabaseError::code()` == "2067"/"1555"); this is a secondary refinement
-/// applied only after that gate passes.
+/// `true` when a (code-2067-gated) UNIQUE violation belongs to the partial
+/// live-branch index (`idx_worktrees_live_branch`) — disambiguating WHICH of
+/// the two UNIQUE constraints on the `worktrees` INSERT fired: that index vs
+/// the migration-0016 `owning_sprint_id` UNIQUE. Two message shapes are
+/// matched, belt-and-braces across the index's two generations:
+///   * `UNIQUE constraint failed: index 'idx_worktrees_live_branch'` — the
+///     migration-0019 EXPRESSION index (`COALESCE(repo_link_id,''), branch`);
+///     SQLite names the INDEX when any indexed term is an expression
+///     (verified against SQLite 3.50);
+///   * `UNIQUE constraint failed: worktrees.branch` — the plain-column shape
+///     the migration-0018 single-column index produced (kept so the matcher
+///     cannot regress if the index ever returns to plain columns).
+///
+/// The primary gate stays the backend-aware code matcher
+/// [`is_unique_violation`] (`DatabaseError::code()` == "2067"/"1555"); this is
+/// a secondary refinement applied only after that gate passes.
 fn unique_violation_names_branch(e: &sqlx::Error) -> bool {
     match e {
-        sqlx::Error::Database(db_err) => db_err.message().contains("worktrees.branch"),
+        sqlx::Error::Database(db_err) => {
+            let msg = db_err.message();
+            msg.contains("idx_worktrees_live_branch") || msg.contains("worktrees.branch")
+        }
         _ => false,
     }
+}
+
+/// Resolve the owning sprint's PRIMARY repo-link id (migration 0019) — the
+/// repo-scope discriminator stamped on `worktrees.repo_link_id` at create
+/// time so the live-branch uniqueness bucket is per-repo. Resolution path
+/// mirrors [`get_sprint_primary_repo_binding`]: any `sprint_tasks` task
+/// (lowest id) → [`find_project_ancestor`] → [`list_repo_links`] primary.
+///
+/// BEST-EFFORT BY DESIGN: the binding is optional, so a missing task binding,
+/// no primary link, or ANY read failure resolves to `None` (the legacy global
+/// `''` bucket) rather than failing the create — a worktree must remain
+/// creatable on a sprint with no project wiring.
+async fn resolve_sprint_primary_repo_link_id(
+    db: &impl DbClient,
+    sprint_id: &str,
+) -> Option<String> {
+    let task_id: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT task_id FROM sprint_tasks WHERE sprint_id = $1 ORDER BY task_id LIMIT 1",
+        args![sprint_id.to_owned()],
+    )
+    .await
+    .ok()
+    .flatten();
+    let task_id = task_id?;
+    let project_id = find_project_ancestor(db, &task_id).await.ok()?;
+    list_repo_links(db, &project_id)
+        .await
+        .ok()?
+        .into_iter()
+        .find(|l| l.is_primary == 1)
+        .map(|l| l.id)
 }
 
 /// Create a [`worktree`](NewWorktree) owned by an existing sprint (migration
@@ -255,13 +300,17 @@ fn unique_violation_names_branch(e: &sqlx::Error) -> bool {
 /// prior id in the event payload as `replaced_worktree_id` so the overwrite is
 /// auditable rather than silent (R10). Returns the new worktree id.
 ///
-/// Live-branch uniqueness (migration 0018): at most one LIVE (`outcome IS NULL`)
-/// worktree may record a given `branch` — the partial UNIQUE index
-/// `idx_worktrees_live_branch` enforces it structurally, and a hit is mapped at
-/// the INSERT (code-2067 gate via [`is_unique_violation`] +
-/// [`unique_violation_names_branch`] column-path disambiguation) into a clean
-/// [`AppError::Validation`] rather than a raw 500. A worktree whose outcome
-/// turns terminal (`merged`/`rejected`) frees its branch for reuse.
+/// Live-branch uniqueness (migrations 0018/0019): at most one LIVE
+/// (`outcome IS NULL AND deleted_at IS NULL`) worktree may record a given
+/// `branch` PER LINKED REPO — the partial UNIQUE index
+/// `idx_worktrees_live_branch` over `(COALESCE(repo_link_id,''), branch)`
+/// enforces it structurally, and a hit is mapped at the INSERT (code-2067 gate
+/// via [`is_unique_violation`] + [`unique_violation_names_branch`]
+/// disambiguation) into a clean [`AppError::Validation`] rather than a raw
+/// 500. The repo bucket is stamped from the owning sprint's primary repo
+/// binding ([`resolve_sprint_primary_repo_link_id`]; unresolvable ⇒ NULL, the
+/// shared global bucket). A worktree whose outcome turns terminal
+/// (`merged`/`rejected`) — or that is soft-deleted — frees its branch.
 pub async fn create_worktree(
     db: &impl DbClient,
     worktree: &NewWorktree,
@@ -323,6 +372,12 @@ pub async fn create_worktree(
     )
     .await?;
 
+    // Migration 0019: stamp the repo-scope discriminator for the live-branch
+    // uniqueness bucket. Best-effort — no binding (or any resolution failure)
+    // stamps NULL, never an error.
+    let repo_link_id: Option<String> =
+        resolve_sprint_primary_repo_link_id(db, &worktree.owning_sprint_id).await;
+
     let id = Uuid::now_v7();
     let id_str = id.to_string();
 
@@ -330,24 +385,28 @@ pub async fn create_worktree(
     let mut tx = db.begin().await?;
 
     // INSERT the worktree (created_at/updated_at left to the column DEFAULT
-    // CURRENT_TIMESTAMP; merged_at/merge_ref/outcome NULL until a merge/rejection).
-    // Two UNIQUE constraints sit on this INSERT: the 0016 `owning_sprint_id`
-    // UNIQUE (pre-checked above; a concurrent-race residual deliberately stays a
-    // raw Db error, R4) and the 0018 partial live-branch index. A hit on the
-    // LATTER — code-2067 gate + the column-path disambiguation (SQLite names
-    // `worktrees.branch`, never the index name) — is a clean typed Validation.
+    // CURRENT_TIMESTAMP; merged_at/merge_ref/outcome NULL until a merge/rejection;
+    // repo_link_id resolved above, NULL when no binding). Two UNIQUE constraints
+    // sit on this INSERT: the 0016 `owning_sprint_id` UNIQUE (pre-checked above;
+    // a concurrent-race residual deliberately stays a raw Db error, R4) and the
+    // 0019 partial per-repo live-branch index. A hit on the LATTER — code-2067
+    // gate + the message disambiguation (the 0019 EXPRESSION index names the
+    // INDEX, `index 'idx_worktrees_live_branch'`; the matcher also keeps the
+    // legacy `worktrees.branch` column-path shape) — is a clean typed
+    // Validation.
     match tx
         .execute(
             r#"
-        INSERT INTO worktrees (id, owning_sprint_id, path, base_ref, branch)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO worktrees (id, owning_sprint_id, path, base_ref, branch, repo_link_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
         "#,
             args![
                 id_str.clone(),
                 worktree.owning_sprint_id.clone(),
                 worktree.path.clone(),
                 worktree.base_ref.clone(),
-                worktree.branch.clone()
+                worktree.branch.clone(),
+                repo_link_id.clone()
             ],
         )
         .await
@@ -357,20 +416,14 @@ pub async fn create_worktree(
             if is_unique_violation(backend, sqlx_err)
                 && unique_violation_names_branch(sqlx_err) =>
         {
-            // LIVENESS-AXIS DIVERGENCE (review R11 — documented here; index
-            // alignment requires a 0019+ rebuild). The migration-0018 partial
-            // index defines "live" as `outcome IS NULL`, while the repo layer's
-            // liveness predicate everywhere else is `deleted_at IS NULL` (the
-            // soft-delete tombstone). A row that is SOFT-DELETED but still has a
-            // NULL `outcome` therefore keeps SQUATTING its branch under the
-            // index — and the verdict tools cannot free it, because
-            // `record_worktree_merge` / `record_worktree_rejection` read a
-            // tombstoned worktree as NotFound. No production path soft-deletes
-            // worktrees today, so the squat is latent, but aligning the two axes
-            // means rebuilding the index over BOTH predicates
-            // (`outcome IS NULL AND deleted_at IS NULL`) in a NEW migration
-            // (0019+): the applied 0018 file is checksum-pinned by sqlx and must
-            // never be edited in place.
+            // Liveness axes ALIGNED by migration 0019 (the R11 deferral,
+            // resolved): the rebuilt index keys on BOTH `outcome IS NULL` AND
+            // `deleted_at IS NULL`, matching the repo layer's universal
+            // soft-delete predicate — a tombstoned row no longer squats its
+            // branch. The 0019 bucket is per-repo: `(COALESCE(repo_link_id,
+            // ''), branch)`, so this arm fires only for a clash WITHIN one
+            // repo bucket (or among legacy/unbound NULL rows, which share the
+            // '' bucket).
             //
             // The index predicate (`branch IS NOT NULL`) means this arm is only
             // reachable with a Some(branch); the unwrap_or is belt-and-braces.
@@ -381,13 +434,14 @@ pub async fn create_worktree(
             // path rather than naming the verdict tools alone.
             return Err(AppError::Validation(format!(
                 "a live worktree already records branch '{}' (at most one live \
-                 worktree per branch, migration 0018). To free the branch: walk \
-                 the OWNING sprint to 'review' via set_sprint_status, then call \
-                 record_worktree_rejection (or record_worktree_merge if the \
-                 branch genuinely merged) — the terminal outcome is what frees \
-                 the branch. Note: cancelling the owning sprint does NOT free \
-                 the branch (cancellation stamps no worktree outcome, and the \
-                 0018 index keys on `outcome IS NULL`)",
+                 worktree per branch per linked repo, migrations 0018/0019). To \
+                 free the branch: walk the OWNING sprint to 'review' via \
+                 set_sprint_status, then call record_worktree_rejection (or \
+                 record_worktree_merge if the branch genuinely merged) — the \
+                 terminal outcome is what frees the branch. Note: cancelling \
+                 the owning sprint does NOT free the branch (cancellation \
+                 stamps no worktree outcome, and the live-branch index keys on \
+                 `outcome IS NULL`)",
                 worktree.branch.as_deref().unwrap_or("<unset>")
             )));
         }
@@ -408,6 +462,8 @@ pub async fn create_worktree(
         // `null` when the owner had no prior worktree_id; the prior id otherwise, so
         // an overwrite of a previously-targeted worktree is observable (R10).
         "replaced_worktree_id": prior_worktree_id,
+        // The 0019 repo-scope bucket stamped on the row (`null` = no binding).
+        "repo_link_id": repo_link_id,
     });
     record_inert_event(tx.as_mut(), "worktree", &id_str, "worktree.created", payload).await?;
 
@@ -807,6 +863,54 @@ pub async fn record_task_commits(
 
     tx.commit().await?;
     Ok(inserted)
+}
+
+/// Remove ONE recorded commit→task provenance edge (review R32) — the repair
+/// path for a bad HISTORICAL `task_commits` row (the R4 sha shape-validation
+/// only guards NEW writes; pre-R4 garbage had no remedy short of raw SQL). In
+/// ONE `BEGIN IMMEDIATE` tx: DELETE the `(commit_sha, task_id)` pair —
+/// zero rows deleted is a clean [`AppError::NotFound`] BEFORE any event, so
+/// the tx rolls back and no event is recorded for a no-op — then EXACTLY ONE
+/// coarse export-inert `worktree.task_commit_removed` event (mirroring
+/// [`record_task_commits`]' event shape: `aggregate_type="worktree"`, keyed by
+/// the commit sha; R-B4 — never `"work_item"`). Other pairs on the same
+/// commit/task are untouched (the DELETE is pair-exact).
+pub async fn remove_task_commit(
+    db: &impl DbClient,
+    commit_sha: &str,
+    task_id: &str,
+) -> Result<(), AppError> {
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute(
+            "DELETE FROM task_commits WHERE commit_sha = $1 AND task_id = $2",
+            args![commit_sha.to_owned(), task_id.to_owned()],
+        )
+        .await?;
+    if affected == 0 {
+        // No such edge — NotFound, and the tx drops without recording an
+        // event (single-mutation-path: one event ⟺ one domain write).
+        return Err(AppError::NotFound(format!(
+            "no task_commits edge records (commit '{commit_sha}', task '{task_id}')"
+        )));
+    }
+
+    let payload = serde_json::json!({
+        "commit_sha": commit_sha,
+        "task_id": task_id,
+    });
+    record_inert_event(
+        tx.as_mut(),
+        "worktree",
+        commit_sha,
+        "worktree.task_commit_removed",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Generic-`R` [`sqlx::FromRow`] for the read-only [`TaskCommit`] aggregate
@@ -1615,6 +1719,172 @@ mod tests {
             .expect("binding read")
             .expect("binding resolved");
         assert_eq!(got_path.as_deref(), Some("/work/repo"));
+    }
+
+    /// Migration 0019: the live-branch uniqueness bucket is PER-REPO. Two live
+    /// worktrees recording the SAME branch coexist when their owning sprints
+    /// bind to projects with DIFFERENT primary repo links; a third sprint in an
+    /// already-occupied bucket still rejects with the Validation; and the
+    /// stamped `repo_link_id` round-trips through `get_worktree`.
+    #[tokio::test]
+    async fn same_branch_different_repo_buckets_coexist() {
+        let pool = connect_in_memory().await.expect("pool");
+
+        // Two INDEPENDENT project chains, each with its own primary repo link
+        // and a sprint bound (via sprint_tasks) into that project.
+        let mut sprints = Vec::new();
+        let mut links = Vec::new();
+        let mut stories = Vec::new();
+        for slug in ["octo/alpha", "octo/beta"] {
+            let story = seed_chain_to_story(&pool).await;
+            let task = create_work_item(&pool, "task", Some(&story), "T", None)
+                .await
+                .expect("task")
+                .to_string();
+            let sprint = seed_sprint(&pool).await;
+            add_tasks_to_sprint(&pool, &sprint, &[task.as_str()])
+                .await
+                .expect("bind task");
+            let project = find_project_ancestor(&pool, &task).await.expect("project");
+            let link = add_repo_link(&pool, &project, slug, true)
+                .await
+                .expect("primary link")
+                .to_string();
+            sprints.push(sprint);
+            links.push(link);
+            stories.push(story);
+        }
+
+        // SAME branch under both repo buckets: both creates succeed (0019).
+        let wt_a = create_worktree(&pool, &new_worktree(&sprints[0]))
+            .await
+            .expect("first bucket's live worktree")
+            .to_string();
+        let wt_b = create_worktree(&pool, &new_worktree(&sprints[1]))
+            .await
+            .expect("a DIFFERENT repo bucket coexists on the same branch")
+            .to_string();
+
+        // The stamped discriminators round-trip and differ.
+        let got_a = get_worktree(&pool, &wt_a).await.expect("get a");
+        let got_b = get_worktree(&pool, &wt_b).await.expect("get b");
+        assert_eq!(got_a.repo_link_id.as_deref(), Some(links[0].as_str()));
+        assert_eq!(got_b.repo_link_id.as_deref(), Some(links[1].as_str()));
+
+        // A THIRD sprint bound into project A's bucket: same (repo, branch)
+        // pair ⇒ still the clean Validation.
+        let task_a2 = create_work_item(&pool, "task", Some(&stories[0]), "T2", None)
+            .await
+            .expect("second task in project A")
+            .to_string();
+        let sprint_c = seed_sprint(&pool).await;
+        add_tasks_to_sprint(&pool, &sprint_c, &[task_a2.as_str()])
+            .await
+            .expect("bind task");
+        let res = create_worktree(&pool, &new_worktree(&sprint_c)).await;
+        match res {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.contains("sprint/1"),
+                "the Validation names the conflicting branch: {msg}"
+            ),
+            other => panic!("a same-bucket duplicate is a Validation, got {other:?}"),
+        }
+    }
+
+    /// Migration 0019 (the R11 alignment): the live-branch index predicate now
+    /// includes `deleted_at IS NULL`, so a SOFT-DELETED row with a NULL
+    /// `outcome` no longer squats its branch — a new live worktree on the same
+    /// branch (same NULL bucket) succeeds after the tombstone.
+    #[tokio::test]
+    async fn soft_deleted_worktree_frees_branch() {
+        let pool = connect_in_memory().await.expect("pool");
+        let sprint_a = seed_sprint(&pool).await;
+        let wt_a = create_worktree(&pool, &new_worktree(&sprint_a))
+            .await
+            .expect("first live worktree")
+            .to_string();
+
+        // Tombstone it (no production path soft-deletes worktrees today; this
+        // is the latent squat 0018 left and 0019 fixes).
+        sqlx::query("UPDATE worktrees SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1")
+            .bind(&wt_a)
+            .execute(&pool)
+            .await
+            .expect("soft-delete");
+
+        let sprint_b = seed_sprint(&pool).await;
+        create_worktree(&pool, &new_worktree(&sprint_b))
+            .await
+            .expect("a soft-deleted row no longer blocks its branch (R11 alignment)");
+    }
+
+    /// R32: `remove_task_commit` deletes exactly the named `(commit, task)`
+    /// pair, records one export-inert `worktree.task_commit_removed` event,
+    /// and leaves sibling pairs untouched.
+    #[tokio::test]
+    async fn remove_task_commit_deletes_pair_and_records_event() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let task_a = create_work_item(&pool, "task", Some(&story), "TA", None)
+            .await
+            .expect("task a")
+            .to_string();
+        let task_b = create_work_item(&pool, "task", Some(&story), "TB", None)
+            .await
+            .expect("task b")
+            .to_string();
+
+        // One commit covering both tasks + a second commit on task_a.
+        record_task_commits(&pool, "c0ffee01", &[task_a.as_str(), task_b.as_str()], None)
+            .await
+            .expect("record c0ffee01");
+        record_task_commits(&pool, "c0ffee02", &[task_a.as_str()], None)
+            .await
+            .expect("record c0ffee02");
+
+        remove_task_commit(&pool, "c0ffee01", &task_a)
+            .await
+            .expect("remove the (c0ffee01, task_a) edge");
+
+        // The named pair is gone; the sibling pairs survive.
+        let by_commit = list_task_commits(&pool, TaskCommitQuery::ByCommit("c0ffee01".to_owned()))
+            .await
+            .expect("by commit");
+        assert_eq!(by_commit.len(), 1, "only task_b's edge remains on c0ffee01");
+        assert_eq!(by_commit[0].task_id, task_b);
+        let by_task = list_task_commits(&pool, TaskCommitQuery::ByTask(task_a.clone()))
+            .await
+            .expect("by task");
+        assert_eq!(by_task.len(), 1, "task_a keeps its c0ffee02 edge");
+        assert_eq!(by_task[0].commit_sha, "c0ffee02");
+
+        // Exactly one removal event (export-inert 'worktree' aggregate).
+        let events: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM events WHERE event_type = 'worktree.task_commit_removed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count removal events");
+        assert_eq!(events, 1, "one coarse removal event recorded");
+    }
+
+    /// R32: removing a non-existent pair is a clean NotFound, and NO event is
+    /// recorded for the no-op.
+    #[tokio::test]
+    async fn remove_task_commit_absent_pair_is_not_found() {
+        let pool = connect_in_memory().await.expect("pool");
+        let res = remove_task_commit(&pool, "deadbeef", "no-such-task").await;
+        assert!(
+            matches!(res, Err(AppError::NotFound(_))),
+            "an absent pair is NotFound, got {res:?}"
+        );
+        let events: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM events WHERE event_type = 'worktree.task_commit_removed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count removal events");
+        assert_eq!(events, 0, "a no-op removal records no event");
     }
 
     /// R19 drift-guard: the `LIST_LIMIT` const and the literal baked into the list

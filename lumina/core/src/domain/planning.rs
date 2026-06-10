@@ -326,6 +326,12 @@ pub struct Worktree {
     /// The worktree's branch name; NULL when unrecorded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// The repo-scope discriminator for live-branch uniqueness (migration
+    /// 0019): the owning sprint's PRIMARY `repo_links` row at create time;
+    /// NULL when no binding resolved (NULL rows share one global bucket,
+    /// preserving the pre-0019 single-repo semantics).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_link_id: Option<String>,
     /// Merge-audit instant (ISO-8601); NULL until a merge/rejection is recorded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merged_at: Option<String>,

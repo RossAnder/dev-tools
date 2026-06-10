@@ -116,9 +116,11 @@ sprint must exist (404), be non-terminal and not already own a live worktree
 (422), `branch`/`base_ref` must be non-empty (422), and a companion must be
 connected (502 otherwise).
 
-- **Unique-live-branch constraint (migration 0018).** At most one LIVE worktree
-  (`outcome IS NULL`) may record a given branch; a merged/rejected worktree
-  frees the branch. In the execute path a same-branch duplicate usually fails
+- **Unique-live-branch constraint (migrations 0018 + 0019).** At most one LIVE
+  worktree (`outcome IS NULL AND deleted_at IS NULL`) may record a given branch
+  PER REPOSITORY (the 0019 rebuild scopes the index by the worktree's
+  `repo_link_id`; unstamped legacy rows share one bucket); a merged/rejected —
+  or soft-deleted — worktree frees the branch. In the execute path a same-branch duplicate usually fails
   earlier in git itself (`worktree add -b` on an existing branch → 502
   `BranchInUse`); the index catches record-layer races and record-only
   collisions ("a live worktree already records branch …" → 422).

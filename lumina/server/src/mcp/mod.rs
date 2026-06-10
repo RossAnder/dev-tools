@@ -480,6 +480,10 @@ mod tests {
             // companion-executed intent (MergeWorktree / CreateWorktree))
             "execute_worktree_merge",
             "execute_worktree_create",
+            // task-commit removal repair tool (review R32; defined in
+            // mcp/worktrees.rs — the pair-exact delete for a bad historical
+            // task_commits row)
+            "remove_task_commit",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -489,7 +493,7 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 86 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 87 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
         //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
         //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
@@ -521,12 +525,16 @@ mod tests {
         //      create_worktree mutation with a companion-executed
         //      CreateWorktree intent, the companion resolving the committish
         //      base_ref and reporting the ground-truth path/head back).
+        //    + 1 remove_task_commit (review R32 follow-up; defined in
+        //      mcp/worktrees.rs — pair-exact removal of a bad historical
+        //      task_commits provenance edge; the R4 sha shape-validation only
+        //      guards NEW record_task_commits writes).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            86,
-            "advertised tool count must be exactly 86, got {}: {names:?}",
+            87,
+            "advertised tool count must be exactly 87, got {}: {names:?}",
             names.len()
         );
 
@@ -541,8 +549,8 @@ mod tests {
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            86,
-            "advertised tool names must be UNIQUE (86 distinct), got {} distinct of {}: {names:?}",
+            87,
+            "advertised tool names must be UNIQUE (87 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
@@ -679,6 +687,8 @@ mod tests {
             // work-item's TOML export — no independent identity).
             "remove_risk",
             "remove_rejected_alternative",
+            // R32: pair-exact hard delete of a task_commits provenance edge.
+            "remove_task_commit",
         ] {
             assert_eq!(
                 annotations_of(&tools, destructive).destructive_hint,
