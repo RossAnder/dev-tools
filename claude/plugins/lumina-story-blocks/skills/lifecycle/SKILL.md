@@ -13,7 +13,7 @@ the next gate is X; run Y."** It mirrors [`../next-block/SKILL.md`](../next-bloc
 — a read-only meta-skill whose value is in telling the agent WHAT TO DO NEXT,
 not in mutating state itself. Where `next-block` advises WITHIN the six-phase
 story walk, `lifecycle` advises ACROSS the whole create→plan→decompose→compose→
-execute→merge runbook ([`../../../../lumina/docs/runbooks/dogfood-lifecycle.md`](../../../../lumina/docs/runbooks/dogfood-lifecycle.md)).
+execute→merge runbook ([`../../../../../lumina/docs/runbooks/dogfood-lifecycle.md`](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md)).
 
 ## Why this skill omits `disable-model-invocation`
 
@@ -139,7 +139,7 @@ advisor's job ends at "recommend"; it never persists its own invocation.
 ## Pointers
 
 - Runbook (the eleven gates, legs A–H):
-  [`../../../../lumina/docs/runbooks/dogfood-lifecycle.md`](../../../../lumina/docs/runbooks/dogfood-lifecycle.md).
+  [`../../../../../lumina/docs/runbooks/dogfood-lifecycle.md`](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md).
 - Sibling advisor (within-story): [`../next-block/SKILL.md`](../next-block/SKILL.md).
 - Orchestration skills this advisor points at: `/lumina:create-project`,
   `/lumina:plan-story`, `/lumina:compose-sprint`, `/lumina:run-sprint`.
