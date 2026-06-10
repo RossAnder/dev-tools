@@ -32,10 +32,13 @@
 //!     REGRESSION directly (the old attach-to-target choreography failed here
 //!     with `Failed{BranchInUse}`) plus the resulting stale-checkout operator
 //!     hint (`target_checkout` + the `git reset --keep` remedy string);
-//!   * NO repo-link `local_path` is seeded, BY CHOICE: the execute-merge
-//!     pre-flight's repo-root split-brain guard is SKIPPED when the project's
-//!     primary repo-link `local_path` is unset, which keeps the temp-repo root
-//!     out of the (lexically-normalised) clone-dir comparison.
+//!   * NO repo-link `local_path` is seeded, BY CHOICE, in the merge/create
+//!     scenarios: the execute pre-flights' repo-root split-brain guard is
+//!     SKIPPED when the project's primary repo-link `local_path` is unset,
+//!     which keeps the temp-repo root out of the (lexically-normalised)
+//!     clone-dir comparison. Scenario 5 is the deliberate EXCEPTION — it
+//!     seeds `local_path` precisely to exercise the guard's REJECTION arm
+//!     (identity equality, review R13) and its identity-pass arm.
 //!
 //! Each scenario stands up its own listener + AppState + temp repo (per-test
 //! isolation), and aborts the companion + server tasks at the end so nextest's
@@ -58,8 +61,9 @@ use lumina_core::domain::{
     NewSprint, NewWorktree, SprintStatus, TaskCommitQuery, WorktreeOutcome,
 };
 use lumina_core::repo;
-use lumina_protocol::{Intent, Outcome};
+use lumina_protocol::{FailureKind, Intent, Outcome, ServerToCompanion};
 use lumina_server::app::{AppState, build_router};
+use lumina_server::companion::CompanionRegistry;
 
 // ---------------------------------------------------------------------------
 // Git fixture (the shell_git.rs tempdir pattern)
@@ -284,8 +288,12 @@ async fn execute_create(
 // ---------------------------------------------------------------------------
 
 /// Seed project→epic(+close criterion)→focus→story, then one task per title;
-/// returns the task ids in input order.
-async fn seed_story_with_tasks(pool: &sqlx::SqlitePool, task_titles: &[&str]) -> Vec<String> {
+/// returns `(project_id, task_ids)` (tasks in input order). The project id is
+/// what the split-brain scenario hangs its primary repo-link off.
+async fn seed_story_with_tasks(
+    pool: &sqlx::SqlitePool,
+    task_titles: &[&str],
+) -> (String, Vec<String>) {
     let project = repo::create_work_item(pool, "project", None, "P", None)
         .await
         .expect("project");
@@ -324,7 +332,7 @@ async fn seed_story_with_tasks(pool: &sqlx::SqlitePool, task_titles: &[&str]) ->
                 .to_string(),
         );
     }
-    tasks
+    (project.to_string(), tasks)
 }
 
 /// Create one bare sprint (left at its `'draft'` default); returns its id.
@@ -394,7 +402,7 @@ async fn execute_merge_e2e_records_ground_truth_and_git_agrees() {
 
     // DB: story + two tasks, sprint owning the worktree, walked to 'review'.
     let pool = connect_in_memory().await.expect("pool");
-    let tasks = seed_story_with_tasks(&pool, &["TA", "TB"]).await;
+    let (_project, tasks) = seed_story_with_tasks(&pool, &["TA", "TB"]).await;
     let (sprint, wt_id) = seed_sprint_with_worktree(&pool, &feature_wt).await;
     repo::add_tasks_to_sprint(&pool, &sprint, &[tasks[0].as_str(), tasks[1].as_str()])
         .await
@@ -555,7 +563,7 @@ async fn commit_checkpoint_e2e_inverts_into_recorded_provenance() {
     // DB: one task + a sprint to hang the provenance off (no merge here, so
     // the sprint can stay at its 'draft' default).
     let pool = connect_in_memory().await.expect("pool");
-    let tasks = seed_story_with_tasks(&pool, &["T1"]).await;
+    let (_project, tasks) = seed_story_with_tasks(&pool, &["T1"]).await;
     let sprint = seed_sprint(&pool).await;
 
     let stack = Stack::spawn(pool.clone(), &repo.root).await;
@@ -734,4 +742,183 @@ async fn execute_create_e2e_records_ground_truth_and_rejects_duplicate_branch() 
     assert_eq!(rows.len(), 2, "failed creates recorded nothing: {rows:?}");
 
     stack.shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 5 (review R23): the split-brain guard's REJECTION arm — every
+// other scenario leaves the primary repo-link `local_path` UNSET so the guard
+// is skipped; this one seeds it deliberately. The guard is strict IDENTITY
+// over `repo::normalise_path_for_compare` (review R13): (a) a SIBLING dir is
+// rejected, (b) a NESTED repo_root under the clone dir — the case the old
+// containment matcher wrongly ACCEPTED — is rejected too, and in both cases
+// NOTHING is recorded and no git ran. (c) the exact clone dir passes the
+// guard through the normaliser (a real Windows path: case + separators) and
+// the merge proceeds — proving the rejections above were the guard, not some
+// other pre-flight.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn execute_merge_split_brain_guard_rejects_mismatched_repo_root() {
+    // Git: one feature commit, so phase (c)'s merge genuinely has work to do.
+    let repo = TestRepo::new().await;
+    let feature_wt = repo.add_feature_worktree("wt-feature").await;
+    std::fs::write(feature_wt.join("feature.txt"), "x\n").expect("write feature file");
+    commit_in(&feature_wt, "feature change").await;
+    let main_tip = git_in(&repo.root, &["rev-parse", "main"]).await;
+
+    // DB: a task BOUND to the owning sprint, so the worktree-keyed binding
+    // resolves a project (no bound task ⇒ guard skipped — the default the
+    // other scenarios rely on); a PRIMARY repo link to hang `local_path` off.
+    let pool = connect_in_memory().await.expect("pool");
+    let (project, tasks) = seed_story_with_tasks(&pool, &["T1"]).await;
+    let (sprint, wt_id) = seed_sprint_with_worktree(&pool, &feature_wt).await;
+    repo::add_tasks_to_sprint(&pool, &sprint, &[tasks[0].as_str()])
+        .await
+        .expect("bind task to sprint");
+    walk_sprint_to_review(&pool, &sprint).await;
+    let link = repo::add_repo_link(&pool, &project, "acme/widget", true)
+        .await
+        .expect("primary repo link")
+        .to_string();
+
+    // Companion rooted at the REAL repo — its Hello.repo_root is what the
+    // guard compares against the seeded local_path.
+    let stack = Stack::spawn(pool.clone(), &repo.root).await;
+
+    // (a) SIBLING dir: any directory other than the repo root fails identity.
+    let sibling = repo.tmp.path().join("elsewhere");
+    repo::set_repo_local_path(&pool, &link, Some(sibling.to_str().expect("utf-8 path")))
+        .await
+        .expect("set sibling local_path");
+    let (status, body) = execute_merge(&stack.router, &wt_id).await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "a mismatched repo_root is a 422 pre-flight Validation: {body}"
+    );
+    assert_eq!(body["error"]["kind"], "validation");
+    let msg = body["error"]["message"].as_str().expect("message string");
+    assert!(
+        msg.contains("split-brain guard") && msg.contains("elsewhere"),
+        "the rejection names the guard and the mismatched clone dir: {msg}"
+    );
+
+    // (b) NESTED (the R13 regression): local_path = the PARENT of the
+    // companion's repo_root, so repo_root is a strict DESCENDANT of the clone
+    // dir. The old containment matcher accepted exactly this; identity must
+    // reject it.
+    repo::set_repo_local_path(&pool, &link, Some(repo.tmp.path().to_str().expect("utf-8 path")))
+        .await
+        .expect("set parent local_path");
+    let (status, body) = execute_merge(&stack.router, &wt_id).await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "a NESTED repo_root under the clone dir is rejected (identity, not containment): {body}"
+    );
+    assert_eq!(body["error"]["kind"], "validation");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .expect("message string")
+            .contains("split-brain guard"),
+        "the nested rejection is the guard's: {body}"
+    );
+
+    // After BOTH rejections: NOTHING recorded, no git ran.
+    let row = repo::get_worktree(&pool, &wt_id).await.expect("get_worktree");
+    assert!(row.outcome.is_none(), "rejection records no outcome");
+    assert!(row.merged_at.is_none(), "rejection stamps no merged_at");
+    assert!(row.merge_ref.is_none(), "rejection records no merge_ref");
+    assert_eq!(row.effective_status, SprintStatus::Review, "owner stays 'review'");
+    assert_eq!(
+        git_in(&repo.root, &["rev-parse", "main"]).await,
+        main_tip,
+        "no merge was dispatched — main's tip is unmoved"
+    );
+
+    // (c) IDENTITY: local_path = exactly the companion's repo_root (the same
+    // string both sides derive from), run through the migration-0014
+    // normaliser — the guard passes and the merge proceeds end-to-end.
+    repo::set_repo_local_path(&pool, &link, Some(repo.root.to_str().expect("utf-8 path")))
+        .await
+        .expect("set identity local_path");
+    let (status, body) = execute_merge(&stack.router, &wt_id).await;
+    assert_eq!(status, StatusCode::OK, "identity passes the guard: {body}");
+    assert_eq!(body["outcome"], "merged", "the merge ran once the guard passed: {body}");
+
+    stack.shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 6 (review R24): a lost ref-CAS — the companion's terminal
+// `Failed{TargetMoved}` — maps through the server flow to the 502 companion
+// envelope with the STRUCTURED snake_case `failure_kind`, and records
+// NOTHING. The companion is STUBBED at the registry seam (the
+// mcp/worktrees.rs stub pattern): a real companion cannot lose the CAS
+// deterministically, so the test injects a `CompanionRegistry`, receives the
+// MergeWorktree intent off the wire, and answers it with TargetMoved.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn execute_merge_target_moved_is_502_with_structured_failure_kind() {
+    // DB only — no temp git repo and no real companion process.
+    let pool = connect_in_memory().await.expect("pool");
+    let (sprint, wt_id) = seed_sprint_with_worktree(&pool, Path::new("/tmp/wt-stub")).await;
+    walk_sprint_to_review(&pool, &sprint).await;
+
+    // Stub registry: register a test-held channel as the companion slot. No
+    // task is bound to the sprint, so the split-brain guard is skipped.
+    let reg = Arc::new(CompanionRegistry::new());
+    let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+    let _token = reg.register(tx, "/work/repo".to_owned()).expect("slot free");
+    let mut state = AppState::new(Arc::new(AnyPool::from(pool.clone())));
+    state.companion = reg.clone();
+    let router = build_router(state);
+
+    // Drive the HTTP mirror concurrently; answer the intent with the lost-CAS
+    // terminal failure.
+    let handle = tokio::spawn({
+        let router = router.clone();
+        let wt_id = wt_id.clone();
+        async move { execute_merge(&router, &wt_id).await }
+    });
+    let ServerToCompanion::IntentRequest { id, intent } =
+        rx.recv().await.expect("intent on the wire");
+    assert!(
+        matches!(intent, Intent::MergeWorktree { .. }),
+        "expected MergeWorktree, got {intent:?}"
+    );
+    reg.complete(
+        id,
+        Outcome::Failed {
+            kind: FailureKind::TargetMoved,
+            message: "target branch 'main' moved between tip-resolve and the ref-CAS advance"
+                .to_owned(),
+        },
+    );
+
+    // (a) The STRUCTURAL envelope: 502 (an execution-plane fault, NOT
+    // caller-input — only NotFound/DirtyWorktree map to 422), kind=companion,
+    // and the snake_case wire name riding the structured `failure_kind` field
+    // (review R7: callers branch on this, never on message prose).
+    let (status, body) = handle.await.expect("join");
+    assert_eq!(
+        status,
+        StatusCode::BAD_GATEWAY,
+        "TargetMoved is an execution-plane fault → 502: {body}"
+    );
+    assert_eq!(body["error"]["kind"], "companion");
+    assert_eq!(
+        body["error"]["failure_kind"], "target_moved",
+        "the envelope carries the structured snake_case failure_kind: {body}"
+    );
+
+    // (b) NOTHING recorded: a terminal Failed leaves the audit unstamped and
+    // the owner in 'review' — a re-run against the new tip stays possible.
+    let row = repo::get_worktree(&pool, &wt_id).await.expect("get_worktree");
+    assert!(row.outcome.is_none(), "TargetMoved records no outcome");
+    assert!(row.merged_at.is_none(), "TargetMoved stamps no merged_at");
+    assert!(row.merge_ref.is_none(), "TargetMoved records no merge_ref");
+    assert_eq!(row.effective_status, SprintStatus::Review, "owner stays 'review'");
 }
