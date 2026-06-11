@@ -1,0 +1,666 @@
+schema_version = 1
+last_updated = 2026-06-10
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R1"
+file = "lumina/companion/src/git/shell.rs"
+line = 451
+symbol = "ShellGit::detach_worktree"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "detach_worktree NotFound classifier arms are dead code under checkout --detach; comment documents messages git never emits there"
+description = "Characterization test shell_git.rs:792-805 pins that --detach reports an unresolvable committish as '--detach does not take a path argument' / 'unable to read tree', so the three NotFound arms (invalid reference / did not match any file / not a valid object name) never match and classification falls through to Engine. The doc comment at shell.rs:445-448 asserts non-detach shapes as if they applied. Either teach the arms the real --detach messages or drop them and correct the comment."
+dedup_id = "75fc04ebd198cec5"
+resolved = 2026-06-10
+resolution = "Taught detach_worktree the real --detach failure shapes (does not take a path argument / unable to read tree) -> NotFound, corrected the doc comment, flipped the characterization test Engine->NotFound. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R2"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 613
+symbol = "execute_worktree_create_flow"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "base_ref accepts any committish at create but is later reused as the default merge TARGET BRANCH"
+description = "Create stores the verbatim committish (HEAD~2, tag, SHA) into worktrees.base_ref; execute_worktree_merge_flow (mcp/worktrees.rs:390-399) uses wt.base_ref as the default merge target, which the companion resolves strictly as refs/heads/<name> (shell.rs:687-707). A non-branch base_ref fails every default-target merge with a late 502 GitFailure instead of early validation. Validate/warn on non-branch-shaped base_ref at create, or resolve the merge target independently."
+dedup_id = "b71bd10cfb83b5bd"
+resolved = 2026-06-10
+resolution = "Merge flow threads target_from_base_ref; default-target NotFound now maps to 422 with base_ref provenance + pass-target_branch remedy. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R3"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 603
+symbol = "execute_worktree_create_flow"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Create flow has no compensation or idempotent re-run path — record failure after WorktreeCreated orphans git state and wedges retries on BranchInUse"
+description = "If repo::create_worktree fails after the companion ran git worktree add -b (the 0018 record-layer race 422, an owning_sprint_id collision 500, transport drop), the branch + on-disk worktree exist with no DB row. A retry dispatches CreateWorktree again and dies in git with Failed{BranchInUse} 502 until manual cleanup; Reconcile is log-only. The merge flow has the AlreadyUpToDate catch-up for exactly this window — the create flow needs an analogous adoption path (on BranchInUse consult worktree_states and record the existing worktree) or a compensating RemoveWorktree dispatch. Flagged independently by the quality and architecture lenses."
+dedup_id = "0786dbfbc6d92c83"
+resolved = 2026-06-10
+resolution = "partial: orphan detection + recovery guidance on record-failure-after-WorktreeCreated and on BranchInUse-with-no-live-row / pending: automated adoption-compensation via Intent::RemoveWorktree (exists at protocol lib.rs:103) — tracked as R31. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R4"
+file = "lumina/core/src/repo/worktrees.rs"
+line = 678
+symbol = "record_task_commits"
+severity = "warning"
+effort = "medium"
+category = "quality"
+summary = "A garbage commit_sha recorded via record_task_commits permanently blocks execute_worktree_merge, and no tool can remove the bad row"
+description = "commit_sha is free text (only a 4096-byte bound); every recorded sha feeds must_remain_reachable, and the executor treats an is_ancestor NotFound as an unverifiable-gate failure (rollback + Failed, executor.rs:381-390, shell.rs:666-671). One typo'd sha makes every merge of that worktree fail forever, and task_commits is insert-only across the MCP/HTTP surface (ON CONFLICT DO NOTHING, no delete/amend tool) — the only remedy is raw SQL. Validate sha shape at record time and/or ship a removal tool."
+dedup_id = "a551933f0ab6a2e5"
+resolved = 2026-06-10
+resolution = "partial: commit_sha shape validation ^[0-9a-fA-F]{7,64}$ in record_task_commits + fixture hex-ification across 4 test files / pending: removal-amend tool (new MCP tool, 86-count) — tracked as R32. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R5"
+file = "lumina/companion/src/executor.rs"
+line = 259
+symbol = "Executor::merge_worktree"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Integration-worktree recognition uses exact PathBuf equality against git-reported realpaths; a canonicalisation mismatch turns every reuse merge into Failed{Internal}"
+description = "git realpath-resolves linked-worktree paths at add time (the project's own test matches by ends_with for this reason, shell_git.rs:564-566). A symlinked repo root (/tmp -> /private/tmp, Windows junctions/subst) or drive-letter case drift makes the find at executor.rs:259 miss: first merge works, every later merge takes the None arm, re-attaches on the occupied path, and fails Internal. Same fragility at :416 (hint exclusion) and :468 (reconcile starts_with). Flagged by both quality and architecture lenses; normalise once at the ShellGit parse boundary."
+dedup_id = "35c04057aa4dfe7c"
+resolved = 2026-06-10
+resolution = "same_path/path_starts_with helpers (canonicalise-when-both-succeed, lexical fallback) at the reuse match, hint exclusion, and reconcile filter in executor.rs. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R6"
+file = "lumina/companion/src/git/shell.rs"
+line = 749
+symbol = "ShellGit::worktree_states"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "A prunable worktree (dir deleted out-of-band) makes worktree_states error wholesale, blocking every merge until manual git worktree prune"
+description = "The porcelain parser ignores the 'prunable' label (shell.rs:749) but then runs status_of against every parsed path (:763-772). For a registered worktree whose directory was manually deleted, git -C <missing> status exits fatal, so worktree_states returns Err(Engine) for the whole call and merge_worktree fails at step (2) for every merge in the repo. Skip prunable records or tolerate a per-worktree status failure."
+dedup_id = "f41179adf5f9aa6a"
+resolved = 2026-06-10
+resolution = "worktree_states parser tracks prunable per stanza and skips those entries before status_of; non-prunable failures still propagate. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R7"
+file = "lumina/server/src/http/worktrees.rs"
+line = 369
+symbol = "flow_error_response"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Terminal Failed outcomes surface as untyped 502s — failure kind only as Debug text in prose, and caller-input failures (NotFound/DirtyWorktree) map to 502 rather than 422"
+description = "Clients must substring-match the {kind:?} rendering to branch on TargetMoved (re-run) vs Conflicted vs other — the exact branch-on-rendered-text anti-pattern the protocol crate's doc forbids, and the Debug name is not the snake_case wire vocabulary (protocol/src/lib.rs:183). Failed{NotFound} (e.g. a bad base_ref committish resolved companion-side) is semantically invalid_params, not a gateway failure. Add a structured failure_kind field to the 502 envelope and MCP error data (flow_error_to_mcp, mcp/worktrees.rs:218-222), and consider 422 for the NotFound/DirtyWorktree classes. Merged quality + architecture findings (same symbol)."
+dedup_id = "e5da8582581e50fa"
+resolved = 2026-06-10
+resolution = "Structured failure_kind (protocol serde wire names) on HTTP envelope and MCP ErrorData; Failed{NotFound|DirtyWorktree} -> 422/invalid_params, others 502; Debug rendering removed. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R8"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 410
+symbol = "execute_worktree_merge_flow"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "Merge-exactly-once relies on a TOCTOU review-status pre-flight; the in-memory lease is keyed by target branch, not worktree"
+description = "The owner-in-review check (:358) is an auto-commit read before the companion round-trip, and the lease is keyed solely by target branch (:410). Two concurrent merges of the SAME worktree with DIFFERENT target_branch overrides both pass pre-flight, take disjoint leases, and both run git merges; the loser's record_worktree_merge fails Validation AFTER its CAS already advanced a ref — git state diverges from the audit record. A worktree-keyed lease alongside the target-keyed one closes it cheaply."
+dedup_id = "036b8823fed45c1f"
+resolved = 2026-06-10
+resolution = "Worktree-keyed lease added beside the target-keyed one on CompanionRegistry (acquire worktree-first, release reverse, voided on disconnect) with registry + flow tests. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R9"
+file = "lumina/companion/src/git/shell.rs"
+line = 339
+symbol = "ShellGit::create_worktree"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Git argv built from server-supplied branch/path/committish/source strings with no -- end-of-options separator (argument injection)"
+description = "create_worktree runs worktree add <path> -b <branch> <start_point> (:339-343); merge ends with <source> last (:529-535); attach_worktree_detached (:408-411) and attach_worktree (:374) are positional too. These values originate from MCP/HTTP params (Intent::CreateWorktree.base, MergeWorktree.source_branch) passed through verbatim — a value beginning with '-' (e.g. --upload-pack=...) is consumed as a git option. Add an explicit -- before positional operands and/or reject leading-dash ref/path values at the executor boundary; the existing branch_dir_name sanitiser covers only the on-disk dir name, not argv."
+dedup_id = "cb94aa332e6e369e"
+resolved = 2026-06-10
+resolution = "-- end-of-options separators on worktree-add/attach/merge argv (git 2.54 acceptance probed live) + reject_leading_dash guard at the executor trust boundary mapping to Failed{NotFound}. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R10"
+file = "lumina/companion/src/git/shell.rs"
+line = 204
+symbol = "ShellGit::resolve_commit"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+related = ["R9"]
+summary = "Committish interpolated into the rev-parse --verify spec is leading-dash flag-parseable (read-only paths, low blast radius)"
+description = 'resolve_commit builds format!("{refname}^{{commit}}") into rev-parse -q --verify; same root cause as R9 but read-only resolves. The shared leading-dash guard at the executor edge covers these paths too — no separate change needed beyond R9.'
+dedup_id = "f4e85f9e10ae8430"
+resolved = 2026-06-10
+resolution = "Covered by R9's executor-edge leading-dash guard; dash values can no longer reach resolve_commit/rev-parse argv. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R11"
+file = "lumina/core/migrations/0018_live_branch_unique.sql"
+line = 33
+symbol = "idx_worktrees_live_branch"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "Migration 0018's liveness predicate (outcome IS NULL) diverges from the repo layer's liveness predicate (deleted_at IS NULL)"
+description = "A worktree row soft-deleted while outcome is still NULL keeps occupying its branch slot forever: the documented remedies (record_worktree_merge/rejection) are unreachable because require_review_owner's SELECT filters tombstoned rows to NotFound. Latent today (no worktree soft-delete mutator exists), but worktrees.deleted_at exists in schema (0016:112) and tests stamp it raw; fixing later costs a DROP+CREATE INDEX in 0019+. Align the predicates or document the divergence in the migration header. Same blind spot in 0016's full owning_sprint_id UNIQUE."
+dedup_id = "bbe5989c8042f850"
+resolved = 2026-06-10
+resolution = "Documentation applied at the repo-layer 0018 mapping site (69dd9a5); the deferred index alignment then LANDED in migration 0019 (b1888fa) — the rebuilt live-branch index predicate now includes deleted_at IS NULL, closing the liveness-axis divergence."
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R12"
+file = "lumina/core/migrations/0018_live_branch_unique.sql"
+line = 32
+symbol = "idx_worktrees_live_branch"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "Live-branch uniqueness is store-global with no repository discriminator"
+description = "The index is over worktrees(branch) alone, but lumina is a multi-project store whose projects link different git repositories. Two projects each wanting a live worktree on 'sprint/1' — legitimate in distinct repos — collide; the ref-CAS race the migration header cites is only real per-repository. The worktrees table has no repo/project column, so correcting this later requires a new column + index rebuild in 0019+. Single-companion/single-repo today, hence warning not critical."
+dedup_id = "81f536de682f5b15"
+resolved = 2026-06-10
+resolution = "Migration 0019: nullable worktrees.repo_link_id FK stamped at create from the sprint's primary repo binding; live-branch index rebuilt per-repo via COALESCE(repo_link_id,'') bucketing with deleted_at folded into the liveness predicate; violation mapping matches the expression-index error shape; legacy NULL rows keep single-repo semantics. b1888fa"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R13"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 246
+symbol = "guard_companion_repo_root"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Split-brain guard is a containment check used as an identity check — a nested different repo under the project clone dir passes"
+description = "select_longest_prefix_project was built for cwd->project resolution and matches when repo_root is any descendant of local_path. A companion rooted at a nested different repository (vendored checkout, submodule, scratch clone) passes the guard, and git executes against the wrong repo while records land on the right project. The guard's intent is identity: use normalise_path_for_compare equality (already imported) instead."
+dedup_id = "fef120246d1446e7"
+resolved = 2026-06-10
+resolution = "guard_companion_repo_root now strict identity via normalise_path_for_compare (made pub in repo_links.rs); nested-repo containment rejected; e2e regression test in 96b6478. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R14"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 268
+symbol = "sprint_primary_repo_binding"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Project-binding and sprint-status reads re-implemented as raw SQL in the server crate instead of repo::* reads"
+description = "sprint_primary_repo_binding re-implements repo::get_worktree_primary_repo_binding's chain with a raw SELECT, and pre-flight re-implements the sprint-status fetch+parse repo does in WorktreeRow::into_worktree. The module doc flags the gap honestly; the fix is adding repo::get_sprint + a sprint-keyed binding fn in core so three raw SELECTs leave the server and the liveness/status predicates stay single-sourced when 0019+ touches sprints."
+dedup_id = "36d817db78fb2d64"
+resolved = 2026-06-10
+resolution = "Added repo::get_sprint (typed SprintRecord) + sprint-keyed get_sprint_primary_repo_binding in core; server raw SELECTs deleted. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R15"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 182
+symbol = "MergeFlowError"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "MergeFlowError now serves two flows under a merge-specific name with stringly-typed op labels duplicated across entry layers"
+description = "The create flow returns MergeFlowError, and both entry layers thread a free-string op ('merge' / 'worktree create') into flow_error_to_mcp/flow_error_response with duplicated message-format strings. Rename to CompanionFlowError and carry the op in the Failed variant so the format string lives once — a third execute flow (RemoveWorktree/CommitCheckpoint) will copy this shape."
+dedup_id = "644b47124bb8ab1b"
+resolved = 2026-06-10
+resolution = "MergeFlowError -> CompanionFlowError with op carried in the error variants; per-layer single format site. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R16"
+file = "lumina/core/migrations/0018_live_branch_unique.sql"
+line = 19
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+related = ["R11"]
+summary = "The documented unblock path for a stuck live branch requires the owning sprint to already be in 'review'"
+description = "The migration header and create_worktree's Validation message prescribe record_worktree_rejection to free a branch, but that verdict is gated on the owner being 'review'. A duplicate-branch worktree owned by a draft/ready/active sprint must first walk ->active->review; cancellation via set_sprint_status stamps no worktree outcome, so per R11's index predicate a cancelled owner never frees the branch. State the full path in the remedy prose or accept rejection from any non-terminal owner."
+dedup_id = "c90712b6a1e5c388"
+resolved = 2026-06-10
+resolution = "Repo-layer 0018 Validation message now prescribes the full path (walk owner to review via set_sprint_status, then verdict) and notes cancellation does not free the branch. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R17"
+file = "claude/plugins/lumina-story-blocks/skills/run-sprint/SKILL.md"
+line = 343
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+related = ["R18"]
+summary = "Broken ADR relative links — ../ depth 4 instead of 5 (resolve to nonexistent claude/docs/adr/)"
+description = '''The ADR-0002/0003/0005 links on line 343 use ../../../../docs/adr/... (4 levels); from skills/run-sprint/SKILL.md the repo root is 5 levels up — the 0006 link on the same line correctly uses 5, proving the inconsistency. Pre-existing (not introduced by this pass). While fixing, sweep all four story-block skills for the 4-level class: rg '\]\(\.\./\.\./\.\./\.\./[^.]' over claude/plugins/lumina-story-blocks/skills/*/SKILL.md.'''
+dedup_id = "84d154af79b4201c"
+resolved = 2026-06-10
+resolution = "run-sprint:343 ADR-0002/0003/0005 links corrected 4->5 levels; class audit run (further out-of-cluster hits tracked as R33). 55d4c29"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R18"
+file = "claude/plugins/lumina-story-blocks/skills/lifecycle/SKILL.md"
+line = 16
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+related = ["R17"]
+summary = "Two broken runbook links — ../ depth 4 instead of 5 (lines 16 and 142)"
+description = "Both links to lumina/docs/runbooks/dogfood-lifecycle.md use ../../../../lumina/... (4 levels), resolving to nonexistent claude/lumina/...; the correct 5-level form appears in mcp/SKILL.md:70. Pre-existing; fix together with R17."
+dedup_id = "35f3f264799bad72"
+resolved = 2026-06-10
+resolution = "lifecycle:16 and :142 runbook links corrected 4->5 levels. 55d4c29"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R19"
+file = "lumina/companion/src/executor.rs"
+line = 440
+symbol = "rollback_failed"
+severity = "warning"
+effort = "small"
+category = "testability"
+related = [
+    "R20",
+    "R21",
+]
+summary = "Double-fault rollback escalation (reset_hard fails after a gate violation) has zero coverage"
+description = "Only the Ok arm of rollback_failed is exercised. The Err arm — producing the 'ADDITIONALLY the rollback ... failed' FailureKind::Internal message a human relies on to know the worktree is in an unexpected state — is never reached (grep: no push_reset_hard(Err...) in companion/tests/executor.rs). One test scripting push_is_ancestor(Ok(false)) + push_reset_hard(Err(...)) pins it."
+dedup_id = "f9b0209d5fbf963b"
+resolved = 2026-06-10
+resolution = "Double-fault test added: gate violation + reset_hard(Err) asserts Internal with both gate and ADDITIONALLY-rollback contexts. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R20"
+file = "lumina/companion/src/executor.rs"
+line = 381
+symbol = "Executor::merge_worktree"
+severity = "warning"
+effort = "small"
+category = "testability"
+related = [
+    "R19",
+    "R21",
+]
+summary = "The unverifiable-gate path (is_ancestor returns Err, not false) is untested despite the module doc calling it load-bearing"
+description = "The module doc (executor.rs:61-63) distinguishes an unverifiable reachability check (must roll back) from a false answer; tests only script Ok(false) and Ok(true). The Err arm at :381 — kind_for mapping + rollback with the 'reachability check failed' message — is never reached (grep confirms no push_is_ancestor(Err...))."
+dedup_id = "dbc1b390173b8816"
+resolved = 2026-06-10
+resolution = "Unverifiable-gate test added: is_ancestor(Err) rolls back (ResetHard last) and reports the reachability-check failure. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R21"
+file = "lumina/companion/src/executor.rs"
+line = 266
+symbol = "Executor::merge_worktree"
+severity = "warning"
+effort = "small"
+category = "testability"
+related = [
+    "R19",
+    "R20",
+]
+summary = "Backend-error early-exit arms in the merge choreography (worktree_states/attach/detach/head_of Err) are uncovered"
+description = "No executor test scripts an Err from worktree_states (:255), attach_worktree_detached (:266, -> Internal), detach_worktree (:305), or head_of (:319); the divergence test scripts an Ok-mismatch, not an Err. These map onto distinct FailureKinds and a regression that mis-classified them would pass the suite."
+dedup_id = "93d242c655f8723f"
+resolved = 2026-06-10
+resolution = "Four backend-error early-exit tests (worktree_states/attach/detach/head_of Err) asserting mapped kinds and call-log shape. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R22"
+file = "lumina/companion/src/executor.rs"
+line = 484
+symbol = "ensure_worktrees_excluded"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The exclude-registration failure path (.git FILE root -> Internal) is promised by the module doc but asserted nowhere"
+description = "Happy/idempotent/missing-file cases are covered; no test creates a .git file (not dir) to force the exclude_failed branch (:551) on create_worktree or merge_worktree. The promised clean-failure contract is unverified."
+dedup_id = "d1a962c70277e808"
+resolved = 2026-06-10
+resolution = "Two .git-FILE tests pin exclude-registration failing cleanly as Internal before any backend call. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R23"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 235
+symbol = "guard_companion_repo_root"
+severity = "warning"
+effort = "medium"
+category = "testability"
+related = ["R13"]
+summary = "The split-brain guard's rejection arm is never tested — every test deliberately leaves local_path unset so the guard is skipped"
+description = "companion_e2e.rs documents that no repo-link local_path is seeded by choice (:35-37), so select_longest_prefix_project returning None -> Validation naming the mismatched roots has no test anywhere. This is the one genuinely untested branch of the new pre-flight code and guards a real misconfiguration (companion pointed at the wrong checkout)."
+dedup_id = "9d62877ba1ee24f0"
+resolved = 2026-06-10
+resolution = "Split-brain rejection e2e: sibling and nested local_path rejected 422 with nothing recorded; identity passes and merges. 96b6478"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R24"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 215
+symbol = "flow_error_to_mcp"
+severity = "warning"
+effort = "medium"
+category = "testability"
+related = ["R7"]
+summary = "The lost-CAS TargetMoved -> 502 mapping is untested through the server/HTTP flow (zero TargetMoved references in lumina/server)"
+description = "The executor pins TargetMoved and shell_git pins both RefCasLost stderr shapes, but no execute_worktree_merge_flow or HTTP test drives a stubbed companion returning Outcome::Failed{TargetMoved} to assert the 502 envelope + nothing-recorded. grep confirms lumina/server contains no TargetMoved reference at all — corroborating R7's untyped-envelope finding. The Conflicted and disconnected paths do get stubbed-companion tests; the headline new failure mode does not."
+dedup_id = "6132fa75bbf9c6d0"
+resolved = 2026-06-10
+resolution = "Stubbed-companion Failed{TargetMoved} e2e asserts 502 + error.failure_kind == target_moved structurally, nothing recorded. 96b6478"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R25"
+file = "lumina/companion/tests/executor.rs"
+line = 29
+symbol = "temp_repo_root"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Executor tests use PID-only temp dirs — a duplicated tag would collide under nextest parallelism; siblings use tempfile::tempdir()"
+description = "temp_repo_root builds temp_dir()/lumina-companion-executor-{tag}-{pid} and remove_dir_all's it up front. Two tests sharing a tag collide intra-run (same pid); shell_git.rs and companion_e2e.rs correctly use tempfile::tempdir() (auto-unique, auto-cleaned). Tags are currently distinct so it passes, but a copy-pasted tag would flake intermittently."
+dedup_id = "cae59395efa753be"
+resolved = 2026-06-10
+resolution = "temp_repo_root rebuilt on tempfile::TempDir returning (TempDir, PathBuf); 17 call sites adjusted; tempfile already a workspace dev-dep. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R26"
+file = "lumina/companion/src/git/shell.rs"
+line = 605
+symbol = "ShellGit::update_branch_ref"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "update_branch_ref's non-CAS engine-failure fallthrough is uncovered"
+description = "Both RefCasLost shapes and the happy CAS are pinned; the else -> engine(...) arm (a non-zero exit matching neither classification) has no test. Locale-sensitive string classification on the ref-move hot path is worth a negative test."
+dedup_id = "2cbf73348c4cab51"
+resolved = 2026-06-10
+resolution = "Real-git test: update_branch_ref with bad ref name a..b classifies Engine, not RefCasLost. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R27"
+file = "lumina/companion/src/git/shell.rs"
+line = 562
+symbol = "ShellGit::merge"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "merge's non-conflict engine-failure arm (non-zero exit, no MERGE_HEAD) is untested"
+description = "FastForward/Merged/AlreadyUpToDate/Conflict/NotFound are covered; the final Err(engine(...)) at :562 — e.g. a merge into a dirty worktree — is not exercised. Hard to trigger deterministically, hence suggestion."
+dedup_id = "12e366a1a0168ee4"
+resolved = 2026-06-10
+resolution = "Real-git test: merge refused by local changes (no MERGE_HEAD) classifies Engine, no in-progress merge left. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R28"
+file = "lumina/companion/tests/executor.rs"
+line = 542
+symbol = "merge_migrates_legacy_on_branch_worktree_with_abort_then_detach"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Legacy-migration test pins only calls[..4] and the outcome — a CAS skip specific to that branch would pass"
+description = "Unlike the happy-path test, the trailing HeadOf/Merge/IsAncestor/UpdateBranchRef sequence is unasserted in the legacy-migration scenario. A calls.last() == UpdateBranchRef assertion (as the FF test does at :337) closes it cheaply."
+dedup_id = "3c53f0f9f3e1d624"
+resolved = 2026-06-10
+resolution = "Legacy-migration test now asserts calls.last() is the UpdateBranchRef CAS. 69dd9a5"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "verified-clean"
+flow = "composed-painting-truffle"
+id = "R29"
+file = "lumina/CONTEXT.md"
+line = 92
+severity = "suggestion"
+effort = "trivial"
+category = "verified-clean"
+verified_note = "Round 1 (2026-06-10) — user lead suspected the glossary still described pre-CAS merge choreography. Audited: the Merge entry (line 92) and Worktree flagged-ambiguity (line 162) correctly state the companion executes and the server/store never shells to git — no contradiction with the detached ref-CAS revision. The glossary omits mechanism detail (detached integration, CAS, TargetMoved) by design; enrichment optional."
+summary = "CONTEXT.md glossary audited against the detached ref-CAS revision — consistent, no stale pre-CAS choreography"
+dedup_id = "12ad1b9e3b0737ee"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "verified-clean"
+flow = "composed-painting-truffle"
+id = "R30"
+file = "lumina/server/src/http/companion.rs"
+line = 73
+symbol = "companion_ws"
+severity = "suggestion"
+effort = "trivial"
+category = "verified-clean"
+verified_note = "Round 1 (2026-06-10) — security lens audited /api/companion/ws: loopback enforced in code via ConnectInfo (403 before upgrade), single-slot registry refuses a second companion, Origin-absence accepted (correct for a non-browser dialer). Sound posture given the companion drives arbitrary git on the host. Residual: the in-process oneshot test path has no ConnectInfo, so the loopback guard is untested in-process."
+summary = "/api/companion/ws loopback enforcement audited — verified good"
+dedup_id = "32038393330fbf14"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R31"
+file = "lumina/server/src/mcp/worktrees.rs"
+line = 603
+symbol = "execute_worktree_create_flow"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+related = ["R3"]
+summary = "Pending parts of R3: automated adoption/compensation for orphaned create-flow git state"
+description = "R3's bounded fix landed detection + recovery guidance only. Full convergence (dispatching a compensating RemoveWorktree on record-failure, or adopting an orphaned worktree on BranchInUse-with-no-live-row) is a flow-design decision. Note: Intent::RemoveWorktree ALREADY EXISTS at lumina/protocol/src/lib.rs:103 — no protocol bump needed; the open question is rollback-on-record-failure semantics."
+dedup_id = "331d2823ccd2b465"
+resolved = 2026-06-10
+resolution = "Best-effort compensating Intent::RemoveWorktree{force:false} on record-failure after WorktreeCreated; success returns the original error with a branch-only cleanup note, failure falls back to full orphan guidance; original error never masked. Stub + real-git e2e coverage. b1888fa"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R32"
+file = "lumina/core/src/repo/worktrees.rs"
+line = 678
+symbol = "record_task_commits"
+severity = "warning"
+effort = "medium"
+category = "quality"
+related = ["R4"]
+summary = "Pending parts of R4: removal/amend tool for bad task_commits rows"
+description = "R4's sha-shape validation landed; historical/edge bad rows still have no remedy short of raw SQL. A removal or amend tool is a new MCP tool (86-count invariant bump) and needs user sign-off on the tool-surface change."
+dedup_id = "47e92d2fea777dd5"
+resolved = 2026-06-10
+resolution = "remove_task_commit repo fn (pair-exact DELETE, NotFound on zero rows, inert worktree event) + MCP tool (surface 86->87, count-invariant + destructive-annotation tests updated) + DELETE /api/commits?commit_sha=&task_id= mirror + doc sync (mcp/SKILL.md, lumina/CLAUDE.md, CLAUDE.md). b1888fa"
+
+[[items]]
+first_flagged = 2026-06-10
+rounds = 1
+status = "fixed"
+flow = "composed-painting-truffle"
+id = "R33"
+file = "claude/plugins/lumina-story-blocks/skills"
+line = 0
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+related = [
+    "R17",
+    "R18",
+]
+summary = "Same 4-vs-5 ../ depth link bug in seven more story-block skills (out of R17/R18 cluster scope)"
+description = "Cluster D's class audit found additional broken 4-level deep-reference links resolving to nonexistent claude/docs/plans/ etc.: plan-story/SKILL.md:222, wire-task-deps/SKILL.md:192-193, set-task-spec/SKILL.md:219-220, story-review/SKILL.md:177, and likely decompose-tasks/SKILL.md:224, research-directed/SKILL.md:15, research-explore/SKILL.md:15. CAUTION: the 4-level ../../../../skills/flow-contract-vet-research links (vet-research:15,61,140; research-explore:58) are CORRECT (claude/skills/ exists) — do not fix those. Same mechanical 4-to-5 correction as R17/R18."
+dedup_id = "80025901b19a8b5c"
+resolved = 2026-06-10
+resolution = "Eight 4-level links across five skills (decompose-tasks, plan-story, set-task-spec, story-review, wire-task-deps) corrected to 5-level; the six correct 4-level flow-contract links verified and left alone. 9490ee8"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled findings 1 (detach_worktree dead NotFound arms — confirmed at shell.rs:451-460 vs shell_git.rs:792-805), 2 (base_ref dual semantics — confirmed at mcp/worktrees.rs:390-399), 5 (PathBuf equality — code confirmed at executor.rs:259, environmental trigger graded B). All passed. Finding 3 merged with Agent-3 F3 into R3; finding 7 merged with Agent-3 F4 into R7 (same file+symbol dedup rule)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 3 findings sampled (agent returned under the 5-cap). Finding 1 (no -- end-of-options separator) confirmed at shell.rs:339-343; finding 2 (rev-parse spec interpolation) confirmed at shell.rs:204-206; finding 3 was a verified-good control (ws loopback enforcement) and persisted as verified-clean R30 rather than an open item."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (0018 outcome-IS-NULL vs deleted_at-IS-NULL divergence — confirmed against the migration and repo/worktrees.rs:194/202/290), F4 (untyped 502 {kind:?} Debug rendering — confirmed at http/worktrees.rs:369-378), F5 (containment-vs-identity guard — confirmed at mcp/worktrees.rs:246-255). All passed. F3 and F8 merged with Agent-1 duplicates into R3/R5."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (run-sprint:343 4-vs-5 ../ depth — confirmed: ADR-0002/0003/0005 at 4 levels, 0006 at 5), F2+F3 (lifecycle:16,142 runbook links at 4 levels — confirmed), F5 (CONTEXT.md:92 Merge entry consistent — confirmed), and the mcp/SKILL.md:377 86-count check. No vet failures. 7 agent-self-identified non-defect verification records (F4, F7, F9-F13) were not persisted as open items; the CONTEXT.md user-lead audit persisted as verified-clean R29; F2+F3 merged into R18; F14's class-audit folded into R17's description."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled findings 1-3 via grep (no push_reset_hard(Err / push_is_ancestor(Err / Err-arm scripts in companion/tests/executor.rs — confirmed), 5 (companion_e2e deliberately leaves local_path unset — confirmed at :35-37), 6 (zero TargetMoved references in lumina/server — confirmed by grep), 7 (PID-only temp_repo_root — confirmed at tests/executor.rs:29-37). All passed."
+dedup_id = "45ca31c3315a5978"

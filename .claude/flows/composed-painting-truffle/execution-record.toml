@@ -1,0 +1,359 @@
+schema_version = 1
+last_updated = 2026-06-10
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:00Z"
+command = "plan-new"
+agent_index = 1
+lens = "update-ref-cas"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "CAS atomicity, -m reflog, zero-OID conventions confirmed verbatim against git-scm.com/docs/git-update-ref; no-worktree-guard claim confirmed by man-page silence."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:01Z"
+command = "plan-new"
+agent_index = 2
+lens = "detached-worktrees"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+rationale = "worktree --detach, porcelain detached label confirmed against git-scm.com/docs/git-worktree; finding 2 downgraded — refusal clause also covers stale assigned paths (core conclusion unchanged)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-10T00:00:02Z"
+command = "plan-new"
+agent_index = 3
+lens = "sqlite-partial-index"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "NULL-distinctness, partial-index predicate rules, 3.8.0 floor consistent with sqlite.org docs; pre-dedupe SQL retained as explicit hypothesis only (rejected in design)."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-10
+agent = "implement"
+summary = "Flow status transitioned draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "bc2d7386dd1ba31a"
+
+[[items]]
+id = "E2"
+type = "deviation"
+date = 2026-06-10
+agent = "implement"
+task_ref = "migration-0018-partial-unique-live-branch-index"
+summary = "Migration 0018 created at lumina/core/migrations/ instead of the plan's lumina/migrations/ path"
+original_intent = "Add lumina/migrations/0018_live_branch_unique.sql as a new forward-only migration"
+rationale = """No lumina/migrations/ directory exists; migrations 0001-0017 live at lumina/core/migrations/ where core's sqlx::migrate!("./migrations") reads them. The root CLAUDE.md prose citing lumina/migrations/0004_repo_links.sql is stale on this path. File created at the canonical location."""
+dedup_id = "046e803d90c0b3b3"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-06-10
+agent = "implement"
+task_ref = "detached-integration-ref-cas-choreography-in-the-companion"
+summary = "Fifth GitBackend trait method resolve_committish added beyond the plan's four"
+original_intent = "Resolve CreateWorktree's committish base by reusing the existing resolve/resolve_commit method"
+rationale = "resolve_commit is a private inherent helper on ShellGit and the trait's resolve is the conflict-resolution op; the executor consumes only Arc<dyn GitBackend>, so no existing trait surface could resolve a general committish (HEAD~2/tags/SHAs). Promoted as GitBackend::resolve_committish, ShellGit delegating to the private helper. Also: occupied-path attach maps to Failed{GitFailure} (not the plan's parenthetical Failed{Internal}) because the centralised kind_for table maps Engine->GitFailure; the explicit GitError::Engine instruction was honoured over the parenthetical."
+dedup_id = "2317e0a3a4e2454c"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-06-10
+agent = "implement"
+task_ref = "execute-worktree-create-server-trigger-merge-hint-surfacing"
+summary = "Sprint pre-flight reads issued via lumina_core::db::scalar_opt instead of a repo::* read"
+original_intent = "execute_worktree_create_flow pre-flights (sprint exists + non-terminal; does not already own a worktree) composed from existing repo reads"
+rationale = "No repo::* read exposes a sprint-by-id lookup (only set_sprint_status reads it, inside its write tx) and lumina/core was outside the task's file ownership. The flow issues three read-only scalar SELECTs through the public db::scalar_opt seam; the mcp/mod.rs no-new-SQL doc-invariant was reworded to scope to writes. Follow-up option: add repo::get_sprint_status in lumina/core/src/repo/runs_sprints.rs to restore the strict invariant."
+dedup_id = "30a70ff60665d5b9"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-06-10
+agent = "implement"
+task_ref = "cross-plane-e2e-regression-create-scenario"
+summary = "Create-scenario assertions adjusted: created worktree is branch-attached (not detached) and the literal duplicate-branch sequence yields 502 BranchInUse (not the 0018 422)"
+original_intent = "Assert the created worktree has a detached HEAD at main's tip, and a second create for a different sprint with the same branch returns 422 via the migration-0018 index"
+rationale = "ShellGit::create_worktree runs git worktree add -b <branch>, so the created worktree is ATTACHED to the new branch at the resolved base tip (only the merge-side integration worktree is detached); asserted HEAD commit == main tip == response head plus symbolic-ref == the branch. The companion's git runs before the record write, so a same-branch re-create fails in git first (502 BranchInUse); the 0018 422 path was covered separately via a record-only row holding the branch, then an execute-create hitting the partial UNIQUE index. Both mechanisms tested; a DB-side branch pre-flight in the flow would be needed to make the literal sequence a 422."
+dedup_id = "c3ab0798a8959102"
+
+[[items]]
+id = "E6"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+task_ref = "detached-integration-ref-cas-choreography-in-the-companion"
+summary = "Waves 1-3 checkpoint: workspace build passed"
+command = "CARGO_INCREMENTAL=0 cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "9a30b55934da5f91"
+
+[[items]]
+id = "E7"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+task_ref = "detached-integration-ref-cas-choreography-in-the-companion"
+summary = "Waves 1-3 checkpoint: full ci-profile test suite passed (585 tests, 28 binaries)"
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path lumina/Cargo.toml --profile ci"
+outcome = "pass"
+dedup_id = "e4cee28e237b814a"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "widen-the-unshipped-protocol-wire-types"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "FailureKind::TargetMoved, TargetCheckoutHint + serde-default target_checkout on Outcome::Merged, CreateWorktree.base widened Sha->String; PROTOCOL_VERSION stays 1; serde round-trip/pinned tests updated (8/8)"
+files = ["lumina/protocol/src/lib.rs"]
+commits = ["720e52e"]
+dedup_id = "454cf4a2959e4ef0"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "migration-0018-partial-unique-live-branch-index"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Index-only migration 0018 (partial UNIQUE over live worktrees' branches) at lumina/core/migrations/; repo::create_worktree maps the 2067 unique violation naming worktrees.branch to AppError::Validation; 2 new repo tests (25/25 worktree tests)"
+files = [
+    "lumina/core/migrations/0018_live_branch_unique.sql",
+    "lumina/core/src/repo/worktrees.rs",
+]
+commits = ["720e52e"]
+dedup_id = "44938c3eb981c288"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "detached-integration-ref-cas-choreography-in-the-companion"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "GitBackend widened (resolve_branch_tip / attach_worktree_detached / detach_worktree / update_branch_ref / resolve_committish), merge() shrunk to (worktree, source, no_ff), GitError::RefCasLost->TargetMoved, Executor::merge_worktree rewritten to the 7-step detached ref-CAS choreography, CreateWorktree base resolved companion-side; fake + 18-test executor suite"
+files = [
+    "lumina/companion/src/git/mod.rs",
+    "lumina/companion/src/git/shell.rs",
+    "lumina/companion/src/git/fake.rs",
+    "lumina/companion/src/executor.rs",
+    "lumina/companion/tests/executor.rs",
+    "lumina/companion/tests/shell_git.rs",
+]
+commits = ["720e52e"]
+dedup_id = "88c5e7912f44b406"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "execute-worktree-create-server-trigger-merge-hint-surfacing"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "execute_worktree_create MCP tool + POST /api/sprints/{sprint_id}/worktree/execute mirror via shared execute_worktree_create_flow (pre-flights, no lease, no DB tx across round-trip); Merged.target_checkout surfaced structured + human hint string; count gate 85->86"
+files = [
+    "lumina/server/src/mcp/worktrees.rs",
+    "lumina/server/src/http/worktrees.rs",
+    "lumina/server/src/mcp/mod.rs",
+]
+commits = ["720e52e"]
+dedup_id = "04dbf1102837d1c8"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "shellgit-integration-tests-for-the-new-methods"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "11 new real-temp-repo tests for resolve_branch_tip / attach_worktree_detached / detach_worktree / update_branch_ref (+resolve_committish); stale guard test inverted into the detached-merge regression assertion (28/28)"
+files = ["lumina/companion/tests/shell_git.rs"]
+commits = ["720e52e"]
+dedup_id = "0df1ec0bd16e30c1"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "cross-plane-e2e-regression-create-scenario"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "detach_primary() workaround removed (merge succeeds with primary on target; target_checkout hint + on-disk stale-checkout asserts); new execute_worktree_create e2e covering 200 happy path, 502 BranchInUse on git-level duplicate, 422 via the 0018 index (4/4)"
+files = ["lumina/server/tests/companion_e2e.rs"]
+commits = ["720e52e"]
+dedup_id = "63ff4f96108abbdf"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Final pass: workspace build passed"
+command = "CARGO_INCREMENTAL=0 cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "9bb67f359a9254fa"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Final pass: full ci-profile suite passed (585 tests)"
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path lumina/Cargo.toml --profile ci"
+outcome = "pass"
+dedup_id = "e7cd6ce95e9929b8"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Final pass: clippy clean"
+command = "cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "ca4d89b338c08eaf"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Final pass: control-plane purity gate empty (no git2/gix in lumina-server)"
+command = "cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal | rg -i '\b(git2|gix)' (must be empty)"
+outcome = "pass"
+dedup_id = "a0ecfb1f14553a05"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Final pass: companion-isolation gate empty (no core/server/sqlx/axum in lumina-companion)"
+command = "cargo tree --manifest-path lumina/Cargo.toml -p lumina-companion -e normal | rg 'lumina-(core|server)|sqlx|axum' (must be empty)"
+outcome = "pass"
+dedup_id = "b0d64f13abeec7f9"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Final pass: cargo audit clean (1 allowed warning: unmaintained serial 0.4.0 via portable-pty)"
+command = "cargo audit --file lumina/Cargo.lock"
+outcome = "pass"
+dedup_id = "9bf16ff9345f9a27"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-06-10
+agent = "implement"
+summary = "Final pass: macro-eradication gate empty (no sqlx bang-macros in core/server src)"
+command = "rg 'sqlx::query(_as|_scalar)?!' lumina/core/src lumina/server/src (must be empty)"
+outcome = "pass"
+dedup_id = "7755509eb0529a08"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "runbook-claude-md-adr-adoption"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Runbook SS E/H rewritten around execute_worktree_create/_merge (manual paths demoted to fallback); lifecycle invariants encoded; lumina/CLAUDE.md + root CLAUDE.md counts -> 86, Step-1b operator constraint rewritten, next-free migration -> 0019, stale 74-headline and lumina/migrations/ path fixed; ADR-0006 dated amendment appended"
+files = [
+    "lumina/docs/runbooks/dogfood-lifecycle.md",
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+    "docs/adr/0006-git-execution-companion.md",
+]
+commits = ["4607b5d"]
+dedup_id = "22c3d37200e7308d"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-06-10
+agent = "implement"
+task_ref = "plugin-skills-adoption"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "run-sprint Step 6 -> execute_worktree_merge primary (conflict/lease/TargetMoved/hint branches); compose-sprint mints via execute_worktree_create with 0018 + sanitisation notes; lifecycle advisor advises execute paths; mcp catalogue gains execute_worktree_create row and updated merge row, count 86; CONVENTIONS.md SS n parenthetical updated"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/run-sprint/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/compose-sprint/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/lifecycle/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md",
+]
+commits = ["4607b5d"]
+dedup_id = "730094df7d360939"
+
+[[items]]
+id = "E23"
+type = "status-transition"
+date = 2026-06-10
+agent = "plan-update"
+summary = "All 8 plan tasks done and final verification green; flow transitions in-progress -> review awaiting /review + /optimise + explicit complete"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "710695de21ea0aa4"
+
+[[items]]
+id = "E24"
+type = "deviation"
+date = 2026-06-10
+agent = "plan-update"
+task_ref = "post-implementation-review-fixes"
+summary = "Round-1 /review findings R1-R28 applied to the landed ref-CAS pass via /review-apply (27 fixed incl. 2 partial, R12 left open pending schema decision)"
+original_intent = "Plan tasks shipped the detached ref-CAS merge + execute_worktree_create as specified; no post-landing hardening pass was in plan scope"
+rationale = "Round-1 review surfaced git-argv injection hardening (-- separators + leading-dash reject), real --detach NotFound classification, prunable-worktree tolerance, canonicalise-aware path identity, structured failure_kind envelopes with 422/502 split, worktree-keyed merge lease, identity split-brain guard (resolves the concern noted in E4 by moving sprint reads behind repo::get_sprint), commit-sha shape validation, 0018 liveness-axis documentation, broken skill-doc links, and 13 coverage gaps; applied across three commits with full workspace verification green (build, 597 tests, clippy, audit)"
+commits = [
+    "69dd9a5",
+    "55d4c29",
+    "96b6478",
+]
+dedup_id = "7eb1466b5742abd7"
+
+[[items]]
+id = "E25"
+type = "deviation"
+date = 2026-06-10
+agent = "plan-update"
+task_ref = "post-implementation-review-fixes"
+summary = "Round-2 /review-apply closed the four remaining ledger items R12+R31-R33 (user-approved schema + tool-surface changes); review ledger now fully dispositioned (31 fixed, 2 verified-clean)"
+original_intent = "Migration numbering ended at 0018 and the MCP surface at 86 tools as shipped by the plan; compensation and provenance-removal paths were out of plan scope"
+rationale = "User selected R12,R31-R33 for apply, authorising: migration 0019 (per-repo live-branch index via nullable worktrees.repo_link_id + deleted_at liveness alignment, closing R11's deferral), best-effort RemoveWorktree compensation on create record-failure, the remove_task_commit tool taking the surface to 87 (count-invariant test updated), and the remaining skill-link depth repairs; full workspace verification green (build, 605 tests, clippy)"
+commits = [
+    "b1888fa",
+    "9490ee8",
+]
+dedup_id = "179f3f693b874bb5"

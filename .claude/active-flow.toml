@@ -401,3 +401,23 @@ scope = [
     "lumina/**",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "composed-painting-truffle"
+last_used = "2026-06-10T15:46:28.9377302Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/protocol/**",
+    "lumina/companion/**",
+    "lumina/server/**",
+    "lumina/core/**",
+    "lumina/migrations/**",
+    "lumina/docs/runbooks/**",
+    "claude/plugins/lumina-story-blocks/**",
+    "docs/adr/0006-git-execution-companion.md",
+    "lumina/CLAUDE.md",
+    "CLAUDE.md",
+]

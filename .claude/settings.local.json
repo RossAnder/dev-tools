@@ -19,7 +19,23 @@
       "Bash(cargo build *)",
       "Bash(grep -v '^$')",
       "PowerShell(cargo test *)",
-      "PowerShell(bash scripts/verify-shared-blocks.sh 2>&1)"
+      "PowerShell(bash scripts/verify-shared-blocks.sh 2>&1)",
+      "Bash(cargo nextest *)",
+      "Bash(CARGO_INCREMENTAL=0 cargo nextest run --manifest-path lumina/Cargo.toml --profile ci)",
+      "Bash(bash -c \"! \\(rg 'sqlx::query\\(_as|_scalar\\)?!\\\\\\(' lumina/core/src lumina/server/src\\)\")",
+      "Bash(cargo tree *)",
+      "Bash(awk 'NR==343' claude/plugins/lumina-story-blocks/skills/run-sprint/SKILL.md)",
+      "Bash(awk 'NR==16 || NR==142' claude/plugins/lumina-story-blocks/skills/lifecycle/SKILL.md)",
+      "Bash(awk 'NR==377' claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md)",
+      "Bash(awk 'NR>=90 && NR<=94' lumina/CONTEXT.md)",
+      "Bash(grep -oc '\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./lumina/docs')",
+      "Bash(CARGO_INCREMENTAL=0 cargo build --workspace --manifest-path lumina/Cargo.toml)",
+      "Bash(CARGO_INCREMENTAL=0 cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets)",
+      "Bash(sed -n '56,90p' /c/Users/rossa/dev/dev-tools/lumina/server/src/app.rs)",
+      "Bash(sed -n '175,185p' /c/Users/rossa/dev/dev-tools/lumina/protocol/src/lib.rs)",
+      "Bash(grep -cE '\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./' claude/plugins/lumina-story-blocks/skills/decompose-tasks/SKILL.md claude/plugins/lumina-story-blocks/skills/plan-story/SKILL.md claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md claude/plugins/lumina-story-blocks/skills/story-review/SKILL.md claude/plugins/lumina-story-blocks/skills/wire-task-deps/SKILL.md)",
+      "Bash(python -c ' *)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   },
   "enabledMcpjsonServers": [
