@@ -63,6 +63,19 @@ pub struct AppState {
     /// that field this needs no later mutation: the WS handler registers
     /// connections into the same shared registry at runtime.
     pub companion: Arc<crate::companion::CompanionRegistry>,
+    /// Post-commit change-notification bus consumed by the `/api/stream`
+    /// telemetry WebSocket (`http::stream`). Defaults to a CLONE of the
+    /// process-wide [`lumina_core::notify::bus`] — `NotifyBus::Clone` shares
+    /// the underlying broadcast channel, so this handle receives exactly what
+    /// the `DbTx` commit path publishes. Holding the clone on `AppState`
+    /// (rather than calling `bus()` in the handler) decouples the handler
+    /// from the global and lets a test inject an isolated bus.
+    pub notify: lumina_core::notify::NotifyBus,
+    /// Registered [`crate::stream::TopicResolver`]s for the multiplexed
+    /// `/api/stream` endpoint. Defaults to
+    /// [`crate::stream::TopicRegistry::with_default_topics`] (every
+    /// production topic family).
+    pub stream_topics: std::sync::Arc<crate::stream::TopicRegistry>,
 }
 
 /// Default number of concurrent session-transcript ingests — the
@@ -104,6 +117,8 @@ impl AppState {
             pty_register_tx: None,
             session_ingest_sem: Arc::new(Semaphore::new(ingest_permits)),
             companion: Arc::new(crate::companion::CompanionRegistry::new()),
+            notify: lumina_core::notify::bus().clone(),
+            stream_topics: Arc::new(crate::stream::TopicRegistry::with_default_topics()),
         }
     }
 }

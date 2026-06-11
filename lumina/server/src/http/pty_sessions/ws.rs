@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::app::AppState;
+use crate::http::ws_common::is_origin_allowed;
 use lumina_core::db::AnyPool;
 use lumina_core::error::AppError;
 use lumina_core::protocol::SessionId;
@@ -123,34 +124,6 @@ pub(crate) async fn ws_handler(
     Ok(ws.on_upgrade(move |socket| async move {
         ws_session_loop(socket, id, registry, pool).await;
     }))
-}
-
-/// Check `Origin` against the localhost allowlist + optional `LUMINA_DEV_ORIGIN`.
-/// Empty origin is rejected (browsers always send one; a missing header most
-/// likely indicates a forged or non-browser caller — which the localhost
-/// trust model already permits via direct mpsc/HTTP, so blocking here only
-/// hardens the browser-CSRF path).
-fn is_origin_allowed(origin: &str) -> bool {
-    if origin.is_empty() {
-        return false;
-    }
-    // Permitted hosts; ports are arbitrary. We do a prefix-match per scheme.
-    const ALLOWED_HOSTS: &[&str] = &["localhost", "127.0.0.1", "[::1]"];
-    for scheme in &["http://", "https://"] {
-        for host in ALLOWED_HOSTS {
-            let prefix = format!("{scheme}{host}");
-            // Either bare host or host:port form. `origin` has no path.
-            if origin == prefix || origin.starts_with(&format!("{prefix}:")) {
-                return true;
-            }
-        }
-    }
-    if let Ok(dev) = std::env::var("LUMINA_DEV_ORIGIN")
-        && origin == dev
-    {
-        return true;
-    }
-    false
 }
 
 /// The WebSocket per-connection loop. Looks up the session, spawns the two
@@ -337,22 +310,4 @@ async fn ws_session_loop(
     }
     token.cancel();
     tracing::info!(session_id = %id, "ws: client disconnected");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Origin allowlist: localhost variants pass; an arbitrary remote does not.
-    #[test]
-    fn origin_allowlist_basic() {
-        assert!(is_origin_allowed("http://localhost"));
-        assert!(is_origin_allowed("http://localhost:5173"));
-        assert!(is_origin_allowed("http://127.0.0.1:24817"));
-        assert!(is_origin_allowed("https://[::1]:1234"));
-        assert!(!is_origin_allowed("http://evil.example"));
-        assert!(!is_origin_allowed(""));
-        // Sneaky prefix variant: must not allow `localhost.evil.com`.
-        assert!(!is_origin_allowed("http://localhost.evil.com"));
-    }
 }

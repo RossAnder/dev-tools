@@ -18,5 +18,6 @@ pub mod error;
 pub mod export;
 pub mod import;
 pub mod jsonl_tail;
+pub mod notify;
 pub mod protocol;
 pub mod repo;

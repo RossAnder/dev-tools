@@ -16,11 +16,17 @@ use crate::error::AppError;
 ///
 /// Takes a `&mut dyn DbTx` (the backend-erased in-flight transaction, not the
 /// pool) precisely so the event row shares the caller's transaction and is
-/// committed/rolled-back atomically with the domain write. Every caller passes
-/// `&mut tx` where `tx: Transaction<'_, Sqlite>` came from
-/// [`crate::db::begin_write`]; that reference unsizes to `&mut dyn DbTx` via the
-/// `impl DbTx for Transaction<'_, Sqlite>` blanket coercion, so the ~100 callers
-/// need no changes.
+/// committed/rolled-back atomically with the domain write. Mutators hold a
+/// `Box<dyn DbTx>` obtained from `DbClient::begin` (which returns the
+/// `NotifyingTx` wrapper — see `db/erased.rs`) and pass it here as
+/// `&mut dyn DbTx` (e.g. via `tx.as_mut()`); there are zero live
+/// `crate::db::begin_write` call sites in `repo/`.
+///
+/// As a side effect, this is the single place every domain write funnels
+/// through, so it also buffers ONE [`crate::notify::ChangeNotification`] on the
+/// transaction via [`crate::db::DbTx::note_change`] — flushed to the
+/// process-wide notify bus by `NotifyingTx::commit` AFTER the commit succeeds
+/// (a rolled-back transaction publishes nothing).
 pub(crate) async fn record_event(
     tx: &mut dyn crate::db::DbTx,
     aggregate_type: &str,
@@ -49,6 +55,16 @@ pub(crate) async fn record_event(
         ],
     )
     .await?;
+
+    // Buffer the post-commit change notification on the transaction (sync, no
+    // await). `NotifyingTx` flushes it to the notify bus only after a
+    // successful commit; a raw `Transaction<Sqlite>` (begin_write path) takes
+    // the default no-op.
+    tx.note_change(crate::notify::ChangeNotification::new(
+        aggregate_type,
+        aggregate_id,
+        event_type,
+    ));
 
     Ok(())
 }

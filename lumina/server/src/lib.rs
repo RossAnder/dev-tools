@@ -26,3 +26,4 @@ pub mod http;
 pub mod assets;
 pub mod mcp;
 pub mod pty;
+pub mod stream;

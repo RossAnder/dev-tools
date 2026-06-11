@@ -6,12 +6,11 @@
 // `lumina/web/src/api/`. Every existing consumer's `import { ... } from
 // '@/api'` continues to resolve through this barrel without edits.
 //
-// Phase-5 family stubs (acceptance-criteria, research-notes, risks,
-// rejected-alternatives, task-deps, open-questions, findings, activity,
-// context-blocks, scalars, structured-patches, readiness) are pre-declared
-// here so subsequent Phase-5 tasks (T8a/T8b/T9/T10/T11a/T11b) only fill in
-// their owned file body — this barrel file is touched ONCE (by T7) and NOT
-// re-edited.
+// New per-family api modules are appended here as they land (e.g. the
+// vectorized-brewing-boole slice's `execution`, then Wave 2a's
+// `sprints`/`worktrees`). The Wave-1 stream plumbing (`./ws-core`,
+// `./stream`) is deliberately NOT barreled — those are internal modules that
+// composables import directly by path.
 
 export * from './http'
 export * from './wire-enums'
@@ -30,3 +29,4 @@ export * from './findings'
 export * from './activity'
 export * from './context-blocks'
 export * from './pty'
+export * from './execution'

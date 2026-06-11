@@ -37,7 +37,12 @@ pub mod export;
 pub mod execution;
 pub mod settings;
 pub mod sessions;
+pub mod stream;
 pub mod worktrees;
+/// Shared WebSocket helpers (Origin allowlist) — a helper module, NOT a
+/// route family; it exposes no `router()` and is deliberately absent from
+/// the `.merge(...)` list below.
+pub mod ws_common;
 
 /// Build the composed `/api` sub-router by merging every per-family router.
 /// The composition root in `app.rs` calls `.nest("/api", crate::http::router())`,
@@ -66,5 +71,6 @@ pub fn router() -> Router<AppState> {
         .merge(execution::router())
         .merge(settings::router())
         .merge(sessions::router())
+        .merge(stream::router())
         .merge(worktrees::router())
 }

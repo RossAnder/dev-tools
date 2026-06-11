@@ -167,7 +167,7 @@ impl DbClient for AnyPool {
         match self {
             AnyPool::Sqlite(pool) => {
                 let tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-                Ok(Box::new(tx))
+                Ok(Box::new(NotifyingTx::new(tx)))
             }
         }
     }
@@ -230,7 +230,7 @@ impl DbClient for SqlitePool {
 
     async fn begin(&self) -> Result<Box<dyn DbTx + '_>, AppError> {
         let tx = self.begin_with("BEGIN IMMEDIATE").await?;
-        Ok(Box::new(tx))
+        Ok(Box::new(NotifyingTx::new(tx)))
     }
 
     fn backend(&self) -> Backend {
@@ -320,6 +320,80 @@ impl DbTx for Transaction<'_, Sqlite> {
 
     async fn commit(self: Box<Self>) -> Result<(), AppError> {
         Transaction::commit(*self).await?;
+        Ok(())
+    }
+}
+
+/// A [`DbTx`] wrapper that buffers [`ChangeNotification`]s noted during the
+/// transaction and flushes them to the process-wide notify bus
+/// ([`crate::notify::bus`]) ONLY AFTER the inner commit succeeds.
+///
+/// Both `DbClient::begin` arms (the [`AnyPool`] and bare `SqlitePool` impls)
+/// return this wrapper, so EVERY seam-routed repo mutation gets post-commit
+/// change notifications automatically — zero per-mutator edits. The raw
+/// `db::begin_write(&SqlitePool)` path deliberately bypasses it (the PTY
+/// subsystem there has its own broadcast).
+///
+/// Invariants:
+/// - **Publish only post-commit.** Publishing inside the transaction would
+///   broadcast WAL-isolated pre-commit state a subscriber's re-read could not
+///   yet observe; the buffer-until-commit is load-bearing, not stylistic.
+/// - **Rollback/drop discards the buffer.** A transaction dropped without
+///   `commit()` drops the `Vec` with it — never a phantom signal for a write
+///   that did not land.
+/// - **Best-effort, non-awaiting.** [`crate::notify::NotifyBus::publish`] is a
+///   sync broadcast send whose errors (zero receivers) are swallowed.
+///
+/// `Send` holds structurally: `Box<dyn DbTx + 'a>` is `Send` via the trait's
+/// `Send` supertrait bound, and `Vec<ChangeNotification>` is `Send`.
+///
+/// [`ChangeNotification`]: crate::notify::ChangeNotification
+pub struct NotifyingTx<'a> {
+    inner: Box<dyn DbTx + 'a>,
+    buffer: Vec<crate::notify::ChangeNotification>,
+}
+
+impl<'a> NotifyingTx<'a> {
+    /// Wrap an inner [`DbTx`] with an empty notification buffer.
+    fn new(inner: impl DbTx + 'a) -> Self {
+        NotifyingTx {
+            inner: Box::new(inner),
+            buffer: Vec::new(),
+        }
+    }
+}
+
+#[async_trait]
+impl DbTx for NotifyingTx<'_> {
+    async fn execute(&mut self, sql: &'static str, args: Args) -> Result<u64, AppError> {
+        self.inner.execute(sql, args).await
+    }
+
+    async fn fetch_optional(
+        &mut self,
+        sql: &'static str,
+        args: Args,
+    ) -> Result<Option<AnyRow>, AppError> {
+        self.inner.fetch_optional(sql, args).await
+    }
+
+    async fn fetch_all(&mut self, sql: &'static str, args: Args) -> Result<Vec<AnyRow>, AppError> {
+        self.inner.fetch_all(sql, args).await
+    }
+
+    fn note_change(&mut self, change: crate::notify::ChangeNotification) {
+        self.buffer.push(change);
+    }
+
+    async fn commit(self: Box<Self>) -> Result<(), AppError> {
+        let NotifyingTx { inner, buffer } = *self;
+        // COMMIT FIRST: only a durably-committed write may be announced. On
+        // commit failure the buffer is dropped with the early return — no
+        // phantom signal.
+        inner.commit().await?;
+        for n in buffer {
+            crate::notify::bus().publish(n);
+        }
         Ok(())
     }
 }

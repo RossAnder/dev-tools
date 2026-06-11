@@ -97,6 +97,19 @@ pub trait DbTx: Send {
     /// Fetch zero or more rows (object-safe primitive; decode via [`tx_query_all`]).
     async fn fetch_all(&mut self, sql: &'static str, args: Args) -> Result<Vec<AnyRow>, AppError>;
 
+    /// Buffer a change notification to publish to the process-wide notify bus
+    /// AFTER this transaction commits. Default no-op: only the `NotifyingTx`
+    /// wrapper (db::erased) overrides this to buffer; a raw `Transaction<Sqlite>`
+    /// (the `begin_write` path) ignores it — correct, since the PTY subsystem
+    /// has its own broadcast. Publishing pre-commit would broadcast WAL-isolated
+    /// pre-commit state, so the buffer-until-commit is load-bearing, not
+    /// stylistic.
+    ///
+    /// Sync (not `async fn`) on purpose: buffering onto a `Vec` needs no await,
+    /// and `#[async_trait]` rewrites only `async fn`s, so this stays a plain
+    /// non-generic method and the trait remains object-safe.
+    fn note_change(&mut self, _change: crate::notify::ChangeNotification) {}
+
     /// Commit the transaction, consuming it.
     async fn commit(self: Box<Self>) -> Result<(), AppError>;
 }
