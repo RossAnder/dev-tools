@@ -10,6 +10,7 @@ import FocusLens from '@/components/FocusLens.vue'
 import ChildGrid from '@/components/ChildGrid.vue'
 import PortfolioEmpty from '@/components/PortfolioEmpty.vue'
 import PtyConsole from '@/components/PtyConsole.vue'
+import SprintsPanel from '@/components/SprintsPanel.vue'
 
 const { focusId, view, loading, focusedNode, loadTree } = useHierarchy()
 
@@ -75,12 +76,9 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
       >
         <section>
           <h2 class="font-mono text-[10.5px] tracking-wider text-[var(--faint)] py-2">
-            [04 / ACTIVE SPRINT]
+            [04 / SPRINTS]
           </h2>
-          <!-- deferred: sprint composer (backend not yet implemented) -->
-          <p class="text-[var(--ghost)] font-mono text-[11px] italic">
-            Deferred — backend not yet implemented.
-          </p>
+          <SprintsPanel />
         </section>
         <section>
           <h2 class="font-mono text-[10.5px] tracking-wider text-[var(--faint)] py-2">

@@ -1,3 +1,5 @@
+import type { SprintStatus } from '../api/wire-enums'
+
 // Source of truth for backend Status values: `lumina/src/domain.rs` Status enum.
 // Any backend Status addition MUST be mirrored here AND in STATUS_CLASS below.
 export const STATUSES = [
@@ -18,12 +20,24 @@ export function asStatus(s: string): StatusBackend | null {
 // Literal class map keyed by backend status. Tailwind 4 only generates classes
 // it can see as literal strings in scanned source, so we list each one verbatim
 // here rather than interpolating `text-${tokenName}` (R1).
-const STATUS_CLASS: Record<StatusBackend, string> = {
+//
+// Sprint lifecycle statuses (`domain::SprintStatus`, migration 0016) share
+// this map so a `<StatusPill>` on a sprint/worktree renders a real colour
+// instead of `statusToken`'s muted fallback. `done`/`cancelled` overlap the
+// work-item vocab and reuse the entries above; the four sprint-only keys are
+// appended below. They are deliberately NOT added to `STATUSES` — that tuple
+// drives the work-item filter tabs (ChildGrid), and `statusLabel` already
+// falls back to `status.toUpperCase()` for keys outside it.
+const STATUS_CLASS: Record<StatusBackend | SprintStatus, string> = {
   todo: 'text-queued',
   in_progress: 'text-in-flight',
   blocked: 'text-blocked',
   done: 'text-done',
   cancelled: 'text-[var(--muted)] line-through',
+  draft: 'text-[var(--faint)]',
+  ready: 'text-queued',
+  active: 'text-in-flight',
+  review: 'text-accent',
 }
 
 export function statusLabel(status: StatusBackend | string): string {
