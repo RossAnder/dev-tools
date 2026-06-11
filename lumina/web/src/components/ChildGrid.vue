@@ -2,6 +2,8 @@
 import { ref, computed, type ComputedRef } from 'vue'
 import type { WorkItem } from '@/api'
 import { useHierarchy } from '@/composables/useHierarchy'
+import { useSprints } from '@/composables/useSprints'
+import { applySprintFilter } from '@/composables/childGridFilter'
 import { STATUSES, kindLabel, type StatusFilter } from '@/composables/useDisplay'
 import ChildCard from './ChildCard.vue'
 
@@ -11,13 +13,34 @@ const props = defineProps<{
 }>()
 
 const { descendantCountFor } = useHierarchy()
+const { selectedSprintId, selectedDetail } = useSprints()
 
 const filter = ref<StatusFilter>('ALL')
+const sprintFilterOn = ref(false)
 
-const filtered: ComputedRef<WorkItem[]> = computed(() => {
+const statusFiltered: ComputedRef<WorkItem[]> = computed(() => {
   if (filter.value === 'ALL') return props.children
   return props.children.filter((c) => c.status === filter.value)
 })
+
+// The sprint filter is effective only while a sprint is actually selected in
+// the [04 / SPRINTS] panel — when the selection clears, `sprintFilterOn`
+// keeps its value but has no effect (and the chip renders disabled).
+const sprintFilterActive: ComputedRef<boolean> = computed(
+  () => sprintFilterOn.value && selectedSprintId.value !== null,
+)
+
+const filtered: ComputedRef<WorkItem[]> = computed(() =>
+  applySprintFilter(
+    statusFiltered.value,
+    selectedDetail.value?.member_task_ids ?? null,
+    sprintFilterActive.value,
+  ),
+)
+
+const hiddenBySprint: ComputedRef<number> = computed(
+  () => statusFiltered.value.length - filtered.value.length,
+)
 
 function pluralise(label: string): string {
   if (label.endsWith('Y')) return label.slice(0, -1) + 'IES'
@@ -37,6 +60,11 @@ function childCountFor(node: WorkItem): number {
 
 function setFilter(next: StatusFilter): void {
   filter.value = next
+}
+
+function toggleSprintFilter(): void {
+  if (selectedSprintId.value === null) return
+  sprintFilterOn.value = !sprintFilterOn.value
 }
 </script>
 
@@ -70,8 +98,25 @@ function setFilter(next: StatusFilter): void {
               : 'border-[var(--border)] text-[var(--faint)] hover:text-[var(--ink-2)]',
           ]"
         >{{ s.label }}</button>
+        <button
+          type="button"
+          :disabled="selectedSprintId === null"
+          @click="toggleSprintFilter"
+          :class="[
+            'px-2 py-1 border rounded-md ml-2',
+            selectedSprintId === null
+              ? 'border-[var(--border)] text-[var(--faint)] opacity-40 cursor-not-allowed'
+              : sprintFilterActive
+                ? 'border-[var(--accent)] text-accent cursor-pointer'
+                : 'border-[var(--border)] text-[var(--faint)] hover:text-[var(--ink-2)] cursor-pointer',
+          ]"
+        >SPRINT</button>
       </div>
     </header>
+    <p
+      v-if="sprintFilterActive"
+      class="mb-3 font-mono text-[10.5px] tracking-[0.16em] text-[var(--faint)]"
+    >{{ hiddenBySprint }} hidden by sprint filter</p>
     <!-- grid / empty states -->
     <p
       v-if="children.length === 0"

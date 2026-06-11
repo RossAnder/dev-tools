@@ -30,12 +30,18 @@ export type { Result }
 // one module can comfortably hold, lift parts into nested composables
 // before reaching back for a store library.
 
+// Center-column view modes, in toggle render order. Single source of truth:
+// CenterToolbar.vue imports this for its v-for toggle, and the list lives in
+// this plain .ts module (not the SFC) so bun tests can import it directly.
+export const VIEW_MODES = ['focus', 'tree', 'pty', 'worktrees'] as const
+export type ViewMode = (typeof VIEW_MODES)[number]
+
 const tree = ref<WorkItemNode[]>([])
 const focusId = ref<string | null>(null)
 const detail = ref<WorkItemDetail | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const view = ref<'focus' | 'tree' | 'pty'>('focus')
+const view = ref<ViewMode>('focus')
 
 // Swappable API adapter for test isolation. Production code calls the real
 // helpers from `@/api`; tests can override individual entries via

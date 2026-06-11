@@ -1,6 +1,6 @@
 <script setup vapor lang="ts">
 import { computed, type ComputedRef } from 'vue'
-import { useHierarchy } from '@/composables/useHierarchy'
+import { useHierarchy, VIEW_MODES, type ViewMode } from '@/composables/useHierarchy'
 import { kindLabel } from '@/composables/useDisplay'
 
 const { view, focusPath } = useHierarchy()
@@ -22,11 +22,9 @@ const contextTag: ComputedRef<string | null> = computed(() => {
 // the template handler: refs auto-unwrap on READ in templates, but writing to
 // the unwrapped identifier would shadow the binding rather than mutate the
 // ref. A function call sidesteps the ambiguity entirely.
-function setView(next: 'focus' | 'tree' | 'pty'): void {
+function setView(next: ViewMode): void {
   view.value = next
 }
-
-const viewModes = ['focus', 'tree', 'pty'] as const
 </script>
 
 <template>
@@ -38,7 +36,7 @@ const viewModes = ['focus', 'tree', 'pty'] as const
       class="inline-flex border border-[var(--border-strong)] rounded-md overflow-hidden"
     >
       <button
-        v-for="(mode, i) in viewModes"
+        v-for="(mode, i) in VIEW_MODES"
         :key="mode"
         type="button"
         :class="[

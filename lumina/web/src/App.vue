@@ -10,6 +10,7 @@ import FocusLens from '@/components/FocusLens.vue'
 import ChildGrid from '@/components/ChildGrid.vue'
 import PortfolioEmpty from '@/components/PortfolioEmpty.vue'
 import PtyConsole from '@/components/PtyConsole.vue'
+import WorktreesView from '@/components/WorktreesView.vue'
 import SprintsPanel from '@/components/SprintsPanel.vue'
 import SprintAgentStream from '@/components/SprintAgentStream.vue'
 
@@ -60,6 +61,7 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
             <ChildGrid v-if="focusedChildren.length > 0" :children="focusedChildren" />
           </template>
           <PtyConsole v-else-if="view === 'pty'" />
+          <WorktreesView v-else-if="view === 'worktrees'" />
           <div
             v-else
             class="mx-4 my-6 p-6 border border-[var(--border)] rounded-xl text-[var(--faint)] font-mono text-[12px] italic"
@@ -68,6 +70,7 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
           </div>
         </template>
         <PtyConsole v-else-if="view === 'pty'" />
+        <WorktreesView v-else-if="view === 'worktrees'" />
         <PortfolioEmpty v-else />
       </div>
 
