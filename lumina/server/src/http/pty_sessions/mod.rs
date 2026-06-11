@@ -3,7 +3,7 @@
 //!
 //! Routes (mounted under `/api` by `app::build_router` via `http::router`):
 //!
-//!   * `GET    /pty/sessions`                    — list (filter by status / project).
+//!   * `GET    /pty/sessions`                    — list (filter by status / project / sprint).
 //!   * `POST   /pty/sessions`                    — spawn a fresh PTY session.
 //!   * `GET    /pty/sessions/{id}`               — one session row.
 //!   * `GET    /pty/sessions/{id}/messages`      — transcript page (?since=, ?limit=).
@@ -110,10 +110,15 @@ struct ListQuery {
     status: Option<String>,
     #[serde(default)]
     project_id: Option<String>,
+    #[serde(default)]
+    sprint_id: Option<String>,
 }
 
 /// `GET /pty/sessions` — list sessions, optionally filtered by status /
-/// project. Returns a JSON array; empty array (200) when no rows match.
+/// project / sprint (the latter against the migration-0015 best-effort
+/// `sprint_id` correlation hint — server-side, so a sprint view never
+/// over-fetches every session). Returns a JSON array; empty array (200)
+/// when no rows match.
 async fn list_sessions(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
@@ -121,12 +126,14 @@ async fn list_sessions(
     tracing::debug!(
         status = q.status.as_deref().unwrap_or(""),
         project_id = q.project_id.as_deref().unwrap_or(""),
+        sprint_id = q.sprint_id.as_deref().unwrap_or(""),
         "http: GET /pty/sessions"
     );
     let rows = repo::pty::list_pty_sessions(
         state.pool.sqlite(),
         q.status.as_deref(),
         q.project_id.as_deref(),
+        q.sprint_id.as_deref(),
     )
     .await?;
     Ok(Json(rows))
@@ -457,6 +464,74 @@ mod tests {
             .expect("body");
         let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
         assert!(body.as_array().expect("array").is_empty());
+    }
+
+    /// `GET /api/pty/sessions?sprint_id=` filters server-side on the
+    /// migration-0015 `sprint_id` correlation hint: only the matching
+    /// session(s) return, a NULL-correlated session never matches, and the
+    /// unfiltered list still returns every row.
+    #[tokio::test]
+    async fn list_pty_sessions_sprint_id_filter() {
+        let pool = connect_in_memory().await.expect("pool");
+
+        // Seed three sessions: two correlated to different sprints, one left
+        // NULL (the harvest-missed-the-sprint shape). `SqlitePool` implements
+        // `DbClient`, so the repo fns seed directly on the pool.
+        for id in ["sess-a", "sess-b", "sess-c"] {
+            repo::pty::create_pty_session(&pool, id, None, None, "/tmp", "{}")
+                .await
+                .expect("seed session");
+        }
+        repo::pty::update_pty_session_correlation(&pool, "sess-a", Some("sprint-x"), None)
+            .await
+            .expect("correlate sess-a");
+        repo::pty::update_pty_session_correlation(&pool, "sess-b", Some("sprint-y"), None)
+            .await
+            .expect("correlate sess-b");
+
+        let state = empty_state(pool);
+        let app = build_router(state);
+
+        // Filtered: only the sprint-x-correlated session comes back.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pty/sessions?sprint_id=sprint-x")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        let rows = body.as_array().expect("array");
+        assert_eq!(rows.len(), 1, "only the sprint-x session matches");
+        assert_eq!(rows[0]["id"], "sess-a");
+
+        // Unfiltered: every session (including the NULL-correlated one).
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pty/sessions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(
+            body.as_array().expect("array").len(),
+            3,
+            "an absent sprint_id leaves the list unfiltered"
+        );
     }
 
     /// PATCH /api/pty/sessions/{id} returns 501 in v1.

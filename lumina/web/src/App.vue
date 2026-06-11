@@ -11,6 +11,7 @@ import ChildGrid from '@/components/ChildGrid.vue'
 import PortfolioEmpty from '@/components/PortfolioEmpty.vue'
 import PtyConsole from '@/components/PtyConsole.vue'
 import SprintsPanel from '@/components/SprintsPanel.vue'
+import SprintAgentStream from '@/components/SprintAgentStream.vue'
 
 const { focusId, view, loading, focusedNode, loadTree } = useHierarchy()
 
@@ -84,10 +85,7 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
           <h2 class="font-mono text-[10.5px] tracking-wider text-[var(--faint)] py-2">
             [05 / AGENT STREAM]
           </h2>
-          <!-- deferred: agentic harness telemetry (entire backend missing) -->
-          <p class="text-[var(--ghost)] font-mono text-[11px] italic">
-            Deferred — backend not yet implemented.
-          </p>
+          <SprintAgentStream />
         </section>
       </aside>
     </main>

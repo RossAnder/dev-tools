@@ -6,8 +6,9 @@
 // `readiness.test.ts`: `__setApiForTests` swaps in an in-memory adapter,
 // `__resetForTests` clears module-singleton state between tests.
 
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
+import { listSessions } from '../api/pty'
 import type {
   AuqAnswer,
   AuqQuestion,
@@ -1157,3 +1158,34 @@ function mockCancelQuestion(): {
   })
   return { fn, calls }
 }
+
+// ---------------------------------------------------------------------------
+// 5. listSessions client — query-string threading of the optional filters
+//    (T18: the new `sprint_id` filter mirrors the T17 server-side param).
+// ---------------------------------------------------------------------------
+
+describe('listSessions query string', () => {
+  let originalFetch: typeof globalThis.fetch
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test('appends ?sprint_id= when provided', async () => {
+    let receivedUrl = ''
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      receivedUrl = typeof input === 'string' ? input : input.toString()
+      return new Response('[]', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof globalThis.fetch
+
+    await listSessions({ sprint_id: 'some-id' })
+    expect(receivedUrl).toContain('sprint_id=some-id')
+  })
+})

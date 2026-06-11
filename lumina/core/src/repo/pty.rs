@@ -396,14 +396,16 @@ pub async fn update_pty_session_ended(
     Ok(())
 }
 
-/// List sessions, optionally filtered by `status` and/or `project_id`,
-/// newest-first by `started_at`. Filters use the `?n IS NULL OR col = ?n`
-/// idiom so a single prepared statement covers every filter combination.
-/// Reads, no transaction.
+/// List sessions, optionally filtered by `status`, `project_id`, and/or
+/// `sprint_id` (the migration-0015 best-effort correlation hint — a session
+/// whose harvest missed the sprint carries NULL and won't match), newest-first
+/// by `started_at`. Filters use the `?n IS NULL OR col = ?n` idiom so a single
+/// prepared statement covers every filter combination. Reads, no transaction.
 pub async fn list_pty_sessions(
     db: &impl DbClient,
     status: Option<&str>,
     project_id: Option<&str>,
+    sprint_id: Option<&str>,
 ) -> Result<Vec<PtySession>, AppError> {
     db.query_all::<PtySession>(
         r#"
@@ -428,9 +430,14 @@ pub async fn list_pty_sessions(
         FROM pty_sessions
         WHERE ($1 IS NULL OR status = $1)
           AND ($2 IS NULL OR project_id = $2)
+          AND ($3 IS NULL OR sprint_id = $3)
         ORDER BY started_at DESC, id
         "#,
-        args![status.map(|s| s.to_owned()), project_id.map(|s| s.to_owned())],
+        args![
+            status.map(|s| s.to_owned()),
+            project_id.map(|s| s.to_owned()),
+            sprint_id.map(|s| s.to_owned())
+        ],
     )
     .await
 }

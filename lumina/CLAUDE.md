@@ -275,7 +275,7 @@ Export is OPERATOR-TRIGGERED, not continuous. The former 5-second background dra
 
 ### PTY sessions (`http/pty_sessions/` — submodule dir: `mod.rs` + `ask.rs` + `ws.rs`; migration 0008, T9)
 
-- `GET    /api/pty/sessions`               → `repo::pty::list_pty_sessions`.
+- `GET    /api/pty/sessions`               → `repo::pty::list_pty_sessions` (optional `?status=` / `?project_id=` / `?sprint_id=` filters; `sprint_id` filters server-side on the migration-0015 best-effort correlation hint — a session whose harvest missed the sprint carries NULL and won't appear).
 - `POST   /api/pty/sessions`               → composes `PtyTransport::spawn` + `repo::pty::create_pty_session` + registry insert + supervisor registration.
 - `GET    /api/pty/sessions/{id}`          → `repo::pty::get_pty_session`.
 - `GET    /api/pty/sessions/{id}/messages` → `repo::pty::list_pty_messages` (paginated via `?since=&limit=`).

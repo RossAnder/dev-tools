@@ -274,10 +274,12 @@ export type WsFrameType = WsFrame['type']
 export async function listSessions(params?: {
   status?: string
   project_id?: string
+  sprint_id?: string
 }): Promise<PtySession[]> {
   const qs = new URLSearchParams()
   if (params?.status) qs.set('status', params.status)
   if (params?.project_id) qs.set('project_id', params.project_id)
+  if (params?.sprint_id) qs.set('sprint_id', params.sprint_id)
   const query = qs.toString() ? `?${qs.toString()}` : ''
   return handle(await fetch(`${API_BASE}/pty/sessions${query}`), z.array(PtySessionSchema))
 }
