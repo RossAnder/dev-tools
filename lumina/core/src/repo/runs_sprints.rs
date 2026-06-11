@@ -34,6 +34,7 @@
 //! cross-cluster substrate (`create_work_item_full_tx`, `CreateOpts`, `enum_to_str`)
 //! lives in `repo/shared.rs` and is reached via `use super::*`.
 
+use serde::Serialize;
 use uuid::Uuid;
 
 use super::*;
@@ -42,7 +43,7 @@ use crate::args;
 use crate::db::{DbClient, Scalar};
 use crate::domain::{
     Disposition, FindingDecisionKind, NewFindingDecision, NewRun, NewSprint, SprintStatus,
-    TargetKind, TriageState,
+    TargetKind, TriageState, WorktreeOutcome,
 };
 use crate::error::AppError;
 
@@ -408,12 +409,18 @@ pub async fn add_tasks_to_sprint(
 /// `status` is parsed into the typed [`SprintStatus`]; an out-of-vocab / legacy
 /// string is a clean [`AppError::Validation`], mirroring [`set_sprint_status`].
 /// (`sprints` has no `updated_at` / soft-delete column — only `created_at`.)
-#[derive(Debug, Clone)]
+/// `Serialize` (with omitted-when-`None` optionals, the wire contract) backs the
+/// read-only sprint list/detail HTTP responses built on
+/// [`list_sprints_with_worktree`].
+#[derive(Debug, Clone, Serialize)]
 pub struct SprintRecord {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub status: SprintStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub predecessor_sprint_id: Option<String>,
     pub created_at: String,
 }
@@ -502,6 +509,194 @@ pub async fn sprint_for_task(
         db,
         "SELECT sprint_id FROM sprint_tasks WHERE task_id = $1 ORDER BY rowid DESC LIMIT 1",
         args![task_id.to_owned()],
+    )
+    .await
+}
+
+/// Minimal LIVE-worktree detail for a sprint-card chip, paired with each sprint
+/// by [`list_sprints_with_worktree`]. A worktree has NO status column — its
+/// `effective_status` is WHOLLY DERIVED from the OWNING sprint's `status`
+/// (mirroring `worktrees.rs`'s JOIN-derived `effective_status`), so in this list
+/// it always equals the paired [`SprintRecord`]'s parsed status. Read aggregate
+/// only — `Serialize` with omitted-when-`None` optionals (the wire contract).
+#[derive(Debug, Clone, Serialize)]
+pub struct WorktreeSummary {
+    /// The worktree's branch name; NULL when unrecorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// The owning sprint's status, JOIN-derived (NOT a DB column).
+    pub effective_status: SprintStatus,
+    /// Terminal merge verdict (`merged|rejected`); NULL until a decision lands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<WorktreeOutcome>,
+}
+
+/// Raw `sprints` LEFT JOIN `worktrees` row as it comes off the database
+/// (`status` still the free-TEXT column value). The joined worktree columns are
+/// `wt_*`-prefixed; `wt_id` (NOT NULL on a real `worktrees` row) is the match
+/// DISCRIMINATOR — `branch` may itself be NULL, so presence is keyed off the
+/// joined PK, never the payload columns. The generic-`R` [`sqlx::FromRow`]
+/// follows the canonical [`crate::db`] recipe.
+#[derive(Debug)]
+struct SprintWithWorktreeRow {
+    id: String,
+    title: Option<String>,
+    status_raw: String,
+    worktree_id: Option<String>,
+    predecessor_sprint_id: Option<String>,
+    created_at: String,
+    wt_id: Option<String>,
+    wt_branch: Option<String>,
+    wt_outcome: Option<String>,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for SprintWithWorktreeRow
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(SprintWithWorktreeRow {
+            id: row.try_get("id")?,
+            title: row.try_get("title")?,
+            status_raw: row.try_get("status")?,
+            worktree_id: row.try_get("worktree_id")?,
+            predecessor_sprint_id: row.try_get("predecessor_sprint_id")?,
+            created_at: row.try_get("created_at")?,
+            wt_id: row.try_get("wt_id")?,
+            wt_branch: row.try_get("wt_branch")?,
+            wt_outcome: row.try_get("wt_outcome")?,
+        })
+    }
+}
+
+/// The shared projection + FROM/LEFT JOIN of the two sprint-list SELECTs below
+/// (mirroring `worktrees.rs`'s `worktree_select_base!`): `concat!` only accepts
+/// LITERALS, so the single source of truth is this `macro_rules!` — the two
+/// consts then differ ONLY in their trailing WHERE/ORDER/LIMIT clause. The LEFT
+/// JOIN scopes to the LIVE owned worktree (`deleted_at IS NULL`, mirroring how
+/// `worktrees.rs` scopes liveness); the migration-0016 UNIQUE
+/// `owning_sprint_id` FK guarantees at most one joined row per sprint.
+macro_rules! sprint_with_worktree_select_base {
+    () => {
+        r#"
+    SELECT
+        sprints.id                    AS id,
+        sprints.title                 AS title,
+        sprints.status                AS status,
+        sprints.worktree_id           AS worktree_id,
+        sprints.predecessor_sprint_id AS predecessor_sprint_id,
+        sprints.created_at            AS created_at,
+        w.id                          AS wt_id,
+        w.branch                      AS wt_branch,
+        w.outcome                     AS wt_outcome
+    FROM sprints
+    LEFT JOIN worktrees w
+        ON w.owning_sprint_id = sprints.id AND w.deleted_at IS NULL
+"#
+    };
+}
+
+/// SELECT for all sprints (no status constraint), each LEFT JOINed with its
+/// live OWNED worktree. Newest first (`created_at DESC`, `id` tiebreak), capped
+/// at 1000 rows (mirroring `worktrees.rs`'s `LIST_LIMIT` cap).
+const SELECT_SPRINTS_WITH_WORKTREE_ALL: &str = concat!(
+    sprint_with_worktree_select_base!(),
+    "    ORDER BY sprints.created_at DESC, sprints.id\n    LIMIT 1000\n"
+);
+
+/// SELECT for sprints holding a given `status` (the `status_filter` arm — the
+/// sprint's own status IS the effective status), each LEFT JOINed with its live
+/// OWNED worktree. Capped at 1000 rows.
+const SELECT_SPRINTS_WITH_WORKTREE_BY_STATUS: &str = concat!(
+    sprint_with_worktree_select_base!(),
+    "    WHERE sprints.status = $1\n    ORDER BY sprints.created_at DESC, sprints.id\n    LIMIT 1000\n"
+);
+
+/// List sprints, each paired with a minimal summary of its LIVE owned worktree
+/// (or `None` when the sprint owns no live worktree) — the read backing the
+/// sprint-list HTTP/SPA view. When `status_filter` is `Some`, only sprints
+/// holding that status are returned (a worktree's `effective_status` IS its
+/// owning sprint's status, so filtering `sprints.status` filters both). Newest
+/// first. A stored status outside the [`SprintStatus`] vocab is a clean
+/// [`AppError::Validation`] (NEVER a parse panic), mirroring [`get_sprint`];
+/// the joined `outcome` (DB CHECK `merged|rejected`) is likewise re-typed into
+/// [`WorktreeOutcome`] with a `Validation` on a bad value. Read-only, no
+/// transaction.
+pub async fn list_sprints_with_worktree(
+    db: &impl DbClient,
+    status_filter: Option<SprintStatus>,
+) -> Result<Vec<(SprintRecord, Option<WorktreeSummary>)>, AppError> {
+    let rows: Vec<SprintWithWorktreeRow> = match status_filter {
+        Some(status) => {
+            let status_str = enum_to_str(status);
+            db.query_all::<SprintWithWorktreeRow>(
+                SELECT_SPRINTS_WITH_WORKTREE_BY_STATUS,
+                args![status_str],
+            )
+            .await?
+        }
+        None => {
+            db.query_all::<SprintWithWorktreeRow>(SELECT_SPRINTS_WITH_WORKTREE_ALL, args![])
+                .await?
+        }
+    };
+
+    rows.into_iter()
+        .map(|row| {
+            let status: SprintStatus =
+                serde_json::from_value(serde_json::Value::String(row.status_raw.clone()))
+                    .map_err(|_| {
+                        AppError::Validation(format!(
+                            "sprint '{}' has unrecognised status '{}'",
+                            row.id, row.status_raw
+                        ))
+                    })?;
+            let outcome: Option<WorktreeOutcome> = match row.wt_outcome {
+                Some(s) => Some(
+                    serde_json::from_value(serde_json::Value::String(s))
+                        .map_err(|e| AppError::Validation(e.to_string()))?,
+                ),
+                None => None,
+            };
+            // `wt_id` is NOT NULL on a real worktree row, so its presence is the
+            // LEFT-JOIN match discriminator (`branch` may itself be NULL).
+            let worktree = row.wt_id.is_some().then_some(WorktreeSummary {
+                branch: row.wt_branch,
+                effective_status: status,
+                outcome,
+            });
+            Ok((
+                SprintRecord {
+                    id: row.id,
+                    title: row.title,
+                    status,
+                    worktree_id: row.worktree_id,
+                    predecessor_sprint_id: row.predecessor_sprint_id,
+                    created_at: row.created_at,
+                },
+                worktree,
+            ))
+        })
+        .collect()
+}
+
+/// The task ids attached to a sprint via the `sprint_tasks` junction, in
+/// attachment order (`ORDER BY rowid` — SQLite's `rowid` is
+/// insertion-monotonic, the [`sprint_for_task`] recency rationale read
+/// forwards), deterministic. An unknown sprint id simply yields an empty Vec
+/// (the caller's pre-flight [`get_sprint`] owns existence). Read-only, no
+/// transaction.
+pub async fn list_sprint_member_task_ids(
+    db: &impl DbClient,
+    sprint_id: &str,
+) -> Result<Vec<String>, AppError> {
+    crate::db::scalar_all::<String>(
+        db,
+        "SELECT task_id FROM sprint_tasks WHERE sprint_id = $1 ORDER BY rowid",
+        args![sprint_id.to_owned()],
     )
     .await
 }
@@ -871,7 +1066,10 @@ pub async fn record_finding_decision(
 mod tests {
     use super::*;
     use crate::db::connect_in_memory;
-    use crate::domain::{FindingDecisionKind, NewFindingDecision, NewRun, NewSprint, RunKind, TargetKind};
+    use crate::domain::{
+        FindingDecisionKind, NewFindingDecision, NewRun, NewSprint, NewWorktree, RunKind,
+        TargetKind,
+    };
     use crate::repo::test_support::*;
     use sqlx::SqlitePool;
 
@@ -1669,5 +1867,118 @@ mod tests {
             matches!(bad_pred, Err(AppError::Validation(_))),
             "a dangling predecessor_sprint_id is a Validation, got {bad_pred:?}"
         );
+    }
+
+    /// `list_sprints_with_worktree` (no filter) returns every seeded sprint,
+    /// pairing a worktree-OWNING sprint with a `WorktreeSummary` (branch +
+    /// outcome from the worktree, `effective_status` = the sprint's own status)
+    /// and a worktree-LESS sprint with `None`.
+    #[tokio::test]
+    async fn list_sprints_returns_seeded_with_worktree() {
+        let pool = connect_in_memory().await.expect("pool");
+        let with_wt = seed_sprint(&pool).await; // 'draft'
+        create_worktree(
+            &pool,
+            &NewWorktree {
+                owning_sprint_id: with_wt.clone(),
+                path: "/tmp/wt".to_owned(),
+                base_ref: Some("main".to_owned()),
+                branch: Some("sprint/list-1".to_owned()),
+            },
+        )
+        .await
+        .expect("create_worktree");
+        let without_wt = seed_sprint(&pool).await; // 'draft', no worktree
+
+        let listed = list_sprints_with_worktree(&pool, None)
+            .await
+            .expect("list_sprints_with_worktree");
+        assert_eq!(listed.len(), 2, "both seeded sprints are listed");
+
+        let (owner_record, owner_summary) = listed
+            .iter()
+            .find(|(s, _)| s.id == with_wt)
+            .expect("the worktree-owning sprint is listed");
+        assert_eq!(owner_record.status, SprintStatus::Draft);
+        let summary = owner_summary
+            .as_ref()
+            .expect("the owning sprint pairs with a worktree summary");
+        assert_eq!(summary.branch.as_deref(), Some("sprint/list-1"));
+        assert_eq!(
+            summary.effective_status,
+            SprintStatus::Draft,
+            "effective_status IS the owning sprint's status (JOIN-derived)"
+        );
+        assert!(summary.outcome.is_none(), "no merge verdict recorded yet");
+
+        let (_, no_summary) = listed
+            .iter()
+            .find(|(s, _)| s.id == without_wt)
+            .expect("the worktree-less sprint is listed");
+        assert!(
+            no_summary.is_none(),
+            "a sprint owning no live worktree pairs with None"
+        );
+    }
+
+    /// `list_sprints_with_worktree(Some(status))` filters to sprints holding
+    /// exactly that status (the sprint's own status IS the effective status).
+    #[tokio::test]
+    async fn list_sprints_status_filter_active() {
+        let pool = connect_in_memory().await.expect("pool");
+        let active = seed_sprint(&pool).await;
+        // The LEGAL chain to 'active' (a direct draft → active is rejected).
+        for next in [SprintStatus::Ready, SprintStatus::Active] {
+            set_sprint_status(&pool, &active, next).await.expect("legal step");
+        }
+        let draft = seed_sprint(&pool).await; // stays 'draft'
+
+        let active_only = list_sprints_with_worktree(&pool, Some(SprintStatus::Active))
+            .await
+            .expect("filtered list");
+        assert_eq!(active_only.len(), 1, "exactly one active sprint");
+        assert_eq!(active_only[0].0.id, active);
+        assert_eq!(active_only[0].0.status, SprintStatus::Active);
+
+        let draft_only = list_sprints_with_worktree(&pool, Some(SprintStatus::Draft))
+            .await
+            .expect("filtered list");
+        assert_eq!(draft_only.len(), 1, "exactly one draft sprint");
+        assert_eq!(draft_only[0].0.id, draft);
+    }
+
+    /// `list_sprint_member_task_ids` returns exactly the attached task ids in
+    /// attachment (`rowid`) order; a sprint with no members yields an empty Vec.
+    #[tokio::test]
+    async fn member_task_ids_returns_attached() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let t1 = create_work_item(&pool, "task", Some(&story), "T1", None)
+            .await
+            .expect("legal task")
+            .to_string();
+        let t2 = create_work_item(&pool, "task", Some(&story), "T2", None)
+            .await
+            .expect("legal task")
+            .to_string();
+        let sprint = seed_sprint(&pool).await;
+        add_tasks_to_sprint(&pool, &sprint, &[t1.as_str(), t2.as_str()])
+            .await
+            .expect("attach tasks");
+
+        let members = list_sprint_member_task_ids(&pool, &sprint)
+            .await
+            .expect("member task ids");
+        assert_eq!(
+            members,
+            vec![t1.clone(), t2.clone()],
+            "exactly the attached task ids, in attachment order"
+        );
+
+        let empty_sprint = seed_sprint(&pool).await;
+        let none = list_sprint_member_task_ids(&pool, &empty_sprint)
+            .await
+            .expect("member task ids on a memberless sprint");
+        assert!(none.is_empty(), "a memberless sprint yields an empty Vec");
     }
 }

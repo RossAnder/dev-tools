@@ -319,6 +319,8 @@ The HTTP mirrors of the migration-0016 worktree/checkpoint/commit + sprint-lifec
 - `GET   /api/commits`                             → `repo::list_task_commits` (one of `?task_id` | `?commit_sha` | `?story_id`).
 - `DELETE /api/commits`                            → `repo::remove_task_commit` (review R32; `?commit_sha=&task_id=`, BOTH required — pair-exact removal of a bad historical provenance edge; absent pair → 404).
 - `PATCH /api/sprints/{sprint_id}/status`          → `repo::set_sprint_status` (typed `SprintStatus` transition guard; REJECTS a terminal `review→done|cancelled` flip on a worktree-OWNING sprint — those must route through `/worktrees/{id}/merge`|`/reject`).
+- `GET   /api/sprints`                             → `repo::list_sprints_with_worktree` (read-only sprint-visibility slice; optional `?status=<SprintStatus>`; each entry pairs the sprint with a minimal LIVE owned-worktree summary `{branch?, effective_status, outcome?}` so a sprint card needs no N+1 detail fetch).
+- `GET   /api/sprints/{sprint_id}`                 → composes `repo::get_sprint` + `repo::get_worktree` (only when the sprint carries a `worktree_id`) + `repo::list_sprint_member_task_ids` (→ `{sprint, worktree?, member_task_ids, predecessor_sprint_id?}`; missing sprint → 404).
 
 ### Companion execution (`http/companion.rs` + `http/worktrees.rs`, ADR-0006 Step 1b — migration-free)
 

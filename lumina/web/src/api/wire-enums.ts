@@ -172,3 +172,35 @@ const SHAPE_VALUES = ['vertical-slice', 'cross-cutting', 'foundational'] as cons
  */
 export type Shape = (typeof SHAPE_VALUES)[number]
 export const ShapeSchema = z.enum(SHAPE_VALUES)
+
+// ---------------------------------------------------------------------------
+// Sprint/worktree visibility slice (T13): Lane, SprintStatus, WorktreeOutcome.
+// ---------------------------------------------------------------------------
+
+const LANE_VALUES = ['implement', 'review'] as const
+/**
+ * Mirrors `domain::Lane` — the team-execution work-queue lane (migration
+ * 0013). Stored on `work_items.lane` (task-only; NULL = not team-managed).
+ * NOTE: no consumer in the read-only sprint/worktree slice (per-task lane
+ * display was dropped) — forward-provisioned for a future per-task view.
+ */
+export type Lane = (typeof LANE_VALUES)[number]
+export const LaneSchema = z.enum(LANE_VALUES)
+
+const SPRINT_STATUS_VALUES = ['draft', 'ready', 'active', 'review', 'done', 'cancelled'] as const
+/**
+ * Mirrors `domain::SprintStatus` — the typed sprint lifecycle (migration
+ * 0016), repo-enforced over `sprints.status` (free TEXT, no DB CHECK).
+ * `draft→ready→active→review→{done,cancelled}`; `done`/`cancelled` terminal.
+ */
+export type SprintStatus = (typeof SPRINT_STATUS_VALUES)[number]
+export const SprintStatusSchema = z.enum(SPRINT_STATUS_VALUES)
+
+const WORKTREE_OUTCOME_VALUES = ['merged', 'rejected'] as const
+/**
+ * Mirrors `domain::WorktreeOutcome` — a worktree's terminal audit outcome
+ * (migration 0016). Stamped by `record_worktree_merge` /
+ * `record_worktree_rejection`; absent (null) while the worktree is live.
+ */
+export type WorktreeOutcome = (typeof WORKTREE_OUTCOME_VALUES)[number]
+export const WorktreeOutcomeSchema = z.enum(WORKTREE_OUTCOME_VALUES)
