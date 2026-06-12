@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
+  "name": "dev-tools-local",
+  "owner": {
+    "name": "Ross"
+  },
+  "metadata": {
+    "description": "Local marketplace for dev-tools repo-bundled plugins (lumina story/sprint blocks)."
+  },
+  "plugins": [
+    {
+      "name": "lumina",
+      "source": "./lumina-story-blocks",
+      "description": "Twenty-nine /lumina:<block> skills for filling story-planning fields and orchestrating the sprint lifecycle one block at a time."
+    }
+  ]
+}
