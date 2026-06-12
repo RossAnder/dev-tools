@@ -314,10 +314,14 @@ async function resolveCwdForFocalPoint(
     try {
       projectDetail = await api.fetchProjectDetail(projectNode.id)
     } catch (e) {
-      // A failed project fetch is non-fatal here — `resolveCwd` will fall back
-      // to the machine clone_root (or null). Record it so the UI can surface
-      // the degraded path.
-      error.value = toMessage(e)
+      // A failed project fetch is NON-FATAL: `resolveCwd` falls back to the
+      // machine clone_root (or null). Do NOT write `error.value` here — a
+      // non-fatal degradation must never leak into the banner of an otherwise
+      // SUCCESSFUL open() (the cwd may still resolve via the fallback). When the
+      // cwd ultimately resolves to null, open() surfaces the load-bearing
+      // "no clone path" error instead; the failed fetch is a devtools warning.
+      // eslint-disable-next-line no-console -- degraded-path signal worth surfacing
+      console.warn(`lumina: floating-chat project fetch failed, falling back to clone_root: ${toMessage(e)}`)
     }
   }
 
