@@ -47,6 +47,8 @@
 <script setup vapor lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useHierarchy } from '@/composables/useHierarchy'
+import { useFloatingChat } from '@/composables/useFloatingChat'
+import { resolveFocalPoint } from '@/composables/floatingChatContext'
 import { useStoryPlan } from '@/composables/useStoryPlan'
 import { useTaskSpec } from '@/composables/useTaskSpec'
 import { useEpicPlan } from '@/composables/useEpicPlan'
@@ -82,8 +84,35 @@ const props = defineProps<{
   kind: Kind
 }>()
 
-const { detail, refresh } = useHierarchy()
+const { detail, refresh, focusPath, focusedNode } = useHierarchy()
 const item = computed<WorkItem | null>(() => detail.value?.item ?? null)
+
+const floatingChat = useFloatingChat()
+
+/**
+ * Field-scope chat trigger (T5). Opens the floating chat against the focused
+ * node with a FIELD-level focal point — `resolveFocalPoint` folds the field
+ * descriptor's `field` into `fieldKey`, so the popup knows which scalar field
+ * the operator is acting on. Reuses the same `ElementDescriptor` shape already
+ * threaded into `EditableElement` (no parallel addressing shape). Guarded on a
+ * non-null `focusedNode`: with no focus there is nothing addressable — no spawn.
+ */
+function openFieldChat(field: string): void {
+  const node = focusedNode.value
+  if (node === null) return
+  void floatingChat.open(
+    resolveFocalPoint(focusPath.value, node, {
+      workItemId: props.itemId,
+      field,
+      kind: props.kind,
+    }),
+  )
+}
+
+// Shared affordance class for the per-field "chat" trigger rendered alongside
+// the "Edit" affordance in the #agent-action seam.
+const chatLabelClass =
+  'font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--faint)] hover:text-[var(--accent)] cursor-pointer'
 
 const storyPlan = useStoryPlan()
 const taskSpec = useTaskSpec()
@@ -397,7 +426,10 @@ const propsHeadingClass = 'font-mono text-[10.5px] tracking-[0.18em] text-[var(-
             :descriptor="{ workItemId: itemId, field: 'outcome', kind }"
           >
             <template #agent-action>
-              <span :class="editLabelClass" @click="openEditor('outcome', 'Outcome', attrString('outcome'))">Edit</span>
+              <span class="inline-flex items-center gap-3">
+                <span :class="chatLabelClass" title="Chat about this field" @click="openFieldChat('outcome')">Chat</span>
+                <span :class="editLabelClass" @click="openEditor('outcome', 'Outcome', attrString('outcome'))">Edit</span>
+              </span>
             </template>
             <span
               v-if="attrString('outcome')"
@@ -511,7 +543,10 @@ const propsHeadingClass = 'font-mono text-[10.5px] tracking-[0.18em] text-[var(-
             :descriptor="{ workItemId: itemId, field: 'problem_statement', kind }"
           >
             <template #agent-action>
-              <span :class="editLabelClass" @click="openEditor('problem_statement', 'Problem Statement', attrString('problem_statement'))">Edit</span>
+              <span class="inline-flex items-center gap-3">
+                <span :class="chatLabelClass" title="Chat about this field" @click="openFieldChat('problem_statement')">Chat</span>
+                <span :class="editLabelClass" @click="openEditor('problem_statement', 'Problem Statement', attrString('problem_statement'))">Edit</span>
+              </span>
             </template>
             <span
               v-if="attrString('problem_statement')"
@@ -658,7 +693,10 @@ const propsHeadingClass = 'font-mono text-[10.5px] tracking-[0.18em] text-[var(-
             :descriptor="{ workItemId: itemId, field: 'outcome', kind }"
           >
             <template #agent-action>
-              <span :class="editLabelClass" @click="openEditor('outcome', 'Outcome', attrString('outcome'))">Edit</span>
+              <span class="inline-flex items-center gap-3">
+                <span :class="chatLabelClass" title="Chat about this field" @click="openFieldChat('outcome')">Chat</span>
+                <span :class="editLabelClass" @click="openEditor('outcome', 'Outcome', attrString('outcome'))">Edit</span>
+              </span>
             </template>
             <span
               v-if="attrString('outcome')"

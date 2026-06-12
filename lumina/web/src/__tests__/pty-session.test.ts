@@ -27,6 +27,7 @@ import {
 } from '../composables/usePtySessions'
 import {
   usePtySession,
+  makePtySessionComposable,
   __resetForTests as __resetSession,
   __setApiForTests as __setSessionApi,
 } from '../composables/usePtySession'
@@ -717,6 +718,63 @@ describe('usePtySession token cancellation', () => {
 
     expect(composable.currentId.value).toBe('s2')
     expect(composable.messages.value).toEqual([makeMessage('s2', 0)])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 3b. makePtySessionComposable — two factory instances are fully independent:
+//     selecting a session on one must NOT mutate the other's currentId /
+//     messages. The default `usePtySession()` is one such instance; a fresh
+//     factory call (e.g. the popup consumer) is another. This is the
+//     behaviour-preserving-refactor guarantee that the [03] console and a
+//     second consumer no longer clobber each other's focused session.
+// ---------------------------------------------------------------------------
+
+describe('makePtySessionComposable instance independence', () => {
+  test('two instances hold independent currentId and messages', async () => {
+    const instanceA = makePtySessionComposable()
+    const instanceB = makePtySessionComposable()
+
+    const historyA = [makeMessage('a1', 0), makeMessage('a1', 1)]
+    const historyB = [makeMessage('b1', 0)]
+
+    instanceA.setApiForTests({
+      getSession: async () => makeSession('a1'),
+      getMessages: async () => historyA,
+      openSessionStream: () => makeMockStream(),
+    })
+    instanceB.setApiForTests({
+      getSession: async () => makeSession('b1'),
+      getMessages: async () => historyB,
+      openSessionStream: () => makeMockStream(),
+    })
+
+    const a = instanceA.use()
+    const b = instanceB.use()
+
+    // Before any select, both start clean and independent.
+    expect(a.currentId.value).toBeNull()
+    expect(b.currentId.value).toBeNull()
+
+    await a.select('a1')
+
+    // A focused a1; B is untouched.
+    expect(a.currentId.value).toBe('a1')
+    expect(a.messages.value).toEqual(historyA)
+    expect(b.currentId.value).toBeNull()
+    expect(b.messages.value).toEqual([])
+
+    await b.select('b1')
+
+    // B focused b1; A's state is unchanged by B's select.
+    expect(b.currentId.value).toBe('b1')
+    expect(b.messages.value).toEqual(historyB)
+    expect(a.currentId.value).toBe('a1')
+    expect(a.messages.value).toEqual(historyA)
+
+    // The two `messages` refs are distinct objects — not a shared singleton.
+    expect(a.messages).not.toBe(b.messages)
+    expect(a.currentId).not.toBe(b.currentId)
   })
 })
 

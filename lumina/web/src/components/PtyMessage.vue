@@ -30,7 +30,19 @@ import { isAuqToolUse, type AuqInput, type AuqAnswer, type AuqQuestion, type Pty
 import { usePtySession, type RenderableMessage } from '@/composables/usePtySession'
 import PtyAuqPicker from './PtyAuqPicker.vue'
 
-const props = defineProps<{ message: RenderableMessage }>()
+const props = withDefaults(
+  defineProps<{
+    message: RenderableMessage
+    // When true, suppress this row's OWN inline <PtyAuqPicker> for an
+    // unmatched AUQ tool_use — the row falls through to the plain tool_use
+    // card instead. FloatingChat sets this so it remains the SOLE picker
+    // (wired to the popup session), since PtyMessage's inline picker binds
+    // the DEFAULT [03]-console session. PtyConsole leaves it at the default
+    // (false), so the [03] console's inline picker still works.
+    suppressAuqPicker?: boolean
+  }>(),
+  { suppressAuqPicker: false },
+)
 
 const { submitAuqAnswer, cancelAuq } = usePtySession()
 
@@ -241,6 +253,7 @@ function onAuqCancel(): void {
     <PtyAuqPicker
       v-else-if="
         message.kind === 'tool_use' &&
+        !suppressAuqPicker &&
         isUnmatchedAuq &&
         auqQuestions !== null &&
         auqToolUseId !== null

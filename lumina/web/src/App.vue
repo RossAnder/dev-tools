@@ -1,6 +1,8 @@
 <script setup vapor lang="ts">
 import { onMounted, computed, type ComputedRef } from 'vue'
 import { useHierarchy } from '@/composables/useHierarchy'
+import { useSettings } from '@/composables/useSettings'
+import { setCwdSettingsProvider } from '@/composables/useFloatingChat'
 import AppHeader from '@/components/AppHeader.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import HierarchySpine from '@/components/HierarchySpine.vue'
@@ -13,11 +15,19 @@ import PtyConsole from '@/components/PtyConsole.vue'
 import WorktreesView from '@/components/WorktreesView.vue'
 import SprintsPanel from '@/components/SprintsPanel.vue'
 import SprintAgentStream from '@/components/SprintAgentStream.vue'
+import FloatingChat from '@/components/FloatingChat.vue'
 
 const { focusId, view, loading, focusedNode, loadTree } = useHierarchy()
+const { cloneRoot, loadSettings } = useSettings()
+
+// Wire the floating-chat cwd resolver to the live machine clone-root. The
+// popup's `resolveCwd` falls back to this when a project has no primary
+// repo-link local_path. Provider closure reads the live ref each call.
+setCwdSettingsProvider(() => ({ cloneRoot: cloneRoot.value }))
 
 onMounted(() => {
   loadTree()
+  void loadSettings()
 })
 
 // Children of the focused node, sourced via the composable's memoised lookup
@@ -94,5 +104,10 @@ const focusedChildren: ComputedRef<import('@/api').WorkItem[]> = computed(
     </main>
 
     <AppFooter />
+
+    <!-- In-context chat popup. A fixed-position sibling at the App root grid
+         (note seq 5/11; Teleport unused) — its `position: fixed` escapes the
+         grid's overflow with no portal. Renders only while open. -->
+    <FloatingChat />
   </div>
 </template>
