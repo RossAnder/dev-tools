@@ -1,6 +1,8 @@
 <script setup vapor lang="ts">
 import { computed, markRaw, ref, type Component, type ComputedRef } from 'vue'
 import { useHierarchy } from '@/composables/useHierarchy'
+import { useFloatingChat } from '@/composables/useFloatingChat'
+import { resolveFocalPoint } from '@/composables/floatingChatContext'
 import { kindLabel } from '@/composables/useDisplay'
 import StatusPill from '@/components/StatusPill.vue'
 import CopyIdButton from '@/components/CopyIdButton.vue'
@@ -13,7 +15,21 @@ import ActivityPanel from '@/components/panels/ActivityPanel.vue'
 import type { TabId } from '@/composables/panelRegistry'
 import type { WorkItem } from '@/api'
 
-const { detail, descendantCounts } = useHierarchy()
+const { detail, descendantCounts, focusPath, focusedNode } = useHierarchy()
+const floatingChat = useFloatingChat()
+
+/**
+ * Item-scope chat trigger (operator decision — lives in the FocusLens header).
+ * Opens the floating chat against the FOCUSED node with an item-level focal
+ * point (no `fieldKey`). Guarded on a non-null `focusedNode`: the header only
+ * renders with a focused item, but `focusedNode` can momentarily be null if the
+ * id is stale, in which case there is nothing to address — no spawn.
+ */
+function openItemChat(): void {
+  const node = focusedNode.value
+  if (node === null) return
+  void floatingChat.open(resolveFocalPoint(focusPath.value, node))
+}
 
 // ---------------------------------------------------------------------------
 // Tabbed-lens shell. The tab region is mounted ABOVE the existing kind-specific
@@ -159,6 +175,19 @@ const planningFields = computed<{ label: string; value: string }[]>(() => {
         <p v-else class="text-[var(--faint)] text-[13px] italic">&mdash;</p>
       </div>
       <div class="flex flex-col items-end gap-3 shrink-0">
+        <!--
+          Item-scope chat trigger (T5). Opens the floating chat against this
+          focused item with an item-level focal point (no fieldKey). Lives in
+          the FocusLens header per the operator decision.
+        -->
+        <button
+          type="button"
+          class="font-mono text-[10.5px] tracking-[0.16em] uppercase px-3 py-1.5 border border-[var(--border)] rounded-md bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors cursor-pointer"
+          title="Open an in-context chat against this item"
+          @click="openItemChat"
+        >
+          Chat
+        </button>
         <StatusPill :status="item.status" />
         <!-- progress bar — non-task and only when progress is non-null -->
         <div
