@@ -51,6 +51,11 @@ export default defineConfig(({ command }) => ({
       '/api': {
         target: 'http://127.0.0.1:24817',
         changeOrigin: true,
+        // Proxy WebSocket upgrades too (the PTY transcript stream at
+        // `/api/pty/sessions/{id}/ws` + the `/api/stream` telemetry socket).
+        // Without this, dev-only WS features (the chat popup's live transcript,
+        // the sprint agent stream) never connect through the dev server.
+        ws: true,
       },
     },
   },
