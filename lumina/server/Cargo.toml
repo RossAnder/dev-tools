@@ -83,11 +83,7 @@ notify = "8.2.0"
 # `cargo sqlx prepare`. `migrate` is kept for the compile-time
 # `sqlx::migrate!("./migrations")` in db.rs. No TLS feature: sqlite is a local
 # file, no transport security needed.
-sqlx = { workspace = true, features = [
-    "runtime-tokio",
-    "sqlite",
-    "migrate",
-] }
+sqlx = { workspace = true, features = ["runtime-tokio", "sqlite", "migrate"] }
 
 # --- MCP server (rmcp, Streamable-HTTP transport) ---
 rmcp = { version = "1.7", features = [
@@ -133,7 +129,7 @@ tempfile.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
 
 # Content-hash dep for finding dedup (first consumed by B16's finding_dedup_hash).
-sha2 = "0.10"
+sha2 = "0.11"
 
 # mimalloc as the global allocator (mirrors tomlctl O56). lumina's hot paths are
 # small-allocation-heavy: every MCP tool call round-trips JSON through serde,

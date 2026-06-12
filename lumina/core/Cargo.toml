@@ -28,11 +28,7 @@ notify = "8.2.0"
 # seam). `macros` feature dropped (no offline cache); `migrate` is kept for the
 # compile-time `sqlx::migrate!("./migrations")` in db.rs. No TLS feature: sqlite
 # is a local file.
-sqlx = { workspace = true, features = [
-    "runtime-tokio",
-    "sqlite",
-    "migrate",
-] }
+sqlx = { workspace = true, features = ["runtime-tokio", "sqlite", "migrate"] }
 
 # async-trait gives the DbClient/DbTx seam (db/client.rs, db/erased.rs) async
 # trait methods.
@@ -47,7 +43,7 @@ jiff.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
 
 # Content-hash dep for finding dedup.
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Atomic snapshot writes in export.rs (tempfile → fsync → rename).
 tempfile.workspace = true
@@ -81,4 +77,4 @@ axum = ["dep:axum"]
 rstest = "0.26"
 pretty_assertions = "1.4"
 proptest = "1"
-insta = "1.47"
+insta = "1"
