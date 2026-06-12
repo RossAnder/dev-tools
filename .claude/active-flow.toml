@@ -421,3 +421,18 @@ scope = [
     "lumina/CLAUDE.md",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "vectorized-brewing-boole"
+last_used = "2026-06-11T10:36:10.1017412Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/core/src/**",
+    "lumina/server/src/**",
+    "lumina/web/src/**",
+    "lumina/web/App.vue",
+    "lumina/CLAUDE.md",
+]

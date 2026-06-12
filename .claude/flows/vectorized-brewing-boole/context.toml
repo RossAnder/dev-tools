@@ -1,0 +1,24 @@
+slug = "vectorized-brewing-boole"
+plan_path = "docs/plans/vectorized-brewing-boole.md"
+status = "review"
+created = 2026-06-11
+updated = 2026-06-11
+branch = "main"
+scope = [
+    "lumina/core/src/**",
+    "lumina/server/src/**",
+    "lumina/web/src/**",
+    "lumina/web/App.vue",
+    "lumina/CLAUDE.md",
+]
+
+[tasks]
+total = 24
+completed = 24
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/vectorized-brewing-boole/review-ledger.toml"
+optimise_findings = ".claude/flows/vectorized-brewing-boole/optimise-findings.toml"
+execution_record = ".claude/flows/vectorized-brewing-boole/execution-record.toml"
+plan_review_findings = ".claude/flows/vectorized-brewing-boole/plan-review-findings.toml"

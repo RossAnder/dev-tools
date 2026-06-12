@@ -73,7 +73,6 @@ Two Plan agents designed this (the WS foundation on the deep/fable tier per User
   - *Rejected: poll-and-broadcast* (per-resource recompute registration + a permanent poll loop + 1–2 s latency floor — the opposite of "adopt with minimal code" for a foundation meant to carry most UI data). *Rejected: events-table watermark tail* (survives a future 2nd writer process but adds poll wakeups; can be slotted behind `NotifyBus` later with no consumer change).
 - **Server endpoint: ONE multiplexed `GET /api/stream`** (not per-resource sockets — a new resource then costs zero routes). The client sends `{type:"subscribe",topic:"sprint-quiescence:<id>"}`; the server replies `init` (full snapshot) on subscribe, then `data` (full snapshot, deduped-on-equal) on change, plus `skipped` on bus lag, `error`, `pong`. **Snapshots, never deltas** ⇒ a missed frame self-heals on the next push and reconnect is race-free (init-on-subscribe + resubscribe-all-on-reconnect). A new resource implements a small `TopicResolver { prefix, interested(may over-approximate), resolve(read-only) }` registered in a `TopicRegistry`; a 150 ms coalesce window + cheap recompute + push-only-if-changed absorbs the over-approximation. Reuses the PTY ws machinery (origin allowlist — extracted to `http/ws_common.rs` — `CancellationToken`, two-task split, `Skipped`-on-lag). `AppState` gains defaulted `notify` + `stream_topics` fields. The connection state machine (`stream/watcher.rs::ConnState`) is socket-free so it unit-tests without a WS.
 - **Client: a generic `useResourceStream<T>(topic)`** over `api/ws-core.ts` (carved from `openSessionStream`: `ws(s)://location.host` url, exp-backoff 1s→30s, `userClosed` guard, handler map) + `api/stream.ts` (one refcounted socket per tab, topic multiplexing). PTY's `usePtySession` is **left byte-identical this wave** (it carries the battle-tested AUQ path; rebasing it on the generic core is optional future cleanup). The whole "new resource" recipe is demonstrated by `useSprintTelemetry(sprintId)` (~10 lines) + the `SprintQuiescence` wire type, both owned here in `api/execution.ts` (Wave-2 imports them — no duplication).
-- **Frame contract (NORMATIVE — defined once so the parallel server lane (T4/T5/T6) and client lane (T7) cannot diverge; T4's serde enums, T5's server emit, T6's e2e, and T7's zod schemas all implement THIS shape).** Every frame is a JSON object tagged with a `type` discriminant — Rust `#[serde(tag="type", rename_all="snake_case")]`, zod a literal `type` field. **Inbound** (client→server): `{type:"subscribe", topic:"<resolver>:<param>"}`, `{type:"unsubscribe", topic:"…"}`, `{type:"ping"}`. **Outbound** (server→client): `{type:"init", topic:"…", data:<snapshot>}` (full snapshot on subscribe), `{type:"data", topic:"…", data:<snapshot>}` (full snapshot on change, deduped-on-equal), `{type:"skipped", topic?:"…"}` (bus lag), `{type:"error", topic?:"…", message:"…"}`, `{type:"pong"}` (reply to inbound `ping`). The `topic` field is REQUIRED on `init`/`data`/`error` so the client routes via its `Map<topic, handler[]>`. Canonical server path: `/api/stream`.
 
 **Waves 2–4 — consumers (read-only, no new domain/writes).**
 - **Sprint reads (flat composition, no new SQL aggregate)**: `repo::list_sprints(status?)` + `repo::list_sprint_member_task_ids(sprint_id)` (the only genuinely new reads; `get_sprint`/`get_worktree` already exist). `GET /api/sprints` (list, `?status=`) and `GET /api/sprints/{id}` → `SprintDetailResponse { sprint, worktree: Option<Worktree>, member_task_ids, predecessor_sprint_id }`. Live counts come from the Wave-1 stream, NOT this endpoint (it stays a static snapshot). **Add `Serialize` to `SprintRecord`** (currently `Debug, Clone` only).
@@ -97,7 +96,7 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 
 ## Tasks
 
-> 24 tasks across 5 waves. Within a wave, tasks are parallel-safe **given the `Depends-on` ordering** — schedule by the dependency edges, not by file-disjointness alone: two Wave-1 pairs DO share a file (T3+T5 both touch `http/mod.rs`; T4+T6 both touch `stream/mod.rs`), but each pair is dependency-ordered so they never run concurrently (the truly-parallel Wave-1 frontier is {1, 3, 7}). Cross-wave `App.vue` edits (T16/T20/T23) are sequenced by wave order. Effort: S <30 min/1–2 files, M 30–120 min/2–5 files, L >120 min.
+> 24 tasks across 5 waves. Within a wave, listed tasks touch disjoint files (parallel-safe); cross-wave `App.vue` edits (T16/T20/T21) are sequenced by wave order. Effort: S <30 min/1–2 files, M 30–120 min/2–5 files, L >120 min.
 
 ### Wave 1 — Reusable WS data-refresh foundation (fable-designed)
 
@@ -110,9 +109,9 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 #### 2. Buffer notifications on the tx; flush post-commit [M]
 - **Files**: `lumina/core/src/db/client.rs` (provided `note_change` default no-op), `lumina/core/src/db/erased.rs` (`NotifyingTx` wrapping both `begin` arms), `lumina/core/src/repo/events.rs` (one `note_change` call after the INSERT), `lumina/core/tests/notify_bus.rs` (new)
 - **Depends on**: 1
-- **Action**: `note_change` pushes onto a `Vec` on the tx wrapper; `commit()` runs `inner.commit().await?` then publishes each buffered notification (sync, non-awaiting). `record_inert_event` delegates to `record_event` ⇒ sprint/run/worktree events covered free. Object-safety preserved. While editing `events.rs`, correct its now-stale doc comment (`:19-23`, which claims the tx comes from `crate::db::begin_write`) — mutators actually hold a `Box<dyn DbTx>` from `DbClient::begin` (there are zero live `begin_write` call sites in `repo/`).
-- **Detail**: NEVER publish inside the tx (WAL isolation ⇒ pre-commit state). Raw `db::begin_write(&SqlitePool)` paths stay silent (correct — PTY has its own broadcast). Under plain `cargo test` (not nextest) the global `OnceLock` bus is process-shared, so a test's `try_recv()` can return a FOREIGN notification or `Err(Lagged)`; the negative test must **drain `try_recv()` in a loop, skip foreign aggregate ids, and treat `Lagged` as continue**, asserting only that none match its OWN aggregate id — document this in the test.
-- **Acceptance**: new `notify_bus.rs`: subscribe → `repo::create_sprint(&pool,…)` → `timeout(1s, rx.recv())` yields `{aggregate_type:"sprint"}` AFTER commit; negative: `db.begin()` tx + `tx.note_change(…)` (the new PUBLIC trait method — `record_event` is `pub(crate)` and unreachable from this external test crate) + drop-without-commit → drained `try_recv()` yields nothing matching this test's aggregate id. Plus full `cargo nextest run --manifest-path lumina/Cargo.toml -p lumina-core --profile ci` green (proves zero tx-semantics drift).
+- **Action**: `note_change` pushes onto a `Vec` on the tx wrapper; `commit()` runs `inner.commit().await?` then publishes each buffered notification (sync, non-awaiting). `record_inert_event` delegates to `record_event` ⇒ sprint/run/worktree events covered free. Object-safety preserved.
+- **Detail**: NEVER publish inside the tx (WAL isolation ⇒ pre-commit state). Raw `db::begin_write(&SqlitePool)` paths stay silent (correct — PTY has its own broadcast). Under plain `cargo test` (not nextest) tests must filter received notifications by their own aggregate ids — document in the test.
+- **Acceptance**: new `notify_bus.rs`: subscribe → `repo::create_sprint(&pool,…)` → `timeout(1s, rx.recv())` yields `{aggregate_type:"sprint"}` AFTER commit; negative: begin tx + `record_event` + drop-without-commit → `try_recv()` empty. Plus full `cargo nextest run --manifest-path lumina/Cargo.toml -p lumina-core --profile ci` green (proves zero tx-semantics drift).
 
 #### 3. Extract the shared Origin allowlist [S]
 - **Files**: `lumina/server/src/http/ws_common.rs` (new — move `is_origin_allowed` + its unit test), `lumina/server/src/http/pty_sessions/ws.rs` (import; delete local fn), `lumina/server/src/http/mod.rs` (mod decl)
@@ -129,26 +128,26 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 #### 5. Mount `GET /api/stream` + wire AppState [M]
 - **Files**: `lumina/server/src/http/stream.rs` (new — upgrade handler, two tasks, `CancellationToken`, `Skipped`-on-lag), `lumina/server/src/http/mod.rs` (mod + `.merge(stream::router())`), `lumina/server/src/app.rs` (`notify` + `stream_topics` AppState fields, defaulted)
 - **Depends on**: 2, 3, 4
-- **Action**: WS handler mirrors `pty_sessions/ws.rs`: origin allowlist (via `ws_common`) before upgrade, split socket, `select!` over {ws frames, `state.notify.subscribe()`, 150 ms coalesce sleep}; on `Lagged(n)` → `mark_all_dirty()` + emit `skipped`. Create the `state.notify.subscribe()` receiver at connection setup, BEFORE the first topic's `init` `resolve()` read — a subscribe-after-resolve opens a stale window (a commit landing between resolve and subscribe yields no frame until the next write).
+- **Action**: WS handler mirrors `pty_sessions/ws.rs`: origin allowlist (via `ws_common`) before upgrade, split socket, `select!` over {ws frames, `state.notify.subscribe()`, 150 ms coalesce sleep}; on `Lagged(n)` → `mark_all_dirty()` + emit `skipped`.
 - **Acceptance**: `oneshot` test: disallowed/absent Origin → same `AppError::Validation` envelope as PTY ws (pre-upgrade); `app.rs` health test still green (defaults didn't break construction); clippy clean.
 
 #### 6. First consumer: sprint-quiescence resolver + e2e proof [M]
 - **Files**: `lumina/server/src/stream/topics/mod.rs` (new — registration point), `lumina/server/src/stream/topics/sprint_quiescence.rs` (new), `lumina/server/src/stream/mod.rs` (`with_default_topics` registers it), `lumina/server/tests/stream_e2e.rs` (new)
 - **Depends on**: 5
 - **Action**: `SprintQuiescenceTopic` (prefix `sprint-quiescence`; `interested` true for any `work_item|sprint|batch|worktree` event; `resolve` calls `repo::get_sprint_quiescence`).
-- **Acceptance**: integration test (tokio-tungstenite, already a dev-dep per `companion_e2e`; build the custom-Origin handshake via `url.into_client_request()` + `req.headers_mut().insert("Origin", …)` + `connect_async(req)` — the first such client in `server/tests/`): bind ephemeral listener over `build_router`, connect with `Origin: http://127.0.0.1`, subscribe `sprint-quiescence:{id}` → `init` (zeros) → drive `create_sprint`+`create_work_item`+`add_tasks_to_sprint`+`set_sprint_status(ready)`+`set_sprint_status(active)` (the legal `draft→ready→active` path — a direct `draft→active` flip is rejected as `Validation`) → `data` frame with `claimable==1` within timeout. `cargo nextest … -p lumina-server --profile quick -E 'binary(stream_e2e)'` (NOT `test(stream_e2e)` — `test()` matches the test NAME within a binary, and an integration binary's fn names don't embed the substring; `binary()` is the repo idiom for integration-test binaries).
+- **Acceptance**: integration test (tokio-tungstenite, already a dev-dep per `companion_e2e`): bind ephemeral listener over `build_router`, connect with `Origin: http://127.0.0.1`, subscribe `sprint-quiescence:{id}` → `init` (zeros) → drive `create_sprint`+`create_work_item`+`add_tasks_to_sprint`+`set_sprint_status(active)` → `data` frame with `claimable==1` within timeout. `cargo nextest … -p lumina-server --profile quick -E 'test(stream_e2e)'`.
 
 #### 7. Client ws-core + multiplexed stream opener [M]
 - **Files**: `lumina/web/src/api/ws-core.ts` (new), `lumina/web/src/api/stream.ts` (new), `lumina/web/src/__tests__/stream-api.test.ts` (new)
 - **Depends on**: — (parallel with 1–6)
-- **Action**: `openReconnectingSocket({path, onFrame, onOpen, onDown})` (exp backoff 1s→30s, reset-on-open, `userClosed` guard); `openResourceStream()` → `{ subscribe(topic, onFrame) -> unsubscribe, onStatus, close }` (one socket, `Map<topic, handler[]>`; first handler ⇒ send subscribe, last gone ⇒ unsubscribe; `onOpen` ⇒ resubscribe every live topic; zod-validate frames per the Wave-1 frame contract). `ws-core.ts` + `stream.ts` are deliberately INTERNAL modules — composables import them directly; they are NOT barrel-exported from `api/index.ts`, and the barrel's "touched ONCE by T7" header comment should be dropped (T9/T14 also edit the barrel).
+- **Action**: `openReconnectingSocket({path, onFrame, onOpen, onDown})` (exp backoff 1s→30s, reset-on-open, `userClosed` guard); `openResourceStream()` → `{ subscribe(topic, onFrame) -> unsubscribe, onStatus, close }` (one socket, `Map<topic, handler[]>`; first handler ⇒ send subscribe, last gone ⇒ unsubscribe; `onOpen` ⇒ resubscribe every live topic; zod-validate frames).
 - **Acceptance**: `bun test src/__tests__/stream-api.test.ts` (mock `globalThis.WebSocket`): subscribe sends frame; reconnect re-sends every live subscription; `close()` suppresses retry; bad frames dropped by zod. `bun run type-check`.
 
 #### 8. `useResourceStream<T>` composable [S]
 - **Files**: `lumina/web/src/composables/useResourceStream.ts` (new), `lumina/web/src/__tests__/resource-stream.test.ts` (new)
 - **Depends on**: 7
-- **Action**: `useResourceStream<T>(topic: MaybeRefOrGetter<string|null>) -> { data, status, error, connect, disconnect }`. The module-singleton convention applies ONLY to the underlying socket + per-topic subscription refcounts — **each invocation returns its OWN `data`/`status`/`error` refs bound to its topic** (so N sprint cards on N different topics don't clobber one shared `data`; cf. T16's per-card `useSprintTelemetry`). Swappable `__setApiForTests`/`__resetForTests`, auto-disconnect on scope dispose.
-- **Acceptance**: `bun test src/__tests__/resource-stream.test.ts`: `init`/`data` update `data`; topic-ref change unsub/resub; two consumers on the SAME topic share one server subscription; **two consumers on DIFFERENT topics hold independent `data`** (only the socket is shared); `__resetForTests` clears.
+- **Action**: `useResourceStream<T>(topic: MaybeRefOrGetter<string|null>) -> { data, status, error, connect, disconnect }`, module-singleton convention (one refcounted shared stream), swappable `__setApiForTests`/`__resetForTests`, auto-disconnect on scope dispose.
+- **Acceptance**: `bun test src/__tests__/resource-stream.test.ts`: `init`/`data` update `data`; topic-ref change unsub/resub; two consumers share one server subscription; `__resetForTests` clears.
 
 #### 9. `useSprintTelemetry` wrapper + wire type [S]
 - **Files**: `lumina/web/src/api/execution.ts` (new — `SprintQuiescence` type + schema, `sprintQuiescenceTopic(id) -> "sprint-quiescence:"+id`), `lumina/web/src/composables/useSprintTelemetry.ts` (new), `lumina/web/src/api/index.ts` (barrel: `export * from './execution'`), `lumina/web/src/__tests__/sprint-telemetry.test.ts` (new)
@@ -159,7 +158,7 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 #### 10. Document the stream surface [S]
 - **Files**: `lumina/CLAUDE.md`
 - **Depends on**: 6
-- **Action**: Add `/api/stream` to the HTTP-routes section; add a Transactions-section note on the post-commit notify-bus (buffer-on-tx, flush-after-commit, best-effort) and the `TopicResolver` seam. State the **sole-writer caveat** explicitly: the in-process bus only fires for writes made by THIS server process — `lumina import-flow` (and any 2nd server on the same `lumina.db`) writes the DB out-of-process and bypasses the bus, so the SPA shows a stale snapshot until reconnect or the next in-process write (the events-table-watermark tail is the designated future fix). The per-route catalogue entries for `GET /api/sprints[/{id}]` (T12) and the `?sprint_id=` param (T17) are added by those tasks when they land, not here.
+- **Action**: Add `/api/stream` to the HTTP-routes section; add a Transactions-section note on the post-commit notify-bus (buffer-on-tx, flush-after-commit, best-effort) and the `TopicResolver` seam.
 - **Acceptance**: doc-only; orchestrator review confirms the route + the notify-bus invariant are recorded.
 
 ### Wave 2a — Sprint reads + typed client (after Wave 1)
@@ -167,25 +166,25 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 #### 11. Add `list_sprints` + `list_sprint_member_task_ids` + `Serialize` on `SprintRecord` [S]
 - **Files**: `lumina/core/src/repo/runs_sprints.rs`
 - **Depends on**: — (Wave 1 not required for the Rust reads, but ships in Wave 2a)
-- **Action**: `list_sprints_with_worktree(db, status_filter: Option<SprintStatus>) -> Result<Vec<(SprintRecord, Option<WorktreeSummary>)>, AppError>` — LEFT JOIN `worktrees` ON `owning_sprint_id` (the worktree's `effective_status` derived from the owning sprint), `ORDER BY created_at DESC, id`, **with a `LIMIT`** (mirror `list_worktrees`' 1000 cap) so a long sprint history can't unbound the response; `WorktreeSummary { branch: Option<String>, effective_status: SprintStatus, outcome: Option<WorktreeOutcome> }` (minimal, for the card chip). `list_sprint_member_task_ids(db, sprint_id) -> Result<Vec<String>, AppError>` (`SELECT task_id FROM sprint_tasks WHERE sprint_id=$1`). Add `Serialize` to `SprintRecord`'s and `WorktreeSummary`'s derive. Read-only, no tx.
-- **Acceptance**: add in-module `#[cfg(test)]` tests **named** `list_sprints_*` and `member_task_ids_*` (this task's Files carry no separate test file, so the tests live in `runs_sprints.rs`; the names must embed those substrings for the filter to match). `cargo nextest run --manifest-path lumina/Cargo.toml -p lumina-core --profile quick -E 'test(list_sprints) + test(member_task_ids)'`; `cargo clippy -p lumina-core …`.
+- **Action**: `list_sprints(db, status_filter: Option<SprintStatus>) -> Result<Vec<SprintRecord>, AppError>` (mirror `list_worktrees`' optional-status arm; `ORDER BY created_at DESC, id`); `list_sprint_member_task_ids(db, sprint_id) -> Result<Vec<String>, AppError>` (`SELECT task_id FROM sprint_tasks WHERE sprint_id=$1`). Add `Serialize` to `SprintRecord`'s derive. Read-only, no tx.
+- **Acceptance**: `cargo nextest run --manifest-path lumina/Cargo.toml -p lumina-core --profile quick -E 'test(list_sprints) + test(member_task_ids)'`; `cargo clippy -p lumina-core …`.
 
 #### 12. Add `GET /api/sprints` + `GET /api/sprints/{id}` handlers [M]
 - **Files**: `lumina/server/src/http/sprints.rs`
 - **Depends on**: 11
-- **Action**: `list_sprints_handler` (`Query<{status: Option<SprintStatus>}>` → `Json<Vec<SprintListEntry>>` where `SprintListEntry { sprint: SprintRecord, worktree: Option<WorktreeSummary> }` — composed from `list_sprints_with_worktree` (T11) so every card renders its worktree chip WITHOUT an N+1 detail fetch, satisfying User Decision 4's "minimal worktree detail on each card"); `get_sprint_detail_handler` (`Path<String>` → compose `get_sprint` + conditional `get_worktree(worktree_id)` + `list_sprint_member_task_ids` → `SprintDetailResponse { sprint, worktree: Option<Worktree>, member_task_ids, predecessor_sprint_id }`). Register both routes and add their entries to the `lumina/CLAUDE.md` route catalogue (the repo's every-route-documented invariant). The SPA schema is `.nullish()` (T14), which accepts BOTH an absent key and explicit `null`, so either serialization round-trips — be consistent with T14.
-- **Acceptance**: `oneshot` tests (seed via `create_sprint`+`add_tasks_to_sprint`+`create_worktree`; to seed a non-draft status use the legal `draft→ready→active` transition path — a direct `draft→active` is rejected): list returns seeded sprints with their worktree summaries + `?status=` filters; detail returns `{sprint, worktree:null, member_task_ids:[t]}` and populated `worktree` when owned. Name the test module/fns `sprints_http_*` so the filter matches; `cargo nextest … -p lumina-server --profile quick -E 'test(sprints_http)'`; clippy.
+- **Action**: `list_sprints_handler` (`Query<{status: Option<SprintStatus>}>` → `Json<Vec<SprintRecord>>`); `get_sprint_detail_handler` (`Path<String>` → compose `get_sprint` + conditional `get_worktree(worktree_id)` + `list_sprint_member_task_ids` → `SprintDetailResponse { sprint, worktree: Option<Worktree>, member_task_ids, predecessor_sprint_id }`). Register both routes. `worktree` emits `null` (do NOT `skip_serializing_if`) so the SPA's `.nullish()` schema round-trips.
+- **Acceptance**: `oneshot` tests (seed via `create_sprint`+`add_tasks_to_sprint`+`create_worktree`): list returns seeded sprints + `?status=` filters; detail returns `{sprint, worktree:null, member_task_ids:[t]}` and populated `worktree` when owned. `cargo nextest … -p lumina-server --profile quick -E 'test(sprints_http)'`; clippy.
 
 #### 13. Wire-enum additions: `Lane`, `SprintStatus`, `WorktreeOutcome` [S]
 - **Files**: `lumina/web/src/api/wire-enums.ts`
 - **Depends on**: —
-- **Action**: Append three const-tuple + `z.enum` + derived-type blocks: `Lane (implement|review)`, `SprintStatus (draft|ready|active|review|done|cancelled)`, `WorktreeOutcome (merged|rejected)`, each doc-commented as mirroring its Rust enum. (`Lane` has no consumer in this slice — Decision 3 dropped per-task lane display — so doc-comment it as forward-provisioned for a future per-task view, or omit it until its first consumer lands.)
+- **Action**: Append three const-tuple + `z.enum` + derived-type blocks: `Lane (implement|review)`, `SprintStatus (draft|ready|active|review|done|cancelled)`, `WorktreeOutcome (merged|rejected)`, each doc-commented as mirroring its Rust enum.
 - **Acceptance**: `bun run type-check`; schemas exercised by task 14's test.
 
 #### 14. `api/sprints.ts` + `api/worktrees.ts` (+ barrel) [M]
 - **Files**: `lumina/web/src/api/sprints.ts` (new), `lumina/web/src/api/worktrees.ts` (new), `lumina/web/src/api/index.ts`, `lumina/web/src/__tests__/sprints.test.ts` (new)
 - **Depends on**: 13 (enums); shapes from 12
-- **Action**: every `Option`-backed field uses **`.nullish()`** (optional + nullable), NOT `.nullable()` — the Rust side may either `skip_serializing_if` (absent key) OR emit explicit `null`, and `.nullable()` alone REJECTS an absent key. `WorktreeSchema` (mirror the `Worktree` struct; nullable fields `.nullish()`; `effective_status: SprintStatusSchema`, `outcome: WorktreeOutcomeSchema.nullish()`); `WorktreeSummarySchema { branch: z.string().nullish(), effective_status: SprintStatusSchema, outcome: WorktreeOutcomeSchema.nullish() }`; `SprintRecordSchema` (its `Option` fields — `title`/`worktree_id`/`predecessor_sprint_id` — also `.nullish()`); `SprintListEntrySchema { sprint: SprintRecordSchema, worktree: WorktreeSummarySchema.nullish() }`; `SprintDetailSchema { sprint, worktree: WorktreeSchema.nullish(), member_task_ids: z.array(z.string()), predecessor_sprint_id: z.string().nullish() }`; `listSprints({status?}) → SprintListEntry[]`, `getSprintDetail(id)`, `listWorktrees({status?})`, `getWorktree(id)` via `handle()`. Barrel adds `sprints` + `worktrees` (and `execution` from T9); `ws-core`/`stream` stay non-barreled (T7).
+- **Action**: `WorktreeSchema` (mirror the `Worktree` struct; nullable fields `.nullish()` since they're skip-serialized; `effective_status: SprintStatusSchema`, `outcome: WorktreeOutcomeSchema.nullish()`); `SprintRecordSchema`; `SprintDetailSchema { sprint, worktree: WorktreeSchema.nullable(), member_task_ids: z.array(z.string()), predecessor_sprint_id: z.string().nullable() }`; `listSprints({status?})`, `getSprintDetail(id)`, `listWorktrees({status?})`, `getWorktree(id)` via `handle()`. Barrel adds both.
 - **Acceptance**: `bun test src/__tests__/sprints.test.ts` (mock `fetch`, round-trip both wrappers + the three enums); `bun run type-check`.
 
 ### Wave 2b — Sprint cards (after Wave 2a + Wave 1)
@@ -197,9 +196,9 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 - **Acceptance**: `bun test src/__tests__/use-sprints.test.ts`: `loadSprints` populates, `selectSprint` sets id+detail, reset clears.
 
 #### 16. `SprintsPanel.vue` + `SprintCard.vue`; swap `[04]` [M]
-- **Files**: `lumina/web/src/components/SprintsPanel.vue` (new), `lumina/web/src/components/SprintCard.vue` (new), `lumina/web/src/composables/useDisplay.ts`, `lumina/web/src/App.vue`
+- **Files**: `lumina/web/src/components/SprintsPanel.vue` (new), `lumina/web/src/components/SprintCard.vue` (new), `lumina/web/src/App.vue`
 - **Depends on**: 15, 9 (`useSprintTelemetry`)
-- **Action**: First add the six `SprintStatus` values (`draft|ready|active|review|done|cancelled`) to `useDisplay.ts`'s `STATUS_CLASS` + `STATUSES` (`:29-36`) — otherwise every sprint-status `<StatusPill>` renders the muted-grey fallback (`statusToken` returns muted for any key absent from `STATUS_CLASS`). `SprintCard` (props `{sprint, worktree, selected}` — `worktree` is the `WorktreeSummary` already carried by the `SprintListEntry`, so the card needs NO per-card detail fetch): title, `<StatusPill :status="sprint.status">`, live aggregates from `useSprintTelemetry(sprint.id)` (claimable/in_progress/blocked/done/stalled badges), minimal worktree chip (branch + `effective_status` pill + outcome chip). `SprintsPanel`: `useSprints()`, `onMounted(loadSprints)`, scrollable `v-for` of cards wiring `@select="selectSprint"` + `:selected`. `App.vue`: replace the `[04]` `<section>` body (`:76-84`) with `<SprintsPanel/>` under a `[04 / SPRINTS]` header.
+- **Action**: `SprintCard` (props `{sprint, worktree, selected}`): title, `<StatusPill :status="sprint.status">`, live aggregates from `useSprintTelemetry(sprint.id)` (claimable/in_progress/blocked/done/stalled badges), minimal worktree chip (branch + `effective_status` pill + outcome chip). `SprintsPanel`: `useSprints()`, `onMounted(loadSprints)`, scrollable `v-for` of cards wiring `@select="selectSprint"` + `:selected`. `App.vue`: replace the `[04]` `<section>` body (`:76-84`) with `<SprintsPanel/>` under a `[04 / SPRINTS]` header.
 - **Acceptance**: `bun run type-check`; `bun run build` (orchestrator pass). SFC render is out of bun-test scope per `web/CLAUDE.md`; composable logic covered by task 15.
 
 ### Wave 3 — Selected-sprint agent stream (after Wave 2)
@@ -208,8 +207,8 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 - **Files**: `lumina/core/src/repo/pty.rs`, `lumina/server/src/http/pty_sessions/mod.rs`
 - **Depends on**: —
 - **Action**: Extend `list_pty_sessions(…, sprint_id: Option<&str>)` with `AND ($n IS NULL OR sprint_id = $n)` mirroring the existing `status`/`project_id` guards; thread `sprint_id` through the handler's query struct. Update existing call sites/tests for the new arg.
-- **Detail**: Server-side filter (not client-side) avoids over-fetching every session; the migration-0015 `sprint_id` correlation is best-effort (a session whose harvest missed the sprint won't appear — UX caveat, documented). Add the `?sprint_id=` param to the `lumina/CLAUDE.md` `GET /api/pty/sessions` route entry.
-- **Acceptance**: add a test (name containing `pty_sessions`) asserting `?sprint_id=X` returns ONLY matching sessions and an absent param returns all — the existing filters don't cover the new behaviour. `cargo nextest … --profile quick -E 'test(list_pty_sessions) + test(pty_sessions)'`; `cargo clippy --workspace …`.
+- **Detail**: Server-side filter (not client-side) avoids over-fetching every session; the migration-0015 `sprint_id` correlation is best-effort (a session whose harvest missed the sprint won't appear — UX caveat, documented).
+- **Acceptance**: `cargo nextest … --profile quick -E 'test(list_pty_sessions) + test(pty_sessions)'`; `cargo clippy --workspace …`.
 
 #### 18. `api/pty.ts` `listSessions` gains `sprint_id` [S]
 - **Files**: `lumina/web/src/api/pty.ts`
@@ -220,7 +219,7 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 #### 19. `useSprintAgentStream.ts` composable [M]
 - **Files**: `lumina/web/src/composables/useSprintAgentStream.ts` (new), `lumina/web/src/__tests__/sprint-agent-stream.test.ts` (new)
 - **Depends on**: 18, 15 (`selectedSprintId`)
-- **Action**: Module-singleton: `sessions`, derived `summaryItems`, `liveMessages`, `status`, `error`. `bind(sprintId)`/`loadForSprint` → `listSessions({sprint_id})`; subscribe `openSessionStream(latestSessionId)` folding `message` frames into one-line summaries (kind badge + truncated content + ts); `openTranscript(sessionId)` → `getMessages` for the modal. Swappable `Api`, `__set/__resetForTests`. Reuses `api/pty.ts` verbatim. **v1 session-LIST refresh**: a session spawned mid-run won't appear from the initial fetch (PTY creation emits no `events` row, so the Wave-1 bus has no signal and there is no polling precedent) — **re-run `loadForSprint(selectedSprintId)` on each `data` frame of that sprint's quiescence topic** (claim/complete writes DO flow through the bus and correlate with session spawns), refreshing the list without a poll loop (see the Risks note).
+- **Action**: Module-singleton: `sessions`, derived `summaryItems`, `liveMessages`, `status`, `error`. `bind(sprintId)`/`loadForSprint` → `listSessions({sprint_id})`; subscribe `openSessionStream(latestSessionId)` folding `message` frames into one-line summaries (kind badge + truncated content + ts); `openTranscript(sessionId)` → `getMessages` for the modal. Swappable `Api`, `__set/__resetForTests`. Reuses `api/pty.ts` verbatim.
 - **Acceptance**: `bun test src/__tests__/sprint-agent-stream.test.ts` (mock `openSessionStream` per the existing `SessionStream` fake): `loadForSprint` populates, summary truncation, transcript fetch.
 
 #### 20. `SprintAgentStream.vue` + `PtySessionSummary.vue`; swap `[05]` [M]
@@ -232,10 +231,10 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 ### Wave 4 — Worktrees central tab + central sprint filter (after Wave 2; T21 after T20)
 
 #### 21. Widen the central view toggle to add `'worktrees'` [S]
-- **Files**: `lumina/web/src/composables/useHierarchy.ts`, `lumina/web/src/components/CenterToolbar.vue`
-- **Depends on**: — (Wave 4; no App.vue edit here)
-- **Action**: Widen the `view` union to `…|'worktrees'` (`useHierarchy.ts:38`); add `'worktrees'` to `viewModes` + widen `setView` (`CenterToolbar.vue:25,29`). **The App.vue render of `<WorktreesView>` is deferred to T23** (which creates the component) — T21 must NOT reference `WorktreesView`, since it does not exist until T23 and a `type-check` here would fail on the unresolved import.
-- **Acceptance**: `bun run type-check`; no existing test covers `view`/`viewModes` membership (`tab-state.test.ts` tests the unrelated per-item `useTabState` tab-strip — `overview/decisions/quality/activity`), so add a NEW small test asserting `'worktrees' ∈ viewModes` rather than extending `tab-state.test.ts`.
+- **Files**: `lumina/web/src/composables/useHierarchy.ts`, `lumina/web/src/components/CenterToolbar.vue`, `lumina/web/src/App.vue`
+- **Depends on**: 20 (App.vue sequencing)
+- **Action**: Widen the `view` union to `…|'worktrees'` (`useHierarchy.ts:38`); add `'worktrees'` to `viewModes` + widen `setView` (`CenterToolbar.vue:25,29`); add `<WorktreesView v-else-if="view === 'worktrees'"/>` to the central chain (`App.vue:60-66`).
+- **Acceptance**: `bun run type-check`; `bun test src/__tests__/tab-state.test.ts` (extend to assert `'worktrees'` is a member).
 
 #### 22. `useWorktrees.ts` composable [S]
 - **Files**: `lumina/web/src/composables/useWorktrees.ts` (new), `lumina/web/src/__tests__/use-worktrees.test.ts` (new)
@@ -243,10 +242,10 @@ smoke: cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal |
 - **Action**: Module-singleton: `worktrees`, `statusFilter: Ref<SprintStatus|'ALL'>`, `filtered` computed, `status`, `error`, `loadWorktrees({status?})`; swappable `__set/__resetForTests`.
 - **Acceptance**: `bun test src/__tests__/use-worktrees.test.ts`; `bun run type-check`.
 
-#### 23. `WorktreesView.vue` (full list + status chips + merge-audit columns) + mount it in App.vue [M]
-- **Files**: `lumina/web/src/components/WorktreesView.vue` (new), `lumina/web/src/App.vue`
-- **Depends on**: 22, 21, 20 (App.vue sequencing — T20 is the last prior App.vue editor)
-- **Action**: `useWorktrees()`, `onMounted(loadWorktrees)`; merge-audit table: branch / `effective_status` (StatusPill) / outcome chip / `merged_at` / `merge_ref` / path; status-filter chips (reuse the `ChildGrid` chip pattern over `SprintStatus` + `ALL`). **Mount the view in App.vue** (moved here from T21 so the component exists before it is referenced): add `<WorktreesView v-else-if="view === 'worktrees'"/>` to BOTH `view === 'pty'` sites — the inner chain (`App.vue:60-66`, inside `focusId !== null`) AND the outer fallback branch (`App.vue:68`) — so the worktrees tab (a global list) renders with or without a focused node, mirroring the existing dual-branch `'pty'` pattern (else selecting it with no focus falls through to `PortfolioEmpty`).
+#### 23. `WorktreesView.vue` (full list + status chips + merge-audit columns) [M]
+- **Files**: `lumina/web/src/components/WorktreesView.vue` (new)
+- **Depends on**: 22, 21
+- **Action**: `useWorktrees()`, `onMounted(loadWorktrees)`; merge-audit table: branch / `effective_status` (StatusPill) / outcome chip / `merged_at` / `merge_ref` / path; status-filter chips (reuse the `ChildGrid` chip pattern over `SprintStatus` + `ALL`).
 - **Acceptance**: `bun run type-check`; `bun run build`.
 
 #### 24. Central sprint-membership filter on `ChildGrid.vue` [M]
@@ -264,10 +263,10 @@ Wave 1 (foundation):
 Wave 2a:  11 → 12        13 → 14         (Rust lane ∥ TS lane)
 Wave 2b:  15 → 16        (16 also needs 9)
 Wave 3:   17 → 18 → 19 → 20              (20 needs 16 for App.vue order)
-Wave 4:   21, 22 → 23 ;  23 also after 20 (the App.vue edit moved here from 21) ;  24 (needs 15)
+Wave 4:   22 → 23 ;  21 (after 20) → 23 ;  24 (needs 15)
 ```
 
-Wave boundaries are checkpoint commits. `App.vue` is edited only in 16 (Wave 2b), 20 (Wave 3), 23 (Wave 4) — never twice in one wave.
+Wave boundaries are checkpoint commits. `App.vue` is edited only in 16 (Wave 2b), 20 (Wave 3), 21 (Wave 4) — never twice in one wave.
 
 ## Verification
 
@@ -282,7 +281,6 @@ Orchestrator-owned, two tiers (sub-agents run only their narrow clippy/type-chec
 - **Recompute chattiness**: `interested()` over-approximates, so any `work_item|sprint|batch|worktree` write dirties a quiescence topic. Mitigated by the 150 ms coalesce window + a cheap aggregate query + push-only-if-changed. Deferred scaling lever (no consumer change): a shared per-topic hub recomputing once and fanning out to N connections.
 - **Reconnect/initial-state race**: structurally solved — init-on-subscribe + resubscribe-all-on-reconnect + full-snapshot (never delta) frames ⇒ no missed-delta bug class.
 - **PTY↔sprint correlation is best-effort** (migration 0015, no FK): a session whose `sprint_id` harvest missed won't appear in its sprint's agent stream. Acceptable UX caveat; documented in T17.
-- **Agent-stream session LIST is not push-driven** (T19): PTY session creation emits no `events` row, so the Wave-1 bus carries no signal for a newly-spawned session. T19 refreshes the list by re-fetching on each quiescence `data` frame (claim/complete correlate with spawns); a session spawned with no concurrent quiescence change appears only on the next refresh — accepted v1 latency, not a missed-message bug.
 - **Scope ~22 source files / 5 waves** exceeds the ~15 guideline — deliberate (User Decision 1's reusable-architecture investment). Contained by strict wave boundaries, disjoint files within a wave, and the per-wave `/implement` recommendation. Waves 1+2 are the MVP; 3+4 are independently deferrable.
 - **Global `OnceLock<NotifyBus>` under plain `cargo test`**: cross-test notification chatter possible (not under nextest, the canonical runner); tests assert on their own aggregate ids (documented in T2).
 - **Auth posture**: `/api/stream` is loopback-only + origin-allowlisted (browser-CSRF defence), strictly read-only (subscribe-only inbound) — a smaller surface than the existing PTY ws. Unchanged by `HOST=0.0.0.0` exposure caveats that already apply to all of `/api`.

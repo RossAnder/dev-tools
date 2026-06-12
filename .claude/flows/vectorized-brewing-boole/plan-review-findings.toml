@@ -1,0 +1,273 @@
+schema_version = 1
+last_updated = 2026-06-11
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 6. First consumer: sprint-quiescence resolver + e2e proof [M]"
+summary = "T6 e2e drives an illegal draft->active single transition; rejected as Validation before any frame"
+description = "can_transition_to (lumina/core/src/domain/enums.rs:481-491) permits only Draft->Ready and Ready->Active; a direct set_sprint_status(active) on a freshly-created draft sprint is rejected. The e2e fails before a stream frame arrives. Same bug poisons the Verification manual smoke ('compose a sprint'). Fix: set_sprint_status(ready) then set_sprint_status(active)."
+anchor_old = "set_sprint_status(active)"
+anchor_new = "set_sprint_status(ready)`+`set_sprint_status(active)"
+dedup_id = "acf600605e80b79a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### 21. Widen the central view toggle to add `'worktrees'` [S]"
+summary = "T21 renders WorktreesView but T23 (which depends on T21) creates it -- inverted dependency"
+description = "T21 inserts <WorktreesView v-else-if='view===worktrees'> into App.vue with a `bun run type-check` acceptance, but WorktreesView.vue is created in T23 whose Depends-on lists 21. The graph (21 -> 23) means T21 can never compile green (unresolvable import). Fix: move the App.vue insertion into T23, or have T21 create a stub SFC."
+dedup_id = "88294aaa293967f9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "executability"
+plan_section = "#### 21. Widen the central view toggle to add `'worktrees'` [S]"
+summary = "T21 acceptance targets tab-state.test.ts, which tests a different mechanism (useTabState tab-strip)"
+description = "tab-state.test.ts (lumina/web/src/__tests__/tab-state.test.ts:9-15,44) tests the per-work-item useTabState tab-strip (overview/decisions/quality/activity), NOT the central `view` union (useHierarchy.ts:38). No existing test covers view/viewModes membership. The acceptance 'extend tab-state.test.ts to assert worktrees is a member' is unimplementable as written. Fix: new test file or honest type-check-only acceptance."
+anchor_old = "`bun test src/__tests__/tab-state.test.ts` (extend to assert `'worktrees'` is a member)"
+anchor_new = "`bun run type-check` (no existing test covers `view` membership; add a new test file rather than extending tab-state.test.ts)"
+dedup_id = "10640adbd298fd2d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "executability"
+plan_section = "### Wave 1 — Reusable WS data-refresh foundation (fable-designed)"
+summary = "WS frame JSON wire-shape never specified; serde (T4) and zod (T7) sides invented in parallel"
+description = "Frame TYPES are named (subscribe/init/data/skipped/error/pong) but never their JSON shapes, and T7 is built parallel to T4-T6. Undecided: serde tagging style (externally-tagged vs tag='type'); whether init/data/error carry a `topic` field (they MUST -- T7 routes via Map<topic,handler[]>); the unsubscribe/ping inbound frames (absent from the catalogue); the literal path /api/stream (only in Approach, not T7). A mismatch surfaces only at T6's e2e. Fix: add one normative frame-contract block referenced by T4/T5/T6/T7."
+dedup_id = "686795ed9724a506"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "critical"
+category = "executability"
+plan_section = "#### 16. `SprintsPanel.vue` + `SprintCard.vue`; swap `[04]` [M]"
+summary = "T16 per-card worktree chip has no data source -- only the selected sprint's detail carries a worktree"
+description = "Every SprintCard is specified to show a minimal worktree chip (branch + effective_status + outcome), but the only worktree-bearing read is GET /api/sprints/{id} (detail), fetched solely for the SELECTED sprint via useSprints.selectSprint. Unselected cards have no worktree data. The executor must invent N+1 fetches, a selected-only chip (contradicting User Decision 4), or widen the list endpoint (a Wave-2a change T16 cannot make). Fix: widen T12's list response to embed a worktree summary, or amend T16 to 'chip on selected card only'."
+dedup_id = "2db77b2b93944ca1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "#### 6. First consumer: sprint-quiescence resolver + e2e proof [M]"
+summary = "T6 nextest filter `test(stream_e2e)` matches the binary name, not a test name -> zero matches"
+description = "nextest test() matches the test NAME within a binary; for the integration binary tests/stream_e2e.rs no fn embeds 'stream_e2e'. The repo's own idiom for integration binaries is binary(...) (the quick profile excludes binary(pty_e2e)|binary(conpty_minimal_repro)). Fix: -E 'binary(stream_e2e)'. Related: T11 lists no test file and never says 'add tests' yet filters test(list_sprints)+test(member_task_ids); T12 filters test(sprints_http) -- both must mandate the in-module test names."
+anchor_old = "test(stream_e2e)"
+anchor_new = "binary(stream_e2e)"
+dedup_id = "326af97a2b661b17"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "feasibility"
+plan_section = "#### 2. Buffer notifications on the tx; flush post-commit [M]"
+summary = "T2 negative test calls pub(crate) record_event from an external crate, and is flaky under cargo test"
+description = "(a) record_event is pub(crate) (lumina/core/src/repo/events.rs:24) -- unreachable from tests/notify_bus.rs; rewrite to call the new public DbTx::note_change on a db.begin() tx, or move the test in-crate. (b) Under plain `cargo test` (shared-process OnceLock bus) try_recv() can return a FOREIGN notification or Err(Lagged); the 'filter by own aggregate ids' mitigation must drain-loop AND treat Lagged as continue, asserting only 'none match my id'."
+dedup_id = "8f8f50882e72847a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 21. Widen the central view toggle to add `'worktrees'` [S]"
+summary = "Worktrees view is focus-gated: App.vue has a second view==='pty' branch at :68 the plan misses"
+description = "App.vue has TWO view==='pty' branches: :60 (inside focusId!==null) and :68 (outer fallback). T21 edits only the inner chain (App.vue:60-66), so selecting the worktrees view with no focused node renders PortfolioEmpty -- yet the worktrees tab is a global list that shouldn't require a focus. The plan's '3 edit sites' count misses this fourth site. Fix: mirror the 'pty' dual-branch pattern, or document the focus-gated behaviour."
+dedup_id = "0d31e29e7cbb7e49"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "risk"
+plan_section = "#### 14. `api/sprints.ts` + `api/worktrees.ts` (+ barrel) [M]"
+summary = "T14 prescribes zod .nullable() but the skip_serializing_if convention omits keys -> .nullish() needed"
+description = "T14 uses .nullable() for SprintDetailSchema.worktree/predecessor_sprint_id, but SprintRecord's Option fields (title/worktree_id/predecessor_sprint_id) have no specified serialization policy; the repo convention (skip_serializing_if) omits absent keys, and zod .nullable() REJECTS an absent key (.nullish() = optional+nullable accepts both). If T11 follows convention, every SprintRecordSchema parse with a null-ish field throws -- and T14's null-emitting mocks won't catch it. Fix: pin T11/T12 to 'no skip_serializing_if', or use .nullish() uniformly."
+dedup_id = "58084da6a9c0c537"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "completeness"
+plan_section = "#### 10. Document the stream surface [S]"
+summary = "Route-catalogue doc gap: T10 covers only /api/stream; T12 and T17 routes get no doc task"
+description = "lumina/CLAUDE.md keeps an exhaustive per-route catalogue, but T10 (the Wave-1 doc task) documents only /api/stream. GET /api/sprints, GET /api/sprints/{id} (T12) and the new ?sprint_id= param on GET /api/pty/sessions (T17) get no documentation task; every prior route family got an explicit entry. Fix: widen T10 or add a Wave-2/3 doc bullet to T12/T17."
+dedup_id = "cc008249d88f1f4b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "executability"
+plan_section = "#### 8. `useResourceStream<T>` composable [S]"
+summary = "T8 'module-singleton convention' read literally clobbers per-card state across N topics"
+description = "If the executor follows the named precedents literally (module-scope data/status refs), N sprint cards on N different topics (T16: useSprintTelemetry(sprint.id) per card in a v-for) share one data ref. Intent is singleton SOCKET, per-call state. T8's acceptance only tests 'two consumers share one subscription' (same topic), never cross-topic independence. Fix: reword to 'each invocation returns its own data/status refs; only the socket+subscription refcounts are module-singleton' + add a cross-topic-independence acceptance."
+dedup_id = "2bfa45199038c9fd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "executability"
+plan_section = "#### 19. `useSprintAgentStream.ts` composable [M]"
+summary = "[05] agent-stream session list has no live-refresh; a mid-run session never appears"
+description = "useSprintAgentStream fetches listSessions({sprint_id}) once per bind; a session spawned mid-run never appears because PTY creation emits no events row, so the Wave-1 NotifyBus provides no signal, and the plan forbids polling. This is the central dogfood-observability scenario (Verification 3). The executor cannot fix it without an architectural decision. Fix: state the v1 refresh story in T19 (e.g. re-fetch on each quiescence data frame) or add an explicit 'stale-list accepted for v1' note + a Risks bullet."
+dedup_id = "8cabd5bc9508eae2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "risk"
+plan_section = "## Approach"
+summary = "Sole-writer assumption violated by `lumina import-flow` (separate process bypasses the in-process bus)"
+description = "The companion is NOT a DB writer (depends on lumina-protocol only) so --with-companion is safe. But `lumina import-flow` writes the DB from a separate process and bypasses the in-process NotifyBus -> the SPA shows stale snapshots until reconnect or the next in-process write. The rejected-alternative note acknowledges the CLASS but not this concrete live instance. Fix: name import-flow + the symptom in T10's doc note; the events-table-watermark fallback is the designated future fix."
+dedup_id = "f702f93bb24c76ac"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 16. `SprintsPanel.vue` + `SprintCard.vue`; swap `[04]` [M]"
+summary = "useDisplay.ts STATUS_CLASS lacks the six SprintStatus values -> sprint pills render muted-grey fallback"
+description = "useDisplay.ts:29-36 statusToken returns the muted fallback for any key absent from STATUS_CLASS; draft|ready|active|review are not in STATUSES. Tasks 16/23 pass SprintStatus into StatusPill (prop is string, so it type-checks and builds) but every sprint-status pill renders muted grey -- the cards' primary visual signal is degraded, and no task touches useDisplay.ts. Fix: add the six SprintStatus entries to STATUS_CLASS/STATUSES in T16 or T23 (or state muted-uniform pills are acceptable v1)."
+dedup_id = "238cc5293789bec0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### 7. Client ws-core + multiplexed stream opener [M]"
+summary = "ws-core.ts/stream.ts never barrel-exported; barrel header goes stale; T13 Lane enum has no consumer"
+description = "Every existing api/*.ts is barrel-exported, but T7's two new modules are omitted from api/index.ts and the barrel's 'touched ONCE by T7' header comment is falsified when T9/T14 edit it. Decide: deliberately-internal (composables import directly) or barrel them, and amend the header. Separately, T13's Lane enum has zero consumers in any task after Decision 3 dropped per-task display -- doc-comment it as forward-provisioned or drop it."
+dedup_id = "1a0272f39bbf7581"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Tasks"
+summary = "'Within a wave, tasks touch disjoint files' is false for Wave 1 (T3+T5, T4+T6) -- reword"
+description = "T3+T5 both list http/mod.rs; T4+T6 both list stream/mod.rs. Both pairs are dependency-ordered (5 deps 3; 6 deps 5->4) so no actual parallel collision arises, but an orchestrator that parallelises by the prose claim rather than the Depends-on edges would collide. Fix: reword the preamble to 'parallel-safe given Depends-on ordering'; schedule by dep edges. The truly-parallel Wave-1 frontier is {1,3,7}."
+dedup_id = "a72ccae50861aba2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "#### 2. Buffer notifications on the tx; flush post-commit [M]"
+summary = "Stale record_event doc comment claims txs come from begin_write; actually Box<dyn DbTx>"
+description = "events.rs:19-23 doc comment says mutator txs come from crate::db::begin_write, but there are zero begin_write call sites in repo/ -- callers hold Box<dyn DbTx> from DbClient::begin. A T2 implementer trusting the comment over the plan could wrongly conclude NotifyingTx covers nothing. T2 already edits events.rs; fix the comment while adding the note_change call."
+dedup_id = "b3e70dc5e433294f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 5. Mount `GET /api/stream` + wire AppState [M]"
+summary = "T5 should pin subscribe-before-resolve ordering to avoid a stale init window"
+description = "The connection's notify.subscribe() MUST precede the first topic's init resolve() read; a subscribe-after-resolve opens a stale window (a commit landing between resolve and subscribe yields no frame until the next write). Natural with the select! structure that creates the bus receiver at connection setup, but worth stating explicitly in T5."
+dedup_id = "10229d7439295241"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "suggestion"
+category = "executability"
+plan_section = "#### 17. `?sprint_id=` arm on `list_pty_sessions` + `GET /api/pty/sessions` [M]"
+summary = "T17 acceptance runs only existing-test filters; nothing asserts ?sprint_id= actually filters"
+description = "repo/pty.rs has no in-module tests today; T17's acceptance runs only pre-existing filters, so the new behaviour is untested. Fix: add to the Action 'add a handler/repo test asserting ?sprint_id=X returns only matching sessions and absent param returns all', naming it so the stated filter (containing pty_sessions) catches it."
+dedup_id = "11f93c0479b5179d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "suggestion"
+category = "risk"
+plan_section = "#### 11. Add `list_sprints` + `list_sprint_member_task_ids` + `Serialize` on `SprintRecord` [S]"
+summary = "Hypothesis: unbounded per-tab recompute fan-out as sprint history grows (list_sprints has no LIMIT)"
+description = "Low-confidence hypothesis (verify once the dogfood DB has >20 sprints): SprintsPanel subscribes one topic per card with no cap and list_sprints specifies no LIMIT (unlike list_worktrees' 1000), so every domain write could trigger N quiescence queries per tab per 150ms window. Consider subscribing only non-terminal sprints' cards and adding a LIMIT/default status to list_sprints. The deferred per-topic hub the plan names fixes this with no consumer change."
+dedup_id = "5550c1a5932e1df8"
+
+[[vet_events]]
+timestamp = "2026-06-11T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Independently verified the lead CRITICAL: can_transition_to (enums.rs:481-491) permits only Draft->Ready/Ready->Active, no Draft->Active, so T6's single set_sprint_status(active) flip is rejected (P1). Confirmed record_event is pub(crate) at events.rs:24, so the T2 external-crate negative test is unreachable (P7). Confirmed App.vue structure (two view==='pty' branches at :60/:68; placeholders :76-93). Agent self-verified ~30 file:line anchors with high accuracy; nothing failed vetting."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-11T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified tab-state.test.ts tests the useTabState tab-strip (overview/decisions/quality/activity), not the central view union -> T21 acceptance targets the wrong file (P3). Confirmed the second view==='pty' branch at App.vue:68 (P8). Confirmed lumina/CLAUDE.md keeps an exhaustive per-route catalogue with no doc task for T12/T17 routes (P10). Agent's 'verified clean' section (list_pty_sessions single call site, AppState constructor, no HTTP route-count invariant) is rigorous; nothing failed vetting."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-11T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Corroborated the nextest-filter claim (P6) against the repo's own idiom: the quick profile excludes integration binaries via binary(pty_e2e)|binary(conpty_minimal_repro), so test(stream_e2e) is the wrong predicate for an integration binary. The WS-frame-contract gap (P4) and the T16 worktree-chip data-source gap (P5) are sound plan-internal cross-checks against the T12 detail-only read shape. Nothing failed vetting."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-11T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Confirmed the zod .nullable()/.nullish() finding (P9) against enums.rs derives + the skip_serializing_if convention; Context7-verified versions (axum 0.8, tokio-tungstenite 0.29, zod ^4.4.3). The tokio broadcast assumptions were verified CORRECT (not a defect). The import-flow sole-writer violation (P13) is supported by lumina/CLAUDE.md (import-flow writes the DB from a separate process); the companion is correctly cleared as a non-writer. No ESCALATE-TO-DEEP flags. Nothing failed vetting."
+dedup_id = "45ca31c3315a5978"

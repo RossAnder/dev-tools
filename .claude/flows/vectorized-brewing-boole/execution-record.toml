@@ -1,0 +1,749 @@
+schema_version = 1
+last_updated = 2026-06-11
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-11
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start (Wave 1 scope)"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "77fe2aa4c2e96783"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E2"
+type = "task-completion"
+task_ref = "create-the-process-wide-notify-bus"
+status = "done"
+summary = "Process-wide notify bus: ChangeNotification + NotifyBus (broadcast cap 1024, Clone shares channel) + bus() OnceLock + best-effort publish"
+files = [
+    "lumina/core/src/notify.rs",
+    "lumina/core/src/lib.rs",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "0d41c74fae2457fc"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E3"
+type = "task-completion"
+task_ref = "buffer-notifications-on-the-tx-flush-post-commit"
+status = "done"
+summary = "Post-commit notify flush: NotifyingTx wraps both begin arms, DbTx::note_change default no-op buffers on tx, commit() publishes after inner.commit(); zero mutator edits; doc comment corrected"
+files = [
+    "lumina/core/src/db/client.rs",
+    "lumina/core/src/db/erased.rs",
+    "lumina/core/src/repo/events.rs",
+    "lumina/core/tests/notify_bus.rs",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "32e3da06a5219e14"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E4"
+type = "task-completion"
+task_ref = "extract-the-shared-origin-allowlist"
+status = "done"
+summary = "Extracted is_origin_allowed into shared http/ws_common.rs (byte-identical); pty ws imports it; moved unit test"
+files = [
+    "lumina/server/src/http/ws_common.rs",
+    "lumina/server/src/http/pty_sessions/ws.rs",
+    "lumina/server/src/http/mod.rs",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "c9465fa3ddf31139"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E5"
+type = "task-completion"
+task_ref = "build-the-topic-seam-connection-state-machine"
+status = "done"
+summary = "TopicResolver/TopicRegistry + normative frame enums + socket-free ConnState (subscribe/note/drain, dedupe-on-equal); 15 seam tests"
+files = [
+    "lumina/server/src/stream/mod.rs",
+    "lumina/server/src/stream/watcher.rs",
+    "lumina/server/src/lib.rs",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "634fe24d1bf1c678"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E6"
+type = "task-completion"
+task_ref = "mount-get-api-stream-wire-appstate"
+status = "done"
+summary = "Mounted GET /api/stream multiplexed WS handler (single select loop over ws/bus/150ms coalesce); AppState notify + stream_topics fields; origin-gated via ws_common"
+files = [
+    "lumina/server/src/app.rs",
+    "lumina/server/src/http/stream.rs",
+    "lumina/server/src/http/mod.rs",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "f1252a68c50c1c05"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E7"
+type = "task-completion"
+task_ref = "first-consumer-sprint-quiescence-resolver-e2e-proof"
+status = "done"
+summary = "SprintQuiescenceTopic resolver registered in with_default_topics; real-socket stream_e2e proves notify-bus -> coalesce -> data frame (claimable==1)"
+files = [
+    "lumina/server/src/stream/topics/mod.rs",
+    "lumina/server/src/stream/topics/sprint_quiescence.rs",
+    "lumina/server/src/stream/mod.rs",
+    "lumina/server/tests/stream_e2e.rs",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "3bd8e32ca9ff1188"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E8"
+type = "task-completion"
+task_ref = "client-ws-core-multiplexed-stream-opener"
+status = "done"
+summary = "Client ws-core (reconnecting socket, exp backoff, userClosed guard) + multiplexed openResourceStream + zod outbound-frame schemas; 7 tests"
+files = [
+    "lumina/web/src/api/ws-core.ts",
+    "lumina/web/src/api/stream.ts",
+    "lumina/web/src/__tests__/stream-api.test.ts",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "e684ade79ad2aba6"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E9"
+type = "task-completion"
+task_ref = "useresourcestream-t-composable"
+status = "done"
+summary = "useResourceStream<T> composable: per-invocation data/status/error refs over one shared socket; __set/__resetForTests; 8 tests"
+files = [
+    "lumina/web/src/composables/useResourceStream.ts",
+    "lumina/web/src/__tests__/resource-stream.test.ts",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "4ac7f11a808636d0"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E10"
+type = "task-completion"
+task_ref = "usesprinttelemetry-wrapper-wire-type"
+status = "done"
+summary = "useSprintTelemetry + canonical SprintQuiescence wire type/schema + sprintQuiescenceTopic; barrel export added, stale T7 comment dropped"
+files = [
+    "lumina/web/src/api/execution.ts",
+    "lumina/web/src/composables/useSprintTelemetry.ts",
+    "lumina/web/src/api/index.ts",
+    "lumina/web/src/__tests__/sprint-telemetry.test.ts",
+]
+commits = ["1ccc649"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "4302218f5da0c157"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E11"
+type = "task-completion"
+task_ref = "document-the-stream-surface"
+status = "done"
+summary = "Documented /api/stream route, post-commit notify-bus, TopicResolver seam, and the sole-writer caveat in lumina/CLAUDE.md"
+files = ["lumina/CLAUDE.md"]
+commits = ["1ccc649"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "79554e6b0b2877e6"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E12"
+type = "deviation"
+task_ref = "mount-get-api-stream-wire-appstate"
+summary = "T5 WS upgrade extractor changed to Result<WebSocketUpgrade, WebSocketUpgradeRejection> so the origin gate runs before the upgrade extractor"
+original_intent = "Extract the WS upgrade as `ws: WebSocketUpgrade` (mirroring the PTY ws handler) and assert the disallowed/absent-Origin 422 via a tower oneshot test."
+rationale = "axum 0.8.9's WebSocketUpgrade extractor rejects under oneshot (426 ConnectionNotUpgradable, no hyper upgrade extension) BEFORE the handler body runs, making the oneshot origin test impossible as specified. Adapted to `ws: Result<WebSocketUpgrade, WebSocketUpgradeRejection>` so the handler body always runs and the origin allowlist stays the outermost check; valid real-socket upgrades behave identically (strictly tighter gating). Confirmed by the T6 real-socket e2e."
+commits = ["1ccc649"]
+dedup_id = "34a5421c94afd16f"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E13"
+type = "verification"
+task_ref = "wave-1-final-verification"
+summary = "Rust workspace build"
+command = "CARGO_INCREMENTAL=0 cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "3ed072fd1b34326b"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E14"
+type = "verification"
+task_ref = "wave-1-final-verification"
+summary = "SPA production build (194 modules)"
+command = "cd lumina/web && bun run build"
+outcome = "pass"
+dedup_id = "6a88b4c14de175cf"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E15"
+type = "verification"
+task_ref = "wave-1-final-verification"
+summary = "Rust test suite: 628 passed (nested-claude e2e bins excluded)"
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path lumina/Cargo.toml --profile ci -E 'not (binary(pty_e2e) + binary(conpty_minimal_repro))'"
+outcome = "pass"
+dedup_id = "1d5594230d461dea"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E16"
+type = "verification"
+task_ref = "wave-1-final-verification"
+summary = "SPA test suite: 301 passed"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "187247f927210263"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E17"
+type = "verification"
+task_ref = "wave-1-final-verification"
+summary = "Rust workspace lint: no warnings"
+command = "cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "406cb655ce509f89"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E18"
+type = "verification"
+task_ref = "wave-1-final-verification"
+summary = "Control-plane purity smoke: no git2/gix in lumina-server normal deps"
+command = "cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal | rg -i 'git2|gix'"
+outcome = "pass"
+dedup_id = "6a080091504f3e1d"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E19"
+type = "verification"
+task_ref = "wave-1-final-verification"
+summary = "Macro-eradication smoke: 0 sqlx bang-macros"
+command = '''rg -c 'sqlx::query(_as|_scalar)?!\(' lumina/core/src lumina/server/src'''
+outcome = "pass"
+dedup_id = "10442166fbcfbffc"
+
+[[items]]
+date = 2026-06-11
+agent = "implement"
+id = "E20"
+type = "verification"
+task_ref = "wave-1-final-verification"
+summary = "Companion-isolation smoke: no core/server/sqlx/axum linkage"
+command = "cargo tree --manifest-path lumina/Cargo.toml -p lumina-companion -e normal | rg 'lumina-(core|server)|sqlx|axum'"
+outcome = "pass"
+dedup_id = "3b5e14d5f99cceeb"
+
+[[items]]
+id = "E21"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 2a checkpoint: workspace build"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "4af0e7c8d54117ad"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 2a checkpoint: nextest suite (excl nested-claude e2e)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+dedup_id = "73b6dea910795ee6"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 2a checkpoint: SPA type-check"
+command = "cd lumina/web && bun run type-check"
+outcome = "pass"
+dedup_id = "39e968d1fea08e3c"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 2a checkpoint: SPA bun test"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "beec69e6bc5fcc8e"
+
+[[items]]
+id = "E25"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "add-list-sprints-list-sprint-member-task-ids-serialize-on-sprintrecord"
+status = "done"
+summary = "Added list_sprints_with_worktree + list_sprint_member_task_ids repo reads, WorktreeSummary struct, Serialize on SprintRecord; in-module tests"
+files = ["lumina/core/src/repo/runs_sprints.rs"]
+commits = ["18e3bc7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "a9d9c904551f87de"
+
+[[items]]
+id = "E26"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "add-get-api-sprints-get-api-sprints-id-handlers"
+status = "done"
+summary = "Added GET /api/sprints list + GET /api/sprints/{id} detail handlers with response models, routes, CLAUDE.md catalogue; sprints_http oneshot tests"
+files = [
+    "lumina/server/src/http/sprints.rs",
+    "lumina/CLAUDE.md",
+]
+commits = ["18e3bc7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "9eb4811c6fed24eb"
+
+[[items]]
+id = "E27"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "wire-enum-additions-lane-sprintstatus-worktreeoutcome"
+status = "done"
+summary = "Added Lane, SprintStatus, WorktreeOutcome wire enums (const-tuple + z.enum + type) to wire-enums.ts"
+files = ["lumina/web/src/api/wire-enums.ts"]
+commits = ["18e3bc7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "990acfc641dcdba5"
+
+[[items]]
+id = "E28"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "api-sprints-ts-api-worktrees-ts-barrel"
+status = "done"
+summary = "Added typed api/sprints.ts + api/worktrees.ts clients with .nullish() zod schemas, barrel exports, 20-test sprints.test.ts"
+files = [
+    "lumina/web/src/api/sprints.ts",
+    "lumina/web/src/api/worktrees.ts",
+    "lumina/web/src/api/index.ts",
+    "lumina/web/src/__tests__/sprints.test.ts",
+]
+commits = ["18e3bc7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "edb489fd7896c31d"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 2b checkpoint: SPA bun test"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "e4905361b66a8bbb"
+
+[[items]]
+id = "E30"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 2b checkpoint: SPA bun run build (type-check + Vite bundle)"
+command = "cd lumina/web && bun run build"
+outcome = "pass"
+dedup_id = "a5d17aaec55adcc4"
+
+[[items]]
+id = "E31"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "usesprints-ts-list-selectedsprintid-selecteddetail"
+status = "done"
+summary = "Added useSprints module-singleton composable (sprints/selectedSprintId/selectedDetail/loadSprints/selectSprint, swappable api seam, stale-response guard); 8 tests"
+files = [
+    "lumina/web/src/composables/useSprints.ts",
+    "lumina/web/src/__tests__/use-sprints.test.ts",
+]
+commits = ["af6edf7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "4dfeaa768e598df7"
+
+[[items]]
+id = "E32"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "sprintspanel-vue-sprintcard-vue-swap-04"
+status = "done"
+summary = "Added SprintsPanel + SprintCard SFCs (status pill, live quiescence badges via useSprintTelemetry, worktree chip), six SprintStatus colours in useDisplay, swapped App.vue [04] to SprintsPanel"
+files = [
+    "lumina/web/src/components/SprintsPanel.vue",
+    "lumina/web/src/components/SprintCard.vue",
+    "lumina/web/src/composables/useDisplay.ts",
+    "lumina/web/src/App.vue",
+]
+commits = ["af6edf7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "9f3d60ed2212c821"
+
+[[items]]
+id = "E33"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 3 checkpoint: workspace build"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "a8075d3e01a47c77"
+
+[[items]]
+id = "E34"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 3 checkpoint: nextest suite (excl nested-claude e2e)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+dedup_id = "e6fd9a31d45818d8"
+
+[[items]]
+id = "E35"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 3 checkpoint: SPA bun test"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "723a74d771215ac9"
+
+[[items]]
+id = "E36"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 3 checkpoint: SPA bun run build (type-check + Vite bundle)"
+command = "cd lumina/web && bun run build"
+outcome = "pass"
+dedup_id = "d6e4eecc3e8f33cc"
+
+[[items]]
+id = "E37"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "sprint-id-arm-on-list-pty-sessions-get-api-pty-sessions"
+status = "done"
+summary = "Added server-side ?sprint_id= filter arm to list_pty_sessions + GET /api/pty/sessions handler query struct; new sprint_id-filter test; CLAUDE.md route param doc"
+files = [
+    "lumina/core/src/repo/pty.rs",
+    "lumina/server/src/http/pty_sessions/mod.rs",
+    "lumina/CLAUDE.md",
+]
+commits = ["def7414"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "dbf0080192672587"
+
+[[items]]
+id = "E38"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "api-pty-ts-listsessions-gains-sprint-id"
+status = "done"
+summary = "Added optional sprint_id to SPA listSessions params + qs.set; new fetch-level URL-assertion test. Lite-dispatched, vet-recommended tag vetted clean by orchestrator"
+files = [
+    "lumina/web/src/api/pty.ts",
+    "lumina/web/src/__tests__/pty-session.test.ts",
+]
+commits = ["def7414"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "4c4114531adee613"
+
+[[items]]
+id = "E39"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "usesprintagentstream-ts-composable"
+status = "done"
+summary = "Added useSprintAgentStream module-singleton (sprint-scoped sessions, latest-session live stream, truncated one-line summaries, openTranscript, quiescence-frame list-refresh no poll); 10 tests"
+files = [
+    "lumina/web/src/composables/useSprintAgentStream.ts",
+    "lumina/web/src/__tests__/sprint-agent-stream.test.ts",
+]
+commits = ["def7414"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "f59d5e8d146a44c1"
+
+[[items]]
+id = "E40"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "sprintagentstream-vue-ptysessionsummary-vue-swap-05"
+status = "done"
+summary = "Added SprintAgentStream + PtySessionSummary SFCs (summary list, click to transcript Modal of PtyMessage rows), swapped App.vue [05] to SprintAgentStream"
+files = [
+    "lumina/web/src/components/SprintAgentStream.vue",
+    "lumina/web/src/components/PtySessionSummary.vue",
+    "lumina/web/src/App.vue",
+]
+commits = ["def7414"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "1b2fd44b3f32049e"
+
+[[items]]
+id = "E41"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 4 checkpoint: SPA bun test"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "6ca37c04ce244a81"
+
+[[items]]
+id = "E42"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Wave 4 checkpoint: SPA bun run build (type-check + Vite bundle)"
+command = "cd lumina/web && bun run build"
+outcome = "pass"
+dedup_id = "8c47734394f83d06"
+
+[[items]]
+id = "E43"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "widen-the-central-view-toggle-to-add-worktrees"
+status = "done"
+summary = "Widened centre view toggle: exported VIEW_MODES single-source tuple (focus/tree/pty/worktrees) from useHierarchy, derived ViewMode type, CenterToolbar imports it; view-modes.test.ts"
+files = [
+    "lumina/web/src/composables/useHierarchy.ts",
+    "lumina/web/src/components/CenterToolbar.vue",
+    "lumina/web/src/__tests__/view-modes.test.ts",
+]
+commits = ["e1e792b"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "0dc011d11f493ede"
+
+[[items]]
+id = "E44"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "useworktrees-ts-composable"
+status = "done"
+summary = "Added useWorktrees module-singleton (worktrees/statusFilter/filtered/loadWorktrees, swappable api seam); 5 tests"
+files = [
+    "lumina/web/src/composables/useWorktrees.ts",
+    "lumina/web/src/__tests__/use-worktrees.test.ts",
+]
+commits = ["e1e792b"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "757c466ad94d8bb0"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "worktreesview-vue-full-list-status-chips-merge-audit-columns-mount-it-in-app-vue"
+status = "done"
+summary = "Added WorktreesView SFC (merge-audit grid + SprintStatus filter chips) and dual-mounted it at both centre-column view===worktrees sites in App.vue"
+files = [
+    "lumina/web/src/components/WorktreesView.vue",
+    "lumina/web/src/App.vue",
+]
+commits = ["e1e792b"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "2bd44c25ff00b906"
+
+[[items]]
+id = "E46"
+type = "task-completion"
+date = 2026-06-11
+agent = "implement"
+task_ref = "central-sprint-membership-filter-on-childgrid-vue"
+status = "done"
+summary = "Added sprint-membership filter chip to ChildGrid driven by useSprints member_task_ids; extracted pure applySprintFilter helper; 6 tests"
+files = [
+    "lumina/web/src/components/ChildGrid.vue",
+    "lumina/web/src/composables/childGridFilter.ts",
+    "lumina/web/src/__tests__/child-grid-filter.test.ts",
+]
+commits = ["e1e792b"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "d7b29c86fda63dcb"
+
+[[items]]
+id = "E47"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final: Rust workspace build"
+command = "cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+dedup_id = "75249a0e1905d1bb"
+
+[[items]]
+id = "E48"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final: SPA production build (vue-tsc + Vite)"
+command = "cd lumina/web && bun run build"
+outcome = "pass"
+dedup_id = "fe04242197bacaf5"
+
+[[items]]
+id = "E49"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final: lumina nextest (634 tests; excl nested-claude e2e pty_e2e/conpty)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+dedup_id = "5c6f36d44acfdc52"
+
+[[items]]
+id = "E50"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final: SPA bun test (354 tests)"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+dedup_id = "4a5ff83ee97d626f"
+
+[[items]]
+id = "E51"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final: Rust clippy all-targets"
+command = "cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "386ae6d67ad42572"
+
+[[items]]
+id = "E52"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final: SPA type-check"
+command = "cd lumina/web && bun run type-check"
+outcome = "pass"
+dedup_id = "1ab519f92e5f670d"
+
+[[items]]
+id = "E53"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final smoke gate: control-plane purity (no git2/gix linked into lumina-server) - empty"
+command = "cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal | rg -i '(git2|gix)'"
+outcome = "pass"
+dedup_id = "bb9612aa05a03d8e"
+
+[[items]]
+id = "E54"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final smoke gate: macro-eradication (zero sqlx bang-macros) - count 0"
+command = "rg -c sqlx-query-bang-macros lumina/core/src lumina/server/src"
+outcome = "pass"
+dedup_id = "5b7654e573730acd"
+
+[[items]]
+id = "E55"
+type = "verification"
+date = 2026-06-11
+agent = "implement"
+summary = "Phase 3 final: cargo audit (clean; only pre-existing serial-crate warning via portable-pty; dep tree unchanged by this slice)"
+command = "cargo audit --file lumina/Cargo.lock"
+outcome = "pass"
+dedup_id = "fd2a9043a3e35fe1"
+
+[[items]]
+id = "E56"
+type = "status-transition"
+date = 2026-06-11
+agent = "plan-update"
+summary = "All 24 plan tasks complete; implementation finished across waves 1-4, awaiting review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "2a2556e5d5a7aabc"
