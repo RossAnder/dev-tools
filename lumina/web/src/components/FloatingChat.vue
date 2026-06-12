@@ -326,7 +326,10 @@ onBeforeUnmount(() => {
                 : 'bg-[var(--surface)]'
             "
           >
-            <PtyMessage :message="m" />
+            <PtyMessage
+              :message="m"
+              :suppress-auq-picker="true"
+            />
           </div>
         </div>
 
