@@ -1,5 +1,21 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "enabledPlugins": {
+    "lumina@dev-tools-local": true
+  },
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "timeout": 30,
+            "type": "http",
+            "url": "http://127.0.0.1:24817/api/sessions/ingest"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(tomlctl *)"
@@ -10,8 +26,5 @@
       "Bash(tomlctl * --allow-outside *)"
     ]
   },
-  "plansDirectory": "docs/plans/",
-  "enabledPlugins": {
-    "lumina@dev-tools-local": true
-  }
+  "plansDirectory": "docs/plans/"
 }

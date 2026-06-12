@@ -174,7 +174,7 @@ export interface Finding {
   severity: Severity
   effort: string | null
   category: string
-  status: string
+  status: string | null
   file: string | null
   line: number | null
   symbol: string | null
@@ -202,14 +202,19 @@ export const FindingSchema = z.object({
   // ABSENT from the JSON. `.nullable().default(null)` normalises the absent key
   // back to `null`, keeping the parsed type `T | null` (interface + every
   // `x === null` consumer unchanged). The non-nullable required fields below
-  // (kind/severity/category/status/summary) are always populated on a live
-  // finding, so skip_serializing_if never fires on them — they stay required.
+  // (kind/severity/category/summary) are always populated on a live finding,
+  // so skip_serializing_if never fires on them — they stay required. NOTE:
+  // `status` is NULLABLE — `findings.status` is `TEXT` (nullable) in the
+  // schema, and a freshly-added finding (e.g. from /story-review) carries a
+  // null status (the disposition is stamped later by resolve_finding; the
+  // pre-resolve workflow state rides `triage_state`). So it normalises like
+  // the other absent-keyed fields rather than staying required.
   work_item_id: z.string().max(200).nullable().default(null),
   kind: z.string().max(100),
   severity: SeveritySchema,
   effort: z.string().max(50).nullable().default(null),
   category: z.string().max(100),
-  status: z.string().max(50),
+  status: z.string().max(50).nullable().default(null),
   file: z.string().max(2000).nullable().default(null),
   line: z.number().nullable().default(null),
   symbol: z.string().max(500).nullable().default(null),
