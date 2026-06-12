@@ -246,7 +246,7 @@ describe('useFloatingChat', () => {
 
   test('open: spawns with the resolved cwd then submitBatch injects context + first prompt atomically', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     let spawnedCwd: string | null = null
@@ -332,7 +332,7 @@ describe('useFloatingChat', () => {
 
   test('runCannedOp submits a single context-bearing prompt frame against the live session', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     const chat = useFloatingChat()
@@ -363,7 +363,7 @@ describe('useFloatingChat', () => {
 
   test('sendFreeform submits the operator text verbatim as one prompt frame', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     const chat = useFloatingChat()
@@ -393,7 +393,7 @@ describe('useFloatingChat', () => {
 
   test('close DELETEs the transient session and resets module state', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     let deletedId: string | null = null
@@ -498,9 +498,73 @@ describe('useFloatingChat', () => {
     expect(chat.error.value).toMatch(/no clone path/i)
   })
 
+  test('non-fatal project-fetch error does not leak into a successful open() banner', async () => {
+    const fp = focalPointWithClone()
+    const spawned = makeSession('pop-1', { status: 'idle' })
+    const stream = makeMockStream()
+
+    const chat = useFloatingChat()
+    __setApiForTests({
+      // The project fetch fails — but it is NON-FATAL: cwd resolves via the
+      // machine clone_root fallback below, so open() still succeeds.
+      fetchProjectDetail: async () => {
+        throw new Error('project fetch boom')
+      },
+      spawnSession: async () => spawned,
+    })
+    __setSettingsForTests(() => ({ cloneRoot: '/machine/root' }))
+    setSessionSeam({
+      getSession: async () => spawned,
+      getMessages: async () => [],
+      openSessionStream: () => stream,
+      sendInputsBatch: async () => {},
+    })
+
+    const result = await chat.open(fp, 'summarise')
+
+    // Success despite the failed (non-fatal) fetch — and NO stale banner.
+    expect(result.ok).toBe(true)
+    expect(chat.error.value).toBeNull()
+  })
+
+  test('a prior open() error is cleared by a subsequent successful open()', async () => {
+    const fp = focalPointWithClone()
+    const chat = useFloatingChat()
+
+    // First open(): spawn throws → error banner set, ok=false.
+    __setApiForTests({
+      fetchProjectDetail: async () =>
+        makeProjectDetail([makeRepoLink({ is_primary: 1, local_path: '/clone/here' })]),
+      spawnSession: async () => {
+        throw new Error('spawn failed: conpty boom')
+      },
+    })
+    const first = await chat.open(fp, 'summarise')
+    expect(first.ok).toBe(false)
+    expect(chat.error.value).toMatch(/conpty boom/)
+
+    // Second open(): everything succeeds → the prior banner is cleared.
+    const spawned = makeSession('pop-1', { status: 'idle' })
+    const stream = makeMockStream()
+    __setApiForTests({
+      fetchProjectDetail: async () =>
+        makeProjectDetail([makeRepoLink({ is_primary: 1, local_path: '/clone/here' })]),
+      spawnSession: async () => spawned,
+    })
+    setSessionSeam({
+      getSession: async () => spawned,
+      getMessages: async () => [],
+      openSessionStream: () => stream,
+      sendInputsBatch: async () => {},
+    })
+    const second = await chat.open(fp, 'summarise')
+    expect(second.ok).toBe(true)
+    expect(chat.error.value).toBeNull()
+  })
+
   test('settings clone_root is used when the project has no primary local_path', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     let spawnedCwd: string | null = null
@@ -545,7 +609,7 @@ describe('useFloatingChat', () => {
 
     // Now open the popup against a different session.
     const fp = focalPointWithClone()
-    const popupSpawned = makeSession('pop-1', { status: 'awaiting' })
+    const popupSpawned = makeSession('pop-1', { status: 'idle' })
     const popupStream = makeMockStream()
     const chat = useFloatingChat()
     __setApiForTests({

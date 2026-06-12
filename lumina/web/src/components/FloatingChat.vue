@@ -306,47 +306,56 @@ onBeforeUnmount(() => {
         role="log"
         aria-live="polite"
       >
-        <div
-          v-if="pairedMessages.length === 0 && !awaiting"
-          class="font-mono text-[11.5px] text-[var(--faint)] italic py-2"
-        >
-          No messages yet.
-        </div>
-        <div
-          v-for="m in pairedMessages"
-          :key="m.id"
-          class="flex w-full py-1"
-          :class="m.kind === 'user_input' ? 'justify-end' : 'justify-start'"
-        >
+        <!-- Gate the transcript on `!awaiting`. During the spawn window the
+             popup session has not been (re)selected yet, so `pairedMessages`
+             still holds the PREVIOUS open's rows until select() clears them —
+             without this guard a REOPENED popup briefly flashes the prior
+             conversation. The "Starting session…" pill above covers the spawn
+             window; once the session is selected, `awaiting` flips false and the
+             fresh transcript streams in. -->
+        <template v-if="!awaiting">
           <div
-            class="max-w-full min-w-0 rounded-md border border-[var(--border)] px-3 py-2"
-            :class="
-              m.kind === 'user_input'
-                ? 'bg-[var(--surface-2)] border-l-2 border-l-[var(--accent)]'
-                : 'bg-[var(--surface)]'
-            "
+            v-if="pairedMessages.length === 0"
+            class="font-mono text-[11.5px] text-[var(--faint)] italic py-2"
           >
-            <PtyMessage
-              :message="m"
-              :suppress-auq-picker="true"
+            No messages yet.
+          </div>
+          <div
+            v-for="m in pairedMessages"
+            :key="m.id"
+            class="flex w-full py-1"
+            :class="m.kind === 'user_input' ? 'justify-end' : 'justify-start'"
+          >
+            <div
+              class="max-w-full min-w-0 rounded-md border border-[var(--border)] px-3 py-2"
+              :class="
+                m.kind === 'user_input'
+                  ? 'bg-[var(--surface-2)] border-l-2 border-l-[var(--accent)]'
+                  : 'bg-[var(--surface)]'
+              "
+            >
+              <PtyMessage
+                :message="m"
+                :suppress-auq-picker="true"
+              />
+            </div>
+          </div>
+
+          <!-- Popup-session AUQ picker. Bound to the popup's OWN pendingAuq +
+               submit/cancel (NOT the default console session that PtyMessage's
+               own inline picker would drive). -->
+          <div
+            v-if="pendingAuq !== null"
+            class="rounded-md border border-[var(--accent)] bg-[var(--surface-2)] px-3 py-2"
+          >
+            <PtyAuqPicker
+              :tool-use-id="pendingAuq.toolUseId"
+              :questions="pendingAuq.questions"
+              @submit="onAuqSubmit"
+              @cancel="onAuqCancel"
             />
           </div>
-        </div>
-
-        <!-- Popup-session AUQ picker. Bound to the popup's OWN pendingAuq +
-             submit/cancel (NOT the default console session that PtyMessage's
-             own inline picker would drive). -->
-        <div
-          v-if="pendingAuq !== null"
-          class="rounded-md border border-[var(--accent)] bg-[var(--surface-2)] px-3 py-2"
-        >
-          <PtyAuqPicker
-            :tool-use-id="pendingAuq.toolUseId"
-            :questions="pendingAuq.questions"
-            @submit="onAuqSubmit"
-            @cancel="onAuqCancel"
-          />
-        </div>
+        </template>
       </div>
 
       <!-- Canned ops. -->

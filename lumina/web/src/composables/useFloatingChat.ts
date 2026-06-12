@@ -28,9 +28,9 @@
 //      state — NO session is spawned.
 //   3. Spawn the popup's OWN session (`SpawnRequest` needs only `cwd`) and focus
 //      it (`select`).
-//   4. Wait for the session to reach `Awaiting` (the prompt is only accepted
-//      once claude is ready), then inject the resolved context block + the first
-//      prompt ATOMICALLY via `submitBatch` (all-or-nothing — risk seq 4).
+//   4. Wait for the session to reach `Idle` (the server's ready-for-input gate,
+//      flipped Spawning→Idle on spawn), then inject the resolved context block +
+//      the first prompt ATOMICALLY via `submitBatch` (all-or-nothing — risk seq 4).
 //
 // ## Dispatch model (operator decision — agent uses MCP ONLY)
 //
@@ -69,23 +69,28 @@ function toMessage(e: unknown): string {
 
 /**
  * The PTY session lifecycle status at which a freshly-spawned session is ready
- * to accept a prompt. The server broadcasts `awaiting` once claude has settled
- * past the spawn/active handshake and is waiting on input. Injecting before
- * this races the input bridge — see risk seq 4 (gate the batch on Awaiting).
+ * to accept its FIRST prompt. The server flips Spawning→`idle` on spawn
+ * (`lumina/server/src/pty/spawn.rs`) — `idle` is the ready-for-input gate. A
+ * session only reaches `awaiting` (busy, mid-turn) AFTER a prompt is sent, and
+ * the supervisor quiesces it back `awaiting`→`idle` when the turn finishes
+ * (`supervisor::maybe_finalise_turn`). Gating the OPEN seed on `awaiting` is a
+ * chicken-and-egg that never resolves (no prompt has been sent yet), so we wait
+ * for `idle`. Injecting before the session is ready races the input bridge —
+ * see risk seq 4 (gate the batch on the ready status).
  */
-const AWAITING_STATUS = 'awaiting'
+const READY_STATUS = 'idle'
 
 /**
- * How long `open()` waits for the spawned session to reach `Awaiting` before
- * giving up. Generous — a cold `claude` spawn (ConPTY handshake + model warm-up)
- * can take several seconds. The wait is poll-free in tests (the seam resolves
- * `select` against a session row already in `awaiting`), so this only bounds a
- * real spawn.
+ * How long `open()` waits for the spawned session to reach `idle` before giving
+ * up. Generous — a cold `claude` spawn (ConPTY handshake + model warm-up) can
+ * take several seconds. The wait is poll-free in tests (the seam resolves
+ * `select` against a session row already in `idle`), so this only bounds a real
+ * spawn.
  */
-const AWAITING_TIMEOUT_MS = 30_000
+const READY_TIMEOUT_MS = 30_000
 
-/** Poll interval while waiting for `Awaiting`. */
-const AWAITING_POLL_MS = 150
+/** Poll interval while waiting for `idle`. */
+const READY_POLL_MS = 150
 
 // ---------------------------------------------------------------------------
 // Canned operation templates.
@@ -215,7 +220,7 @@ const focalPoint: Ref<ChatContextFocalPoint | null> = ref(null)
 /** Last error (no-clone-path, spawn failure, …) for the UI's error banner. */
 const error: Ref<string | null> = ref(null)
 
-/** True while `open()` is mid-flight (spawning + waiting for Awaiting). */
+/** True while `open()` is mid-flight (spawning + waiting for the ready Idle status). */
 const awaiting: Ref<boolean> = ref(false)
 
 /** The id of the popup's currently-spawned transient session, or null. */
@@ -309,10 +314,14 @@ async function resolveCwdForFocalPoint(
     try {
       projectDetail = await api.fetchProjectDetail(projectNode.id)
     } catch (e) {
-      // A failed project fetch is non-fatal here — `resolveCwd` will fall back
-      // to the machine clone_root (or null). Record it so the UI can surface
-      // the degraded path.
-      error.value = toMessage(e)
+      // A failed project fetch is NON-FATAL: `resolveCwd` falls back to the
+      // machine clone_root (or null). Do NOT write `error.value` here — a
+      // non-fatal degradation must never leak into the banner of an otherwise
+      // SUCCESSFUL open() (the cwd may still resolve via the fallback). When the
+      // cwd ultimately resolves to null, open() surfaces the load-bearing
+      // "no clone path" error instead; the failed fetch is a devtools warning.
+      // eslint-disable-next-line no-console -- degraded-path signal worth surfacing
+      console.warn(`lumina: floating-chat project fetch failed, falling back to clone_root: ${toMessage(e)}`)
     }
   }
 
@@ -320,20 +329,21 @@ async function resolveCwdForFocalPoint(
 }
 
 // ---------------------------------------------------------------------------
-// Internal: wait for the popup session to reach `Awaiting`.
+// Internal: wait for the popup session to reach `Idle` (ready-for-input).
 //
 // The session's `sessionStatus` ref is fed by the WS `status` frames (and seeded
-// from the persisted row on `select`). We poll it until it reads `awaiting` (or
-// time out). In tests the seam returns a session row already in `awaiting`, so
-// the first read short-circuits with no real delay.
+// from the persisted row on `select`). We poll it until it reads `idle` (or time
+// out). The server flips Spawning→Idle on spawn, so a healthy fresh session
+// reaches this with NO prompt sent; in tests the seam returns a session row
+// already in `idle`, so the first read short-circuits with no real delay.
 // ---------------------------------------------------------------------------
 
-async function waitForAwaiting(session: ReturnType<typeof popupSession.use>): Promise<boolean> {
-  const deadline = Date.now() + AWAITING_TIMEOUT_MS
+async function waitForReady(session: ReturnType<typeof popupSession.use>): Promise<boolean> {
+  const deadline = Date.now() + READY_TIMEOUT_MS
   for (;;) {
-    if (session.sessionStatus.value === AWAITING_STATUS) return true
+    if (session.sessionStatus.value === READY_STATUS) return true
     if (Date.now() >= deadline) return false
-    await new Promise((r) => setTimeout(r, AWAITING_POLL_MS))
+    await new Promise((r) => setTimeout(r, READY_POLL_MS))
   }
 }
 
@@ -349,7 +359,7 @@ function session() {
 /**
  * Open the popup against a focal point. Snapshots the focal point, derives the
  * cwd, spawns the popup's transient session, and atomically injects the resolved
- * context + a first prompt once the session is Awaiting.
+ * context + a first prompt once the session is Idle (ready-for-input).
  *
  * Error paths (all leave `isOpen=true` so the UI can show the banner, but spawn
  * nothing):
@@ -404,9 +414,10 @@ async function open(
     const sess = session()
     await sess.select(spawned.id)
 
-    // Gate the context injection on the session reaching Awaiting (risk seq 4):
-    // a prompt submitted before claude settles can be dropped by the bridge.
-    const ready = await waitForAwaiting(sess)
+    // Gate the context injection on the session reaching Idle — the server's
+    // ready-for-input status, flipped Spawning→Idle on spawn (risk seq 4): a
+    // prompt submitted before claude settles can be dropped by the bridge.
+    const ready = await waitForReady(sess)
     if (!ready) {
       const message = 'session did not become ready in time'
       error.value = message
