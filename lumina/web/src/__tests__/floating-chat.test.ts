@@ -246,7 +246,7 @@ describe('useFloatingChat', () => {
 
   test('open: spawns with the resolved cwd then submitBatch injects context + first prompt atomically', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     let spawnedCwd: string | null = null
@@ -332,7 +332,7 @@ describe('useFloatingChat', () => {
 
   test('runCannedOp submits a single context-bearing prompt frame against the live session', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     const chat = useFloatingChat()
@@ -363,7 +363,7 @@ describe('useFloatingChat', () => {
 
   test('sendFreeform submits the operator text verbatim as one prompt frame', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     const chat = useFloatingChat()
@@ -393,7 +393,7 @@ describe('useFloatingChat', () => {
 
   test('close DELETEs the transient session and resets module state', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     let deletedId: string | null = null
@@ -500,7 +500,7 @@ describe('useFloatingChat', () => {
 
   test('settings clone_root is used when the project has no primary local_path', async () => {
     const fp = focalPointWithClone()
-    const spawned = makeSession('pop-1', { status: 'awaiting' })
+    const spawned = makeSession('pop-1', { status: 'idle' })
     const stream = makeMockStream()
 
     let spawnedCwd: string | null = null
@@ -545,7 +545,7 @@ describe('useFloatingChat', () => {
 
     // Now open the popup against a different session.
     const fp = focalPointWithClone()
-    const popupSpawned = makeSession('pop-1', { status: 'awaiting' })
+    const popupSpawned = makeSession('pop-1', { status: 'idle' })
     const popupStream = makeMockStream()
     const chat = useFloatingChat()
     __setApiForTests({
