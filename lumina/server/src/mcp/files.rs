@@ -80,7 +80,7 @@ pub struct GetSprintFilesFootprintParams {
 
 /// Convert a slice of `FileRef` param entries to their on-the-wire JSON form
 /// (`Path → string`, `Qualified → {repo, path}`) so the repo fn can re-resolve
-/// + re-validate the slugs internally against the task's project ancestor — the
+/// and re-validate the slugs internally against the task's project ancestor — the
 /// SAME conversion `set_task_spec` performs before handing entries to
 /// `set_task_expected_files`. No repo-link lookup happens here: the repo writer
 /// owns the canonicalisation + the typed reject on an unknown/malformed slug.
