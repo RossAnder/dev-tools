@@ -38,9 +38,9 @@ The plugin at `claude/plugins/lumina-story-blocks/` adds 29 composable skills (r
 | Skill | Slash invocation | One-line summary |
 |---|---|---|
 | problem-statement | `/lumina:problem-statement <id>` | Sets `attributes.problem_statement` (3-axis prompt). |
-| research-notes | `/lumina:research-notes <id>` | Forked subagent: adds 3-7 `research_notes` rows. |
-| research-explore | `/lumina:research-explore <id>` | Forked subagent: dispatch parallel lens-agents to explore the story; each agent returns proposed research notes for vet-research to triage. *(new in round-3)* |
-| research-directed | `/lumina:research-directed <id>` | Forked subagent: verify decision-grade claims (libraries, APIs, file:line) after user decisions land; emit drift findings and supersede stale notes. *(new in round-3)* |
+| research-notes | `/lumina:research-notes <id>` | Adds 3-7 `research_notes` rows (forks in autonomous mode, inline in interactive — §d). |
+| research-explore | `/lumina:research-explore <id>` | Dispatch parallel lens-agents to explore the story; each agent returns proposed research notes for vet-research to triage (forks in autonomous mode, inline in interactive — §d). *(new in round-3)* |
+| research-directed | `/lumina:research-directed <id>` | Verify decision-grade claims (libraries, APIs, file:line) after user decisions land; emit drift findings and supersede stale notes (forks in autonomous mode, inline in interactive — §d). *(new in round-3)* |
 | user-interrogation | `/lumina:user-interrogation <id>` | HumanLayer 4-axis open-questions enumeration. |
 | acceptance-criteria | `/lumina:acceptance-criteria <id>` | Adds free-text AC rows to task children. |
 | approach | `/lumina:approach <id>` | Sets `attributes.execution_strategy` (drafts from prerequisites). |
