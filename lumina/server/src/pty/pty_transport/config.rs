@@ -34,6 +34,50 @@ to type a choice in prose."
     )
 }
 
+/// Autonomous-mode ESCALATION steering, appended ALONGSIDE
+/// [`no_auq_system_prompt`] on every lumina-spawned session (focus 1C.1).
+///
+/// A lumina-spawned orchestrator resolves to AUTONOMOUS mode (no operator at a
+/// TTY), where the interactive `ask_user_question` affordance is structurally
+/// dead: there is no human watching the SPA picker to answer it, and a forked
+/// run has no live channel back. This addendum steers the agent to route a HARD
+/// decision through the DURABLE open-question channel instead, and — crucially —
+/// to PARK rather than guess when no answer arrives.
+///
+/// Three contracts, mirroring the durable-escalation research notes:
+/// - **Durable raise + park, not live ask** (seq17): surface the decision as
+///   `mcp__lumina__add_open_question` + `mcp__lumina__block_task_on_question`,
+///   never the native AskUserQuestion (dead in a no-TTY/forked context).
+/// - **Block then defer, never timeout-then-proceed** (seq16): the legacy
+///   ask-tool 30-min "proceed without input" fallback is actively DANGEROUS for
+///   a hard decision — leave the task BLOCKED and defer to the
+///   clean-close-vs-resume path after quiescence rather than acting on a guess.
+/// - **Failed durable write is a HARD STOP** (seq18): if the open-question /
+///   block write FAILS, stop — do not proceed or degrade.
+///
+/// Kept distinct from [`no_auq_system_prompt`] (the interactive picker steering)
+/// because the postures differ: there, blocking on a live operator answer is
+/// correct; here, there is no operator, so the durable park + defer is the only
+/// safe handling. The agent reads both; the mode it resolves to selects which
+/// applies.
+pub(crate) fn autonomous_escalation_system_prompt() -> String {
+    "When you are running AUTONOMOUSLY under lumina (a lumina-spawned session, no \
+operator at a terminal), a HARD decision — one needing human judgement you cannot \
+safely make alone — MUST be escalated DURABLY, not asked live. Do NOT call the \
+built-in AskUserQuestion tool and do NOT block on the interactive \
+`ask_user_question` tool: in a no-TTY / forked autonomous context no operator is \
+watching to answer, so a live ask is structurally dead. Instead record the decision \
+with `mcp__lumina__add_open_question` (story-scoped, with the candidate options) and \
+PARK the deciding task with `mcp__lumina__block_task_on_question` so it leaves the \
+ready queue and is not re-asked by a fresh agent. If no human answer has arrived, \
+leave the task BLOCKED and defer to the clean-close-or-resume path once work \
+quiesces — NEVER time out and then proceed on a guess; an unanswered hard decision \
+is a stop, not a default. If the durable write itself FAILS (the open-question or \
+block call errors), treat it as a HARD STOP: park or halt and surface the failure — \
+do NOT proceed or degrade past an unrecorded decision."
+        .to_string()
+}
+
 /// Compose the loopback URL the spawned `claude` uses to reach lumina's
 /// `/mcp-ask` server. The child always connects over `127.0.0.1` regardless of
 /// lumina's bind `HOST` (which defaults to loopback; a `0.0.0.0` bind also

@@ -82,7 +82,10 @@ use lumina_core::protocol::{InputFrame, InputKind, SessionId, TypedMessage};
 use crate::pty::transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
 
 mod config;
-use config::{ask_mcp_config_json, no_auq_system_prompt, translate_keystroke_dsl};
+use config::{
+    ask_mcp_config_json, autonomous_escalation_system_prompt, no_auq_system_prompt,
+    translate_keystroke_dsl,
+};
 
 /// Channel capacity for the outbound `broadcast::Sender<TypedMessage>`.
 const OUTBOUND_CAP: usize = 1024;
@@ -288,6 +291,16 @@ impl Transport for PtyTransport {
         // into the prompt so the tool correlates back to this session.
         cmd.arg("--append-system-prompt");
         cmd.arg(no_auq_system_prompt(&session_id_str));
+        // Plus AUTONOMOUS-MODE escalation steering (focus 1C.1): when this
+        // lumina-spawned session resolves to autonomous mode (no operator at a
+        // TTY), a HARD decision must be escalated DURABLY — `add_open_question`
+        // + `block_task_on_question` (park, never re-ask), block-then-defer
+        // rather than timeout-then-proceed, and a failed durable write is a hard
+        // stop. Appended as its own --append-system-prompt (claude concatenates
+        // each); the agent applies it only in the autonomous posture, where the
+        // interactive `ask_user_question` channel above is structurally dead.
+        cmd.arg("--append-system-prompt");
+        cmd.arg(autonomous_escalation_system_prompt());
 
         // Register lumina's `lumina-ask` MCP server (the `ask_user_question`
         // tool) for this session. Claude Code 2.1.x's `--mcp-config` accepts
