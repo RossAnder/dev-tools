@@ -1298,6 +1298,477 @@ async fn repo_local_path_and_settings_flow() {
 }
 
 // =====================================================================
+// Migration-0023 first-class files_touched lifecycle (T8).
+//
+// The whole vertical slice for the `task_files` substrate, threaded through
+// ONE shared in-memory pool, sleep-free + socket-free exactly like the
+// threads above: set-expected → record-actual (divergent) → reconcile-at-
+// close (with divergence) → story/sprint footprint read, asserting DB rows
+// + git-export snapshot + HTTP read, AND the export-INERTNESS of the
+// actual-file / reconcile writes.
+//
+// The four files_touched MCP `#[tool]` methods (`record_task_actual_files`
+// etc.) are crate-private, so — exactly like the planning/decisions and
+// round-2/round-3 threads above — the WRITES go through the PUBLIC `repo::*`
+// single-mutation-path fns the MCP tools (and the HTTP routes) wrap 1:1:
+//   * set-expected  → `repo::set_task_expected_files` (what `set_task_spec`
+//     calls to write `task_files(kind='expected')`);
+//   * record-actual → `repo::add_task_actual_files`;
+//   * reconcile     → driven via `repo::update_work_item_status(_, "done")`
+//     (the `transition_status`→done close route auto-reconciles a task).
+// The footprint READS are driven over the SAME router the server builds via
+// `oneshot` (the four HTTP routes ARE reachable from this integration test),
+// closing the DB → repo → HTTP leg the inner-module unit tests cannot.
+// =====================================================================
+
+/// The full thread for migration-0023's first-class `files_touched` set: a task
+/// with a DIVERGENT expected/actual file set is closed (triggering the at-close
+/// reconcile), then the derived story + sprint footprints are read over HTTP and
+/// the export drain proves the actual-file / reconcile writes are EXPORT-INERT.
+///
+/// Drives one shared pool through every layer (DB rows → git-export snapshot →
+/// HTTP read), mirroring `repo_links_flow`: `mcp_create` builds the legal chain
+/// (it supplies the migration-0010 epic `outcome` + focus `shape` and seeds the
+/// epic close-criterion); the file writes go through the public `repo::*` layer
+/// the crate-private file tools wrap 1:1; the footprint reads `oneshot` the real
+/// router (no socket bind, no sleep).
+#[tokio::test]
+async fn files_touched_lifecycle_flow() {
+    // One shared pool across the file-set writers, the export drain, and the router.
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Seed a legal project→epic→focus→story→task chain, plus a PRIMARY and a
+    //    NON-primary repo link on the project (so the `{repo, path}` form is
+    //    exercisable). `add_repo_link` is the 1:1 wrap-target of the MCP tool.
+    let project = mcp_create(&tools, "project", None, "Files Project").await;
+    let _primary = lumina_core::repo::add_repo_link(&pool, &project, "octocat/hello-world", true)
+        .await
+        .expect("primary repo link");
+    let secondary_id =
+        lumina_core::repo::add_repo_link(&pool, &project, "octocat/other-repo", false)
+            .await
+            .expect("secondary (non-primary) repo link")
+            .to_string();
+    let epic = mcp_create(&tools, "epic", Some(&project), "Files Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Files Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Files Story").await;
+    let task = mcp_create(&tools, "task", Some(&story), "Files Task").await;
+
+    // 1a. SET-EXPECTED: the EXPECTED set is what `set_task_spec.files_touched`
+    //     now writes (kind='expected'). Three expected files: a bare-path primary
+    //     file that WILL be touched (a.rs), a bare-path primary file that will
+    //     NOT be touched (b.rs — the divergence), and a {repo, path} qualified
+    //     NON-primary file that WILL be touched (other-repo/q.rs).
+    let inserted_expected = lumina_core::repo::set_task_expected_files(
+        &pool,
+        &task,
+        &[
+            serde_json::json!("src/a.rs"),
+            serde_json::json!("src/b.rs"),
+            serde_json::json!({ "repo": "octocat/other-repo", "path": "src/q.rs" }),
+        ],
+    )
+    .await
+    .expect("set expected files");
+    assert_eq!(inserted_expected, 3, "three distinct expected files written");
+
+    // The three EXPECTED rows exist (kind='expected').
+    let expected_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM task_files WHERE task_id = ? AND kind = 'expected'",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count expected rows");
+    assert_eq!(expected_count, 3, "task_files(kind='expected') holds three rows");
+
+    // The qualified expected row carries the SECONDARY (non-primary) repo_link_id;
+    // the two bare-path rows fold to the NULL/primary bucket.
+    let qualified_expected_repo: Option<String> = sqlx::query_scalar(
+        "SELECT repo_link_id FROM task_files WHERE task_id = ? AND kind = 'expected' AND path = 'src/q.rs'",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("read the qualified expected row's repo_link_id");
+    assert_eq!(
+        qualified_expected_repo.as_deref(),
+        Some(secondary_id.as_str()),
+        "the {{repo, path}} expected entry binds to the non-primary repo link"
+    );
+
+    // 1b. record_task_activity proves the work_item activity log is untouched by
+    //     the file writes below (baseline activity count for the reconcile audit
+    //     assertion). Seed one execution entry via the PUBLIC MCP tool.
+    let _seed_activity = mcp_record_task_activity(&tools, &task, "started work", "in progress").await;
+    let activity_before_reconcile: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM work_item_activity WHERE work_item_id = ?",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count activity before reconcile");
+
+    // 2. RECORD-ACTUAL (divergent from expected): touched a.rs (was expected) +
+    //    the qualified q.rs (was expected) + c.rs (NEVER expected — an
+    //    over-report). b.rs was expected but is NOT touched. The actual set is
+    //    APPEND-ONLY via `repo::add_task_actual_files`.
+    let inserted_actual = lumina_core::repo::add_task_actual_files(
+        &pool,
+        &task,
+        &[
+            serde_json::json!("src/a.rs"),
+            serde_json::json!({ "repo": "octocat/other-repo", "path": "src/q.rs" }),
+            serde_json::json!("src/c.rs"),
+        ],
+    )
+    .await
+    .expect("record actual files");
+    assert_eq!(inserted_actual, 3, "three distinct actual files appended");
+
+    // The three ACTUAL rows exist (kind='actual'), distinct from the expected set.
+    let actual_paths: Vec<String> = lumina_core::repo::list_task_files(&pool, &task, Some("actual"))
+        .await
+        .expect("list actual files")
+        .into_iter()
+        .map(|f| f.path)
+        .collect();
+    assert_eq!(
+        actual_paths,
+        vec!["src/a.rs".to_owned(), "src/c.rs".to_owned(), "src/q.rs".to_owned()],
+        "task_files(kind='actual') holds the three touched files (ordered by path)"
+    );
+
+    // 3. RECONCILE-AT-CLOSE (with divergence): close the task via the
+    //    `transition_status`→done route (`update_work_item_status`), which
+    //    auto-triggers `reconcile_task_files_at_close` for a kind='task'→done
+    //    transition. The untouched EXPECTED (b.rs) is cleared; the touched
+    //    EXPECTED rows + ALL actual rows remain; a divergence AUDIT activity is
+    //    appended.
+    lumina_core::repo::update_work_item_status(&pool, &task, "done")
+        .await
+        .expect("transition task to done (auto-reconciles)");
+
+    // The untouched EXPECTED (b.rs) is CLEARED; the two touched EXPECTED rows
+    // (a.rs + the qualified q.rs) remain.
+    let expected_after: Vec<String> = lumina_core::repo::list_task_files(&pool, &task, Some("expected"))
+        .await
+        .expect("list expected after reconcile")
+        .into_iter()
+        .map(|f| f.path)
+        .collect();
+    assert_eq!(
+        expected_after,
+        vec!["src/a.rs".to_owned(), "src/q.rs".to_owned()],
+        "the untouched EXPECTED (b.rs) is cleared; the touched ones (a.rs, q.rs) stay"
+    );
+
+    // The ACTUAL set is UNTOUCHED by the reconcile (append-only; c.rs over-report
+    // kept).
+    let actual_after_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM task_files WHERE task_id = ? AND kind = 'actual'",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count actual after reconcile");
+    assert_eq!(actual_after_count, 3, "the reconcile never prunes the ACTUAL set");
+
+    // A divergence AUDIT activity row (entry_kind='reconcile') was appended —
+    // exactly one more activity than the baseline.
+    let reconcile_audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM work_item_activity WHERE work_item_id = ? AND entry_kind = 'reconcile'",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count reconcile audit activity");
+    assert_eq!(
+        reconcile_audit_count, 1,
+        "a material divergence (b.rs cleared) appended exactly one reconcile audit activity"
+    );
+    let activity_after_reconcile: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM work_item_activity WHERE work_item_id = ?",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count activity after reconcile");
+    assert_eq!(
+        activity_after_reconcile,
+        activity_before_reconcile + 1,
+        "the reconcile appended exactly one (audit) activity over the baseline"
+    );
+
+    // 4. FOOTPRINT READ. Bind the task to a sprint so the sprint footprint sees
+    //    it, then read BOTH the story + sprint footprints over HTTP, AND the
+    //    story's `WorkItemDetail.story_files_footprint` via GET /work-items/{id}.
+    let sprint = lumina_core::repo::create_sprint(
+        &pool,
+        &lumina_core::domain::NewSprint {
+            title: None,
+            worktree_id: None,
+            predecessor_sprint_id: None,
+        },
+    )
+    .await
+    .expect("create sprint")
+    .to_string();
+    lumina_core::repo::add_tasks_to_sprint(&pool, &sprint, &[task.as_str()])
+        .await
+        .expect("bind the task to the sprint");
+
+    // The footprint is the DISTINCT (repo_link_id, path) union over expected +
+    // actual (deduped across kind). After the reconcile the live rows are:
+    //   expected: a.rs, q.rs(secondary)   actual: a.rs, c.rs, q.rs(secondary)
+    // ⇒ distinct union = a.rs, c.rs (both NULL/primary bucket) + q.rs(secondary).
+    // A path that is BOTH expected and actual (a.rs, q.rs) appears ONCE.
+    let state = AppState::new(pool.clone());
+
+    // 4a. GET /api/work-items/{story_id}/files-footprint — the HTTP story route.
+    let story_fp_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}/files-footprint"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET story files-footprint");
+    assert_eq!(story_fp_resp.status(), StatusCode::OK, "story footprint route returns 200");
+    let story_fp = json_body(story_fp_resp).await;
+    let story_fp_arr = story_fp.as_array().expect("story footprint is a JSON array");
+    let story_fp_paths: Vec<&str> = story_fp_arr
+        .iter()
+        .map(|e| e["path"].as_str().expect("each footprint entry has a path"))
+        .collect();
+    assert_eq!(
+        story_fp_paths,
+        vec!["src/a.rs", "src/c.rs", "src/q.rs"],
+        "story footprint = the DISTINCT (repo_link_id, path) union; a.rs/q.rs (expected+actual) appear once each"
+    );
+    // The qualified file carries its non-primary repo_link_id; the bare-path
+    // primary-bucket files serialise WITHOUT a repo_link_id key (skip-if-None).
+    let q_entry = story_fp_arr
+        .iter()
+        .find(|e| e["path"].as_str() == Some("src/q.rs"))
+        .expect("q.rs in the story footprint");
+    assert_eq!(
+        q_entry["repo_link_id"].as_str(),
+        Some(secondary_id.as_str()),
+        "the qualified footprint entry carries the non-primary repo_link_id"
+    );
+    let a_entry = story_fp_arr
+        .iter()
+        .find(|e| e["path"].as_str() == Some("src/a.rs"))
+        .expect("a.rs in the story footprint");
+    assert!(
+        a_entry.get("repo_link_id").is_none(),
+        "a bare-path (primary-bucket) footprint entry omits repo_link_id, got {a_entry}"
+    );
+
+    // 4b. GET /api/sprints/{sprint_id}/files-footprint — the HTTP sprint route
+    //     (the same union over the sprint's one member task).
+    let sprint_fp_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/sprints/{sprint}/files-footprint"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET sprint files-footprint");
+    assert_eq!(sprint_fp_resp.status(), StatusCode::OK, "sprint footprint route returns 200");
+    let sprint_fp = json_body(sprint_fp_resp).await;
+    let sprint_fp_paths: Vec<&str> = sprint_fp
+        .as_array()
+        .expect("sprint footprint is a JSON array")
+        .iter()
+        .map(|e| e["path"].as_str().expect("each footprint entry has a path"))
+        .collect();
+    assert_eq!(
+        sprint_fp_paths,
+        vec!["src/a.rs", "src/c.rs", "src/q.rs"],
+        "sprint footprint unions the member task's distinct (repo_link_id, path) set"
+    );
+
+    // 4c. GET /api/work-items/{story_id} — the story DETAIL's
+    //     `story_files_footprint` fold carries the SAME distinct union (the
+    //     kind-gated fold, story-only).
+    let story_detail_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET story detail");
+    assert_eq!(story_detail_resp.status(), StatusCode::OK, "story detail returns 200");
+    let story_detail = json_body(story_detail_resp).await;
+    let detail_fp_paths: Vec<&str> = story_detail["story_files_footprint"]
+        .as_array()
+        .expect("story_files_footprint array in the story detail")
+        .iter()
+        .map(|e| e["path"].as_str().expect("each footprint entry has a path"))
+        .collect();
+    assert_eq!(
+        detail_fp_paths,
+        vec!["src/a.rs", "src/c.rs", "src/q.rs"],
+        "WorkItemDetail.story_files_footprint folds the DISTINCT (repo_link_id, path) union (story-only)"
+    );
+
+    // 4d. The task DETAIL is non-story ⇒ its story_files_footprint fold is EMPTY
+    //     (kind-gated off), exactly mirroring the project-only repo_links fold.
+    let task_detail_resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{task}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET task detail");
+    assert_eq!(task_detail_resp.status(), StatusCode::OK, "task detail returns 200");
+    let task_detail = json_body(task_detail_resp).await;
+    assert_eq!(
+        task_detail["story_files_footprint"]
+            .as_array()
+            .map(Vec::len),
+        Some(0),
+        "a non-story (task) detail has an empty story_files_footprint (kind-gated)"
+    );
+
+    // 5. GIT-EXPORT SNAPSHOT + EXPORT-INERTNESS. The actual-file / reconcile
+    //    writes record a coarse export-INERT `task_files` event
+    //    (aggregate_type='task_files', NEVER 'work_item'), so the drain must
+    //    render ZERO additional work_item snapshots attributable to them.
+    //
+    //    Prove it precisely: drain the inert events explicitly to confirm they
+    //    were recorded, then assert the SUBSEQUENT work_item drain ignores them.
+
+    // 5a. The three file writes (set-expected + actual-append + reconcile-clear)
+    //     each recorded exactly one export-INERT event on the `task_files`
+    //     aggregate — never on `work_item`, so they cannot re-render a snapshot.
+    let inert_task_files_events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events WHERE aggregate_type = 'task_files' AND aggregate_id = ?",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count inert task_files events");
+    assert_eq!(
+        inert_task_files_events, 3,
+        "set-expected + actual-append + reconcile-clear each recorded one inert task_files event"
+    );
+    // And specifically the three expected event types, all on the task_files
+    // aggregate (the export drain renders only work_item aggregates, never these).
+    let inert_event_types: Vec<String> = sqlx::query_scalar(
+        "SELECT event_type FROM events WHERE aggregate_type = 'task_files' AND aggregate_id = ? \
+         ORDER BY event_type",
+    )
+    .bind(&task)
+    .fetch_all(pool.sqlite())
+    .await
+    .expect("list inert task_files event types");
+    assert_eq!(
+        inert_event_types,
+        vec![
+            "task_files.actual_appended".to_owned(),
+            "task_files.expected_set".to_owned(),
+            "task_files.reconciled".to_owned(),
+        ],
+        "the three file writes each emit their distinct coarse inert task_files event"
+    );
+
+    // 5b. Snapshot the count of WORK_ITEM-aggregate events on the task BEFORE the
+    //     drain — none were added by the file writes (the inert events sit on the
+    //     task_files aggregate). The drain renders only work_item aggregates.
+    let task_work_item_events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events WHERE aggregate_type = 'work_item' AND aggregate_id = ?",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count work_item events on the task");
+
+    // 5c. Drain the whole outbox. The work_item events (creates / repo-link
+    //     mutations / the status transition / the reconcile-audit activity) all
+    //     drain and render snapshots; the inert task_files events drain too but
+    //     render NO TOML. Record the count for the inertness assertion below.
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
+        .await
+        .expect("export drain");
+    assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
+
+    // 5d. The story + task work_item snapshots exist (the work_item rows export
+    //     their TOML). The story snapshot's folded story_files_footprint and the
+    //     task's status round-trip through the snapshot.
+    let story_snapshot = export_dir.path().join("story").join(format!("{story}.toml"));
+    assert!(story_snapshot.exists(), "story snapshot exists at {}", story_snapshot.display());
+    let story_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&story_snapshot).expect("read story snapshot"))
+            .expect("parse story snapshot TOML");
+    let snap_fp = story_toml["story_files_footprint"]
+        .as_array()
+        .expect("story_files_footprint array in the story snapshot");
+    let snap_fp_paths: Vec<&str> = snap_fp
+        .iter()
+        .map(|e| e["path"].as_str().expect("snapshot footprint entry path"))
+        .collect();
+    assert_eq!(
+        snap_fp_paths,
+        vec!["src/a.rs", "src/c.rs", "src/q.rs"],
+        "the story snapshot folds the DISTINCT files footprint (work_item rows export their TOML)"
+    );
+
+    let task_snapshot = export_dir.path().join("task").join(format!("{task}.toml"));
+    assert!(task_snapshot.exists(), "task snapshot exists");
+    let task_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&task_snapshot).expect("read task snapshot"))
+            .expect("parse task snapshot TOML");
+    assert_eq!(
+        task_toml["item"]["status"].as_str(),
+        Some("done"),
+        "the closed task's status round-trips in its snapshot"
+    );
+
+    // 5e. EXPORT-INERTNESS (the load-bearing assertion). After the drain, EVERY
+    //     event is stamped exported_at — including the two inert task_files
+    //     events (the drain stamps them so they never re-drain) — but the inert
+    //     events added NO work_item snapshot: the work_item-aggregate event count
+    //     on the task is UNCHANGED by the file writes (they routed through
+    //     aggregate_type='task_files', not 'work_item'), so the drain rendered
+    //     ZERO work_item TOML attributable to them.
+    let unexported_after: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE exported_at IS NULL")
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("count unexported events after drain");
+    assert_eq!(unexported_after, 0, "the drain stamped every event (inert ones included)");
+
+    // The inert task_files events did NOT materialise any work_item TOML: the
+    // task carries the SAME number of work_item-aggregate events as before the
+    // drain (the file writes never emitted a work_item event), so no task_files
+    // event can have re-rendered the task snapshot.
+    let task_work_item_events_after: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events WHERE aggregate_type = 'work_item' AND aggregate_id = ?",
+    )
+    .bind(&task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count work_item events on the task after drain");
+    assert_eq!(
+        task_work_item_events_after, task_work_item_events,
+        "the actual-file + reconcile writes added ZERO work_item events — they are export-inert"
+    );
+}
+
+// =====================================================================
 // Round-2 (migration 0005) coverage — T5 of
 // docs/plans/lumina-story-planning-round-2.md.
 //

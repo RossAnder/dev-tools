@@ -39,6 +39,7 @@ pub mod settings;
 pub mod sessions;
 pub mod stream;
 pub mod worktrees;
+pub mod files;
 /// Shared WebSocket helpers (Origin allowlist) — a helper module, NOT a
 /// route family; it exposes no `router()` and is deliberately absent from
 /// the `.merge(...)` list below.
@@ -73,4 +74,5 @@ pub fn router() -> Router<AppState> {
         .merge(sessions::router())
         .merge(stream::router())
         .merge(worktrees::router())
+        .merge(files::router())
 }

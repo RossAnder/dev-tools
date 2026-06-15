@@ -26,11 +26,13 @@ pub struct BatchEntry {
     /// unset AND `files_touched_count == 0` AND `has_cross_repo == false` —
     /// i.e. truly no spec).
     pub tier: Option<Tier>,
-    /// Number of distinct files in `attributes.files_touched` (counts both
-    /// bare-string and {repo,path}-object entries).
+    /// Number of distinct files in the task's deduped EXPECTED `task_files` set
+    /// (migration 0023) — a bare path and an explicit-primary `{repo,path}` for
+    /// the same file count once.
     pub files_touched_count: usize,
-    /// True when ANY entry in `attributes.files_touched` is a {repo,path}
-    /// object referencing a non-primary repo on the parent project.
+    /// True when ANY of the task's EXPECTED files references a non-primary repo
+    /// on the parent project. (Currently always `false` — see the dormant
+    /// cross-repo note on `get_task_dispatch_plan`.)
     pub has_cross_repo: bool,
 }
 

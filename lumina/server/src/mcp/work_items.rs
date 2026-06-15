@@ -426,8 +426,19 @@ impl LuminaTools {
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "set_task_spec", "mcp tool invoked");
         let mut obj = serde_json::Map::new();
-        if let Some(v) = p.execution_detail {
-            obj.insert("execution_detail".into(), serde_json::Value::String(v));
+        // Holds the canonicalised, on-the-wire `files_touched` entries when
+        // present, so they can ALSO be translated into the first-class
+        // `task_files(kind='expected')` set (migration 0020 / T3) via a SECOND
+        // mutation (`repo::set_task_expected_files`) — mirroring the existing
+        // second `set_task_tier` mutation. The `attributes.files_touched` write
+        // is KEPT in parallel (the dispatch-tier read + claim advisory still
+        // read it until a later task re-wires them onto `task_files`).
+        let mut expected_files: Option<Vec<serde_json::Value>> = None;
+        if let Some(execution_detail) = p.execution_detail {
+            obj.insert(
+                "execution_detail".into(),
+                serde_json::Value::String(execution_detail),
+            );
         }
         if let Some(entries) = p.files_touched {
             // Fast path: when every entry is a bare path, no repo-link lookup
@@ -470,6 +481,13 @@ impl LuminaTools {
                 }
             }
 
+            // Translate the SAME validated entries into the first-class EXPECTED
+            // set (T3): the attributes write below keeps `files_touched`, and
+            // `repo::set_task_expected_files` re-means it onto `task_files`. We
+            // route the already-canonicalised `arr` through the repo fn (it
+            // re-resolves the slugs internally against the project ancestor's
+            // repo_links — the same path, so no divergent double-validation).
+            expected_files = Some(arr.clone());
             obj.insert("files_touched".into(), serde_json::Value::Array(arr));
         }
         if let Some(v) = p.outcome {
@@ -486,6 +504,16 @@ impl LuminaTools {
             )
             .await
             .map_err(app_error_to_mcp)?;
+        }
+        // T3: when `files_touched` was supplied, ALSO write the first-class
+        // EXPECTED set (`task_files(kind='expected')`) — an ADDITIONAL mutation
+        // alongside the attributes write above, exactly like `set_task_tier`.
+        // `set_task_expected_files` REPLACES the task's whole expected set and
+        // records its own export-inert `task_files` event.
+        if let Some(entries) = expected_files {
+            repo::set_task_expected_files(&self.pool, &p.id, &entries)
+                .await
+                .map_err(app_error_to_mcp)?;
         }
         if let Some(tier) = p.tier {
             repo::set_task_tier(&self.pool, &p.id, Some(tier))
@@ -699,5 +727,128 @@ mod tests {
         assert_eq!(attrs.get("problem_statement").and_then(|v| v.as_str()), Some("the problem"));
         assert_eq!(attrs.get("research_notes").and_then(|v| v.as_str()), Some("the research"));
         assert_eq!(attrs.get("execution_strategy").and_then(|v| v.as_str()), Some("the strategy"));
+    }
+
+    /// T3 AC: `set_task_spec` with `files_touched = ['a', {repo:'o/n', path:'b'}]`
+    /// ALSO writes the first-class EXPECTED set onto `task_files` (the dual-write
+    /// alongside the kept `attributes.files_touched`):
+    ///   * exactly two `kind='expected'` rows — `a` → the PRIMARY repo (NULL
+    ///     repo_link_id) and `b` → the NAMED non-primary repo (its repo_link_id);
+    ///   * zero `kind='actual'` rows (the actual set starts empty — no backfill);
+    ///   * the kept `attributes.files_touched` is read back as the EXPECTED form.
+    /// Plus: an UNKNOWN `{repo}` slug is rejected (the project-ancestor
+    /// repo_links validation is preserved on the EXPECTED translation path).
+    #[tokio::test]
+    async fn set_task_spec_writes_expected_files_and_keeps_attributes() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let tools = LuminaTools::new(pool.clone());
+        let story = seed_chain_to_story(&tools).await;
+
+        // The repo links hang off the PROJECT ancestor of the story.
+        let project = repo::find_project_ancestor(&pool, &story)
+            .await
+            .expect("project ancestor of the seeded story");
+
+        // PRIMARY repo `o/primary` + a NON-primary named repo `o/n`.
+        // Seed via the core repo fn (the MCP `add_repo_link` tool method is private).
+        repo::add_repo_link(&pool, &project, "o/primary", true)
+            .await
+            .expect("primary repo link");
+        let named_link_id = repo::add_repo_link(&pool, &project, "o/n", false)
+            .await
+            .expect("named (non-primary) repo link")
+            .to_string();
+
+        let task = create_item(&tools, "task", Some(&story)).await;
+
+        tools
+            .set_task_spec(Parameters(SetTaskSpecParams {
+                id: task.clone(),
+                execution_detail: None,
+                files_touched: Some(vec![
+                    FileRef::Path("a".to_owned()),
+                    FileRef::Qualified { repo: "o/n".to_owned(), path: "b".to_owned() },
+                ]),
+                outcome: None,
+                tier: None,
+            }))
+            .await
+            .expect("set_task_spec succeeds");
+
+        // (1) The kept `attributes.files_touched` is read back as EXPECTED.
+        let detail = repo::get_work_item_detail(&pool, &task).await.expect("detail");
+        let attrs = detail.item.attributes.expect("task attributes set");
+        let files = attrs
+            .get("files_touched")
+            .and_then(|v| v.as_array())
+            .expect("attributes.files_touched array preserved");
+        assert_eq!(files.len(), 2, "both files_touched entries preserved on attributes");
+        assert_eq!(files[0].as_str(), Some("a"), "bare path preserved");
+        assert_eq!(
+            files[1].get("repo").and_then(|v| v.as_str()),
+            Some("o/n"),
+            "qualified entry's repo slug preserved on attributes"
+        );
+
+        // (2) Exactly two kind='expected' task_files rows; zero kind='actual'.
+        let expected_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM task_files WHERE task_id = $1 AND kind = 'expected'",
+        )
+        .bind(&task)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("count expected rows");
+        assert_eq!(expected_count, 2, "two expected task_files rows written");
+
+        let actual_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM task_files WHERE task_id = $1 AND kind = 'actual'",
+        )
+        .bind(&task)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("count actual rows");
+        assert_eq!(actual_count, 0, "no actual task_files rows (actual set starts empty)");
+
+        // (2a) `a` → the PRIMARY repo bucket (NULL repo_link_id).
+        let primary_path_repo: Option<String> = sqlx::query_scalar(
+            "SELECT repo_link_id FROM task_files \
+             WHERE task_id = $1 AND kind = 'expected' AND path = 'a'",
+        )
+        .bind(&task)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("read the 'a' row repo_link_id");
+        assert_eq!(primary_path_repo, None, "the bare path 'a' resolves to the primary repo (NULL)");
+
+        // (2b) `b` → the NAMED non-primary repo's repo_link_id.
+        let named_path_repo: Option<String> = sqlx::query_scalar(
+            "SELECT repo_link_id FROM task_files \
+             WHERE task_id = $1 AND kind = 'expected' AND path = 'b'",
+        )
+        .bind(&task)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("read the 'b' row repo_link_id");
+        assert_eq!(
+            named_path_repo.as_deref(),
+            Some(named_link_id.as_str()),
+            "the {{repo:'o/n', path:'b'}} entry resolves to the named link's repo_link_id"
+        );
+
+        // (3) An UNKNOWN `{repo}` slug is rejected (validation preserved against
+        // the project ancestor's repo_links).
+        let unknown = tools
+            .set_task_spec(Parameters(SetTaskSpecParams {
+                id: task.clone(),
+                execution_detail: None,
+                files_touched: Some(vec![FileRef::Qualified {
+                    repo: "o/unlinked".to_owned(),
+                    path: "c".to_owned(),
+                }]),
+                outcome: None,
+                tier: None,
+            }))
+            .await;
+        assert!(unknown.is_err(), "an unlinked {{repo}} slug is rejected");
     }
 }

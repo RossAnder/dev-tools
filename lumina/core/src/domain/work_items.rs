@@ -263,6 +263,58 @@ pub struct PtyQueueEntry {
     pub error: Option<String>,
 }
 
+/// A row of `task_files` (migration 0020): one file in a task's first-class
+/// touched-file set, promoting the former `attributes.files_touched` JSON array
+/// (migration 0004) to an indexable, de-duplicated child table. One row per
+/// `(task × kind × repo × path)`, with the `idx_task_files_unique` expression
+/// index (over `COALESCE(repo_link_id,'')`) enforcing set membership.
+///
+/// `kind` discriminates the PLAN-time set (`'expected'`) from the EXECUTION-time
+/// set (`'actual'`) so a later pass can diff plan vs reality. `repo_link_id`
+/// mirrors migration 0004's primary-fallback rule: `None` means the file lives
+/// in the project's PRIMARY linked repo (the same implicit-primary fallback
+/// `findings.repo_id` uses), a `Some` value qualifies it to a specific
+/// (non-primary) linked repo. Read aggregate only — `Serialize`, no `JsonSchema`
+/// (mirrors the sibling child-table row structs `RepoLink`/`AcceptanceCriterion`/
+/// `ResearchNote`). The hand-written `FromRow` lives beside the read helpers in
+/// `repo/task_files.rs` (the canonical recipe, like `RepoLink`'s).
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskFile {
+    pub id: String,
+    pub task_id: String,
+    /// `None` ⇒ the project's PRIMARY linked repo (migration-0004 fallback);
+    /// `Some` ⇒ a specific linked repo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_link_id: Option<String>,
+    pub path: String,
+    /// `expected` (plan-time set) or `actual` (execution-time set).
+    pub kind: String,
+    pub created_at: String,
+}
+
+/// A single DISTINCT `(repo_link_id, path)` entry in a DERIVED story/sprint
+/// files-footprint (migration 0020, T5). The footprint is a PURE DERIVED read —
+/// task `task_files` rows are authoritative; there is NO independent story/sprint
+/// footprint store.
+///
+/// `repo_link_id` follows the same primary-fallback rule as the underlying
+/// [`TaskFile`] row: `None` ⇒ the project's PRIMARY linked repo (the
+/// `COALESCE(repo_link_id,'')=''` bucket), `Some` ⇒ a specific non-primary
+/// linked repo. The footprint is DEDUPED ACROSS KIND — a path present as BOTH
+/// `kind='expected'` and `kind='actual'` (and/or on two tasks) appears EXACTLY
+/// ONCE, because the footprint SELECT does NOT project `kind`. Read aggregate
+/// only — `Serialize`, no `JsonSchema` (mirrors the sibling child-table read
+/// shapes `TaskFile`/`RepoLink`); the hand-written `FromRow` lives beside the
+/// footprint read helpers in `repo/task_files.rs` (like `TaskFile`'s).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FootprintFile {
+    /// `None` ⇒ the project's PRIMARY linked repo (migration-0004 fallback);
+    /// `Some` ⇒ a specific linked repo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_link_id: Option<String>,
+    pub path: String,
+}
+
 /// A row of `context_blocks` — the drift-killer. Shared context is one row
 /// referenced by many work-items through `work_item_context`.
 #[derive(Debug, Clone, Serialize)]
@@ -310,6 +362,15 @@ pub struct WorkItemDetail {
     /// not-applicable state for non-task rows.
     #[serde(default)]
     pub task_dependencies: Vec<TaskDependency>,
+    /// DERIVED files-footprint of a STORY (migration 0020, T5): the DISTINCT
+    /// `(repo_link_id, path)` union over the `task_files` rows of the story's
+    /// direct task children, deduped across kind. Populated ONLY when
+    /// `item.kind == "story"`; empty otherwise — EXACTLY mirroring the
+    /// project-only `repo_links` fold. Pure derived read (task rows are
+    /// authoritative); the repo layer (`reads.rs`) owns the kind gate, an empty
+    /// vec is the not-applicable state for non-story rows.
+    #[serde(default)]
+    pub story_files_footprint: Vec<FootprintFile>,
 }
 
 /// Create-body for a new work item. Deserialised by the HTTP POST handler

@@ -19,7 +19,7 @@ use super::*;
 
 use crate::args;
 use crate::db::DbClient;
-use crate::domain::{ContextBlock, WorkItem, WorkItemDetail};
+use crate::domain::{ContextBlock, FootprintFile, WorkItem, WorkItemDetail};
 use crate::error::AppError;
 
 /// List work items, optionally filtered by `parent_id` and/or `kind`.
@@ -110,6 +110,15 @@ pub async fn get_work_item_detail(
             Ok(Vec::new())
         }
     };
+    // Story-only DERIVED footprint (T5) — EXACTLY mirroring the project-only
+    // repo_links gate: populated only for `kind='story'`, an empty Vec otherwise.
+    let story_files_footprint_fut = async {
+        if item.kind == "story" {
+            story_files_footprint(pool, &item.id).await
+        } else {
+            Ok(Vec::new())
+        }
+    };
     let context_blocks_fut =
         pool.query_all::<ContextBlock>(DETAIL_CONTEXT_BLOCKS_SQL, args![id.to_owned()]);
 
@@ -124,6 +133,7 @@ pub async fn get_work_item_detail(
         rejected_alternatives,
         repo_links,
         task_dependencies,
+        story_files_footprint,
         context_blocks,
     ) = tokio::try_join!(
         list_work_items(pool, Some(id), None),
@@ -136,6 +146,7 @@ pub async fn get_work_item_detail(
         list_rejected_alternatives(pool, &item.id),
         repo_links_fut,
         task_dependencies_fut,
+        story_files_footprint_fut,
         context_blocks_fut,
     )?;
 
@@ -152,6 +163,7 @@ pub async fn get_work_item_detail(
         risks,
         rejected_alternatives,
         task_dependencies,
+        story_files_footprint,
     })
 }
 
@@ -173,6 +185,56 @@ const DETAIL_CONTEXT_BLOCKS_SQL: &str = r#"
         JOIN work_item_context wic ON wic.context_block_id = cb.id
         WHERE wic.work_item_id = $1
         ORDER BY cb.created_at, cb.id
+        "#;
+
+/// The DERIVED files-footprint of a STORY (T5): the DISTINCT `(repo_link_id,
+/// path)` union over the `task_files` rows of the story's DIRECT task children,
+/// DEDUPED ACROSS KIND (a path present as both `kind='expected'` and
+/// `kind='actual'`, and/or on two tasks, appears EXACTLY ONCE). Pure derived
+/// read — task rows are authoritative; there is no independent story footprint
+/// store. An unknown/childless story yields an empty Vec.
+///
+/// The membership subquery mirrors the `list_task_dependencies` /
+/// `get_child_count` precedent for "the story's direct task children"
+/// (`parent_id = $1 AND kind = 'task'`, tombstones excluded). The DISTINCT +
+/// cross-kind collapse semantics live in [`footprint_over`]; see its doc for why
+/// a plain `SELECT DISTINCT` dedupes the NULL/primary bucket correctly.
+pub async fn story_files_footprint(
+    db: &impl DbClient,
+    story_id: &str,
+) -> Result<Vec<FootprintFile>, AppError> {
+    footprint_over(db, STORY_FOOTPRINT_SQL, args![story_id.to_owned()]).await
+}
+
+const STORY_FOOTPRINT_SQL: &str = r#"
+        SELECT DISTINCT repo_link_id, path
+        FROM task_files
+        WHERE task_id IN (
+            SELECT id FROM work_items
+            WHERE parent_id = $1 AND kind = 'task' AND deleted_at IS NULL
+        )
+        ORDER BY repo_link_id, path
+        "#;
+
+/// The DERIVED files-footprint of a SPRINT (T5): the DISTINCT `(repo_link_id,
+/// path)` union over the `task_files` rows of the sprint's member tasks (the
+/// `sprint_tasks` junction — the same membership [`list_sprint_member_task_ids`]
+/// reads), DEDUPED ACROSS KIND exactly as the story footprint. Pure derived read.
+/// An unknown/empty sprint yields an empty Vec.
+pub async fn sprint_files_footprint(
+    db: &impl DbClient,
+    sprint_id: &str,
+) -> Result<Vec<FootprintFile>, AppError> {
+    footprint_over(db, SPRINT_FOOTPRINT_SQL, args![sprint_id.to_owned()]).await
+}
+
+const SPRINT_FOOTPRINT_SQL: &str = r#"
+        SELECT DISTINCT repo_link_id, path
+        FROM task_files
+        WHERE task_id IN (
+            SELECT task_id FROM sprint_tasks WHERE sprint_id = $1
+        )
+        ORDER BY repo_link_id, path
         "#;
 
 /// The lumina-minted ancestry ids of a work item — the `project` / `epic` /
