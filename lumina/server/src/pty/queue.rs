@@ -87,7 +87,7 @@ mod tests {
     /// resolves. Returns the session id.
     async fn seed_session(pool: &SqlitePool) -> String {
         let id = Uuid::now_v7().to_string();
-        repo::pty::create_pty_session(pool, &id, None, None, "/tmp", "{}")
+        repo::pty::create_pty_session(pool, &id, None, None, "/tmp", "{}", None)
             .await
             .expect("seed pty_session");
         id

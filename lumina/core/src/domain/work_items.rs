@@ -174,6 +174,16 @@ pub struct PtySession {
     /// this is not an FK); NULL when uncorrelated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
+    /// Execution-mode discriminator (migration 0020, focus 1C.1 AC6):
+    /// `autonomous|interactive|NULL`. A lumina-SPAWNED session is stamped
+    /// `'autonomous'` at create time (lumina only spawns autonomous sessions —
+    /// the mode resolver in `lumina_server::pty::mode` corroborates the env
+    /// signal against the `source='spawned'` provenance fact); an ingested /
+    /// legacy row carries NULL (mode unknown when the row was written). The
+    /// vocabulary is enforced at the typed `Mode` enum boundary in Rust, not by
+    /// a DB CHECK (see `0020_mode_discriminator.sql`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 /// A row of `session_records` (migration 0015): one lossless, verbatim JSONL

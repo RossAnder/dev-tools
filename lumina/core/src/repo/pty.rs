@@ -54,6 +54,7 @@ where
             source: row.try_get("source")?,
             sprint_id: row.try_get("sprint_id")?,
             agent_id: row.try_get("agent_id")?,
+            mode: row.try_get("mode")?,
         })
     }
 }
@@ -168,6 +169,7 @@ pub async fn create_pty_session(
     project_id: Option<&str>,
     cwd: &str,
     config_json: &str,
+    mode: Option<&str>,
 ) -> Result<PtySession, AppError> {
     let now = now_string();
     let parse_strategy_version: i64 = 1;
@@ -179,9 +181,9 @@ pub async fn create_pty_session(
         r#"
         INSERT INTO pty_sessions (
             id, label, project_id, cwd, config_json, parse_strategy_version,
-            status, started_at, updated_at
+            status, started_at, updated_at, mode
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)
         "#,
         args![
             id.to_owned(),
@@ -191,7 +193,8 @@ pub async fn create_pty_session(
             config_json.to_owned(),
             parse_strategy_version,
             status.to_owned(),
-            now
+            now,
+            mode.map(|s| s.to_owned())
         ],
     )
     .await?;
@@ -216,7 +219,8 @@ pub async fn create_pty_session(
             jsonl_path,
             source,
             sprint_id,
-            agent_id
+            agent_id,
+            mode
         FROM pty_sessions
         WHERE id = $1
         "#,
@@ -426,7 +430,8 @@ pub async fn list_pty_sessions(
             jsonl_path,
             source,
             sprint_id,
-            agent_id
+            agent_id,
+            mode
         FROM pty_sessions
         WHERE ($1 IS NULL OR status = $1)
           AND ($2 IS NULL OR project_id = $2)
@@ -467,7 +472,8 @@ pub async fn get_pty_session(
             jsonl_path,
             source,
             sprint_id,
-            agent_id
+            agent_id,
+            mode
         FROM pty_sessions
         WHERE id = $1
         "#,
@@ -781,4 +787,56 @@ pub async fn complete_pty_queue_entry(
 
     tx.commit().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{connect_in_memory, AnyPool};
+
+    /// AC6 (focus 1C.1): the migration-0020 `mode` discriminator round-trips. A
+    /// spawned session created with `mode='autonomous'` reads back that value via
+    /// the `get_pty_session` path — the value persists into the column AND every
+    /// PtySession-hydrating SELECT carries `mode`, so the hand-written
+    /// `FromRow::try_get("mode")` resolves it. An ingested/other create path that
+    /// passes `mode=None` leaves the column NULL.
+    #[tokio::test]
+    async fn create_pty_session_mode_round_trips() {
+        let db: AnyPool = connect_in_memory().await.expect("in-memory pool").into();
+
+        // A lumina-SPAWNED session stamps mode='autonomous' at create time.
+        let created = create_pty_session(&db, "sess-auto", None, None, "/tmp", "{}", Some("autonomous"))
+            .await
+            .expect("create autonomous session");
+        assert_eq!(
+            created.mode.as_deref(),
+            Some("autonomous"),
+            "create returns the stamped mode"
+        );
+
+        // The get path hydrates the same value (proves the column persisted AND
+        // the get SELECT + FromRow carry `mode`).
+        let fetched = get_pty_session(&db, "sess-auto")
+            .await
+            .expect("get autonomous session");
+        assert_eq!(
+            fetched.mode.as_deref(),
+            Some("autonomous"),
+            "mode round-trips through the get_pty_session path"
+        );
+
+        // An ingested/other create path passes mode=None → column stays NULL.
+        let created_null = create_pty_session(&db, "sess-null", None, None, "/tmp", "{}", None)
+            .await
+            .expect("create mode-less session");
+        assert_eq!(created_null.mode, None, "create with mode=None leaves NULL");
+
+        let fetched_null = get_pty_session(&db, "sess-null")
+            .await
+            .expect("get mode-less session");
+        assert_eq!(
+            fetched_null.mode, None,
+            "a mode=None session reads back NULL"
+        );
+    }
 }

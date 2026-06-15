@@ -4,19 +4,22 @@ description: Critique a story across all planning blocks; emits structured findi
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
 disable-model-invocation: true
-context: fork
-agent: general-purpose
 ---
 
 # `lumina:story-review`
 
-Critique a fully-planned story — read its problem_statement, approach narrative, accepted research notes, open questions, edge-case notes, risks, rejected alternatives, and task children (with their acceptance criteria) — and write structured critique findings back to lumina via `mcp__lumina__add_finding` with `kind: "story-review"`. This is the plugin's first critique surface, and the SECOND forked-context skill in the family (joining `research-notes`); the `context: fork` + `agent: general-purpose` pair in the frontmatter sends this skill into an isolated subagent so the multi-step rubric application, cross-block reading, and finding synthesis stay out of the parent planning conversation. The parent sees only this skill's final structured summary.
+Critique a fully-planned story — read its problem_statement, approach narrative, accepted research notes, open questions, edge-case notes, risks, rejected alternatives, and task children (with their acceptance criteria) — and write structured critique findings back to lumina via `mcp__lumina__add_finding` with `kind: "story-review"`. This is the plugin's first critique surface. Whether it runs forked or inline is a RUNTIME decision keyed on the execution mode (see "Run mode: fork-vs-inline" below): in autonomous mode it forks into an isolated `agent: general-purpose` subagent so the multi-step rubric application, cross-block reading, and finding synthesis stay out of the parent's durable-comms transcript (the parent sees only the final structured summary); in interactive mode it runs inline so the user can watch the rubric fire and steer.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape — plus the §d forked-context extras above), §b (5-step check-before-act idempotency, applied per-FINDING here rather than per-invocation), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — story-review is critique, NOT a vet skill), §d (forked-context rationale — `research-notes` was the round-1 example; round-2 makes this skill the SECOND forked skill, see "§d cardinality note" below), §e (Sentry pattern — skill = instructions, MCP = execution), §i (the story-review pattern contract — load-bearing: that section governs `kind: "story-review"` reservation, severity taxonomy, supersession protocol, and provenance).
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per-FINDING here rather than per-invocation), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — story-review is critique, NOT a vet skill), §d (run-mode / fork-vs-inline rationale — fork is a runtime mode decision, not a static per-skill property; see "Run mode: fork-vs-inline" below), §e (Sentry pattern — skill = instructions, MCP = execution), §i (the story-review pattern contract — load-bearing: that section governs `kind: "story-review"` reservation, severity taxonomy, supersession protocol, and provenance).
 
-## §d cardinality note (round-2)
+## Run mode: fork-vs-inline (per §d)
 
-CONVENTIONS.md §d currently states "Exactly ONE skill in this plugin runs in a forked subagent context: `research-notes`." That language is now stale: this `story-review` skill is the second forked-context skill in the plugin. The §d rationale ("multi-step exploration leaves tool-output noise that the main planning conversation does not need") applies equally here — a critique pass that reads every planning block, applies a rubric, cross-references task children, and synthesises findings is exactly the kind of multi-step workflow §d was written to isolate. The §d cardinality language should be amended in a follow-up; the frontmatter shape (7 keys: §a's 4 mandatory + `argument-hint` + the two fork keys) is correct.
+Whether to fork is selected at runtime from the execution mode (the `LUMINA_AUTONOMOUS` signal, corroborated server-side against the session's spawned-provenance through lumina's single-source mode resolver, which fails SAFE to interactive whenever the signal is absent, unverified, or conflicts):
+
+- **Autonomous mode** (lumina-spawned / scheduler-driven) → run FORKED in an isolated `agent: general-purpose` subagent. A critique pass reads every planning block, applies a rubric, cross-references task children, and synthesises findings — exactly the kind of multi-step workflow whose intermediate tool output the parent's durable-comms transcript does not need. The parent receives only the final structured summary.
+- **Interactive mode** (human terminal — the fail-safe default) → run INLINE so the user can watch the rubric fire and weigh in. story-review's idempotency does NOT depend on per-finding `AskUserQuestion` (the supersession decision is made by the heuristic in step 4, not a prompt — see the §b mapping), so the run's behaviour is identical in both modes; only the fork-vs-inline framing differs.
+
+Fork is no longer a static per-skill property recorded in frontmatter — §d (post-1C.1) treats it as a runtime/mode decision, so this skill carries no `context:`/`agent:` keys; the `agent: general-purpose` target applies only on the autonomous fork path described above.
 
 ## MCP tools used
 
@@ -29,7 +32,7 @@ CONVENTIONS.md §d currently states "Exactly ONE skill in this plugin runs in a 
 
 See [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools for canonical argument shapes. Per-call argument values this skill chooses are documented inline at each call site below. This skill is **read-only on risks / rejected_alternatives / research_notes / acceptance_criteria / open_questions** — it does NOT call any `add_*` tool for those sub-tables; it ONLY writes findings.
 
-## Subagent procedure (the body the fork executes)
+## Procedure (the body the skill executes — forked in autonomous mode, inline in interactive)
 
 ### 1. Prerequisite read
 
@@ -129,9 +132,9 @@ mcp__lumina__record_task_activity {
 
 One activity entry per skill invocation, NOT per finding — this differs from `research-notes` (which records one activity entry per NOTE because each note is a distinct write). Story-review's batching reflects that the critique is a single run that may emit many findings; the per-finding audit trail is on the `findings` table itself, not on the activity log.
 
-### 7. Final summary back to parent
+### 7. Final summary
 
-The fork's final output to the parent conversation is a single structured summary (this is the §d benefit — intermediate rubric application and tool noise stay in the fork). Format:
+The final output is a single structured summary. In autonomous mode this is the fork's only output to the parent conversation (the §d benefit — intermediate rubric application and tool noise stay in the fork); in interactive mode it is the run's closing report to the user. Format:
 
 ```
 story-review: <N> findings on <story_id> (readiness=<ready|blocked|incomplete|n/a>)
@@ -151,7 +154,7 @@ Recommended next step: Review the new findings in lumina; resolve / dispute via
   before /lumina:wire-task-deps and sprint dispatch.
 ```
 
-This is the entire visible output to the parent. The full rubric trace, the verbatim quoted excerpts (those live in the `findings` rows), and intermediate similarity-score calculations stay confined to the fork.
+In autonomous mode this is the entire visible output to the parent — the full rubric trace, the verbatim quoted excerpts (those live in the `findings` rows), and intermediate similarity-score calculations stay confined to the fork. In interactive mode the user has already seen the rubric fire live; this summary is the closing recap.
 
 ## 5-step idempotency mapping (per §b — applied per-FINDING)
 
@@ -173,5 +176,5 @@ The skill body decides which rubric checks to run, how to map rubric category to
 
 - Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §d, §e, §i.
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — see Planning & decision tools, Findings family.
-- Companion forked skill (`research-notes`): [`../research-notes/SKILL.md`](../research-notes/SKILL.md) — mirror its frontmatter shape and inline citation conventions.
+- Companion research skill (`research-notes`): [`../research-notes/SKILL.md`](../research-notes/SKILL.md) — mirror its frontmatter shape (and its run-mode fork-vs-inline framing) and inline citation conventions.
 - Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — see R25 (pattern-replacement exhaustive `files_touched`) and R27 (complexity-high reliability degradation).

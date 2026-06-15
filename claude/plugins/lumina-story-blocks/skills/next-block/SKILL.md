@@ -133,7 +133,7 @@ Each sibling's frontmatter `description:` verbatim, so agent auto-load surfaces
 the full menu when this advisor is loaded:
 
 - `/lumina:problem-statement <id>` — Capture or update a story's problem_statement (what's broken, who's affected, success criteria).
-- `/lumina:research-notes <id>` — Identify research gaps and add proposed research notes to a story (forked subagent).
+- `/lumina:research-notes <id>` — Identify research gaps and add proposed research notes to a story (forks in autonomous mode, inline in interactive — see CONVENTIONS §d).
 - `/lumina:vet-research <id>` — Sample, spot-check, and promote/reject a story's proposed research notes; the only plugin skill that records entry_type=vet activity.
 - `/lumina:user-interrogation <id>` — Enumerate open questions for a story across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility).
 - `/lumina:alternatives <id>` — Capture or update a story's rejected alternatives with confidence + rationale; per-element supersession on label collision.

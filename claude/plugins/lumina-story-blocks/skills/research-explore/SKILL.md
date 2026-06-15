@@ -4,19 +4,22 @@ description: Dispatch parallel lens-agents to explore the story; each agent retu
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
 disable-model-invocation: true
-context: fork
-agent: general-purpose
 ---
 
 # `lumina:research-explore`
 
-Multi-agent parallel research exploration for a story. This skill dispatches N (default 4) `research-deep` sub-agents — one per analytical lens — in a SINGLE Agent-tool message; each agent returns ≥3 findings with verbatim citations and an evidence grade; findings are composed into `add_research_note` rows with `state: "proposed"`. The downstream `/lumina:vet-research` skill triages those proposed notes (sample → spot-check → accept/reject). This is round-3's research-exploration entry point and mirrors `/plan-new` Phase 3's parallel-exploration contract (R30).
+Multi-agent parallel research exploration for a story. This skill dispatches N (default 4) `research-deep` sub-agents — one per analytical lens — in a SINGLE Agent-tool message; each agent returns ≥3 findings with verbatim citations and an evidence grade; findings are composed into `add_research_note` rows with `state: "proposed"`. The downstream `/lumina:vet-research` skill triages those proposed notes (sample → spot-check → accept/reject). This is round-3's research-exploration entry point and mirrors `/plan-new` Phase 3's parallel-exploration contract (R30). Whether this skill itself runs forked or inline is a RUNTIME decision keyed on the execution mode (see "Run mode: fork-vs-inline" below) — distinct from the lens-agent fan-out, which it dispatches in either mode.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape; §d's two-key extension for forked context), §b (5-step check-before-act idempotency, applied per-INVOCATION here — see "5-step idempotency mapping" below), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — `research-explore` is plan-time exploration, NOT a vet skill; only `/lumina:vet-research` carries the `entry_type: "vet"` exception), §d (forked-context rationale — see "§d cardinality note" below), §e (Sentry pattern — skill = instructions, MCP = execution), §h (kind-precondition signpost — this skill is story-only). It ALSO cites the universal vet-pass procedure at [`claude/skills/flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md) for evidence-grade triage that EACH sub-agent runs on its own findings — **do not re-state the contract's procedure inline**.
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per-INVOCATION here — see "5-step idempotency mapping" below), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — `research-explore` is plan-time exploration, NOT a vet skill; only `/lumina:vet-research` carries the `entry_type: "vet"` exception), §d (run-mode / fork-vs-inline rationale — see "Run mode: fork-vs-inline" below), §e (Sentry pattern — skill = instructions, MCP = execution), §h (kind-precondition signpost — this skill is story-only). It ALSO cites the universal vet-pass procedure at [`claude/skills/flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md) for evidence-grade triage that EACH sub-agent runs on its own findings — **do not re-state the contract's procedure inline**.
 
-## §d cardinality note (round-3)
+## Run mode: fork-vs-inline (per §d)
 
-CONVENTIONS.md §d currently cites THREE forked-context skills (`research-notes`, `story-review`, `decompose-tasks`). With round-3 T7 (this skill) and T8 (`research-directed`) the count rises to FIVE. The §d rationale ("multi-step exploration whose intermediate tool output would saturate the main planning context") applies here a fortiori — this skill dispatches up to five parallel sub-agents, each of which itself runs Context7 / WebSearch / Read / Grep, and synthesises ≥3 findings; the per-agent tool output saturates context fast. The §d cardinality language should be amended in a follow-up (round-3 T13 §k.1 cleanup is the natural carrier). The frontmatter shape (6 keys: §a's 4 mandatory + the two fork keys; `argument-hint` rides through unchanged) is correct.
+Whether to fork is selected at runtime from the execution mode (the `LUMINA_AUTONOMOUS` signal, corroborated server-side against the session's spawned-provenance through lumina's single-source mode resolver, which fails SAFE to interactive whenever the signal is absent, unverified, or conflicts):
+
+- **Autonomous mode** (lumina-spawned / scheduler-driven) → run FORKED in an isolated `agent: general-purpose` subagent. This skill dispatches up to five parallel lens sub-agents, each of which itself runs Context7 / WebSearch / Read / Grep and synthesises ≥3 findings; the per-agent tool output saturates context fast, so forking keeps that churn out of the parent's durable-comms transcript — the parent receives only the final summary line and the lumina rows themselves.
+- **Interactive mode** (human terminal — the fail-safe default) → run INLINE. This skill takes no per-item `AskUserQuestion` (it is a one-shot, always-additive exploration pass — triage is the downstream `/lumina:vet-research`'s job), so its behaviour is identical in both modes; only the fork-vs-inline framing of the lens-agent tool noise differs.
+
+Note this is two NESTED levels of agent dispatch: the fork decision above is about whether THIS skill runs in its own subagent; the lens-agent fan-out (step 4) is the parallel `research-deep` dispatch this skill performs REGARDLESS of mode. Fork is no longer a static per-skill property recorded in frontmatter — §d (post-1C.1) treats it as a runtime/mode decision, so this skill carries no `context:`/`agent:` keys; the `agent: general-purpose` target applies only on the autonomous fork path described above.
 
 ## MCP tools used
 
@@ -25,11 +28,11 @@ CONVENTIONS.md §d currently cites THREE forked-context skills (`research-notes`
 - `mcp__lumina__add_research_note` — write per-finding row with `state: "proposed"`, `lens`, `summary`, `body`, optional `confidence` and `origin`. NEVER auto-promote to `accepted`; that is `/lumina:vet-research`'s exclusive job per the Sentry pattern.
 - `mcp__lumina__record_task_activity` — provenance per §c (one summary entry per skill invocation; `entry_type: "execution"`, `origin: "plan"` — NOT `"vet"`, which round-2 narrows to `/lumina:vet-research` exclusively).
 
-Within the fork the subagent ALSO uses tools available in its toolbelt — `Agent` (the parallel dispatch primitive — single message, multiple `<invoke>` blocks), `Read`, `Grep`, `WebSearch`, `WebFetch`, `mcp__plugin_context7_context7__query-docs`. These are NOT lumina write tools; they appear inside the dispatched sub-agents' execution paths.
+This skill ALSO uses tools available in its toolbelt — `Agent` (the parallel dispatch primitive — single message, multiple `<invoke>` blocks), `Read`, `Grep`, `WebSearch`, `WebFetch`, `mcp__plugin_context7_context7__query-docs` (in autonomous mode these run inside the fork). These are NOT lumina write tools; they appear inside the dispatched sub-agents' execution paths.
 
 This skill does NOT call `add_finding`, `set_story_plan`, `update_research_note`, or `supersede_research_note`. Note-supersession is `/lumina:vet-research`'s lifecycle; finding emission is downstream (post-vet, via `/lumina:research-directed`). See [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools for canonical argument shapes.
 
-## Subagent procedure (the body the fork executes)
+## Procedure (the body the skill executes — forked in autonomous mode, inline in interactive)
 
 ### 1. Prerequisite read (§b step 1; §e kind-precondition exception per §h)
 

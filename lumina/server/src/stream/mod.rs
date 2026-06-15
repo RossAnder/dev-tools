@@ -111,6 +111,21 @@ pub trait TopicResolver: Send + Sync {
     /// NOT under-approximate (a false negative is a missed update).
     fn interested(&self, param: &str, change: &ChangeNotification) -> bool;
 
+    /// The autonomous-vs-interactive mode discriminator (migration 0020) for
+    /// the subscription identified by `param`, when the resolver can observe
+    /// it from the committed `change`. This is the stream surface's
+    /// propagation seam for the [`ChangeNotification::mode`] field that
+    /// 1B-F5 observability needs: a resolver whose resource is session-scoped
+    /// (e.g. a future PTY-session topic) returns the `change`'s mode so the
+    /// discriminator reaches the stream; every existing resolver inherits the
+    /// `None` default and is unaffected. Read-only and cheap — it MUST NOT hit
+    /// the DB (it runs in the synchronous `note` fold path); derive the value
+    /// from the in-hand `change` alone.
+    fn mode(&self, _param: &str, change: &ChangeNotification) -> Option<String> {
+        let _ = change;
+        None
+    }
+
     /// Recompute the full snapshot for `param`. Read-only.
     async fn resolve(&self, pool: &AnyPool, param: &str) -> Result<serde_json::Value, AppError>;
 }

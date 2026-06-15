@@ -478,7 +478,7 @@ mod tests {
         // NULL (the harvest-missed-the-sprint shape). `SqlitePool` implements
         // `DbClient`, so the repo fns seed directly on the pool.
         for id in ["sess-a", "sess-b", "sess-c"] {
-            repo::pty::create_pty_session(&pool, id, None, None, "/tmp", "{}")
+            repo::pty::create_pty_session(&pool, id, None, None, "/tmp", "{}", None)
                 .await
                 .expect("seed session");
         }

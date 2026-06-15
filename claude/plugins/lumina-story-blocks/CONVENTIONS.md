@@ -6,9 +6,9 @@ The plugin's purpose is to drive lumina's existing MCP tool surface (catalogued 
 
 ## §a Frontmatter shape
 
-Every DB-mutating skill in this plugin declares AT MINIMUM these four keys in its YAML frontmatter, in this order (or six keys if the skill runs in forked context — see §d), and SHOULD additionally declare `argument-hint` whenever `arguments` is non-empty. Read-only documentation skills (currently only the `mcp` catalogue) omit `disable-model-invocation: true` per the exception below; they MAY also omit `arguments` (and correspondingly `argument-hint`) if they take none.
+Every DB-mutating skill in this plugin declares AT MINIMUM these four keys in its YAML frontmatter, in this order, and SHOULD additionally declare `argument-hint` whenever `arguments` is non-empty. Read-only documentation skills (currently only the `mcp` catalogue) omit `disable-model-invocation: true` per the exception below; they MAY also omit `arguments` (and correspondingly `argument-hint`) if they take none.
 
-> **Forward reference**: the four-key shape below is the minimum. Exactly one skill in this plugin (`research-notes`) runs in a forked subagent context and declares two ADDITIONAL keys (`context: fork`, `agent: general-purpose`) for a total of six — see §d for the rationale and the canonical six-key example.
+> **Forward reference**: the four-key shape below is the minimum (five with the recommended `argument-hint`), and it is the CANONICAL frontmatter for every skill — including the exploration-heavy ones. Forking is no longer declared in frontmatter: it is a RUNTIME, mode-conditional decision (autonomous vs interactive) made from a corroborated mode signal, NOT a static `context: fork` / `agent:` key pair. See §d for that rule.
 
 ```yaml
 ---
@@ -149,29 +149,26 @@ Notes:
 - **Substitution guard**: before calling `record_task_activity`, the skill MUST verify `${CLAUDE_SESSION_ID}` resolved to a non-empty value that does not contain the literal substring `CLAUDE_SESSION_ID`. If the substitution did not fire (older harness, non-session invocation, future regression), the literal string `session=${CLAUDE_SESSION_ID}` would land in lumina verbatim and silently break the audit trail. On detected non-substitution, record `body: "session=unknown"` instead AND emit a one-line warning to the user (e.g. `"warning: CLAUDE_SESSION_ID did not substitute; recorded as 'unknown'"`). This makes the failure visible rather than silent.
 - One activity entry per write — not per skill invocation. A skill that writes twice (e.g. supersedes one note AND adds a new one in the same invocation) records two activity entries.
 
-## §d Forked context (research-notes + story-review + decompose-tasks)
+## §d Forked context — a runtime, mode-conditional decision
 
-Round-1 had exactly one forked skill (`research-notes`); round-2 added two (`story-review` and `decompose-tasks`). All three skills' frontmatters add two extra keys (per R2) beyond the mandatory ones from §a — `context: fork` and `agent: general-purpose`. The §a `argument-hint` recommendation still applies whenever `arguments` is non-empty, so the canonical forked frontmatter is seven keys (the §a four plus `argument-hint` plus the two fork keys):
+Some skills in this plugin are multi-step explorations whose intermediate tool output would saturate the main planning context (`research-notes`, `research-explore`, `research-directed`, `story-review`, `decompose-tasks`). Whether such a skill runs FORKED (in an isolated subagent) or INLINE (in the parent conversation) is NOT a static frontmatter property — it is a RUNTIME decision keyed on the execution mode:
 
-```yaml
----
-name: research-notes
-description: Identify research gaps and add proposed research notes to a story.
-arguments: [work_item_id]
-argument-hint: "[work_item_id]"
-disable-model-invocation: true
-context: fork
-agent: general-purpose
----
-```
+- **Autonomous mode** (lumina-spawned / scheduler-driven — no live human at a terminal): the skill FORKS into a subagent (`agent: general-purpose` is the fork target, applied at runtime). There is no interactive `AskUserQuestion` channel, so the exploration runs in isolation and reports back through durable-primitive comms; the spawning context sees only the final summary (and the lumina rows are queryable via `get_work_item`).
+- **Interactive mode** (human terminal): the skill runs INLINE, so live `AskUserQuestion` prompts reach the user directly and they can interject, ask follow-ups, or chain skills. Forking here would force a context switch with no compensating benefit.
 
-The §a → §d delta is exactly two keys (`context`, `agent`) — `argument-hint` belongs to the §a shape and rides through unchanged.
+The mode is selected from a CORROBORATED mode signal — the `LUMINA_AUTONOMOUS` environment signal cross-checked server-side (see `lumina/server/src/pty/mode.rs`), fail-safe to interactive when the signal is absent or unverifiable. It is NOT read from static `context: fork` / `agent:` frontmatter keys: as of this sprint the exploration skills carry the canonical 5-key frontmatter from §a (the four mandatory keys plus the recommended `argument-hint`) and declare no fork keys at all. The `agent: general-purpose` fork target named above is supplied by the runtime when it forks, not baked into the skill file.
 
-**Why fork these three**: all three skills are multi-step explorations whose intermediate tool output would saturate the main planning context. `research-notes` runs Context7 lookups, WebSearch queries, targeted code reads, and draft synthesis; `story-review` runs a 7-category rubric over the full story detail, performing cross-block semantic comparisons and per-rubric finding writes; `decompose-tasks` reads every accepted-state planning block, optionally fans out parallel sub-decompose-agents per foundation-disjoint module (R26), runs pattern-replacement file enumeration via Grep (R25), and synthesises a proposed task list. Each operation leaves tool-output noise in the conversation context that the main planning session does not need. Running these skills in a forked subagent isolates that noise; the parent conversation sees only the final summary (and the lumina rows themselves are queryable via `get_work_item`).
+**Resolution mechanism (how a skill learns its mode at runtime)**: a skill/agent corroborates its mode by calling `mcp__lumina__get_execution_mode` with its `LUMINA_AUTONOMOUS` env-var value as the `token` argument; the tool returns `{ "mode": "autonomous" | "interactive" }`.
 
-**Why every other skill stays inline**: all other skills in this plugin are short interactive Q&A loops — the user types a few sentences, the skill writes one or two MCP calls, done. Inline execution keeps the user in the parent context where they can interject, ask follow-ups, or chain skills. Forking these would force a context switch with no compensating benefit.
+- A present-but-invalid or empty token resolves to `interactive` (the fail-safe above); only a token matching the server's per-process injected secret resolves to `autonomous`. This is the spoof-resistant corroboration — a stray `LUMINA_AUTONOMOUS` in a human shell carries no valid token, so it cannot fake autonomous mode.
+- The orchestrator (a lumina-PTY-spawned session) is ALSO steered to autonomous via its baked `--append-system-prompt`, so it need not call the tool. The tool is primarily how a `Task`-spawned TEAMMATE corroborates its mode: the teammate inherits the token via the propagated `settings.json` env and has the full `/mcp` surface via project config.
+- Behaviour per mode is unchanged from above: `autonomous` ⇒ fork / durable-primitive comms; `interactive` ⇒ inline / live `AskUserQuestion`.
 
-A forked-context skill MAY append reporting/summary steps after the 5-step §b sequence (e.g. research-notes' final summary step). The 5-step §b sequence itself MUST appear in order; additions go after step 5, not interleaved.
+**Why isolate the noise (when forking applies)**: each of these skills leaves heavy tool-output noise in the conversation context that the main planning session does not need. `research-notes` runs Context7 lookups, WebSearch queries, targeted code reads, and draft synthesis; `research-explore` dispatches parallel lens-agents; `research-directed` verifies decision-grade claims and emits drift findings; `story-review` runs a 7-category rubric over the full story detail, performing cross-block semantic comparisons and per-rubric finding writes; `decompose-tasks` reads every accepted-state planning block, optionally fans out parallel sub-decompose-agents per foundation-disjoint module (R26), runs pattern-replacement file enumeration via Grep (R25), and synthesises a proposed task list. Forking in autonomous mode isolates that noise; running inline in interactive mode keeps the user in the loop.
+
+**Why every other skill always stays inline**: all other skills in this plugin are short interactive Q&A loops — the user types a few sentences, the skill writes one or two MCP calls, done. They have no exploration noise to isolate and depend on the live user channel, so they are never candidates for the autonomous-mode fork regardless of mode.
+
+A skill that runs forked MAY append reporting/summary steps after the 5-step §b sequence (e.g. research-notes' final summary step). The 5-step §b sequence itself MUST appear in order; additions go after step 5, not interleaved.
 
 ## §e Sentry pattern — skill = instructions, MCP = execution
 
@@ -272,7 +269,7 @@ The `/lumina:story-review` skill is the plugin's first critique surface — it r
 - **Finding kind**: every finding written by `/lumina:story-review` MUST carry `kind: "story-review"`. This is the round-2 reservation for the kind discriminator and lets read-side consumers (UI filter, future `list_findings_by_kind` repo method) disambiguate from `kind: "code-review"` used by `/review` and `kind: "performance"` used by `/optimise`.
 - **Severity**: `severity ∈ {critical, major, minor, suggestion}` — the typed `Severity` enum (see §k.2 for the deliberate vocab split with `RiskSeverity::{Low, Medium, High, Critical}` on the `risks` table — the two share only the literal `Critical` and otherwise have disjoint vocabularies; do NOT conflate them). Pick severity by the rubric category — direct factual contradiction across blocks is `critical`; tonal/scope drift across blocks is `major`; ungrounded approach claim is `major`; missing AC coverage is `major`; uncovered edge case is `minor`–`major` depending on impact. The story-review SKILL body has the authoritative per-category mapping in its §3 severity-taxonomy note.
 - **Supersession**: if a prior `/lumina:story-review` run left findings that are still relevant but materially restated by the new run, use `mcp__lumina__supersede_finding {old_id, new_*}` to chain — never bare add a duplicate. If the prior finding is no longer applicable, `mcp__lumina__update_finding {status: "resolved"}` closes it without supersession. Otherwise leave the old finding as a historical trail.
-- **Provenance**: every finding carries `origin: "plan"` (mirroring §c) and is written from within the forked context (`context: fork` per §d's pattern). The `confidence` field is optional but recommended for findings derived from heuristic checks (word-overlap, LLM judgement) — distinguishes them from finds that surface a structural contradiction.
+- **Provenance**: every finding carries `origin: "plan"` (mirroring §c) and is written from whatever context the skill runs in (forked in autonomous mode, inline in interactive mode — per §d's runtime mode-conditional rule). The `confidence` field is optional but recommended for findings derived from heuristic checks (word-overlap, LLM judgement) — distinguishes them from finds that surface a structural contradiction.
 
 The skill body cites this section by reference; do NOT inline the rubric here (it lives in the skill's SKILL.md). This section is the contract for HOW critique persists, not WHAT critique runs.
 

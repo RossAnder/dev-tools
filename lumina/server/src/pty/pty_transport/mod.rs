@@ -82,7 +82,10 @@ use lumina_core::protocol::{InputFrame, InputKind, SessionId, TypedMessage};
 use crate::pty::transport::{SessionExit, SpawnConfig, Transport, TransportHandle};
 
 mod config;
-use config::{ask_mcp_config_json, no_auq_system_prompt, translate_keystroke_dsl};
+use config::{
+    ask_mcp_config_json, autonomous_escalation_system_prompt, no_auq_system_prompt,
+    translate_keystroke_dsl,
+};
 
 /// Channel capacity for the outbound `broadcast::Sender<TypedMessage>`.
 const OUTBOUND_CAP: usize = 1024;
@@ -241,6 +244,22 @@ impl Transport for PtyTransport {
         // "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1".
         cmd.env("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1");
 
+        // Inject the autonomous MODE SIGNAL so this lumina-spawned orchestrator
+        // session resolves to autonomous mode. Carried at this proven seam
+        // (research note seq1 — the child inherits any cmd.env(...) here, no new
+        // plumbing). The value is this process's SERVER-MINTED SECRET TOKEN
+        // (`crate::pty::mode::autonomous_secret()`), NOT a bare flag: a consumer
+        // (the orchestrator via baked steering) verifies the token server-side
+        // (`crate::pty::mode::verify_token`), so a stray LUMINA_AUTONOMOUS set in a
+        // human shell carries no valid token and fails safe to interactive — it
+        // can never falsely flip a human-terminal session.
+        // (Teammate propagation rides static settings.json env — see below,
+        // since Task-spawned subagents get a fresh env per GH #46696.)
+        cmd.env(
+            crate::pty::mode::LUMINA_AUTONOMOUS,
+            crate::pty::mode::autonomous_secret(),
+        );
+
         // --session-id aligns API telemetry only; the JSONL filename is bound
         // separately by jsonl_tail::bind_jsonl_path because interactive mode
         // mints its own UUID (see plan Research Notes
@@ -269,14 +288,50 @@ impl Transport for PtyTransport {
         // to the spawned child (no global ~/.claude.json mutation). Verified
         // against claude 2.1.156; the gate was introduced by a Claude Code
         // update that reset the prior stored acceptance.
+        // The `--settings` (flagSettings) layer is ALSO the carrier for the
+        // autonomous MODE SIGNAL to Task-spawned teammates. The runtime
+        // `cmd.env(...)` above reaches THIS orchestrator session but NOT the
+        // subagents it launches via the Task tool — those get a FRESH env
+        // (GH #46696). settings.json `env`, by contrast, is applied to every
+        // session AND to subprocesses Claude Code spawns from it (research
+        // notes seq8–seq10), so carrying the autonomous TOKEN here lets both
+        // the orchestrator and its teammates inherit the same valid token from
+        // the same settings layer — teammates then verify it server-side via the
+        // `get_execution_mode` tool. The value is this process's server-minted
+        // secret (`crate::pty::mode::autonomous_secret()`), NOT a bare flag, so a
+        // stray LUMINA_AUTONOMOUS in a human shell holds no valid token and fails
+        // safe to interactive. Built with serde_json so the inline JSON stays
+        // well-formed; the var NAME is the single-source `mode::LUMINA_AUTONOMOUS`
+        // const (never hand-spelled).
         cmd.arg("--settings");
-        cmd.arg(r#"{"skipDangerousModePermissionPrompt":true}"#);
+        let mut settings_env = serde_json::Map::new();
+        settings_env.insert(
+            crate::pty::mode::LUMINA_AUTONOMOUS.to_string(),
+            serde_json::Value::from(crate::pty::mode::autonomous_secret().to_string()),
+        );
+        cmd.arg(
+            serde_json::json!({
+                "skipDangerousModePermissionPrompt": true,
+                "env": settings_env,
+            })
+            .to_string(),
+        );
         // Steer claude away from the built-in AskUserQuestion picker (which
         // lumina cannot surface) toward lumina's `ask_user_question` MCP tool,
         // which renders in the SPA's structured picker. The session id is baked
         // into the prompt so the tool correlates back to this session.
         cmd.arg("--append-system-prompt");
         cmd.arg(no_auq_system_prompt(&session_id_str));
+        // Plus AUTONOMOUS-MODE escalation steering (focus 1C.1): when this
+        // lumina-spawned session resolves to autonomous mode (no operator at a
+        // TTY), a HARD decision must be escalated DURABLY — `add_open_question`
+        // + `block_task_on_question` (park, never re-ask), block-then-defer
+        // rather than timeout-then-proceed, and a failed durable write is a hard
+        // stop. Appended as its own --append-system-prompt (claude concatenates
+        // each); the agent applies it only in the autonomous posture, where the
+        // interactive `ask_user_question` channel above is structurally dead.
+        cmd.arg("--append-system-prompt");
+        cmd.arg(autonomous_escalation_system_prompt());
 
         // Register lumina's `lumina-ask` MCP server (the `ask_user_question`
         // tool) for this session. Claude Code 2.1.x's `--mcp-config` accepts

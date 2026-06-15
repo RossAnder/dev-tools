@@ -1,0 +1,46 @@
+-- lumina migration 0020: persist the autonomous-vs-interactive mode discriminator
+-- on the session row (ADD-COLUMN, PURELY ADDITIVE).
+--
+-- Forward-only; no down-migration. Recovery if a later task fails: `git revert`
+-- this file and recreate the gitignored dev DB (db::init / `sqlx migrate run`
+-- rebuilds it from the embedded migration set). This migration adds ONE nullable
+-- `pty_sessions` column — it touches no existing column, default, index, or
+-- trigger and changes no existing query result, so it breaks no current consumer
+-- or test; a wipe-and-recreate is safe (the dev DB carries no live mode data).
+--
+-- ## Why (1B-F5 observability — focus 1C.1 durable async comms)
+-- The autonomous-vs-interactive distinction (the "mode discriminator",
+-- `enum Mode {Interactive, Autonomous}` resolved in `server/src/pty/mode.rs`) had
+-- NO observable surface (research note seq26): `pty_sessions.source` is
+-- `spawned|ingested` provenance ONLY — NOT a mode — and the change-notification /
+-- stream surface carried nothing to distinguish a context-selected autonomous
+-- spawn from an interactive terminal session. This column is the durable home for
+-- that discriminator so 1B-F5 can persist and observe it per session.
+--
+-- ## mode column (ADD-COLUMN only — no table rebuild)
+--   * `mode` — nullable, NO DEFAULT, NO CHECK. Legacy/pre-0020 rows carry NULL
+--               (mode unknown — the discriminator did not exist when they were
+--               written). New rows are stamped 'autonomous' | 'interactive' at
+--               spawn time by the resolver. Nullable-with-no-default is the only
+--               shape SQLite's `ALTER TABLE ADD COLUMN` accepts for a forward-only
+--               additive column whose existing rows have no known value (precedent:
+--               `findings.repo_id` in 0004, `worktrees.repo_link_id` in 0019). A
+--               CHECK is deliberately omitted: SQLite cannot ADD a CHECK to a
+--               pre-existing NULL-bearing column without the full table-rebuild
+--               dance this migration avoids, and the value vocabulary is enforced
+--               at the typed `Mode` enum boundary in Rust, mirroring how
+--               `work_items.lane`/`tier` keep their vocab at the repo/enum layer.
+--
+-- NOTE — the `pty_sessions_project_kind_check_insert` / `_update` triggers
+-- (migration 0008) fire on `NEW.project_id` only. They are UNAFFECTED by this
+-- column: `mode` is not `project_id`, so an ingested/spawned INSERT still
+-- RAISE(ABORT)s the txn iff its `project_id` is not a live kind='project' row,
+-- exactly as before. The new column adds no trigger of its own.
+--
+-- ## ROLLBACK RECIPE (forward-only — no down-migration, no DROP COLUMN)
+-- To neutralise the data effects: `UPDATE pty_sessions SET mode = NULL;`. The
+-- schema column stays (SQLite `DROP COLUMN` is avoided per the forward-only
+-- discipline); any true revert is a NEW forward migration that neutralises the
+-- column, never a down-migration or a manual DROP.
+
+ALTER TABLE pty_sessions ADD COLUMN mode TEXT;                                -- nullable, NO DEFAULT/CHECK: autonomous|interactive mode discriminator; NULL for legacy rows; vocab enforced at the typed `Mode` enum boundary in Rust (precedent: findings.repo_id 0004, worktrees.repo_link_id 0019)

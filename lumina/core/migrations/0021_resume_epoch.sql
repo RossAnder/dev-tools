@@ -1,0 +1,68 @@
+-- lumina migration 0021: resume epoch-guard + resolved-after-close marker on
+-- open_questions (ADD-COLUMN, PURELY ADDITIVE).
+--
+-- Forward-only; no down-migration. Recovery if a later task fails: `git revert`
+-- this file and recreate the gitignored dev DB (db::init / `sqlx migrate run`
+-- rebuilds it from the embedded migration set). This migration adds two nullable
+-- `open_questions` columns — it touches no existing column, default, index, or
+-- trigger and changes no existing query result (the `list_open_questions` SELECT
+-- names its columns explicitly, never `SELECT *`), so it breaks no current
+-- consumer or test; a wipe-and-recreate is safe.
+--
+-- ## Why (focus 1C.1 durable async comms — research note seq19 + edge note seq28)
+-- `resolve_open_question` guards against a DOUBLE-resolve (status != 'open' errs)
+-- and unblocks the chosen branch's tasks to 'todo', but it carries NO epoch/
+-- version tying "the answer" to "the question's state when it was asked". Once a
+-- branch is unblocked, re-initiation is an ordinary claim — so if context shifted
+-- between ASK and ANSWER (e.g. the story was re-planned, the parked task replaced),
+-- a STALE human resolution silently applies to whatever 'todo' tasks now match.
+-- An epoch token stamped at ask-time and validated at resolve-time makes that
+-- staleness DETECTABLE rather than silent.
+--
+-- Edge note seq28: if a human answers AFTER the owning run/session clean-closed,
+-- the resolution lands into a closed run with NO live consumer to re-initiate the
+-- parked work — the resolution is silently stranded. A durable
+-- 'resolved-after-close' marker records that this happened so the deferred 1C.3
+-- tokio scheduler can later sweep for late resolutions and re-initiate them rather
+-- than leave them orphaned.
+--
+-- ## Columns (ADD-COLUMN only — no table rebuild)
+-- SQLite's ALTER TABLE adds exactly ONE column per statement, so these are two
+-- separate `ALTER TABLE open_questions ADD COLUMN ...;` statements:
+--   * `resume_epoch`        — nullable INTEGER, NO DEFAULT, NO CHECK. The epoch/
+--                             version token captured at ASK time (set by
+--                             `add_open_question` / `escalate_decision_and_park_task`
+--                             to the parked task's `updated_at`-derived monotonic
+--                             stamp). Legacy/pre-0021 rows carry NULL (no epoch was
+--                             captured when they were asked) — a NULL epoch is
+--                             treated as "unguarded" at resolve time (back-compat:
+--                             an old question still resolves, just without staleness
+--                             detection). Nullable-with-no-default is the only shape
+--                             SQLite's `ALTER TABLE ADD COLUMN` accepts for a
+--                             forward-only additive column whose existing rows have
+--                             no known value (precedent: `findings.repo_id` in 0004,
+--                             `worktrees.repo_link_id` in 0019, `pty_sessions.mode`
+--                             in 0020).
+--   * `resolved_after_close` — nullable TEXT (ISO-8601 timestamp), NO DEFAULT, NO
+--                             CHECK. NULL = the normal case (resolution arrived
+--                             while the owning run/session was live, or the question
+--                             is still open). A non-NULL timestamp records that a
+--                             resolution LANDED into an already-closed run — the
+--                             durable marker the deferred 1C.3 scheduler reads to
+--                             re-initiate a late resolution rather than strand it.
+--                             A timestamp (not a 0/1 flag) so the sweeper can order
+--                             / age late resolutions.
+--
+-- A CHECK is deliberately omitted on both: SQLite cannot ADD a CHECK to a
+-- pre-existing NULL-bearing column without the full table-rebuild dance this
+-- migration avoids, and the semantics are enforced at the repo layer in Rust.
+--
+-- ## ROLLBACK RECIPE (forward-only — no down-migration, no DROP COLUMN)
+-- To neutralise the data effects:
+--   UPDATE open_questions SET resume_epoch = NULL, resolved_after_close = NULL;
+-- The schema columns stay (SQLite `DROP COLUMN` is avoided per the forward-only
+-- discipline, mirrors 0013/0015/0020); any true revert is a NEW forward migration
+-- that neutralises the columns, never a down-migration or a manual DROP.
+
+ALTER TABLE open_questions ADD COLUMN resume_epoch INTEGER;                   -- nullable, NO DEFAULT/CHECK: ask-time epoch/version token; NULL = legacy/unguarded; validated at resolve to detect a stale resolution (research note seq19)
+ALTER TABLE open_questions ADD COLUMN resolved_after_close TEXT;              -- nullable ISO-8601 ts, NO DEFAULT/CHECK: set when a resolution arrives after the owning run/session closed (edge note seq28); the durable marker the deferred 1C.3 scheduler reads to re-initiate a late resolution

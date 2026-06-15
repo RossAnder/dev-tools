@@ -4,23 +4,26 @@ description: Decompose a ready story into task children — proposing vertical-s
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
 disable-model-invocation: true
-context: fork
-agent: general-purpose
 ---
 
 # `lumina:decompose-tasks`
 
-Decompose a planned story into its task children. This skill reads the full story (problem_statement, accepted research notes, answered open questions, approach narrative, rejected alternatives, risks, edge-case notes, verification commands), proposes a task list with foundation-first ordering, named vertical-slice and pattern-replacement GROUPINGS that span subsets of those tasks (units-of-implementation — implement+test+commit together; the groupings are NOT modelled in schema in round-3.5, only surfaced in proposal prose), explicit task-level `task_kind` discriminators (`foundation` / `main` / `polish` — the migration-0007 narrowed vocab; per-task, independent of group membership), and exhaustive Grep-derived file enumeration on pattern-replacement bundles. Gates each proposed task by a per-task user `AskUserQuestion`, and writes accepted tasks via `mcp__lumina__create_work_item` + `mcp__lumina__set_task_kind`. This is the THIRD forked-context skill in the `lumina-story-blocks` family (joining `research-notes` and `story-review`); the `context: fork` + `agent: general-purpose` pair in the frontmatter sends this skill into an isolated subagent so the multi-step reading, pattern-replacement Grep enumeration, multi-agent fan-out, and proposal synthesis stay out of the parent planning conversation. The parent sees only this skill's final structured summary.
+Decompose a planned story into its task children. This skill reads the full story (problem_statement, accepted research notes, answered open questions, approach narrative, rejected alternatives, risks, edge-case notes, verification commands), proposes a task list with foundation-first ordering, named vertical-slice and pattern-replacement GROUPINGS that span subsets of those tasks (units-of-implementation — implement+test+commit together; the groupings are NOT modelled in schema in round-3.5, only surfaced in proposal prose), explicit task-level `task_kind` discriminators (`foundation` / `main` / `polish` — the migration-0007 narrowed vocab; per-task, independent of group membership), and exhaustive Grep-derived file enumeration on pattern-replacement bundles. Gates each proposed task by a per-task user decision (live `AskUserQuestion` in interactive mode; the autonomous-mode default documented at step 5 when live AUQ is dead), and writes accepted tasks via `mcp__lumina__create_work_item` + `mcp__lumina__set_task_kind`. Whether the skill runs forked or inline is a RUNTIME decision keyed on the execution mode (see "Run mode: fork-vs-inline" below): in autonomous mode it forks into an isolated `agent: general-purpose` subagent so the multi-step reading, pattern-replacement Grep enumeration, multi-agent fan-out, and proposal synthesis stay out of the parent's durable-comms transcript (the parent sees only the final structured summary); in interactive mode it runs inline so the user gets live per-task gating.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape — plus the §d forked-context extras above), §b (5-step check-before-act idempotency, applied per-PROPOSED-TASK here rather than per-invocation), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — decompose-tasks is plan-time execution, NOT a vet skill), §d (forked-context rationale — see "§d cardinality note" below), §e (Sentry pattern — skill = instructions, MCP = execution), §i (story-review pattern — relevant because story-review surfaces `task_kind` + `complexity` + `files_touched` issues this skill produces), §j (batch-scheduled task execution — load-bearing: this skill writes the tasks the downstream `/lumina:wire-task-deps` will edge, and the complexity-high split gate fires there, not here).
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per-PROPOSED-TASK here rather than per-invocation), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — decompose-tasks is plan-time execution, NOT a vet skill), §d (run-mode / fork-vs-inline rationale — see "Run mode: fork-vs-inline" below), §e (Sentry pattern — skill = instructions, MCP = execution), §i (story-review pattern — relevant because story-review surfaces `task_kind` + `complexity` + `files_touched` issues this skill produces), §j (batch-scheduled task execution — load-bearing: this skill writes the tasks the downstream `/lumina:wire-task-deps` will edge, and the complexity-high split gate fires there, not here).
 
-## §d cardinality note (round-2)
+## Run mode: fork-vs-inline (per §d)
 
-CONVENTIONS.md §d currently cites TWO forked-context skills (`research-notes` + `story-review`). With this skill the count is THREE — `decompose-tasks` is the third forked-context skill in the plugin. The §d rationale ("multi-step exploration whose intermediate tool output would saturate the main planning context") applies equally here — a decomposition pass reads every planning block, runs multi-agent fan-out when the story spans foundation-disjoint modules (R26), runs `Grep --files_with_matches` for every pattern-replacement task (R25), and synthesises a proposed task list. The §d cardinality language should be amended in a follow-up; the frontmatter shape (7 keys: §a's 4 mandatory + `argument-hint` + the two fork keys) is correct.
+Whether to fork is selected at runtime from the execution mode (the `LUMINA_AUTONOMOUS` signal, corroborated server-side against the session's spawned-provenance through lumina's single-source mode resolver, which fails SAFE to interactive whenever the signal is absent, unverified, or conflicts):
+
+- **Autonomous mode** (lumina-spawned / scheduler-driven) → run FORKED in an isolated `agent: general-purpose` subagent. A decomposition pass reads every planning block, runs multi-agent fan-out when the story spans foundation-disjoint modules (R26), runs `Grep --files_with_matches` for every pattern-replacement task (R25), and synthesises a proposed task list — exactly the kind of multi-step workflow whose intermediate tool output would saturate the parent's durable-comms transcript. Live `AskUserQuestion` is structurally dead here, so the per-task gate (step 5) and the R28 in-progress confirm-prompt (step 2) fall back to their autonomous-mode defaults documented at those steps.
+- **Interactive mode** (human terminal — the fail-safe default) → run INLINE so the user walks the per-task `AskUserQuestion` gate live and can `Edit` / `Drop` / `Skip rest` each proposal.
+
+Fork is no longer a static per-skill property recorded in frontmatter — §d (post-1C.1) treats it as a runtime/mode decision, so this skill carries no `context:`/`agent:` keys; the `agent: general-purpose` target applies only on the autonomous fork path described above.
 
 ## MCP tools used
 
-- `mcp__lumina__get_session_context` — session-start correlation stamp (step 1, read-only — no event). Resolves `{project_id?, sprint_id?, story_id?, epic_id?}` for `$work_item_id` so the ids land in this fork's transcript for the migration-0015 corpus harvest. See [`../mcp/SKILL.md`](../mcp/SKILL.md#session-start-correlation-migration-0015).
+- `mcp__lumina__get_session_context` — session-start correlation stamp (step 1, read-only — no event). Resolves `{project_id?, sprint_id?, story_id?, epic_id?}` for `$work_item_id` so the ids land in this run's transcript (the fork's transcript in autonomous mode) for the migration-0015 corpus harvest. See [`../mcp/SKILL.md`](../mcp/SKILL.md#session-start-correlation-migration-0015).
 - `mcp__lumina__get_work_item` — story read (folds in `attributes.problem_statement`, `attributes.execution_strategy`, `attributes.rejected_alternatives`, `attributes.verification_commands`, `research_notes`, `acceptance_criteria`, `open_questions`, `risks`, existing task children, existing `findings`).
 - `mcp__lumina__create_work_item` — creates one task work-item per accepted proposal (`{kind: "task", parent_id: $work_item_id, title, body, origin: "plan"}`); returns the new task id.
 - `mcp__lumina__set_task_kind` — stamps the new task's `task_kind` column to one of `foundation` / `main` / `polish` (matches migration 0007's narrowed CHECK constraint — see CONVENTIONS §j for why the round-2 four-value vocab was culled).
@@ -35,11 +38,11 @@ See [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools for canonic
 
 R28's contract describes not-started tasks as "superseded en-masse." Lumina's `Status` enum (`lumina/src/domain.rs`) does not include a `superseded` value — the available terminal states are `todo`, `in_progress`, `blocked`, `done`, `cancelled`. The closest representation for "mark this not-started prior task as obsoleted by the new decomposition" is `cancelled`. This skill therefore flips not-started prior tasks to `status: "cancelled"` AND emits one `decomposition_regenerated` activity entry on the parent story pointing to the new batch. The activity entry is the durable supersession trace; the `cancelled` status is the read-side signal. If a future migration adds a `superseded` Status variant, this skill's R28 supersede branch should switch over in lockstep.
 
-## Subagent procedure (the body the fork executes)
+## Procedure (the body the skill executes — forked in autonomous mode, inline in interactive)
 
 ### 1. Prerequisite read
 
-At the top of the fork, call `mcp__lumina__get_session_context({work_item_id: "$work_item_id"})` ONCE (read-only — no event, no write) so the resolved sprint/story/epic ids are stamped into this fork's transcript for the migration-0015 corpus harvest. This is correlation only and does not gate decomposition.
+At the top of the run, call `mcp__lumina__get_session_context({work_item_id: "$work_item_id"})` ONCE (read-only — no event, no write) so the resolved sprint/story/epic ids are stamped into the transcript for the migration-0015 corpus harvest. This is correlation only and does not gate decomposition.
 
 Then call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind:
 
@@ -59,11 +62,12 @@ Surface the input bill of materials to the user as a one-line preface to step 3 
 
 If the prior task children list bound in step 1 is non-empty, branch per R28:
 
-- **Any prior task has `status="in_progress"`** → ABORT with confirm-prompt. Invoke `AskUserQuestion`:
+- **Any prior task has `status="in_progress"`** → confirm before proceeding. **Interactive mode**: invoke `AskUserQuestion`:
   > Header: `Existing in-progress tasks`
   > Body: `This story already has decomposed tasks, and at least one (<task_id>, <task_id>, …) is currently in_progress. Re-running decompose-tasks risks conflicting with active work. Choose:`
   > Options (3): `Abort` (default) / `Continue anyway (leaves in_progress tasks untouched, supersedes only not-started)` / `Replace only not-started`
   > On `Abort`: emit one-line `"decompose-tasks aborted: in_progress tasks present."` and exit. On the other two options: proceed to the next bullet's logic with the user's chosen scope.
+  > **Autonomous mode** (live AUQ dead): take the SAFE default — equivalent to the prompt's `Abort` option's caution but non-destructive of active work: proceed with the `Replace only not-started` scope (leave in_progress AND done tasks untouched, supersede only not-started), and record the conflict-with-active-work condition in the final summary so a human can review. Never block on an answer that can never arrive, and never touch an in_progress task.
 - **Any prior task has `status="done"`** → IMMUTABLE. Those tasks pass through unchanged; the new decomposition only adds and supersedes around them. Surface the done-task ids in the final summary's "preserved-done" count.
 - **Not-started prior tasks** (status ∈ {`todo`, `blocked`, `cancelled`, NULL}) — SUPERSEDED en-masse: for each, call `mcp__lumina__update_work_item({id: <prior_id>, status: "cancelled"})` (per the Plan-deviation note above). After the batch flips, emit ONE `decomposition_regenerated` activity entry via `record_task_activity`:
   ```
@@ -81,14 +85,14 @@ If the prior task children list is empty, this step is a no-op; proceed directly
 
 ### 3. Multi-agent fan-out heuristic (R26)
 
-Decide whether to run a single decomposition pass or fan out to parallel sub-agents WITHIN this fork. The threshold is verbatim:
+Decide whether to run a single decomposition pass or fan out to parallel sub-agents WITHIN this run (within the fork, when running forked in autonomous mode). The threshold is verbatim:
 
 > **Fan-out condition: story spans ≥3 foundation-disjoint affected-areas entries (separate crates, separate top-level dirs with no shared types, separate plugin/skill bundles).**
 
 Derive the "affected-areas" set from the story's `verification_commands` (count distinct `--manifest-path` arguments + distinct top-level directories referenced) AND from the accepted research_notes that mention top-level directories. The ≥3 threshold protects against gratuitous fan-out on small two-module stories where coordination overhead (post-merge dedup + edge-resolution) exceeds the parallelism gain documented in R26 (~36% wall-clock reduction; 5–10% conflict rate).
 
 - **Single-pass** (< 3 affected areas): proceed to step 4 inline.
-- **Fan-out** (≥ 3 affected areas): dispatch one sub-decompose-agent per affected area within the fork (each sees only that area's slice of the inputs — its slice of the approach narrative, the accepted research notes that mention its directory, and its `verification_commands` entry). Each sub-agent returns a partial proposed-task list scoped to its area. Merge the partial lists, then run a dedup pass with three rules:
+- **Fan-out** (≥ 3 affected areas): dispatch one sub-decompose-agent per affected area within this run (within the fork, in autonomous mode; each sees only that area's slice of the inputs — its slice of the approach narrative, the accepted research notes that mention its directory, and its `verification_commands` entry). Each sub-agent returns a partial proposed-task list scoped to its area. Merge the partial lists, then run a dedup pass with three rules:
   - **Identical titles collapse** to one proposal (foundation tasks proposed by multiple sub-agents — e.g. a shared schema migration — are common; collapse them into a single foundation task).
   - **Near-match titles** (substring overlap ≥60% on the title text after stop-word removal) surface as a single proposal in step 5 with the user explicitly invited to disambiguate ("Two sub-agents proposed similar tasks: '<A>' / '<B>'. Accept one, both, or neither?").
   - **Foundation-task ordering** is preserved across the merge: any foundation task proposed by any sub-agent is hoisted ahead of all `main` tasks in the merged list, regardless of which sub-agent proposed it.
@@ -103,15 +107,19 @@ Produce a proposed task list with these constraints:
 - **Pattern-replacement GROUPING pattern** (R25): when a portion of the story's work is a sweep — e.g. "replace every call site of `foo()` with `bar()`" or "rename column `X` to `Y` across all `query!` macros" — identify the affected file list via `Grep --files_with_matches` and propose a pattern-replacement GROUP spanning the tasks that perform the sweep. Like vertical-slice groups, this is a subset of the story's tasks (not all of them); a story may have multiple pattern-replacement groups, and a single task may participate in zero or more. Pattern-replacement is NOT a `task_kind` value (per the migration-0007 cull); the resulting per-bucket tasks are `task_kind = "main"`. Bucket the file list into per-task slices (typically one task per affected directory or one task per 3-5 files, respecting the apply-flow 3-file-per-item cap). The Grep call MUST use `--files_with_matches` (not `--content`) so the file list is the artefact, and MUST scope to the affected-areas directories identified in step 3 (a repository-wide Grep would pollute the list with unrelated matches). Glob patterns are FORBIDDEN in the recorded `files_touched` — every entry must be a concrete file path (R25's enforceability hinges on the list being exhaustive and verifiable post-completion; `**/*.ts` provides neither). If Grep returns zero matches, the work isn't actually a pattern-replacement — re-propose as ordinary vertical-slice grouping or surface for user disambiguation. The per-bucket list is presented in the step-5 proposal so the user sees what will be touched; on `Accept`, the list is recorded into the task's `attributes.files_touched` via `/lumina:set-task-spec` AFTER this skill returns, and the inferred Grep pattern itself is recorded into `attributes.files_touched_pattern` on every task in the bucket so downstream skills can detect pattern-replacement membership without a `task_groups` table. The runtime drift check (every listed file appears in the task's git-diff at completion) is implemented in `/lumina:set-task-spec`, NOT here — this skill only produces the list. R25 is the novel cross-cutting contribution; cite it explicitly in the proposal's per-task description.
 - **Complexity-high gate (R27)**: this skill does NOT prompt for complexity here. The downstream gate fires in `/lumina:wire-task-deps` per §j ("for any task with `complexity = 'high'`, the skill MUST prompt the user to confirm it shouldn't split further BEFORE writing any inbound or outbound edge"). This skill MAY suggest a complexity grade in the proposal description for the user to keep in mind, but the binding write happens via `mcp__lumina__set_complexity` later. Bias aggressively toward smaller per-task scope (R27: agent reliability degrades super-linearly with task complexity).
 
-The proposal is internal to the fork until step 5 walks each item through the user gate.
+The proposal stays internal (to the fork in autonomous mode; to the run's pre-write scratch in interactive mode) until step 5 routes each item through the gate.
 
-### 5. Per-task user gate (per §b, applied per-PROPOSED-TASK)
+### 5. Per-task gate (per §b, applied per-PROPOSED-TASK)
 
-For each proposed task in foundation-first order (foundation block first, then main block, then polish block — within each block, in proposal order), invoke `AskUserQuestion`:
+For each proposed task in foundation-first order (foundation block first, then main block, then polish block — within each block, in proposal order), route the gate by run mode.
+
+**Interactive mode** — invoke `AskUserQuestion`:
 
 > Header: `Proposed task <N>/<TOTAL>`
 > Body: `[<task_kind>] <proposed title>\n\n<proposed body, including pattern-replacement file list if applicable>\n\nGrounded by: <comma-separated accepted-note summaries the slice draws on>`
 > Options (4): `Accept` / `Edit` / `Drop` / `Skip rest`
+
+**Autonomous mode** — live AUQ is structurally dead, so the agent takes the decision itself: `Accept` every proposal it has confidently grounded against the accepted research notes + approach (the autonomous-mode default — the agent surfaces only HARD calls). A proposal the agent is NOT confident about is NOT silently created; instead it is left out of this run and recorded in the final summary as a deferred-for-review proposal, so a human can add it via the durable record. `Edit` and `Skip rest` have no autonomous analogue (there is no interactive editor and no reason to truncate a non-interactive run); `Drop` collapses into "not created + recorded as deferred". Route the per-option write logic below from the resolved decision.
 
 - **Accept** → write the task in two MCP calls:
   ```
@@ -147,9 +155,9 @@ mcp__lumina__record_task_activity {
 
 One summary activity entry per skill invocation, NOT per created task — this differs from `research-notes` (one entry per NOTE). Per-task audit lives in the `work_items` rows themselves + the events outbox (each `create_work_item` emits one event); the activity entry is the per-run rollup.
 
-### 7. Final summary back to parent
+### 7. Final summary
 
-The fork's final output to the parent conversation is a single structured summary. Format:
+The final output is a single structured summary. In autonomous mode this is the fork's only output to the parent conversation; in interactive mode it is the run's closing report to the user. Format:
 
 ```
 decompose-tasks: created <N> tasks on <story_id>, <M> tasks edited, <K> dropped
@@ -159,10 +167,13 @@ decompose-tasks: created <N> tasks on <story_id>, <M> tasks edited, <K> dropped
   Tasks created (in foundation-first order):
     - [<task_kind>] T<id>: "<title>"
     - …
+  Deferred for review (autonomous mode — proposals NOT created because the agent was not confident; add via the durable record): <Q>
+    - [<task_kind>] "<proposed title>" — <one-line reason deferred>
+    - …
 Recommended next step: /lumina:set-task-spec <task_id> on each new task (populates files_touched, acceptance criteria, dual-track outcomes per R23), then /lumina:wire-task-deps <story_id> to write task→task edges and run the complexity-high split gate (per §j).
 ```
 
-This is the entire visible output to the parent. The per-task user-gate prompts, the proposal-synthesis reasoning, the multi-agent fan-out sub-agent traces (if step 3 fanned out), and the Grep results for pattern-replacement enumeration all stay confined to the fork.
+(The "Deferred for review" block fires only in autonomous mode — in interactive mode `Drop`ped/`Skip rest` proposals are the user's own choice and need no review hand-off.) In autonomous mode this is the entire visible output to the parent — the per-task gate decisions, the proposal-synthesis reasoning, the multi-agent fan-out sub-agent traces (if step 3 fanned out), and the Grep results for pattern-replacement enumeration all stay confined to the fork. In interactive mode the user has already walked the per-task gate live; this summary is the closing recap.
 
 ## 5-step idempotency mapping (per §b — applied per-PROPOSED-TASK)
 
@@ -174,7 +185,7 @@ Per CONVENTIONS.md §b the 5-step Check-Before-Act sequence is normally applied 
 | 2. Inspect | Re-run tri-state classification of prior children (procedure step 2) + proposal synthesis (steps 3–4). |
 | 3. Absent → create | Proposed task has no prior-decomposition counterpart → `create_work_item` + `set_task_kind` (procedure step 5, Accept path). |
 | 4. Present and matches → no-op | A done prior task remains valid for the new decomposition → preserved unchanged (R28 immutable branch). |
-| 5. Present and differs → confirm-supersede | Not-started prior tasks → flipped to `status="cancelled"` via `update_work_item` + one `decomposition_regenerated` activity (procedure step 2, R28 supersede branch). The user-confirm is the AskUserQuestion in step 2 for the in_progress case; for the not-started case the supersession is unprompted (matches R28's "superseded en-masse" contract). |
+| 5. Present and differs → confirm-supersede | Not-started prior tasks → flipped to `status="cancelled"` via `update_work_item` + one `decomposition_regenerated` activity (procedure step 2, R28 supersede branch). The confirm for the in_progress case is the step-2 mode-routed gate (interactive: live `AskUserQuestion`; autonomous: the safe `Replace only not-started` default); for the not-started case the supersession is unprompted in both modes (matches R28's "superseded en-masse" contract). |
 
 ## Worked examples
 
@@ -194,7 +205,7 @@ User accepts 1–4, drops 5. Final: created=4, edited=0, dropped=1, by-kind=2/2/
 
 ### Worked example 2 — re-run with R28 tri-state
 
-Same story re-decomposed after task 3 completed (status=done) and task 4 is in_progress. Step 2 detects the in_progress task and prompts the user via AskUserQuestion. User chooses `Replace only not-started`. Step 2 flips tasks 1, 2, 5 (which were todo/cancelled) to `cancelled` if not already, then emits one `decomposition_regenerated` activity entry. Step 3-5 propose a new set of tasks 6, 7, 8 covering the residual scope; task 4 (in_progress) and task 3 (done) are not touched. Final summary lists `Preserved done tasks: 1 (task 3)`, `Superseded from prior decomposition: 2 (tasks 1, 2, 5 — 3 tasks flipped to cancelled)`, plus the newly created 6/7/8.
+Same story re-decomposed after task 3 completed (status=done) and task 4 is in_progress. Step 2 detects the in_progress task and routes the confirm by mode — in interactive mode it prompts the user via `AskUserQuestion` (this example assumes interactive: the user chooses `Replace only not-started`); in autonomous mode it would take the safe `Replace only not-started` default automatically. Step 2 flips tasks 1, 2, 5 (which were todo/cancelled) to `cancelled` if not already, then emits one `decomposition_regenerated` activity entry. Step 3-5 propose a new set of tasks 6, 7, 8 covering the residual scope; task 4 (in_progress) and task 3 (done) are not touched. Final summary lists `Preserved done tasks: 1 (task 3)`, `Superseded from prior decomposition: 2 (tasks 1, 2, 5 — 3 tasks flipped to cancelled)`, plus the newly created 6/7/8.
 
 ### Worked example 3 — fan-out
 
@@ -219,6 +230,6 @@ The skill body MUST NOT call any other lumina write tools. Read-only calls are a
 
 - Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §d, §e, §i, §j.
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — see Planning & decision tools, Task graph family.
-- Companion forked skills: [`../research-notes/SKILL.md`](../research-notes/SKILL.md), [`../story-review/SKILL.md`](../story-review/SKILL.md) — mirror their frontmatter shape and inline citation conventions.
+- Companion research/critique skills: [`../research-notes/SKILL.md`](../research-notes/SKILL.md), [`../story-review/SKILL.md`](../story-review/SKILL.md) — mirror their frontmatter shape (and their run-mode fork-vs-inline framing) and inline citation conventions.
 - Downstream skills in the task-decomposition family: `/lumina:set-task-spec` (per-task files_touched + dual-track outcomes), `/lumina:wire-task-deps` (task→task edges + Kahn batch compute + complexity-high split gate).
 - Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — see R24 (vertical-slice + foundation-first), R25 (pattern-replacement exhaustive `files_touched`), R26 (multi-agent fan-out heuristic), R27 (complexity-high reliability degradation; gate fires in wire-task-deps), R28 (re-run tri-state). Note that R24/R25 originally exposed "vertical-slice" and "pattern-replacement" as `task_kind` values, which migration 0007 (round-3.5 review follow-up) culled — those concepts are correctly modelled as **intra-story task-subset groupings** (a story may have 0+ vertical slices and 0+ pattern-replacement bundles, each spanning some subset of the story's tasks), NOT as values of the per-task `task_kind` enum. Round-3.5 does not add a schema-level groupings table; the groupings live in this skill's proposal prose until a future round adds `task_groups` / `task_group_members` driven by a concrete consumer like `/lumina:run-batch`.

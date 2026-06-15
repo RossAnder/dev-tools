@@ -27,7 +27,8 @@
 use uuid::Uuid;
 
 use crate::args;
-use crate::db::DbClient;
+use crate::db::{scalar_opt, DbClient};
+use crate::domain::SessionSource;
 use crate::error::AppError;
 use crate::jsonl_tail::{parse_line, record_index_fields, JsonlRecordParsed, SessionRecordIndex};
 
@@ -285,6 +286,48 @@ pub async fn record_session_ingested_event(
     payload: serde_json::Value,
 ) -> Result<(), AppError> {
     super::events::record_inert_event(tx, "session", session_id, "session.ingested", payload).await
+}
+
+// ---------------------------------------------------------------------------
+// Server-verifiable provenance fact (focus 1C.1 — autonomous-mode corroboration).
+// ---------------------------------------------------------------------------
+
+/// Read the server-verifiable PROVENANCE fact for a session — the typed
+/// `pty_sessions.source` discriminator — that the autonomous-mode resolver
+/// (`lumina_server::pty::mode`) corroborates a spoofable `LUMINA_AUTONOMOUS`
+/// env signal against. Research note seq15: the mode decision must be tied to
+/// a fact lumina itself recorded, NOT a bare inherited env var (anything in a
+/// human's shell profile could otherwise read as autonomous and suppress the
+/// human-decision gating).
+///
+/// Returns:
+///   * `Some(SessionSource::Spawned)` — lumina launched this session via
+///     `PtyTransport`; an env signal here is CORROBORATED.
+///   * `Some(SessionSource::Ingested)` — a harvested terminal/external session;
+///     an env signal here is a CONFLICT, which the resolver fails safe on.
+///   * `None` — no `pty_sessions` row for `session_id` yet (a brand-new
+///     autonomous run has no spawned-correlation until its row lands — seq30),
+///     OR the stored `source` is an unrecognised string. Both are treated as
+///     ABSENCE → fail safe to interactive.
+///
+/// An unknown stored `source` maps to `None` rather than an error on purpose:
+/// a security fail-safe must degrade to "not corroborated", never surface a
+/// hard error a caller might mishandle into auto-deciding.
+pub async fn session_source(
+    db: &impl DbClient,
+    session_id: &str,
+) -> Result<Option<SessionSource>, AppError> {
+    let raw: Option<String> = scalar_opt(
+        db,
+        "SELECT source FROM pty_sessions WHERE id = $1",
+        args![session_id.to_owned()],
+    )
+    .await?;
+    Ok(raw.and_then(|s| match s.as_str() {
+        "spawned" => Some(SessionSource::Spawned),
+        "ingested" => Some(SessionSource::Ingested),
+        _ => None,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -776,6 +819,52 @@ mod tests {
         .expect("read cwd");
         assert_eq!(source, "spawned", "ON CONFLICT(id) DO NOTHING preserved the first source");
         assert_eq!(cwd, "/dev/a", "the original cwd is preserved");
+    }
+
+    /// `session_source` reads the typed provenance fact: absent row → `None`
+    /// (absence), a `spawned` row → `Some(Spawned)` (corroboration), an
+    /// `ingested` row → `Some(Ingested)` (a conflict the resolver fails safe on).
+    #[tokio::test]
+    async fn session_source_reads_typed_provenance() {
+        let db: AnyPool = connect_in_memory().await.expect("pool").into();
+
+        // Absence: no pty_sessions row yet (a brand-new autonomous run).
+        assert_eq!(
+            session_source(&db, "no-such-session").await.expect("read absent"),
+            None,
+            "no pty_sessions row → None (absence → resolver fails safe)"
+        );
+
+        seed_session(&db, "sess-ingested").await; // seed_session writes source='ingested'
+        assert_eq!(
+            session_source(&db, "sess-ingested").await.expect("read ingested"),
+            Some(SessionSource::Ingested),
+            "an ingested session is a conflict the resolver fails safe on"
+        );
+
+        // A spawned row — the only provenance that corroborates the env signal.
+        {
+            let mut tx = db.begin().await.expect("begin");
+            upsert_session_row(
+                tx.as_mut(),
+                "sess-spawned",
+                "spawned",
+                "/dev/proj",
+                None,
+                None,
+                None,
+                "2026-06-15T00:00:00Z",
+                None,
+            )
+            .await
+            .expect("seed spawned");
+            tx.commit().await.expect("commit");
+        }
+        assert_eq!(
+            session_source(&db, "sess-spawned").await.expect("read spawned"),
+            Some(SessionSource::Spawned),
+            "a spawned session corroborates the env signal"
+        );
     }
 
     // =====================================================================

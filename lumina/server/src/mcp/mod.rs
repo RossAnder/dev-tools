@@ -89,6 +89,7 @@ use lumina_core::error::AppError;
 use lumina_core::repo;
 
 mod findings;
+mod mode;
 mod planning;
 mod reads;
 mod repo_links;
@@ -110,6 +111,7 @@ pub(crate) mod test_support;
 // types by that path. Tool methods and the `tool_router_*` fns are impl items,
 // so these globs re-export only the free types.
 pub use findings::*;
+pub use mode::*;
 pub use planning::*;
 pub use reads::*;
 pub use repo_links::*;
@@ -248,6 +250,7 @@ impl LuminaTools {
                 + Self::tool_router_task_graph()
                 + Self::tool_router_team_execution()
                 + Self::tool_router_sessions()
+                + Self::tool_router_mode()
                 + Self::tool_router_worktrees(),
         }
     }
@@ -460,6 +463,10 @@ mod tests {
             "list_open_questions_for_sprint",
             // session-context read tool (harness-session-corpus, ADR-0004 / T8)
             "get_session_context",
+            // execution-mode read tool (focus 1C.1, AC1 consumer; defined in
+            // mcp/mode.rs — corroborates the caller's LUMINA_AUTONOMOUS token
+            // server-side via crate::pty::mode, no DB)
+            "get_execution_mode",
             // worktree / checkpoint / commit-provenance tools (migration 0016,
             // sprint-lifecycle & worktree substrate, ADR-0002 layer 2)
             "create_worktree",
@@ -493,7 +500,7 @@ mod tests {
 
         // Exact total: catches a stray (or silently-dropped) tool that the
         // membership loop above would not.
-        // 87 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
+        // 88 = 39 baseline (Round-1) + 14 Round-2 migration-0005 tools (T4)
         //    + 2 Round-3 migration-0006 tools (T4: get_task_dispatch_plan, set_task_tier)
         //    + 3 migration-0010 epic/focus tools (T6: set_shape, set_epic_plan, set_focus_plan)
         //    + 3 migration-0011 Part-B batch-write tools (B18: add_findings,
@@ -529,16 +536,20 @@ mod tests {
         //      mcp/worktrees.rs — pair-exact removal of a bad historical
         //      task_commits provenance edge; the R4 sha shape-validation only
         //      guards NEW record_task_commits writes).
+        //    + 1 get_execution_mode (focus 1C.1, AC1 consumer; defined in
+        //      mcp/mode.rs — corroborates the caller's LUMINA_AUTONOMOUS token
+        //      against this process's secret via crate::pty::mode and resolves
+        //      to "autonomous"/"interactive"; read-only, no DB, no write).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            87,
-            "advertised tool count must be exactly 87, got {}: {names:?}",
+            88,
+            "advertised tool count must be exactly 88, got {}: {names:?}",
             names.len()
         );
 
-        // Name-uniqueness guard (router-split risk mitigation): the eleven
+        // Name-uniqueness guard (router-split risk mitigation): the twelve
         // per-family `tool_router_*` sub-routers are summed with
         // `ToolRouter::merge`, which is NAME-KEYED — a duplicate tool name
         // across two families would be silently absorbed while KEEPING the
@@ -549,8 +560,8 @@ mod tests {
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            87,
-            "advertised tool names must be UNIQUE (87 distinct), got {} distinct of {}: {names:?}",
+            88,
+            "advertised tool names must be UNIQUE (88 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
@@ -666,6 +677,8 @@ mod tests {
             "get_story_finding_queue",
             // session-context read tool (harness-session-corpus, ADR-0004 / T8).
             "get_session_context",
+            // execution-mode read tool (focus 1C.1, AC1 consumer; mcp/mode.rs).
+            "get_execution_mode",
             // worktree / commit-provenance read tools (migration 0016, ADR-0002
             // layer 2).
             "get_worktree",
