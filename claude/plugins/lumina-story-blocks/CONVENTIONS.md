@@ -315,6 +315,8 @@ compute_tier(effort, complexity, files_touched_count, has_cross_repo):
 
 Mirrors `/implement`'s deep-vs-lite agent split: cross-file refactors, security-sensitive code, judgement-heavy work go Deep; mechanical, fully-specified, ≤3-file work goes Lite. The `> 3` ceiling matches the `/optimise-apply` / `/review-apply` 3-file-per-item cap — anything above is cross-file by definition.
 
+**`files_touched_count` source (migration 0023):** the count is now the DE-DUPLICATED EXPECTED `task_files` count — the number of distinct `(repo_link_id, path)` rows of `kind='expected'` for the task (the first-class `task_files` table that the migration-0023 pass promoted the former `attributes.files_touched` JSON array into) — NOT the raw `attributes.files_touched` array length. `set_task_spec.files_touched` writes that expected set (and `compute_tier`/`get_task_dispatch_plan` read its deduped count), so two spellings of the same primary-repo file (a bare path and an explicit-primary `{repo, path}` slug) fold to one and no longer double-count toward the `> 3` ceiling. The RULE above is UNCHANGED — only the count's source + dedup moved.
+
 The rule is intentionally simple (no weights, no calibration). When real workload data accumulates, retuning happens in one place: `repo::compute_tier` + this §k. Round-3 tests pin every branch (`compute_tier_high_complexity_is_deep`, …); changes to the rule are deliberate.
 
 ### §k.1 Canonical research-lens vocabulary
