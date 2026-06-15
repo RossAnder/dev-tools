@@ -38,6 +38,17 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use super::*;
+
+/// Review→rework round cap (focus 1C.1, research note seq24). When a
+/// `spawn_task` rework decision pushes the host finding's `rounds` counter to
+/// this many rounds, the loop has churned enough that a human should decide
+/// rather than the reviewer spawning yet another rework task; the cap-and-
+/// escalate path raises a durable, human-decision `open_question` on the
+/// finding's host story and PARKS the freshly-spawned rework task on it (via
+/// the [`escalate_decision_and_park_task`] primitive, inlined on the decision
+/// tx). 3 is a deliberately small value: two automated rework attempts, then
+/// the third trip hands the decision to a human.
+const REWORK_ROUNDS_CAP: i64 = 3;
 use super::events::{record_event, record_inert_event};
 use crate::args;
 use crate::db::{DbClient, Scalar};
@@ -979,14 +990,116 @@ pub async fn record_finding_decision(
             // 3. Round-cap counter: increment the host finding's `rounds` (the
             //    review→rework round counter). `rounds` is nullable and written
             //    ONLY at insert today, so COALESCE the NULL to 0 before the bump.
-            //    The `rounds >= N` cap that makes the reviewer defer+escalate
-            //    instead of spawning another rework is the CONSUMER's logic — we
-            //    only MAINTAIN the counter here.
             tx.execute(
                 "UPDATE findings SET rounds = COALESCE(rounds, 0) + 1 WHERE id = $1",
                 args![finding_id.to_owned()],
             )
             .await?;
+
+            // 3b. Cap-and-escalate (focus 1C.1, research note seq24). Read back
+            //     the post-increment count ON THE TX (same writer snapshot) and,
+            //     once it reaches `REWORK_ROUNDS_CAP`, hand the decision to a
+            //     human: raise a durable `open_question` on the finding's host
+            //     STORY and PARK this freshly-spawned rework task on it, INLINING
+            //     `escalate_decision_and_park_task`'s body on THIS decision tx (we
+            //     are already inside a write tx — calling the self-committing
+            //     primitive on `db` would open a SECOND, separate tx and break the
+            //     single-tx hard-stop contract; seq18). A failed escalation write
+            //     therefore propagates as an `AppError` and rolls the WHOLE
+            //     decision back (hard-stop, not a silent degrade). The escalation
+            //     is gated on the host being a `story` (it always is on the
+            //     review→rework loop — the finding is story-hosted, see the §E
+            //     comment above — but the kind guard keeps this correct if a
+            //     non-story host ever reaches here, in which case we leave the
+            //     rework task claimable rather than escalate against a non-story).
+            let rounds: i64 = crate::db::tx_scalar_one::<i64>(
+                tx.as_mut(),
+                "SELECT COALESCE(rounds, 0) FROM findings WHERE id = $1",
+                args![finding_id.to_owned()],
+            )
+            .await?;
+            if rounds >= REWORK_ROUNDS_CAP {
+                let host_kind = crate::db::tx_scalar_opt::<String>(
+                    tx.as_mut(),
+                    "SELECT kind FROM work_items WHERE id = $1",
+                    args![host.to_owned()],
+                )
+                .await?;
+                if host_kind.as_deref() == Some("story") {
+                    // Raise the human-decision question on the host story
+                    // (mirrors `add_open_question`: `seq` is 1-based monotonic
+                    // within the story).
+                    let question = format!(
+                        "Rework on finding {finding_id} has hit {REWORK_ROUNDS_CAP} rounds \
+                         without resolution — a human should decide how to proceed."
+                    );
+                    let q_id = Uuid::now_v7();
+                    let q_id_str = q_id.to_string();
+                    let q_seq = crate::db::tx_scalar_one::<i64>(
+                        tx.as_mut(),
+                        "SELECT COALESCE(MAX(seq), 0) + 1 FROM open_questions WHERE story_id = $1",
+                        args![host.to_owned()],
+                    )
+                    .await?;
+                    tx.execute(
+                        "INSERT INTO open_questions (id, story_id, seq, question, status) \
+                         VALUES ($1, $2, $3, $4, 'open')",
+                        args![q_id_str.clone(), host.to_owned(), q_seq, question],
+                    )
+                    .await?;
+                    // Two default options: keep iterating, or abandon the rework
+                    // loop (mirrors `add_question_option`: 1-based `seq`).
+                    for (idx, label) in ["continue-rework", "abandon"].iter().enumerate() {
+                        tx.execute(
+                            "INSERT INTO question_options (id, question_id, seq, label, detail) \
+                             VALUES ($1, $2, $3, $4, NULL)",
+                            args![
+                                Uuid::now_v7().to_string(),
+                                q_id_str.clone(),
+                                idx as i64 + 1,
+                                (*label).to_owned()
+                            ],
+                        )
+                        .await?;
+                    }
+                    // Park the freshly-spawned rework task on the question
+                    // (mirrors `escalate_decision_and_park_task` / the BLOCK
+                    // mechanism — never a held lease). The task was just created
+                    // `todo`, so the pre-`todo` park guard is satisfied.
+                    tx.execute(
+                        r#"
+                        UPDATE work_items
+                        SET blocked_by_question_id = $2,
+                            status = 'blocked',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                        "#,
+                        args![new_id_str.clone(), q_id_str.clone()],
+                    )
+                    .await?;
+                    // One export-bearing event on the host STORY's work_item
+                    // aggregate (R1), matching `escalate_decision_and_park_task`'s
+                    // single `open_question.escalated` event. This is in ADDITION
+                    // to the inert `finding.decision_recorded` event below — the
+                    // escalation is a distinct logical write on the STORY (a
+                    // work_item aggregate), so it is NOT folded into the finding
+                    // event; it is the documented multi-write exception, like the
+                    // Resolve arm's `finding.resolved`.
+                    record_event(
+                        tx.as_mut(),
+                        "work_item",
+                        host,
+                        "open_question.escalated",
+                        serde_json::json!({
+                            "question_id": q_id_str,
+                            "parked_task_id": new_id_str,
+                            "finding_id": finding_id,
+                            "rounds": rounds,
+                        }),
+                    )
+                    .await?;
+                }
+            }
         }
 
         Some(new_id)
@@ -1348,6 +1461,98 @@ mod tests {
             recorded_spawn.as_deref(),
             Some(new_id.as_str()),
             "the decision row names the spawned work_item"
+        );
+    }
+
+    /// Count `open_questions` rows on a story.
+    async fn count_open_questions(pool: &SqlitePool, story_id: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM open_questions WHERE story_id = $1")
+            .bind(story_id)
+            .fetch_one(pool)
+            .await
+            .expect("count open_questions")
+    }
+
+    /// Focus 1C.1 (research note seq24): repeated `SpawnTask` rework decisions on
+    /// one story-hosted finding increment `findings.rounds`; BELOW the
+    /// `REWORK_ROUNDS_CAP` no human-decision question is raised, but the decision
+    /// that pushes `rounds` TO the cap escalates — it raises a durable
+    /// `open_question` on the finding's host story and parks the freshly-spawned
+    /// rework task on it.
+    #[tokio::test]
+    async fn record_finding_decision_rework_cap_escalates_to_open_question() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let finding = create_finding(
+            &pool,
+            &story,
+            &NewFinding { summary: Some("flaps in review"), ..NewFinding::default() },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+
+        let spawn_once = |finding: String| {
+            let pool = pool.clone();
+            async move {
+                record_finding_decision(
+                    &pool,
+                    &NewFindingDecision {
+                        finding_id: finding,
+                        decision: FindingDecisionKind::SpawnTask,
+                        decided_by: Some("reviewer".into()),
+                    },
+                )
+                .await
+                .expect("spawn_task decision")
+            }
+        };
+
+        // `rounds` starts NULL (=0). The cap is 3, so the first
+        // `REWORK_ROUNDS_CAP - 1` spawns stay below the cap: no question yet.
+        for round in 1..REWORK_ROUNDS_CAP {
+            spawn_once(finding.clone()).await;
+            assert_eq!(
+                count_open_questions(&pool, &story).await,
+                0,
+                "round {round} is below the cap — no escalation question yet"
+            );
+        }
+
+        // The cap-hitting spawn (rounds → REWORK_ROUNDS_CAP) escalates.
+        let (_decision_id, spawned) = spawn_once(finding.clone()).await;
+        let capped_task = spawned.expect("cap-hitting spawn yields a task").to_string();
+
+        assert_eq!(
+            count_open_questions(&pool, &story).await,
+            1,
+            "hitting the rounds cap raises exactly one human-decision question on the host story"
+        );
+
+        // The freshly-spawned rework task is parked on that question (blocked).
+        let (status, blocked_on): (String, Option<String>) = {
+            use sqlx::Row as _;
+            let r = sqlx::query(
+                "SELECT status, blocked_by_question_id FROM work_items WHERE id = $1",
+            )
+            .bind(&capped_task)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            (r.try_get("status").unwrap(), r.try_get("blocked_by_question_id").unwrap())
+        };
+        assert_eq!(status, "blocked", "the cap-hitting rework task is parked");
+        let question_id: String = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM open_questions WHERE story_id = $1",
+        )
+        .bind(&story)
+        .fetch_one(&pool)
+        .await
+        .expect("the escalation question id");
+        assert_eq!(
+            blocked_on.as_deref(),
+            Some(question_id.as_str()),
+            "the parked task points at the escalation question"
         );
     }
 
