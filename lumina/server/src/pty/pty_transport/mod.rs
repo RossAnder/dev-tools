@@ -283,8 +283,30 @@ impl Transport for PtyTransport {
         // to the spawned child (no global ~/.claude.json mutation). Verified
         // against claude 2.1.156; the gate was introduced by a Claude Code
         // update that reset the prior stored acceptance.
+        // The `--settings` (flagSettings) layer is ALSO the carrier for the
+        // autonomous MODE SIGNAL to Task-spawned teammates. The runtime
+        // `cmd.env(...)` above reaches THIS orchestrator session but NOT the
+        // subagents it launches via the Task tool — those get a FRESH env
+        // (GH #46696). settings.json `env`, by contrast, is applied to every
+        // session AND to subprocesses Claude Code spawns from it (research
+        // notes seq8–seq10), so carrying `LUMINA_AUTONOMOUS=1` here lets both
+        // the orchestrator and its teammates inherit the signal from the same
+        // settings layer. Built with serde_json so the inline JSON stays
+        // well-formed; the var NAME is the single-source `mode::LUMINA_AUTONOMOUS`
+        // const (never hand-spelled).
         cmd.arg("--settings");
-        cmd.arg(r#"{"skipDangerousModePermissionPrompt":true}"#);
+        let mut settings_env = serde_json::Map::new();
+        settings_env.insert(
+            crate::pty::mode::LUMINA_AUTONOMOUS.to_string(),
+            serde_json::Value::from("1"),
+        );
+        cmd.arg(
+            serde_json::json!({
+                "skipDangerousModePermissionPrompt": true,
+                "env": settings_env,
+            })
+            .to_string(),
+        );
         // Steer claude away from the built-in AskUserQuestion picker (which
         // lumina cannot surface) toward lumina's `ask_user_question` MCP tool,
         // which renders in the SPA's structured picker. The session id is baked
