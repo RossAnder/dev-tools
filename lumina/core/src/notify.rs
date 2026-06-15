@@ -36,10 +36,18 @@ pub struct ChangeNotification {
     pub aggregate_id: String,
     /// The event vocabulary entry, e.g. `"created"`, `"status_changed"`.
     pub event_type: String,
+    /// The autonomous-vs-interactive mode discriminator (migration 0020) when
+    /// the producer KNOWS it — e.g. a PTY-session change can carry the spawn's
+    /// resolved `Mode` (`"autonomous"` | `"interactive"`). `None` whenever the
+    /// producer has no mode to report (the common case: domain writes that are
+    /// not session-scoped), so existing producers are unaffected.
+    pub mode: Option<String>,
 }
 
 impl ChangeNotification {
-    /// Construct a notification from any string-ish parts.
+    /// Construct a notification from any string-ish parts. The mode
+    /// discriminator defaults to `None`; use [`ChangeNotification::with_mode`]
+    /// to attach it when the producer knows the session's mode.
     pub fn new(
         aggregate_type: impl Into<String>,
         aggregate_id: impl Into<String>,
@@ -49,7 +57,17 @@ impl ChangeNotification {
             aggregate_type: aggregate_type.into(),
             aggregate_id: aggregate_id.into(),
             event_type: event_type.into(),
+            mode: None,
         }
+    }
+
+    /// Attach the autonomous-vs-interactive mode discriminator (migration 0020),
+    /// returning the updated notification. A producer that knows the session's
+    /// resolved `Mode` chains this onto [`ChangeNotification::new`]; producers
+    /// that don't simply leave `mode` at its `None` default.
+    pub fn with_mode(mut self, mode: impl Into<String>) -> Self {
+        self.mode = Some(mode.into());
+        self
     }
 }
 
