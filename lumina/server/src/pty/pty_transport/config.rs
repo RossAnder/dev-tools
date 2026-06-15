@@ -44,7 +44,7 @@ to type a choice in prose."
 /// decision through the DURABLE open-question channel instead, and — crucially —
 /// to PARK rather than guess when no answer arrives.
 ///
-/// Three contracts, mirroring the durable-escalation research notes:
+/// Four contracts, mirroring the durable-escalation research notes:
 /// - **Durable raise + park, not live ask** (seq17): surface the decision as
 ///   `mcp__lumina__add_open_question` + `mcp__lumina__block_task_on_question`,
 ///   never the native AskUserQuestion (dead in a no-TTY/forked context).
@@ -54,6 +54,13 @@ to type a choice in prose."
 ///   clean-close-vs-resume path after quiescence rather than acting on a guess.
 /// - **Failed durable write is a HARD STOP** (seq18): if the open-question /
 ///   block write FAILS, stop — do not proceed or degrade.
+/// - **Irreversibility floor** (seq20): the enumerated DESTRUCTIVE ops — merge,
+///   branch delete, force-push, work-item delete — ALWAYS require a durable
+///   human decision FIRST, REGARDLESS of mode. The autonomous "take more
+///   decisions" license does NOT extend to them: they cannot be undone, so the
+///   floor overrides the self-decide posture and forces the open-question gate
+///   even when the agent would otherwise act alone. Mode-INDEPENDENT — it is the
+///   one place the autonomous license is capped.
 ///
 /// Kept distinct from [`no_auq_system_prompt`] (the interactive picker steering)
 /// because the postures differ: there, blocking on a live operator answer is
@@ -74,7 +81,14 @@ leave the task BLOCKED and defer to the clean-close-or-resume path once work \
 quiesces — NEVER time out and then proceed on a guess; an unanswered hard decision \
 is a stop, not a default. If the durable write itself FAILS (the open-question or \
 block call errors), treat it as a HARD STOP: park or halt and surface the failure — \
-do NOT proceed or degrade past an unrecorded decision."
+do NOT proceed or degrade past an unrecorded decision. IRREVERSIBILITY FLOOR: a \
+small set of DESTRUCTIVE operations — merging a worktree/branch (including \
+`mcp__lumina__execute_worktree_merge`), deleting a branch, force-pushing, and \
+deleting a work item — ALWAYS require a durable human decision FIRST, in EVERY mode. \
+The autonomous license to take more decisions does NOT cover them: they cannot be \
+undone, so before performing any of them you MUST raise an `add_open_question` and \
+block on the answer, even when you would otherwise decide alone. This floor is \
+mode-independent and overrides the self-decide posture."
         .to_string()
 }
 
