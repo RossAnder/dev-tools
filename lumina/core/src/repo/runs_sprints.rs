@@ -1041,10 +1041,26 @@ pub async fn record_finding_decision(
                         args![host.to_owned()],
                     )
                     .await?;
+                    // Resume epoch-guard (focus 1C.1, research note seq19): stamp
+                    // the parked task's lifetime `work_item` event count as the
+                    // question's `resume_epoch`, IDENTICALLY to the canonical
+                    // `escalate_decision_and_park_task` primitive — so the
+                    // stale-resolution guard in `resolve_open_question` covers this
+                    // auto-generated rework-cap escalation too (without it the
+                    // question is unguarded NULL). Read ON THE TX (same writer
+                    // snapshot); the freshly-spawned rework task `new_id_str` is
+                    // still `todo` and the park UPDATE below routes its event to the
+                    // host story, so this count is the task's pre-park value.
+                    let resume_epoch = crate::db::tx_scalar_one::<i64>(
+                        tx.as_mut(),
+                        "SELECT COUNT(*) FROM events WHERE aggregate_id = $1 AND aggregate_type = 'work_item'",
+                        args![new_id_str.clone()],
+                    )
+                    .await?;
                     tx.execute(
-                        "INSERT INTO open_questions (id, story_id, seq, question, status) \
-                         VALUES ($1, $2, $3, $4, 'open')",
-                        args![q_id_str.clone(), host.to_owned(), q_seq, question],
+                        "INSERT INTO open_questions (id, story_id, seq, question, status, resume_epoch) \
+                         VALUES ($1, $2, $3, $4, 'open', $5)",
+                        args![q_id_str.clone(), host.to_owned(), q_seq, question, resume_epoch],
                     )
                     .await?;
                     // Two default options: keep iterating, or abandon the rework
@@ -1553,6 +1569,22 @@ mod tests {
             blocked_on.as_deref(),
             Some(question_id.as_str()),
             "the parked task points at the escalation question"
+        );
+
+        // The inlined rework-cap escalation MUST stamp `resume_epoch` exactly as
+        // the canonical `escalate_decision_and_park_task` primitive does — a NULL
+        // here silently disables the stale-resolution guard in
+        // `resolve_open_question` on this auto-generated escalation.
+        let resume_epoch: Option<i64> = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT resume_epoch FROM open_questions WHERE id = $1",
+        )
+        .bind(&question_id)
+        .fetch_one(&pool)
+        .await
+        .expect("resume_epoch read");
+        assert!(
+            resume_epoch.is_some(),
+            "the rework-cap escalation stamps a non-NULL resume_epoch (staleness guard)"
         );
     }
 
