@@ -247,13 +247,18 @@ impl Transport for PtyTransport {
         // Inject the autonomous MODE SIGNAL so this lumina-spawned orchestrator
         // session resolves to autonomous mode. Carried at this proven seam
         // (research note seq1 — the child inherits any cmd.env(...) here, no new
-        // plumbing). The signal is NOT trusted bare: the mode resolver
-        // (`crate::pty::mode`) corroborates it against the server-verifiable
-        // `pty_sessions.source='spawned'` fact and fails safe to interactive
-        // otherwise, so this can never falsely flip a human-terminal session.
-        // (Teammate propagation rides static settings.json env — a separate task,
+        // plumbing). The value is this process's SERVER-MINTED SECRET TOKEN
+        // (`crate::pty::mode::autonomous_secret()`), NOT a bare flag: a consumer
+        // (the orchestrator via baked steering) verifies the token server-side
+        // (`crate::pty::mode::verify_token`), so a stray LUMINA_AUTONOMOUS set in a
+        // human shell carries no valid token and fails safe to interactive — it
+        // can never falsely flip a human-terminal session.
+        // (Teammate propagation rides static settings.json env — see below,
         // since Task-spawned subagents get a fresh env per GH #46696.)
-        cmd.env(crate::pty::mode::LUMINA_AUTONOMOUS, "1");
+        cmd.env(
+            crate::pty::mode::LUMINA_AUTONOMOUS,
+            crate::pty::mode::autonomous_secret(),
+        );
 
         // --session-id aligns API telemetry only; the JSONL filename is bound
         // separately by jsonl_tail::bind_jsonl_path because interactive mode
@@ -289,16 +294,20 @@ impl Transport for PtyTransport {
         // subagents it launches via the Task tool — those get a FRESH env
         // (GH #46696). settings.json `env`, by contrast, is applied to every
         // session AND to subprocesses Claude Code spawns from it (research
-        // notes seq8–seq10), so carrying `LUMINA_AUTONOMOUS=1` here lets both
-        // the orchestrator and its teammates inherit the signal from the same
-        // settings layer. Built with serde_json so the inline JSON stays
+        // notes seq8–seq10), so carrying the autonomous TOKEN here lets both
+        // the orchestrator and its teammates inherit the same valid token from
+        // the same settings layer — teammates then verify it server-side via the
+        // `get_execution_mode` tool. The value is this process's server-minted
+        // secret (`crate::pty::mode::autonomous_secret()`), NOT a bare flag, so a
+        // stray LUMINA_AUTONOMOUS in a human shell holds no valid token and fails
+        // safe to interactive. Built with serde_json so the inline JSON stays
         // well-formed; the var NAME is the single-source `mode::LUMINA_AUTONOMOUS`
         // const (never hand-spelled).
         cmd.arg("--settings");
         let mut settings_env = serde_json::Map::new();
         settings_env.insert(
             crate::pty::mode::LUMINA_AUTONOMOUS.to_string(),
-            serde_json::Value::from("1"),
+            serde_json::Value::from(crate::pty::mode::autonomous_secret().to_string()),
         );
         cmd.arg(
             serde_json::json!({
