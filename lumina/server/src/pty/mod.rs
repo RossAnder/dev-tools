@@ -14,6 +14,7 @@ pub mod supervisor;       // T8
 pub mod spawn;            // T3 (lumina-pty-followups)
 pub mod emit;             // shared persist+broadcast helper (jsonl bridge / ask tool / answer endpoint)
 pub mod ask;              // /mcp-ask single-tool MCP server (ask_user_question — native-AUQ replacement)
+pub mod mode;             // autonomous-vs-interactive mode-signal contract + resolver (focus 1C.1)
 
 // `protocol` and `jsonl_tail` moved to `lumina-core` (the DB-free parsing
 // back-edge `repo::sessions` depends on); re-export `protocol`'s wire types
