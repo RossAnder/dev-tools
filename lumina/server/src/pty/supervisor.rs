@@ -524,7 +524,7 @@ mod tests {
         // queue is empty.
         let session_id = SessionId::new();
         let session_id_str = session_id.to_string();
-        repo::pty::create_pty_session(pool.sqlite(), &session_id_str, None, None, "/tmp", "{}")
+        repo::pty::create_pty_session(pool.sqlite(), &session_id_str, None, None, "/tmp", "{}", None)
             .await
             .expect("seed pty_session");
 

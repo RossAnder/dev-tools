@@ -167,6 +167,11 @@ pub async fn spawn_pty_session_internal(
         project_id.as_deref(),
         &cwd_display,
         &config_json,
+        // A lumina-SPAWNED session is autonomous by construction (focus 1C.1
+        // AC6): lumina only launches autonomous runs, so stamp the durable mode
+        // discriminator at create time. The mode resolver corroborates the env
+        // signal against this row's `source='spawned'` provenance.
+        Some("autonomous"),
     )
     .await?;
 
