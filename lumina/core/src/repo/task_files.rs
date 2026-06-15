@@ -380,6 +380,167 @@ pub async fn list_task_files(
     }
 }
 
+/// Outcome of a close-time reconcile ([`reconcile_task_files_at_close`]) — the
+/// divergence counts the caller (and the audit activity) report. `cleared` is the
+/// number of untouched-EXPECTED rows DELETEd on THIS run (drives idempotency: a
+/// re-run finds them already gone ⇒ `cleared == 0`); `unexpected_actual` is the
+/// count of ACTUAL canonical keys that were never in the EXPECTED set (a stable
+/// condition that survives re-runs, since ACTUAL is append-only and never pruned).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReconcileOutcome {
+    /// EXPECTED rows cleared this run because no ACTUAL row matched (idempotent:
+    /// 0 on a re-run once they are gone).
+    pub cleared: usize,
+    /// ACTUAL canonical keys that were never EXPECTED (over-report; NEVER pruned).
+    pub unexpected_actual: usize,
+}
+
+/// Reconcile a task's EXPECTED file set against its ACTUAL set AT CLOSE, then
+/// audit any material divergence (T4).
+///
+/// **What it does.** CLEARS every `kind='expected'` row whose canonical
+/// `(COALESCE(repo_link_id,''), path)` key has NO matching `kind='actual'` row for
+/// the SAME task — i.e. files that were planned-to-touch but never actually
+/// touched. EXPECTED and ACTUAL stay DISTINCT kinds throughout: this only DELETEs
+/// the untouched EXPECTED rows; it NEVER converts/merges an EXPECTED row into an
+/// ACTUAL one, and it NEVER touches the ACTUAL set (ACTUAL is append-only — a
+/// touched-then-reverted file is a tolerated over-report, not pruned here).
+///
+/// **Idempotency (Grounds R4 "clear destroys intent", R7 "reclaim partial
+/// actuals").** Safe to run repeatedly: a second pass after a prior reconcile
+/// finds the untouched-EXPECTED rows already gone, so it DELETEs zero, appends NO
+/// audit, and returns `cleared == 0`. This makes it safe under a `complete_task`
+/// re-run (crash-recovery / double-call) AND under a lease-reclaim re-open then
+/// re-close — ACTUAL recording is INDEPENDENT of EXPECTED presence, so a partial
+/// ACTUAL set recorded before a reclaim is preserved across the re-close. The
+/// audit append is gated on `cleared > 0` (a deletion genuinely happened on THIS
+/// run) precisely so a re-close never re-appends the same audit row.
+///
+/// **Audit-on-divergence (not silent).** When the reconcile finds MATERIAL
+/// divergence — defined here as `cleared > 0` (at least one EXPECTED row was
+/// cleared because it was never touched) — it appends EXACTLY ONE `reconcile`-kind
+/// activity (origin `implement`) summarising the divergence counts (cleared +
+/// any unexpected-ACTUAL), via the shared [`append_activity`] writer (its own tx +
+/// `work_item.activity_appended` event). The expected set is NOT cleared silently.
+/// The unexpected-ACTUAL count is reported in that same audit entry, but does NOT
+/// by itself trigger an audit (it is a stable, re-run-surviving condition, so
+/// firing on it would break the re-close idempotency the close routes rely on);
+/// any nonzero `cleared` is the materiality threshold.
+///
+/// Each underlying write owns its own `BEGIN IMMEDIATE` tx (the reconcile DELETE +
+/// its inert `task_files` event in one tx; the audit activity in `append_activity`'s
+/// own tx), matching the Option-A seam the other writers in this module use — the
+/// close routes COMPOSE this step, they do not wrap it in an outer tx.
+pub async fn reconcile_task_files_at_close(
+    db: &impl DbClient,
+    task_id: &str,
+) -> Result<ReconcileOutcome, AppError> {
+    // Read both sets up front (read-only, autocommit) so we can compute the
+    // unexpected-ACTUAL count for the audit summary. The DELETE below is the
+    // authoritative mutation; these reads only inform the audit text.
+    let actual = list_task_files(db, task_id, Some("actual")).await?;
+    let expected = list_task_files(db, task_id, Some("expected")).await?;
+
+    // Canonical key per stored row: COALESCE(repo_link_id,'') ⇒ the NULL/primary
+    // bucket maps to the empty string, mirroring the storage UNIQUE index (R2).
+    let key = |f: &TaskFile| (f.repo_link_id.clone().unwrap_or_default(), f.path.clone());
+    let unexpected_actual = actual
+        .iter()
+        .filter(|f| !expected.iter().any(|e| key(e) == key(f)))
+        .count();
+
+    // CLEAR the untouched-EXPECTED rows in ONE tx + one inert event. The DELETE is
+    // expressed entirely in SQL (a correlated NOT EXISTS over the ACTUAL rows for
+    // the same task + canonical key) so it is atomic and idempotent: a re-run
+    // matches zero rows once the untouched-EXPECTED are gone. `rows_affected` is
+    // the authoritative "did this run clear anything" signal — NOT the in-memory
+    // read above (which could race a concurrent ACTUAL append between the read and
+    // the writer lock; the DELETE re-evaluates under the RESERVED lock).
+    let mut tx = db.begin().await?;
+    let cleared = tx
+        .execute(
+            // Delete by id of the doomed EXPECTED rows. The id-subquery (rather
+            // than a `DELETE … AS e` alias on the target table) keeps this portable
+            // across SQLite versions; the correlated NOT EXISTS over the ACTUAL
+            // rows is keyed on the canonical `(COALESCE(repo_link_id,''), path)`
+            // bucket, matching the storage UNIQUE index (R2).
+            r#"
+            DELETE FROM task_files
+            WHERE id IN (
+                SELECT e.id FROM task_files AS e
+                WHERE e.task_id = $1
+                  AND e.kind = 'expected'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM task_files AS a
+                      WHERE a.task_id = e.task_id
+                        AND a.kind = 'actual'
+                        AND COALESCE(a.repo_link_id, '') = COALESCE(e.repo_link_id, '')
+                        AND a.path = e.path
+                  )
+            )
+            "#,
+            args![task_id.to_owned()],
+        )
+        .await? as usize;
+
+    // Only record the inert reconcile event when the DELETE actually removed rows
+    // (a zero-row reconcile is a true no-op — mirroring the empty-append reject in
+    // `add_task_actual_files`, which never records an event for a zero-row batch).
+    if cleared > 0 {
+        let payload = serde_json::json!({
+            "task_id": task_id,
+            "cleared_expected": cleared,
+            "unexpected_actual": unexpected_actual,
+        });
+        record_inert_event(
+            tx.as_mut(),
+            "task_files",
+            task_id,
+            "task_files.reconciled",
+            payload,
+        )
+        .await?;
+        tx.commit().await?;
+    } else {
+        // Nothing cleared ⇒ roll back (no event) — the idempotent re-run path (no
+        // EXPECTED row was untouched, or a prior reconcile already cleared them).
+        // An explicit `drop` documents the rollback intent; `commit` consumed `tx`
+        // on the other branch, so this is the only place `tx` is disposed here.
+        drop(tx);
+    }
+
+    // Audit-on-divergence: a MATERIAL divergence (≥1 EXPECTED row cleared this
+    // run) appends EXACTLY ONE `reconcile` activity describing the counts. Gated on
+    // `cleared > 0` so a re-close never re-appends (idempotency). The summary also
+    // names the unexpected-ACTUAL over-report for completeness.
+    if cleared > 0 {
+        let summary = format!(
+            "files_touched reconcile at close: cleared {cleared} expected file(s) that were \
+             never actually touched; {unexpected_actual} actual file(s) were not in the \
+             expected set (over-report, kept)"
+        );
+        let audit_payload = serde_json::json!({
+            "cleared_expected": cleared,
+            "unexpected_actual": unexpected_actual,
+        });
+        append_activity(
+            db,
+            task_id,
+            "reconcile",
+            None,
+            &summary,
+            Some(&audit_payload),
+            Some("implement"),
+        )
+        .await?;
+    }
+
+    Ok(ReconcileOutcome {
+        cleared,
+        unexpected_actual,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,6 +792,291 @@ mod tests {
         assert_eq!(
             updated_before, updated_after,
             "the task's updated_at is unchanged (no update_work_item bump)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // reconcile_task_files_at_close (T4) — clear untouched-EXPECTED, audit on
+    // divergence, idempotent under re-run, and wired into transition_status→done.
+    // -----------------------------------------------------------------------
+
+    /// Count `reconcile`-kind activity rows for a task (the audit-on-divergence
+    /// signal). `work_item_activity.entry_kind` carries the wire-form `'reconcile'`.
+    async fn count_reconcile_activity(pool: &SqlitePool, task_id: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM work_item_activity \
+             WHERE work_item_id = $1 AND entry_kind = 'reconcile'",
+        )
+        .bind(task_id)
+        .fetch_one(pool)
+        .await
+        .expect("count reconcile activity")
+    }
+
+    /// (a) The reconcile CLEARS EXPECTED rows with no matching ACTUAL, KEEPS the
+    /// EXPECTED row that WAS actually touched, and NEVER prunes any ACTUAL row
+    /// (including an over-report ACTUAL that was never EXPECTED). EXPECTED and
+    /// ACTUAL stay DISTINCT kinds.
+    #[tokio::test]
+    async fn reconcile_clears_untouched_expected_keeps_the_rest() {
+        let (pool, task) = seed_project_link_task().await;
+
+        // EXPECTED: planned to touch a.rs (touched) + b.rs (NOT touched).
+        set_task_expected_files(
+            &pool,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/b.rs")],
+        )
+        .await
+        .expect("set expected");
+        // ACTUAL: actually touched a.rs (matches an expected) + c.rs (over-report,
+        // never expected). b.rs was expected but never touched.
+        add_task_actual_files(
+            &pool,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/c.rs")],
+        )
+        .await
+        .expect("append actual");
+
+        let outcome = reconcile_task_files_at_close(&pool, &task)
+            .await
+            .expect("reconcile runs");
+        assert_eq!(outcome.cleared, 1, "exactly the untouched EXPECTED (b.rs) is cleared");
+        assert_eq!(
+            outcome.unexpected_actual, 1,
+            "exactly one ACTUAL (c.rs) was never EXPECTED (an over-report)"
+        );
+
+        // EXPECTED now holds ONLY a.rs (the touched one); b.rs is gone.
+        let expected = list_task_files(&pool, &task, Some("expected"))
+            .await
+            .expect("list expected after reconcile");
+        let expected_paths: Vec<&str> = expected.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            expected_paths,
+            vec!["src/a.rs"],
+            "the untouched EXPECTED (b.rs) is cleared; the touched one (a.rs) stays"
+        );
+
+        // ACTUAL is UNTOUCHED — both a.rs and c.rs (the over-report) remain. The
+        // reconcile never prunes ACTUAL, and EXPECTED/ACTUAL stay distinct kinds.
+        let actual = list_task_files(&pool, &task, Some("actual"))
+            .await
+            .expect("list actual after reconcile");
+        let actual_paths: Vec<&str> = actual.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            actual_paths,
+            vec!["src/a.rs", "src/c.rs"],
+            "ACTUAL is preserved verbatim (the over-report c.rs is NOT pruned)"
+        );
+        assert_eq!(
+            count_task_files(&pool, &task, "actual").await,
+            2,
+            "both actual rows survive the reconcile"
+        );
+    }
+
+    /// (c) A material divergence (≥1 EXPECTED cleared) appends EXACTLY ONE
+    /// `reconcile` audit activity (not silent). The audit fires once per material
+    /// reconcile run.
+    #[tokio::test]
+    async fn reconcile_appends_exactly_one_audit_activity_on_divergence() {
+        let (pool, task) = seed_project_link_task().await;
+
+        set_task_expected_files(
+            &pool,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/b.rs")],
+        )
+        .await
+        .expect("set expected");
+        // a.rs touched; b.rs NOT → b.rs will be cleared → material divergence.
+        add_task_actual_files(&pool, &task, &[serde_json::json!("src/a.rs")])
+            .await
+            .expect("append actual");
+
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            0,
+            "no audit before the reconcile"
+        );
+
+        reconcile_task_files_at_close(&pool, &task)
+            .await
+            .expect("reconcile runs");
+
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            1,
+            "a material divergence appends exactly one reconcile audit activity (not silent)"
+        );
+    }
+
+    /// (b) Running the reconcile TWICE is a no-op: the second pass clears zero,
+    /// appends NO second audit, and leaves the row counts unchanged. This is the
+    /// idempotency guarantee the close routes lean on (re-run / reclaim re-close).
+    #[tokio::test]
+    async fn reconcile_is_idempotent_on_rerun() {
+        let (pool, task) = seed_project_link_task().await;
+
+        set_task_expected_files(
+            &pool,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/b.rs")],
+        )
+        .await
+        .expect("set expected");
+        add_task_actual_files(&pool, &task, &[serde_json::json!("src/a.rs")])
+            .await
+            .expect("append actual");
+
+        let first = reconcile_task_files_at_close(&pool, &task)
+            .await
+            .expect("first reconcile");
+        assert_eq!(first.cleared, 1, "first pass clears the untouched EXPECTED (b.rs)");
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            1,
+            "first pass appends one audit"
+        );
+        let expected_after_first = count_task_files(&pool, &task, "expected").await;
+        let actual_after_first = count_task_files(&pool, &task, "actual").await;
+
+        // Second pass: nothing left to clear ⇒ a true no-op.
+        let second = reconcile_task_files_at_close(&pool, &task)
+            .await
+            .expect("second (idempotent) reconcile");
+        assert_eq!(second.cleared, 0, "the re-run clears nothing (b.rs already gone)");
+
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            1,
+            "the re-run appends NO second audit (idempotent)"
+        );
+        assert_eq!(
+            count_task_files(&pool, &task, "expected").await,
+            expected_after_first,
+            "expected row count unchanged by the re-run"
+        );
+        assert_eq!(
+            count_task_files(&pool, &task, "actual").await,
+            actual_after_first,
+            "actual row count unchanged by the re-run"
+        );
+
+        // No-divergence case is ALSO a no-op: a task whose expected set exactly
+        // matches its actual set clears nothing and audits nothing.
+        let (pool2, task2) = seed_project_link_task().await;
+        set_task_expected_files(&pool2, &task2, &[serde_json::json!("src/only.rs")])
+            .await
+            .expect("set expected");
+        add_task_actual_files(&pool2, &task2, &[serde_json::json!("src/only.rs")])
+            .await
+            .expect("append actual");
+        let outcome = reconcile_task_files_at_close(&pool2, &task2)
+            .await
+            .expect("reconcile runs");
+        assert_eq!(outcome.cleared, 0, "a fully-matching set clears nothing");
+        assert_eq!(outcome.unexpected_actual, 0, "no unexpected actual");
+        assert_eq!(
+            count_reconcile_activity(&pool2, &task2).await,
+            0,
+            "no audit when there is no divergence (not silent ≠ noisy)"
+        );
+    }
+
+    /// (d, non-team route) The plain `transition_status` → `done` path
+    /// (`update_work_item_status`) TRIGGERS the reconcile for a `kind='task'`
+    /// transition: untouched-EXPECTED is cleared and an audit activity is appended.
+    /// A re-transition to `done` is idempotent (no second clear, no second audit).
+    #[tokio::test]
+    async fn transition_status_done_triggers_reconcile_and_is_idempotent() {
+        let (pool, task) = seed_project_link_task().await;
+
+        set_task_expected_files(
+            &pool,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/b.rs")],
+        )
+        .await
+        .expect("set expected");
+        add_task_actual_files(&pool, &task, &[serde_json::json!("src/a.rs")])
+            .await
+            .expect("append actual");
+
+        // Move the task to `done` via the non-team close route.
+        update_work_item_status(&pool, &task, "done")
+            .await
+            .expect("transition to done");
+
+        // The reconcile fired: b.rs (untouched EXPECTED) cleared, audit appended.
+        let expected_paths: Vec<String> = list_task_files(&pool, &task, Some("expected"))
+            .await
+            .expect("expected after done")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(
+            expected_paths,
+            vec!["src/a.rs".to_string()],
+            "transition_status→done cleared the untouched EXPECTED (b.rs)"
+        );
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            1,
+            "transition_status→done appended exactly one reconcile audit"
+        );
+
+        // A NON-done transition does NOT reconcile (guard: only kind=task→done).
+        // Re-transition to `done` is idempotent: no second clear, no second audit.
+        update_work_item_status(&pool, &task, "done")
+            .await
+            .expect("re-transition to done");
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            1,
+            "a re-transition to done does not re-audit (idempotent)"
+        );
+        assert_eq!(
+            count_task_files(&pool, &task, "expected").await,
+            1,
+            "a re-transition to done does not re-clear"
+        );
+    }
+
+    /// The reconcile fires ONLY for `kind='task'` → `done` transitions: a NON-done
+    /// status change on a task never reconciles, and (defensively) a non-task item
+    /// never has its (absent) file set touched.
+    #[tokio::test]
+    async fn transition_status_non_done_does_not_reconcile() {
+        let (pool, task) = seed_project_link_task().await;
+
+        set_task_expected_files(
+            &pool,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/b.rs")],
+        )
+        .await
+        .expect("set expected");
+        add_task_actual_files(&pool, &task, &[serde_json::json!("src/a.rs")])
+            .await
+            .expect("append actual");
+
+        // Transition to a NON-done status: the reconcile must NOT fire.
+        update_work_item_status(&pool, &task, "in_progress")
+            .await
+            .expect("transition to in_progress");
+
+        assert_eq!(
+            count_task_files(&pool, &task, "expected").await,
+            2,
+            "a non-done transition leaves the EXPECTED set intact"
+        );
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            0,
+            "a non-done transition appends no reconcile audit"
         );
     }
 }

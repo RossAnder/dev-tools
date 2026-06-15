@@ -696,6 +696,28 @@ pub async fn complete_task(
         update_work_item_status(db, task_id, "done").await?;
     }
 
+    // --- Step 2b: reconcile the task's files_touched sets (T4). -------------
+    // CLEAR every EXPECTED file row that was never ACTUALLY touched (and audit the
+    // divergence) as part of the close. `reconcile_task_files_at_close` owns its
+    // OWN tx(s) — the same composer discipline as the surrounding steps (each
+    // logical sub-mutation keeps its own tx + event), so it does not break the
+    // single-mutation-path invariant. It is IDEMPOTENT: a re-run on an
+    // already-`done` task (crash-recovery / double-call) or after a lease-reclaim
+    // re-open→re-close finds the untouched-EXPECTED rows already gone, clears zero,
+    // and appends no duplicate audit — so it composes cleanly with the two-txn
+    // idempotent structure above (the reconcile is its own idempotent step, never
+    // leaving a `done`-but-un-reconciled state a re-close wouldn't heal).
+    //
+    // NB the non-team `transition_status`→done path (`update_work_item_status`) now
+    // ALSO reconciles on a task→done transition, so on the FRESH-completion path
+    // (Step 2 actually ran the transition) the reconcile has effectively already
+    // happened; this explicit call is then a no-op (idempotent). It is retained
+    // unconditionally because Step 2 is SKIPPED for an already-`done` task (the
+    // crash-recovery re-close), and this is what guarantees the reconcile still
+    // fires on that path. The double-invocation on the fresh path is harmless by
+    // construction (idempotent).
+    reconcile_task_files_at_close(db, task_id).await?;
+
     // --- Step 3: owner-guarded lease clear (completion cleanup). -----------
     // A SEPARATE single-mutation tx (mirroring `release_task`): clear
     // `assignee`/`lease_expires_at` ONLY for the row the caller owns. Tied to
@@ -1895,5 +1917,121 @@ mod tests {
                 .await
                 .expect("count reviews");
         assert_eq!(review_count, 1, "the re-run does not double-spawn the review task");
+    }
+
+    // =======================================================================
+    // complete_task × files_touched reconcile (T4) — the team-lane close route
+    // fires the close-time reconcile and is idempotent under re-run.
+    // =======================================================================
+
+    /// Count `reconcile`-kind activity rows for a task (the audit-on-divergence
+    /// signal from `reconcile_task_files_at_close`).
+    async fn count_reconcile_activity(pool: &SqlitePool, task_id: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM work_item_activity \
+             WHERE work_item_id = $1 AND entry_kind = 'reconcile'",
+        )
+        .bind(task_id)
+        .fetch_one(pool)
+        .await
+        .expect("count reconcile activity")
+    }
+
+    /// (d, team-lane route) `complete_task` TRIGGERS the close-time reconcile: a
+    /// material divergence (an EXPECTED file never actually touched) is cleared and
+    /// an audit activity is appended, while the touched-EXPECTED and ALL ACTUAL
+    /// rows survive (EXPECTED/ACTUAL stay distinct kinds). Re-running `complete_task`
+    /// (the crash-recovery / double-call path) is idempotent — no second clear, no
+    /// second audit — proving the reconcile composes cleanly with the existing
+    /// two-txn idempotent close.
+    #[tokio::test]
+    async fn complete_task_reconciles_files_and_is_idempotent() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // EXPECTED: a.rs (will be touched) + b.rs (will NOT be touched → cleared).
+        set_task_expected_files(
+            &db,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/b.rs")],
+        )
+        .await
+        .expect("set expected");
+        // ACTUAL: a.rs (matches an expected) + c.rs (over-report, never expected).
+        add_task_actual_files(
+            &db,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/c.rs")],
+        )
+        .await
+        .expect("append actual");
+
+        // Claim then complete via the team-lane route.
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(claimed.task_id, task);
+
+        complete_task(&db, &task, "agent-a")
+            .await
+            .expect("first complete");
+
+        // The reconcile fired on close: b.rs (untouched EXPECTED) cleared; a.rs
+        // (touched EXPECTED) kept; BOTH actual rows preserved (distinct kinds).
+        let expected_paths: Vec<String> = list_task_files(&db, &task, Some("expected"))
+            .await
+            .expect("expected after complete")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(
+            expected_paths,
+            vec!["src/a.rs".to_string()],
+            "complete_task cleared the untouched EXPECTED (b.rs), kept the touched one (a.rs)"
+        );
+        let actual_paths: Vec<String> = list_task_files(&db, &task, Some("actual"))
+            .await
+            .expect("actual after complete")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(
+            actual_paths,
+            vec!["src/a.rs".to_string(), "src/c.rs".to_string()],
+            "ALL actual rows survive the close-time reconcile (over-report c.rs not pruned)"
+        );
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            1,
+            "complete_task appended exactly one reconcile audit on the divergence"
+        );
+
+        // Re-run complete_task (crash-recovery / double-call): idempotent — no
+        // second clear, no second audit.
+        complete_task(&db, &task, "agent-a")
+            .await
+            .expect("second complete (idempotent)");
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            1,
+            "a re-run of complete_task does not re-audit (idempotent reconcile)"
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM task_files WHERE task_id = $1 AND kind = 'expected'"
+            )
+            .bind(&task)
+            .fetch_one(&pool)
+            .await
+            .expect("count expected"),
+            1,
+            "a re-run of complete_task does not re-clear (b.rs stays gone, a.rs stays)"
+        );
     }
 }

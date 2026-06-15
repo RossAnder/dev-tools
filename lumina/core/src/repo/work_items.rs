@@ -314,6 +314,21 @@ pub async fn update_work_item_status(
 
     tx.commit().await?;
 
+    // T4: reconcile the task's EXPECTED/ACTUAL files_touched sets at close — but
+    // ONLY for a `kind='task'` → `done` transition (the non-team close route;
+    // `complete_task` is the team-lane route). Not other statuses, and not
+    // non-task items (a story/epic/project carries no `task_files` rows). The
+    // reconcile COMPOSES after the status commit (it owns its own tx(s) — the
+    // Option-A seam) and is IDEMPOTENT, so a re-transition to `done` (or a
+    // lease-reclaim re-open→re-close) never re-clears or re-audits. Read the kind
+    // only when status is `done` so the common non-`done` transition stays a
+    // single round-trip. The kind read uses the autocommit `db` (the status tx is
+    // already committed); a missing row would have failed the `affected == 0` gate
+    // above, so `work_item_kind` here resolves.
+    if status == "done" && work_item_kind(db, id).await? == "task" {
+        reconcile_task_files_at_close(db, id).await?;
+    }
+
     Ok(())
 }
 
