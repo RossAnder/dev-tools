@@ -68,6 +68,91 @@ pub async fn add_open_question(
     Ok(id)
 }
 
+/// Idempotent RUN-LEVEL question creation (focus 1C.1, research notes seq22 +
+/// seq29). `open_questions` is STORY-scoped, so a run-level decision is REUSED as
+/// a story-scoped row TAGGED to the run via a caller-supplied dedup/idempotency
+/// `dedup_key` (the "run tag" lives in the key — typically `<run_id>:<slug>` or a
+/// content hash). The gap this closes (seq29): two non-PTY teammates hitting the
+/// SAME run-level decision would each call [`add_open_question`] and create
+/// DUPLICATE questions. This path COLLAPSES the second create onto the first.
+///
+/// Contract: within ONE write transaction (`BEGIN IMMEDIATE` serialises writers
+/// at begin-time, so two concurrent in-process callers can't both pass the
+/// pre-check), if an OPEN question on `story_id` already carries `dedup_key`,
+/// return its id WITHOUT writing — `(false, existing_id)`; else INSERT a fresh
+/// row stamping `run_dedup_key = dedup_key` and return `(true, new_id)`. The
+/// partial UNIQUE index `idx_open_questions_run_dedup` (migration 0022,
+/// `(story_id, run_dedup_key) WHERE run_dedup_key IS NOT NULL AND status='open'`)
+/// is the record-layer backstop against a race the pre-check misses. The key is
+/// scoped to OPEN rows, so once a run-level question is answered/cancelled the
+/// same key may be re-raised for a fresh decision.
+///
+/// Story-scoped (mirrors [`add_open_question`]): a non-`story` target is rejected
+/// with [`AppError::Validation`] (kind read first; also yields `NotFound` if the
+/// id is absent). A create emits ONE `open_question.added` event on the owning
+/// story's `work_item` aggregate (R1); a collapse-onto-existing emits NO event
+/// (no logical write happened), preserving the +1-event-per-write invariant.
+///
+/// Returns `(created, question_id)` — `created` is `false` on a dedup collapse.
+pub async fn add_run_question_idempotent(
+    db: &impl DbClient,
+    story_id: &str,
+    question: &str,
+    dedup_key: &str,
+) -> Result<(bool, Uuid), AppError> {
+    let kind = work_item_kind(db, story_id).await?;
+    if kind != "story" {
+        return Err(AppError::Validation(format!(
+            "open questions are settable only on a story, not on '{kind}'"
+        )));
+    }
+
+    let mut tx = db.begin().await?;
+
+    // Pre-check INSIDE the write tx: an existing OPEN question on this story
+    // carrying the key collapses the create. BEGIN IMMEDIATE holds the RESERVED
+    // lock from begin-time, so a concurrent in-process caller serialises behind
+    // this read→insert rather than racing it; the partial UNIQUE index backstops
+    // any record-layer race the pre-check cannot see.
+    let existing = crate::db::tx_scalar_opt::<String>(
+        tx.as_mut(),
+        "SELECT id FROM open_questions WHERE story_id = $1 AND run_dedup_key = $2 AND status = 'open'",
+        args![story_id.to_owned(), dedup_key.to_owned()],
+    )
+    .await?;
+    if let Some(id_str) = existing {
+        // Collapse onto the existing run-level question: no write, no event.
+        let id = Uuid::parse_str(&id_str)
+            .map_err(|e| AppError::Validation(format!("stored question id '{id_str}' is not a uuid: {e}")))?;
+        tx.commit().await?;
+        return Ok((false, id));
+    }
+
+    let id = Uuid::now_v7();
+    let id_str = id.to_string();
+
+    let seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM open_questions WHERE story_id = $1",
+        args![story_id.to_owned()],
+    )
+    .await?;
+
+    tx.execute(
+        "INSERT INTO open_questions (id, story_id, seq, question, status, run_dedup_key) VALUES ($1, $2, $3, $4, 'open', $5)",
+        args![id_str.clone(), story_id.to_owned(), seq, question.to_owned(), dedup_key.to_owned()],
+    )
+    .await?;
+
+    // Route the event to the owning STORY's work_item aggregate (R1) — same shape
+    // as `add_open_question`, so export + the "exactly one event" invariant hold.
+    let payload = serde_json::json!({ "question_id": id_str, "seq": seq });
+    record_event(tx.as_mut(), "work_item", story_id, "open_question.added", payload).await?;
+
+    tx.commit().await?;
+    Ok((true, id))
+}
+
 /// Read an open question's owning `story_id`, erroring `NotFound` if the question
 /// id has no row. Used by the option-add and resolve paths.
 async fn open_question_story(db: &impl DbClient, id: &str) -> Result<String, AppError> {
@@ -623,6 +708,78 @@ mod tests {
         add_open_question(&pool, &story, "should we?")
             .await
             .expect("open question on a story ok");
+    }
+
+    /// Run-level idempotent creation (focus 1C.1, seq29): a SECOND create with
+    /// the SAME dedup key on the SAME story does NOT duplicate — the count stays
+    /// 1 and the returned id matches the first, with `created=false` and NO extra
+    /// `open_question.added` event. A DIFFERENT key on the same story is a fresh
+    /// question (count rises), and once the first is resolved its key frees so a
+    /// re-raise creates anew.
+    #[tokio::test]
+    async fn run_question_idempotent_collapses_on_same_key() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        let added_before = count_events_of_type(&pool, "open_question.added").await;
+
+        // First create: a real INSERT.
+        let (created1, q1) =
+            add_run_question_idempotent(&pool, &story, "run-level: which target branch?", "run-7:branch")
+                .await
+                .expect("first create");
+        assert!(created1, "first create writes a new question");
+
+        // Second create with the SAME key: collapses onto the first, no write.
+        let (created2, q2) =
+            add_run_question_idempotent(&pool, &story, "run-level: which target branch?", "run-7:branch")
+                .await
+                .expect("second create");
+        assert!(!created2, "second create with the same key does NOT write");
+        assert_eq!(q1, q2, "the collapse returns the SAME question id");
+
+        // Exactly ONE open_questions row exists for this key, and exactly ONE
+        // open_question.added event fired across the two calls.
+        let count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM open_questions WHERE story_id = ?1 AND run_dedup_key = ?2",
+        )
+        .bind(&story)
+        .bind("run-7:branch")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+        assert_eq!(count, 1, "the dedup key never duplicates a live run-level question");
+        assert_eq!(
+            count_events_of_type(&pool, "open_question.added").await,
+            added_before + 1,
+            "exactly one open_question.added event for the two idempotent creates"
+        );
+
+        // A DIFFERENT key on the same story is a distinct question.
+        let (created3, q3) =
+            add_run_question_idempotent(&pool, &story, "run-level: ship now?", "run-7:ship")
+                .await
+                .expect("different key");
+        assert!(created3 && q3 != q1, "a different key creates a fresh question");
+
+        // Once the first is resolved, its key frees: a re-raise creates anew.
+        let opt = add_question_option(&pool, &q1.to_string(), "A", None).await.expect("opt").to_string();
+        resolve_open_question(&pool, &q1.to_string(), &opt, Some("human")).await.expect("resolve");
+        let (created4, q4) =
+            add_run_question_idempotent(&pool, &story, "run-level: which target branch?", "run-7:branch")
+                .await
+                .expect("re-raise after resolve");
+        assert!(created4 && q4 != q1, "a resolved key frees for a fresh run-level question");
+
+        // Non-story target rejects (mirrors add_open_question).
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        let err = add_run_question_idempotent(&pool, &task, "?", "k")
+            .await
+            .expect_err("non-story must reject");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
     }
 
     /// Resolving a two-option question unblocks the chosen branch's task (→todo)
