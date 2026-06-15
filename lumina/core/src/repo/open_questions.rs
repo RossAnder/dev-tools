@@ -319,19 +319,80 @@ pub async fn resolve_open_question(
         )));
     }
 
+    // Resume epoch-guard + resolved-after-close (focus 1C.1, research note seq19 +
+    // edge note seq28). The escalate path stamps `resume_epoch` = the parked
+    // task's lifetime event count at ask-time; questions raised via plain
+    // `add_open_question` leave it NULL (unguarded — they have no single parked
+    // consumer to version against, so they resolve exactly as before).
+    let resume_epoch = crate::db::scalar_one::<Option<i64>>(
+        db,
+        "SELECT resume_epoch FROM open_questions WHERE id = $1",
+        args![question_id.to_owned()],
+    )
+    .await?;
+
+    // The parked consumer(s) still waiting on this question. The escalate path
+    // parks EXACTLY ONE task (back-linked via `blocked_by_question_id`); a
+    // plain question may have 0+ manually-blocked tasks. If NONE remain blocked,
+    // the run/session that asked has clean-closed (the task was cancelled, done,
+    // re-planned, or never parked) and the human's answer has no live consumer to
+    // re-initiate — that is the seq28 edge, recorded by the `resolved_after_close`
+    // marker so the deferred 1C.3 scheduler can sweep + re-initiate it later
+    // rather than strand it.
+    let parked_task = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT id FROM work_items \
+         WHERE blocked_by_question_id = $1 AND status = 'blocked' AND deleted_at IS NULL \
+         ORDER BY id LIMIT 1",
+        args![question_id.to_owned()],
+    )
+    .await?;
+    let resolved_after_close = parked_task.is_none();
+
+    // Stale-resolution guard: only when an epoch was stamped (escalate path) AND
+    // a parked task still waits. Re-read the parked task's CURRENT lifetime event
+    // count; if it differs from the ask-time epoch the task's state shifted
+    // between ask and answer (e.g. the story was re-planned), so the resolution is
+    // STALE — reject it (detectable to the caller) rather than silently apply it.
+    if let (Some(epoch), Some(task)) = (resume_epoch, parked_task.as_deref()) {
+        let now_epoch = crate::db::scalar_one::<i64>(
+            db,
+            "SELECT COUNT(*) FROM events WHERE aggregate_id = $1 AND aggregate_type = 'work_item'",
+            args![task.to_owned()],
+        )
+        .await?;
+        if now_epoch != epoch {
+            return Err(AppError::Validation(format!(
+                "open_question '{question_id}' resolution is STALE: the parked task's state \
+                 changed since the question was asked (resume_epoch {epoch} != current {now_epoch}); \
+                 re-ask against the current state before resolving"
+            )));
+        }
+    }
+
     let mut tx = db.begin().await?;
 
-    // 1. Mark the question answered.
+    // 1. Mark the question answered. When no parked consumer remained, stamp the
+    //    `resolved_after_close` marker (CURRENT_TIMESTAMP) so the deferred 1C.3
+    //    scheduler can later sweep late resolutions; otherwise leave it NULL.
+    //    A bound CASE keeps this one statement: the marker is set iff
+    //    `resolved_after_close` is true (no live parked task).
     tx.execute(
         r#"
         UPDATE open_questions
         SET status = 'answered',
             chosen_option_id = $2,
             decided_at = CURRENT_TIMESTAMP,
-            decided_by = $3
+            decided_by = $3,
+            resolved_after_close = CASE WHEN $4 THEN CURRENT_TIMESTAMP ELSE NULL END
         WHERE id = $1
         "#,
-        args![question_id.to_owned(), chosen_option_id.to_owned(), by.map(str::to_owned)],
+        args![
+            question_id.to_owned(),
+            chosen_option_id.to_owned(),
+            by.map(str::to_owned),
+            resolved_after_close,
+        ],
     )
     .await?;
 
@@ -456,13 +517,32 @@ pub async fn escalate_decision_and_park_task(
         )));
     }
 
+    // Resume epoch-guard (focus 1C.1, research note seq19): capture the parked
+    // task's lifetime event count NOW, at ask-time, and stamp it on the question
+    // as `resume_epoch`. Every repo mutation on a work_item records exactly one
+    // `events` row on that item's aggregate, so this count is a monotonic,
+    // deterministic state-version of the task. `resolve_open_question` later
+    // re-reads the count and compares: if it grew (the task was re-planned /
+    // its state shifted between ask and answer), the human's resolution is STALE
+    // and is rejected rather than silently applied to a changed task. Read on the
+    // auto-commit connection BEFORE the write tx — it is a point-in-time snapshot
+    // either way, and the block UPDATE below records no per-task event (it routes
+    // its single event to the story), so this count is the task's pre-park value.
+    let resume_epoch = crate::db::scalar_one::<i64>(
+        db,
+        "SELECT COUNT(*) FROM events WHERE aggregate_id = $1 AND aggregate_type = 'work_item'",
+        args![task_id.to_owned()],
+    )
+    .await?;
+
     let question_id = Uuid::now_v7();
     let question_id_str = question_id.to_string();
 
     // ---- One write transaction: raise + options + park (seq18 hard-stop) --
     let mut tx = db.begin().await?;
 
-    // 1. INSERT the question (mirrors `add_open_question`).
+    // 1. INSERT the question (mirrors `add_open_question`), stamping the
+    //    ask-time `resume_epoch` so the resolve half can detect a stale answer.
     let q_seq = crate::db::tx_scalar_one::<i64>(
         tx.as_mut(),
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM open_questions WHERE story_id = $1",
@@ -470,8 +550,8 @@ pub async fn escalate_decision_and_park_task(
     )
     .await?;
     tx.execute(
-        "INSERT INTO open_questions (id, story_id, seq, question, status) VALUES ($1, $2, $3, $4, 'open')",
-        args![question_id_str.clone(), story_id.to_owned(), q_seq, question.to_owned()],
+        "INSERT INTO open_questions (id, story_id, seq, question, status, resume_epoch) VALUES ($1, $2, $3, $4, 'open', $5)",
+        args![question_id_str.clone(), story_id.to_owned(), q_seq, question.to_owned(), resume_epoch],
     )
     .await?;
 
@@ -746,5 +826,140 @@ mod tests {
             .await
             .expect("count");
         assert_eq!(q_before, q_after, "no question written when park is rejected");
+    }
+
+    /// Resume epoch-guard + resolved-after-close marker (focus 1C.1, migration
+    /// 0021). The escalate path stamps `resume_epoch` = the parked task's
+    /// ask-time event count. THREE outcomes are exercised:
+    ///   (a) the parked task's state changes after the ask (here: a `set_effort`
+    ///       records a new task event) → the resolution is STALE and rejected
+    ///       with `Validation`, with NO question state mutated;
+    ///   (b) a clean (epoch-matching, still-parked) answer resolves normally and
+    ///       leaves `resolved_after_close` NULL;
+    ///   (c) when no parked consumer remains (the task was cancelled away before
+    ///       the answer arrived), the answer still resolves but stamps the
+    ///       durable `resolved_after_close` marker for the deferred scheduler.
+    #[tokio::test]
+    async fn resume_epoch_detects_stale_resolution_and_after_close_marker() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        // --- (a) STALE: the parked task changes between ask and answer. -------
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        let q = escalate_decision_and_park_task(&pool, &story, &task, "which?", &["A", "B"])
+            .await
+            .expect("escalate")
+            .to_string();
+
+        // The epoch was stamped at ask-time (non-NULL on the escalate path).
+        let epoch = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT resume_epoch FROM open_questions WHERE id = ?1",
+        )
+        .bind(&q)
+        .fetch_one(&pool)
+        .await
+        .expect("epoch read");
+        assert!(epoch.is_some(), "escalate stamps a resume_epoch");
+
+        let opt = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM question_options WHERE question_id = ?1 ORDER BY seq LIMIT 1",
+        )
+        .bind(&q)
+        .fetch_one(&pool)
+        .await
+        .expect("opt");
+
+        // Mutate the still-blocked parked task: one new work_item event bumps its
+        // lifetime event count past the stamped epoch. `set_effort` is
+        // status-agnostic, so the task stays `blocked`.
+        crate::repo::set_effort(&pool, &task, crate::domain::Effort::M)
+            .await
+            .expect("set_effort");
+
+        let err = resolve_open_question(&pool, &q, &opt, Some("human"))
+            .await
+            .expect_err("stale resolution must reject");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+
+        // The reject left the question OPEN and the task still parked (no write).
+        let status = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT status FROM open_questions WHERE id = ?1",
+        )
+        .bind(&q)
+        .fetch_one(&pool)
+        .await
+        .expect("status read");
+        assert_eq!(status.as_deref(), Some("open"), "stale reject does not resolve");
+        assert_eq!(item_status(&pool, &task).await, "blocked", "task stays parked");
+
+        // --- (b) CLEAN: epoch matches, task still parked → normal resolve. ----
+        let task2 = create_work_item(&pool, "task", Some(&story), "T2", None)
+            .await
+            .expect("task2")
+            .to_string();
+        let q2 = escalate_decision_and_park_task(&pool, &story, &task2, "which2?", &["X"])
+            .await
+            .expect("escalate2")
+            .to_string();
+        let opt2 = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM question_options WHERE question_id = ?1 ORDER BY seq LIMIT 1",
+        )
+        .bind(&q2)
+        .fetch_one(&pool)
+        .await
+        .expect("opt2");
+        resolve_open_question(&pool, &q2, &opt2, Some("human"))
+            .await
+            .expect("clean resolve");
+        assert_eq!(item_status(&pool, &task2).await, "todo", "clean resolve unblocks");
+        let after_close2 = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT resolved_after_close FROM open_questions WHERE id = ?1",
+        )
+        .bind(&q2)
+        .fetch_one(&pool)
+        .await
+        .expect("after_close2 read");
+        assert!(after_close2.is_none(), "a live-parked resolve leaves resolved_after_close NULL");
+
+        // --- (c) AFTER-CLOSE: no parked consumer remains → marker stamped. ----
+        let task3 = create_work_item(&pool, "task", Some(&story), "T3", None)
+            .await
+            .expect("task3")
+            .to_string();
+        let q3 = escalate_decision_and_park_task(&pool, &story, &task3, "which3?", &["Y"])
+            .await
+            .expect("escalate3")
+            .to_string();
+        let opt3 = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM question_options WHERE question_id = ?1 ORDER BY seq LIMIT 1",
+        )
+        .bind(&q3)
+        .fetch_one(&pool)
+        .await
+        .expect("opt3");
+        // The run clean-closed: the parked task is cancelled away before the
+        // human answers, so no live consumer remains to re-initiate.
+        sqlx::query("UPDATE work_items SET status = 'cancelled' WHERE id = ?1")
+            .bind(&task3)
+            .execute(&pool)
+            .await
+            .expect("cancel task3");
+        resolve_open_question(&pool, &q3, &opt3, Some("human"))
+            .await
+            .expect("after-close resolve still succeeds");
+        let after_close3 = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT resolved_after_close FROM open_questions WHERE id = ?1",
+        )
+        .bind(&q3)
+        .fetch_one(&pool)
+        .await
+        .expect("after_close3 read");
+        assert!(
+            after_close3.is_some(),
+            "a resolution with no live parked consumer stamps resolved_after_close (seq28)"
+        );
     }
 }
