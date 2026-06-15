@@ -16,7 +16,6 @@ use crate::args;
 use crate::db::DbClient;
 use crate::domain::{BatchEntry, Lane, TaskKind, Tier};
 use crate::error::AppError;
-use serde_json::Value;
 
 // ---------------------------------------------------------------------------
 // work_items.task_kind setter (migration 0005, vocab narrowed in 0007).
@@ -316,15 +315,17 @@ pub async fn compute_task_batches(
 // ---------------------------------------------------------------------------
 
 /// Raw row read in bulk by [`get_task_dispatch_plan`]: the `id` plus the spec
-/// columns (`effort`/`complexity`/`attributes`) feeding [`compute_tier`].
+/// columns (`effort`/`complexity`) feeding [`compute_tier`]. The
+/// `files_touched_count` no longer comes from the attributes JSON — it is the
+/// de-duplicated EXPECTED `task_files` count (migration 0020, T7), read
+/// separately below — so `attributes` is no longer projected here.
 /// Generic over `R: Row` per the canonical [`crate::db`] FromRow recipe; the
-/// three spec columns are nullable (`Option<String>`), `id` is NOT NULL.
+/// two spec columns are nullable (`Option<String>`), `id` is NOT NULL.
 #[derive(Debug)]
 struct DispatchSpecRow {
     id: String,
     effort: Option<String>,
     complexity: Option<String>,
-    attributes: Option<String>,
 }
 
 impl<'r, R> sqlx::FromRow<'r, R> for DispatchSpecRow
@@ -339,7 +340,35 @@ where
             id: row.try_get("id")?,
             effort: row.try_get("effort")?,
             complexity: row.try_get("complexity")?,
-            attributes: row.try_get("attributes")?,
+        })
+    }
+}
+
+/// Raw row read in bulk by [`get_task_dispatch_plan`]: a task id paired with
+/// its de-duplicated EXPECTED `task_files` count (migration 0020, T7). The
+/// count is `COUNT(DISTINCT COALESCE(repo_link_id,'') || '\u{1}' || path)` over
+/// the task's `kind='expected'` rows — DISTINCT on the CANONICAL
+/// `(repo_link_id, path)` key so a bare path and an explicit-primary
+/// `{repo, path}` for the SAME primary repo (stored as NULL vs a primary
+/// repo_link_id) collapse to ONE file (Ground R2/R3). `id` is NOT NULL; `n`
+/// is a NOT-NULL aggregate.
+#[derive(Debug)]
+struct ExpectedCountRow {
+    id: String,
+    n: i64,
+}
+
+impl<'r, R> sqlx::FromRow<'r, R> for ExpectedCountRow
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(ExpectedCountRow {
+            id: row.try_get("id")?,
+            n: row.try_get("n")?,
         })
     }
 }
@@ -377,7 +406,7 @@ pub async fn get_task_dispatch_plan(
     let spec_rows = pool
         .query_all::<DispatchSpecRow>(
             r#"
-        SELECT id, effort, complexity, attributes
+        SELECT id, effort, complexity
         FROM work_items
         WHERE parent_id = $1 AND kind = 'task' AND deleted_at IS NULL
         "#,
@@ -390,30 +419,64 @@ pub async fn get_task_dispatch_plan(
         specs_by_id.insert(row.id.clone(), row);
     }
 
+    // ONE bulk read of the de-duplicated EXPECTED `task_files` count per task on
+    // this story (migration 0020, T7) — the new `files_touched_count` source.
+    // The count is DISTINCT on the CANONICAL `(repo_link_id, path)` key
+    // (`COALESCE(repo_link_id,'') || sep || path`) so a bare path and an
+    // explicit-primary `{repo, path}` for the SAME primary repo (stored as NULL
+    // vs a primary repo_link_id) collapse to ONE file — keeping `compute_tier`
+    // STABLE (a borderline task is NOT spuriously over-promoted to `deep` by
+    // `files>3`; Ground R2/R3). We dedup in SQL (a single grouped read) rather
+    // than folding rows through `canonical_file_key` in Rust: the canonical key
+    // for a STORED row is exactly `COALESCE(repo_link_id,'')` (the storage
+    // UNIQUE-index bucket — see `task_files.rs`), so the SQL form is the simpler
+    // correct one and needs no per-task repo_links lookup. `char(1)` is an
+    // unprintable separator that cannot appear in a repo_link_id (a uuid) or a
+    // path, so the concatenated key is unambiguous. Tasks with no expected rows
+    // are absent here and default to 0 below.
+    let count_rows = pool
+        .query_all::<ExpectedCountRow>(
+            r#"
+        SELECT tf.task_id AS id,
+               COUNT(DISTINCT COALESCE(tf.repo_link_id, '') || char(1) || tf.path) AS n
+        FROM task_files tf
+        JOIN work_items w ON w.id = tf.task_id
+        WHERE w.parent_id = $1
+          AND w.kind = 'task'
+          AND w.deleted_at IS NULL
+          AND tf.kind = 'expected'
+        GROUP BY tf.task_id
+        "#,
+            args![story_id.to_owned()],
+        )
+        .await?;
+    let mut expected_count_by_id: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::with_capacity(count_rows.len());
+    for row in count_rows {
+        expected_count_by_id.insert(row.id, row.n.max(0) as usize);
+    }
+
     let mut out: Vec<Vec<BatchEntry>> = Vec::with_capacity(batches.len());
     for batch in batches {
         let mut entries: Vec<BatchEntry> = Vec::with_capacity(batch.len());
         for task_id in batch {
-            // Look up the task spec for effort/complexity/attributes from the
-            // bulk read. An id present in the batches but absent here is a
+            // Look up the task spec for effort/complexity from the bulk read.
+            // An id present in the batches but absent here is a
             // races-with-delete (the bulk read filters tombstoned rows) and
             // surfaces as `NotFound`, matching the prior per-task semantics.
             let row = specs_by_id
                 .remove(&task_id)
                 .ok_or_else(|| AppError::NotFound(format!("work_item '{task_id}' not found")))?;
 
-            // Count `files_touched` entries (bare-string OR {repo,path}
-            // objects). A malformed `attributes` blob is treated as 0 here
-            // rather than re-erroring — `decode_attributes` is the
-            // authoritative corruption-detector elsewhere; this read is a
-            // best-effort summary.
-            let files_touched_count: usize = match row.attributes.as_deref() {
-                None => 0,
-                Some(raw) => serde_json::from_str::<Value>(raw)
-                    .ok()
-                    .and_then(|v| v.get("files_touched").and_then(Value::as_array).map(Vec::len))
-                    .unwrap_or(0),
-            };
+            // `files_touched_count` is the DE-DUPLICATED EXPECTED `task_files`
+            // count (migration 0020, T7) — distinct canonical `(repo_link_id,
+            // path)` keys among the task's `kind='expected'` rows (computed in
+            // the grouped SQL read above). A bare path and an explicit-primary
+            // `{repo, path}` for the same primary repo count as ONE file, so a
+            // borderline task is not spuriously over-promoted to `deep`
+            // (Ground R2/R3). A task with no expected rows defaults to 0.
+            let files_touched_count: usize =
+                expected_count_by_id.get(&task_id).copied().unwrap_or(0);
 
             // TODO(round-3 follow-up): wire a {repo,path} slug resolver
             // against the project ancestor's `repo_links` to flag a
@@ -729,6 +792,135 @@ mod tests {
         assert!(
             matches!(missing, AppError::NotFound(_)),
             "a missing id is NotFound, got {missing:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // get_task_dispatch_plan files_touched_count re-sourced from the DEDUPED
+    // EXPECTED task_files count (migration 0020, T7). AC (a): a task whose
+    // EXPECTED set names the SAME primary file as both a bare path and an
+    // explicit-primary {repo, path} counts as ONE file — so a borderline task
+    // is NOT spuriously over-promoted to `deep` by `files>3`.
+    // -----------------------------------------------------------------------
+
+    /// (a) The dispatch-plan tier reads the de-duplicated EXPECTED count. A task
+    /// whose EXPECTED set carries the same primary-repo file as `"x"` AND
+    /// `{repo: <primary>, path: "x"}` yields `files_touched_count == 1` (the two
+    /// spellings fold to one canonical key — Ground R2/R3), so a task that would
+    /// be Deep at a raw count of 5 stays `Lite` once deduped to ≤3 files.
+    #[tokio::test]
+    async fn dispatch_plan_files_touched_count_is_deduped_so_tier_stays_lite() {
+        use crate::domain::{Complexity, Effort};
+
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+
+        // Attach a PRIMARY repo link to the project so an explicit-primary
+        // {repo, path} entry resolves (and folds to the NULL bucket).
+        let project = find_project_ancestor(&pool, &story)
+            .await
+            .expect("project ancestor");
+        add_repo_link(&pool, &project, "octocat/hello-world", true)
+            .await
+            .expect("primary repo link");
+
+        // A task with otherwise-Lite spec (effort=s, complexity=low). Without
+        // dedup, the EXPECTED set below would count as 5 entries (>3 ⇒ Deep);
+        // with canonical dedup the bare+explicit-primary "x" fold to one, so the
+        // distinct count is 3 (x, y, z) ⇒ NOT > 3 ⇒ stays Lite.
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+        set_effort(&db, &task, Effort::S).await.expect("effort");
+        set_complexity(&db, &task, Complexity::Low).await.expect("complexity");
+
+        set_task_expected_files(
+            &db,
+            &task,
+            &[
+                serde_json::json!("src/x.rs"),
+                serde_json::json!({ "repo": "octocat/hello-world", "path": "src/x.rs" }),
+                serde_json::json!("src/y.rs"),
+                serde_json::json!("src/z.rs"),
+                // A second explicit-primary spelling of x — also folds.
+                serde_json::json!({ "repo": "octocat/hello-world", "path": "src/x.rs" }),
+            ],
+        )
+        .await
+        .expect("set expected files");
+
+        let plan = get_task_dispatch_plan(&db, &story)
+            .await
+            .expect("dispatch plan");
+        let entry = plan
+            .iter()
+            .flatten()
+            .find(|e| e.task_id == task)
+            .expect("the task is in the dispatch plan");
+
+        assert_eq!(
+            entry.files_touched_count, 3,
+            "the bare + explicit-primary spellings of src/x.rs fold to one canonical key, \
+             so the deduped EXPECTED count is 3 (x, y, z), not 5"
+        );
+        assert_eq!(
+            entry.tier,
+            Some(Tier::Lite),
+            "a deduped count of 3 is NOT > 3, so the borderline task stays Lite (not over-promoted to Deep)"
+        );
+    }
+
+    /// A NON-primary explicit `{repo, path}` for the same path is a DISTINCT
+    /// canonical key, so it counts SEPARATELY — the dedup is primary-specific,
+    /// not a blanket path collapse. With `"x"` (primary) + `{repo: secondary,
+    /// path: "x"}` the EXPECTED count is 2.
+    #[tokio::test]
+    async fn dispatch_plan_count_keeps_nonprimary_repo_distinct() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+
+        let project = find_project_ancestor(&pool, &story)
+            .await
+            .expect("project ancestor");
+        add_repo_link(&pool, &project, "octocat/hello-world", true)
+            .await
+            .expect("primary repo link");
+        add_repo_link(&pool, &project, "octocat/other-repo", false)
+            .await
+            .expect("secondary repo link");
+
+        let task = create_work_item(&pool, "task", Some(&story), "T", None)
+            .await
+            .expect("task")
+            .to_string();
+
+        set_task_expected_files(
+            &db,
+            &task,
+            &[
+                serde_json::json!("src/x.rs"),
+                serde_json::json!({ "repo": "octocat/other-repo", "path": "src/x.rs" }),
+            ],
+        )
+        .await
+        .expect("set expected files");
+
+        let plan = get_task_dispatch_plan(&db, &story)
+            .await
+            .expect("dispatch plan");
+        let entry = plan
+            .iter()
+            .flatten()
+            .find(|e| e.task_id == task)
+            .expect("the task is in the dispatch plan");
+
+        assert_eq!(
+            entry.files_touched_count, 2,
+            "a non-primary {{repo, path}} keeps a distinct canonical key, so x@primary and \
+             x@secondary count as two files (the dedup is primary-specific, not blanket)"
         );
     }
 }

@@ -29,36 +29,35 @@ use serde_json::Value;
 // single writer (the SELECT→UPDATE share one RESERVED-locked txn).
 // ---------------------------------------------------------------------------
 
-/// Normalise one raw `attributes.files_touched` entry to its `(repo, path)`
-/// overlap KEY. Bare string `p` → `(None, p)` (the legacy form, resolving to the
-/// project's primary repo); object `{repo, path}` → `(Some(repo), path)`. Any
-/// other shape (malformed entry) yields `None` and is dropped from the overlap
-/// scan — files_touched is best-effort, so a malformed entry simply produces no
-/// caution rather than an error (ADR-0002). Used ONLY by the post-commit advisory
-/// scan; never inside the write txn.
+/// Read a task's CANONICAL `(repo_link_id, path)` overlap keys from the
+/// first-class `task_files` EXPECTED set (migration 0020, T7) — the re-keyed
+/// replacement for the old raw-slug `attributes.files_touched` parse.
 ///
-/// LEFT FOR T7 (consumer re-wire — migration 0020 `task_files`): this keys on the
-/// raw repo SLUG string, so a bare path and an explicit `{repo: <primary-slug>,
-/// path}` for the SAME primary repo FALSE-DISTINGUISH (they should overlap). The
-/// canonical fix is [`crate::repo::canonical_file_key`] (repo/task_files.rs),
-/// which collapses an explicit-primary slug to the NULL `repo_link_id` bucket so
-/// the two spellings share one key (Ground R2). Re-keying THIS scan on that
-/// canonical form is deferred to T7 because it would turn the cheap, DB-free
-/// post-commit overlap parse into a per-task project-ancestor + repo_links
-/// resolution (a DB-dependent path on the claim hot loop), and the full advisory
-/// re-wire (including reading the overlap set from `task_files` instead of the
-/// `attributes` JSON) is T7's scope; the canonical helper is provided now so T7
-/// can wire it in without a fresh design pass.
-fn files_touched_overlap_key(entry: &Value) -> Option<(Option<String>, String)> {
-    if let Some(p) = entry.as_str() {
-        return Some((None, p.to_owned()));
-    }
-    if let Some(obj) = entry.as_object() {
-        let repo = obj.get("repo").and_then(Value::as_str)?;
-        let path = obj.get("path").and_then(Value::as_str)?;
-        return Some((Some(repo.to_owned()), path.to_owned()));
-    }
-    None
+/// **Why canonical, why `task_files`.** The stored EXPECTED rows are ALREADY in
+/// canonical form: `set_task_expected_files` runs every entry through
+/// [`crate::repo::canonical_file_key`] before insert, which collapses an explicit
+/// PRIMARY-repo slug to the NULL `repo_link_id` bucket (matching the storage
+/// `COALESCE(repo_link_id,'')` UNIQUE index — Ground R2). So a bare path and an
+/// explicit-primary `{repo, path}` for the SAME primary repo are stored as the
+/// SAME `(None, path)` key and no longer FALSE-DISTINGUISH, while genuinely
+/// different repos keep a distinct `Some(repo_link_id)` and never FALSE-overlap.
+/// Reading the keys straight from `task_files` means the scan needs NO per-task
+/// project-ancestor + repo_links resolution — the canonicalisation already
+/// happened at write time, so this stays a cheap post-commit read (a single
+/// indexed SELECT per scanned task, `idx_task_files_task(task_id, kind)`), in
+/// keeping with the advisory's cheap-read discipline (ADR-0002: the overlap is
+/// advisory, never a gate).
+///
+/// Returns the de-duplicated set of canonical keys (a `TaskFile` row already
+/// dedups at storage, but collecting into a `BTreeSet` gives the caller a ready
+/// set for intersection). An absent EXPECTED set yields an empty set — no
+/// caution, never an error.
+async fn task_expected_overlap_keys(
+    db: &impl DbClient,
+    task_id: &str,
+) -> Result<std::collections::BTreeSet<(Option<String>, String)>, AppError> {
+    let rows = crate::repo::list_task_files(db, task_id, Some("expected")).await?;
+    Ok(rows.into_iter().map(|f| (f.repo_link_id, f.path)).collect())
 }
 
 /// Extract the `files_touched` array from a task's stored `attributes` TEXT
@@ -330,10 +329,12 @@ pub async fn claim_next_task(
     tx.commit().await?;
 
     // --- Step 5: advisory file-overlap report (POST-commit; cheap read). ---
-    // Per ADR-0002 the claim NEVER skips on overlap. Read the claimed task's
-    // files_touched, then scan the OTHER in_progress tasks in this sprint and
-    // report any that share ≥1 (repo, path) key. CRUCIAL: this JSON parse runs
+    // Per ADR-0002 the claim NEVER skips on overlap. CRUCIAL: this all runs
     // OUTSIDE the write txn so it never holds the writer lock.
+    //
+    // `ClaimedTask.files_touched` keeps its existing contract: the RAW
+    // best-effort `attributes.files_touched` entries (bare strings / {repo,path}
+    // objects) verbatim, so downstream consumers see the same shape as before.
     let claimed_attrs: Option<String> = crate::db::scalar_opt::<String>(
         db,
         "SELECT attributes FROM work_items WHERE id = $1",
@@ -342,21 +343,25 @@ pub async fn claim_next_task(
     .await?;
     let files_touched = files_touched_from_attributes(claimed_attrs.as_deref());
 
-    let mut file_overlap_warnings: Vec<FileOverlapWarning> = Vec::new();
-    if !files_touched.is_empty() {
-        use std::collections::BTreeSet;
-        let claimed_keys: BTreeSet<(Option<String>, String)> = files_touched
-            .iter()
-            .filter_map(files_touched_overlap_key)
-            .collect();
+    // The OVERLAP scan (T7) is re-keyed onto the CANONICAL `(repo_link_id, path)`
+    // form: read the claimed task's EXPECTED `task_files` keys, then scan the
+    // OTHER in_progress tasks in this sprint and report any that share ≥1
+    // canonical key. Because the stored keys are already canonical (NULL ≡
+    // primary), a bare path and an explicit-primary `{repo, path}` for the same
+    // primary repo correctly OVERLAP (no false-negative), and genuinely
+    // different repos stay distinct (no false-positive). Each scanned task costs
+    // one cheap indexed `list_task_files` read.
+    let claimed_keys = task_expected_overlap_keys(db, &task_id).await?;
 
-        if !claimed_keys.is_empty() {
-            // Other in_progress tasks in the same sprint, excluding the
-            // just-claimed one. Carry id + attributes for the per-task scan.
-            let others = db
-                .query_all::<OverlapScanRow>(
-                    r#"
-                SELECT t.id, t.attributes
+    let mut file_overlap_warnings: Vec<FileOverlapWarning> = Vec::new();
+    if !claimed_keys.is_empty() {
+        // Other in_progress tasks in the same sprint, excluding the just-claimed
+        // one. We only need their ids; the canonical keys are read per task from
+        // `task_files` below.
+        let others = db
+            .query_all::<OverlapScanRow>(
+                r#"
+                SELECT t.id
                 FROM work_items t
                 JOIN sprint_tasks st ON st.task_id = t.id AND st.sprint_id = $1
                 WHERE t.status = 'in_progress'
@@ -364,29 +369,25 @@ pub async fn claim_next_task(
                   AND t.deleted_at IS NULL
                 ORDER BY t.created_at, t.id
                 "#,
-                    args![sprint_id.to_owned(), task_id.clone()],
-                )
-                .await?;
+                args![sprint_id.to_owned(), task_id.clone()],
+            )
+            .await?;
 
-            for other in others {
-                let other_files = files_touched_from_attributes(other.attributes.as_deref());
-                let mut shared: Vec<String> = other_files
-                    .iter()
-                    .filter_map(files_touched_overlap_key)
-                    .filter(|k| claimed_keys.contains(k))
-                    // The advisory `shared` list reports the PATH segment of
-                    // each shared key (the human-meaningful piece); a {repo,
-                    // path} entry contributes its path.
-                    .map(|(_, path)| path)
-                    .collect();
-                if !shared.is_empty() {
-                    shared.sort();
-                    shared.dedup();
-                    file_overlap_warnings.push(FileOverlapWarning {
-                        task_id: other.id,
-                        shared,
-                    });
-                }
+        for other in others {
+            let other_keys = task_expected_overlap_keys(db, &other.id).await?;
+            // The advisory `shared` list reports the PATH segment of each shared
+            // canonical key (the human-meaningful piece).
+            let mut shared: Vec<String> = other_keys
+                .intersection(&claimed_keys)
+                .map(|(_, path)| path.clone())
+                .collect();
+            if !shared.is_empty() {
+                shared.sort();
+                shared.dedup();
+                file_overlap_warnings.push(FileOverlapWarning {
+                    task_id: other.id,
+                    shared,
+                });
             }
         }
     }
@@ -437,13 +438,14 @@ where
 }
 
 /// Raw row read by the post-commit file-overlap scan in [`claim_next_task`]:
-/// an in-progress sprint task's id + its stored `attributes` TEXT blob (parsed
-/// for `files_touched` OUTSIDE the write txn). `attributes` is nullable.
+/// an in-progress sprint task's id. T7 re-keyed the scan onto the first-class
+/// `task_files` EXPECTED set, so the per-task canonical `(repo_link_id, path)`
+/// keys are read via [`task_expected_overlap_keys`] (not parsed from the
+/// `attributes` blob) — this row therefore carries only the `id`.
 /// Generic over `R: Row` per the canonical [`crate::db`] FromRow recipe.
 #[derive(Debug)]
 struct OverlapScanRow {
     id: String,
-    attributes: Option<String>,
 }
 
 impl<'r, R> sqlx::FromRow<'r, R> for OverlapScanRow
@@ -451,12 +453,10 @@ where
     R: sqlx::Row,
     &'r str: sqlx::ColumnIndex<R>,
     String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
-    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
 {
     fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
         Ok(OverlapScanRow {
             id: row.try_get("id")?,
-            attributes: row.try_get("attributes")?,
         })
     }
 }
@@ -1102,7 +1102,11 @@ mod tests {
             .await
             .expect("dep edge");
 
-        // Give both tasks files_touched so the overlap scan has data.
+        // Give both tasks files_touched so the overlap scan has data. T7 re-keyed
+        // the advisory onto the first-class `task_files` EXPECTED set, so seed
+        // there (the `set_work_item_attributes` calls still populate the
+        // `ClaimedTask.files_touched` field, but the OVERLAP scan reads
+        // `task_files`).
         set_work_item_attributes(
             &db,
             &dep_task,
@@ -1110,6 +1114,13 @@ mod tests {
         )
         .await
         .expect("dep files_touched");
+        set_task_expected_files(
+            &db,
+            &dep_task,
+            &[serde_json::json!("src/shared.rs"), serde_json::json!("src/only_dep.rs")],
+        )
+        .await
+        .expect("dep expected files");
         set_work_item_attributes(
             &db,
             &ready_task,
@@ -1117,6 +1128,13 @@ mod tests {
         )
         .await
         .expect("ready files_touched");
+        set_task_expected_files(
+            &db,
+            &ready_task,
+            &[serde_json::json!("src/shared.rs"), serde_json::json!("src/only_ready.rs")],
+        )
+        .await
+        .expect("ready expected files");
 
         // Put dep_task in_progress (so it is an overlap target) but NOT done.
         sqlx::query(
@@ -1146,6 +1164,13 @@ mod tests {
         )
         .await
         .expect("other files_touched");
+        set_task_expected_files(
+            &db,
+            &other_ip,
+            &[serde_json::json!("src/shared.rs"), serde_json::json!("src/other.rs")],
+        )
+        .await
+        .expect("other expected files");
         sqlx::query(
             "UPDATE work_items SET status = 'in_progress', assignee = 'agent-y', \
              lease_expires_at = datetime('now', '+1800 seconds') WHERE id = $1",
@@ -2032,6 +2057,152 @@ mod tests {
             .expect("count expected"),
             1,
             "a re-run of complete_task does not re-clear (b.rs stays gone, a.rs stays)"
+        );
+    }
+
+    // =======================================================================
+    // claim_next_task advisory overlap re-keyed onto the CANONICAL
+    // (repo_link_id, path) form via the first-class `task_files` EXPECTED set
+    // (migration 0020, T7). AC (b): the advisory neither false-positives nor
+    // false-negatives — a bare path and an explicit-primary {repo, path} for
+    // the SAME primary repo OVERLAP (no false-negative); genuinely different
+    // files / repos do NOT (no false-positive).
+    // =======================================================================
+
+    /// (b) The claim-time advisory keys on the canonical `(repo_link_id, path)`
+    /// form. Two in_progress tasks that share a canonical key via DIFFERENT
+    /// spellings (a bare `"src/shared.rs"` vs an explicit-primary
+    /// `{repo: <primary>, path: "src/shared.rs"}`) are reported as overlapping
+    /// (NO false-negative). A task whose EXPECTED set is a genuinely different
+    /// file — and one in a genuinely different (non-primary) repo at the SAME
+    /// path — are NOT reported (NO false-positive).
+    #[tokio::test]
+    async fn claim_advisory_overlap_keys_on_canonical_form() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+
+        // PRIMARY + a NON-primary linked repo on the project (the linked slugs
+        // an explicit `{repo, path}` EXPECTED entry can reference).
+        let project = find_project_ancestor(&pool, &story)
+            .await
+            .expect("project ancestor");
+        add_repo_link(&pool, &project, "octocat/hello-world", true)
+            .await
+            .expect("primary repo link");
+        add_repo_link(&pool, &project, "octocat/other-repo", false)
+            .await
+            .expect("secondary repo link");
+
+        // The task we will CLAIM. Its EXPECTED set names the primary file via the
+        // BARE spelling.
+        let claimed_task =
+            seed_queue_task(&pool, &story, &sprint, "CLAIM", Some("implement"), Some("deep")).await;
+        set_task_expected_files(
+            &db,
+            &claimed_task,
+            &[serde_json::json!("src/shared.rs"), serde_json::json!("src/only_claim.rs")],
+        )
+        .await
+        .expect("claimed expected files");
+
+        // SHARES the primary file via the EXPLICIT-PRIMARY spelling — must
+        // OVERLAP the claimed task's bare spelling (no false-negative).
+        let sharer =
+            seed_queue_task(&pool, &story, &sprint, "SHARER", Some("implement"), Some("deep")).await;
+        set_task_expected_files(
+            &db,
+            &sharer,
+            &[
+                serde_json::json!({ "repo": "octocat/hello-world", "path": "src/shared.rs" }),
+                serde_json::json!("src/only_sharer.rs"),
+            ],
+        )
+        .await
+        .expect("sharer expected files");
+
+        // A genuinely DIFFERENT file — must NOT overlap (no false-positive).
+        let disjoint =
+            seed_queue_task(&pool, &story, &sprint, "DISJOINT", Some("implement"), Some("deep"))
+                .await;
+        set_task_expected_files(
+            &db,
+            &disjoint,
+            &[serde_json::json!("src/elsewhere.rs")],
+        )
+        .await
+        .expect("disjoint expected files");
+
+        // SAME PATH but a DIFFERENT (non-primary) repo — a DISTINCT canonical key,
+        // so it must NOT overlap the claimed task's primary src/shared.rs (no
+        // false-positive across repos).
+        let other_repo =
+            seed_queue_task(&pool, &story, &sprint, "OTHERREPO", Some("implement"), Some("deep"))
+                .await;
+        set_task_expected_files(
+            &db,
+            &other_repo,
+            &[serde_json::json!({ "repo": "octocat/other-repo", "path": "src/shared.rs" })],
+        )
+        .await
+        .expect("other-repo expected files");
+
+        // Put the three OTHER tasks in_progress (overlap targets are scanned only
+        // among in_progress sprint tasks). Leave `claimed_task` at todo so the
+        // claim picks it.
+        for t in [&sharer, &disjoint, &other_repo] {
+            sqlx::query(
+                "UPDATE work_items SET status = 'in_progress', assignee = 'agent-x', \
+                 lease_expires_at = datetime('now', '+1800 seconds') WHERE id = $1",
+            )
+            .bind(t)
+            .execute(&pool)
+            .await
+            .expect("set other in_progress");
+        }
+
+        // Claim the bare-spelling task; the advisory scan runs post-commit.
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-claim", 1800)
+            .await
+            .expect("claim runs")
+            .expect("the claimed_task is claimable");
+        assert_eq!(claimed.task_id, claimed_task, "the ready task is claimed");
+
+        let warned: Vec<&str> = claimed
+            .file_overlap_warnings
+            .iter()
+            .map(|w| w.task_id.as_str())
+            .collect();
+
+        // No false-NEGATIVE: the explicit-primary sharer overlaps the bare claim.
+        assert!(
+            warned.contains(&sharer.as_str()),
+            "the explicit-primary {{repo, path}} sharer overlaps the bare spelling \
+             (canonical key fold — no false-negative), got {warned:?}"
+        );
+        let sharer_warning = claimed
+            .file_overlap_warnings
+            .iter()
+            .find(|w| w.task_id == sharer)
+            .expect("sharer warning present");
+        assert_eq!(
+            sharer_warning.shared,
+            vec!["src/shared.rs".to_string()],
+            "the reported shared path is the canonical primary file"
+        );
+
+        // No false-POSITIVE: a genuinely different file, and the same path in a
+        // DIFFERENT repo, are NOT reported.
+        assert!(
+            !warned.contains(&disjoint.as_str()),
+            "a disjoint file is not an overlap (no false-positive), got {warned:?}"
+        );
+        assert!(
+            !warned.contains(&other_repo.as_str()),
+            "the same path in a NON-primary repo is a distinct canonical key — not an overlap \
+             (no false-positive across repos), got {warned:?}"
         );
     }
 }
