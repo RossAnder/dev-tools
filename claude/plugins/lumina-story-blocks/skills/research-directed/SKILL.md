@@ -4,19 +4,22 @@ description: Verify decision-grade claims (libraries, APIs, file:line) after use
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
 disable-model-invocation: true
-context: fork
-agent: general-purpose
 ---
 
 # `lumina:research-directed`
 
-Verify the decision-grade claims that survived the user's planning decisions — library version pins, API signatures, `file:line` references — *after* the approach and the answered `open_questions` have landed. This is the round-3 directed lap that mirrors `/plan-new` Phase 5: research fires **per decision, not per claim** (R31 in `docs/plans/lumina-story-planning-round-3.md` line 122). Drift detected during verification becomes a superseding research note plus an `add_finding { kind: "research-drift" }` row; confirmations bump the existing note's `confidence` to `"high"`. The skill iterates the *decisions*, derives the verifiable claim set from each, and dispatches one verification sub-agent per claim.
+Verify the decision-grade claims that survived the user's planning decisions — library version pins, API signatures, `file:line` references — *after* the approach and the answered `open_questions` have landed. This is the round-3 directed lap that mirrors `/plan-new` Phase 5: research fires **per decision, not per claim** (R31 in `docs/plans/lumina-story-planning-round-3.md` line 122). Drift detected during verification becomes a superseding research note plus an `add_finding { kind: "research-drift" }` row; confirmations bump the existing note's `confidence` to `"high"`. The skill iterates the *decisions*, derives the verifiable claim set from each, and dispatches one verification sub-agent per claim. Whether the skill itself runs forked or inline is a RUNTIME decision keyed on the execution mode (see "Run mode: fork-vs-inline" below) — distinct from the per-claim verification fan-out, which it dispatches in either mode.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act, applied per-DECISION per §b-per-element), §c (provenance — `entry_type: "execution"`, no vet exception here), §d (forked context — see cardinality note below), §e (Sentry pattern — skill = instructions, MCP = execution), §h (kind-precondition — story-only). It does NOT cite §c's vet exception: that exception is narrowed to `/lumina:vet-research` alone; this skill is post-decision verification, not pre-acceptance sampling, and writes `entry_type: "execution"` like every other plugin write. It also cites the universal vet-pass procedure at [`claude/skills/flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md) for evidence-grade triage when interpreting sub-agent return — do NOT re-state that contract inline.
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act, applied per-DECISION per §b-per-element), §c (provenance — `entry_type: "execution"`, no vet exception here), §d (run-mode / fork-vs-inline rationale — see "Run mode: fork-vs-inline" below), §e (Sentry pattern — skill = instructions, MCP = execution), §h (kind-precondition — story-only). It does NOT cite §c's vet exception: that exception is narrowed to `/lumina:vet-research` alone; this skill is post-decision verification, not pre-acceptance sampling, and writes `entry_type: "execution"` like every other plugin write. It also cites the universal vet-pass procedure at [`claude/skills/flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md) for evidence-grade triage when interpreting sub-agent return — do NOT re-state that contract inline.
 
-## §d cardinality note — forked-context skills now five
+## Run mode: fork-vs-inline (per §d)
 
-Round-1 had exactly one forked skill (`research-notes`); round-2 added two (`story-review`, `decompose-tasks`); round-3 adds two more (`research-explore`, `research-directed`) for a total of **five** forked-context skills in this plugin. The §d six-key frontmatter shape (four mandatory + `context: fork` + `agent: general-purpose`) is unchanged; only the cardinality count is updated. The rationale is identical: this skill dispatches N parallel verification sub-agents whose tool output would saturate the parent planning context. Forking isolates the noise; the parent sees only the final summary and the lumina rows themselves.
+Whether to fork is selected at runtime from the execution mode (the `LUMINA_AUTONOMOUS` signal, corroborated server-side against the session's spawned-provenance through lumina's single-source mode resolver, which fails SAFE to interactive whenever the signal is absent, unverified, or conflicts):
+
+- **Autonomous mode** (lumina-spawned / scheduler-driven) → run FORKED in an isolated `agent: general-purpose` subagent. This skill dispatches N parallel verification sub-agents whose tool output would saturate the parent's durable-comms transcript; forking isolates that noise — the parent sees only the final summary line and the lumina rows themselves. The DRIFTED-row disambiguation (step 4, when multiple accepted notes match a falsified claim) loses its live `AskUserQuestion` here and falls back to the autonomous-mode default documented at that step.
+- **Interactive mode** (human terminal — the fail-safe default) → run INLINE. The user gets the live `AskUserQuestion` disambiguation in step 4 and can watch the per-claim verification verdicts land.
+
+Fork is no longer a static per-skill property recorded in frontmatter — §d (post-1C.1) treats it as a runtime/mode decision, so this skill carries no `context:`/`agent:` keys; the `agent: general-purpose` target applies only on the autonomous fork path described above. (Round-1 through round-3 grew the count of skills that fork to five; post-1C.1 that "which skills fork" framing is obsolete — every one of those skills now forks ONLY in autonomous mode.)
 
 ## MCP tools used
 
@@ -27,13 +30,13 @@ Round-1 had exactly one forked skill (`research-notes`); round-2 added two (`sto
 - `mcp__lumina__add_finding` — drift findings (`kind: "research-drift"`, typed `Severity::Major` by default; `Severity::Critical` only when the falsified claim invalidates the approach).
 - `mcp__lumina__record_task_activity` — one summary activity entry per skill invocation (§c, `entry_type: "execution"`, `origin: "plan"`).
 
-Within the fork: the `Agent` tool (dispatching `research-lite` for mechanical lookups and `research-deep` for ambiguous claims), `Read`, `Grep`, `WebFetch`, `WebSearch`, `mcp__plugin_context7_context7__query-docs`.
+Within this run (within the fork, in autonomous mode): the `Agent` tool (dispatching `research-lite` for mechanical lookups and `research-deep` for ambiguous claims), `Read`, `Grep`, `WebFetch`, `WebSearch`, `mcp__plugin_context7_context7__query-docs`.
 
 This skill does NOT call `set_story_plan`, `update_work_item`, or any task / acceptance-criterion / open-question tool. The story plan and decision rows are *inputs* here; only research notes, findings, and the one provenance activity row are written.
 
 See [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools for the canonical argument shapes.
 
-## Subagent procedure
+## Procedure (the body the skill executes — forked in autonomous mode, inline in interactive)
 
 ### 1. Prerequisite read (§b step 1; §h story-only fail-fast)
 
@@ -70,7 +73,7 @@ Each sub-agent prompt MUST instruct: cite URLs verbatim, grade evidence (`high`/
 
 For each returned verification:
 
-- **DRIFTED** (claim falsified): match the cited claim back to an `accepted_notes` row by `lens` + body substring (best-effort; if multiple candidates match, show the user via `AskUserQuestion` to pick the correct row, or pick `None` if no existing note asserted the now-falsified claim). Then:
+- **DRIFTED** (claim falsified): match the cited claim back to an `accepted_notes` row by `lens` + body substring (best-effort). If multiple candidates match, disambiguate by run mode — **interactive**: show the user an `AskUserQuestion` to pick the correct row (or `None` if no existing note asserted the now-falsified claim); **autonomous** (live AUQ dead): pick the SINGLE best lens + body-substring match deterministically, and if no candidate is a clear best match, treat it as `None` (write a standalone superseding note rather than guessing which prior note to supersede) — recording the ambiguity in the drift finding's description so a human can re-link on review. Then:
   1. `mcp__lumina__add_research_note { work_item_id: "$work_item_id", summary: <new summary>, body: <new body — what verification actually found>, confidence: "high", lens: <same lens as old>, origin: "plan" }` → captures `new_id`.
   2. If an old matching note was identified: `mcp__lumina__update_research_note { id: new_id, state: "accepted" }` (the row is born `proposed`; promote to `accepted` since the verification grade is `high`), then `mcp__lumina__supersede_research_note { old_id: <matched note id>, new_id }`.
   3. If no old matching note existed: leave the new note as a standalone `accepted` row (no supersede chain) — set `state: "accepted"` via the same `update_research_note` call.
