@@ -263,6 +263,35 @@ pub struct PtyQueueEntry {
     pub error: Option<String>,
 }
 
+/// A row of `task_files` (migration 0020): one file in a task's first-class
+/// touched-file set, promoting the former `attributes.files_touched` JSON array
+/// (migration 0004) to an indexable, de-duplicated child table. One row per
+/// `(task × kind × repo × path)`, with the `idx_task_files_unique` expression
+/// index (over `COALESCE(repo_link_id,'')`) enforcing set membership.
+///
+/// `kind` discriminates the PLAN-time set (`'expected'`) from the EXECUTION-time
+/// set (`'actual'`) so a later pass can diff plan vs reality. `repo_link_id`
+/// mirrors migration 0004's primary-fallback rule: `None` means the file lives
+/// in the project's PRIMARY linked repo (the same implicit-primary fallback
+/// `findings.repo_id` uses), a `Some` value qualifies it to a specific
+/// (non-primary) linked repo. Read aggregate only — `Serialize`, no `JsonSchema`
+/// (mirrors the sibling child-table row structs `RepoLink`/`AcceptanceCriterion`/
+/// `ResearchNote`). The hand-written `FromRow` lives beside the read helpers in
+/// `repo/task_files.rs` (the canonical recipe, like `RepoLink`'s).
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskFile {
+    pub id: String,
+    pub task_id: String,
+    /// `None` ⇒ the project's PRIMARY linked repo (migration-0004 fallback);
+    /// `Some` ⇒ a specific linked repo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_link_id: Option<String>,
+    pub path: String,
+    /// `expected` (plan-time set) or `actual` (execution-time set).
+    pub kind: String,
+    pub created_at: String,
+}
+
 /// A row of `context_blocks` — the drift-killer. Shared context is one row
 /// referenced by many work-items through `work_item_context`.
 #[derive(Debug, Clone, Serialize)]

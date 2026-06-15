@@ -29,13 +29,26 @@ use serde_json::Value;
 // single writer (the SELECT→UPDATE share one RESERVED-locked txn).
 // ---------------------------------------------------------------------------
 
-/// Normalise one raw `attributes.files_touched` entry to its canonical
-/// `(repo, path)` overlap KEY. Bare string `p` → `(None, p)` (the legacy form,
-/// resolving to the project's primary repo); object `{repo, path}` →
-/// `(Some(repo), path)`. Any other shape (malformed entry) yields `None` and
-/// is dropped from the overlap scan — files_touched is best-effort, so a
-/// malformed entry simply produces no caution rather than an error (ADR-0002).
-/// Used ONLY by the post-commit advisory scan; never inside the write txn.
+/// Normalise one raw `attributes.files_touched` entry to its `(repo, path)`
+/// overlap KEY. Bare string `p` → `(None, p)` (the legacy form, resolving to the
+/// project's primary repo); object `{repo, path}` → `(Some(repo), path)`. Any
+/// other shape (malformed entry) yields `None` and is dropped from the overlap
+/// scan — files_touched is best-effort, so a malformed entry simply produces no
+/// caution rather than an error (ADR-0002). Used ONLY by the post-commit advisory
+/// scan; never inside the write txn.
+///
+/// LEFT FOR T7 (consumer re-wire — migration 0020 `task_files`): this keys on the
+/// raw repo SLUG string, so a bare path and an explicit `{repo: <primary-slug>,
+/// path}` for the SAME primary repo FALSE-DISTINGUISH (they should overlap). The
+/// canonical fix is [`crate::repo::canonical_file_key`] (repo/task_files.rs),
+/// which collapses an explicit-primary slug to the NULL `repo_link_id` bucket so
+/// the two spellings share one key (Ground R2). Re-keying THIS scan on that
+/// canonical form is deferred to T7 because it would turn the cheap, DB-free
+/// post-commit overlap parse into a per-task project-ancestor + repo_links
+/// resolution (a DB-dependent path on the claim hot loop), and the full advisory
+/// re-wire (including reading the overlap set from `task_files` instead of the
+/// `attributes` JSON) is T7's scope; the canonical helper is provided now so T7
+/// can wire it in without a fresh design pass.
 fn files_touched_overlap_key(entry: &Value) -> Option<(Option<String>, String)> {
     if let Some(p) = entry.as_str() {
         return Some((None, p.to_owned()));

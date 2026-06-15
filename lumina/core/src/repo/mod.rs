@@ -59,6 +59,7 @@ mod runs_sprints;
 mod sessions;
 mod shared;
 mod task_dependencies;
+mod task_files;
 mod task_graph;
 mod team_execution;
 mod work_items;
@@ -143,6 +144,15 @@ pub use risks::*;
 // the `repo::pty::*` module path that its 27 nested call sites require.
 pub use readiness::*;
 pub use task_dependencies::*;
+// First-class task touched-file set (`task_files.rs`, migration 0020). The glob
+// `pub use` exposes the EXPECTED replace-writer (`set_task_expected_files`), the
+// append-only ACTUAL writer (`add_task_actual_files`), the read helper
+// (`list_task_files`), and the canonical-key resolver (`canonical_file_key`) at
+// their `crate::repo::*` paths — the T6 MCP tools / HTTP mirrors and the
+// `team_execution` advisory call them by path. Each writer is a self-contained
+// single-mutation-path tx recording one coarse export-inert `task_files` event
+// (the `record_task_commits` precedent), so T6 just wraps them.
+pub use task_files::*;
 pub use task_graph::*;
 pub use team_execution::*;
 // Worktree + task-commit provenance mutators/reads (`worktrees.rs`, migration
