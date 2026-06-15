@@ -241,6 +241,17 @@ impl Transport for PtyTransport {
         // "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1".
         cmd.env("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1");
 
+        // Inject the autonomous MODE SIGNAL so this lumina-spawned orchestrator
+        // session resolves to autonomous mode. Carried at this proven seam
+        // (research note seq1 — the child inherits any cmd.env(...) here, no new
+        // plumbing). The signal is NOT trusted bare: the mode resolver
+        // (`crate::pty::mode`) corroborates it against the server-verifiable
+        // `pty_sessions.source='spawned'` fact and fails safe to interactive
+        // otherwise, so this can never falsely flip a human-terminal session.
+        // (Teammate propagation rides static settings.json env — a separate task,
+        // since Task-spawned subagents get a fresh env per GH #46696.)
+        cmd.env(crate::pty::mode::LUMINA_AUTONOMOUS, "1");
+
         // --session-id aligns API telemetry only; the JSONL filename is bound
         // separately by jsonl_tail::bind_jsonl_path because interactive mode
         // mints its own UUID (see plan Research Notes
