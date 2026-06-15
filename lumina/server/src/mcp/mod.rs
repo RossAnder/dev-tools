@@ -88,6 +88,7 @@ use lumina_core::domain::CreateWorkItemRequest;
 use lumina_core::error::AppError;
 use lumina_core::repo;
 
+mod files;
 mod findings;
 mod mode;
 mod planning;
@@ -110,6 +111,7 @@ pub(crate) mod test_support;
 // integration tests (`tests/e2e.rs`) and `http::structured_patches` import these
 // types by that path. Tool methods and the `tool_router_*` fns are impl items,
 // so these globs re-export only the free types.
+pub use files::*;
 pub use findings::*;
 pub use mode::*;
 pub use planning::*;
@@ -251,6 +253,7 @@ impl LuminaTools {
                 + Self::tool_router_team_execution()
                 + Self::tool_router_sessions()
                 + Self::tool_router_mode()
+                + Self::tool_router_files()
                 + Self::tool_router_worktrees(),
         }
     }
@@ -491,6 +494,14 @@ mod tests {
             // mcp/worktrees.rs — the pair-exact delete for a bad historical
             // task_commits row)
             "remove_task_commit",
+            // first-class touched-file tools (migration 0020,
+            // files-touched-first-class pass / T6; defined in mcp/files.rs —
+            // each wraps ONE existing repo::task_files / repo::reads fn that
+            // owns its own tx + a coarse export-INERT task_files event)
+            "record_task_actual_files",
+            "reconcile_task_files",
+            "get_story_files_footprint",
+            "get_sprint_files_footprint",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -540,16 +551,26 @@ mod tests {
         //      mcp/mode.rs — corroborates the caller's LUMINA_AUTONOMOUS token
         //      against this process's secret via crate::pty::mode and resolves
         //      to "autonomous"/"interactive"; read-only, no DB, no write).
+        //    + 4 first-class touched-file tools (migration 0020,
+        //      files-touched-first-class pass / T6; defined in mcp/files.rs):
+        //      record_task_actual_files (append the execution-time set →
+        //      repo::add_task_actual_files), reconcile_task_files (close-time
+        //      reconcile → repo::reconcile_task_files_at_close),
+        //      get_story_files_footprint + get_sprint_files_footprint (the
+        //      DERIVED DISTINCT (repo_link_id, path) footprint reads →
+        //      repo::story_files_footprint / repo::sprint_files_footprint). Each
+        //      wraps ONE existing repo fn that owns its own tx + a coarse
+        //      export-INERT task_files event (the reads take none).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            88,
-            "advertised tool count must be exactly 88, got {}: {names:?}",
+            92,
+            "advertised tool count must be exactly 92, got {}: {names:?}",
             names.len()
         );
 
-        // Name-uniqueness guard (router-split risk mitigation): the twelve
+        // Name-uniqueness guard (router-split risk mitigation): the thirteen
         // per-family `tool_router_*` sub-routers are summed with
         // `ToolRouter::merge`, which is NAME-KEYED — a duplicate tool name
         // across two families would be silently absorbed while KEEPING the
@@ -560,8 +581,8 @@ mod tests {
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            88,
-            "advertised tool names must be UNIQUE (88 distinct), got {} distinct of {}: {names:?}",
+            92,
+            "advertised tool names must be UNIQUE (92 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
