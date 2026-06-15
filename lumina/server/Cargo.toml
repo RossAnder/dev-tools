@@ -169,7 +169,7 @@ tower = { version = "0.5", features = ["util"] }
 rstest = "0.26"
 pretty_assertions = "1.4"
 proptest = "1"
-insta = "1.47"
+insta = "1.48"
 
 # PTY e2e test (Task 16): assert_cmd drives a stub `claude`-replacement binary
 # fixture (no real claude required); tokio-tungstenite drives the WebSocket
