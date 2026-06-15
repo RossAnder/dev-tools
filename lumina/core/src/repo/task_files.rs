@@ -47,6 +47,54 @@ use serde_json::Value;
 /// blob.
 const MAX_PATH_BYTES: usize = 4096;
 
+/// Generic-`R` [`sqlx::FromRow`] for the read-only [`FootprintFile`] derived
+/// shape (T5) — lives beside the read helpers like [`TaskFile`]'s. The footprint
+/// SELECT projects only `(repo_link_id, path)`: the NOT NULL `path` → `String`,
+/// the nullable `repo_link_id` → `Option<String>`.
+use crate::domain::FootprintFile;
+
+impl<'r, R> sqlx::FromRow<'r, R> for FootprintFile
+where
+    R: sqlx::Row,
+    &'r str: sqlx::ColumnIndex<R>,
+    String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+{
+    fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
+        Ok(FootprintFile {
+            repo_link_id: row.try_get("repo_link_id")?,
+            path: row.try_get("path")?,
+        })
+    }
+}
+
+/// Run a DERIVED footprint query: the DISTINCT `(repo_link_id, path)` union over
+/// the `task_files` rows of the task set named by the caller's `sql` (a static
+/// `SELECT DISTINCT repo_link_id, path FROM task_files WHERE task_id IN (<member
+/// subquery>)`). This is the shared primitive the story/sprint footprint reads in
+/// `reads.rs` compose — they each supply the membership subquery; the dedup +
+/// cross-kind collapse semantics live here, in one place.
+///
+/// **Why a plain `SELECT DISTINCT` dedupes correctly across NULL repo_link_id.**
+/// SQL `DISTINCT` treats two NULLs as EQUAL for the purpose of row distinctness
+/// (unlike a UNIQUE *index*, where the storage layer needed `COALESCE(repo_link_id,'')`
+/// to fold NULL≡'' — see `idx_task_files_unique`). So two primary-bucket rows
+/// `(NULL, "src/x.rs")` collapse to one DISTINCT row WITHOUT any COALESCE here,
+/// which is exactly the dedup we want for the footprint. (`Some(id)` rows still
+/// distinguish by their specific id, as desired.) Because `kind` is NOT in the
+/// projection, a path that is BOTH `expected` and `actual` also collapses to one
+/// row. Read-only, no transaction; ordered `repo_link_id, path` for determinism.
+///
+/// `args` binds the membership subquery's parameter(s) (e.g. `$1` = the story id
+/// or sprint id); the SQL stays a `&'static str` per the `DbClient` seam.
+pub(crate) async fn footprint_over(
+    db: &impl DbClient,
+    sql: &'static str,
+    args: crate::db::Args,
+) -> Result<Vec<FootprintFile>, AppError> {
+    db.query_all::<FootprintFile>(sql, args).await
+}
+
 /// The canonical `(repo_link_id, path)` key for a touched file (Ground R2). The
 /// `repo_link_id` is `None` for the project's PRIMARY linked repo (the storage
 /// `COALESCE(repo_link_id,'')='')` bucket — so a bare path and an explicit
@@ -545,7 +593,7 @@ pub async fn reconcile_task_files_at_close(
 mod tests {
     use super::*;
     use crate::db::connect_in_memory;
-    use crate::repo::test_support::seed_chain_to_story;
+    use crate::repo::test_support::{seed_chain_to_story, seed_sprint};
     use pretty_assertions::assert_eq;
     use sqlx::SqlitePool;
 
@@ -1077,6 +1125,155 @@ mod tests {
             count_reconcile_activity(&pool, &task).await,
             0,
             "a non-done transition appends no reconcile audit"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Derived story/sprint footprint (T5) — DISTINCT (repo_link_id, path) union
+    // over member tasks, deduped across kind; WorkItemDetail story-files fold is
+    // story-kind-gated.
+    // -----------------------------------------------------------------------
+
+    /// Seed the legal chain and return `(pool, story_id)`. Unlike
+    /// [`seed_project_link_task`] this returns the STORY so the footprint reads
+    /// (which union over the story's task children) are exercisable; repo links
+    /// are NOT needed (the footprint tests use bare-path primary-bucket files).
+    async fn seed_story() -> (SqlitePool, String) {
+        let pool = connect_in_memory().await.expect("migrated in-memory pool");
+        let story = seed_chain_to_story(&pool).await;
+        (pool, story)
+    }
+
+    /// Create a `task` under `story` and return its id.
+    async fn task_under(pool: &SqlitePool, story: &str, title: &str) -> String {
+        create_work_item(pool, "task", Some(story), title, None)
+            .await
+            .expect("task under story")
+            .to_string()
+    }
+
+    /// (a) Two tasks sharing a path → that path appears EXACTLY ONCE in the
+    /// story footprint (DISTINCT union across tasks). (b) A path that is BOTH
+    /// `expected` AND `actual` on one task → appears EXACTLY ONCE (deduped across
+    /// kind — the footprint SELECT omits `kind`).
+    #[tokio::test]
+    async fn story_footprint_dedups_across_tasks_and_kinds() {
+        let (pool, story) = seed_story().await;
+        let t1 = task_under(&pool, &story, "T1").await;
+        let t2 = task_under(&pool, &story, "T2").await;
+
+        // (a) shared path across two tasks: both expect src/shared.rs.
+        set_task_expected_files(&pool, &t1, &[serde_json::json!("src/shared.rs")])
+            .await
+            .expect("t1 expected");
+        set_task_expected_files(&pool, &t2, &[serde_json::json!("src/shared.rs")])
+            .await
+            .expect("t2 expected");
+
+        // (b) cross-kind dup on t1: src/both.rs is BOTH expected and actual.
+        set_task_expected_files(
+            &pool,
+            &t1,
+            &[serde_json::json!("src/shared.rs"), serde_json::json!("src/both.rs")],
+        )
+        .await
+        .expect("t1 expected (with both.rs)");
+        add_task_actual_files(&pool, &t1, &[serde_json::json!("src/both.rs")])
+            .await
+            .expect("t1 actual both.rs");
+
+        // A task-unique actual to prove the union spans actual rows too.
+        add_task_actual_files(&pool, &t2, &[serde_json::json!("src/only2.rs")])
+            .await
+            .expect("t2 actual only2.rs");
+
+        let footprint = story_files_footprint(&pool, &story)
+            .await
+            .expect("story footprint");
+        let paths: Vec<&str> = footprint.iter().map(|f| f.path.as_str()).collect();
+
+        // DISTINCT union, ordered by (repo_link_id, path) — all in the NULL
+        // primary bucket here, so ordering is by path. Each path appears ONCE.
+        assert_eq!(
+            paths,
+            vec!["src/both.rs", "src/only2.rs", "src/shared.rs"],
+            "the footprint is the DISTINCT (repo_link_id, path) union: shared.rs once \
+             (two tasks), both.rs once (expected+actual on one task)"
+        );
+        // Every entry is the NULL/primary bucket (bare paths).
+        assert!(
+            footprint.iter().all(|f| f.repo_link_id.is_none()),
+            "bare-path footprint entries all fold to the NULL/primary bucket"
+        );
+    }
+
+    /// The SPRINT footprint is the DISTINCT union over the sprint's MEMBER tasks
+    /// (the `sprint_tasks` junction), deduped identically to the story footprint.
+    #[tokio::test]
+    async fn sprint_footprint_unions_member_tasks() {
+        let (pool, story) = seed_story().await;
+        let sprint = seed_sprint(&pool).await;
+        let t1 = task_under(&pool, &story, "T1").await;
+        let t2 = task_under(&pool, &story, "T2").await;
+        add_tasks_to_sprint(&pool, &sprint, &[t1.as_str(), t2.as_str()])
+            .await
+            .expect("bind tasks to sprint");
+
+        set_task_expected_files(&pool, &t1, &[serde_json::json!("src/a.rs")])
+            .await
+            .expect("t1 expected");
+        add_task_actual_files(&pool, &t1, &[serde_json::json!("src/a.rs")])
+            .await
+            .expect("t1 actual a.rs (cross-kind dup)");
+        add_task_actual_files(&pool, &t2, &[serde_json::json!("src/b.rs")])
+            .await
+            .expect("t2 actual b.rs");
+
+        let footprint = sprint_files_footprint(&pool, &sprint)
+            .await
+            .expect("sprint footprint");
+        let paths: Vec<&str> = footprint.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec!["src/a.rs", "src/b.rs"],
+            "sprint footprint is the DISTINCT union over member tasks (a.rs once \
+             despite expected+actual)"
+        );
+    }
+
+    /// (c) `WorkItemDetail.story_files_footprint` is POPULATED for a `kind='story'`
+    /// item and is EMPTY for a non-story item (here a `task`) — EXACTLY mirroring
+    /// the project-only `repo_links` fold.
+    #[tokio::test]
+    async fn work_item_detail_story_files_is_story_kind_gated() {
+        let (pool, story) = seed_story().await;
+        let task = task_under(&pool, &story, "T1").await;
+        set_task_expected_files(&pool, &task, &[serde_json::json!("src/x.rs")])
+            .await
+            .expect("task expected");
+
+        // Story detail: footprint populated (one path from its task child).
+        let story_detail = get_work_item_detail(&pool, &story)
+            .await
+            .expect("story detail");
+        let story_paths: Vec<&str> = story_detail
+            .story_files_footprint
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect();
+        assert_eq!(
+            story_paths,
+            vec!["src/x.rs"],
+            "a kind='story' detail folds in the derived files footprint"
+        );
+
+        // Task detail (non-story): footprint EMPTY (kind-gated off).
+        let task_detail = get_work_item_detail(&pool, &task)
+            .await
+            .expect("task detail");
+        assert!(
+            task_detail.story_files_footprint.is_empty(),
+            "a non-story (task) detail has an empty story_files_footprint (kind-gated)"
         );
     }
 }

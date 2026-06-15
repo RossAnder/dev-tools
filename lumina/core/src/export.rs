@@ -959,6 +959,7 @@ mod tests {
             risks: vec![],
             rejected_alternatives: vec![],
             task_dependencies: vec![],
+            story_files_footprint: vec![],
         };
 
         // The SAME conversion render_work_item performs: whole-struct → table →
