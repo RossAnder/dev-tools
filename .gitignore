@@ -7,3 +7,9 @@
 *.toml.lock
 *.lock
 !Cargo.lock
+
+# Local SQLite dev databases (disposable; schema lives in migrations/)
+*.db
+*.db-shm
+*.db-wal
+*.db.*
