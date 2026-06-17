@@ -257,6 +257,17 @@ pub async fn supersede_research_note(
     Ok(())
 }
 
+/// Escape the SQL `LIKE` metacharacters (`%`, `_`) in `s` against a backslash
+/// escape character, for use with a `LIKE … ESCAPE '\'` clause. The backslash
+/// itself is escaped FIRST (`\` → `\\`) so the `%`/`_` escapes we then add are
+/// not double-escaped. A raw caller path like `research_notes.rs` contains a
+/// literal `_`, which `LIKE` would otherwise treat as a single-char wildcard
+/// (silently matching `research-notes.rs` / `researchXnotes.rs`); escaping it
+/// confines the `file`-prefix match to the literal path.
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
 // Full-row SELECT for [`query_research_notes`] — the same column list the
 // [`ResearchNote`] FromRow decodes (mirroring `list_research_notes`), plus a
 // static NULL-guard filter and a stable `created_at DESC, id` (newest-first)
@@ -264,12 +275,17 @@ pub async fn supersede_research_note(
 // `'static`; the WHERE is NEVER built from user input — the only variation is
 // whether each bound value is NULL):
 //   * `$1` — `work_item_id`     : `($1 IS NULL OR work_item_id = $1)`.
-//   * `$2` — `file` path filter : an absent `$2` disables the conjunct; when
-//     present, an EXISTS over `json_each(anchors)` matches a note whose anchors
-//     array holds an anchor equal to `$2` OR starting `$2 || ':'` (the
-//     `path:line` form). `json_each` over a NULL `anchors` column yields zero
-//     rows, so a note with no anchors simply fails the EXISTS — no NULL guard
-//     needed inside it.
+//   * `$2`/`$4` — `file` path filter : an absent `$2` disables the conjunct;
+//     when present, an EXISTS over `json_each(anchors)` matches a note whose
+//     anchors array holds an anchor EQUAL to the RAW `$2` OR a `path:line`
+//     anchor whose prefix is the file. The prefix branch uses `LIKE $4 || ':%'
+//     ESCAPE '\'`, where `$4` is the `LIKE`-escaped form of the file (see
+//     [`escape_like`]) — so a literal `_` in a real path (e.g.
+//     `research_notes.rs`) is NOT a single-char wildcard. The exact branch stays
+//     on the RAW `$2` (no escaping — `=` is literal). `json_each` over a NULL
+//     `anchors` column yields zero rows, so a note with no anchors simply fails
+//     the EXISTS — no NULL guard needed inside it; the whole conjunct is already
+//     guarded by `$2 IS NULL`, so a NULL `$4` is harmless.
 //   * `$3` — `anchor` exact     : an absent `$3` disables the conjunct; when
 //     present, an EXISTS over `json_each(anchors)` matches a note whose anchors
 //     array holds an anchor EQUAL to `$3`.
@@ -290,7 +306,7 @@ const QUERY_RESEARCH_NOTES_SQL: &str = "\
     WHERE ($1 IS NULL OR work_item_id = $1) \
       AND ($2 IS NULL OR EXISTS ( \
             SELECT 1 FROM json_each(research_notes.anchors) je \
-            WHERE je.value = $2 OR je.value LIKE $2 || ':%')) \
+            WHERE je.value = $2 OR je.value LIKE $4 || ':%' ESCAPE '\\')) \
       AND ($3 IS NULL OR EXISTS ( \
             SELECT 1 FROM json_each(research_notes.anchors) je \
             WHERE je.value = $3)) \
@@ -315,10 +331,15 @@ pub async fn query_research_notes(
     db: &impl DbClient,
     filter: &QueryResearchNotesFilter<'_>,
 ) -> Result<Vec<ResearchNote>, AppError> {
-    // The three NULL-guard binds, in the fixed positional order $1..=$3. Each
-    // is owned-cloned once into the `Args` bundle; the SQL references the
-    // matching `$N` (twice for $1 — once in `IS NULL`, once in `= $1`) and the
-    // runtime SQLite layer resolves both references to this single bound value.
+    // The four NULL-guard binds, in the fixed positional order $1..=$4. Each is
+    // owned-cloned once into the `Args` bundle; the SQL references the matching
+    // `$N` (twice for $1 — once in `IS NULL`, once in `= $1`) and the runtime
+    // SQLite layer resolves both references to this single bound value. `$2` is
+    // the RAW file (the `= $2` exact branch + its `IS NULL` guard); `$4` is its
+    // `LIKE`-escaped form (the `LIKE $4 || ':%' ESCAPE '\'` prefix branch), so a
+    // literal `_` in a real path is not a single-char wildcard. `$4` is NULL iff
+    // `$2` is, and the conjunct is guarded by `$2 IS NULL`, so a NULL `$4` is
+    // harmless.
     let rows = db
         .query_all::<ResearchNote>(
             QUERY_RESEARCH_NOTES_SQL,
@@ -326,6 +347,7 @@ pub async fn query_research_notes(
                 filter.work_item_id.map(str::to_owned),
                 filter.file.map(str::to_owned),
                 filter.anchor.map(str::to_owned),
+                filter.file.map(escape_like),
             ],
         )
         .await?;
@@ -384,5 +406,45 @@ mod tests {
         assert_eq!(detail.research_notes[0].state.as_deref(), Some("accepted"));
         assert_eq!(detail.research_notes[0].rationale.as_deref(), Some("chosen"));
         assert_eq!(detail.research_notes[0].confidence.as_deref(), Some("high"), "confidence left");
+    }
+
+    /// The `file` filter ESCAPEs `LIKE` metacharacters: a literal `_` in a real
+    /// path (`research_notes.rs`) must NOT wildcard-match a `path:line` anchor
+    /// whose path differs only at that char (`researchXnotes.rs:20`). Seeds two
+    /// notes with `path:line` anchors that collide ONLY under an unescaped
+    /// `LIKE`, queries by `file`, and asserts exactly the literal-path note (A)
+    /// comes back — proving the `ESCAPE '\'` clause + the escaped `$4` bind.
+    #[tokio::test]
+    async fn query_research_notes_file_filter_escapes_like_wildcards() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        // Note A: a real `path:line` anchor with a literal underscore.
+        let a = add_research_note(
+            &pool, &story, "note A", None, None, None, None,
+            Some(&["research_notes.rs:10".to_owned()]),
+        )
+        .await
+        .expect("note A")
+        .to_string();
+        // Note B: same shape but an `X` where A has `_` — only an UNescaped
+        // `LIKE` (where `_` is a single-char wildcard) would also match this.
+        add_research_note(
+            &pool, &story, "note B", None, None, None, None,
+            Some(&["researchXnotes.rs:20".to_owned()]),
+        )
+        .await
+        .expect("note B");
+
+        let filter = QueryResearchNotesFilter {
+            work_item_id: None,
+            file: Some("research_notes.rs"),
+            anchor: None,
+        };
+        let rows = query_research_notes(&pool, &filter).await.expect("query");
+
+        // EXACTLY note A — the `_` did not wildcard-match `researchXnotes.rs`.
+        assert_eq!(rows.len(), 1, "only the literal-path note matches (no `_` wildcard)");
+        assert_eq!(rows[0].id, a, "the matched note is A (research_notes.rs:10)");
     }
 }
