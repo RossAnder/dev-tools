@@ -3534,16 +3534,13 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
         impl_toml["item"].get("reviews_work_item_id").is_none(),
         "1B-F9: no reviews_work_item_id back-link is ever written (cascade retired)"
     );
-    // NB the reviewer closed the SAME row via `update_work_item_status`→done (the
-    // M4 review→done path), which — UNLIKE `complete_task` — does NOT clear the
-    // lease. So the reviewer's assignee/lease persist on the now-`done` row. That
-    // is harmless (a `done` row is terminal — the claim's readiness set is
-    // todo/open/review, so a done+leased row is never re-claimed), but it means
-    // the lease fields are PRESENT in the snapshot, not omitted. (Clearing the
-    // lease on review→done would be a follow-up; out of this test-rewrite's scope.)
+    // The reviewer closed the SAME row via `update_work_item_status`→done. A
+    // transition to a TERMINAL status CLEARS the lease (finding 019ed6d5 fix), so
+    // the reviewer's assignee/lease do NOT linger on the now-`done` row — the
+    // lease columns are NULL and so are OMITTED from the exported snapshot.
     assert!(
-        impl_toml["item"]["assignee"].as_str().is_some(),
-        "the reviewer's lease persists on the done row (review→done via transition_status does not clear it)"
+        impl_toml["item"].get("assignee").is_none(),
+        "review→done clears the reviewer's lease — no stale assignee on the done snapshot"
     );
 
     // 7b. The rework task snapshot carries lane='implement' (the MF-fixed

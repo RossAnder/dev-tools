@@ -2198,6 +2198,53 @@ mod tests {
         assert_eq!(status_final, "done", "the done row is never reopened by a rejected flag");
     }
 
+    /// (1B-F9 follow-up, finding 019ed6d5) A review→done close via
+    /// `update_work_item_status` CLEARS the reviewer's lease. The reviewer's path
+    /// to done is `update_work_item_status` (NOT `complete_task`, which routes a
+    /// lane='review' completion back to review), and that path previously left
+    /// `assignee`/`lease_expires_at` set — a stale lease on the terminal row. A
+    /// transition to a terminal status now clears the lease, so the done row holds
+    /// none.
+    #[tokio::test]
+    async fn review_done_clears_reviewer_lease() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // Impl claim + complete → routes the SAME row to the review state (M1);
+        // complete_task clears the impl lease.
+        claim_next_task(&db, &sprint, Lane::Implement, None, "impl-agent", 1800)
+            .await
+            .expect("impl claim runs")
+            .expect("claimable");
+        complete_task(&db, &task, "impl-agent").await.expect("complete → review");
+
+        // A reviewer claims the SAME row on the review lane → in_progress + leased.
+        let rc = claim_next_task(&db, &sprint, Lane::Review, None, "review-agent", 1800)
+            .await
+            .expect("review claim runs")
+            .expect("the review-state row is claimable on the review lane");
+        assert_eq!(rc.task_id, task);
+        let (status_mid, assignee_mid, lease_mid) = task_lease_state(&pool, &task).await;
+        assert_eq!(status_mid, "in_progress", "the claimed review row is in_progress");
+        assert_eq!(assignee_mid.as_deref(), Some("review-agent"), "leased to the reviewer");
+        assert!(lease_mid.is_some(), "the reviewer holds a lease while reviewing");
+
+        // The reviewer closes the SAME row review→done via update_work_item_status.
+        update_work_item_status(&db, &task, "done").await.expect("review → done");
+
+        // The terminal transition cleared the lease (finding 019ed6d5): no stale
+        // assignee/lease lingers on the done row.
+        let (status_done, assignee_done, lease_done) = task_lease_state(&pool, &task).await;
+        assert_eq!(status_done, "done", "the SAME row is now done");
+        assert_eq!(assignee_done, None, "review→done clears the reviewer's assignee");
+        assert_eq!(lease_done, None, "review→done clears the reviewer's lease deadline");
+    }
+
     // =======================================================================
     // claim_next_task advisory overlap re-keyed onto the CANONICAL
     // (repo_link_id, path) form via the first-class `task_files` EXPECTED set

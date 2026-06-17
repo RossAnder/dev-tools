@@ -339,6 +339,38 @@ pub async fn update_work_item_status(
     let payload = serde_json::json!({ "status": status });
     record_event(tx.as_mut(), "work_item", id, "work_item.status_changed", payload).await?;
 
+    // 1B-F9 follow-up (finding 019ed6d5): a transition to a TERMINAL status
+    // (done/cancelled) RELEASES any lease the row still holds. The reviewer's
+    // review→done close routes through THIS function (NOT `complete_task`, whose
+    // owner-guarded Step-3 clear it never hits), so without this it left a stale
+    // assignee/lease on the done row that surfaced in the export snapshot. The
+    // clear is gated `WHERE assignee IS NOT NULL`, so its rows-affected tells us
+    // whether a lease was actually held — mirroring `release_task` /
+    // `complete_task` Step 3 (no fragile read of the nullable `assignee` column).
+    // Only when a lease was truly cleared do we emit one `work_item.released`
+    // (same tx, atomic with `status_changed`), keeping the team-run stream
+    // contract: a reviewer's review→done surfaces a release exactly as
+    // `complete_task`'s lite→done does. A NON-leased terminal transition (the
+    // common story/epic/task case) clears 0 rows and emits no spurious release;
+    // `complete_task`'s own Step-3 clear then finds the lease already gone and is
+    // a clean no-op (no duplicate release event).
+    if status == "done" || status == "cancelled" {
+        let released = tx
+            .execute(
+                r#"
+            UPDATE work_items
+            SET assignee = NULL, lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1 AND assignee IS NOT NULL
+            "#,
+                args![id.to_owned()],
+            )
+            .await?;
+        if released > 0 {
+            let payload = serde_json::json!({ "reason": "terminal_transition" });
+            record_event(tx.as_mut(), "work_item", id, "work_item.released", payload).await?;
+        }
+    }
+
     tx.commit().await?;
 
     // T4: reconcile the task's EXPECTED/ACTUAL files_touched sets at close — but
