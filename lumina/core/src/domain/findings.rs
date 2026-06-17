@@ -114,6 +114,10 @@ pub struct ResearchNote {
     pub rationale: Option<String>,
     pub lens: Option<String>,
     pub origin: Option<String>,
+    /// Typed citations (migration 0024): a JSON array of anchor strings, each
+    /// either a `"<repo-relative-path>:<line>"` file anchor or an `http(s)` URL.
+    /// `None` when the column is NULL (legacy notes keep citations in `body`).
+    pub anchors: Option<Vec<String>>,
     /// Self-FK to the note that supersedes this one; live notes are
     /// `superseded_by IS NULL`.
     pub superseded_by: Option<String>,

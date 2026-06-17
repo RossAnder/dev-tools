@@ -299,6 +299,10 @@ where
             rationale: row.try_get("rationale")?,
             lens: row.try_get("lens")?,
             origin: row.try_get("origin")?,
+            // Phase-1 stub: the `anchors` TEXT column is not yet read here; the
+            // repo-layer threading task wires the JSON-TEXT → Vec<String> decode
+            // in this constructor and the list_research_notes SELECT.
+            anchors: None,
             superseded_by: row.try_get("superseded_by")?,
             created_at: row.try_get("created_at")?,
         })
