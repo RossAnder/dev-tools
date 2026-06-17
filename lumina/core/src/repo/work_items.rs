@@ -278,12 +278,39 @@ pub async fn create_work_items(
 /// id has no row — checked via `rows_affected()` so the missing-row case never
 /// emits a spurious event. A `→done` transition on a task is gated by
 /// [`enforce_closure_gate`] (the read runs inside the same tx, before the write).
+///
+/// **Done-is-terminal guard (1B-F9 M4).** A `done → review` transition is
+/// REJECTED with [`AppError::Validation`]: `done` is terminal, so a task that
+/// already completed (the lite→`done` path, or a reviewer's review→`done` close)
+/// can NEVER be flagged back into the review lane. Re-reviewing completed work
+/// requires a brand-NEW task (consistent with not_doing #4 / edge-case
+/// 019ed5fc-3df0). The row is never reopened.
 pub async fn update_work_item_status(
     db: &impl DbClient,
     id: &str,
     status: &str,
 ) -> Result<(), AppError> {
     let mut tx = db.begin().await?;
+
+    // Done-is-terminal guard (1B-F9 M4): reject a `done → review` flip BEFORE any
+    // write. Read the current status on the tx (same writer-lock snapshot). A
+    // missing row reads back None and falls through to the `affected == 0`
+    // NotFound below (behaviour preserved). `done` is terminal: the SAME row is
+    // never reopened into review — re-review needs a NEW task.
+    if status == "review" {
+        let current: Option<String> = crate::db::tx_scalar_opt::<String>(
+            tx.as_mut(),
+            "SELECT status FROM work_items WHERE id = $1 AND deleted_at IS NULL",
+            args![id.to_owned()],
+        )
+        .await?;
+        if current.as_deref() == Some("done") {
+            return Err(AppError::Validation(format!(
+                "work_item '{id}' is done; done is terminal and cannot be flagged into \
+                 review — create a new task to re-review completed work"
+            )));
+        }
+    }
 
     // Closure gate (migration 0003): reject task→done under a `hard` story while
     // any acceptance criterion is unchecked. Runs before the UPDATE in this tx.

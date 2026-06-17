@@ -2061,6 +2061,143 @@ mod tests {
         );
     }
 
+    /// (1B-F9 M4 / AC5 + AC10) Full SAME-ROW review lifecycle: a deep impl task
+    /// → `complete_task` routes it to the review state (M1, no reconcile) → a
+    /// reviewer CLAIMS the SAME row on the review lane (M2, → in_progress) → the
+    /// reviewer transitions the SAME row review→`done` via `update_work_item_status`
+    /// (M4), which flips it to done AND fires `reconcile_task_files_at_close` AT
+    /// THAT point. Asserts: it is ONE row throughout (never a spawned/second task,
+    /// never reopened); reconcile fires EXACTLY ONCE, at review→done — NOT at
+    /// complete_task (the deferred-past-review property, AC10).
+    #[tokio::test]
+    async fn review_lifecycle_same_row_deep_to_review_to_done_reconciles_once() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // EXPECTED a.rs (touched) + b.rs (untouched → must be reconciled away, but
+        // only at review→done, not at complete_task).
+        set_task_expected_files(
+            &db,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/b.rs")],
+        )
+        .await
+        .expect("set expected");
+        add_task_actual_files(&db, &task, &[serde_json::json!("src/a.rs")])
+            .await
+            .expect("append actual");
+
+        // (1) impl claim + complete → routes the SAME row to review (M1).
+        let c = claim_next_task(&db, &sprint, Lane::Implement, None, "impl-agent", 1800)
+            .await
+            .expect("impl claim runs")
+            .expect("claimable");
+        assert_eq!(c.task_id, task);
+        let res = complete_task(&db, &task, "impl-agent").await.expect("complete → review");
+        assert_eq!(res.review_task_id, None, "M1: no spawned review task");
+        let (lane, _, status) = task_lane_tier_status(&pool, &task).await;
+        assert_eq!(status, "review", "routed to the review state");
+        assert_eq!(lane.as_deref(), Some("review"), "same row re-laned to review");
+        // Reconcile has NOT fired yet (deferred past review): b.rs survives.
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            0,
+            "AC10: no reconcile at complete_task for a deep task"
+        );
+
+        // (2) a reviewer CLAIMS the SAME row on the review lane (M2 → in_progress).
+        let rc = claim_next_task(&db, &sprint, Lane::Review, None, "review-agent", 1800)
+            .await
+            .expect("review claim runs")
+            .expect("the same row is claimable on the review lane");
+        assert_eq!(rc.task_id, task, "the reviewer claims the SAME row, not a new task");
+
+        // (3) the reviewer transitions the SAME row review→done (M4). This is the
+        // review→done path (update_work_item_status, NOT complete_task — which
+        // would route a lane='review' row BACK to review per M1).
+        update_work_item_status(&db, &task, "done")
+            .await
+            .expect("review → done");
+
+        let (lane_after, _, status_after) = task_lane_tier_status(&pool, &task).await;
+        assert_eq!(status_after, "done", "AC5: the SAME row is now done");
+        assert_eq!(lane_after.as_deref(), Some("review"), "lane stays review; the row is the review task");
+
+        // Still EXACTLY ONE task row for this lifecycle (never a second/spawned task).
+        let task_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE kind = 'task'")
+                .fetch_one(&pool)
+                .await
+                .expect("count tasks");
+        assert_eq!(task_count, 1, "the whole lifecycle is ONE row — never reopened, never spawned");
+
+        // (4) reconcile fired EXACTLY ONCE, AT review→done: b.rs (untouched
+        // EXPECTED) is now cleared and exactly one reconcile audit exists.
+        let expected_paths: Vec<String> = list_task_files(&db, &task, Some("expected"))
+            .await
+            .expect("expected after done")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(
+            expected_paths,
+            vec!["src/a.rs".to_string()],
+            "AC10: reconcile fires at review→done — the untouched EXPECTED (b.rs) is cleared"
+        );
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            1,
+            "reconcile fires EXACTLY ONCE per task, at review→done (never both complete_task AND here)"
+        );
+    }
+
+    /// (1B-F9 M4 / AC3 / edge-case 019ed5fc-3df0) `done` is terminal: a
+    /// `done → review` status transition is rejected, so a task that already
+    /// completed can never be flagged back into review. (The lite→done path is
+    /// the common case; re-review needs a NEW task.)
+    #[tokio::test]
+    async fn review_done_is_terminal_rejects_flag_into_review() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+        // A lite task that completes straight to done (M1 lite branch).
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("lite")).await;
+        let c = claim_next_task(&db, &sprint, Lane::Implement, None, "impl-agent", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(c.task_id, task);
+        complete_task(&db, &task, "impl-agent").await.expect("complete → done");
+        let (_, _, status) = task_lane_tier_status(&pool, &task).await;
+        assert_eq!(status, "done", "lite task completed to done");
+
+        // Flag-into-review via a done→review STATUS transition is REJECTED.
+        let status_flip = update_work_item_status(&db, &task, "review").await;
+        assert!(
+            matches!(status_flip, Err(AppError::Validation(_))),
+            "done→review status transition must be a Validation error, got {status_flip:?}"
+        );
+
+        // Flag-into-review via set_task_lane(review) on the done task is REJECTED.
+        let lane_flip = crate::repo::set_task_lane(&db, &task, Some(Lane::Review)).await;
+        assert!(
+            matches!(lane_flip, Err(AppError::Validation(_))),
+            "set_task_lane(review) on a done task must be a Validation error, got {lane_flip:?}"
+        );
+
+        // The row is untouched — still done (neither rejected flag half-applied).
+        let (_, _, status_final) = task_lane_tier_status(&pool, &task).await;
+        assert_eq!(status_final, "done", "the done row is never reopened by a rejected flag");
+    }
+
     // =======================================================================
     // claim_next_task advisory overlap re-keyed onto the CANONICAL
     // (repo_link_id, path) form via the first-class `task_files` EXPECTED set
