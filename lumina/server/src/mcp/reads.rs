@@ -304,6 +304,138 @@ impl LuminaTools {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::test_support::*;
+    use lumina_core::db::connect_in_memory;
+
+    /// Decode the JSON text payload of a read tool's `CallToolResult` (the read
+    /// tools return their value as a single `Content::json` text item).
+    fn read_tool_json(result: &CallToolResult) -> serde_json::Value {
+        let text = &result.content[0]
+            .as_text()
+            .expect("read tool returns a text content item")
+            .text;
+        serde_json::from_str(text).expect("read tool text is JSON")
+    }
+
+    /// `project_work_item_detail` keeps `item` always, returns item-only for an
+    /// empty list (and for `[Item]`), and retains EXACTLY the named array
+    /// sections otherwise — the core projection contract, unit-tested against a
+    /// real seeded `WorkItemDetail` with no `pub`/handler involvement.
+    #[tokio::test]
+    async fn project_work_item_detail_filters_to_requested_sections() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let tools = LuminaTools::new(pool.clone());
+        let story = seed_chain_to_story(&tools).await;
+        // Populate two distinct array sections so positive/negative selection is
+        // observable: acceptance_criteria (via repo) and activity (via repo).
+        repo::add_acceptance_criterion(&pool, &story, "ships green")
+            .await
+            .expect("seed acceptance criterion");
+        repo::append_activity(&pool, &story, "comment", Some("e2e"), "noted", None, None)
+            .await
+            .expect("seed activity");
+
+        let detail = repo::get_work_item_detail(&pool, &story)
+            .await
+            .expect("detail");
+
+        // Empty include ⇒ item-only.
+        let empty = project_work_item_detail(&detail, &[]).expect("project empty");
+        let empty_obj = empty.as_object().expect("object");
+        assert_eq!(empty_obj.len(), 1, "empty include ⇒ item-only");
+        assert!(empty_obj.contains_key("item"), "item always present");
+
+        // `[Item]` is equivalent to empty ⇒ still item-only.
+        let item_only =
+            project_work_item_detail(&detail, &[Section::Item]).expect("project [item]");
+        assert_eq!(
+            item_only, empty,
+            "`[Item]` and `[]` are equivalent (item-only)"
+        );
+
+        // A named subset ⇒ EXACTLY item + those sections.
+        let subset = project_work_item_detail(
+            &detail,
+            &[Section::AcceptanceCriteria, Section::Activity],
+        )
+        .expect("project subset");
+        let subset_obj = subset.as_object().expect("object");
+        let mut keys: Vec<&str> = subset_obj.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["acceptance_criteria", "activity", "item"],
+            "subset ⇒ exactly item + the two named sections, no others"
+        );
+        assert_eq!(
+            subset["acceptance_criteria"].as_array().expect("acs array").len(),
+            1,
+            "the requested non-empty section carries its row"
+        );
+    }
+
+    /// The MCP `get_work_item` HANDLER dispatch: absent `include` ⇒ the full
+    /// detail (every array key present); `include:["item"]` ⇒ item-only; a named
+    /// subset ⇒ exactly those + `item`. Drives the PRIVATE handler in-crate (no
+    /// `pub` widening needed), decoding its `CallToolResult` JSON text.
+    #[tokio::test]
+    async fn get_work_item_handler_projects_via_include() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let tools = LuminaTools::new(pool.clone());
+        let story = seed_chain_to_story(&tools).await;
+        repo::add_acceptance_criterion(&pool, &story, "ships green")
+            .await
+            .expect("seed acceptance criterion");
+
+        // Absent include ⇒ FULL payload: all 12 array section keys present.
+        let full = tools
+            .get_work_item(Parameters(GetWorkItemParams {
+                id: story.clone(),
+                include: None,
+            }))
+            .await
+            .expect("get_work_item (full) succeeds");
+        assert_eq!(full.is_error, Some(false), "not an error");
+        let full_json = read_tool_json(&full);
+        assert!(full_json.get("item").is_some(), "item present");
+        for key in [
+            "children", "findings", "context_blocks", "activity", "acceptance_criteria",
+            "research_notes", "open_questions", "repo_links", "risks",
+            "rejected_alternatives", "task_dependencies", "story_files_footprint",
+        ] {
+            assert!(full_json.get(key).is_some(), "full payload carries `{key}`");
+        }
+
+        // include:["item"] ⇒ item-only.
+        let item_only = tools
+            .get_work_item(Parameters(GetWorkItemParams {
+                id: story.clone(),
+                include: Some(vec![Section::Item]),
+            }))
+            .await
+            .expect("get_work_item (item-only) succeeds");
+        let item_only_json = read_tool_json(&item_only);
+        let obj = item_only_json.as_object().expect("object");
+        assert_eq!(obj.len(), 1, "item-only payload has exactly one key");
+        assert!(obj.contains_key("item"), "the one key is item");
+
+        // A named subset ⇒ exactly item + that section.
+        let subset = tools
+            .get_work_item(Parameters(GetWorkItemParams {
+                id: story.clone(),
+                include: Some(vec![Section::AcceptanceCriteria]),
+            }))
+            .await
+            .expect("get_work_item (subset) succeeds");
+        let subset_json = read_tool_json(&subset);
+        assert!(subset_json.get("item").is_some(), "item present");
+        assert!(
+            subset_json.get("acceptance_criteria").is_some(),
+            "requested section present"
+        );
+        assert!(subset_json.get("findings").is_none(), "unrequested section dropped");
+        assert!(subset_json.get("children").is_none(), "unrequested section dropped");
+    }
 
     /// An invalid `kind` enum value on the `list_work_items` param surface is
     /// rejected at deserialization, which (via `Parameters<T>` + the typed enum)
