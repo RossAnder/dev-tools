@@ -9,11 +9,18 @@ disable-model-invocation: true
 # `lumina:plan-story`
 
 Chained-runner orchestrator: walks a story through six canonical phases
-end-to-end, with one `AskUserQuestion` gate per block, dispatching the matching
-`/lumina:<block>` skill via the `Skill` tool. The runner stays INLINE (five §a
-keys, NOT forked) because the per-block gates are user-mediated. Dispatched
-per-block skills may themselves fork (`research-explore`, `research-directed`,
-`research-notes`, `story-review`, `decompose-tasks` per §d).
+end-to-end, with one `AskUserQuestion` gate per block, then "running" the
+gated block by INLINE-REPLICATION — NOT by `Skill("lumina:<block>", …)`
+dispatch (§l.4). Every per-block skill carries `disable-model-invocation:
+true`, so a runner-issued `Skill()` is REFUSED at the harness layer; the
+canonical path is for this runner to READ the block's SKILL.md and replicate
+its §b check-before-act + §c provenance sequence inline, driving the raw
+`mcp__lumina__*` tools itself (§l.4). The runner stays INLINE (five §a keys,
+NOT forked) because the per-block gates are user-mediated. Some replicated
+blocks themselves fork (`research-explore`, `story-review`, `decompose-tasks`
+per §d); replicating those faithfully means reproducing their REAL sub-agent
+fan-out under §d's runtime mode rule, never a thin single-pass gesture
+(§l.4(d)).
 
 Each phase carries a HARD precondition computed from `get_story_readiness`
 booleans (with a Phase-5/6 tail read against `detail`). When MET, the per-block
@@ -23,12 +30,14 @@ with override` writes a §l.1 audit row so `/lumina:story-review` can later
 surface the gap.
 
 Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (five keys, NOT forked), §b (per-DISPATCHED-SKILL; each dispatched skill
-enforces its own §b), §c (runner emits ONE rollup + ONE §l.1 audit per
-override; dispatched skills emit their own §c on internal writes), §e
+§a (five keys, NOT forked), §b (per-REPLICATED-BLOCK; the runner replicates
+each block's own §b check-before-act inline per §l.4), §c (runner emits ONE
+rollup + ONE §l.1 audit per override; each replicated block's own §c writes
+are reproduced inline as it runs), §e
 (Sentry — runner = orchestration, MCP = state), §i (story-review fires in
 Phase 4), §j (wire-task-deps composes with `compute_task_batches` in Phase 5),
-**§l (the six-phase contract — phase table §l.0, audit §l.1, carve-out §l.2)**.
+**§l (the six-phase contract — phase table §l.0, audit §l.1, carve-out §l.2,
+and §l.4 the inline-replication execution path the runner "runs" each block by)**.
 
 ## MCP tools used directly by this runner
 
@@ -38,8 +47,16 @@ Phase 4), §j (wire-task-deps composes with `compute_task_batches` in Phase 5),
 - `mcp__lumina__record_task_activity` — final §c rollup + one §l.1 audit per overridden block.
 - `mcp__lumina__get_session_context` — session-start correlation stamp (Step 1). Read-only; called ONCE against `$work_item_id` so the resolved sprint/story/epic ids land in this session's transcript for the migration-0015 corpus harvest. See [`../mcp/SKILL.md`](../mcp/SKILL.md#session-start-correlation-migration-0015).
 
-Per-block dispatch: `Skill("lumina:<block>", "$work_item_id")` — each
-dispatched skill takes one positional arg per its `arguments` frontmatter.
+Per-block execution: INLINE-REPLICATION (§l.4) — to "run" a block, READ that
+block's SKILL.md and replicate its §b 5-step check-before-act + §c provenance
+sequence inline against the raw `mcp__lumina__*` tools, binding `$work_item_id`
+exactly as the block's `arguments` frontmatter would. The runner does NOT issue
+`Skill("lumina:<block>", …)`: every block carries `disable-model-invocation:
+true`, so that dispatch is refused at the harness layer (§l.4; the exemption
+was requested in claude-code#43809/#26251 and closed not-planned). Should a
+stray `Skill()` ever be issued and hit the refusal, handle it detect-once-then
+-prompt — switch that block to inline-replication and continue, do NOT
+retry-loop (§l.4(c)).
 
 ## Body
 
@@ -104,9 +121,15 @@ or child-table count.
 #### Step 4A — precondition MET (standard AUQ, 4 options)
 
 > **Header**: `Block: <name> (Phase <N> — <phase-name>)`
-> **Body**: `<derived state line>\n\nDispatch /lumina:<name> for this story?`
+> **Body**: `<derived state line>\n\nRun the <name> block for this story?`
 > **Options**:
-> - `Run` — Dispatch `Skill("lumina:<name>", "$work_item_id")`.
+> - `Run` — Replicate `<name>` INLINE per §l.4: read its SKILL.md and run its
+>   §b/§c sequence against the raw `mcp__lumina__*` tools with `$work_item_id`.
+>   Do NOT issue `Skill("lumina:<name>", …)` (refused — disable-model-invocation,
+>   §l.4). For a forked block (`research-explore`, `story-review`,
+>   `decompose-tasks`) replicate its REAL sub-agent fan-out faithfully (§l.4(d));
+>   for an `AskUserQuestion`-gated sub-step in autonomous mode, degrade to the
+>   durable-comms/default branch rather than hanging (§l.4(b)).
 > - `Skip (warn)` — Skip + warn `"Skipping in-phase blocks may leave Phase
 >   <N> incomplete; run /lumina:story-review later."`
 > - `Inspect current state` — Print readiness slice + `detail` subset, then
@@ -122,12 +145,13 @@ re-read readiness. `Abort` → break step 3.
 > **Body**: `<derived state line>; prereq <expression> = false\n\nThe
 > Phase-<N> entry precondition is not met. Choose:`
 > **Options**:
-> - `Resolve prereq (dispatch <upstream-skill>)` — Dispatch the upstream
->   skill from the phase table. On return, RE-EVALUATE the precondition;
->   if MET, the same block's AUQ switches to 4A; else re-ask this AUQ.
+> - `Resolve prereq (run <upstream-skill> inline)` — Replicate the upstream
+>   skill from the phase table INLINE per §l.4 (read its SKILL.md + raw MCP,
+>   NOT `Skill()`). On return, RE-EVALUATE the precondition; if MET, the same
+>   block's AUQ switches to 4A; else re-ask this AUQ.
 > - `Skip with override` — Write the §l.1 audit (step 4C), `override_count++`,
 >   push `<name>` onto `overrides`, advance to the NEXT block in the phase
->   WITHOUT dispatching.
+>   WITHOUT running it.
 > - `Abort` — Set `abort_block`/`abort_phase`, break the walk.
 
 For phases with multiple sub-conditions (Phase 3, Phase 5), the upstream
@@ -187,8 +211,10 @@ mcp__lumina__record_task_activity {
 Apply the §c guard: on non-substitution, swap to
 `session=unknown; phases_completed=<...>; overrides=[<...>]` and warn.
 
-Dispatched skills emit their own §c on internal writes; this runner emits
-only (a) the rollup, AND (b) one row per overridden block.
+Each replicated block reproduces its own §c on its internal writes as the
+runner runs it inline (§l.4); ON TOP of those, this runner emits the two
+runner-level direct writes — (a) the rollup, AND (b) one §l.1 row per
+overridden block.
 
 ### Step 7 — final summary
 
@@ -205,18 +231,21 @@ slash-command table — runner cites by reference, does NOT re-implement.
 
 ## Sentry-pattern compliance (per §e)
 
-Runner decides: phase order (canonical six per §l.0), per-block dispatch
-order within each phase (canonical), AUQ shape (precondition met/failed
-branch at step 4). Runner MUST NOT compute readiness client-side (always
-call `get_story_readiness`); MUST NOT replicate per-block §b (each
-dispatched skill handles its own check-before-act); MUST NOT absorb
-dispatched skills' §c writes. Runner's only direct writes: (a) the §c
-rollup at step 6, (b) one §l.1 audit per overridden block at step 4C.
+Runner decides: phase order (canonical six per §l.0), per-block run order
+within each phase (canonical), AUQ shape (precondition met/failed branch at
+step 4). Runner MUST NOT compute readiness client-side (always call
+`get_story_readiness`). When it "runs" a block it does so by INLINE-REPLICATION
+(§l.4): it reads that block's SKILL.md and reproduces the block's OWN §b
+check-before-act + §c provenance sequence inline — it does NOT invent its own
+check-then-act logic, shadow the block's MCP-tool business logic (§e), or
+collapse a forked block's §d fan-out (§l.4(d)). Beyond the per-block
+replicated writes, the runner's only RUNNER-LEVEL direct writes are: (a) the
+§c rollup at step 6, (b) one §l.1 audit per overridden block at step 4C.
 Local `detail.kind == "story"` at step 1 is the §e-blessed exception.
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §i, §j, **§l**.
+- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §i, §j, **§l (incl. §l.4 the inline-replication execution path)**.
 - Advisor: [`../next-block/SKILL.md`](../next-block/SKILL.md); MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md).
-- Forked dispatched siblings: [`../research-explore/SKILL.md`](../research-explore/SKILL.md), [`../research-directed/SKILL.md`](../research-directed/SKILL.md), [`../research-notes/SKILL.md`](../research-notes/SKILL.md), [`../story-review/SKILL.md`](../story-review/SKILL.md), [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md).
+- Forked siblings replicated inline (real fan-out, §l.4(d)): [`../research-explore/SKILL.md`](../research-explore/SKILL.md), [`../research-directed/SKILL.md`](../research-directed/SKILL.md), [`../research-notes/SKILL.md`](../research-notes/SKILL.md), [`../story-review/SKILL.md`](../story-review/SKILL.md), [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md).
 - Plans: round-2 [`docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) (R1, R5, R6); round-3 [`docs/plans/lumina-story-planning-round-3.md`](../../../../../docs/plans/lumina-story-planning-round-3.md) T10 + CONVENTIONS §l.

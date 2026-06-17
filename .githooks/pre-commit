@@ -7,4 +7,6 @@ if [ -z "$STAGED" ]; then
   exit 0
 fi
 
-exec "$(git rev-parse --show-toplevel)/scripts/verify-shared-blocks.sh"
+ROOT="$(git rev-parse --show-toplevel)"
+"$ROOT/scripts/verify-shared-blocks.sh"
+"$ROOT/scripts/verify-plan-story-blocks.sh"
