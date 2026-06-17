@@ -27,7 +27,8 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use lumina_core::domain::{CreateWorkItemRequest, UpdateWorkItemRequest, WorkItem, WorkItemDetail};
+use crate::mcp::reads::{Section, project_work_item_detail};
+use lumina_core::domain::{CreateWorkItemRequest, UpdateWorkItemRequest, WorkItem};
 use lumina_core::error::AppError;
 use lumina_core::repo::{self, NewWorkItemSpec};
 
@@ -51,6 +52,49 @@ pub struct ListQuery {
     pub parent_id: Option<String>,
     #[serde(default)]
     pub kind: Option<String>,
+}
+
+/// Query parameters for `GET /work-items/{id}` — the projection control that
+/// mirrors the MCP `get_work_item` `include` field. `include` is a raw
+/// comma-separated list of snake_case [`Section`] names (e.g.
+/// `?include=item,findings`). It is kept as a raw `Option<String>` (not a typed
+/// `Vec`) so the handler can distinguish three states: the key ABSENT (`None` ⇒
+/// full payload), the key present but EMPTY (`Some("")` ⇒ item-only), and a
+/// populated list (`Some("findings,…")` ⇒ item + named sections). Parsing into
+/// the typed vocabulary — and rejecting unknown tokens — happens in
+/// [`parse_include`].
+#[derive(Debug, Default, Deserialize)]
+pub struct DetailQuery {
+    #[serde(default)]
+    pub include: Option<String>,
+}
+
+/// Parse the raw `?include=` value into the requested [`Section`] list.
+///
+/// Splits on `,`, trims each token, and drops empty tokens (so a stray trailing
+/// comma or a bare `?include=` is tolerated). Each remaining token is matched
+/// against the snake_case [`Section`] vocabulary via the enum's own
+/// `Deserialize`; an UNKNOWN token is a caller-input error surfaced as
+/// `AppError::Validation` (422 `{"error":{"kind":"validation",…}}`), naming the
+/// offending token — semantically the HTTP mirror of the MCP layer's
+/// `invalid_params` on a bad enum value.
+fn parse_include(raw: &str) -> Result<Vec<Section>, AppError> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|tok| !tok.is_empty())
+        .map(|tok| {
+            serde_json::from_value::<Section>(serde_json::Value::String(tok.to_owned())).map_err(
+                |_| {
+                    AppError::Validation(format!(
+                        "unknown include section '{tok}'; valid sections are item, children, \
+                         findings, context_blocks, activity, acceptance_criteria, research_notes, \
+                         open_questions, repo_links, risks, rejected_alternatives, \
+                         task_dependencies, story_files_footprint"
+                    ))
+                },
+            )
+        })
+        .collect()
 }
 
 /// One element of `BatchWorkItemsBody.items` (B19). Mirrors the
@@ -173,13 +217,35 @@ fn build_tree(items: Vec<WorkItem>) -> Vec<TreeNode> {
 
 /// `GET /work-items/{id}` — item plus direct children, findings, and linked
 /// context blocks. 404 (via `AppError::NotFound`) when the id has no row.
+///
+/// Optional `?include=` projection (mirrors the MCP `get_work_item` `include`
+/// field): a comma-separated list of snake_case [`Section`] names. ABSENT ⇒ the
+/// full `WorkItemDetail` (unchanged legacy shape); PRESENT (even an empty
+/// `?include=`) ⇒ the `item` object plus only the named sections, projected at
+/// the serialization boundary via the shared
+/// [`project_work_item_detail`](crate::mcp::reads::project_work_item_detail)
+/// helper. An unknown token → 422 (see [`parse_include`]).
 async fn get_work_item(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<WorkItemDetail>, AppError> {
+    Query(q): Query<DetailQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
     tracing::debug!(id = %id, "http: GET /work-items/{{id}}");
     let detail = repo::get_work_item_detail(state.pool.as_ref(), &id).await?;
-    Ok(Json(detail))
+    match q.include {
+        // Absent `?include=` ⇒ the full detail, unchanged.
+        None => Ok(Json(
+            serde_json::to_value(detail).map_err(|e| AppError::Other(e.into()))?,
+        )),
+        // Present (even empty) ⇒ project to `item` + the named sections, using
+        // the SAME helper + vocabulary as the MCP `get_work_item` tool.
+        Some(raw) => {
+            let sections = parse_include(&raw)?;
+            let projected = project_work_item_detail(&detail, &sections)
+                .map_err(|e| AppError::Other(e.into()))?;
+            Ok(Json(projected))
+        }
+    }
 }
 
 /// `POST /work-items` — create a work item. Illegal hierarchy → 422 (the repo
@@ -825,6 +891,102 @@ mod tests {
         let ids = body["ids"].as_array().expect("ids array");
         assert_eq!(ids.len(), 2, "both task specs created");
         assert!(ids.iter().all(|id| id.as_str().is_some()), "ids are uuid strings");
+    }
+
+    /// `GET /api/work-items/{id}` projection (`?include=`) — the HTTP mirror of
+    /// the MCP `get_work_item` `include` field. Asserts the four contract points:
+    /// absent `?include=` ⇒ the full detail (every section key present); a
+    /// populated `?include=acceptance_criteria` ⇒ `item` + only that section; an
+    /// EMPTY `?include=` ⇒ item-only (present-but-empty is NOT absent); and an
+    /// unknown token ⇒ 422 with the validation envelope.
+    #[tokio::test]
+    async fn get_work_item_projection_filters_sections() {
+        let pool = connect_in_memory().await.expect("pool");
+        let (story_id, _task_id) = seed_chain(&pool).await;
+        // Give the story a non-empty section so a positive/negative filter is
+        // observable.
+        repo::add_acceptance_criterion(&pool, &story_id, "ships green")
+            .await
+            .expect("add acceptance criterion");
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
+        let router = build_router(state);
+
+        // (1) Absent ?include= ⇒ the FULL detail: every array section key present.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{story_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert!(body.get("item").is_some(), "full payload carries item");
+        for key in [
+            "children", "findings", "context_blocks", "activity", "acceptance_criteria",
+            "research_notes", "open_questions", "repo_links", "risks",
+            "rejected_alternatives", "task_dependencies", "story_files_footprint",
+        ] {
+            assert!(body.get(key).is_some(), "full payload carries `{key}`");
+        }
+
+        // (2) ?include=acceptance_criteria ⇒ item + that section ONLY.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/work-items/{story_id}?include=acceptance_criteria"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert!(body.get("item").is_some(), "item always present");
+        let acs = body
+            .get("acceptance_criteria")
+            .and_then(|v| v.as_array())
+            .expect("requested acceptance_criteria present");
+        assert_eq!(acs.len(), 1, "the seeded criterion is folded in");
+        assert!(body.get("findings").is_none(), "unrequested section dropped");
+        assert!(body.get("children").is_none(), "unrequested section dropped");
+
+        // (3) EMPTY ?include= ⇒ item-only (present-but-empty differs from absent).
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{story_id}?include="))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        let obj = body.as_object().expect("object body");
+        assert_eq!(obj.len(), 1, "item-only payload has exactly one key");
+        assert!(obj.contains_key("item"), "the one key is item");
+
+        // (4) Unknown token ⇒ 422 + validation envelope.
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{story_id}?include=bogus"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "validation");
     }
 
     /// SPA fallback contract: an unknown non-`/api` path returns `index.html`
