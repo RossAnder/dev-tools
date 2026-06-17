@@ -88,7 +88,7 @@ You are one of N parallel research agents for story <story_id>. The other agents
 ## Output contract (per finding; minimum 3)
 - `summary`: ≤80 chars, action-oriented (e.g. "verify Pinia v3 SSR hydration path against round-2 store").
 - `body`: 2–5 sentences containing the verifiable claim; the claim is what `/lumina:vet-research` will spot-check.
-- `source`: a URL (with `https://`) OR a `file:line` reference (e.g. `lumina/src/repo.rs:412`) — verbatim, no paraphrase. The orchestrator's vet-pass will fetch / read this directly.
+- `source`: a URL (with `https://`) OR a `file:line` reference (e.g. `lumina/src/repo.rs:412`) — verbatim, no paraphrase. The orchestrator's vet-pass will fetch / read this directly; this value is written into the note's typed `anchors` array (NOT the body), where it is also indexed by `query_research_notes`.
 - `confidence`: one of `high` / `medium` / `low` per `flow-contract-vet-research` (high = primary-source verified; medium = secondary-source / inference; low = hypothesis worth checking).
 
 Citation discipline (R35, plan-review-finding P10 of round-2): EVERY external URL MUST be quoted verbatim, no shortening, no inferred host. Library version pins MUST cite the package + version + the docs URL. file:line MUST be a real path resolvable from the repo root.
@@ -113,7 +113,7 @@ mcp__lumina__add_research_note {
   work_item_id: "$work_item_id",
   summary: <finding.summary>,
   body: <finding.body>,
-  source: <finding.source>,        # written into the body if no source field exists; see note below
+  anchors: [<finding.source>],     # the citation(s) as typed anchors — see note below
   lens: <agent.lens>,              # from the canonical 5 in step 2
   confidence: <finding.confidence>, # "high" | "medium" | "low"
   state: "proposed",               # NEVER auto-promote — /lumina:vet-research's job (§e Sentry pattern)
@@ -123,7 +123,7 @@ mcp__lumina__add_research_note {
 
 Notes:
 
-- The `add_research_note` MCP tool's param struct (per `lumina/src/mcp.rs` `AddResearchNoteParams`) accepts `summary`, `body`, `confidence`, `lens`, `origin` — there is currently NO discrete `source` field on the row. The convention is to append the citation to the END of `body` as a trailing line like `Source: <url-or-file:line>` so the vet-pass spot-check can extract it. The Sentry pattern (§e) forbids skill-side derivation that shadows MCP business logic — but composing a `body` string from sub-agent output is data shaping, not lifecycle logic, and is permitted. If a future migration adds a typed `source` column to `research_notes`, this composition shifts to a discrete field.
+- The `add_research_note` MCP tool now carries a typed `anchors` field (migration 0024): a JSON array of citation strings, each EITHER a `<repo-relative-path>:<line>` reference (e.g. `lumina/src/repo.rs:412`) OR an `http(s)://` URL. Put every `file:line` / URL citation into `anchors` — do NOT append it to `body` (the `Source:` trailing-line convention is retired). `body` holds the prose finding only. Validation is all-or-nothing: a malformed entry (a non-URL with no `:<positive-line>`) rejects the whole write, so quote each anchor verbatim. The downstream vet-pass reads `anchors` directly (and `query_research_notes`'s `file`/`anchor` filters index them) — so citations land where the vet-pass and cross-work-item queries expect them. Composing the `anchors` array from sub-agent `source` output is data shaping, not lifecycle logic, and is permitted under the Sentry pattern (§e).
 - DO NOT auto-promote to `state: "accepted"`. The proposed→accepted transition is `/lumina:vet-research`'s exclusive lifecycle (Sentry pattern + the §c vet-exception is narrowly scoped to that one skill).
 - The `lens` argument is free-form TEXT validated only against the canonical 5 by this skill body (NOT enforced server-side per R32). Pass the snake-case form verbatim.
 - One `add_research_note` call per finding — NOT one batched call per agent. Each note is an independently triageable row in the downstream vet-pass.

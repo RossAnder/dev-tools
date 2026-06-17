@@ -142,8 +142,8 @@ These set the composer-facing grading axes and drive the decision lifecycle. `re
 | `check_acceptance_criterion` | Mark a criterion checked (optional `by`); also appends a `verification` activity entry. |
 | `uncheck_acceptance_criterion` | Mark a criterion unchecked. |
 | `remove_acceptance_criterion` | DESTRUCTIVE: hard-delete a criterion by `id` (criteria have no independent export identity). |
-| `add_research_note` | Add a first-class research note (summary / body / confidence / lens / origin) to a work item. |
-| `update_research_note` | Partial set-or-leave update of a research note's `confidence` / `state` (`proposed` / `accepted` / `rejected`) / `rationale` / `lens`. |
+| `add_research_note` | Add a first-class research note (summary / body / confidence / lens / origin) to a work item. Carries an optional typed `anchors` field (migration 0024): a JSON array of citation strings, each a `<repo-relative-path>:<line>` reference OR an `http(s)://` URL. PUT citations here, not appended to `body` — they are validated (all-or-nothing: a malformed entry rejects the write) and indexed by `query_research_notes`. |
+| `update_research_note` | Partial set-or-leave update of a research note's `confidence` / `state` (`proposed` / `accepted` / `rejected`) / `rationale` / `lens` / `anchors` (migration 0024 — a non-empty array sets; absent OR empty leaves the existing anchors). |
 | `supersede_research_note` | Mark an old research note superseded by a new one; superseded notes drop from the live detail fold. |
 | `supersede_finding` | Mark an old finding superseded by a new one (sets the old finding's `superseded_by`); superseded findings drop from the live detail fold. |
 | `add_risk` | `{ work_item_id, summary, body?, rationale?, severity, mitigation? } → { id }` — append a risk to a work-item's risk register. `severity` ∈ `low | medium | high | critical` (lowercase; matches the SQL CHECK). |
@@ -345,6 +345,7 @@ Migration 0011 Part B added nine tools across three families: batch-write (B18),
 |------|-------------|
 | `query_findings` | `{ work_item_id?, run_id?, severity?, category?, status?, triage_state?, count_by? } → { findings: [...] }` (or `{ counts: [{key, count}] }` in grouped mode) — query LIVE (non-superseded) findings with a static NULL-guard filter; an ABSENT field is unconstrained, so one prepared statement covers every combination. `count_by = "severity"` switches to grouped mode (one bucket per severity; NULL severities fold into a `(none)` bucket). Read-only. Prefer narrowing the filter or using `count_by` — an unfiltered query can return a large set. |
 | `get_story_finding_queue` | `{ story_id } → Finding[]` — compose a story's review/optimise finding queue: every live finding attached to the story itself OR one of its DIRECT task children, newest-flagged first. Findings on tombstoned (soft-deleted) items are excluded. Read-only. |
+| `query_research_notes` | `{ work_item_id?, file?, anchor? } → ResearchNote[]` (migration 0024, the F7 anchor pass) — query LIVE (non-superseded) research notes across work items by their typed `anchors`, with a static NULL-guard filter (an ABSENT field is unconstrained). `work_item_id` scopes to one item's notes. `file` matches any note whose `anchors` cite that file — the anchor equals the path OR is the `path:line` form for it (the "what did we research about this file" lookup). `anchor` is an exact full-anchor-string match (a specific `path:line` cite or http(s) URL). Returns newest-first. Read-only. |
 
 ### Run / sprint / triage tools (B24)
 
