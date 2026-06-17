@@ -740,78 +740,84 @@ pub async fn renew_lease(
 }
 
 // ---------------------------------------------------------------------------
-// complete_task (team-execution migration 0013, plan §D). The done→review
-// CASCADE — the documented COMPOSER exception to the per-mutator single-tx rule
-// ("compose, don't trigger"). It does NOT open a single tx writing one domain
-// row + one event; instead it COMPOSES several already-single-mutation steps,
-// each carrying its OWN event, in the same disciplined shape as
-// `record_finding_decision` / `resolve_open_question`:
+// complete_task (team-execution migration 0013; 1B-F9 M1 review-as-state
+// rewrite). The done→review SAME-ROW transition — still the documented COMPOSER
+// exception to the per-mutator single-tx rule ("compose, don't trigger"). It
+// does NOT open a single tx writing one domain row + one event; instead it
+// COMPOSES several already-single-mutation steps, each carrying its OWN event,
+// in the same disciplined shape as `record_finding_decision` /
+// `resolve_open_question`:
 //
-//   1. read the impl task's lane/status/parent_id (drives the branch);
-//   2. transition the task to `done` via `update_work_item_status` (its own tx +
-//      `work_item.status_changed` event; the closure-gate read runs inside it) —
-//      skipped when the task is already `done` (idempotent re-run);
+//   1. read the impl task's lane/tier/status (tier+lane drive the branch);
+//   2. tier-route the completion (1B-F9 M1):
+//        - DEEP (or already-FLAGGED `lane='review'`) → the NON-terminal
+//          `Status::Review` + `lane='review'` on the SAME row (reuse the
+//          `update_work_item_status` transition + `set_task_lane`, each its own
+//          tx + event); NO `done`, so the files_touched reconcile is DEFERRED
+//          past review;
+//        - LITE / un-flagged → `done` via `update_work_item_status` (its own tx +
+//          `work_item.status_changed` event; closure-gate read + files_touched
+//          reconcile run inside it) — skipped when already `done`;
 //   3. a SEPARATE owner-guarded lease-clear (its own tx + `work_item.released`
-//      event when it mutates) — completion cleanup, mirroring `release_task`;
-//   4. for an `implement`-lane task only, spawn EXACTLY ONE review task under the
-//      story (Txn-2: one create + post-create stamp + dep edge + sprint bind, all
-//      folded into a single `work_item.created` event), guarded by an idempotency
-//      probe so a crash-recovery re-run never double-spawns.
+//      event when it mutates) — completion cleanup, mirroring `release_task`.
 //
-// A `review`-lane (or `lane IS NULL` / any non-implement) task completes to
-// `done` only — NO review spawn — which is what prevents an infinite
-// review→review cascade.
+// There is NO separate review task and NO spawn cascade any more: a deep task
+// becomes its own review-lane row, which the reviewer claims directly. So
+// `review_task_id` is always `None` (the field is retained on the result for
+// wire back-compat until F2 retires `reviews_work_item_id` end-to-end).
 // ---------------------------------------------------------------------------
 
-/// Result of [`complete_task`] (plan §D): the completed task's id and the id of
-/// the review task spawned for it (`Some` only for an `implement`-lane
-/// completion; `None` for a `review`-lane / non-implement completion, or when a
-/// review child already existed and was reused on an idempotent re-run — in the
-/// reuse case the EXISTING child id is returned, never `None`). A repo.rs-local
+/// Result of [`complete_task`] (plan §D; 1B-F9 M1): the completed task's id and
+/// `review_task_id`, which is now ALWAYS `None` — the done→review spawn cascade
+/// was retired, so no separate review task is created (a deep/flagged task
+/// carries its own row into the `review` state). The field is kept for wire
+/// back-compat until F2 drops `reviews_work_item_id` end-to-end. A repo.rs-local
 /// struct (NOT in `domain.rs`) to honour the task's file-ownership constraint;
-/// the MCP/HTTP surface (T9/T10) wraps it with `Content::json`.
+/// the MCP/HTTP surface wraps it with `Content::json`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CompleteTaskResult {
     pub task_id: String,
-    /// `Some(review_task_id)` for an implement-lane completion (freshly spawned
-    /// OR reused on idempotent re-run); `None` for a review-lane completion.
+    /// Always `None` since 1B-F9 M1 (the review-task spawn cascade was retired).
+    /// Retained for wire back-compat until F2 retires `reviews_work_item_id`.
     pub review_task_id: Option<String>,
 }
 
-/// Complete a task and cascade its review (plan §D) — the COMPOSER exception to
-/// the single-mutation rule. Composes the `done` transition (closure-gate
-/// preserved via [`update_work_item_status`]), an owner-guarded lease clear, and
-/// — for an `implement`-lane task — the spawn of exactly one review task under
-/// the story, bound back via `reviews_work_item_id`, depending on the impl task,
-/// and bound into every sprint the impl task belongs to.
+/// Complete a task (1B-F9 M1 review-as-state) — the COMPOSER exception to the
+/// single-mutation rule. Tier-routes the completion: a DEEP task (or one already
+/// FLAGGED `lane='review'`) moves to the NON-terminal `Status::Review` +
+/// `lane='review'` on its OWN row; a LITE / un-flagged task transitions to
+/// `done` (closure-gate + files_touched reconcile preserved via
+/// [`update_work_item_status`]). Then an owner-guarded lease clear runs in both
+/// branches. There is NO separate review task spawned.
+///
+/// **Reconcile deferral.** `reconcile_task_files_at_close` auto-fires INSIDE
+/// `update_work_item_status` on a task→`done` transition, so a deep task routed
+/// to `review` (not `done`) is deliberately NOT reconciled at complete_task — it
+/// reconciles only once it later reaches `done` (e.g. via M4's `review → done`).
 ///
 /// **Idempotency / crash recovery.** Re-running on an already-`done` task skips
-/// the transition; the review-spawn step first probes for an existing review
-/// child (`reviews_work_item_id = task_id`) and, if present, returns that id with
-/// NO new spawn. So a crash between the `done` transition and the spawn — or a
-/// flaky double-call — converges to exactly one review task.
+/// the `done` transition; re-running on an already-`review` row skips the status
+/// set (the `set_task_lane` re-stamp is a harmless no-op), and the owner-guarded
+/// lease clear matches 0 rows once cleared — so a flaky double-call converges.
 ///
-/// **Lane awareness.** Only `lane = 'implement'` spawns a review; a `review`-lane
-/// (or `lane IS NULL` / any other) task completes to `done` only, returning
-/// `review_task_id = None` — this is what prevents a review→review→… cascade.
-///
-/// **Hierarchy.** The review task's `parent_id` is the impl task's OWN
-/// `parent_id` (the story), NOT the impl task — a task cannot parent a task
-/// (hierarchy trigger, `0001_init.sql:74/94`).
+/// **Lane / tier awareness.** The branch is `tier == 'deep' OR lane == 'review'`
+/// → review-state, else → `done`. `review_task_id` is always `None`.
 pub async fn complete_task(
     db: &impl DbClient,
     task_id: &str,
     agent_id: &str,
 ) -> Result<CompleteTaskResult, AppError> {
-    // --- Step 1: read the impl task's lane / status / parent_id. -----------
+    // --- Step 1: read the impl task's lane / tier / status. ----------------
     // A liveness filter (`deleted_at IS NULL`) keeps a tombstoned task from being
-    // completed. `lane` drives the branch; `status` gates the idempotent skip of
-    // the `done` transition; `parent_id` is the review task's parent (the story).
+    // completed. `tier`/`lane` drive the review-vs-done branch (1B-F9 M1);
+    // `status` gates the idempotent skip of a re-completion. `parent_id` is no
+    // longer read — the review-task spawn cascade (which parented under the
+    // story) is gone.
     #[derive(Debug)]
     struct CompleteTaskRow {
         lane: Option<String>,
+        tier: Option<String>,
         status: String,
-        parent_id: Option<String>,
     }
     impl<'r, R> sqlx::FromRow<'r, R> for CompleteTaskRow
     where
@@ -823,49 +829,60 @@ pub async fn complete_task(
         fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
             Ok(CompleteTaskRow {
                 lane: row.try_get("lane")?,
+                tier: row.try_get("tier")?,
                 status: row.try_get("status")?,
-                parent_id: row.try_get("parent_id")?,
             })
         }
     }
     let task_row: CompleteTaskRow = db
         .query_opt::<CompleteTaskRow>(
-            "SELECT lane, status, parent_id FROM work_items WHERE id = $1 AND deleted_at IS NULL",
+            "SELECT lane, tier, status FROM work_items WHERE id = $1 AND deleted_at IS NULL",
             args![task_id.to_owned()],
         )
         .await?
         .ok_or_else(|| AppError::NotFound(format!("work_item '{task_id}' not found")))?;
 
-    // --- Step 2: done transition (idempotent). -----------------------------
-    // `update_work_item_status` opens its OWN tx, runs the closure-gate read
-    // before the write, and emits one `work_item.status_changed` event. Skip it
-    // when the task is already `done` so a crash-recovery re-run does not re-emit
-    // the event (and does not re-run the gate against an already-terminal row).
-    if task_row.status != "done" {
-        update_work_item_status(db, task_id, "done").await?;
-    }
-
-    // --- Step 2b: reconcile the task's files_touched sets (T4). -------------
-    // CLEAR every EXPECTED file row that was never ACTUALLY touched (and audit the
-    // divergence) as part of the close. `reconcile_task_files_at_close` owns its
-    // OWN tx(s) — the same composer discipline as the surrounding steps (each
-    // logical sub-mutation keeps its own tx + event), so it does not break the
-    // single-mutation-path invariant. It is IDEMPOTENT: a re-run on an
-    // already-`done` task (crash-recovery / double-call) or after a lease-reclaim
-    // re-open→re-close finds the untouched-EXPECTED rows already gone, clears zero,
-    // and appends no duplicate audit — so it composes cleanly with the two-txn
-    // idempotent structure above (the reconcile is its own idempotent step, never
-    // leaving a `done`-but-un-reconciled state a re-close wouldn't heal).
+    // --- Step 2: tier-routed completion (1B-F9 M1). ------------------------
+    // A DEEP task — or one the implementer/orchestrator has already FLAGGED for
+    // review by stamping `lane = 'review'` — is NOT terminal at complete_task:
+    // it moves to the NON-terminal `Status::Review` state + `lane = 'review'` on
+    // its OWN row, so it leaves the implement claim set and enters the review
+    // claim set without any separate review task being spawned. A LITE (or
+    // un-flagged: `tier` NULL / not deep) task completes straight to `done`.
     //
-    // NB the non-team `transition_status`→done path (`update_work_item_status`) now
-    // ALSO reconciles on a task→done transition, so on the FRESH-completion path
-    // (Step 2 actually ran the transition) the reconcile has effectively already
-    // happened; this explicit call is then a no-op (idempotent). It is retained
-    // unconditionally because Step 2 is SKIPPED for an already-`done` task (the
-    // crash-recovery re-close), and this is what guarantees the reconcile still
-    // fires on that path. The double-invocation on the fresh path is harmless by
-    // construction (idempotent).
-    reconcile_task_files_at_close(db, task_id).await?;
+    // This REPLACES the former unconditional `done` flip + done→review spawn
+    // cascade. The done flip carries `reconcile_task_files_at_close` with it (the
+    // reconcile auto-fires on a task→done transition inside
+    // `update_work_item_status`), so routing a deep task to `review` instead of
+    // `done` correctly DEFERS reconciliation past the review state — a deep task
+    // is NOT reconciled at complete_task, only when it later reaches `done`.
+    let to_review =
+        task_row.tier.as_deref() == Some("deep") || task_row.lane.as_deref() == Some("review");
+
+    if to_review {
+        // Move to the non-terminal review state on the SAME row. Reuse the
+        // existing single-mutation transition + `set_task_lane` (each its own tx +
+        // event, the composer discipline). NO `done`, so NO reconcile fires.
+        // Idempotent: a re-run on an already-`review` row skips the status set;
+        // `set_task_lane` re-stamping `'review'` is a harmless no-op write.
+        let review_status = enum_to_str(crate::domain::Status::Review);
+        if task_row.status != review_status {
+            update_work_item_status(db, task_id, &review_status).await?;
+        }
+        set_task_lane(db, task_id, Some(Lane::Review)).await?;
+    } else {
+        // Lite / un-flagged: complete to `done`. `update_work_item_status` opens
+        // its OWN tx, runs the closure-gate read before the write, emits one
+        // `work_item.status_changed` event, AND reconciles the task's
+        // files_touched sets at close (a task→done transition auto-fires
+        // `reconcile_task_files_at_close` inside it). Skip when already `done` so a
+        // crash-recovery re-run does not re-emit the event or re-run the gate
+        // against an already-terminal row (the reconcile is itself idempotent, so
+        // an already-`done` row needs no separate reconcile call here).
+        if task_row.status != "done" {
+            update_work_item_status(db, task_id, "done").await?;
+        }
+    }
 
     // --- Step 3: owner-guarded lease clear (completion cleanup). -----------
     // A SEPARATE single-mutation tx (mirroring `release_task`): clear
@@ -897,195 +914,19 @@ pub async fn complete_task(
         // No mutation ⇒ drop (rollback) with no event.
     }
 
-    // --- Step 4: lane branch. ----------------------------------------------
-    // Only an `implement`-lane completion cascades a review. A `review`-lane (or
-    // `lane IS NULL` / any other) completion stops here — completed to `done`,
-    // no spawn — which is what prevents an infinite review→review cascade.
-    if task_row.lane.as_deref() != Some("implement") {
-        return Ok(CompleteTaskResult {
-            task_id: task_id.to_owned(),
-            review_task_id: None,
-        });
-    }
-
-    // Idempotency probe (OUTSIDE the spawn txn): a live review child already
-    // bound back to this impl task ⇒ reuse it, no new spawn. This is the
-    // crash-recovery guard — a re-run after a prior spawn converges to the SAME
-    // review task id.
-    let existing_review: Option<String> = crate::db::scalar_opt::<String>(
-        db,
-        "SELECT id FROM work_items WHERE reviews_work_item_id = $1 AND deleted_at IS NULL",
-        args![task_id.to_owned()],
-    )
-    .await?;
-    if let Some(review_id) = existing_review {
-        return Ok(CompleteTaskResult {
-            task_id: task_id.to_owned(),
-            review_task_id: Some(review_id),
-        });
-    }
-
-    // The review task parents under the STORY = the impl task's own parent_id
-    // (a task cannot parent a task; hierarchy trigger 0001_init.sql:74/94). A
-    // task with no parent is a data-integrity violation (the hierarchy gate
-    // requires a `story` parent at create) — surface it as `Validation` rather
-    // than silently skipping the cascade.
-    let story_id = task_row.parent_id.as_deref().ok_or_else(|| {
-        AppError::Validation(format!(
-            "cannot spawn a review task for '{task_id}': it has no parent story"
-        ))
-    })?;
-
-    // Copy the impl task's `files_touched` onto the review task so the reviewer
-    // inherits the file scope (and the §C advisory-overlap scan sees it). Read
-    // the raw entries from the impl task's attributes via the same best-effort
-    // path the claim uses; an empty/absent set ⇒ no files_touched stamp.
-    let impl_attrs: Option<String> = crate::db::scalar_opt::<String>(
-        db,
-        "SELECT attributes FROM work_items WHERE id = $1",
-        args![task_id.to_owned()],
-    )
-    .await?;
-    let impl_files_touched = files_touched_from_attributes(impl_attrs.as_deref());
-
-    // Sprints the impl task belongs to — the review task must join EACH so the
-    // §C claim JOIN (which keys on `sprint_tasks`) can ever see it. Read OUTSIDE
-    // the spawn txn (a cheap read; the bind INSERTs happen inside).
-    let impl_sprints: Vec<String> = {
-        #[derive(Debug)]
-        struct SprintIdRow {
-            sprint_id: String,
-        }
-        impl<'r, R> sqlx::FromRow<'r, R> for SprintIdRow
-        where
-            R: sqlx::Row,
-            &'r str: sqlx::ColumnIndex<R>,
-            String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
-        {
-            fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
-                Ok(SprintIdRow {
-                    sprint_id: row.try_get("sprint_id")?,
-                })
-            }
-        }
-        db.query_all::<SprintIdRow>(
-            "SELECT sprint_id FROM sprint_tasks WHERE task_id = $1",
-            args![task_id.to_owned()],
-        )
-        .await?
-        .into_iter()
-        .map(|r| r.sprint_id)
-        .collect()
-    };
-
-    // --- Txn-2: spawn the review task (one create + stamps + dep + sprint ---
-    // binds, all folded into ONE `work_item.created` event — the composer's
-    // single-event-per-logical-sub-mutation discipline). ---------------------
-    let mut tx = db.begin().await?;
-
-    // Create the review child under the story via the no-event tx helper (mirrors
-    // the `record_finding_decision` spawn path). `CreateOpts` carries no
-    // lane/tier/reviews link, so those are stamped by the post-create UPDATE.
-    let review_title = format!("Review: {task_id}");
-    let review_id = create_work_item_full_tx(
-        tx.as_mut(),
-        "task",
-        Some(story_id),
-        &review_title,
-        None,
-        CreateOpts {
-            origin: Some("review"),
-            outcome: None,
-            shape: None,
-            lane: None,
-        },
-    )
-    .await?;
-    let review_id_str = review_id.to_string();
-
-    // Post-create stamp: lane='review', the back-link, and tier=NULL (a review is
-    // a LANE, never a tier — explicitly NULLed so a CreateOpts-default never
-    // leaks a tier onto the review task). Mirrors the `spawned_from_finding_id`
-    // post-create stamp idiom.
-    tx.execute(
-        r#"
-        UPDATE work_items
-        SET lane = 'review',
-            reviews_work_item_id = $2,
-            tier = NULL,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-        "#,
-        args![review_id_str.clone(), task_id.to_owned()],
-    )
-    .await?;
-
-    // Copy the impl task's files_touched onto the review task's attributes (only
-    // when non-empty). Written as a minimal `{"files_touched": [...]}` object —
-    // a valid task attribute shape — directly on the tx (the review task was just
-    // created with NULL attributes, so a plain SET is sufficient; no read-merge).
-    if !impl_files_touched.is_empty() {
-        let attrs = serde_json::json!({ "files_touched": impl_files_touched });
-        let attrs_str = serde_json::to_string(&attrs).map_err(|e| AppError::Other(e.into()))?;
-        tx.execute(
-            "UPDATE work_items SET attributes = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-            args![review_id_str.clone(), attrs_str],
-        )
-        .await?;
-    }
-
-    // Dependency edge: the review task depends_on the impl task, so it never
-    // becomes claimable until the impl task is `done` (which it now is). Inserted
-    // directly on the tx (NOT via `add_task_dependency`, which opens its own tx +
-    // event) so it folds into this one composer event.
-    tx.execute(
-        r#"
-        INSERT INTO task_dependencies (task_id, depends_on_id, kind)
-        VALUES ($1, $2, 'sequence')
-        "#,
-        args![review_id_str.clone(), task_id.to_owned()],
-    )
-    .await?;
-
-    // Bind the review task into EACH sprint the impl task belongs to — without
-    // this the §C claim JOIN (keyed on `sprint_tasks`) never surfaces it.
-    // Idempotent at the junction (mirrors `add_tasks_to_sprint`).
-    for sprint_id in &impl_sprints {
-        tx.execute(
-            r#"
-            INSERT INTO sprint_tasks (sprint_id, task_id)
-            VALUES ($1, $2)
-            ON CONFLICT(sprint_id, task_id) DO NOTHING
-            "#,
-            args![sprint_id.to_owned(), review_id_str.clone()],
-        )
-        .await?;
-    }
-
-    // ONE export-eligible create event for the whole spawn (the child's create +
-    // all the stamps/binds fold into it — the composer's single-event discipline).
-    let payload = serde_json::json!({
-        "kind": "task",
-        "parent_id": story_id,
-        "title": review_title,
-        "lane": "review",
-        "reviews_work_item_id": task_id,
-        "origin": "review",
-    });
-    record_event(
-        tx.as_mut(),
-        "work_item",
-        &review_id_str,
-        "work_item.created",
-        payload,
-    )
-    .await?;
-
-    tx.commit().await?;
-
+    // --- Done. -------------------------------------------------------------
+    // 1B-F9 M1 RETIRED the done→review spawn cascade: a deep/flagged task now
+    // carries its OWN row into the `review` state (Step 2) instead of a separate
+    // review task being spawned, so there is no review-task create, no
+    // `reviews_work_item_id` back-link, no copied `files_touched`, no task→task
+    // dep edge, and no review-task event. `review_task_id` is therefore always
+    // `None`. (The reviewer claims the SAME row from the `review` lane; a review
+    // completion — `lane == 'review'`, NOT deep-tier — falls into Step 2's
+    // `to_review` branch only if still flagged, otherwise to `done`. M4 makes a
+    // review-lane completion route `review → done`.)
     Ok(CompleteTaskResult {
         task_id: task_id.to_owned(),
-        review_task_id: Some(review_id_str),
+        review_task_id: None,
     })
 }
 
@@ -1840,51 +1681,40 @@ mod tests {
     }
 
     // =======================================================================
-    // complete_task (T6) — the done→review CASCADE. Reuse the claim/release seed
-    // helpers (seed_chain_to_story + seed_sprint + seed_queue_task) and cover the
-    // three plan T6 acceptance bullets: an implement-lane completion spawns
-    // exactly one back-linked review task under the story (sprint-bound, with a
-    // dep edge, files_touched copied); a review-lane completion spawns nothing;
-    // a re-run is idempotent (no duplicate, same id).
+    // complete_task (1B-F9 M1) — the done→review SAME-ROW transition (the spawn
+    // cascade was retired). Reuse the claim/release seed helpers
+    // (seed_chain_to_story + seed_sprint + seed_queue_task) and cover the M1
+    // acceptance: a DEEP implement-lane completion routes the SAME row to the
+    // non-terminal `review` state + `lane='review'` (no spawn, no separate task);
+    // a LITE / un-flagged completion routes to `done`; a re-run is idempotent.
     // =======================================================================
 
-    /// Read a review task's (parent_id, reviews_work_item_id, lane, tier, status)
-    /// for the back-link / hierarchy assertions.
-    async fn review_task_shape(
+    /// Read a task's (lane, tier, status) for the same-row review-state assertions.
+    async fn task_lane_tier_status(
         pool: &SqlitePool,
-        review_id: &str,
-    ) -> (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        String,
-    ) {
+        task_id: &str,
+    ) -> (Option<String>, Option<String>, String) {
         use sqlx::Row as _;
-        let r = sqlx::query(
-            "SELECT parent_id, reviews_work_item_id, lane, tier, status \
-             FROM work_items WHERE id = $1",
-        )
-        .bind(review_id)
-        .fetch_one(pool)
-        .await
-        .expect("review task row");
+        let r = sqlx::query("SELECT lane, tier, status FROM work_items WHERE id = $1")
+            .bind(task_id)
+            .fetch_one(pool)
+            .await
+            .expect("task row");
         (
-            r.try_get("parent_id").unwrap(),
-            r.try_get("reviews_work_item_id").unwrap(),
             r.try_get("lane").unwrap(),
             r.try_get("tier").unwrap(),
             r.try_get("status").unwrap(),
         )
     }
 
-    /// (1) Completing an `implement`-lane task transitions it to done, clears its
-    /// lease, and spawns EXACTLY ONE review task: parent = the story (NOT the impl
-    /// task), back-linked via `reviews_work_item_id`, `lane='review'`,
-    /// `tier=NULL`, bound into the impl task's sprint, with a dependency edge on
-    /// the impl task, and the impl task's `files_touched` copied across.
+    /// (1) Completing a DEEP `implement`-lane task routes the SAME row into the
+    /// non-terminal `review` state (`status='review'`, `lane='review'`), clears
+    /// its lease, spawns NO separate task, and returns `review_task_id = None`.
+    /// (The claim-side recognition of the `review` status — making the row
+    /// claimable in the review lane — is M2/M3's change, not M1's; this test
+    /// asserts only M1's complete_task-side state transition.)
     #[tokio::test]
-    async fn complete_implement_task_spawns_one_backlinked_review() {
+    async fn complete_deep_implement_task_routes_same_row_to_review() {
         let pool = connect_in_memory().await.expect("pool");
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
@@ -1893,14 +1723,11 @@ mod tests {
         let task =
             seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
 
-        // Give the impl task a files_touched spec so the cascade copies it.
-        set_work_item_attributes(
-            &db,
-            &task,
-            &serde_json::json!({ "files_touched": ["src/a.rs", { "repo": "o/n", "path": "src/b.rs" }] }),
-        )
-        .await
-        .expect("impl files_touched");
+        let tasks_before =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE kind = 'task'")
+                .fetch_one(&pool)
+                .await
+                .expect("count tasks before");
 
         // Claim it so it is genuinely in_progress + leased to agent-a.
         let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
@@ -1913,106 +1740,52 @@ mod tests {
             .await
             .expect("complete runs");
         assert_eq!(result.task_id, task);
-        let review_id = result
-            .review_task_id
-            .clone()
-            .expect("an implement-lane completion spawns a review task");
+        assert_eq!(
+            result.review_task_id, None,
+            "M1: no separate review task is spawned — review_task_id is always None"
+        );
 
-        // The impl task is done + lease cleared.
-        let (status, assignee, lease) = task_lease_state(&pool, &task).await;
-        assert_eq!(status, "done", "impl task transitioned to done");
+        // The SAME row moved to the non-terminal review state + review lane, and
+        // its lease cleared.
+        let (lane, tier, status) = task_lane_tier_status(&pool, &task).await;
+        assert_eq!(status, "review", "deep impl task routed to the non-terminal review state");
+        assert_eq!(lane.as_deref(), Some("review"), "the same row is re-stamped lane='review'");
+        assert_eq!(tier.as_deref(), Some("deep"), "tier is untouched (still deep)");
+        let (_, assignee, lease) = task_lease_state(&pool, &task).await;
         assert_eq!(assignee, None, "lease assignee cleared on completion");
         assert_eq!(lease, None, "lease deadline cleared on completion");
 
-        // EXACTLY ONE review task bound back to the impl task.
-        let review_count =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE reviews_work_item_id = $1")
-                .bind(&task)
+        // No new task row — the spawn cascade is gone.
+        let tasks_after =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE kind = 'task'")
                 .fetch_one(&pool)
                 .await
-                .expect("count reviews");
-        assert_eq!(review_count, 1, "exactly one review task spawned");
+                .expect("count tasks after");
+        assert_eq!(tasks_after, tasks_before, "M1: no review task is created");
 
-        // Hierarchy + back-link + lane/tier shape.
-        let (parent_id, reviews, lane, tier, rstatus) = review_task_shape(&pool, &review_id).await;
-        assert_eq!(
-            parent_id.as_deref(),
-            Some(story.as_str()),
-            "review task parents under the STORY, not the impl task"
-        );
-        assert_eq!(
-            reviews.as_deref(),
-            Some(task.as_str()),
-            "review task back-links to the impl task it covers"
-        );
-        assert_eq!(lane.as_deref(), Some("review"), "spawned with lane='review'");
-        assert_eq!(tier, None, "review is a lane, not a tier → tier NULL");
-        assert_eq!(rstatus, "open", "review task starts at the create-default status");
-
-        // Bound into the impl task's sprint.
-        let bound = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = $1 AND task_id = $2",
+        // No `reviews_work_item_id` back-link is ever written.
+        let backlinks = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM work_items WHERE reviews_work_item_id = $1",
         )
-        .bind(&sprint)
-        .bind(&review_id)
-        .fetch_one(&pool)
-        .await
-        .expect("count sprint binding");
-        assert_eq!(bound, 1, "review task bound into the impl task's sprint");
-
-        // Dependency edge: review depends_on impl.
-        let dep = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM task_dependencies WHERE task_id = $1 AND depends_on_id = $2",
-        )
-        .bind(&review_id)
         .bind(&task)
         .fetch_one(&pool)
         .await
-        .expect("count dep edge");
-        assert_eq!(dep, 1, "review task depends on the impl task");
-
-        // files_touched copied verbatim (bare string + {repo,path} object).
-        let attrs: String =
-            sqlx::query_scalar::<_, Option<String>>("SELECT attributes FROM work_items WHERE id = $1")
-                .bind(&review_id)
-                .fetch_one(&pool)
-                .await
-                .expect("review attributes")
-                .expect("review attributes present (files_touched copied)");
-        let parsed: serde_json::Value = serde_json::from_str(&attrs).expect("attrs json");
-        assert_eq!(
-            parsed.get("files_touched"),
-            Some(&serde_json::json!(["src/a.rs", { "repo": "o/n", "path": "src/b.rs" }])),
-            "the impl task's files_touched is copied onto the review task"
-        );
-
-        // The review task IS claimable in the review lane now the impl task is done
-        // (proves the sprint bind + dep-satisfied wiring is correct end-to-end).
-        let review_claim = claim_next_task(&db, &sprint, Lane::Review, None, "agent-r", 1800)
-            .await
-            .expect("review claim runs")
-            .expect("review task is claimable");
-        assert_eq!(review_claim.task_id, review_id);
+        .expect("count backlinks");
+        assert_eq!(backlinks, 0, "M1: no reviews_work_item_id back-link is written");
     }
 
-    /// (2) Completing a `review`-lane task transitions it to done and spawns NO
-    /// task (prevents an infinite review→review cascade).
+    /// (2) Completing a LITE (un-flagged: tier NULL, not deep) `implement`-lane
+    /// task routes the SAME row to `done` (not review) and spawns nothing.
     #[tokio::test]
-    async fn complete_review_task_spawns_nothing() {
+    async fn complete_lite_implement_task_routes_to_done() {
         let pool = connect_in_memory().await.expect("pool");
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
         activate_sprint(&pool, &sprint).await;
-        let review =
-            seed_queue_task(&pool, &story, &sprint, "REVIEW", Some("review"), None).await;
-
-        // Claim it in the review lane so it is in_progress + leased.
-        let claimed = claim_next_task(&db, &sprint, Lane::Review, None, "agent-r", 1800)
-            .await
-            .expect("claim runs")
-            .expect("claimable");
-        assert_eq!(claimed.task_id, review);
+        // tier=lite → un-flagged for review → completes to done.
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("lite")).await;
 
         let tasks_before =
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE kind = 'task'")
@@ -2020,17 +1793,20 @@ mod tests {
                 .await
                 .expect("count tasks before");
 
-        let result = complete_task(&db, &review, "agent-r")
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(claimed.task_id, task);
+
+        let result = complete_task(&db, &task, "agent-a")
             .await
             .expect("complete runs");
-        assert_eq!(result.task_id, review);
-        assert_eq!(
-            result.review_task_id, None,
-            "a review-lane completion spawns no further task"
-        );
+        assert_eq!(result.task_id, task);
+        assert_eq!(result.review_task_id, None, "no spawn");
 
-        let (status, assignee, lease) = task_lease_state(&pool, &review).await;
-        assert_eq!(status, "done", "review task transitioned to done");
+        let (status, assignee, lease) = task_lease_state(&pool, &task).await;
+        assert_eq!(status, "done", "lite/un-flagged impl task completes to done");
         assert_eq!(assignee, None, "lease cleared");
         assert_eq!(lease, None, "lease deadline cleared");
 
@@ -2039,17 +1815,14 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .expect("count tasks after");
-        assert_eq!(
-            tasks_after, tasks_before,
-            "no new task row created by a review-lane completion"
-        );
+        assert_eq!(tasks_after, tasks_before, "no new task row created");
     }
 
-    /// (3) Re-running `complete_task` on an already-completed implement task is
-    /// idempotent: no duplicate review task, and the SAME review_task_id is
-    /// returned (crash-recovery convergence).
+    /// (3) Re-running `complete_task` on an already-routed DEEP task is
+    /// idempotent: the row stays in the `review` state (no duplicate transition),
+    /// `review_task_id` stays `None`, and no task row is ever created.
     #[tokio::test]
-    async fn complete_implement_task_is_idempotent() {
+    async fn complete_deep_implement_task_is_idempotent() {
         let pool = connect_in_memory().await.expect("pool");
         let db: AnyPool = pool.clone().into();
         let story = seed_chain_to_story(&pool).await;
@@ -2067,30 +1840,26 @@ mod tests {
         let first = complete_task(&db, &task, "agent-a")
             .await
             .expect("first complete");
-        let review_id = first
-            .review_task_id
-            .clone()
-            .expect("first run spawns a review task");
+        assert_eq!(first.review_task_id, None, "M1: no spawn on first complete");
 
-        // Re-run (the crash-recovery / double-call case). The task is already
-        // done; the spawn probe finds the existing review child and returns it.
+        // Re-run (crash-recovery / double-call). The row is already `review`; the
+        // status set is skipped and the lane re-stamp is a no-op.
         let second = complete_task(&db, &task, "agent-a")
             .await
             .expect("second complete (idempotent)");
-        assert_eq!(
-            second.review_task_id.as_deref(),
-            Some(review_id.as_str()),
-            "the re-run returns the SAME review task id, not a new one"
-        );
+        assert_eq!(second.review_task_id, None, "M1: still no spawn on re-run");
 
-        // Still EXACTLY ONE review task — no duplicate spawn.
-        let review_count =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE reviews_work_item_id = $1")
-                .bind(&task)
+        let (lane, _, status) = task_lane_tier_status(&pool, &task).await;
+        assert_eq!(status, "review", "the row stays in the review state across a re-run");
+        assert_eq!(lane.as_deref(), Some("review"), "lane stays 'review' across a re-run");
+
+        // Still EXACTLY ONE task row — no duplicate, no spawned review task.
+        let task_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM work_items WHERE kind = 'task'")
                 .fetch_one(&pool)
                 .await
-                .expect("count reviews");
-        assert_eq!(review_count, 1, "the re-run does not double-spawn the review task");
+                .expect("count tasks");
+        assert_eq!(task_count, 1, "the re-run creates no new task row");
     }
 
     // =======================================================================
@@ -2111,13 +1880,16 @@ mod tests {
         .expect("count reconcile activity")
     }
 
-    /// (d, team-lane route) `complete_task` TRIGGERS the close-time reconcile: a
-    /// material divergence (an EXPECTED file never actually touched) is cleared and
-    /// an audit activity is appended, while the touched-EXPECTED and ALL ACTUAL
-    /// rows survive (EXPECTED/ACTUAL stay distinct kinds). Re-running `complete_task`
-    /// (the crash-recovery / double-call path) is idempotent — no second clear, no
-    /// second audit — proving the reconcile composes cleanly with the existing
-    /// two-txn idempotent close.
+    /// (d, team-lane DONE route) `complete_task` on a LITE task TRIGGERS the
+    /// close-time reconcile: a material divergence (an EXPECTED file never
+    /// actually touched) is cleared and an audit activity is appended, while the
+    /// touched-EXPECTED and ALL ACTUAL rows survive (EXPECTED/ACTUAL stay distinct
+    /// kinds). Re-running `complete_task` (the crash-recovery / double-call path)
+    /// is idempotent — no second clear, no second audit — proving the reconcile
+    /// composes cleanly with the existing idempotent close. (1B-F9 M1: the
+    /// reconcile rides the task→`done` transition, so this uses a LITE task; a
+    /// DEEP task routes to `review` and is NOT reconciled here — see
+    /// `complete_deep_task_does_not_reconcile`.)
     #[tokio::test]
     async fn complete_task_reconciles_files_and_is_idempotent() {
         let pool = connect_in_memory().await.expect("pool");
@@ -2125,8 +1897,9 @@ mod tests {
         let story = seed_chain_to_story(&pool).await;
         let sprint = seed_sprint(&pool).await;
         activate_sprint(&pool, &sprint).await;
+        // LITE so complete_task routes to `done` (the reconcile-bearing branch).
         let task =
-            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("lite")).await;
 
         // EXPECTED: a.rs (will be touched) + b.rs (will NOT be touched → cleared).
         set_task_expected_files(
@@ -2206,6 +1979,69 @@ mod tests {
             .expect("count expected"),
             1,
             "a re-run of complete_task does not re-clear (b.rs stays gone, a.rs stays)"
+        );
+    }
+
+    /// (1B-F9 M1 / AC10) `complete_task` on a DEEP task does NOT reconcile: the
+    /// deep task routes to the non-terminal `review` state (not `done`), and the
+    /// files_touched reconcile rides the task→`done` transition, so it is
+    /// correctly DEFERRED past review. The untouched EXPECTED row SURVIVES (it is
+    /// only cleared once the row later reaches `done`) and NO reconcile audit is
+    /// appended at complete_task.
+    #[tokio::test]
+    async fn complete_deep_task_does_not_reconcile() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // EXPECTED: a.rs (touched) + b.rs (NOT touched). Under the DONE route b.rs
+        // would be reconciled away; under the review route it must SURVIVE.
+        set_task_expected_files(
+            &db,
+            &task,
+            &[serde_json::json!("src/a.rs"), serde_json::json!("src/b.rs")],
+        )
+        .await
+        .expect("set expected");
+        add_task_actual_files(&db, &task, &[serde_json::json!("src/a.rs")])
+            .await
+            .expect("append actual");
+
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-a", 1800)
+            .await
+            .expect("claim runs")
+            .expect("claimable");
+        assert_eq!(claimed.task_id, task);
+
+        complete_task(&db, &task, "agent-a")
+            .await
+            .expect("complete runs");
+
+        // Routed to review (not done).
+        let (_, _, status) = task_lane_tier_status(&pool, &task).await;
+        assert_eq!(status, "review", "deep task routed to review, not done");
+
+        // The untouched EXPECTED (b.rs) SURVIVES — reconcile did NOT fire.
+        let expected_paths: Vec<String> = list_task_files(&db, &task, Some("expected"))
+            .await
+            .expect("expected after complete")
+            .into_iter()
+            .map(|f| f.path)
+            .collect();
+        assert_eq!(
+            expected_paths,
+            vec!["src/a.rs".to_string(), "src/b.rs".to_string()],
+            "reconcile is DEFERRED past review: the untouched EXPECTED survives"
+        );
+        // No reconcile audit at complete_task for a deep task.
+        assert_eq!(
+            count_reconcile_activity(&pool, &task).await,
+            0,
+            "no reconcile audit is appended when a deep task routes to review"
         );
     }
 
