@@ -124,6 +124,7 @@ async fn add_research_note_handler(
         body.confidence.as_deref(),
         body.lens.as_deref(),
         origin_str.as_deref(),
+        None,
     )
     .await?;
     Ok((
@@ -152,6 +153,7 @@ async fn update_research_note_handler(
         state: body.state,
         rationale: body.rationale,
         lens: body.lens,
+        anchors: None,
     };
     repo::update_research_note(pool, &id, &req).await?;
     let detail = repo::get_work_item_detail(pool, &work_item_id).await?;

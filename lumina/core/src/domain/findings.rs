@@ -369,4 +369,10 @@ pub struct UpdateResearchNoteRequest {
     /// New analytical lens; absent leaves it unchanged.
     #[serde(default)]
     pub lens: Option<String>,
+    /// New typed citations (migration 0024): a JSON array of anchor strings.
+    /// Absent OR empty leaves the existing anchors unchanged (COALESCE
+    /// set-or-leave) — clearing anchors back to NULL via update is a no-op,
+    /// consistent with the other set-or-leave fields on this body.
+    #[serde(default)]
+    pub anchors: Option<Vec<String>>,
 }

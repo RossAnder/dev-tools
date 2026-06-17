@@ -34,6 +34,7 @@ pub async fn add_research_note(
     confidence: Option<&str>,
     lens: Option<&str>,
     origin: Option<&str>,
+    anchors: Option<&[String]>,
 ) -> Result<Uuid, AppError> {
     // Verify the work item exists first (NotFound, not a dangling-FK 500).
     let _ = work_item_kind(db, work_item_id).await?;
@@ -42,6 +43,15 @@ pub async fn add_research_note(
     let id_str = id.to_string();
     // State defaults to `proposed` on create.
     let state = enum_to_str(ResearchState::Proposed);
+
+    // Normalise anchors on write: None or an EMPTY slice → SQL NULL; a non-empty
+    // slice → its JSON-array TEXT. Mirrors the read-side empty-array → None fold.
+    let anchors_json: Option<String> = match anchors {
+        Some(a) if !a.is_empty() => {
+            Some(serde_json::to_string(a).map_err(|e| AppError::Other(e.into()))?)
+        }
+        _ => None,
+    };
 
     let mut tx = db.begin().await?;
 
@@ -55,8 +65,8 @@ pub async fn add_research_note(
     tx.execute(
         r#"
         INSERT INTO research_notes
-            (id, work_item_id, seq, summary, body, confidence, state, lens, origin)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (id, work_item_id, seq, summary, body, confidence, state, lens, origin, anchors)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
         args![
             id_str.clone(),
@@ -68,6 +78,7 @@ pub async fn add_research_note(
             state,
             lens.map(str::to_owned),
             origin.map(str::to_owned),
+            anchors_json,
         ],
     )
     .await?;
@@ -106,6 +117,17 @@ pub async fn update_research_note(
     let work_item_id = research_note_work_item(db, id).await?;
     let state_str: Option<String> = req.state.map(enum_to_str);
 
+    // Set-or-leave anchors: a non-empty vec binds its JSON-array TEXT (the
+    // COALESCE then sets); None OR an empty vec binds NULL (the COALESCE then
+    // leaves the existing value — clearing-to-empty via update is a no-op,
+    // consistent with the other COALESCE fields here).
+    let anchors_json: Option<String> = match req.anchors.as_deref() {
+        Some(a) if !a.is_empty() => {
+            Some(serde_json::to_string(a).map_err(|e| AppError::Other(e.into()))?)
+        }
+        _ => None,
+    };
+
     let mut tx = db.begin().await?;
 
     let affected = tx
@@ -115,7 +137,8 @@ pub async fn update_research_note(
         SET confidence = COALESCE($2, confidence),
             state      = COALESCE($3, state),
             rationale  = COALESCE($4, rationale),
-            lens       = COALESCE($5, lens)
+            lens       = COALESCE($5, lens),
+            anchors    = COALESCE($6, anchors)
         WHERE id = $1
         "#,
             args![
@@ -124,6 +147,7 @@ pub async fn update_research_note(
                 state_str.clone(),
                 req.rationale.clone(),
                 req.lens.clone(),
+                anchors_json,
             ],
         )
         .await?;
@@ -220,11 +244,11 @@ mod tests {
         let story = seed_chain_to_story(&pool).await;
         let ev_before = count_events(&pool).await;
 
-        let old = add_research_note(&pool, &story, "old finding", None, Some("low"), None, None)
+        let old = add_research_note(&pool, &story, "old finding", None, Some("low"), None, None, None)
             .await
             .expect("old note")
             .to_string();
-        let new = add_research_note(&pool, &story, "new finding", None, Some("high"), None, None)
+        let new = add_research_note(&pool, &story, "new finding", None, Some("high"), None, None, None)
             .await
             .expect("new note")
             .to_string();
@@ -251,6 +275,7 @@ mod tests {
             state: Some(ResearchState::Accepted),
             rationale: Some("chosen".into()),
             lens: None,
+            anchors: None,
         };
         update_research_note(&pool, &new, &req).await.expect("accept");
         let detail = get_work_item_detail(&pool, &story).await.expect("detail");

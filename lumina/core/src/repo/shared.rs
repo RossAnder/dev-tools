@@ -473,6 +473,7 @@ pub(crate) async fn list_research_notes(
             rationale,
             lens,
             origin,
+            anchors,
             superseded_by,
             created_at
         FROM research_notes

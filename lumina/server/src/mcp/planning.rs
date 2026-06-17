@@ -460,6 +460,7 @@ impl LuminaTools {
             p.confidence.as_deref(),
             p.lens.as_deref(),
             origin_str.as_deref(),
+            None,
         )
         .await
         .map_err(app_error_to_mcp)?;
@@ -482,6 +483,7 @@ impl LuminaTools {
             state: p.state,
             rationale: p.rationale,
             lens: p.lens,
+            anchors: None,
         };
         repo::update_research_note(&self.pool, &p.id, &req)
             .await

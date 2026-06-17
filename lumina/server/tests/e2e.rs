@@ -625,6 +625,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
         Some("high"),
         Some("performance"),
         Some("plan"),
+        None,
     )
     .await
     .expect("add live research note")
@@ -635,6 +636,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
         "build a dedicated cache",
         None,
         Some("low"),
+        None,
         None,
         None,
     )
@@ -651,6 +653,7 @@ async fn full_thread_planning_and_decisions_db_export_http() {
             state: Some(ResearchState::Accepted),
             rationale: Some("matches existing idioms".to_owned()),
             lens: None,
+            anchors: None,
         },
     )
     .await
@@ -2330,6 +2333,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         Some("medium"),
         None,
         None,
+        None,
     )
     .await
     .expect("proposed note");
@@ -2380,6 +2384,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
         Some("high"),
         None,
         None,
+        None,
     )
     .await
     .expect("research note")
@@ -2392,6 +2397,7 @@ async fn get_story_readiness_cascade_covers_load_bearing_variants() {
             state: Some(ResearchState::Accepted),
             rationale: Some("ok".to_owned()),
             lens: None,
+            anchors: None,
         },
     )
     .await
