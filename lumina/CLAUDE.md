@@ -378,7 +378,7 @@ A cheap broadcast DRAINER forwards every record into an unbounded buffer that a 
 
 ### MCP tool (`get_session_context`)
 
-`get_session_context(work_item_id) → { project_id?, sprint_id?, story_id?, epic_id? }` — read-only; composes the work-item's ancestry walk with its sprint membership. A session calls it at session start against a known `work_item_id` so the resolved correlation ids land in the transcript JSONL, where `harvest_correlation` later picks them up. This is the single tool migration-0015 adds: the surface goes 73 → 74 and the count-invariant test in `mcp/mod.rs` asserted **74** at that point (later passes took it to the current 87 — see § MCP tool surface).
+`get_session_context(work_item_id) → { project_id?, sprint_id?, story_id?, epic_id? }` — read-only; composes the work-item's ancestry walk with its sprint membership. A session calls it at session start against a known `work_item_id` so the resolved correlation ids land in the transcript JSONL, where `harvest_correlation` later picks them up. This is the single tool migration-0015 adds: the surface goes 73 → 74 and the count-invariant test in `mcp/mod.rs` asserted **74** at that point (later passes took it to the current 93 — see § MCP tool surface).
 
 ### HTTP hook + `lumina init-hooks` CLI
 
