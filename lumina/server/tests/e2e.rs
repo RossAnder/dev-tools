@@ -3089,21 +3089,27 @@ async fn epic_focus_setters_emit_exactly_one_event_each_to_export() {
 }
 
 // =====================================================================
-// Team-execution work-queue coverage (migration 0013) — T12 of
-// docs/plans/eventual-leaping-metcalfe.md.
+// Team-execution work-queue coverage (migration 0013; 1B-F9 review-as-state
+// rewrite) — originally T12 of docs/plans/eventual-leaping-metcalfe.md, rewritten
+// for the same-row review model.
 //
-// This thread walks the full claim/lease/cascade loop through ALL layers
-// in ONE in-process test over ONE shared pool, sleep-free + socket-free
-// (oneshot HTTP + a direct `export_pending` drain), exactly mirroring the
-// existing threads above:
+// This thread walks the full claim/lease/review loop through ALL layers in ONE
+// in-process test over ONE shared pool, sleep-free + socket-free (oneshot HTTP +
+// a direct `export_pending` drain). 1B-F9 RETIRED the done→review SPAWN cascade:
+// a DEEP impl task no longer spawns a separate review task — it carries its OWN
+// row into the non-terminal `review` state, which a review agent then claims and
+// closes review→done on the SAME row. So this thread asserts the same-row
+// lifecycle, NOT a spawned-and-back-linked review task:
 //
-//   claim(implement) → complete_task (review spawned + back-linked + sprint
-//   bound) → claim(review) → add_findings ON THE STORY +
+//   claim(implement) → complete_task on a DEEP task → the SAME row flips to
+//   status='review' + lane='review' (review_task_id=None, NOT done, NOT
+//   reconciled) → claim(review) returns the SAME row → add_findings ON THE STORY +
 //   record_finding_decision(spawn_task) → rework task spawned lane=implement,
-//   sprint-bound, claimable (re-claimed to prove the loop closes) →
-//   get_sprint_quiescence verdict reflects state → git-export drains the 4
-//   new work_items columns (lane / assignee / lease_expires_at /
-//   reviews_work_item_id) → HTTP read of the new /api routes.
+//   sprint-bound, claimable (re-claimed to prove the rework loop closes) →
+//   get_sprint_quiescence reflects the non-terminal `in_review`/in_progress
+//   buckets → reviewer transitions the SAME row review→done (reconcile fires
+//   THERE) → git-export drains the work_items columns (lane / status / cleared
+//   lease) on the SAME impl row → HTTP read of the /api routes.
 //
 // LANE-STAMPING NOTE (RESOLVED — lane is now a first-class task field): the
 // former accepted layer-1 limitation is GONE. `create_work_item` now defaults a
@@ -3177,9 +3183,11 @@ async fn activate_sprint(pool: &Arc<lumina_core::db::AnyPool>, sprint_id: &str) 
     }
 }
 
-/// The full team-execution thread: claim → complete (review spawned +
-/// back-linked) → claim(review) → findings + rework spawn (claimable) →
-/// quiescence → export drains the 4 new columns → HTTP read.
+/// The full team-execution thread (1B-F9 same-row review model): claim →
+/// complete a DEEP task (SAME row → review state, no spawn) → claim(review)
+/// returns the SAME row → findings + rework spawn (claimable) → quiescence →
+/// reviewer closes review→done on the SAME row (reconcile fires there) → export
+/// drains the work_items columns on the SAME impl row → HTTP read.
 #[tokio::test]
 async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http() {
     // One shared pool across the MCP handler, the export drain, and the router.
@@ -3195,6 +3203,15 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     let impl_task = mcp_create(&tools, "task", Some(&story), "Team-Exec Impl Task").await;
 
     let sprint_id = seed_implement_sprint(&pool, &impl_task).await;
+
+    // 1B-F9: stamp the impl task `tier='deep'` so `complete_task` routes it into
+    // the non-terminal review state on its OWN row (the `to_review` branch fires
+    // for tier='deep'); a lite/un-flagged task would complete straight to done.
+    sqlx::query("UPDATE work_items SET tier = 'deep' WHERE id = ?1")
+        .bind(&impl_task)
+        .execute(pool.sqlite())
+        .await
+        .expect("stamp impl task tier='deep' (routes to review on complete)");
 
     // 2. claim_next_task(lane=implement) → a task is claimed/leased: assignee +
     //    lease_expires_at set, and the claimed id is our seeded impl task.
@@ -3243,86 +3260,71 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     assert_eq!(db_assignee.as_deref(), Some("impl-agent"), "lease assignee persisted");
     assert!(db_lease.is_some(), "lease_expires_at persisted on the claim");
 
-    // 3. complete_task on the claimed impl task → done AND a review task spawned,
-    //    parented under the story, back-linked via reviews_work_item_id, and
-    //    bound into the sprint.
+    // 3. complete_task on the claimed DEEP impl task → 1B-F9 same-row review:
+    //    the SAME row flips to status='review' + lane='review' (NOT done, NOT
+    //    reconciled), the lease clears, and NO separate review task is spawned
+    //    (review_task_id is None — the cascade is retired).
     let completed = lumina_core::repo::complete_task(&pool, &impl_task, "impl-agent")
         .await
         .expect("complete_task(impl)");
     assert_eq!(completed.task_id, impl_task, "complete echoes the impl task id");
-    let review_task = completed
-        .review_task_id
-        .expect("an implement-lane completion spawns a review task");
+    assert_eq!(
+        completed.review_task_id, None,
+        "1B-F9: a deep completion routes the SAME row to review — no spawned review task"
+    );
 
-    // The impl task is now done with a cleared lease.
-    let impl_done: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
-        .bind(&impl_task)
-        .fetch_one(pool.sqlite())
-        .await
-        .expect("read impl status after complete");
-    assert_eq!(impl_done, "done", "complete_task transitioned the impl task to done");
-    let impl_assignee_cleared: Option<String> =
-        sqlx::query_scalar("SELECT assignee FROM work_items WHERE id = ?1")
+    // The SAME impl row is now in the non-terminal review state, re-laned to
+    // review, with a cleared lease — and is NOT a new row (no spawn).
+    let (impl_status, impl_lane, impl_assignee_cleared): (String, Option<String>, Option<String>) = {
+        let status: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
             .bind(&impl_task)
             .fetch_one(pool.sqlite())
             .await
-            .expect("read impl assignee after complete");
+            .expect("read impl status after complete");
+        let lane: Option<String> = sqlx::query_scalar("SELECT lane FROM work_items WHERE id = ?1")
+            .bind(&impl_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read impl lane after complete");
+        let assignee: Option<String> =
+            sqlx::query_scalar("SELECT assignee FROM work_items WHERE id = ?1")
+                .bind(&impl_task)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read impl assignee after complete");
+        (status, lane, assignee)
+    };
+    assert_eq!(impl_status, "review", "complete_task routed the deep task to the review state");
+    assert_eq!(impl_lane.as_deref(), Some("review"), "the SAME row is re-laned to review");
     assert!(
         impl_assignee_cleared.is_none(),
         "complete_task cleared the impl task's lease assignee"
     );
 
-    // The review task is parented under the STORY (NOT under the impl task — a
-    // task cannot parent a task), lane='review', back-linked, sprint-bound.
-    let (review_parent, review_lane, review_backlink): (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    ) = {
-        let parent: Option<String> =
-            sqlx::query_scalar("SELECT parent_id FROM work_items WHERE id = ?1")
-                .bind(&review_task)
-                .fetch_one(pool.sqlite())
-                .await
-                .expect("read review parent");
-        let lane: Option<String> =
-            sqlx::query_scalar("SELECT lane FROM work_items WHERE id = ?1")
-                .bind(&review_task)
-                .fetch_one(pool.sqlite())
-                .await
-                .expect("read review lane");
-        let backlink: Option<String> =
-            sqlx::query_scalar("SELECT reviews_work_item_id FROM work_items WHERE id = ?1")
-                .bind(&review_task)
-                .fetch_one(pool.sqlite())
-                .await
-                .expect("read review backlink");
-        (parent, lane, backlink)
-    };
-    assert_eq!(
-        review_parent.as_deref(),
-        Some(story.as_str()),
-        "the review task parents under the story (not the impl task)"
-    );
-    assert_eq!(review_lane.as_deref(), Some("review"), "the spawned task is on the review lane");
-    assert_eq!(
-        review_backlink.as_deref(),
-        Some(impl_task.as_str()),
-        "the review task back-links to the impl task via reviews_work_item_id"
-    );
-    let review_bound: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = ?1 AND task_id = ?2",
+    // No review task was spawned: no row back-links to the impl task, and no new
+    // task row appeared under the story besides the impl task itself.
+    let backlinks: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM work_items WHERE reviews_work_item_id = ?1")
+            .bind(&impl_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("count backlinks to the impl task");
+    assert_eq!(backlinks, 0, "1B-F9: no review task back-links to the impl task (no spawn)");
+    let story_task_children: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM work_items WHERE parent_id = ?1 AND kind = 'task' AND deleted_at IS NULL",
     )
-    .bind(&sprint_id)
-    .bind(&review_task)
+    .bind(&story)
     .fetch_one(pool.sqlite())
     .await
-    .expect("count review sprint binding");
-    assert_eq!(review_bound, 1, "the review task is bound into the impl task's sprint");
+    .expect("count task children of the story");
+    assert_eq!(
+        story_task_children, 1,
+        "only the impl task exists under the story — no spawned review task"
+    );
 
-    // 4. claim_next_task(lane=review) → claim the spawned review task. Its
-    //    depends_on edge on the impl task is satisfied (impl is now done), so it
-    //    is claimable on the review lane.
+    // 4. claim_next_task(lane=review) → the SAME impl row is now claimable on the
+    //    review lane (M2 widened the readiness predicate to admit status='review'
+    //    on lane='review'). The reviewer claims the SAME row, not a new task.
     let claimed_review = lumina_core::repo::claim_next_task(
         &pool,
         &sprint_id,
@@ -3333,15 +3335,23 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     )
     .await
     .expect("claim_next_task(review)")
-    .expect("the spawned review task is claimable");
+    .expect("the review-state row is claimable on the review lane");
     assert_eq!(
-        claimed_review.task_id, review_task,
-        "the review-lane claim returns the spawned review task"
+        claimed_review.task_id, impl_task,
+        "the review-lane claim returns the SAME impl row (now in the review state)"
     );
     assert!(
         matches!(claimed_review.lane, lumina_core::domain::Lane::Review),
-        "the claimed review task carries the review lane"
+        "the claimed review-state row carries the review lane"
     );
+    // The claim re-leased the SAME row to the reviewer → in_progress.
+    let review_in_progress: String =
+        sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+            .bind(&impl_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read status after review claim");
+    assert_eq!(review_in_progress, "in_progress", "the review claim leases the SAME row → in_progress");
 
     // 5. The reviewer found problems → add_findings hosted ON THE STORY (a
     //    task-hosted finding's spawn_task would parent a task under a task and
@@ -3439,59 +3449,54 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
         "the implement-lane re-claim returns the rework task"
     );
 
-    // 6. get_sprint_quiescence reflects the seeded state. At this point: impl
-    //    task done (terminal); review task still in_progress (claimed by
-    //    review-agent, never completed); rework task in_progress (just claimed).
-    //    So NOT done (in_progress > 0), and NOT stalled (nothing blocked).
+    // 6. get_sprint_quiescence reflects the seeded state. At this point: the impl
+    //    row is in_progress (claimed by review-agent on the REVIEW lane — the
+    //    same-row review is being worked); the rework task is in_progress (just
+    //    claimed by impl-agent-2). NO task is terminal yet, and no UNCLAIMED
+    //    review-state task remains (the review is claimed → in_progress, not
+    //    in_review). So NOT done (in_progress > 0), and NOT stalled.
     let q_mid = lumina_core::repo::get_sprint_quiescence(&pool, &sprint_id)
         .await
         .expect("quiescence mid-flight");
     assert!(!q_mid.done, "sprint is not done while tasks are in_progress: {q_mid:?}");
     assert!(!q_mid.stalled, "sprint is not stalled (no blocked-on-question tasks): {q_mid:?}");
-    assert_eq!(q_mid.in_progress, 2, "review + rework tasks are in_progress: {q_mid:?}");
-    assert_eq!(q_mid.terminal, 1, "the completed impl task is terminal: {q_mid:?}");
+    assert_eq!(
+        q_mid.in_progress, 2,
+        "the same-row review (claimed) + the rework task are both in_progress: {q_mid:?}"
+    );
+    assert_eq!(q_mid.in_review, 0, "the review is CLAIMED (in_progress), so 0 unclaimed in_review: {q_mid:?}");
+    assert_eq!(q_mid.terminal, 0, "nothing is terminal yet: {q_mid:?}");
     assert_eq!(q_mid.claimable, 0, "no further claimable tasks remain: {q_mid:?}");
 
-    // Drive the verdict to `done`: complete the review task (review lane → done,
-    // no cascade) and the rework task (implement lane → would spawn a review, but
-    // we then complete that review too to fully quiesce). Simpler: complete the
-    // review task, then complete the rework task (which spawns a 2nd review), then
-    // complete that 2nd review. We assert the flip to `done` after quiescing all.
-    lumina_core::repo::complete_task(&pool, &review_task, "review-agent")
+    // Drive the verdict to `done`:
+    //  - the reviewer closes the SAME-ROW review review→done via
+    //    `update_work_item_status` (the M4 review→done path — NOT `complete_task`,
+    //    which would route a lane='review' completion BACK to review per M1);
+    //  - the rework task (lane='implement', tier=NULL) is completed via
+    //    `complete_task`, which routes it straight to done (it is neither
+    //    deep-tier nor review-laned, so M1's `to_review` branch does NOT fire and
+    //    NO second review is spawned).
+    lumina_core::repo::update_work_item_status(&pool, &impl_task, "done")
         .await
-        .expect("complete the review task (review lane → done, no spawn)");
+        .expect("reviewer closes the same-row review → done (M4 path)");
     let rework_complete = lumina_core::repo::complete_task(&pool, &rework_task, "impl-agent-2")
         .await
-        .expect("complete the rework task (implement lane → spawns a 2nd review)");
-    let second_review = rework_complete
-        .review_task_id
-        .expect("completing the rework impl task spawns a second review task");
-    // Claim + complete the second review to drain the cascade to quiescence.
-    let claimed_second_review = lumina_core::repo::claim_next_task(
-        &pool,
-        &sprint_id,
-        lumina_core::domain::Lane::Review,
-        None,
-        "review-agent",
-        300,
-    )
-    .await
-    .expect("claim the second review task")
-    .expect("the second review task is claimable");
-    assert_eq!(claimed_second_review.task_id, second_review);
-    lumina_core::repo::complete_task(&pool, &second_review, "review-agent")
-        .await
-        .expect("complete the second review task (review lane → done)");
+        .expect("complete the rework task (lite/un-flagged → done directly)");
+    assert_eq!(
+        rework_complete.review_task_id, None,
+        "1B-F9: the un-flagged rework completes straight to done — no second review spawned"
+    );
 
     let q_done = lumina_core::repo::get_sprint_quiescence(&pool, &sprint_id)
         .await
-        .expect("quiescence after draining the cascade");
+        .expect("quiescence after closing the review + rework");
     assert!(
         q_done.done,
         "the sprint flips to done once every task is terminal: {q_done:?}"
     );
     assert!(!q_done.stalled, "a done sprint is not stalled: {q_done:?}");
     assert_eq!(q_done.in_progress, 0, "no in_progress tasks remain: {q_done:?}");
+    assert_eq!(q_done.in_review, 0, "no unclaimed review-state tasks remain: {q_done:?}");
     assert_eq!(q_done.claimable, 0, "no claimable tasks remain: {q_done:?}");
 
     // 7. Drain git-export DIRECTLY (no sleep / no background loop) and assert the
@@ -3505,7 +3510,11 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
         .expect("export drain");
     assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
 
-    // 7a. The impl task snapshot carries lane='implement' + a cleared lease.
+    // 7a. The impl task snapshot — the SAME row that carried the whole
+    //     implement→review→done lifecycle — now carries lane='review' (re-laned
+    //     at complete_task, M1) + status='done' (closed review→done by the
+    //     reviewer, M4). There is NO separate review-task snapshot (the cascade
+    //     is retired) and NO reviews_work_item_id (no back-link is ever written).
     let impl_snapshot = export_dir.path().join("task").join(format!("{impl_task}.toml"));
     assert!(impl_snapshot.exists(), "impl task snapshot exists at {}", impl_snapshot.display());
     let impl_toml: toml::Value =
@@ -3513,40 +3522,33 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
             .expect("parse impl snapshot TOML");
     assert_eq!(
         impl_toml["item"]["lane"].as_str(),
-        Some("implement"),
-        "the impl task snapshot carries the new `lane` column"
-    );
-    // assignee + lease_expires_at were cleared by complete_task; the
-    // skip_serializing_if = Option::is_none serde convention omits a None scalar,
-    // so the cleared lease fields are simply ABSENT from the snapshot (not null).
-    assert!(
-        impl_toml["item"].get("assignee").is_none(),
-        "the cleared assignee is omitted from the impl snapshot (skip_serializing_if None)"
-    );
-    assert!(
-        impl_toml["item"].get("lease_expires_at").is_none(),
-        "the cleared lease_expires_at is omitted from the impl snapshot"
-    );
-
-    // 7b. The review task snapshot carries lane='review' + the reviews_work_item_id
-    //     back-link column — the load-bearing new-column round-trip for the cascade.
-    let review_snapshot = export_dir.path().join("task").join(format!("{review_task}.toml"));
-    assert!(review_snapshot.exists(), "review task snapshot exists");
-    let review_toml: toml::Value =
-        toml::from_str(&std::fs::read_to_string(&review_snapshot).expect("read review snapshot"))
-            .expect("parse review snapshot TOML");
-    assert_eq!(
-        review_toml["item"]["lane"].as_str(),
         Some("review"),
-        "the review task snapshot carries lane='review'"
+        "the SAME impl row carries lane='review' (re-laned at complete_task)"
     );
     assert_eq!(
-        review_toml["item"]["reviews_work_item_id"].as_str(),
-        Some(impl_task.as_str()),
-        "the review task snapshot carries the reviews_work_item_id back-link to the impl task"
+        impl_toml["item"]["status"].as_str(),
+        Some("done"),
+        "the SAME impl row is now status='done' (closed review→done by the reviewer)"
+    );
+    assert!(
+        impl_toml["item"].get("reviews_work_item_id").is_none(),
+        "1B-F9: no reviews_work_item_id back-link is ever written (cascade retired)"
+    );
+    // NB the reviewer closed the SAME row via `update_work_item_status`→done (the
+    // M4 review→done path), which — UNLIKE `complete_task` — does NOT clear the
+    // lease. So the reviewer's assignee/lease persist on the now-`done` row. That
+    // is harmless (a `done` row is terminal — the claim's readiness set is
+    // todo/open/review, so a done+leased row is never re-claimed), but it means
+    // the lease fields are PRESENT in the snapshot, not omitted. (Clearing the
+    // lease on review→done would be a follow-up; out of this test-rewrite's scope.)
+    assert!(
+        impl_toml["item"]["assignee"].as_str().is_some(),
+        "the reviewer's lease persists on the done row (review→done via transition_status does not clear it)"
     );
 
-    // 7c. The rework task snapshot carries lane='implement'.
+    // 7b. The rework task snapshot carries lane='implement' (the MF-fixed
+    //     review→rework loop: a story-/task-hosted finding's spawn_task re-enters
+    //     the implement lane).
     let rework_snapshot = export_dir.path().join("task").join(format!("{rework_task}.toml"));
     assert!(rework_snapshot.exists(), "rework task snapshot exists");
     let rework_toml: toml::Value =
@@ -3558,12 +3560,13 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
         "the rework task snapshot carries lane='implement'"
     );
 
-    // 8. HTTP read (oneshot) via the NEW /api routes — no socket bind. Read the
-    //    sprint quiescence AND a work-item detail to prove the new fields/shape
-    //    come back over HTTP.
+    // 8. HTTP read (oneshot) via the /api routes — no socket bind. Read the
+    //    sprint quiescence AND the impl work-item detail to prove the shape comes
+    //    back over HTTP.
     let state = AppState::new(pool.clone());
 
-    // 8a. GET /api/sprints/{id}/quiescence — the SprintQuiescence shape + verdict.
+    // 8a. GET /api/sprints/{id}/quiescence — the SprintQuiescence shape + verdict
+    //     (now carrying the in_review bucket, M3).
     let quiescence_resp = build_router(state.clone())
         .oneshot(
             Request::builder()
@@ -3582,35 +3585,209 @@ async fn full_thread_team_execution_claim_complete_rework_quiescence_export_http
     );
     assert_eq!(quiescence_body["in_progress"].as_i64(), Some(0));
     assert_eq!(quiescence_body["claimable"].as_i64(), Some(0));
+    assert_eq!(
+        quiescence_body["in_review"].as_i64(),
+        Some(0),
+        "the HTTP quiescence read surfaces the in_review bucket (M3)"
+    );
     assert!(
         quiescence_body["terminal"].as_i64().unwrap_or(0) >= 1,
         "terminal count is surfaced over HTTP"
     );
 
-    // 8b. GET /api/work-items/{review_task} — the work-item detail surfaces the
-    //     new lane + reviews_work_item_id fields (T3 threaded them into
-    //     WorkItemDetail).
-    let review_detail_resp = build_router(state)
+    // 8b. GET /api/work-items/{impl_task} — the work-item detail surfaces the SAME
+    //     row's final lane='review' + status='done' (the whole lifecycle lived on
+    //     ONE row; no separate review task to read).
+    let impl_detail_resp = build_router(state)
         .oneshot(
             Request::builder()
-                .uri(format!("/api/work-items/{review_task}"))
+                .uri(format!("/api/work-items/{impl_task}"))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
-        .expect("oneshot GET review task detail");
-    assert_eq!(review_detail_resp.status(), StatusCode::OK, "review detail returns 200");
-    let review_detail = json_body(review_detail_resp).await;
+        .expect("oneshot GET impl task detail");
+    assert_eq!(impl_detail_resp.status(), StatusCode::OK, "impl detail returns 200");
+    let impl_detail = json_body(impl_detail_resp).await;
     assert_eq!(
-        review_detail["item"]["lane"].as_str(),
+        impl_detail["item"]["lane"].as_str(),
         Some("review"),
-        "the HTTP work-item detail surfaces the new `lane` field"
+        "the HTTP work-item detail surfaces the SAME row's final lane='review'"
     );
     assert_eq!(
-        review_detail["item"]["reviews_work_item_id"].as_str(),
-        Some(impl_task.as_str()),
-        "the HTTP work-item detail surfaces the reviews_work_item_id back-link — full thread closed"
+        impl_detail["item"]["status"].as_str(),
+        Some("done"),
+        "the HTTP work-item detail surfaces the SAME row done — full same-row lifecycle closed"
     );
+}
+
+// =====================================================================
+// 1B-F9 same-row review lifecycle (review-as-state) — the dedicated
+// implement→review→done thread the redesign adds. A FOCUSED e2e thread (no
+// rework loop, no worktree/merge — those live in the threads above/below) that
+// asserts BOTH tier branches at the layer boundary:
+//   - a DEEP task: claim(implement) → complete_task → the SAME row → review
+//     state (status='review', lane='review', NOT done, NOT reconciled) →
+//     claim(review) returns the SAME row → transition_status review→done (the
+//     reconcile fires HERE) → the row is done, never reopened, ONE row throughout.
+//   - a LITE/un-flagged task: claim(implement) → complete_task → done directly
+//     (no review state, no spawn).
+// Covers AC1 (deep→review state), AC2 (lite→done), AC4 (reviewer claims the
+// review-state row), AC5 (clean review→done on the same row, never reopened),
+// AC10 (reconcile at review→done). Sleep-free, socket-free.
+// =====================================================================
+
+/// The same-row implement→review→done lifecycle (1B-F9), both tier branches,
+/// end-to-end over one shared pool — the new thread the redesign names.
+#[tokio::test]
+async fn full_thread_same_row_review_lifecycle_deep_and_lite() {
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // A legal chain to a story with TWO impl tasks: one DEEP (→review), one
+    // LITE (→done). Both bound to ONE active sprint.
+    let project = mcp_create(&tools, "project", None, "Lifecycle Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "Lifecycle Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Lifecycle Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Lifecycle Story").await;
+    let deep_task = mcp_create(&tools, "task", Some(&story), "Deep Task").await;
+    let lite_task = mcp_create(&tools, "task", Some(&story), "Lite Task").await;
+
+    // Bind both to a fresh active sprint (the helper binds the first task + walks
+    // draft→ready→active); bind the second explicitly and stamp tiers.
+    let sprint_id = seed_implement_sprint(&pool, &deep_task).await;
+    lumina_core::repo::add_tasks_to_sprint(&pool, &sprint_id, &[lite_task.as_str()])
+        .await
+        .expect("bind the lite task to the sprint");
+    sqlx::query("UPDATE work_items SET tier = 'deep', status = 'todo' WHERE id = ?1")
+        .bind(&deep_task)
+        .execute(pool.sqlite())
+        .await
+        .expect("stamp deep tier on the deep task");
+    sqlx::query("UPDATE work_items SET tier = 'lite', status = 'todo' WHERE id = ?1")
+        .bind(&lite_task)
+        .execute(pool.sqlite())
+        .await
+        .expect("stamp lite tier on the lite task");
+
+    // --- DEEP branch: implement → review state on the SAME row. ------------
+    let claimed_deep = lumina_core::repo::claim_next_task(
+        &pool,
+        &sprint_id,
+        lumina_core::domain::Lane::Implement,
+        Some(lumina_core::domain::Tier::Deep),
+        "impl-agent",
+        300,
+    )
+    .await
+    .expect("claim(implement, deep)")
+    .expect("the deep task is claimable");
+    assert_eq!(claimed_deep.task_id, deep_task, "the deep claim returns the deep task");
+
+    let completed_deep = lumina_core::repo::complete_task(&pool, &deep_task, "impl-agent")
+        .await
+        .expect("complete_task(deep)");
+    assert_eq!(
+        completed_deep.review_task_id, None,
+        "AC1: a deep completion routes the SAME row to review — no spawn"
+    );
+    let (deep_status, deep_lane): (String, Option<String>) = {
+        let s: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+            .bind(&deep_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("deep status after complete");
+        let l: Option<String> = sqlx::query_scalar("SELECT lane FROM work_items WHERE id = ?1")
+            .bind(&deep_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("deep lane after complete");
+        (s, l)
+    };
+    assert_eq!(deep_status, "review", "AC1: deep task is in the non-terminal review state");
+    assert_eq!(deep_lane.as_deref(), Some("review"), "the SAME row is re-laned to review");
+
+    // AC4: a review agent claims the SAME row on the review lane.
+    let claimed_review = lumina_core::repo::claim_next_task(
+        &pool,
+        &sprint_id,
+        lumina_core::domain::Lane::Review,
+        None,
+        "review-agent",
+        300,
+    )
+    .await
+    .expect("claim(review)")
+    .expect("the review-state row is claimable on the review lane");
+    assert_eq!(
+        claimed_review.task_id, deep_task,
+        "AC4: the reviewer claims the SAME deep row, not a separate review task"
+    );
+
+    // AC5 + AC10: the reviewer closes the SAME row review→done via
+    // transition_status (NOT complete_task — which routes a lane='review'
+    // completion BACK to review per M1); the reconcile fires at this point.
+    lumina_core::repo::update_work_item_status(&pool, &deep_task, "done")
+        .await
+        .expect("reviewer closes review → done");
+    let deep_done: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+        .bind(&deep_task)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("deep status after review→done");
+    assert_eq!(deep_done, "done", "AC5: the SAME deep row is now done");
+
+    // --- LITE branch: implement → done directly. ---------------------------
+    let claimed_lite = lumina_core::repo::claim_next_task(
+        &pool,
+        &sprint_id,
+        lumina_core::domain::Lane::Implement,
+        Some(lumina_core::domain::Tier::Lite),
+        "impl-agent-2",
+        300,
+    )
+    .await
+    .expect("claim(implement, lite)")
+    .expect("the lite task is claimable");
+    assert_eq!(claimed_lite.task_id, lite_task, "the lite claim returns the lite task");
+
+    let completed_lite = lumina_core::repo::complete_task(&pool, &lite_task, "impl-agent-2")
+        .await
+        .expect("complete_task(lite)");
+    assert_eq!(
+        completed_lite.review_task_id, None,
+        "AC2: a lite/un-flagged completion goes straight to done — no review state, no spawn"
+    );
+    let lite_status: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+        .bind(&lite_task)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("lite status after complete");
+    assert_eq!(lite_status, "done", "AC2: the lite task completed straight to done");
+
+    // The whole story carries exactly TWO task rows — the lifecycle never spawned
+    // or reopened a row (one deep + one lite, both terminal-done).
+    let story_task_children: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM work_items WHERE parent_id = ?1 AND kind = 'task' AND deleted_at IS NULL",
+    )
+    .bind(&story)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count task children of the story");
+    assert_eq!(
+        story_task_children, 2,
+        "exactly the two seeded tasks exist — the same-row model spawns no review tasks"
+    );
+
+    // The sprint is now task-done (both member tasks terminal, no review cascade).
+    let q = lumina_core::repo::get_sprint_quiescence(&pool, &sprint_id)
+        .await
+        .expect("quiescence after both branches");
+    assert!(q.done, "both tasks terminal ⇒ the sprint is task-done: {q:?}");
+    assert_eq!(q.in_review, 0, "no unclaimed review-state rows remain: {q:?}");
+    assert_eq!(q.terminal, 2, "both tasks are terminal: {q:?}");
 }
 
 // =====================================================================
@@ -3833,8 +4010,10 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     assert_eq!(q_frozen.claimable, 0, "quiescence reports claimable=0 during freeze: {q_frozen:?}");
     assert!(!q_frozen.done, "a frozen-but-incomplete sprint is not done: {q_frozen:?}");
 
-    // Complete the checkpoint task → the freeze lifts. (Completing an implement
-    // task spawns a review task; we leave it — the frozen-out task is now claimable.)
+    // Complete the checkpoint task → the freeze lifts. (1B-F9: these impl tasks
+    // are un-flagged (tier=NULL), so completing one goes straight to done — no
+    // review-state row, no spawned review task — and the frozen-out task is now
+    // claimable.)
     lumina_core::repo::complete_task(&pool, &checkpoint_task, "impl-agent")
         .await
         .expect("complete the checkpoint task — lifts the freeze");
@@ -4076,11 +4255,11 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
     // 9a. Terminal quiescence on the merged owner S1. With S1 now in the terminal
     //     `done` status (non-`active`), the claim-gating mirror in
     //     get_sprint_quiescence forces `claimable` to 0 — the NON-ACTIVE gating
-    //     path, distinct from the freeze path asserted at q_frozen above. Note S1
-    //     is NOT itself `done`: completing each implement task spawned a review
-    //     task (left un-drained in this thread), so review tasks remain `todo`
-    //     (non-terminal) and `done` reflects RAW task completion, not the merged
-    //     sprint status. (Deviation from the plan's Gap-1 wording — see report.)
+    //     path, distinct from the freeze path asserted at q_frozen above. 1B-F9:
+    //     every impl task here was un-flagged (tier=NULL), so each completed
+    //     STRAIGHT to done — no review-state rows, no spawned review tasks left
+    //     un-drained — so S1 IS task-done (every member task is terminal). This is
+    //     the new same-row model: there is no review cascade to leave dangling.
     let q_merged = lumina_core::repo::get_sprint_quiescence(&pool, &s1)
         .await
         .expect("quiescence on the merged owner S1");
@@ -4088,9 +4267,13 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
         q_merged.claimable, 0,
         "the merged (non-active) owner exposes no claimable work — non-active gating: {q_merged:?}"
     );
+    assert_eq!(
+        q_merged.in_review, 0,
+        "1B-F9: un-flagged impl tasks complete straight to done — no unclaimed review-state rows: {q_merged:?}"
+    );
     assert!(
-        !q_merged.done,
-        "S1 is NOT task-done: the un-drained spawned review tasks remain non-terminal: {q_merged:?}"
+        q_merged.done,
+        "S1 IS task-done: every un-flagged impl task went straight to done (no review cascade): {q_merged:?}"
     );
 
     // 10. HTTP reads (oneshot, no socket bind) of the new surface.
@@ -4212,8 +4395,11 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
 // team-run event types a live `/api/stream` consumer (sibling 1B-F5) depends on —
 // `work_item.claimed` (claim), `work_item.activity_appended`
 // (record_task_activity), `work_item.status_changed` (the done transition), and
-// `work_item.released` (complete's lease-clear) — PLUS the review-spawn
-// `work_item.created` cascade. This thread asserts that exact stream shape.
+// `work_item.released` (complete's lease-clear). This thread asserts that exact
+// stream shape. 1B-F9 RETIRED the review-spawn cascade — an un-flagged (lite/
+// tier=NULL) completion goes straight to done with NO `work_item.created` for a
+// spawned review task — so the contract is the four events on the SAME row, with
+// no cascade `created`.
 //
 // The notify bus is a process-wide singleton; under plain `cargo test` (one
 // process, many threads) a sibling test's notification can land on this
@@ -4273,21 +4459,22 @@ async fn claim_activity_complete_emits_team_run_event_stream() {
     let completed = lumina_core::repo::complete_task(&pool, &impl_task, "stream-agent")
         .await
         .expect("complete_task(impl)");
-    let review_task = completed
-        .review_task_id
-        .expect("an implement completion spawns a review task");
+    assert_eq!(
+        completed.review_task_id, None,
+        "1B-F9: an un-flagged (lite/tier=NULL) completion goes straight to done — no review-task spawn"
+    );
 
     // Drain the bus into (aggregate_id, aggregate_type, event_type) triples for
-    // OUR work items (the impl task + its spawned review task). Collecting the
-    // full triple keeps any incidental non-work_item event sharing an id from
-    // masquerading as a contract event. The publishes are synchronous within the
-    // awaited commits above, so by here every event is already buffered.
+    // OUR impl task. Collecting the full triple keeps any incidental
+    // non-work_item event sharing an id from masquerading as a contract event.
+    // The publishes are synchronous within the awaited commits above, so by here
+    // every event is already buffered.
     let mut seen: std::collections::HashSet<(String, String, String)> =
         std::collections::HashSet::new();
     loop {
         match rx.try_recv() {
             Ok(n) => {
-                if n.aggregate_id == impl_task || n.aggregate_id == review_task {
+                if n.aggregate_id == impl_task {
                     seen.insert((n.aggregate_id, n.aggregate_type, n.event_type));
                 }
             }
@@ -4296,14 +4483,14 @@ async fn claim_activity_complete_emits_team_run_event_stream() {
         }
     }
 
-    // The four team-run contract events on the impl task + the review-spawn
-    // cascade — the exact work_item-aggregate stream a /api/stream consumer sees.
+    // The four team-run contract events on the SAME impl row — the exact
+    // work_item-aggregate stream a /api/stream consumer sees. 1B-F9: no
+    // review-spawn `work_item.created` (the cascade is retired).
     for (id, event_type) in [
         (impl_task.as_str(), "work_item.claimed"),
         (impl_task.as_str(), "work_item.activity_appended"),
         (impl_task.as_str(), "work_item.status_changed"),
         (impl_task.as_str(), "work_item.released"),
-        (review_task.as_str(), "work_item.created"),
     ] {
         assert!(
             seen.contains(&(
