@@ -4315,3 +4315,252 @@ async fn claim_activity_complete_emits_team_run_event_stream() {
         );
     }
 }
+
+/// The full thread for the migration-0024 research-note `anchors` surface: add a
+/// research note carrying BOTH anchor forms (a `<path>:<line>` file anchor and an
+/// `http(s)` URL) via the real HTTP validation+persist path, then prove the
+/// `research_notes.anchors` column flows DB → git-export snapshot → HTTP read; and
+/// assert the two boundary behaviours — a malformed anchor is rejected (422, no
+/// note persisted) and an EMPTY anchors list normalises to NULL (no anchors).
+///
+/// Drive path: the HTTP `POST /api/work-items/{id}/research-notes` route is used
+/// for the round-trip AND the malformed-rejection, deliberately, because anchor
+/// validation lives at the MCP/HTTP boundary (`validate_anchors`), not the repo
+/// layer — so driving the write through the router exercises the same path a real
+/// client hits. Mirrors the existing threads: one shared in-memory pool, a direct
+/// `export_pending` drain (no sleep / no background loop), and `oneshot` against
+/// `build_router` (no socket bind).
+#[tokio::test]
+async fn research_note_anchors_round_trip_db_export_http() {
+    // One shared pool across the MCP seed handler, the export drain, and router.
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Build a legal chain to a `story` (anchors ride a research note, which
+    //    attaches to a story). `mcp_create` supplies the migration-0010 epic
+    //    outcome + focus shape and the epic close-criterion the story-create gate
+    //    needs.
+    let project = mcp_create(&tools, "project", None, "Anchors Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "Anchors Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Anchors Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Anchors Story").await;
+
+    let state = AppState::new(pool.clone());
+
+    // 2. Add a research note WITH anchors via the real HTTP write path — a valid
+    //    set containing BOTH anchor forms. Returns 201 + { id }.
+    let file_anchor = "lumina/core/src/repo.rs:42";
+    let url_anchor = "https://example.com/doc";
+    let add_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/work-items/{story}/research-notes"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "summary": "cite the repo + the upstream doc",
+                        "confidence": "high",
+                        "anchors": [file_anchor, url_anchor],
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST research-notes with anchors");
+    assert_eq!(
+        add_resp.status(),
+        StatusCode::CREATED,
+        "POST research-notes with valid anchors returns 201"
+    );
+    let note_id = json_body(add_resp).await["id"]
+        .as_str()
+        .expect("POST returns { id }")
+        .to_owned();
+
+    // 3. The DB row holds the anchors as the compact JSON-array TEXT (the exact
+    //    `serde_json::to_string(&[String])` form the repo writes — no spaces).
+    let stored_anchors: String = sqlx::query_scalar(
+        "SELECT anchors FROM research_notes WHERE id = ?",
+    )
+    .bind(&note_id)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("read the note's anchors column");
+    assert_eq!(
+        stored_anchors,
+        format!("[\"{file_anchor}\",\"{url_anchor}\"]"),
+        "the anchors column stores the JSON-array text in input order"
+    );
+
+    // 4. Drain the export DIRECTLY (no sleep / no background loop). The note add
+    //    re-renders the story snapshot (`work_item.research_note_added`).
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
+        .await
+        .expect("export drain");
+    assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
+
+    // 4a. The STORY snapshot carries the note with BOTH anchors (the field rides
+    //     the whole-WorkItemDetail serialise into the folded research_notes array).
+    let story_snapshot = export_dir.path().join("story").join(format!("{story}.toml"));
+    assert!(story_snapshot.exists(), "story snapshot exists");
+    let story_toml: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&story_snapshot).expect("read story snapshot"))
+            .expect("parse story snapshot TOML");
+    let snap_notes = story_toml["research_notes"]
+        .as_array()
+        .expect("research_notes array in story snapshot");
+    assert_eq!(snap_notes.len(), 1, "one research note in the snapshot");
+    let snap_anchors = snap_notes[0]["anchors"]
+        .as_array()
+        .expect("anchors array on the snapshot note");
+    let snap_anchor_set: std::collections::HashSet<&str> = snap_anchors
+        .iter()
+        .map(|a| a.as_str().expect("anchor is a string"))
+        .collect();
+    assert!(
+        snap_anchor_set.contains(file_anchor) && snap_anchor_set.contains(url_anchor),
+        "both anchors round-trip in the story snapshot, got {snap_anchor_set:?}"
+    );
+
+    // 5. Read the story back over HTTP — the detail's research note carries the
+    //    `anchors` array.
+    let detail_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET story detail");
+    assert_eq!(detail_resp.status(), StatusCode::OK, "story detail returns 200");
+    let detail_body = json_body(detail_resp).await;
+    let http_notes = detail_body["research_notes"]
+        .as_array()
+        .expect("research_notes array in HTTP story detail");
+    assert_eq!(http_notes.len(), 1, "the HTTP detail surfaces the note");
+    let http_anchors = http_notes[0]["anchors"]
+        .as_array()
+        .expect("anchors array in the HTTP detail note");
+    let http_anchor_set: std::collections::HashSet<&str> = http_anchors
+        .iter()
+        .map(|a| a.as_str().expect("anchor is a string"))
+        .collect();
+    assert!(
+        http_anchor_set.contains(file_anchor) && http_anchor_set.contains(url_anchor),
+        "both anchors round-trip in the HTTP detail — full thread closed, got {http_anchor_set:?}"
+    );
+
+    // 6. Malformed rejection: a `path:notanumber` anchor (non-positive-integer
+    //    line) is rejected at the HTTP boundary with 422, and NO note persists.
+    let notes_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM research_notes WHERE work_item_id = ?",
+    )
+    .bind(&story)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count notes before the malformed write");
+    let bad_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/work-items/{story}/research-notes"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "summary": "this write must be rejected",
+                        "anchors": ["path:notanumber"],
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST research-notes with a malformed anchor");
+    assert_eq!(
+        bad_resp.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "a malformed anchor is rejected with 422"
+    );
+    let notes_after: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM research_notes WHERE work_item_id = ?",
+    )
+    .bind(&story)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count notes after the malformed write");
+    assert_eq!(
+        notes_after, notes_before,
+        "the malformed write persisted no note (count unchanged)"
+    );
+
+    // 7. Empty→NULL: an EMPTY anchors list normalises to SQL NULL on write, and
+    //    reads back as no anchors (DB NULL / domain None / JSON null).
+    let empty_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/work-items/{story}/research-notes"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "summary": "a note with an explicitly empty anchors list",
+                        "anchors": [],
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST research-notes with an empty anchors list");
+    assert_eq!(
+        empty_resp.status(),
+        StatusCode::CREATED,
+        "an empty anchors list is accepted (201)"
+    );
+    let empty_note_id = json_body(empty_resp).await["id"]
+        .as_str()
+        .expect("POST returns { id }")
+        .to_owned();
+    // DB column is NULL (empty slice → NULL on write).
+    let empty_stored: Option<String> = sqlx::query_scalar(
+        "SELECT anchors FROM research_notes WHERE id = ?",
+    )
+    .bind(&empty_note_id)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("read the empty note's anchors column");
+    assert!(
+        empty_stored.is_none(),
+        "an empty anchors list normalises to NULL in the column, got {empty_stored:?}"
+    );
+    // HTTP detail surfaces the empty-anchors note with `anchors: null`.
+    let empty_detail_resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET story detail after the empty note");
+    assert_eq!(empty_detail_resp.status(), StatusCode::OK);
+    let empty_detail_body = json_body(empty_detail_resp).await;
+    let empty_http_notes = empty_detail_body["research_notes"]
+        .as_array()
+        .expect("research_notes array in HTTP detail");
+    let empty_note = empty_http_notes
+        .iter()
+        .find(|n| n["id"].as_str() == Some(empty_note_id.as_str()))
+        .expect("the empty-anchors note is in the live fold");
+    assert!(
+        empty_note["anchors"].is_null(),
+        "the empty-anchors note serialises anchors as JSON null, got {:?}",
+        empty_note["anchors"]
+    );
+}
