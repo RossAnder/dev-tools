@@ -7,6 +7,9 @@
 *.toml.lock
 *.lock
 !Cargo.lock
+# bun.lock is the SPA's lockfile; build.rs runs `bun install --frozen-lockfile`
+# in a fresh worktree, so it MUST be tracked (else the frozen install fails).
+!lumina/web/bun.lock
 
 # Local SQLite dev databases (disposable; schema lives in migrations/)
 *.db
