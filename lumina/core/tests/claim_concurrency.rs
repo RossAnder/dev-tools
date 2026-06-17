@@ -485,6 +485,238 @@ async fn checkpoint_freeze_holds_under_contention() {
     );
 }
 
+/// Create a `task` under `story` ALREADY IN THE REVIEW STATE — `lane='review'`,
+/// `status='review'` — and bind it to `sprint`. This is the shape a deep impl
+/// task carries after `complete_task` (1B-F9 M1) routes it into the review state
+/// on its OWN row; a dedicated review agent then claims it through the SAME
+/// atomic `claim_next_task` primitive (1B-F9 M2). Raw runtime sqlx UPDATE for
+/// the seed (NOT a compile-time macro — the macro-eradication gate stays at 0).
+async fn seed_review_state_task(
+    pool: &SqlitePool,
+    story: &str,
+    sprint: &str,
+    title: &str,
+) -> String {
+    let task = repo::create_work_item(pool, "task", Some(story), title, None)
+        .await
+        .expect("legal task")
+        .to_string();
+    // lane='review' + status='review' (tier left NULL — a review is a lane, not
+    // a tier). This is exactly the post-M1 same-row review state.
+    sqlx::query("UPDATE work_items SET lane = 'review', status = 'review' WHERE id = $1")
+        .bind(&task)
+        .execute(pool)
+        .await
+        .expect("stamp lane='review' + status='review'");
+    repo::add_tasks_to_sprint(pool, sprint, &[task.as_str()])
+        .await
+        .expect("bind review task to sprint");
+    task
+}
+
+/// **Review-lane claim correctness gate (1B-F9 M2).** N=8 review agents
+/// concurrently drain a sprint of M=4 review-lane tasks that are sitting in the
+/// `review` STATE (the post-M1 same-row shape). The property: the widened
+/// claimable predicate (`status='review' AND lane='review'`) is honoured by the
+/// SAME atomic SELECT→UPDATE primitive, so no two review agents ever claim the
+/// same review-lane task (no double-review), exactly mirroring the implement-lane
+/// gate. The Acceptance's literal "two contending review agents, exactly one
+/// claims a given review-lane task" is the M=1 special case of this M=4 sweep —
+/// asserted directly via the single-task M=1 leg below.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_review_claims_never_double_claim() {
+    let (_tmp, pool) = open_on_disk_pool().await;
+
+    let story = seed_chain_to_story(&pool).await;
+    let sprint = seed_sprint(&pool).await;
+    activate_sprint(&pool, &sprint).await;
+    let mut seeded_ids = Vec::with_capacity(READY_TASKS);
+    for i in 0..READY_TASKS {
+        let id = seed_review_state_task(&pool, &story, &sprint, &format!("Review Task {i}")).await;
+        seeded_ids.push(id);
+    }
+
+    let pool = Arc::new(pool);
+    let sprint = Arc::new(sprint);
+
+    // N review agents each loop claim_next_task on Lane::Review until drained.
+    let mut agents = JoinSet::new();
+    for a in 0..CONCURRENT_AGENTS {
+        let pool = Arc::clone(&pool);
+        let sprint = Arc::clone(&sprint);
+        let agent_id = format!("review-agent-{a}");
+        agents.spawn(async move {
+            let mut mine: Vec<ClaimedTask> = Vec::new();
+            loop {
+                let claimed = repo::claim_next_task(
+                    &*pool,
+                    &sprint,
+                    Lane::Review,
+                    None,
+                    &agent_id,
+                    LEASE_TTL_SECS,
+                )
+                .await?;
+                match claimed {
+                    Some(task) => mine.push(task),
+                    None => break,
+                }
+            }
+            Ok::<(String, Vec<ClaimedTask>), lumina_core::error::AppError>((agent_id, mine))
+        });
+    }
+
+    let mut claims_by_task: HashMap<String, Vec<String>> = HashMap::new();
+    let mut total_claims = 0usize;
+    while let Some(joined) = agents.join_next().await {
+        let (agent_id, claimed) = joined
+            .expect("review agent task panicked")
+            .unwrap_or_else(|e| panic!("review claim_next_task errored under contention (no SQLITE_BUSY expected): {e}"));
+        for task in claimed {
+            assert_eq!(task.lane, Lane::Review, "a review claim returns a review-lane task");
+            assert_eq!(
+                task.assignee, agent_id,
+                "a claimed review task's assignee must be the claiming agent"
+            );
+            claims_by_task
+                .entry(task.task_id.clone())
+                .or_default()
+                .push(agent_id.clone());
+            total_claims += 1;
+        }
+    }
+
+    // No double-review: every review task id was claimed by exactly one agent.
+    for (task_id, claimers) in &claims_by_task {
+        assert_eq!(
+            claimers.len(),
+            1,
+            "review task {task_id} was DOUBLE-CLAIMED by {claimers:?} — the review-state \
+             SELECT→UPDATE failed to serialise (this is the double-review risk M2 guards)"
+        );
+    }
+    for id in &seeded_ids {
+        assert!(
+            claims_by_task.contains_key(id),
+            "review task {id} was never claimed — the widened predicate did not admit the review state"
+        );
+    }
+    let expected = READY_TASKS.min(CONCURRENT_AGENTS);
+    assert_eq!(
+        total_claims, expected,
+        "expected exactly {expected} successful review claims (min(agents, ready review tasks))"
+    );
+
+    // Belt-and-braces: exactly M review-lane rows are now leased in_progress.
+    let in_progress: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM work_items \
+         WHERE status = 'in_progress' AND assignee IS NOT NULL AND lane = 'review' \
+           AND id IN (SELECT task_id FROM sprint_tasks WHERE sprint_id = $1)",
+    )
+    .bind(sprint.as_str())
+    .fetch_one(&*pool)
+    .await
+    .expect("count in_progress leased review tasks");
+    assert_eq!(
+        in_progress, expected as i64,
+        "exactly {expected} review-lane tasks should be leased in_progress after the drain"
+    );
+}
+
+/// **The Acceptance's literal case: two contending review agents, ONE
+/// review-lane task — exactly one wins (no double-review).** A focused M=1
+/// version of the sweep above: two agents race a single review-state task; one
+/// gets it, the other gets `Ok(None)`. This is the minimal proof that the
+/// review-state claim routes through the atomic primitive (never a
+/// lane-flip-then-claim two-step that could let both win).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn two_review_agents_one_task_exactly_one_claims() {
+    let (_tmp, pool) = open_on_disk_pool().await;
+    let story = seed_chain_to_story(&pool).await;
+    let sprint = seed_sprint(&pool).await;
+    activate_sprint(&pool, &sprint).await;
+    let task = seed_review_state_task(&pool, &story, &sprint, "The one review task").await;
+
+    let pool = Arc::new(pool);
+    let sprint = Arc::new(sprint);
+
+    let mut agents = JoinSet::new();
+    for a in 0..2 {
+        let pool = Arc::clone(&pool);
+        let sprint = Arc::clone(&sprint);
+        let agent_id = format!("review-agent-{a}");
+        agents.spawn(async move {
+            let claimed = repo::claim_next_task(
+                &*pool,
+                &sprint,
+                Lane::Review,
+                None,
+                &agent_id,
+                LEASE_TTL_SECS,
+            )
+            .await?;
+            Ok::<(String, Option<ClaimedTask>), lumina_core::error::AppError>((agent_id, claimed))
+        });
+    }
+
+    let mut winners: Vec<String> = Vec::new();
+    let mut none_count = 0usize;
+    while let Some(joined) = agents.join_next().await {
+        let (agent_id, claimed) = joined
+            .expect("review agent task panicked")
+            .unwrap_or_else(|e| panic!("review claim errored (no SQLITE_BUSY expected): {e}"));
+        match claimed {
+            Some(t) => {
+                assert_eq!(t.task_id, task, "the winner claimed the seeded review task");
+                assert_eq!(t.assignee, agent_id, "the winner is stamped as assignee");
+                winners.push(agent_id);
+            }
+            None => none_count += 1,
+        }
+    }
+    assert_eq!(winners.len(), 1, "EXACTLY ONE review agent claims the task (no double-review)");
+    assert_eq!(none_count, 1, "the losing review agent gets Ok(None)");
+}
+
+/// **Review-lane lazy-reclaim parity (no sleep).** A REVIEW-lane task seeded
+/// `in_progress` with a literal PAST `lease_expires_at` (a crashed reviewer) is
+/// reclaimed by the very next review claim and re-leased to the live review
+/// agent — proving the dead-agent self-heal path covers review-lane tasks with
+/// the same parity as implement-lane tasks (answered Q 019ed5d1-e51b). The
+/// reclaim resets the row to `todo` (already in the ready set), so it is
+/// re-claimable on `lane='review'` without any review-specific reclaim logic.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn review_lane_lazily_reclaims_seeded_past_lease_without_sleep() {
+    let (_tmp, pool) = open_on_disk_pool().await;
+    let story = seed_chain_to_story(&pool).await;
+    let sprint = seed_sprint(&pool).await;
+    activate_sprint(&pool, &sprint).await;
+    let task = seed_review_state_task(&pool, &story, &sprint, "Stale review").await;
+
+    // A crashed reviewer: in_progress, owned by a dead agent, past lease. (The
+    // row's lane stays 'review'.) Raw runtime sqlx — not a macro. No sleep.
+    sqlx::query(
+        "UPDATE work_items SET status = 'in_progress', assignee = 'dead-reviewer', \
+         lease_expires_at = '2000-01-01 00:00:00' WHERE id = $1",
+    )
+    .bind(&task)
+    .execute(&pool)
+    .await
+    .expect("seed expired review lease in the past");
+
+    let claimed: ClaimedTask =
+        repo::claim_next_task(&pool, &sprint, Lane::Review, None, "live-reviewer", LEASE_TTL_SECS)
+            .await
+            .expect("review claim runs without error")
+            .expect("the expired-lease review task is reclaimed and then claimable");
+    assert_eq!(claimed.task_id, task, "the reclaimed review task is the one re-leased");
+    assert_eq!(claimed.lane, Lane::Review, "it is still a review-lane task after reclaim");
+    assert_eq!(
+        claimed.assignee, "live-reviewer",
+        "the stale review lease was reclaimed and re-leased to the new reviewer"
+    );
+}
+
 /// **Lazy-reclaim determinism (no sleep).** A task seeded `in_progress` with a
 /// literal PAST `lease_expires_at` (owned by a now-dead agent) is reclaimed by
 /// the very next claim and re-leased to the live claimer — WITHOUT waiting for

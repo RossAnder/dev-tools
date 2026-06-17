@@ -94,24 +94,43 @@ pub struct FileOverlapWarning {
 
 /// Sprint quiescence verdict (team-execution migration): the lead polls this to
 /// decide whether to terminate (all work done) or escalate (stalled — blocked
-/// with nothing claimable to make progress). The four counts are taken across
-/// the sprint's tasks in all lanes; `done`/`stalled` are derived roll-ups. The
+/// with nothing claimable to make progress). The counts are taken across the
+/// sprint's tasks in all lanes; `done`/`stalled` are derived roll-ups. The
 /// counts are `i64` to match the SQLite count-column parity used elsewhere in
 /// the repo layer. Read aggregate only — `Debug, Clone, Serialize`.
+///
+/// The count buckets are MUTUALLY EXCLUSIVE and collectively exhaustive over the
+/// sprint's live tasks (`total = claimable + in_progress + blocked_on_question +
+/// in_review + terminal`), so `done = terminal == total` excludes EVERY
+/// non-terminal class. `in_review` (1B-F9 M3) is the NON-terminal bucket for a
+/// `status='review'` task — a deep impl task that `complete_task` (M1) carried
+/// into the review state on its own row and that no reviewer has yet claimed (a
+/// CLAIMED review task is `status='in_progress'`, counted in `in_progress`). A
+/// review-state task therefore keeps the sprint NOT `done`, and — when it is the
+/// only non-terminal work left and nobody is working it — surfaces as `stalled`
+/// (the review escalation signal, AC8) rather than hanging the sprint invisibly.
 #[derive(Debug, Clone, Serialize)]
 pub struct SprintQuiescence {
-    /// Tasks satisfying the claim-readiness predicate (minus the lease).
+    /// Tasks satisfying the claim-readiness predicate (minus the lease) — the
+    /// implement-side ready set (`status IN ('todo','open')`).
     pub claimable: i64,
-    /// Tasks currently leased / `in_progress`.
+    /// Tasks currently leased / `in_progress` (including a CLAIMED review task).
     pub in_progress: i64,
     /// Tasks blocked on an unresolved open question.
     pub blocked_on_question: i64,
+    /// NON-terminal review bucket (1B-F9 M3): UNCLAIMED `status='review'` tasks
+    /// awaiting a reviewer. Folded into `total`, so a review-state task keeps the
+    /// sprint NOT `done`.
+    pub in_review: i64,
     /// Tasks in a terminal state (`done`/`cancelled`).
     pub terminal: i64,
-    /// `claimable == 0 && in_progress == 0 && blocked_on_question == 0`.
+    /// `terminal == total` — EVERY sprint task is terminal (total includes the
+    /// non-terminal `in_review` bucket, so an unclaimed review keeps this false).
     pub done: bool,
-    /// `blocked_on_question > 0 && claimable == 0 && in_progress == 0` — needs
-    /// an arbiter to resolve a question before progress can resume.
+    /// `!done && claimable == 0 && in_progress == 0 && (blocked_on_question > 0
+    /// || in_review > 0)` — the only non-terminal work is parked on a question
+    /// (needs an arbiter) OR is an unclaimed review task (needs a reviewer);
+    /// either way progress cannot resume without external action.
     pub stalled: bool,
 }
 

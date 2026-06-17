@@ -28,12 +28,15 @@ export type Kind = (typeof KIND_VALUES)[number]
 export const KindSchema = z.enum(KIND_VALUES)
 
 // Containers (project/epic/focus/story) use 'open' as their default workflow
-// status; only tasks cycle through the todo/in_progress/blocked/done/cancelled
-// states. The Rust `domain::Status` enum (domain.rs:336) lists only the task
-// states because migration 0001 declares `status` as free-text TEXT with no
-// CHECK — 'open' is real container-level data, not in the enum. Keep both here
-// so the wire schema accepts the actual response shape.
-const STATUS_VALUES = ['open', 'todo', 'in_progress', 'blocked', 'done', 'cancelled'] as const
+// status; only tasks cycle through the todo/in_progress/blocked/review/done/
+// cancelled states. The Rust `domain::Status` enum lists the task states because
+// migration 0001 declares `status` as free-text TEXT with no CHECK — 'open' is
+// real container-level data, not in the enum. 'review' (1B-F9) is the
+// non-terminal review state a deep task enters on completion (review-as-state:
+// the SAME row, claimed by a reviewer on the review lane — distinct from the
+// `lane='review'` queue discriminator). Keep all here so the wire schema accepts
+// the actual response shape.
+const STATUS_VALUES = ['open', 'todo', 'in_progress', 'blocked', 'review', 'done', 'cancelled'] as const
 /** Mirrors `domain::Status` — the work-item workflow statuses. */
 export type Status = (typeof STATUS_VALUES)[number]
 export const StatusSchema = z.enum(STATUS_VALUES)

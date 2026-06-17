@@ -595,6 +595,30 @@ pub async fn set_task_lane(
 
     let mut tx = db.begin().await?;
 
+    // Done-is-terminal guard (1B-F9 M4): reject flagging a `done` task INTO the
+    // review lane. `done` is terminal — a completed task (lite→done, or a
+    // reviewer's review→done close) can never be flagged back for re-review;
+    // that requires a brand-NEW task (edge-case 019ed5fc-3df0 / not_doing #4).
+    // Mirrors the `done → review` STATUS guard in `update_work_item_status`: the
+    // status guard stops the dangerous re-claim (the claim needs status='review'
+    // AND lane='review'), this lane guard rejects the flag at its own surface so
+    // the intent never even half-applies. Read on the tx (same writer snapshot);
+    // a missing row falls through to the `affected == 0` NotFound below.
+    if matches!(lane, Some(Lane::Review)) {
+        let current: Option<String> = crate::db::tx_scalar_opt::<String>(
+            tx.as_mut(),
+            "SELECT status FROM work_items WHERE id = $1 AND deleted_at IS NULL",
+            args![task_id.to_owned()],
+        )
+        .await?;
+        if current.as_deref() == Some("done") {
+            return Err(AppError::Validation(format!(
+                "work_item '{task_id}' is done; done is terminal and cannot be flagged into \
+                 the review lane — create a new task to re-review completed work"
+            )));
+        }
+    }
+
     let affected = tx
         .execute(
             r#"UPDATE work_items SET lane = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"#,

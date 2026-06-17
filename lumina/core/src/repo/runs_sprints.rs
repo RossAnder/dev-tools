@@ -849,6 +849,56 @@ pub async fn record_finding_decision(
         let host = host_id
             .as_deref()
             .expect("spawn host presence checked above");
+
+        // 1B-F9 MF: resolve the SPAWN PARENT, lifting a TASK host UP to its
+        // parent STORY for a `spawn_task` (rework) verdict. A review finding is
+        // frequently hosted on the IMPL TASK it was raised against (not the
+        // story), but a task cannot parent a task (`validate_hierarchy_edge`:
+        // "a 'task' must sit under a 'story', not under a 'task'") — so without
+        // this lift the create hard-fails and rolls the WHOLE decision back
+        // (the empirically-confirmed failure mode; the secondary symptom is that
+        // the `WHERE t.parent_id = host` sprint-binding fallback below also finds
+        // nothing for a task host, leaving rework sprint-UNBOUND). Lifting the
+        // task host to its parent story nests the rework under the story AND lets
+        // the binding fallback inherit the story's sprint membership. The lift is
+        // scoped to `kind == "task"`: a `spawn_story` verdict keeps its host
+        // unchanged (a story sits under a focus, and `validate_hierarchy_edge`
+        // still guards an incompatible host). `spawn_parent` is what BOTH the
+        // create AND the sprint-binding fallback key on.
+        let spawn_parent: String = if kind == "task" {
+            let host_kind = crate::db::tx_scalar_opt::<String>(
+                tx.as_mut(),
+                "SELECT kind FROM work_items WHERE id = $1",
+                args![host.to_owned()],
+            )
+            .await?;
+            if host_kind.as_deref() == Some("task") {
+                // A task's parent is its story (the hierarchy guarantees a task
+                // has a story parent). A task host with NO parent is a
+                // data-integrity violation — surface it as Validation rather
+                // than silently parenting the rework at the root.
+                crate::db::tx_scalar_opt::<String>(
+                    tx.as_mut(),
+                    "SELECT parent_id FROM work_items WHERE id = $1",
+                    args![host.to_owned()],
+                )
+                .await?
+                .ok_or_else(|| {
+                    AppError::Validation(format!(
+                        "cannot spawn rework from finding '{finding_id}': its task host \
+                         '{host}' has no parent story"
+                    ))
+                })?
+            } else {
+                // Non-task host (the story-hosted review path, or a focus etc.) —
+                // parent under the host directly, as before. An incompatible host
+                // kind is still caught by `validate_hierarchy_edge` in the create.
+                host.to_owned()
+            }
+        } else {
+            host.to_owned()
+        };
+
         // Title: the finding's summary when present + non-empty, else a fallback.
         let summary: Option<String> = crate::db::tx_scalar_opt::<String>(
             tx.as_mut(),
@@ -877,10 +927,12 @@ pub async fn record_finding_decision(
             None => "review".to_owned(),
         };
         // An incompatible host kind surfaces the helper's Validation UN-swallowed.
+        // `spawn_parent` is the host lifted to the story for a task-hosted rework
+        // (1B-F9 MF); for every other path it equals `host`.
         let new_id = create_work_item_full_tx(
             tx.as_mut(),
             kind,
-            Some(host),
+            Some(spawn_parent.as_str()),
             title,
             None,
             CreateOpts {
@@ -960,9 +1012,15 @@ pub async fn record_finding_decision(
             };
             let sprint_id: Option<String> = match sprint_id {
                 Some(s) => Some(s),
-                // Fallback: the host story's existing sprint membership. `host`
-                // is the finding's host work_item (the story for a review
-                // finding); its sprint-bound task children share the sprint.
+                // Fallback: the rework's parent STORY's existing sprint
+                // membership. `spawn_parent` is the STORY the rework nests under
+                // (1B-F9 MF: the host lifted to its parent story for a task host,
+                // else the story host itself); its sprint-bound task children
+                // (e.g. the impl task that produced the finding) share the
+                // sprint. Keying on `spawn_parent` rather than the raw `host` is
+                // what binds a TASK-hosted rework to the sprint — the old `host`
+                // key found nothing for a task host (a task has no task children),
+                // leaving rework sprint-UNBOUND.
                 None => crate::db::tx_scalar_opt::<String>(
                     tx.as_mut(),
                     r#"
@@ -971,7 +1029,7 @@ pub async fn record_finding_decision(
                     JOIN work_items t ON t.id = st.task_id
                     WHERE t.parent_id = $1
                     "#,
-                    args![host.to_owned()],
+                    args![spawn_parent.to_owned()],
                 )
                 .await?,
             };

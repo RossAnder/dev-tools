@@ -386,7 +386,9 @@ mod tests {
         let body = json_body(resp).await;
         assert_eq!(body["renewed"], true, "owner renew succeeds");
 
-        // Complete → 200 + CompleteTaskResult; implement-lane spawns a review.
+        // Complete → 200 + CompleteTaskResult. 1B-F9: the seeded task is
+        // un-flagged (tier=NULL), so it completes STRAIGHT to done — the
+        // review-spawn cascade is retired, so `review_task_id` is null.
         let resp = router
             .clone()
             .oneshot(
@@ -405,8 +407,8 @@ mod tests {
         let body = json_body(resp).await;
         assert_eq!(body["task_id"], task_id, "complete echoes the task id");
         assert!(
-            body["review_task_id"].as_str().is_some(),
-            "an implement-lane completion spawns a review task"
+            body["review_task_id"].is_null(),
+            "1B-F9: an un-flagged completion goes straight to done — no spawned review task"
         );
 
         // GET quiescence → 200 + the count/verdict shape.

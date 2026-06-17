@@ -26,9 +26,9 @@ agent teams are unavailable the runner **auto-degrades** to the single-agent
 worker loop, which is the explicitly-labelled fallback (`## Auto-degrade —
 single-agent worker loop` near the end). The degrade is automatic and silent on
 the happy path: the runner DETECTS team availability at pre-flight (Step 1.3)
-and picks the topology for you. Everything ELSE — pre-flight, lane cascade,
-commit cadence, checkpoint freeze, quiescence, and the merge — is IDENTICAL
-across both topologies; only the worker fan-out differs.
+and picks the topology for you. Everything ELSE — pre-flight, the review-as-state
+lifecycle, commit cadence, checkpoint freeze, quiescence, and the merge — is
+IDENTICAL across both topologies; only the worker fan-out differs.
 
 Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
 §a (five keys, NOT forked — the runner stays inline so topology-selection,
@@ -36,7 +36,7 @@ checkpoint, and quiescence decisions are user-visible), §c (one §c rollup at
 the end; the per-task `record_task_activity` progress entries are operational,
 not planning writes — they carry `origin: "implement"`), §e (Sentry — runner
 decides loop control + fan-out + drift monitoring; MCP owns
-leasing/cascade/lifecycle state).
+leasing / the review-as-state lifecycle / sprint-lifecycle state).
 
 ## MCP tools used directly by this runner
 
@@ -50,20 +50,36 @@ Work-queue (migration 0013):
   primitive a shared in-process list cannot provide.
 - `renew_lease { task_id, agent_id, lease_ttl_secs }` — heartbeat at ~half-TTL while working.
 - `record_task_activity` — per-task progress entries (`origin: "implement"`).
-- `complete_task { task_id, agent_id }` — transition `done` + clear lease; for an
-  `implement`-lane task ALSO spawns the back-linked `review`-lane task.
+- `complete_task { task_id, agent_id }` — close out a claimed task on its OWN row,
+  routed by tier (1B-F9 review-as-state): a **deep** task (or one already flagged
+  `lane='review'`) moves to the NON-terminal `review` STATE + `lane='review'` on
+  the SAME row (NOT `done`, NOT reconciled — it re-enters the queue for a reviewer
+  to claim); a **lite / un-flagged** task transitions straight to `done`. NO
+  separate review task is ever spawned (`review_task_id` is always null — the old
+  done→review SPAWN cascade is RETIRED). `complete_task` on a `lane='review'` task
+  routes it BACK to review (not done), so it is NOT the review→done close path —
+  the reviewer uses `transition_status`/`update_work_item_status → done` for that.
+- `transition_status { id, status }` — the reviewer's clean-review close path:
+  flips the claimed `review`-state row `review → done` on the SAME row (the
+  files_touched reconcile fires HERE). Rejects a `done → review` flip — `done` is
+  terminal, so re-reviewing completed work needs a brand-NEW task.
 - `release_task { task_id, agent_id }` — owner-guarded yield; ONLY on a true abandon.
-- `get_sprint_quiescence { sprint_id }` — the lead's termination/escalation + drift poll.
+- `get_sprint_quiescence { sprint_id }` — the lead's termination/escalation + drift
+  poll. Now carries an `in_review` bucket: UNCLAIMED `review`-state tasks are
+  NON-terminal (they keep the sprint not-`done`); a no-claimer review surfaces as
+  `stalled` (needs a reviewer) rather than hanging the sprint invisibly.
 - `list_open_questions_for_sprint { sprint_id }` — arbiter surface for blocked questions.
 - `compute_task_batches { story_id }` — Kahn phase batches over the task subtree; the
   lead reads these to drive the phase-batch-boundary commit cadence (Step 4).
 
-Review cascade:
+Review findings → rework (NEW implement tasks, never a review-task spawn):
 
 - `add_finding` — reviewer files critique findings (`kind: "code-review"`).
 - `record_finding_decision { finding_id, decision: "spawn_task", ... }` — spawns a
   rework task already stamped `lane='implement'` + `tier=NULL` + bound to the sprint
-  (so rework re-enters the implement-lane claim with no manual lane-stamp).
+  (so rework re-enters the implement-lane claim with no manual lane-stamp). A
+  task-hosted finding's rework nests under the host task's parent STORY (1B-F9 MF),
+  so it is hierarchy-legal AND inherits the story's sprint membership.
 
 Sprint lifecycle / worktree / commit provenance (migration 0016):
 
@@ -190,34 +206,65 @@ quiescence/drift monitoring (the lead nudges teammates that stop on an error or
 finish work without marking it complete). The lead owns the single Step-7
 finalize; teammates do NOT each merge.
 
-### Step 3 — lane handling (implement ⇄ review cascade) [shared]
+### Step 3 — review is a LANE/STATE on the SAME task (review-as-state) [shared]
 
-Lanes are first-class (`work_items.lane ∈ implement | review`, NULL = not
-team-managed); the cascade is IDENTICAL under teams and single-agent:
+**1B-F9 redesign: review is NOT a spawned task — it is a non-terminal STATE the
+implemented task itself enters.** There is no separate review work-item, no
+`reviews_work_item_id` back-link, no copied `files_touched`, and no done→review
+SPAWN cascade. A task carries its OWN row through implement → review → done.
+Lanes stay first-class (`work_items.lane ∈ implement | review`, NULL = not
+team-managed); the lifecycle is IDENTICAL under teams and single-agent:
 
-- **Completing an `implement`-lane task** spawns a `lane='review'` review task
-  (done by `complete_task` itself): a new task under the impl task's story,
-  back-linked via `reviews_work_item_id`, with a task→task dep edge so it
-  CANNOT be claimed until the impl task is `done`, and bound to the sprint.
-  The runner does nothing extra — the cascade is server-side.
-- **Claiming the `review` lane**: in the same worker loop, also
-  `claim_next_task({ sprint_id, lane: "review", agent_id, lease_ttl_secs })`
-  (e.g. when the implement lane returns null but quiescence is not yet
-  terminal). The reviewer reads the impl task's diff, files critique via
-  `add_finding` (`kind: "code-review"`), and for each actionable finding calls
-  `record_finding_decision({ finding_id, decision: "spawn_task", ... })` —
-  which stamps a NEW `lane='implement'` rework task (already `tier=NULL`,
-  sprint-bound, claimable). That rework re-enters the implement lane with NO
-  manual lane-stamp.
-- **Completing a `review`-lane task spawns NOTHING** (the cascade stops at one
-  hop — prevents an infinite review→review loop). Rework, if any, came from the
-  `spawn_task` finding-decision above, not from `complete_task`.
+- **Completing a DEEP (or already-flagged) implement task** routes the SAME row
+  to the NON-terminal `review` STATE + `lane='review'` (done by `complete_task`
+  itself — `review_task_id` is always null). The row leaves the implement claim
+  set and enters the review claim set; the files_touched reconcile is DEFERRED
+  until the row later reaches `done`. A **lite / un-flagged** task instead
+  completes straight to `done` (no review state) — trivial mechanical work is not
+  re-reviewed by default; flag it for review by stamping `lane='review'`
+  (`set_task_lane`) before completing if a reviewer should still see it.
+- **Dedicated review agent(s) claim the `review` lane CONTINUOUSLY**, decoupled
+  from the checkpoint/commit cadence: `claim_next_task({ sprint_id, lane:
+  "review", agent_id, lease_ttl_secs })` atomically claims a review-state row
+  (M2 widened the claim's readiness predicate to admit `status='review' AND
+  lane='review'`). The claim flips it to `in_progress` on the review lane — the
+  SAME atomic primitive the implement lane uses, so two reviewers never
+  double-claim the same row. Reviewing is NOT gated on a quiesce-before-review
+  barrier (that would serialise the whole sprint and defeat continuous review) —
+  reviewers run alongside implementers throughout.
+- **A clean review → `done`** via `transition_status`/`update_work_item_status`
+  on the SAME row (the files_touched reconcile fires HERE). Do NOT use
+  `complete_task` to close a review: on a `lane='review'` row it routes BACK to
+  the review state, so it is not the close path. The row is NEVER reopened —
+  `done` is terminal, and a `done → review` flip (or flagging a `done` task into
+  the review lane) is rejected; re-reviewing completed work needs a brand-NEW task.
+- **Review findings spawn NEW implement tasks, not rework reviews.** The reviewer
+  files critique via `add_finding` (`kind: "code-review"`) and, for each
+  actionable finding, `record_finding_decision({ finding_id, decision:
+  "spawn_task", ... })` — which stamps a NEW `lane='implement'` task (already
+  `tier=NULL`, sprint-bound, claimable) under the finding's parent STORY (a
+  task-hosted finding lifts to its parent story). That rework re-enters the
+  implement lane with no manual lane-stamp.
+
+**Isolation contract (the server is RECORD-ONLY — it ships no git isolation
+primitive, so review scopes by the task's own footprint, NOT a whole-tree diff):**
+
+- Review the task's `files_touched`-scoped diff — the paths the task's
+  first-class `task_files` set names — never the whole working tree (a shared
+  worktree carries every concurrent task's edits; a whole-tree diff would
+  attribute peers' work to this task).
+- For work ALREADY swept into a checkpoint commit, the working tree is empty for
+  those paths — diff the task's recorded `task_commits` SHAs
+  (`list_task_commits`) instead of the now-empty working tree, scoped to the
+  task's `task_files`.
+- For UNCOMMITTED work, diff the working tree scoped to the task's `task_files`.
 
 A practical drain order (per worker): drain implement-lane claims; when implement
-returns null, sweep review-lane claims; a review may spawn fresh implement
-rework, so the pool re-checks the implement lane after each review sweep.
-Continue until BOTH lanes return null sprint-wide, then the lead falls through to
-Step 6.
+returns null, sweep review-lane claims (the review-state rows DEEP completions
+left); a review's findings may spawn fresh implement rework, so the pool
+re-checks the implement lane after each review sweep. Continue until BOTH lanes
+return null sprint-wide (and `get_sprint_quiescence` reports `in_review=0`), then
+the lead falls through to Step 6.
 
 ### Step 4 — commit cadence (Kahn phase-batch boundaries) [shared]
 
@@ -393,9 +440,9 @@ write `session=unknown` and warn.
 > gate fires — agent teams are unavailable (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`
 > unset) OR lumina MCP is not configured at project/user scope (so teammates
 > could not reach the work-queue). State which gate fired, then run this loop. The
-> lifecycle (Step 1 pre-flight, Step 3 lane cascade, Step 4 commit cadence, Step 5
-> checkpoint freeze, Step 6 quiescence, Step 7 merge, Step 8 un-wedge, Step 9
-> rollup) is UNCHANGED; only the worker fan-out collapses to one agent.
+> lifecycle (Step 1 pre-flight, Step 3 review-as-state, Step 4 commit cadence,
+> Step 5 checkpoint freeze, Step 6 quiescence, Step 7 merge, Step 8 un-wedge,
+> Step 9 rollup) is UNCHANGED; only the worker fan-out collapses to one agent.
 
 One agent is BOTH lead and sole worker. Loop, working entirely inside the SHARED
 worktree on disk:
@@ -415,14 +462,20 @@ worktree on disk:
    work_item_id: <task_id>, entry_type: "execution", origin: "implement",
    summary: "...", body: "session=${CLAUDE_SESSION_ID}" })` (apply the §c
    substitution guard — `session=unknown` + warn on non-substitution).
-5. On completion, `complete_task({ task_id, agent_id })`. `complete_task` is
-   idempotent — on an AMBIGUOUS failure RETRY it rather than releasing. Call
-   `release_task` ONLY on a TRUE abandon, never as error-recovery for an uncertain
-   completion.
+5. On completion, `complete_task({ task_id, agent_id })`. Per Step 3 (review-as-
+   state): a deep/flagged task routes to the non-terminal `review` state on its
+   OWN row (re-claim it on the review lane below to review + close it `review →
+   done` via `transition_status`); a lite/un-flagged task goes straight to `done`.
+   `complete_task` is idempotent — on an AMBIGUOUS failure RETRY it rather than
+   releasing. Call `release_task` ONLY on a TRUE abandon, never as error-recovery
+   for an uncertain completion.
 6. Re-loop to 1. A practical order: drain implement-lane claims; when implement
-   returns null, sweep review-lane claims; a review may spawn fresh implement
+   returns null, sweep review-lane claims (the `review`-state rows deep
+   completions left — claim, review the task_files-scoped diff, close `review →
+   done`, or `spawn_task` rework); a review's findings may spawn fresh implement
    rework, so re-check the implement lane after each review sweep; continue until
-   BOTH lanes return null in the same pass, then fall through to Step 6.
+   BOTH lanes return null in the same pass (and quiescence `in_review=0`), then
+   fall through to Step 6.
 
 There is no fan-out, no drift monitoring, and no peer `SendMessage` in this
 fallback — the single agent cannot drift away from itself. Everything else
@@ -437,8 +490,9 @@ sweep order (implement-first, review after drain), the Kahn phase-batch commit
 cadence + dirty-snapshot tolerance, the checkpoint quiesce→commit→record→complete
 sequence, the quiescence poll cadence + teammate-drift nudge/reclaim, and the
 un-wedge two-step. Runner MUST NOT replicate server-owned state: leasing + reclaim
-(`claim_next_task` / `renew_lease`), the done→review→rework cascade
-(`complete_task` / `record_finding_decision`), the sprint-lifecycle transition
+(`claim_next_task` / `renew_lease`), the tier-routed completion + same-row review
+state + the review→done close (`complete_task` / `transition_status`) and the
+findings→implement-rework spawn (`record_finding_decision`), the sprint-lifecycle transition
 legality and the terminal-flip guard (`set_sprint_status` /
 `execute_worktree_merge` / the fallback `record_worktree_merge` /
 `record_worktree_rejection`), and commit-provenance idempotency

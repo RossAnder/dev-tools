@@ -28,6 +28,14 @@ pub enum Kind {
 /// (migration 0001 declares `status` as plain TEXT with no CHECK), but the MCP
 /// param surface advertises this typed set so callers send legal values; the
 /// repo (Task 3) validates against it. Serialises snake_case.
+///
+/// `Review` (1B-F9) is NON-terminal — it groups with `Todo`/`InProgress`/
+/// `Blocked` (work still in flight), DISTINCT from the terminal `Done`/
+/// `Cancelled`. It is ALSO distinct from the [`Lane::Review`] queue
+/// discriminator: `Review` here is a task's *workflow status* (the impl is
+/// awaiting a review pass), whereas `Lane::Review` marks which *queue* a task
+/// lives in. A bare `Review` variant serialises to `"review"` via the
+/// enum-level `rename_all` (no per-variant rename needed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
@@ -37,6 +45,9 @@ pub enum Status {
     InProgress,
     /// Awaiting review / verification.
     Blocked,
+    /// Awaiting a review pass (non-terminal; the implementation is done but the
+    /// review has not yet completed). Distinct from the [`Lane::Review`] queue.
+    Review,
     /// Completed.
     Done,
     /// Abandoned without completion.
@@ -534,6 +545,22 @@ mod tests {
         assert_eq!(json, serde_json::Value::String(expected.to_owned()), "wire form");
         let back: T = serde_json::from_value(json).expect("deserialise");
         assert_eq!(back, value, "round-trip");
+    }
+
+    #[test]
+    fn status_review_round_trip_snake_case() {
+        // 1B-F9: the net-new `Review` work-item status — wire form is "review"
+        // via the enum-level rename_all (no per-variant rename). Non-terminal,
+        // distinct from the existing terminal Done/Cancelled and from the
+        // Lane::Review queue discriminator.
+        assert_wire(Status::Review, "review");
+        // Sanity-pin the surrounding variants so a future rename can't silently
+        // shift Review's neighbours.
+        assert_wire(Status::Todo, "todo");
+        assert_wire(Status::InProgress, "in_progress");
+        assert_wire(Status::Blocked, "blocked");
+        assert_wire(Status::Done, "done");
+        assert_wire(Status::Cancelled, "cancelled");
     }
 
     #[test]
