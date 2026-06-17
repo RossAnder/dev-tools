@@ -4194,3 +4194,118 @@ async fn full_thread_worktree_sprint_lifecycle_export_then_http_read() {
         "the impl task work_item snapshot is rendered — full thread closed"
     );
 }
+
+// =====================================================================
+// 1B-F8 — team-run observability: the claim→activity→complete event-stream
+// SHAPE, locked in-process WITHOUT spawning a live agent team (AC#5 emit side).
+//
+// Every domain event funnels through `repo::events::record_event`, which buffers
+// a `ChangeNotification` via `DbTx::note_change` that `NotifyingTx::commit`
+// flushes to the process-wide notify bus AFTER commit. So a single
+// claim→activity→complete sequence over the real repo path publishes the four
+// team-run event types a live `/api/stream` consumer (sibling 1B-F5) depends on —
+// `work_item.claimed` (claim), `work_item.activity_appended`
+// (record_task_activity), `work_item.status_changed` (the done transition), and
+// `work_item.released` (complete's lease-clear) — PLUS the review-spawn
+// `work_item.created` cascade. This thread asserts that exact stream shape.
+//
+// The notify bus is a process-wide singleton; under plain `cargo test` (one
+// process, many threads) a sibling test's notification can land on this
+// receiver, so — like `core/tests/notify_bus.rs` — we FILTER on this test's own
+// work-item ids and tolerate `Lagged`.
+#[tokio::test]
+async fn claim_activity_complete_emits_team_run_event_stream() {
+    use lumina_core::notify::bus;
+    use tokio::sync::broadcast::error::TryRecvError;
+
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // A legal chain to a story + one implement task, bound to a fresh ACTIVE
+    // sprint (the seed helper stages 'todo' + ladders draft→ready→active).
+    let project = mcp_create(&tools, "project", None, "Stream Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "Stream Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Stream Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Stream Story").await;
+    let impl_task = mcp_create(&tools, "task", Some(&story), "Stream Impl Task").await;
+    let sprint_id = seed_implement_sprint(&pool, &impl_task).await;
+
+    // Subscribe AFTER seeding: a broadcast receiver only sees notifications
+    // published after `subscribe()`, so the seed's create/attach/status events
+    // are outside this window (and would be filtered by id anyway).
+    let mut rx = bus().subscribe();
+
+    // claim → activity → complete (the team-run inner sequence; no live team).
+    let claimed = lumina_core::repo::claim_next_task(
+        &pool,
+        &sprint_id,
+        lumina_core::domain::Lane::Implement,
+        None,
+        "stream-agent",
+        300,
+    )
+    .await
+    .expect("claim_next_task(implement)")
+    .expect("a claimable implement task");
+    assert_eq!(claimed.task_id, impl_task, "the seeded impl task is claimed");
+
+    tools
+        .record_task_activity(Parameters(RecordTaskActivityParams {
+            work_item_id: impl_task.clone(),
+            entry_type: TaskActivityType::Execution,
+            summary: "stream-shape progress".to_owned(),
+            body: None,
+            outcome: None,
+            origin: None,
+            author: None,
+        }))
+        .await
+        .expect("record_task_activity");
+
+    let completed = lumina_core::repo::complete_task(&pool, &impl_task, "stream-agent")
+        .await
+        .expect("complete_task(impl)");
+    let review_task = completed
+        .review_task_id
+        .expect("an implement completion spawns a review task");
+
+    // Drain the bus into (aggregate_id, aggregate_type, event_type) triples for
+    // OUR work items (the impl task + its spawned review task). Collecting the
+    // full triple keeps any incidental non-work_item event sharing an id from
+    // masquerading as a contract event. The publishes are synchronous within the
+    // awaited commits above, so by here every event is already buffered.
+    let mut seen: std::collections::HashSet<(String, String, String)> =
+        std::collections::HashSet::new();
+    loop {
+        match rx.try_recv() {
+            Ok(n) => {
+                if n.aggregate_id == impl_task || n.aggregate_id == review_task {
+                    seen.insert((n.aggregate_id, n.aggregate_type, n.event_type));
+                }
+            }
+            Err(TryRecvError::Lagged(_)) => continue,
+            Err(TryRecvError::Empty) | Err(TryRecvError::Closed) => break,
+        }
+    }
+
+    // The four team-run contract events on the impl task + the review-spawn
+    // cascade — the exact work_item-aggregate stream a /api/stream consumer sees.
+    for (id, event_type) in [
+        (impl_task.as_str(), "work_item.claimed"),
+        (impl_task.as_str(), "work_item.activity_appended"),
+        (impl_task.as_str(), "work_item.status_changed"),
+        (impl_task.as_str(), "work_item.released"),
+        (review_task.as_str(), "work_item.created"),
+    ] {
+        assert!(
+            seen.contains(&(
+                id.to_owned(),
+                "work_item".to_owned(),
+                event_type.to_owned()
+            )),
+            "team-run stream must carry work_item {id} {event_type}; got {seen:?}"
+        );
+    }
+}
