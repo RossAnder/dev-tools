@@ -18,21 +18,27 @@ import * as z from 'zod'
  * Mirrors the Rust `SprintQuiescence` read aggregate
  * (lumina/core/src/domain/planning.rs): the sprint quiescence verdict behind
  * `GET /api/sprints/{sprint_id}/quiescence` and the `sprint-quiescence:<id>`
- * stream topic. snake_case keys per the wire convention; the four counts are
+ * stream topic. snake_case keys per the wire convention; the five counts are
  * `i64` on the Rust side, `done`/`stalled` are derived bool roll-ups.
  */
 export interface SprintQuiescence {
   /** Tasks satisfying the claim-readiness predicate (minus the lease). */
   claimable: number
-  /** Tasks currently leased / `in_progress`. */
+  /** Tasks currently leased / `in_progress` (incl. a CLAIMED review task). */
   in_progress: number
   /** Tasks blocked on an unresolved open question. */
   blocked_on_question: number
+  /**
+   * Non-terminal review bucket (1B-F9): UNCLAIMED `status='review'` tasks
+   * awaiting a reviewer. Folded into the total, so a review-state task keeps the
+   * sprint not `done`.
+   */
+  in_review: number
   /** Tasks in a terminal state (`done`/`cancelled`). */
   terminal: number
-  /** `claimable == 0 && in_progress == 0 && blocked_on_question == 0`. */
+  /** `terminal == total` — every member task is terminal (total includes `in_review`). */
   done: boolean
-  /** Blocked with nothing claimable/in-progress — needs an arbiter. */
+  /** Only non-terminal work is parked-on-question OR an unclaimed review — needs an arbiter/reviewer. */
   stalled: boolean
 }
 
@@ -45,6 +51,7 @@ export const SprintQuiescenceSchema = z.object({
   claimable: z.number(),
   in_progress: z.number(),
   blocked_on_question: z.number(),
+  in_review: z.number(),
   terminal: z.number(),
   done: z.boolean(),
   stalled: z.boolean(),

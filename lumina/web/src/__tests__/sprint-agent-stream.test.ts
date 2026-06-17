@@ -154,6 +154,7 @@ function snapshot(overrides: Partial<SprintQuiescence> = {}): SprintQuiescence {
     claimable: 0,
     in_progress: 0,
     blocked_on_question: 0,
+    in_review: 0,
     terminal: 0,
     done: false,
     stalled: false,
