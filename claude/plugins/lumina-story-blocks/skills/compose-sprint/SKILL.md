@@ -39,10 +39,12 @@ pre-batches), §k (tier derivation is server-side via `get_task_dispatch_plan`).
 - `mcp__lumina__get_task_dispatch_plan` — Step 2 the batched, tiered task waves.
 - `mcp__lumina__create_sprint` — Step 4 mint the sprint (defaults `draft`).
 - `mcp__lumina__add_tasks_to_sprint` — Step 5 attach the selected task ids.
-- `mcp__lumina__execute_worktree_create` — Step 6 mint a NEW worktree via the connected `lumina-companion` (PRIMARY — runs the real `git worktree add -b` AND records in one call).
-- `mcp__lumina__create_worktree` — Step 6 record-only FALLBACK when no companion is connected (after a manual `git worktree add`).
+- `mcp__lumina__get_checkpoint_suggestions` — Step 6 surface checkpoint candidates from cross-task `files_touched` overlap (sprint-scoped, over the attached tasks).
+- `mcp__lumina__set_task_checkpoint` — Step 6 stamp the operator-finalised checkpoint set (`checkpoint=1`).
+- `mcp__lumina__execute_worktree_create` — Step 7 mint a NEW worktree via the connected `lumina-companion` (PRIMARY — runs the real `git worktree add -b` AND records in one call).
+- `mcp__lumina__create_worktree` — Step 7 record-only FALLBACK when no companion is connected (after a manual `git worktree add`).
 - `mcp__lumina__set_task_lane` — referenced in Step 5 ONLY as the review-lane / clear path (NOT used to make planned tasks claimable — they already default `lane="implement"`).
-- `mcp__lumina__set_sprint_status` — Step 7 ladder `draft→ready→active`.
+- `mcp__lumina__set_sprint_status` — Step 8 ladder `draft→ready→active`.
 - `mcp__lumina__record_task_activity` — §c provenance after each write.
 
 ## Body
@@ -124,12 +126,55 @@ Idempotent at the junction (already-attached pairs collapse, not counted in
 
 **Lane note (no lane-stamping step needed)**: a planned task created via
 `create_work_item` ALREADY defaults to `lane="implement"`, so once the sprint is
-`active` (Step 7) every attached task is immediately claimable by
+`active` (Step 8) every attached task is immediately claimable by
 `claim_next_task` — there is NO manual lane-stamp here. Use
 `mcp__lumina__set_task_lane` ONLY if you ever need to move a task to the
 `review` lane or clear it (`lane=null`); it is never part of the compose path.
 
-### Step 6 — worktree (AUQ gate)
+### Step 6 — checkpoint suggestions (AUQ gate)
+
+Surface server-computed checkpoint candidates and let the operator finalise the
+set BEFORE the ladder — a `checkpoint=1` task only FREEZES the sprint once it is
+`active` (Step 8), so the marking must be in place before that.
+
+```
+suggestions = mcp__lumina__get_checkpoint_suggestions({ sprint_id })
+```
+
+`get_checkpoint_suggestions` returns the attached tasks whose first-class
+EXPECTED `files_touched` sets INTERSECT another attached task's — each candidate
+carries its overlapping peer task ids + the shared paths. (Sprint-scoped, so it
+sees exactly the tasks attached at Step 5; the same read is also available
+story-scoped via `{ story_id }` before a sprint exists.)
+
+If `suggestions` is EMPTY, no two attached tasks plan to touch the same file —
+skip checkpoints entirely (note `"compose-sprint: no file-overlap checkpoints"`)
+and go to Step 7.
+
+Otherwise present the candidates to the operator (task id + title + the shared
+paths + overlapping peers) and gate the FINAL set with this `AskUserQuestion`,
+VERBATIM:
+
+> **Header**: `Checkpoints`
+> **Body**: `<N> attached task(s) overlap on shared files. Mark the suggested candidates as checkpoints (consolidated-commit barriers), or override the set?`
+> **Options** (exactly 2):
+> - `Accept` — Stamp every suggested candidate as a checkpoint.
+> - `Override` — Operator names the final checkpoint set (add a task the suggestion missed, drop one that does not need a barrier — including the empty set to mark none).
+
+Stamp the FINAL set (the accepted suggestions, or the operator's override) one
+task at a time:
+
+```
+mcp__lumina__set_task_checkpoint({ task_id: "<chosen task>", on: true })
+```
+
+A `checkpoint=1` task freezes the WHOLE sprint while it is `in_progress` (a
+sprint-wide barrier for shared-file / consolidated-commit work — NOT a task→task
+dep), so mark ONLY tasks that genuinely need the team to quiesce around a shared
+commit. Per §c append one activity row recording the final set
+(`summary: "compose-sprint: marked <n> checkpoint task(s) on sprint <sprint_id>"`).
+
+### Step 7 — worktree (AUQ gate)
 
 Gate the worktree decision with this `AskUserQuestion`, VERBATIM:
 
@@ -171,7 +216,7 @@ never own it.
 Per §c append one activity row recording the worktree choice
 (`summary: "compose-sprint: <new worktree <id> | targeted worktree <id>> for sprint <sprint_id>"`).
 
-### Step 7 — ladder draft→ready→active
+### Step 8 — ladder draft→ready→active
 
 Drive the sprint up the lifecycle with `set_sprint_status`, in order, STOPPING
 at `active`:
@@ -206,8 +251,9 @@ compose-sprint: sprint <sprint_id> active; <added> tasks attached
 
 ## Sentry-pattern compliance (per §e)
 
-Composer DECIDES: the compose order (read → select → mint → attach → worktree →
-ladder), the two AUQ prompt shapes, the stop-at-`active` ceiling. Composer MUST
+Composer DECIDES: the compose order (read → select → mint → attach → checkpoint →
+worktree → ladder), the AUQ prompt shapes (task-set, checkpoints, worktree), the
+stop-at-`active` ceiling. Composer MUST
 NOT compute readiness or tiers client-side (always `get_story_readiness` /
 `get_task_dispatch_plan`); MUST NOT pre-batch tasks (§j — batching is
 server-side); MUST NOT lane-stamp planned tasks (they default `implement`); MUST
