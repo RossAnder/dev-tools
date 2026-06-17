@@ -192,9 +192,10 @@ impl LuminaTools {
     }
 
     /// Fetch one work item with its direct children, findings, context blocks,
-    /// and activity log.
+    /// and activity log. The optional `include` projection narrows the payload
+    /// to `item` + the named sections (see [`GetWorkItemParams::include`]).
     #[tool(
-        description = "Fetch one work item by id, with its direct children, findings, linked context blocks, and activity log.",
+        description = "Fetch one work item by id, with its direct children, findings, linked context blocks, and activity log. Pass an optional `include` array to project the payload down to the always-present `item` plus only the named sections (children, findings, context_blocks, activity, acceptance_criteria, research_notes, open_questions, repo_links, risks, rejected_alternatives, task_dependencies, story_files_footprint); ABSENT ⇒ the full payload (legacy shape), and an empty list (or one holding only `item`) ⇒ item-only.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_work_item(
