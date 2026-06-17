@@ -35,7 +35,20 @@
       "Bash(sed -n '175,185p' /c/Users/rossa/dev/dev-tools/lumina/protocol/src/lib.rs)",
       "Bash(grep -cE '\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./' claude/plugins/lumina-story-blocks/skills/decompose-tasks/SKILL.md claude/plugins/lumina-story-blocks/skills/plan-story/SKILL.md claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md claude/plugins/lumina-story-blocks/skills/story-review/SKILL.md claude/plugins/lumina-story-blocks/skills/wire-task-deps/SKILL.md)",
       "Bash(python -c ' *)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "mcp__lumina__create_work_item",
+      "mcp__lumina__set_task_kind",
+      "mcp__lumina__get_story_readiness",
+      "mcp__lumina__record_task_activity",
+      "mcp__lumina__set_effort",
+      "mcp__lumina__set_complexity",
+      "mcp__lumina__set_task_spec",
+      "mcp__lumina__block_task_on_task",
+      "mcp__lumina__get_task_dispatch_plan",
+      "mcp__lumina__compute_task_batches",
+      "mcp__lumina__set_closure_gate",
+      "mcp__lumina__set_relevance",
+      "mcp__lumina__add_acceptance_criterion"
     ]
   },
   "enabledMcpjsonServers": [
