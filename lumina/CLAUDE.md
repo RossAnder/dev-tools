@@ -166,7 +166,7 @@ The axum API mirrors the MCP write surface so a browser/SPA client (or any HTTP-
 
 - `GET    /health`                          → liveness probe (no DB hit).
 - `GET    /work-items`                      → `repo::list_work_items` (default: full nested tree of roots; with `?parent_id=`/`?kind=`: flat filtered list).
-- `GET    /work-items/{id}`                 → `repo::get_work_item_detail`.
+- `GET    /work-items/{id}`                 → `repo::get_work_item_detail` (optional `?include=` query param — a comma-separated snake_case section list mirroring the MCP `get_work_item` `include` projection: `item`, `children`, `findings`, `context_blocks`, `activity`, `acceptance_criteria`, `research_notes`, `open_questions`, `repo_links`, `risks`, `rejected_alternatives`, `task_dependencies`, `story_files_footprint`; ABSENT ⇒ the full `WorkItemDetail`, PRESENT — even empty — ⇒ `item` + the named sections, an unknown token → 400/invalid-params).
 - `POST   /work-items`                      → `repo::create_work_item_with_origin` (migration 0010: body carries `outcome` — mandatory for `kind:"epic"` — and `shape` — mandatory for `kind:"focus"`, ∈ `vertical-slice|cross-cutting|foundational`; team-execution: an optional `lane` ∈ `implement|review` overrides the task-only create-time default `'implement'`).
 - `PATCH  /work-items/{id}`                 → `repo::update_work_item`.
 - `DELETE /work-items/{id}`                 → `repo::delete_work_item` (soft-delete; round-4 T1 closed the "full mirror" gap against the MCP `delete_work_item` tool).

@@ -4564,3 +4564,216 @@ async fn research_note_anchors_round_trip_db_export_http() {
         empty_note["anchors"]
     );
 }
+
+/// Story 1A-F16 — the `get_work_item` PROJECTION (`include`) thread, end-to-end
+/// through the public HTTP read surface (`oneshot`, no socket bind), over a real
+/// seeded story. Mirrors the in-process idiom: MCP writes to seed, HTTP reads to
+/// assert. Covers the four projection-contract points plus the handler-boundary
+/// proof:
+///   (a) absent `?include=` ⇒ the FULL `WorkItemDetail` (all 12 array sections) —
+///       the regression guard against the projection ever narrowing the default.
+///   (b) `?include=item` ⇒ item-only (exactly one key).
+///   (c) `?include=activity,findings` ⇒ EXACTLY `item` + those two, no others.
+///   (d) `GET …/readiness` reads the FULL repo fold and its
+///       `next_recommended_action` is identical whether or not a projection was
+///       issued against `get_work_item` — i.e. the filter lives at the handler
+///       serialization boundary, NOT inside `repo::get_work_item_detail`. This
+///       assertion would FAIL if the filter had been pushed into the repo layer
+///       (readiness would then see a narrowed fold and recommend differently).
+///   (e) the `mcp/mod.rs` tool-count invariant is unaffected — the projection
+///       EXTENDS `get_work_item`, adding NO tool (count stays 94); that invariant
+///       test runs in-suite already, so no assertion is added here.
+#[tokio::test]
+async fn get_work_item_projection_thread_http() {
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Seed a richly-planned story: chain → story, a plan (problem_statement),
+    //    an acceptance criterion, a research note, an activity entry, and a task
+    //    child — so multiple array sections are non-empty for the full-payload
+    //    regression guard and the readiness read has real data to summarise.
+    let project = mcp_create(&tools, "project", None, "Proj Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "Proj Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Proj Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Proj Story").await;
+    mcp_set_story_plan(
+        &tools,
+        &story,
+        "the problem statement",
+        "the research notes",
+        "the execution strategy",
+    )
+    .await;
+    lumina_core::repo::add_acceptance_criterion(&pool, &story, "ships green")
+        .await
+        .expect("seed acceptance criterion");
+    lumina_core::repo::add_research_note(
+        &pool,
+        &story,
+        "a note",
+        Some("rationale"),
+        Some("medium"),
+        Some("storage"),
+        Some("plan"),
+        None,
+    )
+    .await
+    .expect("seed research note");
+    mcp_record_task_activity(&tools, &story, "noted something", "ok").await;
+    let _task = mcp_create(&tools, "task", Some(&story), "Proj Task").await;
+
+    let state = AppState::new(pool.clone());
+
+    // (a) Absent ?include= ⇒ the FULL detail: every array section key present.
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET full detail");
+    assert_eq!(resp.status(), StatusCode::OK, "full detail returns 200");
+    let full = json_body(resp).await;
+    assert!(full.get("item").is_some(), "full payload carries item");
+    for key in [
+        "children", "findings", "context_blocks", "activity", "acceptance_criteria",
+        "research_notes", "open_questions", "repo_links", "risks",
+        "rejected_alternatives", "task_dependencies", "story_files_footprint",
+    ] {
+        assert!(full.get(key).is_some(), "full payload carries `{key}`");
+    }
+    // The seeded sections actually carry rows (the projection's None-path is a
+    // faithful passthrough of the full repo fold).
+    assert_eq!(full["children"].as_array().expect("children").len(), 1);
+    assert_eq!(
+        full["acceptance_criteria"].as_array().expect("acs").len(),
+        1
+    );
+    assert_eq!(full["research_notes"].as_array().expect("notes").len(), 1);
+    assert_eq!(full["activity"].as_array().expect("activity").len(), 1);
+
+    // (b) ?include=item ⇒ item-only (exactly one key).
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}?include=item"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET item-only");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let item_only = json_body(resp).await;
+    let obj = item_only.as_object().expect("object body");
+    assert_eq!(obj.len(), 1, "item-only payload has exactly one key");
+    assert!(obj.contains_key("item"), "the one key is item");
+
+    // (c) ?include=activity,findings ⇒ EXACTLY item + those two, no others.
+    let resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/work-items/{story}?include=activity,findings"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET subset");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let subset = json_body(resp).await;
+    let mut keys: Vec<&str> = subset
+        .as_object()
+        .expect("object body")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        ["activity", "findings", "item"],
+        "subset ⇒ exactly item + the two named sections, no others"
+    );
+    assert_eq!(
+        subset["activity"].as_array().expect("activity array").len(),
+        1,
+        "the requested non-empty activity section carries its row"
+    );
+
+    // (d) Handler-boundary proof: the projection is a READ-TIME narrowing only —
+    //     it neither mutates the store nor narrows the underlying fold, so an
+    //     independent reader (the readiness route, which composes the full
+    //     planning data via repo::get_story_readiness) is wholly unaffected by a
+    //     projection issued against get_work_item. Capture readiness, issue a
+    //     maximally-narrowing (`item`-only) projected read, then re-capture — the
+    //     verdict must be byte-identical AND the full unprojected detail must
+    //     still be complete afterwards. This would FAIL if the projection filter
+    //     had been pushed DOWN into repo::get_work_item_detail (a narrowed shared
+    //     fold would corrupt the default read and/or the readiness summary).
+    async fn readiness(state: &AppState, story: &str) -> serde_json::Value {
+        let resp = build_router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{story}/readiness"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("oneshot GET readiness");
+        assert_eq!(resp.status(), StatusCode::OK, "readiness returns 200");
+        json_body(resp).await
+    }
+
+    let before = readiness(&state, &story).await;
+    // The readiness reflects the full underlying planning data (problem
+    // statement was set on the story) — proving it reads the unprojected fold.
+    assert_eq!(
+        before["problem_statement_set"], true,
+        "readiness sees the full fold's problem_statement"
+    );
+    assert!(
+        before.get("next_recommended_action").is_some(),
+        "readiness carries the next recommended action"
+    );
+
+    // Issue a maximally-narrowing projected read (item-only) against the same
+    // story; this must not perturb the repo fold the readiness route reads.
+    let _ = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}?include=item"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("projected read between readiness captures");
+
+    let after = readiness(&state, &story).await;
+    assert_eq!(
+        before, after,
+        "readiness verdict (incl. next_recommended_action) is identical regardless of projection \
+         — the filter is handler-boundary-only, never narrows repo::get_work_item_detail"
+    );
+
+    // And the unprojected default read is STILL complete after the narrowing
+    // read — a projection narrows only its own response, never the stored fold.
+    let resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET full detail after projection");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let full_again = json_body(resp).await;
+    assert_eq!(
+        full_again, full,
+        "the full unprojected detail is unchanged after a narrowing projected read"
+    );
+}

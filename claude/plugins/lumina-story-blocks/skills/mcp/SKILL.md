@@ -217,7 +217,7 @@ Fine-grained prerequisite edges between task siblings of a story. Both endpoints
 | Tool | When to use |
 |------|-------------|
 | `list_work_items` | List items, optionally filtered by `parent_id`, `kind`, and/or `status`. |
-| `get_work_item` | Fetch one item with its direct children, findings, linked context blocks, and activity log. |
+| `get_work_item` | Fetch one item with its direct children, findings, linked context blocks, and activity log. Pass optional `include` (a snake_case section array: `item`, `children`, `findings`, `context_blocks`, `activity`, `acceptance_criteria`, `research_notes`, `open_questions`, `repo_links`, `risks`, `rejected_alternatives`, `task_dependencies`, `story_files_footprint`) to project the payload down to `item` + the named sections — ABSENT ⇒ the full payload; an empty list (or one holding only `item`) ⇒ item-only. |
 | `get_tree` | Walk the tree from an optional `root` (default: all roots), bounded by an optional `max_depth`. Returns a nested forest. |
 | `get_sprint_view` | View a story with its task subtree and each task's activity log. |
 | `get_session_context` | `{ work_item_id } → { project_id?, sprint_id?, story_id?, epic_id? }` — resolve a work item's correlation context (ancestry walk + sprint membership). Read-only. **Call it at session start against the work item you are operating on** so the resolved ids land in the transcript JSONL; lumina's session-corpus ingest (migration 0015) later harvests them to correlate this session to its sprint / story / task. See the "Session-start correlation" note below. |
