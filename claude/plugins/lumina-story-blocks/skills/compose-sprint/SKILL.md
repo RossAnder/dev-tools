@@ -257,7 +257,7 @@ stop-at-`active` ceiling. Composer MUST
 NOT compute readiness or tiers client-side (always `get_story_readiness` /
 `get_task_dispatch_plan`); MUST NOT pre-batch tasks (§j — batching is
 server-side); MUST NOT lane-stamp planned tasks (they default `implement`); MUST
-NOT shell to git for the worktree mint while a companion is connected (Step 6's
+NOT shell to git for the worktree mint while a companion is connected (Step 7's
 `execute_worktree_create` is the primary; manual `git worktree add` +
 `create_worktree` is the no-companion fallback); MUST NOT drive a
 worktree-owning sprint to a terminal status (use the worktree merge/rejection
