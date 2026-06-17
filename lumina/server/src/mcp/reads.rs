@@ -28,12 +28,119 @@ pub struct ListWorkItemsParams {
     pub status: Option<Status>,
 }
 
+/// A selectable section of a [`lumina_core::domain::WorkItemDetail`] payload,
+/// used by `get_work_item`'s `include` projection control. Each variant maps to
+/// exactly one serialized key of `WorkItemDetail`: `Item` is the always-present
+/// sentinel (the `item` object itself, never filterable away), and the other
+/// twelve name the optional array sections. Wire form is snake_case, matching
+/// the `WorkItemDetail` JSON keys byte-for-byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Section {
+    /// The work item itself — the always-present sentinel. Carries no array key
+    /// (its JSON key `"item"` is added unconditionally by the projector).
+    Item,
+    /// The item's direct children (`children`).
+    Children,
+    /// The item's findings (`findings`).
+    Findings,
+    /// The item's linked context blocks (`context_blocks`).
+    ContextBlocks,
+    /// The item's activity log (`activity`).
+    Activity,
+    /// The item's acceptance criteria (`acceptance_criteria`).
+    AcceptanceCriteria,
+    /// The item's research notes (`research_notes`).
+    ResearchNotes,
+    /// The item's open questions (`open_questions`).
+    OpenQuestions,
+    /// The project's linked repos (`repo_links`; project-kind only).
+    RepoLinks,
+    /// The item's risk register (`risks`).
+    Risks,
+    /// The item's rejected planning alternatives (`rejected_alternatives`).
+    RejectedAlternatives,
+    /// Outgoing task→task dependency edges (`task_dependencies`; task-kind only).
+    TaskDependencies,
+    /// The story's derived files footprint (`story_files_footprint`; story-kind only).
+    StoryFilesFootprint,
+}
+
+impl Section {
+    /// The `WorkItemDetail` JSON key this section retains, or `None` for the
+    /// `Item` sentinel (whose `"item"` key the projector always keeps).
+    fn key(self) -> Option<&'static str> {
+        match self {
+            Section::Item => None,
+            Section::Children => Some("children"),
+            Section::Findings => Some("findings"),
+            Section::ContextBlocks => Some("context_blocks"),
+            Section::Activity => Some("activity"),
+            Section::AcceptanceCriteria => Some("acceptance_criteria"),
+            Section::ResearchNotes => Some("research_notes"),
+            Section::OpenQuestions => Some("open_questions"),
+            Section::RepoLinks => Some("repo_links"),
+            Section::Risks => Some("risks"),
+            Section::RejectedAlternatives => Some("rejected_alternatives"),
+            Section::TaskDependencies => Some("task_dependencies"),
+            Section::StoryFilesFootprint => Some("story_files_footprint"),
+        }
+    }
+}
+
+/// Project a [`WorkItemDetail`](lumina_core::domain::WorkItemDetail) down to the
+/// requested `include` sections at the serialization boundary. The `"item"` key
+/// is ALWAYS retained (the sentinel); every other key is kept only when its
+/// matching [`Section`] appears in `include`. An empty `include` (or one holding
+/// only [`Section::Item`]) therefore yields an item-only payload.
+///
+/// Shared by the MCP `get_work_item` handler and the HTTP mirror (T2) so both
+/// project against identical vocabulary. Does NOT touch `repo::get_work_item_detail`
+/// — readiness/tree/sprint-view depend on the full fold — it filters the already
+/// serialized object.
+pub(crate) fn project_work_item_detail(
+    detail: &lumina_core::domain::WorkItemDetail,
+    include: &[Section],
+) -> Result<serde_json::Value, serde_json::Error> {
+    // The full detail serializes to a JSON object whose keys are `item` plus the
+    // twelve array sections.
+    let full = serde_json::to_value(detail)?;
+    let mut out = serde_json::Map::new();
+
+    if let serde_json::Value::Object(map) = full {
+        // The sentinel `item` is always present.
+        if let Some(item) = map.get("item") {
+            out.insert("item".to_string(), item.clone());
+        }
+        // Retain only the requested array-section keys.
+        for section in include {
+            let Some(key) = section.key() else { continue };
+            if let Some(value) = map.get(key) {
+                out.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+
+    Ok(serde_json::Value::Object(out))
+}
+
 /// Arguments for the `get_work_item` read tool.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetWorkItemParams {
     /// The work-item id to fetch (with its direct children, findings, linked
     /// context blocks, and activity log).
     pub id: String,
+    /// Optional projection control: which sections of the detail payload to
+    /// return. ABSENT ⇒ the full payload (every section), preserving the legacy
+    /// shape. When present, the `item` object is ALWAYS returned, plus only the
+    /// named array sections; the vocabulary is `item` (the always-present
+    /// sentinel) plus `children`, `findings`, `context_blocks`, `activity`,
+    /// `acceptance_criteria`, `research_notes`, `open_questions`, `repo_links`,
+    /// `risks`, `rejected_alternatives`, `task_dependencies`,
+    /// `story_files_footprint`. An empty list (or one holding only `item`) is
+    /// item-only.
+    #[serde(default)]
+    pub include: Option<Vec<Section>>,
 }
 
 /// Arguments for the `get_tree` read tool: walk descendants from a root.
@@ -92,13 +199,26 @@ impl LuminaTools {
     )]
     async fn get_work_item(
         &self,
-        Parameters(GetWorkItemParams { id }): Parameters<GetWorkItemParams>,
+        Parameters(GetWorkItemParams { id, include }): Parameters<GetWorkItemParams>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "get_work_item", "mcp tool invoked");
         let detail = repo::get_work_item_detail(&self.pool, &id)
             .await
             .map_err(app_error_to_mcp)?;
-        json_result(&detail)
+        // Absent `include` ⇒ the full payload (legacy shape). When present,
+        // project down to `item` + the requested sections at the serialization
+        // boundary (the repo fold itself is never narrowed).
+        match include {
+            None => json_result(&detail),
+            Some(sections) => {
+                // Projection re-serializes the (owned-`String`/`Option`) detail,
+                // so a failure here is effectively unreachable; map it to
+                // `internal_error` rather than unwrap (mirroring `json_result`).
+                let projected = project_work_item_detail(&detail, &sections)
+                    .map_err(|_| ErrorData::internal_error("an internal error occurred", None))?;
+                json_result(&projected)
+            }
+        }
     }
 
     /// Walk the work-item tree from a root (or all roots), bounded by an optional

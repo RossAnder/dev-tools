@@ -92,7 +92,9 @@ mod files;
 mod findings;
 mod mode;
 mod planning;
-mod reads;
+// `pub(crate)` so the HTTP `get_work_item` mirror (T2) can reuse the
+// projection vocabulary (`reads::Section` / `reads::project_work_item_detail`).
+pub(crate) mod reads;
 mod repo_links;
 mod risks_alts;
 mod runs_sprints;
