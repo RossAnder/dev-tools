@@ -462,6 +462,155 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// get_checkpoint_suggestions (1B-F8): cross-task EXPECTED files-overlap →
+// checkpoint candidates. A read-only sibling of the advisory claim-overlap scan
+// above — same canonical `(repo_link_id, path)` keys via
+// `task_expected_overlap_keys`, but computed pairwise across a story's (or
+// sprint's) WHOLE task set so the compose-sprint operator can stamp checkpoints
+// BEFORE the sprint runs. Read-only: no tx, no event.
+// ---------------------------------------------------------------------------
+
+/// A task's canonical EXPECTED overlap keys (`(repo_link_id, path)`; NULL ≡
+/// primary repo) — the unit of the cross-task intersection. Aliased so the
+/// per-task scan map stays under `clippy::type_complexity`.
+type ExpectedKeys = std::collections::BTreeSet<(Option<String>, String)>;
+
+/// One OTHER task a checkpoint candidate shares EXPECTED files with, plus the
+/// shared paths. Mirrors [`crate::domain::FileOverlapWarning`]'s shape — the
+/// PATH segment of each shared canonical key is the human-meaningful piece the
+/// operator reads.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CheckpointOverlap {
+    /// The other task whose EXPECTED set intersects this candidate's.
+    pub task_id: String,
+    /// The shared PATHs (sorted + deduped), one per shared `(repo_link_id, path)`
+    /// canonical key.
+    pub shared_paths: Vec<String>,
+}
+
+/// A CHECKPOINT CANDIDATE: a task whose first-class EXPECTED `task_files` set
+/// intersects ≥1 OTHER task's EXPECTED set in the same story/sprint scope. Two
+/// tasks planning to touch the same file want a consolidated commit (a
+/// checkpoint) rather than racing on the shared sprint worktree — this is the
+/// server-side signal `compose-sprint` surfaces, lets the operator override, and
+/// stamps via `set_task_checkpoint`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CheckpointSuggestion {
+    /// The candidate task id.
+    pub task_id: String,
+    /// The overlapping peers + their shared paths (ordered by peer task id).
+    pub overlaps: Vec<CheckpointOverlap>,
+}
+
+/// Compute checkpoint candidates over an explicit task-id set (the scope-shared
+/// core of [`story_checkpoint_suggestions`] / [`sprint_checkpoint_suggestions`]).
+///
+/// **Why EXPECTED, why canonical.** The overlap runs on the first-class
+/// `task_files` EXPECTED set — read once per task via [`task_expected_overlap_keys`]
+/// (canonical `(repo_link_id, path)` keys; NULL ≡ primary, so a bare path and an
+/// explicit-primary `{repo, path}` for the same repo correctly overlap and
+/// genuinely-different repos stay distinct). EXPECTED is the ONLY set populated
+/// at compose time — the ACTUAL set accrues during execution — so a pre-run
+/// checkpoint suggestion can only see EXPECTED.
+///
+/// O(n²) pairwise over the scope's tasks (sprint-sized), each pair a cheap
+/// `BTreeSet` intersection over keys already read once per task. A task with an
+/// EMPTY expected set, or one overlapping nothing, is OMITTED. Candidates come
+/// back ordered by the input task order (the SELECTs order by `created_at, id`),
+/// each carrying its overlapping peers ordered by peer task id.
+async fn checkpoint_suggestions_over(
+    db: &impl DbClient,
+    task_ids: &[String],
+) -> Result<Vec<CheckpointSuggestion>, AppError> {
+    // Read each task's canonical EXPECTED keys exactly once.
+    let mut per_task: Vec<(String, ExpectedKeys)> = Vec::with_capacity(task_ids.len());
+    for id in task_ids {
+        per_task.push((id.clone(), task_expected_overlap_keys(db, id).await?));
+    }
+
+    let mut suggestions: Vec<CheckpointSuggestion> = Vec::new();
+    for (i, (id_i, keys_i)) in per_task.iter().enumerate() {
+        if keys_i.is_empty() {
+            continue;
+        }
+        let mut overlaps: Vec<CheckpointOverlap> = Vec::new();
+        for (j, (id_j, keys_j)) in per_task.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            let mut shared: Vec<String> = keys_i
+                .intersection(keys_j)
+                .map(|(_, path)| path.clone())
+                .collect();
+            if !shared.is_empty() {
+                shared.sort();
+                shared.dedup();
+                overlaps.push(CheckpointOverlap {
+                    task_id: id_j.clone(),
+                    shared_paths: shared,
+                });
+            }
+        }
+        if !overlaps.is_empty() {
+            // `overlaps` is already in `per_task` (task) order — a stable,
+            // id-ordered peer list since the SELECTs order by `created_at, id`.
+            suggestions.push(CheckpointSuggestion {
+                task_id: id_i.clone(),
+                overlaps,
+            });
+        }
+    }
+    Ok(suggestions)
+}
+
+/// Checkpoint candidates over a STORY's DIRECT task children — the cross-task
+/// EXPECTED files-overlap suggestion, story-scoped. Mirrors the
+/// `story_files_footprint` membership (`parent_id = $1 AND kind = 'task'`,
+/// tombstones excluded). Read-only; an unknown/childless story yields `[]`.
+pub async fn story_checkpoint_suggestions(
+    db: &impl DbClient,
+    story_id: &str,
+) -> Result<Vec<CheckpointSuggestion>, AppError> {
+    let rows = db
+        .query_all::<OverlapScanRow>(
+            r#"
+            SELECT id
+            FROM work_items
+            WHERE parent_id = $1 AND kind = 'task' AND deleted_at IS NULL
+            ORDER BY created_at, id
+            "#,
+            args![story_id.to_owned()],
+        )
+        .await?;
+    let ids: Vec<String> = rows.into_iter().map(|r| r.id).collect();
+    checkpoint_suggestions_over(db, &ids).await
+}
+
+/// Checkpoint candidates over a SPRINT's MEMBER tasks (the `sprint_tasks`
+/// junction — the membership the sprint footprint reads) — the same cross-task
+/// EXPECTED files-overlap suggestion, sprint-scoped. Read-only; an unknown/empty
+/// sprint yields `[]`.
+pub async fn sprint_checkpoint_suggestions(
+    db: &impl DbClient,
+    sprint_id: &str,
+) -> Result<Vec<CheckpointSuggestion>, AppError> {
+    let rows = db
+        .query_all::<OverlapScanRow>(
+            r#"
+            SELECT t.id
+            FROM work_items t
+            JOIN sprint_tasks st ON st.task_id = t.id AND st.sprint_id = $1
+            WHERE t.kind = 'task' AND t.deleted_at IS NULL
+            ORDER BY t.created_at, t.id
+            "#,
+            args![sprint_id.to_owned()],
+        )
+        .await?;
+    let ids: Vec<String> = rows.into_iter().map(|r| r.id).collect();
+    checkpoint_suggestions_over(db, &ids).await
+}
+
+// ---------------------------------------------------------------------------
 // release_task + renew_lease (team-execution migration 0013, plan §C). The
 // lease-lifecycle companions to `claim_next_task`: `release_task` is the
 // park-and-pull / voluntary-yield path; `renew_lease` is the heartbeat. Both

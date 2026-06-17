@@ -502,6 +502,11 @@ mod tests {
             "reconcile_task_files",
             "get_story_files_footprint",
             "get_sprint_files_footprint",
+            // checkpoint-suggestion read (1B-F8; defined in mcp/files.rs —
+            // cross-task EXPECTED files-overlap → candidate checkpoint tasks,
+            // story- or sprint-scoped; composes repo::*_checkpoint_suggestions
+            // over the first-class task_files EXPECTED set, read-only no tx)
+            "get_checkpoint_suggestions",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -561,12 +566,18 @@ mod tests {
         //      repo::story_files_footprint / repo::sprint_files_footprint). Each
         //      wraps ONE existing repo fn that owns its own tx + a coarse
         //      export-INERT task_files event (the reads take none).
+        //    + 1 get_checkpoint_suggestions (1B-F8; defined in mcp/files.rs —
+        //      a read-only sibling of the footprint reads: cross-task EXPECTED
+        //      files-overlap → candidate checkpoint task ids, story- or
+        //      sprint-scoped; composes repo::story_checkpoint_suggestions /
+        //      repo::sprint_checkpoint_suggestions over the first-class
+        //      task_files EXPECTED set, no tx + no event).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            92,
-            "advertised tool count must be exactly 92, got {}: {names:?}",
+            93,
+            "advertised tool count must be exactly 93, got {}: {names:?}",
             names.len()
         );
 
@@ -581,8 +592,8 @@ mod tests {
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            92,
-            "advertised tool names must be UNIQUE (92 distinct), got {} distinct of {}: {names:?}",
+            93,
+            "advertised tool names must be UNIQUE (93 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
