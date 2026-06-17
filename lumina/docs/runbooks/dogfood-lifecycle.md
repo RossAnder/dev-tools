@@ -202,7 +202,8 @@ Execute by claiming, leasing, and completing tasks:
 ```
 claim_next_task { sprint_id, lane: "implement", tier?, agent_id, lease_ttl_secs } → { claimed }
 renew_lease     { task_id, agent_id, lease_ttl_secs }                            # heartbeat
-complete_task   { task_id, agent_id }                                            → { task_id, review_task_id? }
+complete_task   { task_id, agent_id }                                            → { task_id, review_task_id }  # review_task_id is ALWAYS null (1B-F9)
+transition_status { id: <task>, status: "done" }                                 # the reviewer's review → done close (same row)
 ```
 
 Because tasks default to `lane='implement'` at create (leg C), a planned task is
@@ -215,14 +216,26 @@ claimable the moment the sprint is `active` — no lane-stamping detour.
   dependency edge — use it to serialise barrier work (e.g. a shared-file
   migration) that must not race with other claims.
 
-- **Gate (10) — the review-lane cascade.** `complete_task` on an `implement`-lane
-  task spawns a `lane='review'` task under the same story, back-linked via
-  `reviews_work_item_id`, with copied `files_touched` and a task→task dep edge.
-  A reviewer claims it (`claim_next_task { lane: "review" }`); reviewer findings
-  spawn rework via `record_finding_decision { decision: "spawn_task" }`, which
-  stamps `lane='implement'` + `tier=NULL` on the rework task and binds it to the
-  sprint — so the rework is itself claimable. A `review`-lane (or NULL-lane)
-  completion spawns nothing (prevents an infinite cascade).
+- **Gate (10) — review is a LANE/STATE on the SAME task (1B-F9 review-as-state).**
+  There is NO spawned review task. `complete_task` routes the completed task on
+  its OWN row by tier: a **deep** task (or one flagged `lane='review'`) moves to
+  the non-terminal `review` STATE + `lane='review'` (NOT `done`, NOT reconciled —
+  `review_task_id` is always null); a **lite / un-flagged** task goes straight to
+  `done`. A dedicated reviewer claims the review-state row CONTINUOUSLY
+  (`claim_next_task { lane: "review" }` — M2 admits `status='review' AND
+  lane='review'`), reviews the task's `files_touched`-scoped diff (for already-
+  checkpointed work, diff the recorded `task_commits` SHAs — the server is
+  record-only and ships no git isolation; never a whole-tree diff, never a
+  quiesce-before-review barrier), and closes a clean review `review → done` on the
+  SAME row via `transition_status` (the reconcile fires there; `complete_task`
+  would route a `lane='review'` row BACK to review, so it is NOT the close path).
+  The row is never reopened — `done` is terminal (a `done → review` flip is
+  rejected). Reviewer findings spawn NEW implement tasks via
+  `record_finding_decision { decision: "spawn_task" }` — stamps `lane='implement'`
+  + `tier=NULL`, nests under the finding's parent STORY (a task host lifts to its
+  story, 1B-F9 MF), binds to the sprint → claimable. Quiescence's `in_review`
+  bucket keeps an UNCLAIMED review-state task non-terminal (and surfaces a
+  no-claimer review as `stalled`).
 
 Poll quiescence to know when to stop or escalate:
 
@@ -358,11 +371,15 @@ the canonical list — the legs A–H above cite it.
    `review→done|cancelled` on it. **Un-wedge path:** drive `active→review` via
    `set_sprint_status`, then `record_worktree_rejection` to cancel cleanly.
    *(Leg H.)*
-10. **The review-lane cascade.** `complete_task` on an `implement`-lane task
-    spawns a `lane='review'` task (back-linked via `reviews_work_item_id`);
-    reviewer findings spawn rework via `record_finding_decision { decision:
-    "spawn_task" }` (stamps `lane='implement'`, binds to the sprint → claimable).
-    A `review`/NULL-lane completion spawns nothing. *(Leg F.)*
+10. **Review is a lane/state on the SAME task (1B-F9 review-as-state).** No
+    spawned review task: `complete_task` routes a deep/flagged task to the
+    non-terminal `review` STATE + `lane='review'` on its OWN row (a lite task →
+    `done`); a reviewer claims the review-state row, reviews the
+    `files_touched`-scoped diff (or the recorded `task_commits` SHAs for
+    checkpointed work), and closes `review → done` via `transition_status` (never
+    reopened). Findings spawn NEW `lane='implement'` rework via
+    `record_finding_decision { decision: "spawn_task" }` (nests under the parent
+    story, binds to the sprint → claimable). *(Leg F.)*
 11. **The lumina server never runs git.** Git executes in the `lumina-companion`
     process (preferred — `execute_worktree_create` / `execute_worktree_merge`
     create/merge AND record in one call) or in the agent's own shell (the
