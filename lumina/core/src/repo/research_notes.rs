@@ -18,8 +18,35 @@ use super::*;
 use super::events::record_event;
 use crate::args;
 use crate::db::{DbClient, Scalar};
-use crate::domain::{ResearchState, UpdateResearchNoteRequest};
+use crate::domain::{ResearchNote, ResearchState, UpdateResearchNoteRequest};
 use crate::error::AppError;
+
+/// Filter input for [`query_research_notes`] — a static NULL-guard filter
+/// mirroring [`crate::domain::QueryFindingsFilter`]'s idiom (B20, migration
+/// 0011): every field is `Option<&str>` and an absent field does not constrain
+/// its predicate, so ONE prepared statement covers every combination WITHOUT
+/// building SQL from user input. A borrowing input (the values are bound once
+/// per call and never outlive it), constructed at the MCP/HTTP boundary.
+///
+/// The two anchor filters answer the two cross-work-item queries the F7 anchor
+/// pass exists to serve:
+/// - `file` — "show every note citing file X": match a note whose `anchors`
+///   array holds an anchor whose PATH-PART equals X (the exact anchor, or the
+///   `X:<line>` `path:line` form). This is the common "what did we research
+///   about this file" lookup, so it spans every line cited in that file.
+/// - `anchor` — exact full-anchor-string match (a specific `path:line` cite or
+///   a specific URL).
+#[derive(Debug, Default, Clone)]
+pub struct QueryResearchNotesFilter<'a> {
+    /// Constrain to notes on this work-item; absent ⇒ no constraint.
+    pub work_item_id: Option<&'a str>,
+    /// Constrain to notes citing this FILE (anchor == X OR anchor LIKE 'X:%');
+    /// absent ⇒ no constraint.
+    pub file: Option<&'a str>,
+    /// Constrain to notes carrying this EXACT anchor string; absent ⇒ no
+    /// constraint.
+    pub anchor: Option<&'a str>,
+}
 
 /// Append ONE `research_notes` row under the single-mutation-path discipline
 /// (migration 0003). `seq` is `MAX(seq)+1` per work item WITHIN the transaction;
@@ -228,6 +255,81 @@ pub async fn supersede_research_note(
 
     tx.commit().await?;
     Ok(())
+}
+
+// Full-row SELECT for [`query_research_notes`] — the same column list the
+// [`ResearchNote`] FromRow decodes (mirroring `list_research_notes`), plus a
+// static NULL-guard filter and a stable `created_at DESC, id` (newest-first)
+// order. The clause is a `&'static str` literal (the runtime seam requires
+// `'static`; the WHERE is NEVER built from user input — the only variation is
+// whether each bound value is NULL):
+//   * `$1` — `work_item_id`     : `($1 IS NULL OR work_item_id = $1)`.
+//   * `$2` — `file` path filter : an absent `$2` disables the conjunct; when
+//     present, an EXISTS over `json_each(anchors)` matches a note whose anchors
+//     array holds an anchor equal to `$2` OR starting `$2 || ':'` (the
+//     `path:line` form). `json_each` over a NULL `anchors` column yields zero
+//     rows, so a note with no anchors simply fails the EXISTS — no NULL guard
+//     needed inside it.
+//   * `$3` — `anchor` exact     : an absent `$3` disables the conjunct; when
+//     present, an EXISTS over `json_each(anchors)` matches a note whose anchors
+//     array holds an anchor EQUAL to `$3`.
+// `superseded_by IS NULL` keeps the result to LIVE notes only — consistent with
+// `list_research_notes` and the `get_work_item_detail` fold. Each `$N` is bound
+// ONCE per distinct placeholder; a placeholder appearing twice in the SQL reads
+// the same single bound value (the `query_findings` idiom).
+//
+// Design note: the `($N IS NULL OR …)` NULL-guard is NON-SARGABLE and the two
+// `json_each` EXISTS subqueries are full per-row scans of the anchors array;
+// both are accepted as immaterial at the current `research_notes`-table scale
+// (the deliberate trade-off is ONE prepared statement covering every filter
+// combination — no dynamic SQL), matching the `query_findings` rationale.
+const QUERY_RESEARCH_NOTES_SQL: &str = "\
+    SELECT id, work_item_id, seq, summary, body, confidence, state, \
+           rationale, lens, origin, anchors, superseded_by, created_at \
+    FROM research_notes \
+    WHERE ($1 IS NULL OR work_item_id = $1) \
+      AND ($2 IS NULL OR EXISTS ( \
+            SELECT 1 FROM json_each(research_notes.anchors) je \
+            WHERE je.value = $2 OR je.value LIKE $2 || ':%')) \
+      AND ($3 IS NULL OR EXISTS ( \
+            SELECT 1 FROM json_each(research_notes.anchors) je \
+            WHERE je.value = $3)) \
+      AND superseded_by IS NULL \
+    ORDER BY created_at DESC, id";
+
+/// Query LIVE research notes across work items with a static NULL-guard filter
+/// over `work_item_id` + the two anchor predicates (the F7 anchor pass; mirrors
+/// [`query_findings`]). Each filter field is `Option<&str>`; an absent field
+/// binds `NULL`, which disables its conjunct, so one prepared statement covers
+/// every filter combination WITHOUT building SQL from user input. "Live only" —
+/// `superseded_by IS NULL` is always applied, matching [`list_research_notes`]
+/// and the `get_work_item_detail` fold (superseded notes are intentionally NOT
+/// queryable here). Returns the notes newest-first (`created_at DESC, id`).
+///
+/// The `file` filter matches a note whose `anchors` array cites the given file
+/// (the anchor equals the path, or is the `path:line` form `path:%`); the
+/// `anchor` filter is an exact full-anchor-string match. Both run through
+/// SQLite's `json_each` table-valued function over the stored JSON array. This
+/// is a READ — no transaction, no event row.
+pub async fn query_research_notes(
+    db: &impl DbClient,
+    filter: &QueryResearchNotesFilter<'_>,
+) -> Result<Vec<ResearchNote>, AppError> {
+    // The three NULL-guard binds, in the fixed positional order $1..=$3. Each
+    // is owned-cloned once into the `Args` bundle; the SQL references the
+    // matching `$N` (twice for $1 — once in `IS NULL`, once in `= $1`) and the
+    // runtime SQLite layer resolves both references to this single bound value.
+    let rows = db
+        .query_all::<ResearchNote>(
+            QUERY_RESEARCH_NOTES_SQL,
+            args![
+                filter.work_item_id.map(str::to_owned),
+                filter.file.map(str::to_owned),
+                filter.anchor.map(str::to_owned),
+            ],
+        )
+        .await?;
+    Ok(rows)
 }
 
 #[cfg(test)]
