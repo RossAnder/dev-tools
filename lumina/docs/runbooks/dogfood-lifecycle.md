@@ -99,6 +99,23 @@ chosen task ids under one transaction (an already-attached pair is collapsed and
 not re-counted). Composition is a COMPOSITION step, NOT an execution trigger —
 the sprint does not start running just because tasks are attached.
 
+Between attach and the worktree/ladder, compose-sprint surfaces **checkpoint
+suggestions** from cross-task `files_touched` overlap and lets the operator
+finalise the set BEFORE the sprint runs (a `checkpoint=1` task only freezes the
+sprint once it is `active`):
+
+```
+get_checkpoint_suggestions { sprint_id }              → [ { task_id, overlaps: [ { task_id, shared_paths } ] }, … ]
+set_task_checkpoint        { task_id, on: true }      # stamp each operator-finalised checkpoint
+```
+
+`get_checkpoint_suggestions` returns the attached tasks whose first-class
+EXPECTED `task_files` set intersects another attached task's (story- or
+sprint-scoped). It is **advisory** — it suggests consolidated-commit barriers
+(gate 8) for shared-file work; the operator accepts, adds, or drops candidates,
+then stamps the final set with `set_task_checkpoint`. Marking happens here, not
+later, because the freeze only bites once the sprint is `active`.
+
 ## E. Create the worktree — `execute_worktree_create` (companion), record-only fallback
 
 A sprint OWNS exactly one worktree. PREFER the companion execute path — one
@@ -142,6 +159,19 @@ connected (502 otherwise).
   `worktrees.status` column).
 
 ## F. Drive the sprint ladder + execute — `/lumina:run-sprint`
+
+`/lumina:run-sprint` **defaults to the agent-team worker fan-out** (a bounded
+pool of 3–5 teammates draining the claim queue in parallel under one lead) and
+**auto-degrades to a single-agent worker loop** when agent teams are unavailable
+(`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` unset) or lumina MCP is not configured at
+project/user scope (teammates inherit MCP only from project/user settings, never
+a per-subagent `mcpServers` block). Both topologies share the SAME sprint
+worktree and the SAME lifecycle below; only the worker fan-out differs. The
+runner commits at Kahn phase-batch boundaries (`compute_task_batches` read
+advisorily) with `record_task_commits` provenance, plus a consolidated commit at
+each checkpoint freeze and a final close commit before the merge — see
+[ADR-0002](../../../docs/adr/0002-sprint-execution-architecture.md) (the
+2026-06-17 team-default amendment).
 
 A sprint walks the lifecycle ladder before tasks can be claimed:
 

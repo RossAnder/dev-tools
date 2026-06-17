@@ -1,6 +1,6 @@
 ---
 name: run-sprint
-description: Drive an active sprint to a recorded merge — single-agent worker loop over the team-execution work-queue, then the companion-executed merge with lumina recording provenance.
+description: Drive an active sprint to a recorded merge — agent-team worker fan-out by DEFAULT (auto-degrading to a single-agent loop when CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS or project/user-level lumina MCP is unavailable) over the team-execution work-queue, then the companion-executed merge with lumina recording provenance.
 arguments: [sprint_id]
 argument-hint: "[sprint_id]"
 disable-model-invocation: true
@@ -12,24 +12,31 @@ Execution-loop runner: drives ONE sprint from `active` to a recorded merge of
 its shared worktree. The runner claims, works, and completes tasks against the
 durable team-execution work-queue (migration 0013), honours the migration-0016
 sprint-lifecycle + checkpoint-freeze + worktree-ownership rules, and ends by
-triggering the merge via `execute_worktree_merge` — the companion now merges
-for you. The SERVER stays **record-only** and never shells to git; the git
-itself runs in the separate `lumina-companion` process (ADR-0006), which
-merges on lumina's behalf and records the audit with the companion's
-ground-truth sha. (The agent still runs its own commits in the shared
-worktree; manual `git merge` + `record_worktree_merge` remains the
-no-companion fallback/audit path — see Step 6.)
+triggering the merge via `execute_worktree_merge` — the companion merges for
+you. The SERVER stays **record-only** and never shells to git; the git itself
+runs in the separate `lumina-companion` process (ADR-0006), which merges on
+lumina's behalf and records the audit with the companion's ground-truth sha.
+(Workers still run their own commits in the shared worktree; manual `git merge`
++ `record_worktree_merge` remains the no-companion fallback/audit path — see
+Step 7.)
 
-The **single-agent worker loop (Steps 2–6) is the CANONICAL path** — the safe
-default. An agent-team variant is a clearly-labelled SECONDARY appendix at the
-end; do NOT reach for it unless the user explicitly opts into agent teams.
+The **agent-team worker fan-out (Step 2) is the DEFAULT path** — a bounded pool
+of teammate workers drains the work-queue in parallel under one lead. When
+agent teams are unavailable the runner **auto-degrades** to the single-agent
+worker loop, which is the explicitly-labelled fallback (`## Auto-degrade —
+single-agent worker loop` near the end). The degrade is automatic and silent on
+the happy path: the runner DETECTS team availability at pre-flight (Step 1.3)
+and picks the topology for you. Everything ELSE — pre-flight, lane cascade,
+commit cadence, checkpoint freeze, quiescence, and the merge — is IDENTICAL
+across both topologies; only the worker fan-out differs.
 
 Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (five keys, NOT forked — the runner stays inline so checkpoint/quiescence
-decisions are user-visible), §c (one §c rollup at the end; the per-task
-`record_task_activity` progress entries are operational, not planning writes —
-they carry `origin: "implement"`), §e (Sentry — runner decides loop control;
-MCP owns leasing/cascade/lifecycle state).
+§a (five keys, NOT forked — the runner stays inline so topology-selection,
+checkpoint, and quiescence decisions are user-visible), §c (one §c rollup at
+the end; the per-task `record_task_activity` progress entries are operational,
+not planning writes — they carry `origin: "implement"`), §e (Sentry — runner
+decides loop control + fan-out + drift monitoring; MCP owns
+leasing/cascade/lifecycle state).
 
 ## MCP tools used directly by this runner
 
@@ -37,14 +44,19 @@ Work-queue (migration 0013):
 
 - `claim_next_task { sprint_id, lane, tier?, agent_id, lease_ttl_secs }` — the
   race-free claim primitive; returns `{ claimed: null }` (NOT an error) when no
-  task is ready OR the sprint is not runnable (frozen / not `active`).
+  task is ready OR the sprint is not runnable (frozen / not `active`). Under a
+  team, each worker claims with its OWN `agent_id` (and optionally a `tier` so
+  lite/deep workers self-select) — the atomic claim is exactly the race-free
+  primitive a shared in-process list cannot provide.
 - `renew_lease { task_id, agent_id, lease_ttl_secs }` — heartbeat at ~half-TTL while working.
 - `record_task_activity` — per-task progress entries (`origin: "implement"`).
 - `complete_task { task_id, agent_id }` — transition `done` + clear lease; for an
   `implement`-lane task ALSO spawns the back-linked `review`-lane task.
 - `release_task { task_id, agent_id }` — owner-guarded yield; ONLY on a true abandon.
-- `get_sprint_quiescence { sprint_id }` — the lead's termination/escalation poll.
+- `get_sprint_quiescence { sprint_id }` — the lead's termination/escalation + drift poll.
 - `list_open_questions_for_sprint { sprint_id }` — arbiter surface for blocked questions.
+- `compute_task_batches { story_id }` — Kahn phase batches over the task subtree; the
+  lead reads these to drive the phase-batch-boundary commit cadence (Step 4).
 
 Review cascade:
 
@@ -68,14 +80,17 @@ Sprint lifecycle / worktree / commit provenance (migration 0016):
   companion connected); drives the owner `review→done`.
 - `record_worktree_rejection { worktree_id, reason }` — the reject counterpart; drives the owner `review→cancelled`.
 
-The runner ALSO invokes the repo-wide `commit-conventions` skill (NOT a
-`/lumina:*` skill — it lives at `claude/skills/commit-conventions/`) to draft
-clean git messages. Keep commit↔task cross-refs in lumina (via
-`record_task_commits`), NOT in commit-message trailers.
+Team coordination is the HARNESS's job, not lumina's: teammate fan-out and peer
+`SendMessage` (advisory `file_overlap_warnings`, lead nudges) ride the agent-team
+channel — lumina provides NO peer-messaging tool. The runner ALSO invokes the
+repo-wide `commit-conventions` skill (NOT a `/lumina:*` skill — it lives at
+`claude/skills/commit-conventions/`) to draft clean git messages. Keep
+commit↔task cross-refs in lumina (via `record_task_commits`), NOT in
+commit-message trailers.
 
 ## Body
 
-### Step 1 — pre-flight (sprint active + exactly one shared worktree)
+### Step 1 — pre-flight (sprint active + one shared worktree + topology selection)
 
 1. Read the sprint. If its status is `draft` or `ready`, raise it to `active`
    via `set_sprint_status({ sprint_id: "$sprint_id", status: "active" })` (the
@@ -85,52 +100,100 @@ clean git messages. Keep commit↔task cross-refs in lumina (via
 2. Assert EXACTLY ONE shared worktree exists for the sprint:
    `list_worktrees` (or `get_worktree` on a known id) → confirm one worktree
    whose `owning_sprint_id == $sprint_id`. There is ONE shared sprint worktree,
-   never a per-worker worktree. Confirm the on-disk worktree exists too —
-   compose-sprint minted it earlier via the companion's
-   `execute_worktree_create` (or, on the no-companion fallback, the agent ran
-   the real `git worktree add` and recorded it via `create_worktree`). If zero
-   or more than one, ABORT and ask the user to reconcile (the SERVER does not
-   create on-disk worktrees itself; only the companion does, on its behalf).
-3. Mint a stable `agent_id` for this run (e.g. `run-sprint-<short-uuid>`) and a
-   `lease_ttl_secs` (the default 30 min is generous; pick a shorter value for a
-   chatty loop). Hold both for every `claim_next_task` / `renew_lease` /
+   never a per-worker worktree — the checkpoint barrier and the single Step-7
+   merge both assume it. Confirm the on-disk worktree exists too — compose-sprint
+   minted it earlier via the companion's `execute_worktree_create` (or, on the
+   no-companion fallback, the agent ran the real `git worktree add` and recorded
+   it via `create_worktree`). If zero or more than one, ABORT and ask the user to
+   reconcile (the SERVER does not create on-disk worktrees itself; only the
+   companion does, on its behalf).
+3. **SELECT TOPOLOGY — team (default) vs single-agent (auto-degrade).** Run the
+   team topology UNLESS one of these degrade gates fires; if either fires,
+   auto-degrade to the single-agent fallback and state which gate fired:
+   - **(a) Agent-teams availability**: agent teams require the experimental flag
+     `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in the environment. If it is
+     UNSET/not `1`, you cannot spawn teammates → DEGRADE to single-agent.
+   - **(b) lumina MCP at project/user scope**: a teammate subagent does NOT
+     inherit a per-subagent `mcpServers` frontmatter block — that is DROPPED
+     upstream; teammates inherit MCP servers ONLY from PROJECT (`.mcp.json`) or
+     USER settings. So BEFORE spawning teammates, confirm the `lumina` server is
+     configured at project or user scope (e.g. `.mcp.json` carries a `lumina`
+     HTTP entry). If it is NOT, teammates would be unable to call
+     `claim_next_task` / `complete_task` → DEGRADE to single-agent (the lead, in
+     the main session, keeps its lumina MCP either way).
+
+     A handy assertion: the lead itself reaching `mcp__lumina__*` does not prove
+     project/user scope (the lead may have it via a session/frontmatter source a
+     teammate won't see) — verify the `.mcp.json` / user-settings entry exists,
+     don't infer it from your own access.
+4. Mint a stable `agent_id` for the lead (e.g. `run-sprint-<short-uuid>`); each
+   teammate gets its OWN derived `agent_id` (e.g. `run-sprint-<uuid>-w<n>`). Pick
+   a `lease_ttl_secs` with a **floor of 600s (10 min)** — short enough that a
+   stalled worker's task is reclaimable promptly, long enough that a deep task's
+   work between heartbeats never lapses; the default 1800s (30 min) is a fine
+   ceiling. Hold the id + TTL for every `claim_next_task` / `renew_lease` /
    `complete_task` / `release_task` call.
 
-### Step 2 — worker loop (single agent — CANONICAL)
+### Step 2 — worker fan-out: agent-team topology (DEFAULT)
 
-Loop, working entirely inside the SHARED worktree on disk:
+The team shares ONE sprint worktree on disk (Step 1.2). One agent is the
+**LEAD** (the invoking session): it owns topology selection, fan-out, the commit
+cadence (Step 4), checkpoint quiesce (Step 5), quiescence/drift monitoring
+(Step 6), and the single Step-7 finalize. The lead spawns a bounded pool of
+**teammate workers**; each teammate runs the worker loop below against the
+shared queue.
 
-1. `claimed = claim_next_task({ sprint_id, lane: "implement", agent_id,
+**Fan-out cap — 3 to 5 concurrent teammates.** Spawn a BOUNDED pool (3–5 per the
+upstream agent-teams guidance), NOT one teammate per task: the pool drains the
+queue by re-claiming as tasks complete. More than ~5 thrashes the shared
+worktree + cargo build lock and yields diminishing returns; fewer than 3
+underuses parallelism on a well-decomposed sprint. Size to the sprint's claimable
+breadth (a 3-task sprint needs ~2–3 workers, not 5). The lead MAY also work the
+queue itself between monitoring duties.
+
+Each teammate loops, working entirely inside the SHARED worktree on disk:
+
+1. `claimed = claim_next_task({ sprint_id, lane: "implement", agent_id: <own>,
    lease_ttl_secs })`. (Drain the implement lane first; sweep the `review` lane
-   in the same loop — see Step 3 lane handling. Pass `tier` only if this worker
-   is specialised to a tier.)
-2. If `claimed == null`, BREAK to Step 5 (quiescence check) — null means no
+   in the same loop — see Step 3. Pass `tier` only if this worker is specialised
+   to a tier, so lite/deep workers self-select.)
+2. If `claimed == null`, the implement lane is (for now) dry — sweep the review
+   lane (Step 3); if BOTH return null, park and report to the lead. Null means no
    ready task OR the sprint is frozen by an in-progress checkpoint task OR the
-   sprint is not `active`. Do not treat null as an error.
-   **Lane-fix note**: a planned task DEFAULTS to `lane='implement'` at create,
-   so the implement-lane claim surfaces planned tasks DIRECTLY — there is no
+   sprint is not `active` — never an error.
+   **Lane-fix note**: a planned task DEFAULTS to `lane='implement'` at create, so
+   the implement-lane claim surfaces planned tasks DIRECTLY — there is no
    pre-stamp step and no finding-spawn detour.
-3. If the claimed task carries `checkpoint=1`, jump to Step 4 (checkpoint
-   protocol) instead of working it normally.
-4. Work the task in the shared worktree. While working, `renew_lease` at
-   ~half the TTL so the lease never lapses mid-task (a lapsed lease is lazily
-   reclaimed by the next claim — another worker could steal the task). Append
-   progress via `record_task_activity({ work_item_id: <task_id>, entry_type:
-   "execution", origin: "implement", summary: "...", body:
-   "session=${CLAUDE_SESSION_ID}" })` (apply the §c substitution guard —
-   `session=unknown` + warn on non-substitution).
-5. On completion, `complete_task({ task_id, agent_id })`. Treat completion
-   defensively: `complete_task` is idempotent (safe to re-run across the
-   two-txn window), so on an AMBIGUOUS failure (network/timeout, unknown
-   outcome) RETRY `complete_task` rather than releasing. Call `release_task`
-   ONLY on a TRUE abandon (you are deliberately yielding unfinished work back
-   to the queue) — never as error-recovery for an uncertain completion.
-6. Re-loop to Step 2.1.
+3. If the claimed task carries `checkpoint=1`, hand control to the checkpoint
+   protocol (Step 5) instead of working it normally — a checkpoint freezes the
+   whole sprint, so it is a lead-coordinated barrier, not ordinary work.
+4. Work the task in the shared worktree. **Renew at ~half the TTL**
+   (`renew_lease`) so the lease never lapses mid-task (a lapsed lease is lazily
+   reclaimed by the next claim — a peer could steal the task). Append progress via
+   `record_task_activity({ work_item_id: <task_id>, entry_type: "execution",
+   origin: "implement", summary: "...", body: "session=${CLAUDE_SESSION_ID}" })`
+   (apply the §c substitution guard — `session=unknown` + warn on
+   non-substitution). The `file_overlap_warnings` on the claim are ADVISORY
+   (never a gate, per ADR-0002) — coordinate over them with peers via
+   `SendMessage`, do not block on them.
+5. On completion, `complete_task({ task_id, agent_id: <own> })`. Treat completion
+   defensively: `complete_task` is idempotent (safe to re-run across the two-txn
+   window), so on an AMBIGUOUS failure (network/timeout, unknown outcome) RETRY
+   `complete_task` rather than releasing. Call `release_task` ONLY on a TRUE
+   abandon (deliberately yielding unfinished work back to the queue) — never as
+   error-recovery for an uncertain completion.
+6. Re-loop to 2.1.
 
-### Step 3 — lane handling (implement ⇄ review cascade)
+**Lead responsibilities run concurrently with the pool** — fan-out sizing, the
+Step-4 commit cadence, the Step-5 checkpoint quiesce, and the Step-6
+quiescence/drift monitoring (the lead nudges teammates that stop on an error or
+finish work without marking it complete). The lead owns the single Step-7
+finalize; teammates do NOT each merge.
+
+### Step 3 — lane handling (implement ⇄ review cascade) [shared]
 
 Lanes are first-class (`work_items.lane ∈ implement | review`, NULL = not
-team-managed):
+team-managed); the cascade is IDENTICAL under teams and single-agent:
 
 - **Completing an `implement`-lane task** spawns a `lane='review'` review task
   (done by `complete_task` itself): a new task under the impl task's story,
@@ -150,63 +213,106 @@ team-managed):
   hop — prevents an infinite review→review loop). Rework, if any, came from the
   `spawn_task` finding-decision above, not from `complete_task`.
 
-A practical single-agent order: drain implement-lane claims; when implement
+A practical drain order (per worker): drain implement-lane claims; when implement
 returns null, sweep review-lane claims; a review may spawn fresh implement
-rework, so re-check the implement lane after each review sweep. Continue until
-BOTH lanes return null in the same pass, then fall through to Step 5.
+rework, so the pool re-checks the implement lane after each review sweep.
+Continue until BOTH lanes return null sprint-wide, then the lead falls through to
+Step 6.
 
-### Step 4 — checkpoint protocol (sprint-wide freeze)
+### Step 4 — commit cadence (Kahn phase-batch boundaries) [shared]
 
-A `checkpoint=1` task (set via `set_task_checkpoint`) FREEZES the WHOLE sprint
-while it is `in_progress` — `claim_next_task` returns null sprint-wide (a
-runtime freeze, NOT a task→task dep). This is the barrier for shared-file /
-consolidated-commit work. When you claim such a task:
+The lead owns committing; workers do their edits in the shared worktree and the
+lead lands them. Commit at **Kahn phase-batch boundaries**, plus checkpoints,
+plus a final close:
+
+1. Read the phase batches with `compute_task_batches({ story_id })` (Vec of
+   phases, each a set of tasks dispatchable once its predecessors are done).
+   Dispatch and complete a phase's tasks, then make ONE commit at the boundary
+   before the next phase's tasks land their edits.
+2. For each boundary commit: draft the message with the `commit-conventions`
+   skill (NO harness trailers), then record provenance with
+   `record_task_commits({ commit_sha, task_ids: [<every task id whose edits this
+   commit captures>], sprint_id: "$sprint_id" })` (idempotent via
+   `UNIQUE(commit_sha, task_id)`).
+3. **Accept an occasional dirty snapshot.** Because teammates work concurrently
+   and the Kahn boundaries are NOT hard barriers (tasks pipeline across phases as
+   their deps clear), a boundary commit MAY capture a partially-edited file from
+   an already-started next-phase task. That is ACCEPTED — under team concurrency
+   bisectability + per-commit provenance are best-effort, not a guarantee; the
+   checkpoint consolidated commits (Step 5) and the final close commit before the
+   merge (Step 7) reconcile the remainder. Do NOT stall the pool waiting for a
+   perfectly clean tree at every boundary.
+4. A `checkpoint=1` task forces a consolidated commit at a sprint-wide freeze —
+   that is the Step-5 special case of this cadence.
+
+### Step 5 — checkpoint protocol (sprint-wide freeze) [shared]
+
+A `checkpoint=1` task (set via `set_task_checkpoint`, typically by compose-sprint
+from cross-task `files_touched` overlap) FREEZES the WHOLE sprint while it is
+`in_progress` — `claim_next_task` returns null sprint-wide (a runtime freeze, NOT
+a task→task dep). This is the barrier for shared-file / consolidated-commit work.
+When the checkpoint task is claimed:
 
 1. QUIESCE peers: poll `get_sprint_quiescence` until `in_progress` (excluding
-   this checkpoint task) reaches 0 — all other workers have parked. (Single
-   agent: you are the only worker, so this is immediate; the poll matters under
-   the team appendix.)
+   this checkpoint task) reaches 0 — all other workers have parked (their claims
+   now return null sprint-wide). Under a team this poll is load-bearing; for a
+   single agent it is immediate (you are the only worker).
 2. Make ONE consolidated REAL commit on the shared worktree (use the
    `commit-conventions` skill for the message; NO harness trailers).
 3. Record provenance: `record_task_commits({ commit_sha: <the commit>,
    task_ids: [<every task id this batch commit implements>], sprint_id:
    "$sprint_id" })`. Idempotent via `UNIQUE(commit_sha, task_id)`.
 4. `complete_task({ task_id: <checkpoint task>, agent_id })` to LIFT the freeze
-   — claims resume sprint-wide.
+   — claims resume sprint-wide for the whole pool.
 
 Re-loop to Step 2.
 
-### Step 5 — lead / quiescence (terminate or escalate)
+### Step 6 — lead / quiescence + drift monitoring (terminate or escalate) [shared]
 
-When the worker loop drains (both lanes return null), poll
-`get_sprint_quiescence({ sprint_id })` and branch on the verdict:
+The lead polls `get_sprint_quiescence({ sprint_id })` on a steady cadence — both
+to detect termination AND to monitor teammate drift:
+
+**Drift / stuck-task monitoring (lead contract).** A teammate may STOP on an
+error (crash, refusal, context exhaustion) or FINISH work without marking it
+complete (no `complete_task`). The lead watches for a task that stays
+`in_progress` with a lease nearing expiry and no fresh `record_task_activity`:
+- NUDGE the owning teammate via `SendMessage` ("renew or complete task <id>").
+- If the teammate is unresponsive, let the lease LAPSE — the next
+  `claim_next_task` lazily reclaims it (or the lead `release_task`s it if it
+  owns the lease) so a peer re-runs it. The lead must NOT let a stuck task
+  silently wedge the sprint: nudge, then rely on lease-reclaim.
+- A worker that exits its loop with a task still claimed is the same case —
+  reclaim via lease lapse.
+
+**Termination verdict** — branch on the quiescence roll-up:
 
 - **`done`** (`claimable==0 && in_progress==0 && blocked==0`) → proceed to
-  Step 6 (finalize / merge).
+  Step 7 (finalize / merge).
 - **`blocked_on_question > 0`** → resolve via
   `list_open_questions_for_sprint({ sprint_id })`: answer code/convention
   questions directly with `resolve_open_question` (pick the enabling option —
   this unblocks that branch's tasks and cancels the others'), and ESCALATE
   genuine product calls to the human (who answers via
-  `POST /open-questions/{id}/resolve`). After resolving, re-loop to Step 2 —
+  `POST /open-questions/{id}/resolve`). After resolving, the pool re-claims —
   unblocked tasks are now claimable.
 - **`stalled`** (`blocked>0 && claimable==0 && in_progress==0`) → no progress
   is possible without an arbiter. Surface the stall to the user with the open
-  questions / blocked task ids; do NOT spin. Resolve or escalate, then re-loop
-  to Step 2; if nothing can unblock it, treat the sprint as un-wedge-needed
-  (Step 7).
+  questions / blocked task ids; do NOT spin. Resolve or escalate, then re-loop;
+  if nothing can unblock it, treat the sprint as un-wedge-needed (Step 8).
 
-Re-poll after each resolution; only a terminal `done` verdict gates Step 6.
+Re-poll after each resolution; only a terminal `done` verdict gates Step 7.
 
-### Step 6 — finalize / merge (companion-executed)
+### Step 7 — finalize / merge (companion-executed) [shared]
 
-Only AFTER quiescence reports `done`:
+Only AFTER quiescence reports `done`. The LEAD owns this (workers do NOT each
+merge):
 
-1. `set_sprint_status({ sprint_id, status: "review" })` — flip `active→review`.
-   (This is the LAST `set_sprint_status` call the runner makes; the terminal
-   `review→done` flip is driven by the merge RECORD — `execute_worktree_merge`
-   records it for you, or `record_worktree_merge` on the manual fallback — NOT
-   by `set_sprint_status`; see the un-wedge note for why.)
+1. Land the final close commit if the tree carries un-committed worker edits
+   (Step 4), then `set_sprint_status({ sprint_id, status: "review" })` — flip
+   `active→review`. (This is the LAST `set_sprint_status` call the runner makes;
+   the terminal `review→done` flip is driven by the merge RECORD —
+   `execute_worktree_merge` records it for you, or `record_worktree_merge` on the
+   manual fallback — NOT by `set_sprint_status`; see the un-wedge note for why.)
 2. `execute_worktree_merge({ worktree_id })` — the PRIMARY merge path. The
    connected `lumina-companion` performs the merge in a DETACHED integration
    worktree, so a checked-out target does NOT block it (no "move your primary
@@ -247,7 +353,7 @@ commit-message trailers.
 
 The sprint is now `done` with a recorded merge.
 
-### Step 7 — un-wedge a stuck sprint (record-only abandon)
+### Step 8 — un-wedge a stuck sprint (record-only abandon) [shared]
 
 A sprint stuck `active` with an OWNED worktree CANNOT be cancelled directly:
 `set_sprint_status` rejects the terminal `active→cancelled` flip on a
@@ -262,7 +368,7 @@ owner. Recover in TWO steps:
 State this to the user explicitly: you cannot jump `active→cancelled` on an
 owned worktree; you go through `review` first.
 
-### Step 8 — §c provenance rollup (ONE post-run entry)
+### Step 9 — §c provenance rollup (ONE post-run entry) [shared]
 
 After the run ends (merged, rejected, or aborted), append exactly ONE rollup
 to the sprint (or its lead story). Apply the §c substitution guard verbatim.
@@ -272,7 +378,7 @@ mcp__lumina__record_task_activity {
   work_item_id: "$sprint_id",
   entry_type: "execution",
   origin: "implement",
-  summary: "run-sprint: completed=<n> review=<n> rework=<n> checkpoints=<n>; outcome=<merged|rejected|aborted>",
+  summary: "run-sprint: topology=<team|single-agent> completed=<n> review=<n> rework=<n> checkpoints=<n>; outcome=<merged|rejected|aborted>",
   body: "session=${CLAUDE_SESSION_ID}; worktree=<worktree_id>; merge_ref=<ref-or-none>"
 }
 ```
@@ -281,63 +387,73 @@ mcp__lumina__record_task_activity {
 default `origin: "plan"` for the planning-block skills). On non-substitution,
 write `session=unknown` and warn.
 
+## Auto-degrade — single-agent worker loop (fallback)
+
+> **This is the fallback, not the default.** It runs ONLY when a Step-1.3 degrade
+> gate fires — agent teams are unavailable (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`
+> unset) OR lumina MCP is not configured at project/user scope (so teammates
+> could not reach the work-queue). State which gate fired, then run this loop. The
+> lifecycle (Step 1 pre-flight, Step 3 lane cascade, Step 4 commit cadence, Step 5
+> checkpoint freeze, Step 6 quiescence, Step 7 merge, Step 8 un-wedge, Step 9
+> rollup) is UNCHANGED; only the worker fan-out collapses to one agent.
+
+One agent is BOTH lead and sole worker. Loop, working entirely inside the SHARED
+worktree on disk:
+
+1. `claimed = claim_next_task({ sprint_id, lane: "implement", agent_id,
+   lease_ttl_secs })`. (Drain the implement lane first; sweep the `review` lane
+   in the same loop — Step 3. Pass `tier` only if this worker is specialised to a
+   tier.)
+2. If `claimed == null`, BREAK to Step 6 (quiescence check) — null means no ready
+   task OR the sprint is frozen by an in-progress checkpoint task OR the sprint is
+   not `active`. Do not treat null as an error.
+3. If the claimed task carries `checkpoint=1`, jump to Step 5 (checkpoint
+   protocol) instead of working it normally. Single-agent: the quiesce poll is
+   immediate — you are the only worker.
+4. Work the task in the shared worktree. `renew_lease` at ~half the TTL so the
+   lease never lapses mid-task. Append progress via `record_task_activity({
+   work_item_id: <task_id>, entry_type: "execution", origin: "implement",
+   summary: "...", body: "session=${CLAUDE_SESSION_ID}" })` (apply the §c
+   substitution guard — `session=unknown` + warn on non-substitution).
+5. On completion, `complete_task({ task_id, agent_id })`. `complete_task` is
+   idempotent — on an AMBIGUOUS failure RETRY it rather than releasing. Call
+   `release_task` ONLY on a TRUE abandon, never as error-recovery for an uncertain
+   completion.
+6. Re-loop to 1. A practical order: drain implement-lane claims; when implement
+   returns null, sweep review-lane claims; a review may spawn fresh implement
+   rework, so re-check the implement lane after each review sweep; continue until
+   BOTH lanes return null in the same pass, then fall through to Step 6.
+
+There is no fan-out, no drift monitoring, and no peer `SendMessage` in this
+fallback — the single agent cannot drift away from itself. Everything else
+(commit cadence, checkpoint quiesce, quiescence, finalize, un-wedge, rollup) is
+exactly as the shared steps describe.
+
 ## Sentry-pattern compliance (per §e)
 
-Runner decides: pre-flight order, lane sweep order (implement-first, review
-after drain), the checkpoint quiesce→commit→record→complete sequence, the
-quiescence poll cadence, and the un-wedge two-step. Runner MUST NOT replicate
-server-owned state: leasing + reclaim (`claim_next_task` / `renew_lease`), the
-done→review→rework cascade (`complete_task` / `record_finding_decision`), the
-sprint-lifecycle transition legality and the terminal-flip guard
-(`set_sprint_status` / `execute_worktree_merge` / the fallback
-`record_worktree_merge` / `record_worktree_rejection`), and commit-provenance
-idempotency (`record_task_commits`) all live in lumina. The runner runs its
-own git commits in the shared worktree; the MERGE is executed by the
-`lumina-companion` process via `execute_worktree_merge` (the SERVER stays
-record-only and never shells to git — ADR-0006), with manual `git merge` + the
-fallback `record_worktree_merge` reserved for the no-companion case.
-
-## Appendix — agent-team variant (SECONDARY, opt-in)
-
-> **This is NOT the default.** The single-agent loop above (Steps 2–6) is the
-> canonical, safe path. Use agent teams only when the user explicitly opts in
-> (e.g. a large, well-decomposed sprint where parallelism pays). The lifecycle,
-> checkpoint-freeze, lane-cascade, and merge steps are UNCHANGED; only the
-> worker fan-out differs.
-
-Enable with the experimental flag `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. The
-team shares ONE sprint worktree on disk — NEVER a per-worker worktree (the
-checkpoint barrier and the single Step-6 merge both assume one shared
-worktree).
-
-Team tools used:
-
-- `claim_next_task` (each worker claims with its OWN `agent_id`, a `lane`, and
-  optionally a `tier` so lite/deep workers self-select) — the atomic claim is
-  exactly the race-free primitive a shared in-process list cannot provide.
-- `renew_lease` — each worker heartbeats its own lease at ~half-TTL.
-- `complete_task` — each worker completes its own claims (the review cascade is
-  identical to the single-agent path).
-- `get_sprint_quiescence` — the LEAD (one designated agent) polls for the
-  terminal verdict and owns Step 6 finalize; workers do NOT each merge.
-- `list_open_questions_for_sprint` — the lead (arbiter) resolves/escalates
-  blocked questions; workers park via `release_task` and pull the next task.
-- peer `SendMessage` — workers coordinate over `file_overlap_warnings`
-  (advisory, never a gate per ADR-0002) and the lead signals the checkpoint
-  quiesce. lumina provides NO peer-messaging tool; that is the harness's
-  agent-team channel.
-
-Checkpoint under teams: the freeze is sprint-wide, so when the lead (or any
-worker) holds an `in_progress` `checkpoint=1` task, every other worker's
-`claim_next_task` returns null. The checkpoint holder polls
-`get_sprint_quiescence` until peers' `in_progress` reaches 0, makes the ONE
-consolidated commit, `record_task_commits`, then `complete_task` to lift the
-freeze for the whole team.
+Runner decides: pre-flight order, topology selection (team default vs
+single-agent auto-degrade) + the degrade gates, fan-out sizing (3–5), the lane
+sweep order (implement-first, review after drain), the Kahn phase-batch commit
+cadence + dirty-snapshot tolerance, the checkpoint quiesce→commit→record→complete
+sequence, the quiescence poll cadence + teammate-drift nudge/reclaim, and the
+un-wedge two-step. Runner MUST NOT replicate server-owned state: leasing + reclaim
+(`claim_next_task` / `renew_lease`), the done→review→rework cascade
+(`complete_task` / `record_finding_decision`), the sprint-lifecycle transition
+legality and the terminal-flip guard (`set_sprint_status` /
+`execute_worktree_merge` / the fallback `record_worktree_merge` /
+`record_worktree_rejection`), and commit-provenance idempotency
+(`record_task_commits`) all live in lumina. Workers run their own git commits in
+the shared worktree; the MERGE is executed by the `lumina-companion` process via
+`execute_worktree_merge` (the SERVER stays record-only and never shells to git —
+ADR-0006), with manual `git merge` + the fallback `record_worktree_merge`
+reserved for the no-companion case. Team fan-out + peer `SendMessage` are the
+HARNESS's agent-team channel, not lumina tools.
 
 ## Pointers
 
 - Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §c, §e.
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — team-execution work-queue
   (migration 0013) + sprint-lifecycle / worktree / commit-provenance (migration 0016) sections.
+- Checkpoint suggestion (compose-sprint): [`../compose-sprint/SKILL.md`](../compose-sprint/SKILL.md) stamps `checkpoint=1` from cross-task `files_touched` overlap.
 - Commit messages: the repo-wide `commit-conventions` skill at `claude/skills/commit-conventions/`.
-- ADRs: [`docs/adr/0002-sprint-execution-architecture.md`](../../../../../docs/adr/0002-sprint-execution-architecture.md) (advisory file-overlap), [`docs/adr/0003-commit-checkpoint-provenance.md`](../../../../../docs/adr/0003-commit-checkpoint-provenance.md), [`docs/adr/0005-sprint-lifecycle-worktree-ownership.md`](../../../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md), [`docs/adr/0006-git-execution-companion.md`](../../../../../docs/adr/0006-git-execution-companion.md) (the companion execution plane behind `execute_worktree_merge`).
+- ADRs: [`docs/adr/0002-sprint-execution-architecture.md`](../../../../../docs/adr/0002-sprint-execution-architecture.md) (team-default topology + advisory file-overlap), [`docs/adr/0003-commit-checkpoint-provenance.md`](../../../../../docs/adr/0003-commit-checkpoint-provenance.md), [`docs/adr/0005-sprint-lifecycle-worktree-ownership.md`](../../../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md), [`docs/adr/0006-git-execution-companion.md`](../../../../../docs/adr/0006-git-execution-companion.md) (the companion execution plane behind `execute_worktree_merge`).

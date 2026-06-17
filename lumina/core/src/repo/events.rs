@@ -27,6 +27,18 @@ use crate::error::AppError;
 /// transaction via [`crate::db::DbTx::note_change`] — flushed to the
 /// process-wide notify bus by `NotifyingTx::commit` AFTER the commit succeeds
 /// (a rolled-back transaction publishes nothing).
+///
+/// **Team-run observability contract (1B-F8).** Because EVERY domain event
+/// funnels through here, the team-execution work-queue events a live agent
+/// stream depends on — `work_item.claimed` (`claim_next_task`),
+/// `work_item.released` (`release_task` AND `complete_task`'s lease-clear),
+/// `work_item.status_changed` (the `done` transition), and
+/// `work_item.activity_appended` (`record_task_activity`) — ALL reach the notify
+/// bus post-commit with NO per-path special-casing. There is no separate emit
+/// path to keep in sync: a team-run consumer (the `/api/stream` watcher / its
+/// `TopicResolver`) sees a claim→activity→complete sequence as that exact
+/// event-type stream. The `claim_activity_complete_emits_team_run_event_stream`
+/// thread in `server/tests/e2e.rs` locks this shape end-to-end.
 pub(crate) async fn record_event(
     tx: &mut dyn crate::db::DbTx,
     aggregate_type: &str,

@@ -41,6 +41,7 @@ use crate::app::AppState;
 use lumina_core::domain::FootprintFile;
 use lumina_core::error::AppError;
 use lumina_core::repo;
+use lumina_core::repo::CheckpointSuggestion;
 
 // ---------------------------------------------------------------------------
 // Body types
@@ -83,6 +84,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/sprints/{sprint_id}/files-footprint",
             get(sprint_files_footprint_handler),
+        )
+        .route(
+            "/work-items/{story_id}/checkpoint-suggestions",
+            get(story_checkpoint_suggestions_handler),
+        )
+        .route(
+            "/sprints/{sprint_id}/checkpoint-suggestions",
+            get(sprint_checkpoint_suggestions_handler),
         )
 }
 
@@ -151,6 +160,35 @@ async fn sprint_files_footprint_handler(
     tracing::debug!(sprint_id = %sprint_id, "http: GET /sprints/{{sprint_id}}/files-footprint");
     let footprint = repo::sprint_files_footprint(state.pool.as_ref(), &sprint_id).await?;
     Ok(Json(footprint))
+}
+
+/// `GET /work-items/{story_id}/checkpoint-suggestions` — checkpoint candidates
+/// from cross-task EXPECTED files-overlap over the story's DIRECT task children
+/// (the HTTP mirror of the story scope of the `get_checkpoint_suggestions` MCP
+/// tool). Each candidate carries its overlapping peers + shared paths. Pure
+/// derived read; an unknown/childless story or one with no overlap yields an
+/// empty array. Returns 200 + `Vec<CheckpointSuggestion>`.
+async fn story_checkpoint_suggestions_handler(
+    State(state): State<AppState>,
+    Path(story_id): Path<String>,
+) -> Result<Json<Vec<CheckpointSuggestion>>, AppError> {
+    tracing::debug!(story_id = %story_id, "http: GET /work-items/{{story_id}}/checkpoint-suggestions");
+    let suggestions = repo::story_checkpoint_suggestions(state.pool.as_ref(), &story_id).await?;
+    Ok(Json(suggestions))
+}
+
+/// `GET /sprints/{sprint_id}/checkpoint-suggestions` — checkpoint candidates from
+/// cross-task EXPECTED files-overlap over the sprint's MEMBER tasks (the HTTP
+/// mirror of the sprint scope of the `get_checkpoint_suggestions` MCP tool).
+/// Pure derived read; an unknown/empty sprint or one with no overlap yields an
+/// empty array. Returns 200 + `Vec<CheckpointSuggestion>`.
+async fn sprint_checkpoint_suggestions_handler(
+    State(state): State<AppState>,
+    Path(sprint_id): Path<String>,
+) -> Result<Json<Vec<CheckpointSuggestion>>, AppError> {
+    tracing::debug!(sprint_id = %sprint_id, "http: GET /sprints/{{sprint_id}}/checkpoint-suggestions");
+    let suggestions = repo::sprint_checkpoint_suggestions(state.pool.as_ref(), &sprint_id).await?;
+    Ok(Json(suggestions))
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +393,67 @@ mod tests {
         let arr = body.as_array().expect("array");
         assert_eq!(arr.len(), 1, "the member task's path appears once in the sprint footprint");
         assert_eq!(arr[0]["path"], "src/x.rs");
+    }
+
+    /// `GET /api/work-items/{sid}/checkpoint-suggestions` and
+    /// `GET /api/sprints/{spid}/checkpoint-suggestions` surface the two tasks
+    /// that share an EXPECTED path as candidates (each pointing at the other on
+    /// the shared path); a non-404 also proves both routes merged into
+    /// `http::router()`.
+    #[tokio::test]
+    async fn checkpoint_suggestions_http() {
+        let pool = connect_in_memory().await.expect("pool");
+        let (story_id, t1) = seed_chain(&pool).await;
+        // A second task under the same story, sharing src/shared.rs with t1.
+        let t2 = repo::create_work_item(&pool, "task", Some(&story_id), "T2", None)
+            .await
+            .expect("t2")
+            .to_string();
+        repo::set_task_expected_files(&pool, &t1, &[serde_json::json!("src/shared.rs")])
+            .await
+            .expect("t1 expected");
+        repo::set_task_expected_files(&pool, &t2, &[serde_json::json!("src/shared.rs")])
+            .await
+            .expect("t2 expected");
+
+        let sprint_id = seed_sprint(&pool).await;
+        repo::add_tasks_to_sprint(&pool, &sprint_id, &[t1.as_str(), t2.as_str()])
+            .await
+            .expect("bind tasks to sprint");
+
+        let state = AppState::new(Arc::new(lumina_core::db::AnyPool::from(pool)));
+        let router = build_router(state);
+
+        // Story scope: two candidates, each overlapping the other on src/shared.rs.
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/work-items/{story_id}/checkpoint-suggestions"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        let arr = body.as_array().expect("array");
+        assert_eq!(arr.len(), 2, "both tasks sharing src/shared.rs are candidates");
+        assert_eq!(arr[0]["overlaps"][0]["shared_paths"][0], "src/shared.rs");
+
+        // Sprint scope: the same two member-task candidates.
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/sprints/{sprint_id}/checkpoint-suggestions"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = json_body(resp).await;
+        assert_eq!(body.as_array().expect("array").len(), 2, "sprint scope surfaces the same candidates");
     }
 
     /// `POST /api/work-items/{tid}/reconcile-files` clears the untouched-EXPECTED

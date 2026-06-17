@@ -78,6 +78,24 @@ pub struct GetSprintFilesFootprintParams {
     pub sprint_id: String,
 }
 
+/// Arguments for the `get_checkpoint_suggestions` read tool → either
+/// `repo::story_checkpoint_suggestions` or `repo::sprint_checkpoint_suggestions`.
+/// EXACTLY ONE of `story_id` / `sprint_id` must be set — both-or-neither is
+/// invalid_params (the two scopes are mutually exclusive, like the two footprint
+/// reads, but folded into one tool because the cross-task overlap is the same
+/// computation over a different member set).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetCheckpointSuggestionsParams {
+    /// Scope the suggestion to a STORY's DIRECT task children. Mutually
+    /// exclusive with `sprint_id`.
+    #[serde(default)]
+    pub story_id: Option<String>,
+    /// Scope the suggestion to a SPRINT's MEMBER tasks. Mutually exclusive with
+    /// `story_id`.
+    #[serde(default)]
+    pub sprint_id: Option<String>,
+}
+
 /// Convert a slice of `FileRef` param entries to their on-the-wire JSON form
 /// (`Path → string`, `Qualified → {repo, path}`) so the repo fn can re-resolve
 /// and re-validate the slugs internally against the task's project ancestor — the
@@ -196,6 +214,50 @@ impl LuminaTools {
             .await
             .map_err(app_error_to_mcp)?;
         json_result(&footprint)
+    }
+
+    /// Read CHECKPOINT-CANDIDATE suggestions from cross-task EXPECTED
+    /// files-overlap (single repo call → `repo::story_checkpoint_suggestions` /
+    /// `repo::sprint_checkpoint_suggestions`). A task is a candidate when its
+    /// first-class EXPECTED `task_files` set intersects ≥1 OTHER task's EXPECTED
+    /// set in the same scope — the signal `compose-sprint` surfaces so the
+    /// operator can stamp consolidated-commit checkpoints (via
+    /// `set_task_checkpoint`) BEFORE the sprint runs. EXACTLY ONE of `story_id` /
+    /// `sprint_id` must be set (both/neither ⇒ invalid_params). Each candidate
+    /// carries its overlapping peers + shared paths. An unknown/childless scope
+    /// or a scope with no cross-task overlap yields an empty list. Read-only.
+    #[tool(
+        description = "Read checkpoint-candidate suggestions from cross-task EXPECTED files-overlap (story- OR sprint-scoped — pass EXACTLY ONE of story_id/sprint_id, both/neither is invalid_params). A task is a candidate when its first-class EXPECTED task_files set intersects another task's EXPECTED set in the same scope (two tasks planning to touch the same file want a consolidated-commit checkpoint rather than racing on the shared worktree). Each candidate carries its overlapping peer task ids + the shared paths. An unknown/childless scope or one with no cross-task overlap yields an empty list. Read-only — surfaced by compose-sprint to suggest checkpoints the operator finalises via set_task_checkpoint.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_checkpoint_suggestions(
+        &self,
+        Parameters(GetCheckpointSuggestionsParams { story_id, sprint_id }): Parameters<
+            GetCheckpointSuggestionsParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_checkpoint_suggestions", "mcp tool invoked");
+        let suggestions = match (story_id, sprint_id) {
+            (Some(story), None) => repo::story_checkpoint_suggestions(&self.pool, &story)
+                .await
+                .map_err(app_error_to_mcp)?,
+            (None, Some(sprint)) => repo::sprint_checkpoint_suggestions(&self.pool, &sprint)
+                .await
+                .map_err(app_error_to_mcp)?,
+            (Some(_), Some(_)) => {
+                return Err(ErrorData::invalid_params(
+                    "exactly one of story_id / sprint_id must be set, not both",
+                    None,
+                ));
+            }
+            (None, None) => {
+                return Err(ErrorData::invalid_params(
+                    "one of story_id / sprint_id is required",
+                    None,
+                ));
+            }
+        };
+        json_result(&suggestions)
     }
 }
 
@@ -514,6 +576,69 @@ mod tests {
             Some(0),
             "the re-run clears nothing (idempotent)"
         );
+    }
+
+    /// `get_checkpoint_suggestions` (story scope) surfaces the two tasks that
+    /// share an EXPECTED path as candidates; a task overlapping nothing is
+    /// omitted. Validates the tool's repo dispatch + JSON shape.
+    #[tokio::test]
+    async fn checkpoint_suggestions_story_scope() {
+        let (tools, _pool) = tools().await;
+        let story = seed_chain_to_story(&tools).await;
+        let t1 = create_item(&tools, "task", Some(&story)).await;
+        let t2 = create_item(&tools, "task", Some(&story)).await;
+        let t3 = create_item(&tools, "task", Some(&story)).await;
+
+        repo::set_task_expected_files(tools.pool(), &t1, &[serde_json::json!("src/shared.rs")])
+            .await
+            .expect("t1 expected");
+        repo::set_task_expected_files(tools.pool(), &t2, &[serde_json::json!("src/shared.rs")])
+            .await
+            .expect("t2 expected");
+        repo::set_task_expected_files(tools.pool(), &t3, &[serde_json::json!("src/lonely.rs")])
+            .await
+            .expect("t3 expected");
+
+        let res = tools
+            .get_checkpoint_suggestions(Parameters(GetCheckpointSuggestionsParams {
+                story_id: Some(story.clone()),
+                sprint_id: None,
+            }))
+            .await
+            .expect("checkpoint suggestions");
+        let value: serde_json::Value = res.into_typed().expect("suggestions json value");
+        let arr = value.as_array().expect("suggestions is a JSON array");
+        let ids: std::collections::BTreeSet<&str> =
+            arr.iter().map(|s| s["task_id"].as_str().expect("task_id")).collect();
+        assert_eq!(
+            ids,
+            [t1.as_str(), t2.as_str()].into_iter().collect(),
+            "the two tasks sharing src/shared.rs are candidates; the lonely task is omitted"
+        );
+    }
+
+    /// Both-or-neither scope is `invalid_params` (the tool's mutual-exclusion
+    /// guard) — neither branch ever reaches the repo.
+    #[tokio::test]
+    async fn checkpoint_suggestions_requires_exactly_one_scope() {
+        let (tools, _pool) = tools().await;
+        let both = tools
+            .get_checkpoint_suggestions(Parameters(GetCheckpointSuggestionsParams {
+                story_id: Some("s".to_owned()),
+                sprint_id: Some("sp".to_owned()),
+            }))
+            .await
+            .expect_err("both scopes set is rejected");
+        assert!(both.message.contains("exactly one"), "both-set message: {both}");
+
+        let neither = tools
+            .get_checkpoint_suggestions(Parameters(GetCheckpointSuggestionsParams {
+                story_id: None,
+                sprint_id: None,
+            }))
+            .await
+            .expect_err("neither scope set is rejected");
+        assert!(neither.message.contains("required"), "neither-set message: {neither}");
     }
 
     /// Extract the ordered `path` strings from a footprint read-tool result.
