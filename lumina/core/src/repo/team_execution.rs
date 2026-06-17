@@ -103,9 +103,10 @@ fn files_touched_from_attributes(attributes: Option<&str>) -> Vec<Value> {
 ///      (`work_items.checkpoint = 1`, migration 0016) in the sprint is
 ///      `in_progress`: a checkpoint freezes its whole sprint (a sprint-wide
 ///      barrier) until that checkpoint task leaves `in_progress`.
-///   3. **Candidate select** — the first ready task (status=`todo`, unleased,
-///      matching lane + optional tier, not blocked on a question, live, with
-///      every task-dependency `done`), ordered by the `compute_task_batches`
+///   3. **Candidate select** — the first ready task (status ∈ `todo`/`open`,
+///      OR `review` on `lane='review'` per 1B-F9 M2; unleased, matching lane +
+///      optional tier, not blocked on a question, live, with every
+///      task-dependency `done`), ordered by the `compute_task_batches`
 ///      tie-break (`task_kind` sort, `created_at`, `id`). NO file-overlap
 ///      filtering (overlap is advisory). No candidate ⇒ `Ok(None)`.
 ///   4. **Lease** — stamp `status='in_progress'`, `assignee`, and
@@ -216,14 +217,24 @@ pub async fn claim_next_task(
     // task-dependency `done`. The "not-started" set is `status IN ('todo',
     // 'open')`: `create_work_item` stamps the create-default `status='open'`
     // (and the `work_items.status` column DEFAULT is 'open'), so EVERY
-    // freshly-created task — most importantly the review task spawned by
-    // `complete_task` (T6) and the rework task spawned by
-    // `record_finding_decision` (T8), both created via the create path — starts
-    // at 'open'. A 'todo'-only predicate would render those spawned tasks
-    // invisible and SILENTLY break the entire review→rework cascade.
-    // `block_task_on_question` (repo.rs:4299) sets the same precedent, treating
-    // `"todo" | "open"` as the equivalent "ready, not started" precondition (its
-    // branch-resolution restores blocked tasks to 'todo', which is in this set).
+    // freshly-created task starts at 'open'. A 'todo'-only predicate would
+    // render those tasks invisible. `block_task_on_question` (repo.rs:4299)
+    // sets the same precedent, treating `"todo" | "open"` as the equivalent
+    // "ready, not started" precondition (its branch-resolution restores blocked
+    // tasks to 'todo', which is in this set).
+    //
+    // 1B-F9 M2: the readiness set ALSO admits a `status='review'` task ON
+    // `lane='review'` — the SAME row a deep impl task carries into the review
+    // state at `complete_task` (M1), which a dedicated review agent then claims
+    // through THIS atomic primitive (NEVER a lane-flip-then-claim two-step —
+    // that would bypass the single-writer guarantee and let two review agents
+    // double-claim the same row). The `review` state is gated to `lane='review'`
+    // explicitly (not left to the `t.lane = $2` filter) so an implement-lane
+    // claim can never select a review-state row, and the intent is legible at
+    // the predicate. A crashed reviewer's lease is reclaimed (Step 1) back to
+    // `todo` — already in this ready set — so review-lane tasks reclaim with the
+    // same parity as implement-lane tasks (no special-casing needed).
+    //
     // `lane IS NOT NULL` is implied by `lane = $2`
     // (a legacy `lane IS NULL` task can never match a non-null bound value),
     // so back-compat (lane=NULL tasks invisible) falls out for free. The
@@ -238,7 +249,7 @@ pub async fn claim_next_task(
         SELECT t.id, t.tier
         FROM work_items t
         JOIN sprint_tasks st ON st.task_id = t.id AND st.sprint_id = $1
-        WHERE t.status IN ('todo', 'open')
+        WHERE (t.status IN ('todo', 'open') OR (t.status = 'review' AND t.lane = 'review'))
           AND t.assignee IS NULL
           AND t.lane = $2
           AND ($3 IS NULL OR t.tier = $3)
@@ -277,10 +288,13 @@ pub async fn claim_next_task(
     // it shares the stored-timestamp format. The WHERE re-asserts the
     // not-started/unleased predicate (defence-in-depth; the SELECT and UPDATE
     // already share one writer-locked txn so no concurrent claimer can
-    // interleave). The status guard MUST mirror the step-3 readiness set
-    // (`IN ('todo','open')`) — otherwise an 'open'-status candidate (the create
-    // default for every spawned review/rework task) would be selected but match
-    // 0 rows here and the claim would spuriously bail.
+    // interleave). The status guard MUST mirror the step-3 readiness set —
+    // including the 1B-F9 M2 `status='review' AND lane='review'` clause —
+    // otherwise an 'open'-status candidate (the create default for every spawned
+    // task) OR a review-lane review-state candidate would be selected but match
+    // 0 rows here and the claim would spuriously bail. A claimed review-state
+    // row transitions to `in_progress` here exactly like any other claim (the
+    // lease/heartbeat/reclaim machinery is uniform across lanes).
     let ttl_modifier = format!("+{lease_ttl_secs} seconds");
     let leased = tx
         .execute(
@@ -290,7 +304,9 @@ pub async fn claim_next_task(
             assignee = $2,
             lease_expires_at = datetime('now', $3),
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND status IN ('todo', 'open') AND assignee IS NULL
+        WHERE id = $1
+          AND (status IN ('todo', 'open') OR (status = 'review' AND lane = 'review'))
+          AND assignee IS NULL
         "#,
             args![task_id.clone(), agent_id.to_owned(), ttl_modifier],
         )
