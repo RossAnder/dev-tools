@@ -1,7 +1,10 @@
 //! `sprint-quiescence:<sprint_id>` — the first concrete [`TopicResolver`]
 //! (Wave 1, T6). Streams a sprint's [`lumina_core::domain::SprintQuiescence`]
-//! aggregate (claimable / in_progress / blocked_on_question / terminal counts
-//! plus the derived `done`/`stalled` verdict) as full snapshots.
+//! aggregate (claimable / in_progress / blocked_on_question / in_review /
+//! terminal counts plus the derived `done`/`stalled` verdict) as full snapshots.
+//! The `in_review` bucket (1B-F9 M3, an unclaimed `status='review'` task) flows
+//! through `serde_json::to_value(q)` automatically — the resolver serialises the
+//! whole struct, so a new count field needs no resolver change.
 
 use async_trait::async_trait;
 
@@ -100,6 +103,7 @@ mod tests {
         assert_eq!(snapshot["claimable"], 0);
         assert_eq!(snapshot["in_progress"], 0);
         assert_eq!(snapshot["blocked_on_question"], 0);
+        assert_eq!(snapshot["in_review"], 0, "1B-F9 M3: the new review bucket is surfaced in the stream payload");
         assert_eq!(snapshot["terminal"], 0);
         assert_eq!(snapshot["done"], true, "a taskless sprint is trivially done");
         assert_eq!(snapshot["stalled"], false);

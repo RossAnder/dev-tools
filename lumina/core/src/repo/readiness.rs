@@ -43,9 +43,14 @@ use serde_json::Value;
 ///     lane/tier filter — quiescence counts across ALL lanes. Keeping the two in
 ///     lockstep means the lead's "nothing to claim" verdict can never disagree
 ///     with what a claimer would actually find.
-///   * `in_progress` — leased / being-worked (`status='in_progress'`, live).
+///   * `in_progress` — leased / being-worked (`status='in_progress'`, live);
+///     this INCLUDES a review task a reviewer has CLAIMED (M2 stamps it
+///     `in_progress` like any other claim).
 ///   * `blocked_on_question` — parked on a question (`blocked_by_question_id IS
 ///     NOT NULL`, live).
+///   * `in_review` (1B-F9 M3) — UNCLAIMED `status='review'` tasks (live): a deep
+///     impl task that `complete_task` carried into the review state on its own
+///     row, awaiting a reviewer. A NON-terminal bucket folded into `total`.
 ///   * `terminal` — `status IN ('done','cancelled')`, live.
 ///
 /// **Sprint-level claim gating (migration 0016, plan §C).** `claim_next_task`
@@ -59,19 +64,27 @@ use serde_json::Value;
 ///
 /// Verdict (computed in Rust from the counts):
 ///   * `done` ⇔ EVERY sprint task is terminal (`terminal == total`, total =
-///     terminal + in_progress + blocked_on_question + the raw-claimable count
-///     before any freeze/non-active zeroing). Deliberately NOT derived from the
-///     gated `claimable`: a freeze / non-`active` status zeroes `claimable`
-///     while real non-terminal work remains, so a `claimable == 0`-based `done`
-///     would falsely report a merely-frozen sprint as complete. Basing it on
-///     actual task completion keeps `done` honest under a freeze. An empty / all-
-///     terminal sprint reads `done=true` as before.
-///   * `stalled` ⇔ `blocked_on_question > 0 && claimable == 0 && in_progress ==
-///     0 && !done` — the only non-terminal work is parked on a question (needs an
-///     arbiter). The `!done` clause and the requirement of at least one
-///     question-blocked task mean a frozen / non-`active` sprint with pending
-///     (but un-parked) work is NEITHER `done` NOR `stalled` — its work is simply
-///     gated, not stalled, and resumes when the sprint activates / unfreezes.
+///     terminal + in_progress + blocked_on_question + in_review + the
+///     raw-claimable count before any freeze/non-active zeroing). The `in_review`
+///     bucket (1B-F9 M3) is folded into total, so an unclaimed review-state task
+///     keeps `done=false` (AC6) — without it a `status='review'` task would land
+///     in NO bucket, be excluded from total, and let `done` falsely report true.
+///     Deliberately NOT derived from the gated `claimable`: a freeze / non-`active`
+///     status zeroes `claimable` while real non-terminal work remains, so a
+///     `claimable == 0`-based `done` would falsely report a merely-frozen sprint
+///     as complete. Basing it on actual task completion keeps `done` honest under
+///     a freeze. An empty / all-terminal sprint reads `done=true` as before.
+///   * `stalled` ⇔ `!done && claimable == 0 && in_progress == 0 &&
+///     (blocked_on_question > 0 || in_review > 0)` — the only non-terminal work
+///     is parked on a question (needs an arbiter) OR is an UNCLAIMED review-state
+///     task (needs a reviewer; AC8 — a no-claimer review surfaces escalated
+///     rather than hanging the sprint invisibly). A CLAIMED review is
+///     `in_progress`, which keeps `stalled=false` (the review is being worked —
+///     this is what distinguishes review-with-claimer from review-with-no-claimer).
+///     The `!done` clause + the requirement of at least one parked/unclaimed-review
+///     task mean a frozen / non-`active` sprint with pending (but un-parked) work
+///     is NEITHER `done` NOR `stalled` — its work is gated, not stalled, and
+///     resumes when the sprint activates / unfreezes.
 ///
 /// A missing / unknown `sprint_id` is NOT an error: the join yields zero rows,
 /// every count is 0, the sprint-status read is `None` (non-`active`), so
@@ -86,6 +99,7 @@ pub async fn get_sprint_quiescence(
         claimable: i64,
         in_progress: i64,
         blocked_on_question: i64,
+        in_review: i64,
         terminal: i64,
     }
     impl<'r, R> sqlx::FromRow<'r, R> for QuiescenceCountsRow
@@ -99,6 +113,7 @@ pub async fn get_sprint_quiescence(
                 claimable: row.try_get("claimable")?,
                 in_progress: row.try_get("in_progress")?,
                 blocked_on_question: row.try_get("blocked_on_question")?,
+                in_review: row.try_get("in_review")?,
                 terminal: row.try_get("terminal")?,
             })
         }
@@ -130,6 +145,9 @@ pub async fn get_sprint_quiescence(
           COALESCE(SUM(CASE WHEN
               t.blocked_by_question_id IS NOT NULL AND t.deleted_at IS NULL
             THEN 1 ELSE 0 END), 0) AS blocked_on_question,
+          COALESCE(SUM(CASE WHEN
+              t.status = 'review' AND t.deleted_at IS NULL
+            THEN 1 ELSE 0 END), 0) AS in_review,
           COALESCE(SUM(CASE WHEN
               t.status IN ('done', 'cancelled') AND t.deleted_at IS NULL
             THEN 1 ELSE 0 END), 0) AS terminal
@@ -180,9 +198,15 @@ pub async fn get_sprint_quiescence(
     // `done` reflects ACTUAL task completion (every sprint task terminal), read
     // off the RAW counts BEFORE any freeze/non-active zeroing — otherwise a
     // freeze that forces `claimable` to 0 could masquerade as completion. Total
-    // live tasks = the four mutually-exclusive count buckets summed; `done` ⇔
-    // there are tasks (or none) and all of them are terminal.
-    let total = counts.claimable + counts.in_progress + counts.blocked_on_question + counts.terminal;
+    // live tasks = the FIVE mutually-exclusive count buckets summed (1B-F9 M3
+    // adds the non-terminal `in_review` bucket); `done` ⇔ there are tasks (or
+    // none) and all of them are terminal. Folding `in_review` into total is what
+    // keeps an unclaimed review-state task from falsely reading as done (AC6).
+    let total = counts.claimable
+        + counts.in_progress
+        + counts.blocked_on_question
+        + counts.in_review
+        + counts.terminal;
     let done = counts.terminal == total;
 
     // Gate `claimable` to 0 when the sprint is non-`active` OR frozen — the
@@ -194,17 +218,25 @@ pub async fn get_sprint_quiescence(
         0
     };
 
-    // `stalled` ⇔ the only non-terminal work is parked on a question. The added
-    // `!done` clause + the `blocked_on_question > 0` requirement mean a frozen /
-    // non-`active` sprint with pending (un-parked) work is NEITHER done NOR
-    // stalled — its work is gated, not stalled, and resumes on activate/unfreeze.
-    let stalled =
-        counts.blocked_on_question > 0 && claimable == 0 && counts.in_progress == 0 && !done;
+    // `stalled` ⇔ the only non-terminal work needs EXTERNAL action: it is parked
+    // on a question (needs an arbiter) OR is an UNCLAIMED review-state task
+    // (`in_review > 0`, needs a reviewer — AC8). A CLAIMED review is
+    // `in_progress`, so the `in_progress == 0` clause keeps a being-worked review
+    // out of `stalled` (distinguishing review-with-claimer from
+    // review-with-no-claimer). The `!done` clause + the requirement of at least
+    // one parked/unclaimed-review task mean a frozen / non-`active` sprint with
+    // pending (un-parked) work is NEITHER done NOR stalled — its work is gated,
+    // not stalled, and resumes on activate/unfreeze.
+    let stalled = !done
+        && claimable == 0
+        && counts.in_progress == 0
+        && (counts.blocked_on_question > 0 || counts.in_review > 0);
 
     Ok(SprintQuiescence {
         claimable,
         in_progress: counts.in_progress,
         blocked_on_question: counts.blocked_on_question,
+        in_review: counts.in_review,
         terminal: counts.terminal,
         done,
         stalled,
@@ -772,6 +804,103 @@ mod tests {
         assert_eq!(q.terminal, 0, "nothing terminal");
         assert!(!q.done, "a blocked task means not done");
         assert!(q.stalled, "blocked-only with nothing else ⇒ stalled, needs arbiter");
+    }
+
+    /// (1B-F9 M3 / AC6) A sprint with a `status='review'` task is NOT done: the
+    /// review-state task lands in the non-terminal `in_review` bucket, is folded
+    /// into total, and so `done = terminal == total` reads FALSE even when every
+    /// OTHER task is terminal. Without the bucket the review task would land in NO
+    /// bucket, be excluded from total, and `done` would falsely report true.
+    #[tokio::test]
+    async fn quiescence_review_state_task_is_not_done() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+
+        // One DONE task + one review-state task (lane='review', status='review' —
+        // the post-M1 same-row shape). The review task is the ONLY non-terminal
+        // work; without the in_review bucket it would be invisible to total.
+        let done_task =
+            seed_queue_task(&pool, &story, &sprint, "DONE", Some("implement"), Some("deep")).await;
+        let review_task =
+            seed_queue_task(&pool, &story, &sprint, "REVIEW", Some("review"), None).await;
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&done_task)
+            .execute(&pool)
+            .await
+            .expect("mark done");
+        sqlx::query("UPDATE work_items SET status = 'review' WHERE id = $1")
+            .bind(&review_task)
+            .execute(&pool)
+            .await
+            .expect("mark review");
+
+        let q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence with a review-state task");
+        assert_eq!(q.in_review, 1, "the review-state task is counted in the in_review bucket");
+        assert_eq!(q.terminal, 1, "the done task is terminal");
+        assert_eq!(q.claimable, 0, "the review task is not in the implement-ready set");
+        assert_eq!(q.in_progress, 0, "nothing leased");
+        assert!(
+            !q.done,
+            "AC6: a sprint with a review-state task is NOT done (review folds into total)"
+        );
+    }
+
+    /// (1B-F9 M3 / AC8) An UNCLAIMED review-state task with nothing else
+    /// progress-able surfaces as `stalled` (a no-claimer review needs a reviewer
+    /// — the escalation signal, not an indefinite non-done). A CLAIMED review is
+    /// `status='in_progress'`, which keeps `stalled=false` — distinguishing
+    /// review-with-claimer from review-with-no-claimer.
+    #[tokio::test]
+    async fn quiescence_no_claimer_review_is_stalled() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+
+        // The only non-terminal work is ONE unclaimed review-state task.
+        let review_task =
+            seed_queue_task(&pool, &story, &sprint, "REVIEW", Some("review"), None).await;
+        sqlx::query("UPDATE work_items SET status = 'review' WHERE id = $1")
+            .bind(&review_task)
+            .execute(&pool)
+            .await
+            .expect("mark review (no claimer)");
+
+        let stalled_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence with an unclaimed review task");
+        assert_eq!(stalled_q.in_review, 1, "one unclaimed review-state task");
+        assert_eq!(stalled_q.in_progress, 0, "no claimer ⇒ nothing in_progress");
+        assert!(!stalled_q.done, "an unclaimed review keeps the sprint not done");
+        assert!(
+            stalled_q.stalled,
+            "AC8: an unclaimed review-state task with nothing else surfaces as stalled/escalated"
+        );
+
+        // Now a reviewer CLAIMS it (M2): status='review' → 'in_progress'. The
+        // review is being worked, so the sprint is NEITHER done NOR stalled.
+        let claimed = claim_next_task(&db, &sprint, Lane::Review, None, "reviewer-a", 1800)
+            .await
+            .expect("review claim runs")
+            .expect("the review task is claimable");
+        assert_eq!(claimed.task_id, review_task);
+
+        let working_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence with a claimed review task");
+        assert_eq!(working_q.in_review, 0, "a CLAIMED review moves out of the in_review bucket");
+        assert_eq!(working_q.in_progress, 1, "the claimed review is in_progress");
+        assert!(!working_q.done, "an in-progress review keeps the sprint not done");
+        assert!(
+            !working_q.stalled,
+            "a review with a claimer in_progress is NOT stalled (it is being worked)"
+        );
     }
 
     /// `list_open_questions_for_sprint` returns only UNRESOLVED questions scoped
