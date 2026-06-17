@@ -17,6 +17,46 @@ use lumina_core::domain::{
     ClosureGate, Complexity, Effort, Origin, Relevance, Shape, UpdateResearchNoteRequest,
 };
 
+/// Validate a research note's `anchors` list against the fixed anchor contract
+/// (the single source of truth shared by BOTH the MCP and HTTP add/update
+/// surfaces — the HTTP handlers in `http/research_notes.rs` import this fn). An
+/// anchor is well-formed iff it is EITHER an `http://` / `https://` URL OR a
+/// `<repo-relative-path>:<line>` citation whose path part (everything before the
+/// LAST colon) is non-empty and whose line part (everything after) parses as a
+/// `u32 >= 1`. Validation is ALL-OR-NOTHING: a single malformed entry rejects
+/// the whole write as `Validation` (→ invalid_params at MCP, 422 at HTTP via the
+/// shared error mappers), naming the offending anchor(s) — no silent drop, no
+/// partial write. `None` / an empty list is valid (no anchors).
+pub(crate) fn validate_anchors(anchors: &Option<Vec<String>>) -> Result<(), AppError> {
+    let Some(list) = anchors else { return Ok(()) };
+    let bad: Vec<&str> = list
+        .iter()
+        .filter(|a| !is_valid_anchor(a))
+        .map(String::as_str)
+        .collect();
+    if bad.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Validation(format!(
+            "malformed research-note anchor(s) (each must be an http(s):// URL or '<path>:<line>' with a positive line number): {}",
+            bad.join(", ")
+        )))
+    }
+}
+
+/// True iff `anchor` matches the anchor contract (URL form or `path:line`).
+fn is_valid_anchor(anchor: &str) -> bool {
+    if anchor.starts_with("http://") || anchor.starts_with("https://") {
+        return true;
+    }
+    // `path:line` — split on the LAST colon so a Windows-ish drive prefix or a
+    // colon inside the path doesn't fool the line parse.
+    match anchor.rsplit_once(':') {
+        Some((path, line)) => !path.is_empty() && line.parse::<u32>().is_ok_and(|n| n >= 1),
+        None => false,
+    }
+}
+
 /// Arguments for the `set_relevance` write tool → `repo::set_relevance`. The
 /// typed `relevance` enum advertises the legal values; the repo rejects a
 /// task/project target with `Validation`.
@@ -152,6 +192,11 @@ pub struct AddResearchNoteParams {
     /// `plan`/`implement`/`review`/`optimise`/`tdd`/`human`/`none` (migration 0003).
     #[serde(default)]
     pub origin: Option<Origin>,
+    /// Optional typed citations: a list of anchor strings, each either an
+    /// `http(s)://` URL or a `<repo-relative-path>:<line>` reference. Any
+    /// malformed entry rejects the whole write (see `validate_anchors`).
+    #[serde(default)]
+    pub anchors: Option<Vec<String>>,
 }
 
 /// Arguments for the `update_research_note` write tool: a partial set-or-leave
@@ -173,6 +218,11 @@ pub struct UpdateResearchNoteParams {
     /// New analytical lens; absent leaves it unchanged.
     #[serde(default)]
     pub lens: Option<String>,
+    /// New typed citations; absent OR empty leaves the existing anchors
+    /// unchanged (set-or-leave, mirroring `UpdateResearchNoteRequest.anchors`).
+    /// Any malformed entry rejects the whole write (see `validate_anchors`).
+    #[serde(default)]
+    pub anchors: Option<Vec<String>>,
 }
 
 /// Arguments for the `supersede_research_note` write tool →
@@ -451,6 +501,7 @@ impl LuminaTools {
         Parameters(p): Parameters<AddResearchNoteParams>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "add_research_note", "mcp tool invoked");
+        validate_anchors(&p.anchors).map_err(app_error_to_mcp)?;
         let origin_str = p.origin.map(enum_to_str);
         let id = repo::add_research_note(
             &self.pool,
@@ -460,6 +511,7 @@ impl LuminaTools {
             p.confidence.as_deref(),
             p.lens.as_deref(),
             origin_str.as_deref(),
+            p.anchors.as_deref(),
         )
         .await
         .map_err(app_error_to_mcp)?;
@@ -477,11 +529,13 @@ impl LuminaTools {
         Parameters(p): Parameters<UpdateResearchNoteParams>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "update_research_note", "mcp tool invoked");
+        validate_anchors(&p.anchors).map_err(app_error_to_mcp)?;
         let req = UpdateResearchNoteRequest {
             confidence: p.confidence,
             state: p.state,
             rationale: p.rationale,
             lens: p.lens,
+            anchors: p.anchors,
         };
         repo::update_research_note(&self.pool, &p.id, &req)
             .await

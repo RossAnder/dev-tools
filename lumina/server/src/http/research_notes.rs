@@ -24,6 +24,9 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 
 use crate::app::AppState;
+// Single source of truth for the anchor contract — the MCP-layer helper, reused
+// here so the HTTP add/update routes (a real write path) cannot bypass it.
+use crate::mcp::validate_anchors;
 use lumina_core::domain::{Origin, ResearchState, UpdateResearchNoteRequest, WorkItemDetail};
 use lumina_core::error::AppError;
 use lumina_core::repo;
@@ -41,6 +44,10 @@ struct AddResearchNoteBody {
     pub lens: Option<String>,
     #[serde(default)]
     pub origin: Option<Origin>,
+    /// Typed citations: each anchor is an `http(s)://` URL or a `<path>:<line>`
+    /// reference; any malformed entry rejects the whole write (422).
+    #[serde(default)]
+    pub anchors: Option<Vec<String>>,
 }
 
 /// Body for `PATCH /research-notes/{id}`. Mirrors `UpdateResearchNoteParams`
@@ -56,6 +63,11 @@ struct UpdateResearchNoteBody {
     pub rationale: Option<String>,
     #[serde(default)]
     pub lens: Option<String>,
+    /// New typed citations; absent OR empty leaves the existing anchors
+    /// unchanged (set-or-leave). Any malformed entry rejects the whole write
+    /// (422).
+    #[serde(default)]
+    pub anchors: Option<Vec<String>>,
 }
 
 /// Build the research-notes sub-router. Returned as `Router<AppState>` so
@@ -115,6 +127,7 @@ async fn add_research_note_handler(
     Json(body): Json<AddResearchNoteBody>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!(work_item_id = %work_item_id, "http: POST /work-items/{{id}}/research-notes");
+    validate_anchors(&body.anchors)?;
     let origin_str = body.origin.map(enum_to_wire);
     let id = repo::add_research_note(
         state.pool.as_ref(),
@@ -124,6 +137,7 @@ async fn add_research_note_handler(
         body.confidence.as_deref(),
         body.lens.as_deref(),
         origin_str.as_deref(),
+        body.anchors.as_deref(),
     )
     .await?;
     Ok((
@@ -145,6 +159,7 @@ async fn update_research_note_handler(
     Json(body): Json<UpdateResearchNoteBody>,
 ) -> Result<Json<WorkItemDetail>, AppError> {
     tracing::debug!(note_id = %id, "http: PATCH /research-notes/{{id}}");
+    validate_anchors(&body.anchors)?;
     let pool = state.pool.sqlite();
     let work_item_id = parent_work_item(pool, &id).await?;
     let req = UpdateResearchNoteRequest {
@@ -152,6 +167,7 @@ async fn update_research_note_handler(
         state: body.state,
         rationale: body.rationale,
         lens: body.lens,
+        anchors: body.anchors,
     };
     repo::update_research_note(pool, &id, &req).await?;
     let detail = repo::get_work_item_detail(pool, &work_item_id).await?;

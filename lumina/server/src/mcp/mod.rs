@@ -452,6 +452,11 @@ mod tests {
             // migration 0011 Part-B query tools (B21)
             "query_findings",
             "get_story_finding_queue",
+            // research-note anchor query (F7 anchor pass; defined in
+            // mcp/findings.rs — cross-work-item query over the migration-0024
+            // research_notes.anchors JSON array via json_each, NULL-guard
+            // filter over work_item_id + file/anchor predicates, read-only)
+            "query_research_notes",
             // migration 0011 Part-B run/sprint/triage domain tools (B24)
             "create_run",
             "create_sprint",
@@ -572,12 +577,18 @@ mod tests {
         //      sprint-scoped; composes repo::story_checkpoint_suggestions /
         //      repo::sprint_checkpoint_suggestions over the first-class
         //      task_files EXPECTED set, no tx + no event).
+        //    + 1 query_research_notes (F7 research-note anchor pass; defined in
+        //      mcp/findings.rs beside query_findings — a read-only cross-work-item
+        //      query over the migration-0024 research_notes.anchors JSON array
+        //      via json_each: a static NULL-guard filter over work_item_id + the
+        //      file/anchor anchor predicates → repo::query_research_notes; no tx,
+        //      no event).
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            93,
-            "advertised tool count must be exactly 93, got {}: {names:?}",
+            94,
+            "advertised tool count must be exactly 94, got {}: {names:?}",
             names.len()
         );
 
@@ -592,8 +603,8 @@ mod tests {
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            93,
-            "advertised tool names must be UNIQUE (93 distinct), got {} distinct of {}: {names:?}",
+            94,
+            "advertised tool names must be UNIQUE (94 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
@@ -707,6 +718,8 @@ mod tests {
             // migration 0011 / Part-B query read tools (B21).
             "query_findings",
             "get_story_finding_queue",
+            // research-note anchor query (F7 anchor pass; mcp/findings.rs).
+            "query_research_notes",
             // session-context read tool (harness-session-corpus, ADR-0004 / T8).
             "get_session_context",
             // execution-mode read tool (focus 1C.1, AC1 consumer; mcp/mode.rs).

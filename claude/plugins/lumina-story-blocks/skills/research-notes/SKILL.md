@@ -69,7 +69,8 @@ For each gap NOT routed to supersession, run the appropriate lookup:
 Synthesise each gap's research into a research-note draft:
 
 - `summary` — one-line, ~60-100 chars, what was learned.
-- `body` — 2-5 sentences with the actual finding + a citation (URL, file:line range, or library-version pin).
+- `body` — 2-5 sentences with the actual finding (prose only — the citation goes in `anchors`, NOT the body).
+- `anchors` — the citation(s) as typed anchor strings (migration 0024): a JSON array, each entry EITHER a `<repo-relative-path>:<line>` reference OR an `http(s)://` URL. A library-version pin cites the package's docs URL. Do NOT append citations to `body`; put them here, where the vet-pass and `query_research_notes`'s `file`/`anchor` filters read them. A malformed entry rejects the whole write, so quote each anchor verbatim.
 - `lens` — one of the category strings above.
 - `confidence` — `low` / `medium` / `high`, graded honestly against evidence strength (single blog post = `low`; official docs + corroborating code reading = `high`).
 
@@ -81,7 +82,8 @@ For each gap that does NOT match an existing note, call:
 mcp__lumina__add_research_note {
   work_item_id: "$work_item_id",
   summary: "<one-line>",
-  body: "<2-5 sentences with citation>",
+  body: "<2-5 sentences — prose finding only>",
+  anchors: ["<path:line or http(s):// URL>", ...],
   lens: "<gap-category>",
   confidence: "<low|medium|high>",
   origin: "plan"

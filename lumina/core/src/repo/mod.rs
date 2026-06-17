@@ -299,6 +299,25 @@ where
             rationale: row.try_get("rationale")?,
             lens: row.try_get("lens")?,
             origin: row.try_get("origin")?,
+            // Decode the nullable `anchors` TEXT column (migration 0024) from its
+            // stored JSON array into `Vec<String>`. NULL or an empty string → None;
+            // an empty parsed array → None too (so a stored `[]` reads back the
+            // same as no anchors). Decode is tolerant: a `file:line` anchor whose
+            // file was since deleted is fine (no FK) — only a genuinely malformed
+            // JSON blob errors, surfaced as a `ColumnDecode` like any bad column.
+            anchors: match row.try_get::<Option<String>, _>("anchors")? {
+                None => None,
+                Some(s) if s.is_empty() => None,
+                Some(s) => {
+                    let parsed: Vec<String> = serde_json::from_str(&s).map_err(|e| {
+                        sqlx::Error::ColumnDecode {
+                            index: "anchors".into(),
+                            source: Box::new(e),
+                        }
+                    })?;
+                    if parsed.is_empty() { None } else { Some(parsed) }
+                }
+            },
             superseded_by: row.try_get("superseded_by")?,
             created_at: row.try_get("created_at")?,
         })

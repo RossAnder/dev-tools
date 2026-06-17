@@ -1,11 +1,13 @@
-//! Findings query / aggregation routes (B22, migration 0011 — Part B Phase B4).
+//! Findings query / aggregation routes (B22, migration 0011 — Part B Phase B4)
+//! plus the research-note anchor query (the F7 anchor pass).
 //!
-//! Two READ-only GETs that wrap the B20 repo read layer (no new SQL):
+//! READ-only GETs that wrap the repo read layer (no new SQL):
 //!   * `GET /findings/query`                       — `repo::query_findings`.
 //!   * `GET /work-items/{story_id}/finding-queue`  — `repo::get_story_finding_queue`.
+//!   * `GET /research-notes/query`                 — `repo::query_research_notes`.
 //!
 //! Each handler delegates to a single `repo::*` call, mirroring the matching
-//! B21 MCP tool. Paths are relative to the `/api` mount point in `app.rs`.
+//! MCP tool. Paths are relative to the `/api` mount point in `app.rs`.
 
 use axum::Json;
 use axum::Router;
@@ -14,7 +16,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 
 use crate::app::AppState;
-use lumina_core::domain::{Finding, QueryFindingsFilter};
+use lumina_core::domain::{Finding, QueryFindingsFilter, ResearchNote};
 use lumina_core::error::AppError;
 use lumina_core::repo::{self, QueryFindingsResult};
 
@@ -29,6 +31,25 @@ pub fn router() -> Router<AppState> {
             "/work-items/{story_id}/finding-queue",
             get(finding_queue_handler),
         )
+        .route(
+            "/research-notes/query",
+            get(query_research_notes_handler),
+        )
+}
+
+/// Query-param shape for `GET /research-notes/query`, mirroring the MCP
+/// `query_research_notes` tool's filter. Every field is optional (the static
+/// NULL-guard filter); an absent param does not constrain its predicate. Owned
+/// `String`s off the querystring, converted to the borrowing
+/// `repo::QueryResearchNotesFilter` at the handler.
+#[derive(Debug, serde::Deserialize)]
+struct ResearchNotesQuery {
+    #[serde(default)]
+    work_item_id: Option<String>,
+    #[serde(default)]
+    file: Option<String>,
+    #[serde(default)]
+    anchor: Option<String>,
 }
 
 /// `GET /findings/query` — query LIVE findings with the static NULL-guard filter,
@@ -61,6 +82,33 @@ async fn finding_queue_handler(
     tracing::debug!(story_id = %story_id, "http: GET /work-items/{{story_id}}/finding-queue");
     let queue = repo::get_story_finding_queue(state.pool.as_ref(), &story_id).await?;
     Ok(Json(queue))
+}
+
+/// `GET /research-notes/query` — query LIVE research notes with the static
+/// NULL-guard filter over `work_item_id` + the two anchor predicates (`file`,
+/// `anchor`). The filter arrives as querystring params (`Query<ResearchNotesQuery>`);
+/// every field is optional, and an absent field does not constrain its
+/// predicate. Returns `Json(Vec<ResearchNote>)`, newest-first. This is a READ —
+/// no transaction, no event row. The `/research-notes/query` static segment
+/// does not collide with the dynamic `/research-notes/{id}` PATCH that
+/// `research_notes::router` declares.
+async fn query_research_notes_handler(
+    State(state): State<AppState>,
+    Query(q): Query<ResearchNotesQuery>,
+) -> Result<Json<Vec<ResearchNote>>, AppError> {
+    tracing::debug!(
+        work_item_id = q.work_item_id.as_deref().unwrap_or(""),
+        file = q.file.as_deref().unwrap_or(""),
+        anchor = q.anchor.as_deref().unwrap_or(""),
+        "http: GET /research-notes/query"
+    );
+    let filter = repo::QueryResearchNotesFilter {
+        work_item_id: q.work_item_id.as_deref(),
+        file: q.file.as_deref(),
+        anchor: q.anchor.as_deref(),
+    };
+    let notes = repo::query_research_notes(state.pool.as_ref(), &filter).await?;
+    Ok(Json(notes))
 }
 
 #[cfg(test)]

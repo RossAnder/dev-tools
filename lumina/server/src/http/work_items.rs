@@ -646,6 +646,7 @@ mod tests {
             Some("medium"),
             Some("storage"),
             Some("plan"),
+            None,
         )
         .await
         .expect("add research note");

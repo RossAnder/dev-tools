@@ -18,8 +18,35 @@ use super::*;
 use super::events::record_event;
 use crate::args;
 use crate::db::{DbClient, Scalar};
-use crate::domain::{ResearchState, UpdateResearchNoteRequest};
+use crate::domain::{ResearchNote, ResearchState, UpdateResearchNoteRequest};
 use crate::error::AppError;
+
+/// Filter input for [`query_research_notes`] — a static NULL-guard filter
+/// mirroring [`crate::domain::QueryFindingsFilter`]'s idiom (B20, migration
+/// 0011): every field is `Option<&str>` and an absent field does not constrain
+/// its predicate, so ONE prepared statement covers every combination WITHOUT
+/// building SQL from user input. A borrowing input (the values are bound once
+/// per call and never outlive it), constructed at the MCP/HTTP boundary.
+///
+/// The two anchor filters answer the two cross-work-item queries the F7 anchor
+/// pass exists to serve:
+/// - `file` — "show every note citing file X": match a note whose `anchors`
+///   array holds an anchor whose PATH-PART equals X (the exact anchor, or the
+///   `X:<line>` `path:line` form). This is the common "what did we research
+///   about this file" lookup, so it spans every line cited in that file.
+/// - `anchor` — exact full-anchor-string match (a specific `path:line` cite or
+///   a specific URL).
+#[derive(Debug, Default, Clone)]
+pub struct QueryResearchNotesFilter<'a> {
+    /// Constrain to notes on this work-item; absent ⇒ no constraint.
+    pub work_item_id: Option<&'a str>,
+    /// Constrain to notes citing this FILE (anchor == X OR anchor LIKE 'X:%');
+    /// absent ⇒ no constraint.
+    pub file: Option<&'a str>,
+    /// Constrain to notes carrying this EXACT anchor string; absent ⇒ no
+    /// constraint.
+    pub anchor: Option<&'a str>,
+}
 
 /// Append ONE `research_notes` row under the single-mutation-path discipline
 /// (migration 0003). `seq` is `MAX(seq)+1` per work item WITHIN the transaction;
@@ -34,6 +61,7 @@ pub async fn add_research_note(
     confidence: Option<&str>,
     lens: Option<&str>,
     origin: Option<&str>,
+    anchors: Option<&[String]>,
 ) -> Result<Uuid, AppError> {
     // Verify the work item exists first (NotFound, not a dangling-FK 500).
     let _ = work_item_kind(db, work_item_id).await?;
@@ -42,6 +70,15 @@ pub async fn add_research_note(
     let id_str = id.to_string();
     // State defaults to `proposed` on create.
     let state = enum_to_str(ResearchState::Proposed);
+
+    // Normalise anchors on write: None or an EMPTY slice → SQL NULL; a non-empty
+    // slice → its JSON-array TEXT. Mirrors the read-side empty-array → None fold.
+    let anchors_json: Option<String> = match anchors {
+        Some(a) if !a.is_empty() => {
+            Some(serde_json::to_string(a).map_err(|e| AppError::Other(e.into()))?)
+        }
+        _ => None,
+    };
 
     let mut tx = db.begin().await?;
 
@@ -55,8 +92,8 @@ pub async fn add_research_note(
     tx.execute(
         r#"
         INSERT INTO research_notes
-            (id, work_item_id, seq, summary, body, confidence, state, lens, origin)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (id, work_item_id, seq, summary, body, confidence, state, lens, origin, anchors)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
         args![
             id_str.clone(),
@@ -68,6 +105,7 @@ pub async fn add_research_note(
             state,
             lens.map(str::to_owned),
             origin.map(str::to_owned),
+            anchors_json,
         ],
     )
     .await?;
@@ -106,6 +144,17 @@ pub async fn update_research_note(
     let work_item_id = research_note_work_item(db, id).await?;
     let state_str: Option<String> = req.state.map(enum_to_str);
 
+    // Set-or-leave anchors: a non-empty vec binds its JSON-array TEXT (the
+    // COALESCE then sets); None OR an empty vec binds NULL (the COALESCE then
+    // leaves the existing value — clearing-to-empty via update is a no-op,
+    // consistent with the other COALESCE fields here).
+    let anchors_json: Option<String> = match req.anchors.as_deref() {
+        Some(a) if !a.is_empty() => {
+            Some(serde_json::to_string(a).map_err(|e| AppError::Other(e.into()))?)
+        }
+        _ => None,
+    };
+
     let mut tx = db.begin().await?;
 
     let affected = tx
@@ -115,7 +164,8 @@ pub async fn update_research_note(
         SET confidence = COALESCE($2, confidence),
             state      = COALESCE($3, state),
             rationale  = COALESCE($4, rationale),
-            lens       = COALESCE($5, lens)
+            lens       = COALESCE($5, lens),
+            anchors    = COALESCE($6, anchors)
         WHERE id = $1
         "#,
             args![
@@ -124,6 +174,7 @@ pub async fn update_research_note(
                 state_str.clone(),
                 req.rationale.clone(),
                 req.lens.clone(),
+                anchors_json,
             ],
         )
         .await?;
@@ -206,6 +257,103 @@ pub async fn supersede_research_note(
     Ok(())
 }
 
+/// Escape the SQL `LIKE` metacharacters (`%`, `_`) in `s` against a backslash
+/// escape character, for use with a `LIKE … ESCAPE '\'` clause. The backslash
+/// itself is escaped FIRST (`\` → `\\`) so the `%`/`_` escapes we then add are
+/// not double-escaped. A raw caller path like `research_notes.rs` contains a
+/// literal `_`, which `LIKE` would otherwise treat as a single-char wildcard
+/// (silently matching `research-notes.rs` / `researchXnotes.rs`); escaping it
+/// confines the `file`-prefix match to the literal path.
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+// Full-row SELECT for [`query_research_notes`] — the same column list the
+// [`ResearchNote`] FromRow decodes (mirroring `list_research_notes`), plus a
+// static NULL-guard filter and a stable `created_at DESC, id` (newest-first)
+// order. The clause is a `&'static str` literal (the runtime seam requires
+// `'static`; the WHERE is NEVER built from user input — the only variation is
+// whether each bound value is NULL):
+//   * `$1` — `work_item_id`     : `($1 IS NULL OR work_item_id = $1)`.
+//   * `$2`/`$4` — `file` path filter : an absent `$2` disables the conjunct;
+//     when present, an EXISTS over `json_each(anchors)` matches a note whose
+//     anchors array holds an anchor EQUAL to the RAW `$2` OR a `path:line`
+//     anchor whose prefix is the file. The prefix branch uses `LIKE $4 || ':%'
+//     ESCAPE '\'`, where `$4` is the `LIKE`-escaped form of the file (see
+//     [`escape_like`]) — so a literal `_` in a real path (e.g.
+//     `research_notes.rs`) is NOT a single-char wildcard. The exact branch stays
+//     on the RAW `$2` (no escaping — `=` is literal). `json_each` over a NULL
+//     `anchors` column yields zero rows, so a note with no anchors simply fails
+//     the EXISTS — no NULL guard needed inside it; the whole conjunct is already
+//     guarded by `$2 IS NULL`, so a NULL `$4` is harmless.
+//   * `$3` — `anchor` exact     : an absent `$3` disables the conjunct; when
+//     present, an EXISTS over `json_each(anchors)` matches a note whose anchors
+//     array holds an anchor EQUAL to `$3`.
+// `superseded_by IS NULL` keeps the result to LIVE notes only — consistent with
+// `list_research_notes` and the `get_work_item_detail` fold. Each `$N` is bound
+// ONCE per distinct placeholder; a placeholder appearing twice in the SQL reads
+// the same single bound value (the `query_findings` idiom).
+//
+// Design note: the `($N IS NULL OR …)` NULL-guard is NON-SARGABLE and the two
+// `json_each` EXISTS subqueries are full per-row scans of the anchors array;
+// both are accepted as immaterial at the current `research_notes`-table scale
+// (the deliberate trade-off is ONE prepared statement covering every filter
+// combination — no dynamic SQL), matching the `query_findings` rationale.
+const QUERY_RESEARCH_NOTES_SQL: &str = "\
+    SELECT id, work_item_id, seq, summary, body, confidence, state, \
+           rationale, lens, origin, anchors, superseded_by, created_at \
+    FROM research_notes \
+    WHERE ($1 IS NULL OR work_item_id = $1) \
+      AND ($2 IS NULL OR EXISTS ( \
+            SELECT 1 FROM json_each(research_notes.anchors) je \
+            WHERE je.value = $2 OR je.value LIKE $4 || ':%' ESCAPE '\\')) \
+      AND ($3 IS NULL OR EXISTS ( \
+            SELECT 1 FROM json_each(research_notes.anchors) je \
+            WHERE je.value = $3)) \
+      AND superseded_by IS NULL \
+    ORDER BY created_at DESC, id";
+
+/// Query LIVE research notes across work items with a static NULL-guard filter
+/// over `work_item_id` + the two anchor predicates (the F7 anchor pass; mirrors
+/// [`query_findings`]). Each filter field is `Option<&str>`; an absent field
+/// binds `NULL`, which disables its conjunct, so one prepared statement covers
+/// every filter combination WITHOUT building SQL from user input. "Live only" —
+/// `superseded_by IS NULL` is always applied, matching [`list_research_notes`]
+/// and the `get_work_item_detail` fold (superseded notes are intentionally NOT
+/// queryable here). Returns the notes newest-first (`created_at DESC, id`).
+///
+/// The `file` filter matches a note whose `anchors` array cites the given file
+/// (the anchor equals the path, or is the `path:line` form `path:%`); the
+/// `anchor` filter is an exact full-anchor-string match. Both run through
+/// SQLite's `json_each` table-valued function over the stored JSON array. This
+/// is a READ — no transaction, no event row.
+pub async fn query_research_notes(
+    db: &impl DbClient,
+    filter: &QueryResearchNotesFilter<'_>,
+) -> Result<Vec<ResearchNote>, AppError> {
+    // The four NULL-guard binds, in the fixed positional order $1..=$4. Each is
+    // owned-cloned once into the `Args` bundle; the SQL references the matching
+    // `$N` (twice for $1 — once in `IS NULL`, once in `= $1`) and the runtime
+    // SQLite layer resolves both references to this single bound value. `$2` is
+    // the RAW file (the `= $2` exact branch + its `IS NULL` guard); `$4` is its
+    // `LIKE`-escaped form (the `LIKE $4 || ':%' ESCAPE '\'` prefix branch), so a
+    // literal `_` in a real path is not a single-char wildcard. `$4` is NULL iff
+    // `$2` is, and the conjunct is guarded by `$2 IS NULL`, so a NULL `$4` is
+    // harmless.
+    let rows = db
+        .query_all::<ResearchNote>(
+            QUERY_RESEARCH_NOTES_SQL,
+            args![
+                filter.work_item_id.map(str::to_owned),
+                filter.file.map(str::to_owned),
+                filter.anchor.map(str::to_owned),
+                filter.file.map(escape_like),
+            ],
+        )
+        .await?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,11 +368,11 @@ mod tests {
         let story = seed_chain_to_story(&pool).await;
         let ev_before = count_events(&pool).await;
 
-        let old = add_research_note(&pool, &story, "old finding", None, Some("low"), None, None)
+        let old = add_research_note(&pool, &story, "old finding", None, Some("low"), None, None, None)
             .await
             .expect("old note")
             .to_string();
-        let new = add_research_note(&pool, &story, "new finding", None, Some("high"), None, None)
+        let new = add_research_note(&pool, &story, "new finding", None, Some("high"), None, None, None)
             .await
             .expect("new note")
             .to_string();
@@ -251,11 +399,52 @@ mod tests {
             state: Some(ResearchState::Accepted),
             rationale: Some("chosen".into()),
             lens: None,
+            anchors: None,
         };
         update_research_note(&pool, &new, &req).await.expect("accept");
         let detail = get_work_item_detail(&pool, &story).await.expect("detail");
         assert_eq!(detail.research_notes[0].state.as_deref(), Some("accepted"));
         assert_eq!(detail.research_notes[0].rationale.as_deref(), Some("chosen"));
         assert_eq!(detail.research_notes[0].confidence.as_deref(), Some("high"), "confidence left");
+    }
+
+    /// The `file` filter ESCAPEs `LIKE` metacharacters: a literal `_` in a real
+    /// path (`research_notes.rs`) must NOT wildcard-match a `path:line` anchor
+    /// whose path differs only at that char (`researchXnotes.rs:20`). Seeds two
+    /// notes with `path:line` anchors that collide ONLY under an unescaped
+    /// `LIKE`, queries by `file`, and asserts exactly the literal-path note (A)
+    /// comes back — proving the `ESCAPE '\'` clause + the escaped `$4` bind.
+    #[tokio::test]
+    async fn query_research_notes_file_filter_escapes_like_wildcards() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+
+        // Note A: a real `path:line` anchor with a literal underscore.
+        let a = add_research_note(
+            &pool, &story, "note A", None, None, None, None,
+            Some(&["research_notes.rs:10".to_owned()]),
+        )
+        .await
+        .expect("note A")
+        .to_string();
+        // Note B: same shape but an `X` where A has `_` — only an UNescaped
+        // `LIKE` (where `_` is a single-char wildcard) would also match this.
+        add_research_note(
+            &pool, &story, "note B", None, None, None, None,
+            Some(&["researchXnotes.rs:20".to_owned()]),
+        )
+        .await
+        .expect("note B");
+
+        let filter = QueryResearchNotesFilter {
+            work_item_id: None,
+            file: Some("research_notes.rs"),
+            anchor: None,
+        };
+        let rows = query_research_notes(&pool, &filter).await.expect("query");
+
+        // EXACTLY note A — the `_` did not wildcard-match `researchXnotes.rs`.
+        assert_eq!(rows.len(), 1, "only the literal-path note matches (no `_` wildcard)");
+        assert_eq!(rows[0].id, a, "the matched note is A (research_notes.rs:10)");
     }
 }

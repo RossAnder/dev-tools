@@ -259,6 +259,27 @@ pub struct GetStoryFindingQueueParams {
     pub story_id: String,
 }
 
+/// Arguments for the `query_research_notes` read tool →
+/// `repo::query_research_notes` (the F7 anchor pass). Every field is optional
+/// (the static NULL-guard filter); an absent field does not constrain its
+/// predicate. The owned-`String` shape deserialises off the wire and converts
+/// to the borrowing `repo::QueryResearchNotesFilter` at the handler.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct QueryResearchNotesParams {
+    /// Constrain to research notes on this work-item; absent ⇒ no constraint.
+    #[serde(default)]
+    pub work_item_id: Option<String>,
+    /// Constrain to notes citing this FILE — match a note whose anchors hold an
+    /// anchor EQUAL to this path OR of the `<path>:<line>` form for it; absent
+    /// ⇒ no constraint.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Constrain to notes carrying this EXACT anchor string (a specific
+    /// `path:line` cite or http(s) URL); absent ⇒ no constraint.
+    #[serde(default)]
+    pub anchor: Option<String>,
+}
+
 #[tool_router(router = tool_router_findings, vis = "pub(crate)")]
 impl LuminaTools {
     /// Create a finding attached to a work item (single repo call → `create_finding`).
@@ -482,6 +503,31 @@ impl LuminaTools {
             .await
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// Query LIVE research notes across work items with a static NULL-guard
+    /// filter over `work_item_id` + the two anchor predicates (single repo call
+    /// → `repo::query_research_notes`; mirrors `query_findings`). Read-only.
+    #[tool(
+        description = "Query LIVE (non-superseded) research notes across work items with a static NULL-guard filter. Each optional field constrains a predicate; an ABSENT field is unconstrained, so one prepared statement covers every combination. `work_item_id` scopes to one item's notes. `file` matches every note whose `anchors` cite that file (the anchor equals the path, or is the `path:line` form for that file) — the \"what did we research about this file\" lookup. `anchor` is an exact full-anchor-string match (a specific `path:line` cite or a specific http(s) URL). Returns the matching notes newest-first as a JSON array. Read-only.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn query_research_notes(
+        &self,
+        Parameters(QueryResearchNotesParams { work_item_id, file, anchor }): Parameters<
+            QueryResearchNotesParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "query_research_notes", "mcp tool invoked");
+        let filter = repo::QueryResearchNotesFilter {
+            work_item_id: work_item_id.as_deref(),
+            file: file.as_deref(),
+            anchor: anchor.as_deref(),
+        };
+        let rows = repo::query_research_notes(&self.pool, &filter)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::to_value(rows).unwrap_or_default())
     }
 
     /// Compose a story's review/optimise finding queue (single repo call →

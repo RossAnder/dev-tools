@@ -818,6 +818,7 @@ mod tests {
             Some("high"),
             Some("storage"),
             Some("plan"),
+            None,
         )
         .await
         .expect("add research note");

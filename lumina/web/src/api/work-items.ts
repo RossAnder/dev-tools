@@ -301,6 +301,10 @@ export interface ResearchNote {
   state: ResearchState | null
   rationale: string | null
   lens: string | null
+  // `anchors` is EITHER a JSON array of strings (each a `"<path>:<line>"` or an
+  // `http(s)://` URL) OR `null` (no anchors) OR absent on the wire, so the
+  // consumer type is `string[] | null | undefined`.
+  anchors?: string[] | null
   origin: Origin | null
   superseded_by: string | null
   created_at: string
@@ -316,6 +320,11 @@ export const ResearchNoteSchema = z.object({
   state: ResearchStateSchema.nullable(),
   rationale: z.string().max(4000).nullable(),
   lens: z.string().max(200).nullable(),
+  // `anchors` arrives as an array of strings, an explicit `null`, or absent
+  // (the wire shape `string[] | null | undefined`). `.nullish()` accepts all
+  // three — the only field here that may be ABSENT, so it diverges from the
+  // sibling plain `.nullable()` fields (those are always emitted as `null`).
+  anchors: z.array(z.string()).nullish(),
   origin: OriginSchema.nullable(),
   superseded_by: z.string().max(200).nullable(),
   created_at: z.string().max(50),
@@ -660,4 +669,27 @@ export async function updateWorkItem(
  */
 export async function updateStatus(id: string, status: string): Promise<WorkItem> {
   return updateWorkItem(id, { status: status as Status })
+}
+
+/**
+ * `GET /api/research-notes/query` — query LIVE research notes, optionally
+ * filtered by `work_item_id` / `file` / `anchor` (each absent param is
+ * unconstrained). Mirrors the {@link fetchTree} / `listSprints` query-param
+ * idiom: build the query string with `URLSearchParams`, then validate the
+ * response as an array of {@link ResearchNote}.
+ */
+export async function queryResearchNotes(params?: {
+  work_item_id?: string
+  file?: string
+  anchor?: string
+}): Promise<ResearchNote[]> {
+  const qs = new URLSearchParams()
+  if (params?.work_item_id) qs.set('work_item_id', params.work_item_id)
+  if (params?.file) qs.set('file', params.file)
+  if (params?.anchor) qs.set('anchor', params.anchor)
+  const query = qs.toString() ? `?${qs.toString()}` : ''
+  return handle(
+    await fetch(`${API_BASE}/research-notes/query${query}`),
+    z.array(ResearchNoteSchema),
+  )
 }

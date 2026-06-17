@@ -71,7 +71,7 @@ Cite R30: the 4-agent cap matches `/plan-new` Phase 3's apply-flow agent-per-bat
 
 Each sub-agent receives a self-contained prompt carrying ONE note and performs the spot-check work for that note:
 
-- **Citation extraction**: read the note's `body` and identify the verifiable claim:
+- **Citation extraction**: read the note's typed `anchors` array (each entry is a `path:line` reference or an `http(s)://` URL) — that is where citations now live (migration 0024). For a LEGACY note with no `anchors`, fall back to scanning `body` for an inline URL / `file:line`. Identify the verifiable claim and verify each anchor:
   - URL → fetch with `WebFetch` (or `Read` if file://) and confirm the cited fact.
   - `file:line` → `Read` that range (or `Grep` the symbol) and confirm the code matches the description.
   - Library version pin → `mcp__plugin_context7_context7__query-docs` against the cited library ID and confirm the version reference.
