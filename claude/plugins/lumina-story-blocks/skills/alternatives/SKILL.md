@@ -3,7 +3,6 @@ name: alternatives
 description: Capture or update a story's rejected alternatives with confidence + rationale; per-element supersession on label collision.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:alternatives`

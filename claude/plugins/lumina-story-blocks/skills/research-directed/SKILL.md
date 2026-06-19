@@ -3,7 +3,6 @@ name: research-directed
 description: Verify decision-grade claims (libraries, APIs, file:line) after user decisions land; emit drift findings and supersede stale notes.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:research-directed`

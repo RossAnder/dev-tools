@@ -3,7 +3,6 @@ name: user-interrogation
 description: Enumerate open questions for a story across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility).
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:user-interrogation`

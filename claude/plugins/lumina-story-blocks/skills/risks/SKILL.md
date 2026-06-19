@@ -3,7 +3,6 @@ name: risks
 description: Capture or update a story's risks with severity + mitigation; per-element supersession on label collision.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:risks`

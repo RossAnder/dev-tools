@@ -3,7 +3,6 @@ name: research-explore
 description: Dispatch parallel lens-agents to explore the story; each agent returns proposed research notes for /lumina:vet-research to triage.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:research-explore`

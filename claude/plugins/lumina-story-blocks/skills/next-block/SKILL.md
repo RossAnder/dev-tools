@@ -13,18 +13,15 @@ command to run. The pattern follows the precedent set by Anthropic's Superpowers
 exemplar `using-superpowers/SKILL.md` — a read-only meta-skill whose body's value
 is in telling the agent WHAT TO DO NEXT, not in mutating state itself.
 
-## Why this skill omits `disable-model-invocation`
+## Read-only skill
 
-Every DB-mutating skill in this plugin declares `disable-model-invocation: true`
-per CONVENTIONS.md §a to remove its `description` from the routing context, so
-ONLY explicit triggers (`/lumina:<name>` slash, UI dispatch, explicit `Skill`
-tool call) fire it. The §a **exception** carves out read-only / documentation
-skills — these may stay model-discoverable so agents can auto-find them. This
-skill is exclusively read (two read-only calls: `mcp__lumina__get_session_context`
-for session-start correlation + `mcp__lumina__get_story_readiness`) and
-therefore qualifies for the exception. The `mcp` catalogue uses the same
-exception; mirror its frontmatter shape (the four §a keys, no
-`disable-model-invocation`).
+This skill is exclusively READ (two read-only calls:
+`mcp__lumina__get_session_context` for session-start correlation +
+`mcp__lumina__get_story_readiness`) — it writes nothing. Like every skill in
+this plugin now, it is model-discoverable, so agents can auto-find it; the
+former `disable-model-invocation` distinction was retired plugin-wide
+(CONVENTIONS.md §a). It mirrors the four-§a-key frontmatter shape of the `mcp`
+catalogue.
 
 This is also why the §e Sentry split applies cleanly: skill body = WHAT TO ASK
 LUMINA + WHAT TO TELL THE USER; the lumina server computes the recommendation

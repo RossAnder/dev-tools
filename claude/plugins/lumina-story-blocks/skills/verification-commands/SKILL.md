@@ -3,7 +3,6 @@ name: verification-commands
 description: Capture or update a story's verification commands (build/test/lint/smoke) used by /implement and /tdd.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:verification-commands`

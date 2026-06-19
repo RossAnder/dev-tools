@@ -3,7 +3,6 @@ name: relevance
 description: Set or supersede an epic/focus/story's relevance (active / backlog / deferred / rejected).
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:relevance`

@@ -3,7 +3,6 @@ name: story-review
 description: Critique a story across all planning blocks; emits structured findings via add_finding{kind="story-review"}.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:story-review`

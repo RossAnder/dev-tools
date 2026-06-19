@@ -15,16 +15,14 @@ not in mutating state itself. Where `next-block` advises WITHIN the six-phase
 story walk, `lifecycle` advises ACROSS the whole create→plan→decompose→compose→
 execute→merge runbook ([`../../../../../lumina/docs/runbooks/dogfood-lifecycle.md`](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md)).
 
-## Why this skill omits `disable-model-invocation`
+## Read-only skill
 
-Every DB-mutating skill in this plugin declares `disable-model-invocation: true`
-per CONVENTIONS.md §a to remove its `description` from the routing context, so
-ONLY explicit triggers fire it. The §a **exception** carves out read-only /
-documentation skills — these may stay model-discoverable so agents can auto-find
-them. This skill is exclusively read (`get_tree`, the sprint status read, and
-`get_sprint_quiescence`) and therefore qualifies for the exception; it mirrors
-the four-key frontmatter shape of [`../next-block/SKILL.md`](../next-block/SKILL.md)
-and the `mcp` catalogue (no `disable-model-invocation`).
+This skill is exclusively READ (`get_tree`, the sprint status read, and
+`get_sprint_quiescence`) — it writes nothing. Like every skill in this plugin
+now, it is model-discoverable, so agents can auto-find it; the former
+`disable-model-invocation` distinction was retired plugin-wide (CONVENTIONS.md
+§a). It mirrors the four-key frontmatter shape of
+[`../next-block/SKILL.md`](../next-block/SKILL.md) and the `mcp` catalogue.
 
 This is also why the §e Sentry split applies cleanly: skill body = WHAT TO ASK
 LUMINA + WHAT TO TELL THE USER; lumina owns the lifecycle state (sprint status,

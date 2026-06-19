@@ -3,7 +3,6 @@ name: problem-statement
 description: Capture or update a story's problem_statement (what's broken, who's affected, success criteria).
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:problem-statement`

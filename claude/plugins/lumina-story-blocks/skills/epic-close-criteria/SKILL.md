@@ -3,7 +3,6 @@ name: epic-close-criteria
 description: Add, check, uncheck, or supersede an epic's close-criteria — the per-element gate for transitioning the epic to done.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:epic-close-criteria`

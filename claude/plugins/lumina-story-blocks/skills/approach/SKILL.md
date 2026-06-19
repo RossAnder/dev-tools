@@ -3,7 +3,6 @@ name: approach
 description: Capture or update a story's execution_strategy, drafting from accepted research and resolved questions.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:approach`

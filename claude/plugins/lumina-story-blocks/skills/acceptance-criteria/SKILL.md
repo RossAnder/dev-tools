@@ -3,7 +3,6 @@ name: acceptance-criteria
 description: Add free-text acceptance criteria to a story's task children, prompting with concrete-I/O / trigger / verification structural hints.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:acceptance-criteria`

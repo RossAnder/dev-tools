@@ -3,7 +3,6 @@ name: focus-framing
 description: Capture or update a focus's framing (what's in-scope and out-of-scope for this focus).
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:focus-framing`

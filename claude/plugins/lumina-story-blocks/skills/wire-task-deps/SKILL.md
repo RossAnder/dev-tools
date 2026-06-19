@@ -3,14 +3,13 @@ name: wire-task-deps
 description: Wire explicit task→task dependency edges across a story's task children, then surface the Kahn-ordered phase schedule.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:wire-task-deps`
 
 Wire explicit task→task dependency edges across a story's task children, then surface the Kahn-ordered phase schedule that downstream `/implement` (and any future sprint composer) will execute. This skill writes the EDGES; the phase batching is computed downstream by `mcp__lumina__compute_task_batches` and surfaced back to the user. The complexity-high split gate (R27) fires HERE — this is the last skill in the planning chain that can refuse to commit a high-complexity task to "execute as-is" before edges bind its scope.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape — five keys, inline context), §b (5-step check-before-act idempotency — applied per EDGE here per §b-per-element scope), §c (provenance recording — see "§c rollup deviation" below), §e (Sentry pattern: skill = workflow, MCP = execution), §j (batch-scheduled task execution — load-bearing: this skill IS the batch-scheduled execution wire-up, and §j is the contract for HOW the task graph composes with the downstream executor).
+This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape — four keys, inline context), §b (5-step check-before-act idempotency — applied per EDGE here per §b-per-element scope), §c (provenance recording — see "§c rollup deviation" below), §e (Sentry pattern: skill = workflow, MCP = execution), §j (batch-scheduled task execution — load-bearing: this skill IS the batch-scheduled execution wire-up, and §j is the contract for HOW the task graph composes with the downstream executor).
 
 ## MCP tools used
 

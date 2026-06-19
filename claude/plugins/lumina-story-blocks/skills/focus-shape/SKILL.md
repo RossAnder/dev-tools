@@ -3,7 +3,6 @@ name: focus-shape
 description: Set or supersede a focus's shape (vertical-slice / cross-cutting / foundational).
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:focus-shape`

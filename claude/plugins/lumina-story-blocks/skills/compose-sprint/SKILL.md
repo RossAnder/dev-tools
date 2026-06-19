@@ -3,7 +3,6 @@ name: compose-sprint
 description: Compose a sprint from a planned, decomposed story and ladder it draft→ready→active.
 arguments: [story_id]
 argument-hint: "[story_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:compose-sprint`
@@ -19,14 +18,16 @@ fallback), and ladders the sprint `draft→ready→active`. It STOPS at `active`
 execution (`run-sprint`) and the terminal merge/rejection flip are a SEPARATE
 skill's job.
 
-This skill MUTATES the store (it mints a sprint, attaches tasks, records a
-worktree, drives status) so it declares `disable-model-invocation: true` per
-§a — ONLY explicit triggers (`/lumina:compose-sprint <story_id>`, UI dispatch,
-explicit `Skill` call) fire it. It stays INLINE (five §a keys, NOT forked):
-the two gates are user-mediated and benefit from the parent context.
+This skill is a high-blast-radius MUTATOR (it mints a sprint, attaches tasks,
+records a worktree, drives status), yet it is model-invocable like the rest of
+the plugin — the flag was removed plugin-wide (§a/§n.3); its safety rests on
+§n.1 TXN-idempotency plus deliberate scheduler/operator invocation
+(`/lumina:compose-sprint <story_id>`, UI dispatch, explicit `Skill` call). It
+stays INLINE (four §a keys, NOT forked): the two gates are user-mediated and
+benefit from the parent context.
 
 Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (five keys, mutating), §c (one activity row per write), §e (Sentry — skill =
+§a (four keys, mutating), §c (one activity row per write), §e (Sentry — skill =
 orchestration, MCP = state; the local `detail.kind == "story"` check at Step 1
 is the §e-blessed exception), §j (the dispatch plan composes
 `compute_task_batches` downstream — this composer consumes batches, never

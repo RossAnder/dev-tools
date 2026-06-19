@@ -3,7 +3,6 @@ name: epic-outcome
 description: Capture or update an epic's outcome (what closing it delivers, who benefits, the observable signal it's achieved).
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:epic-outcome`

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # verify-plan-story-blocks.sh — drift/coverage gate for the lumina-story-blocks
-# plugin's inline-replication contract (story 1A-F5; CONVENTIONS §l.4).
+# plugin's Skill()-dispatch contract (CONVENTIONS §l.4 — now a tombstone for the
+# retired inline-replication workaround; the chained runners dispatch via Skill()).
 #
 # Asserts four invariants and exits non-zero (listing EVERY failure) if any break:
 #
@@ -11,13 +12,11 @@
 #                  in §l.0 — modulo the explicit non-phase allowlist below
 #                  (catches a FUTURE block added to skills/ but left undocumented).
 #   2. CITATION  — plan-story and create-project both cite CONVENTIONS §l.4.
-#   3. NO-SOLE-DISPATCH — both runners document inline-replication, and any
-#                  `Skill("lumina:...)` mention in a runner is NEGATED (never an
-#                  imperative "dispatch via Skill" directive), so Skill()-dispatch
-#                  is never presented as THE path to "run" a block.
-#   4. FLAG      — every DB-mutating writer SKILL.md retains
-#                  `disable-model-invocation: true` (the §a/§n.3 no-auto-fire
-#                  guarantee); only the read-only skills in NO_FLAG_OK omit it.
+#   3. DISPATCH-DOCUMENTED — both runners document Skill()-dispatch: each carries
+#                  at least one `Skill(` dispatch directive (the new canonical
+#                  path now that inline-replication is retired).
+#   4. NO-FLAG   — `disable-model-invocation:` must not reappear in any skill
+#                  SKILL.md (the flag was removed plugin-wide; see CONVENTIONS §a).
 #
 # Bash + awk (the repo standard is GNU awk / gawk — see the CLAUDE.md Windows
 # note: the default Git-Bash mawk is steered around by preferring gawk below;
@@ -41,10 +40,6 @@ CREATE_PROJECT="$SKILLS/create-project/SKILL.md"
 NON_PHASE="plan-story compose-sprint create-project run-sprint lifecycle \
 next-block mcp epic-outcome epic-close-criteria focus-shape focus-framing \
 research-notes"
-
-# Read-only skills that legitimately OMIT disable-model-invocation (the §a
-# read-only exception + the §n.3 lifecycle advisor + the read-only next-block).
-NO_FLAG_OK="mcp lifecycle next-block"
 
 AWK="$(command -v gawk || command -v awk)"
 
@@ -103,31 +98,22 @@ for f in "$PLAN_STORY" "$CREATE_PROJECT"; do
   grep -q '§l\.4' "$f" || err "$(rel "$f") does not cite CONVENTIONS §l.4"
 done
 
-# --- 3. NO-SOLE-DISPATCH + inline-replication documented ---------------------
+# --- 3. DISPATCH-DOCUMENTED --------------------------------------------------
+# Each runner MUST carry at least one `Skill(` dispatch directive — the new
+# canonical path now that inline-replication (§l.4) is retired.
 for f in "$PLAN_STORY" "$CREATE_PROJECT"; do
-  grep -qi 'inline-replicat' "$f" \
-    || err "$(rel "$f") does not document inline-replication"
-  # Every line mentioning Skill( MUST carry a negation cue; a bare imperative
-  # dispatch directive (no cue) is the regression this catches.
-  if grep -n 'Skill(' "$f" \
-       | grep -vi 'not\|never\|refus\|instead\|rather\|disable-model' \
-       >/dev/null; then
-    err "$(rel "$f") has a non-negated Skill( dispatch directive — inline-replication (§l.4) must be the documented path, not Skill()-dispatch"
-  fi
+  grep -q 'Skill(' "$f" \
+    || err "$(rel "$f") has no Skill( dispatch directive — Skill()-dispatch (§l.4) is now the documented path"
 done
 
-# --- 4. FLAG -----------------------------------------------------------------
+# --- 4. NO-FLAG --------------------------------------------------------------
+# The flag was removed plugin-wide (see CONVENTIONS §a); guard against any
+# SKILL.md reintroducing `disable-model-invocation:` (at any value).
 for d in "$SKILLS"/*/; do
   name="$(basename "$d")"
   [ -f "$d/SKILL.md" ] || continue
-  if case " $NO_FLAG_OK " in *" $name "*) true ;; *) false ;; esac; then
-    # read-only skill: assert it does NOT carry the flag (keeps NO_FLAG_OK honest)
-    grep -q '^disable-model-invocation: true' "$d/SKILL.md" \
-      && err "read-only skill '$name' unexpectedly carries disable-model-invocation: true (remove it from NO_FLAG_OK or drop the flag)"
-    continue
-  fi
-  grep -q '^disable-model-invocation: true' "$d/SKILL.md" \
-    || err "DB-mutating skill '$name' is missing 'disable-model-invocation: true' (the §a/§n.3 no-auto-fire guarantee)"
+  grep -q '^disable-model-invocation:' "$d/SKILL.md" \
+    && err "skill '$name' reintroduces 'disable-model-invocation:' (removed plugin-wide; see CONVENTIONS §a)"
 done
 
 # --- verdict -----------------------------------------------------------------
@@ -135,4 +121,4 @@ if [ "$fail" -ne 0 ]; then
   printf '\nverify-plan-story-blocks: FAILED — fix the drift above; do NOT skip the gate.\n' >&2
   exit 1
 fi
-printf 'verify-plan-story-blocks: OK (§l.0 coverage, §l.4 citations, no sole Skill-dispatch, disable-model-invocation flags intact).\n'
+printf 'verify-plan-story-blocks: OK (§l.0 coverage, §l.4 citations, Skill()-dispatch documented, no disable-model-invocation flag).\n'

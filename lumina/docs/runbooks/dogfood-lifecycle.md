@@ -16,13 +16,14 @@
 > thin read-only advisor `/lumina:lifecycle` tells you where you are and which
 > gate is next.
 >
-> **Agent execution model**: an agent cannot *type* a slash command, and the
-> chained runners (`/lumina:create-project`, `/lumina:plan-story`) cannot
-> `Skill()`-dispatch their `disable-model-invocation` block siblings (the
-> dispatch is refused). Where a leg says "via `/lumina:<block>`", the runner
-> executes by READING that block's `SKILL.md` and replicating its steps inline
-> via raw MCP — see CONVENTIONS §l.4. The slash forms name the block to run;
-> they are the human entry point, not the agent's dispatch mechanism.
+> **Agent execution model**: an agent cannot *type* a slash command, but the
+> chained runners (`/lumina:create-project`, `/lumina:plan-story`) CAN
+> `Skill()`-dispatch their block siblings — the `disable-model-invocation` flag
+> that once refused that dispatch has been removed plugin-wide, so the per-block
+> skills are model-invocable. Where a leg says "via `/lumina:<block>`", the
+> runner executes it with `Skill("lumina:<block>", <id>)` — see CONVENTIONS
+> §l.4. The slash forms are the human entry point; `Skill()`-dispatch is the
+> agent's equivalent dispatch mechanism for the same block.
 
 The lifecycle is project → epic → focus → story → task → compose-sprint →
 worktree → execute → merge. Each section A–H below is one leg; the
@@ -63,8 +64,9 @@ create_work_item { kind: "story",   parent_id: <focus>, title: "…" }          
 
 Walk the story through the six-phase canonical sequence (frame → explore →
 decide → verify-design → decompose → closure). `/lumina:plan-story` is the
-chained runner — an agent walks it by inline-replicating each block's
-`SKILL.md` via raw MCP (CONVENTIONS §l.4), not by `Skill()`-dispatch;
+chained runner — an agent walks it by `Skill()`-dispatching each block sibling
+(`Skill("lumina:<block>", <id>)`, CONVENTIONS §l.4), now that the
+`disable-model-invocation` flag that once blocked that dispatch has been removed;
 `/lumina:next-block` advises the next single block. This leg
 fills `problem_statement`, accepted research notes, approach, acceptance
 criteria, verification commands, risks, etc. — the inputs the closure and

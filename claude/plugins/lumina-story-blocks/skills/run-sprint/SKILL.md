@@ -3,7 +3,6 @@ name: run-sprint
 description: Drive an active sprint to a recorded merge — agent-team worker fan-out by DEFAULT (auto-degrading to a single-agent loop when CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS or project/user-level lumina MCP is unavailable) over the team-execution work-queue, then the companion-executed merge with lumina recording provenance.
 arguments: [sprint_id]
 argument-hint: "[sprint_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:run-sprint`
@@ -31,7 +30,7 @@ lifecycle, commit cadence, checkpoint freeze, quiescence, and the merge — is
 IDENTICAL across both topologies; only the worker fan-out differs.
 
 Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (five keys, NOT forked — the runner stays inline so topology-selection,
+§a (four keys, NOT forked — the runner stays inline so topology-selection,
 checkpoint, and quiescence decisions are user-visible), §c (one §c rollup at
 the end; the per-task `record_task_activity` progress entries are operational,
 not planning writes — they carry `origin: "implement"`), §e (Sentry — runner

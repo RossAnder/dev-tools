@@ -3,7 +3,6 @@ name: not-doing
 description: Capture or supersede a story's "Not Included" scope boundary as a free-text attributes.not_doing entry.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:not-doing`

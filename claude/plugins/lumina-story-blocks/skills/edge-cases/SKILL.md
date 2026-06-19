@@ -3,7 +3,6 @@ name: edge-cases
 description: Enumerate edge cases for a work item as research notes with lens="edge-case" and a per-case confidence grade.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:edge-cases`

@@ -3,7 +3,6 @@ name: research-notes
 description: Identify research gaps and add proposed research notes to a story (forks in autonomous mode, inline in interactive).
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
-disable-model-invocation: true
 ---
 
 # `lumina:research-notes`
