@@ -101,6 +101,7 @@ pub async fn get_sprint_quiescence(
         blocked_on_question: i64,
         in_review: i64,
         terminal: i64,
+        blocked_by_finding: i64,
     }
     impl<'r, R> sqlx::FromRow<'r, R> for QuiescenceCountsRow
     where
@@ -115,6 +116,7 @@ pub async fn get_sprint_quiescence(
                 blocked_on_question: row.try_get("blocked_on_question")?,
                 in_review: row.try_get("in_review")?,
                 terminal: row.try_get("terminal")?,
+                blocked_by_finding: row.try_get("blocked_by_finding")?,
             })
         }
     }
@@ -150,7 +152,34 @@ pub async fn get_sprint_quiescence(
             THEN 1 ELSE 0 END), 0) AS in_review,
           COALESCE(SUM(CASE WHEN
               t.status IN ('done', 'cancelled') AND t.deleted_at IS NULL
-            THEN 1 ELSE 0 END), 0) AS terminal
+            THEN 1 ELSE 0 END), 0) AS terminal,
+          -- 1B-F4 serious-finding block (ORTHOGONAL overlay, NOT a partition
+          -- bucket — counts the operator-BLOCKED tasks REGARDLESS of partition
+          -- status, so it is excluded from `total`). T3 / review-finding 019edfce:
+          -- this is retied to the operator-BLOCK STATE, not the raw finding. A task
+          -- counts as `blocked_by_finding` ONLY when it is BOTH (a) PARKED through
+          -- `record_finding_block` — `status='blocked'` AND `blocked_by_question_id
+          -- IS NOT NULL` — AND (b) still carries a LIVE (`superseded_by IS NULL`),
+          -- unresolved (`resolved_at IS NULL`), serious (`critical`/`major`)
+          -- finding. Gating on the park (not the bare finding) is what makes the
+          -- overlay track the operator's BLOCK verdict rather than every serious
+          -- finding: it EXCLUDES the AUTO-rework path (`record_finding_decision`
+          -- (SpawnTask) leaves the finding live+unresolved — it stamps only
+          -- `triage_state` — but never parks the finding's HOST, so this CASE is
+          -- false for it), and it lets `resolve_open_question` clear the overlay by
+          -- unparking the host (`status` no longer `'blocked'`) so `done` can flip
+          -- (1B-F4 Part C). DERIVED-ONLY — no schema change.
+          COALESCE(SUM(CASE WHEN t.deleted_at IS NULL
+                  AND t.status = 'blocked'
+                  AND t.blocked_by_question_id IS NOT NULL
+                  AND EXISTS (
+                  SELECT 1 FROM findings f
+                  WHERE f.work_item_id = t.id
+                    AND f.superseded_by IS NULL
+                    AND f.resolved_at IS NULL
+                    AND f.severity IN ('critical', 'major')
+              )
+            THEN 1 ELSE 0 END), 0) AS blocked_by_finding
         FROM sprint_tasks st
         JOIN work_items t ON t.id = st.task_id
         WHERE st.sprint_id = $1
@@ -207,7 +236,12 @@ pub async fn get_sprint_quiescence(
         + counts.blocked_on_question
         + counts.in_review
         + counts.terminal;
-    let done = counts.terminal == total;
+    // `blocked` (1B-F4): a serious, still-open review finding parks the sprint.
+    // It is an ORTHOGONAL overlay (not part of `total`); its only roll-up effect
+    // is to keep `done` FALSE while any serious finding is open, so a sprint whose
+    // tasks are all terminal but still carry a serious open finding is NOT `done`.
+    let blocked = counts.blocked_by_finding > 0;
+    let done = counts.terminal == total && !blocked;
 
     // Gate `claimable` to 0 when the sprint is non-`active` OR frozen — the
     // claim yields nothing under either condition. Applied AFTER `done` is
@@ -238,7 +272,9 @@ pub async fn get_sprint_quiescence(
         blocked_on_question: counts.blocked_on_question,
         in_review: counts.in_review,
         terminal: counts.terminal,
+        blocked_by_finding: counts.blocked_by_finding,
         done,
+        blocked,
         stalled,
     })
 }
@@ -523,7 +559,7 @@ mod tests {
     use super::*;
     use crate::db::AnyPool;
     use crate::db::connect_in_memory;
-    use crate::domain::Lane;
+    use crate::domain::{Lane, Severity};
     use crate::repo::test_support::*;
     use sqlx::SqlitePool;
 
@@ -847,6 +883,276 @@ mod tests {
         assert!(
             !q.done,
             "AC6: a sprint with a review-state task is NOT done (review folds into total)"
+        );
+    }
+
+    /// (1B-F4, RECONCILED for T3 Part D) A SERIOUS (`critical`/`major`), still-OPEN
+    /// review finding blocks the sprint ONLY when its host went through the OPERATOR
+    /// BLOCK path (`record_finding_block` parks the host `status='blocked'` +
+    /// `blocked_by_question_id`). The `blocked_by_finding` overlay is retied to that
+    /// PARK STATE (T3 Part D / review-finding 019edfce), NOT the raw finding — so:
+    ///   * a serious open finding on an UN-parked task does NOT set `blocked`
+    ///     (this is the AUTO-rework shape — a `record_finding_decision(SpawnTask)`
+    ///     leaves the finding live+unresolved but never parks the host); and
+    ///   * a serious open finding on a PARKED host DOES set `blocked` / `done=false`
+    ///     even when every task is otherwise terminal.
+    /// `blocked` is an ORTHOGONAL overlay: unlike the five partition buckets it is
+    /// not a sixth bucket. Superseding the finding clears the overlay.
+    #[tokio::test]
+    async fn quiescence_blocked_by_serious_finding_keeps_done_false() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+
+        // A single task, driven to a TERMINAL state. With no finding the sprint is
+        // trivially done (every task terminal) and NOT blocked — the baseline.
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "TASK", Some("implement"), Some("deep")).await;
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&task)
+            .execute(&pool)
+            .await
+            .expect("mark done");
+
+        let baseline = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence with no findings");
+        assert_eq!(baseline.terminal, 1, "the only task is terminal");
+        assert_eq!(baseline.blocked_by_finding, 0, "no serious finding ⇒ zero block count");
+        assert!(!baseline.blocked, "no serious finding ⇒ not blocked");
+        assert!(baseline.done, "all-terminal, unblocked sprint is done");
+
+        // Record a LIVE (no supersession), unresolved (no resolved_at) CRITICAL
+        // finding on the terminal task via the same repo path production uses.
+        let finding = create_finding(
+            &db,
+            &task,
+            &NewFinding {
+                severity: Some(Severity::Critical),
+                summary: Some("blocking review finding"),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create critical finding")
+        .to_string();
+
+        // T3 Part D: a serious open finding ALONE — with NO operator park — does
+        // NOT block. This is the auto-path shape (the finding stays live+unresolved
+        // until a triage decision); it must not falsely flip `blocked`.
+        let unparked_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence with an open serious finding but NO park");
+        assert_eq!(
+            unparked_q.blocked_by_finding, 0,
+            "T3 Part D: an UN-parked serious finding (the auto-rework shape) does NOT block"
+        );
+        assert!(!unparked_q.blocked, "no operator park ⇒ not blocked");
+        assert!(
+            unparked_q.done,
+            "an un-parked serious finding leaves an all-terminal sprint done (auto path, not block)"
+        );
+
+        // Now drive the OPERATOR BLOCK via the real repo path: it raises a durable
+        // open_question on the host story and parks the host (`status='blocked'` +
+        // `blocked_by_question_id`). THIS is what the overlay tracks.
+        record_finding_block(&db, &finding, Some("orchestrator"))
+            .await
+            .expect("operator block parks the host");
+
+        let blocked_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence with a parked, serious, open finding");
+        assert!(
+            blocked_q.blocked_by_finding >= 1,
+            "the PARKED host carrying a serious open finding is counted"
+        );
+        assert!(blocked_q.blocked, "a parked serious open finding blocks the sprint");
+        assert!(
+            !blocked_q.done,
+            "1B-F4: a parked serious open finding keeps the sprint NOT done"
+        );
+
+        // Resolve the block by SUPERSEDING the finding (it is no longer LIVE):
+        // `blocked` clears (the park remains but the finding no longer qualifies).
+        sqlx::query("UPDATE findings SET superseded_by = $1 WHERE id = $1")
+            .bind(&finding)
+            .execute(&pool)
+            .await
+            .expect("supersede the finding");
+
+        let cleared_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence after the finding is superseded");
+        assert_eq!(cleared_q.blocked_by_finding, 0, "a superseded finding no longer blocks");
+        assert!(!cleared_q.blocked, "no LIVE serious finding ⇒ not blocked");
+    }
+
+    /// (1B-F4 T3 Part C — the UNBLOCK contract, end-to-end). The round trip:
+    /// a serious finding → `record_finding_block` parks the host and raises the
+    /// operator question (`blocked=true`, `done=false`) → `resolve_open_question`
+    /// UNPARKS the host (`status='blocked' → 'todo'` AND clears the
+    /// `blocked_by_question_id` back-link in the SAME UPDATE), which clears the
+    /// `blocked_by_finding` overlay (Part D ties it to the PARK STATE) so
+    /// `blocked=false` and returns the host to the claim queue → once the
+    /// now-unparked host is completed the sprint reports `done=true`. The finding
+    /// itself stays LIVE+unresolved throughout (it is resolved SEPARATELY, NOT by
+    /// question-resolution) — proving the overlay tracks the PARK, not the finding.
+    ///
+    /// The `resolve_open_question` FK-clear (`repo/open_questions.rs`, the unpark
+    /// arm) is the follow-up fix that closes the earlier cross-cut: without it the
+    /// resolved host kept a stale `blocked_by_question_id`, which permanently
+    /// excluded it from `claim_next_task` and pinned it in the `blocked_on_question`
+    /// bucket so `done` could never flip. This test asserts the GENUINE end state —
+    /// after resolve the host is `todo` AND `blocked_by_question_id IS NULL` AND
+    /// claimable again — with no test stand-in.
+    #[tokio::test]
+    async fn unblock_contract_resolve_question_flips_done() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+
+        // The impl task that produced the finding, already DONE (review runs after
+        // implementation). Driven terminal via raw SQL so it records NO work_item
+        // event — keeping the block's `resume_epoch` snapshot stable across the
+        // resolve (the stale-resolution guard re-reads this count).
+        let impl_task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&impl_task)
+            .execute(&pool)
+            .await
+            .expect("mark impl done");
+
+        // A serious (Major) review finding on the impl task — the operator judges
+        // it needs a human decision, so the BLOCK path is taken.
+        let finding = create_finding(
+            &db,
+            &impl_task,
+            &NewFinding {
+                severity: Some(Severity::Major),
+                summary: Some("operator must decide"),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create serious finding")
+        .to_string();
+
+        // BLOCK: parks the host + raises the durable open_question on the story.
+        let block = record_finding_block(&db, &finding, Some("orchestrator"))
+            .await
+            .expect("operator block");
+
+        let blocked_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence after block");
+        assert!(blocked_q.blocked, "the parked serious finding blocks the sprint");
+        assert!(!blocked_q.done, "a blocked sprint is NOT done");
+        assert_eq!(
+            blocked_q.blocked_on_question, 1,
+            "the parked host lands in the blocked_on_question bucket"
+        );
+
+        // The block leaves `enabling_option_id` NULL on the parked host, so it is on
+        // the non-exclusive branch and `resolve_open_question` will flip it to
+        // `todo`. Pick any option on the raised question to resolve.
+        let q_id = block.question_id.to_string();
+        let option = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM question_options WHERE question_id = $1 ORDER BY seq LIMIT 1",
+        )
+        .bind(&q_id)
+        .fetch_one(&pool)
+        .await
+        .expect("an option exists on the block question");
+
+        resolve_open_question(&db, &q_id, &option, Some("operator"))
+            .await
+            .expect("resolve the operator question");
+
+        // The host is fully UNPARKED: status flipped back to `todo` AND the
+        // `blocked_by_question_id` back-link cleared in the same resolve UPDATE
+        // (the FK-clear fix). Both halves of the park are reversed.
+        let (status, blocked_on): (String, Option<String>) = {
+            use sqlx::Row as _;
+            let r = sqlx::query("SELECT status, blocked_by_question_id FROM work_items WHERE id = $1")
+                .bind(&impl_task)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            (r.try_get("status").unwrap(), r.try_get("blocked_by_question_id").unwrap())
+        };
+        assert_eq!(status, "todo", "resolve flips the host status back to todo");
+        assert!(
+            blocked_on.is_none(),
+            "resolve_open_question clears the blocked_by_question_id back-link (FK-clear fix)"
+        );
+
+        // The finding is untouched by the resolution (resolved SEPARATELY).
+        let finding_resolved: Option<String> =
+            sqlx::query_scalar::<_, Option<String>>("SELECT resolved_at FROM findings WHERE id = $1")
+                .bind(&finding)
+                .fetch_one(&pool)
+                .await
+                .expect("finding resolved_at read");
+        assert!(
+            finding_resolved.is_none(),
+            "question-resolution does NOT resolve the finding (it stays live+unresolved)"
+        );
+
+        // Part D contract: the `blocked` overlay clears (it keys on
+        // `status='blocked'`, now false) even though the finding is still
+        // live+unresolved. AND, because the FK back-link is now cleared, the host
+        // is genuinely back in the queue — it leaves the `blocked_on_question`
+        // bucket and re-enters `claimable` (the claim predicate requires
+        // `blocked_by_question_id IS NULL`).
+        let unblocked_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence after resolve");
+        assert_eq!(
+            unblocked_q.blocked_by_finding, 0,
+            "T3 Part D: resolve clears the blocked overlay (finding still live)"
+        );
+        assert!(!unblocked_q.blocked, "status no longer 'blocked' ⇒ not blocked");
+        assert_eq!(
+            unblocked_q.blocked_on_question, 0,
+            "the unparked host left the blocked_on_question bucket (FK cleared)"
+        );
+        assert_eq!(
+            unblocked_q.claimable, 1,
+            "the unparked host is claimable again (status='todo', blocked_by_question_id NULL)"
+        );
+        assert!(!unblocked_q.done, "the unparked host is claimable work, so not yet done");
+
+        // The unparked host really IS claimable now — drain it via the production
+        // claim path (not a raw read), proving the FK-clear restored it to the
+        // queue end-to-end.
+        let claimed = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-z", 1800)
+            .await
+            .expect("claim runs after unblock")
+            .expect("the unparked host is claimable via claim_next_task");
+        assert_eq!(claimed.task_id, impl_task, "the claim hands out the unparked host");
+
+        // FULL Part C `done=true` leg: complete the now-unblocked host. With no
+        // non-terminal work remaining the sprint flips to done — the unblock
+        // contract closes for REAL (no test stand-in).
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&impl_task)
+            .execute(&pool)
+            .await
+            .expect("complete the unblocked host");
+
+        let done_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence after completing the unblocked host");
+        assert!(!done_q.blocked, "still not blocked");
+        assert!(
+            done_q.done,
+            "T3 Part C: with the block resolved and the host completed, done flips true"
         );
     }
 

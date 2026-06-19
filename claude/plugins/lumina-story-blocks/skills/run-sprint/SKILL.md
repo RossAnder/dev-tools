@@ -64,21 +64,37 @@ Work-queue (migration 0013):
   terminal, so re-reviewing completed work needs a brand-NEW task.
 - `release_task { task_id, agent_id }` — owner-guarded yield; ONLY on a true abandon.
 - `get_sprint_quiescence { sprint_id }` — the lead's termination/escalation + drift
-  poll. Now carries an `in_review` bucket: UNCLAIMED `review`-state tasks are
+  poll. Carries an `in_review` bucket: UNCLAIMED `review`-state tasks are
   NON-terminal (they keep the sprint not-`done`); a no-claimer review surfaces as
-  `stalled` (needs a reviewer) rather than hanging the sprint invisibly.
+  `stalled` (needs a reviewer) rather than hanging the sprint invisibly. Also
+  exposes `blocked_by_finding` (count) + `blocked` (bool): `blocked` is true ONLY
+  when a serious (critical/major), LIVE, unresolved finding sits on a host PARKED
+  via the `block` path (`status='blocked'` + `blocked_by_question_id`) — an
+  AUTO-rework (`spawn_task`) finding does NOT block. While `blocked`, `done` is
+  false, so the merge gate stays honest until the operator resolves the question.
 - `list_open_questions_for_sprint { sprint_id }` — arbiter surface for blocked questions.
 - `compute_task_batches { story_id }` — Kahn phase batches over the task subtree; the
   lead reads these to drive the phase-batch-boundary commit cadence (Step 4).
 
 Review findings → rework (NEW implement tasks, never a review-task spawn):
 
-- `add_finding` — reviewer files critique findings (`kind: "code-review"`).
-- `record_finding_decision { finding_id, decision: "spawn_task", ... }` — spawns a
-  rework task already stamped `lane='implement'` + `tier=NULL` + bound to the sprint
-  (so rework re-enters the implement-lane claim with no manual lane-stamp). A
-  task-hosted finding's rework nests under the host task's parent STORY (1B-F9 MF),
-  so it is hierarchy-legal AND inherits the story's sprint membership.
+- `add_finding` — reviewer files critique findings (`kind: "code-review"`). Record
+  the finding at the STORY; a task-hosted finding lifts to its parent story.
+- `record_finding_decision { finding_id, decision: "spawn_task", ... }` — the
+  AUTO-resolveable disposition: spawns a rework task already stamped
+  `lane='implement'` + `tier=NULL` + bound to the sprint (so rework re-enters the
+  implement-lane claim with no manual lane-stamp). A task-hosted finding's rework
+  nests under the host task's parent STORY (1B-F9 MF), so it is hierarchy-legal AND
+  inherits the story's sprint membership. The sprint is NOT blocked. REFUSED on a
+  **Critical** finding (typed validation) — that always needs the operator path.
+- `record_finding_decision { finding_id, decision: "block", ... }` — the
+  OPERATOR-resolveable disposition (serious findings needing a human decision):
+  spawns NO task; lifts the host to its parent story, raises a durable
+  `open_question`, parks the host (`status='blocked'` + `blocked_by_question_id`),
+  emits one `open_question.escalated` event, and BLOCKS the sprint. Returns
+  `{ story_id, question_id, blocked_work_item_id }`. `resolve_open_question`
+  unparks the host (clearing `blocked_by_question_id`) and unblocks the sprint.
+  Same MCP tool as the spawn path — no new tool, surface stays 94.
 
 Sprint lifecycle / worktree / commit provenance (migration 0016):
 
@@ -237,13 +253,32 @@ team-managed); the lifecycle is IDENTICAL under teams and single-agent:
   the review state, so it is not the close path. The row is NEVER reopened —
   `done` is terminal, and a `done → review` flip (or flagging a `done` task into
   the review lane) is rejected; re-reviewing completed work needs a brand-NEW task.
-- **Review findings spawn NEW implement tasks, not rework reviews.** The reviewer
-  files critique via `add_finding` (`kind: "code-review"`) and, for each
-  actionable finding, `record_finding_decision({ finding_id, decision:
-  "spawn_task", ... })` — which stamps a NEW `lane='implement'` task (already
-  `tier=NULL`, sprint-bound, claimable) under the finding's parent STORY (a
-  task-hosted finding lifts to its parent story). That rework re-enters the
-  implement lane with no manual lane-stamp.
+- **Review findings → rework, and the orchestrator's auto-vs-operator
+  judgement.** The reviewer files critique via `add_finding` (`kind:
+  "code-review"`) — record the finding at the STORY (a task-hosted finding lifts
+  to its parent story for BOTH dispositions below). For each actionable finding
+  the orchestrator picks ONE of two dispositions:
+  - **Auto-resolveable** (regular inline rework — the sprint is NOT blocked):
+    `record_finding_decision({ finding_id, decision: "spawn_task", ... })`
+    stamps a NEW `lane='implement'` task (already `tier=NULL`, sprint-bound,
+    claimable) on the finding's host story, so the rework re-enters the
+    implement lane during the sprint with no manual lane-stamp.
+  - **Operator-resolveable** (serious — needs a human decision — the sprint IS
+    blocked): the NEW `record_finding_decision({ finding_id, decision: "block",
+    ... })` creates NO rework task; it lifts the host to its parent story,
+    raises a durable `open_question` on that story, parks the host work_item
+    (`status='blocked'` + `blocked_by_question_id`), and emits one
+    `open_question.escalated` event. It returns `{ story_id, question_id,
+    blocked_work_item_id }`. The sprint stays blocked until an operator/arbiter
+    answers via `resolve_open_question`, which unparks the host (clearing
+    `blocked_by_question_id`) so it re-enters the claim queue.
+  - **Severity safe-default**: a `spawn_task` (auto) on a **Critical** finding is
+    REFUSED (typed validation / invalid_params) — a Critical always needs the
+    operator `block` path, never silent auto-rework. Major/etc. may still
+    auto-spawn. Lean toward `block` whenever a finding needs a design/scope call
+    a fresh implement task cannot safely make on its own.
+  - The `block` decision rides the EXISTING `record_finding_decision` tool — NO
+    new MCP tool, the tool-count invariant stays at 94.
 
 **Isolation contract (the server is RECORD-ONLY — it ships no git isolation
 primitive, so review scopes by the task's own footprint, NOT a whole-tree diff):**

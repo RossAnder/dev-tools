@@ -808,6 +808,9 @@ pub async fn record_finding_decision(
     struct FindingHostRow {
         work_item_id: Option<String>,
         run_id: Option<String>,
+        /// The finding's free-TEXT severity (`critical`/`major`/…). Read ON THE TX
+        /// for T3 Part A: a `Critical` finding must NEVER auto-spawn rework.
+        severity: Option<String>,
     }
     impl<'r, R> sqlx::FromRow<'r, R> for FindingHostRow
     where
@@ -820,12 +823,13 @@ pub async fn record_finding_decision(
             Ok(FindingHostRow {
                 work_item_id: row.try_get("work_item_id")?,
                 run_id: row.try_get("run_id")?,
+                severity: row.try_get("severity")?,
             })
         }
     }
     let host_row: FindingHostRow = match crate::db::tx_query_opt::<FindingHostRow>(
         tx.as_mut(),
-        "SELECT work_item_id, run_id FROM findings WHERE id = $1",
+        "SELECT work_item_id, run_id, severity FROM findings WHERE id = $1",
         args![finding_id.to_owned()],
     )
     .await?
@@ -833,6 +837,34 @@ pub async fn record_finding_decision(
         Some(row) => row,
         None => return Err(AppError::NotFound(format!("finding '{finding_id}' not found"))),
     };
+
+    // --- T3 Part A: severity safe-default (refuse to AUTO-spawn on Critical). ----
+    // A `Critical` finding ALWAYS needs an operator decision — it must route
+    // through the BLOCK path (`record_finding_block`), NEVER silent auto-rework.
+    // When the `SpawnTask` (auto) verdict lands on a Critical finding, we REFUSE
+    // here with a typed `Validation` rather than create the rework task. We
+    // deliberately choose the typed-error route over an INTERNAL call to
+    // `record_finding_block`: that fn opens its OWN `db.begin()` (= a SECOND
+    // `BEGIN IMMEDIATE` tx), and invoking it while THIS decision tx already holds
+    // the writer lock would either self-deadlock or — at best — split the logical
+    // operation across two independent commits, breaking the single-tx contract
+    // this fn (and the seq18 hard-stop note above) is built on. Returning a clean
+    // Validation BEFORE any write keeps the tx single-path, rolls nothing back
+    // (no write has happened on the `SpawnTask` arm yet), and hands the caller
+    // (T4's MCP/HTTP surface) an unambiguous directive to call the block path.
+    // The guard is scoped to `SpawnTask`: `SpawnStory`/`Defer`/`Dismiss`/`Resolve`
+    // are NOT the silent-auto-rework verdict, so a Critical finding may still be
+    // deferred, dismissed, resolved, or escalated to a follow-up STORY.
+    if matches!(decision.decision, FindingDecisionKind::SpawnTask)
+        && host_row.severity.as_deref() == Some("critical")
+    {
+        return Err(AppError::Validation(format!(
+            "finding '{finding_id}' is Critical: an auto spawn_task rework is refused — a \
+             Critical finding always needs an operator decision; route it through the \
+             block path (record_finding_block) instead"
+        )));
+    }
+
     let host_id = host_row.work_item_id;
 
     // A spawn needs a host to parent under; a hostless finding cannot spawn.
@@ -1249,16 +1281,296 @@ pub async fn record_finding_decision(
     Ok((decision_id, spawned_id))
 }
 
+/// The shape returned by [`record_finding_block`] — the OPERATOR-resolveable
+/// (BLOCK) disposition of a serious sprint review finding (1B-F4 T2). It carries
+/// the ids the caller (T4's MCP/HTTP surface) needs to surface to the operator:
+/// the host STORY the block was raised against, the durable `open_question` that
+/// parks the decision, and the `work_item` that was moved to `status='blocked'`.
+///
+/// Deliberately NOT a `finding_decisions` row: a BLOCK creates NO rework task and
+/// records NO triage-decision audit row (the `finding_decisions.decision` CHECK
+/// vocabulary — `spawn_task|spawn_story|defer|dismiss|resolve` — is left
+/// untouched, so no table-rebuild migration is needed; see the fn docstring's
+/// design note). The audit lives in the `open_question.escalated` event on the
+/// host story's `work_item` aggregate (export-bearing, so the block is git-exported
+/// and the quiescence stream re-renders the parked story).
+#[derive(Debug, Clone)]
+pub struct FindingBlock {
+    /// The host STORY the block was raised against (a task host is lifted to its
+    /// parent story, mirroring the 1B-F9 spawn-lift).
+    pub story_id: Uuid,
+    /// The durable `open_question` raised on the host story (the operator's
+    /// decision point).
+    pub question_id: Uuid,
+    /// The `work_item` parked at `status='blocked'` — the finding's host (or the
+    /// lifted parent story when the host is a task).
+    pub blocked_work_item_id: Uuid,
+}
+
+/// Record the OPERATOR-resolveable (BLOCK) disposition of a serious sprint review
+/// finding (1B-F4 T2). This is the sibling of [`record_finding_decision`]'s
+/// `SpawnTask` (AUTO-resolveable) verdict: where AUTO creates an `implement`-lane
+/// rework task that re-enters the claim queue, BLOCK creates NO task — it parks
+/// the sprint on a durable human decision so the quiescence stream + audit show
+/// WHY the sprint is blocked.
+///
+/// ## Why a dedicated fn, not a new `FindingDecisionKind::Block` variant
+/// `finding_decisions.decision` is CHECK-constrained
+/// (`spawn_task|spawn_story|defer|dismiss|resolve`); a new kind would force a
+/// SQLite table-rebuild migration. A BLOCK is also NOT a `finding_decisions` row
+/// at all — it spawns nothing and records no triage audit — so routing it through
+/// the decision-kind machinery would be a poor fit. A dedicated repo fn keeps the
+/// CHECK (and the migration history) untouched and gives T4's MCP/HTTP surface a
+/// clean seam: the new `block` branch calls THIS fn, while `spawn_task|…|resolve`
+/// continue to call [`record_finding_decision`]. The AUTO branch is the EXISTING
+/// `record_finding_decision(SpawnTask)` path (which already stamps
+/// `lane='implement'`, `tier=NULL`, sprint-binds, and routes the create through
+/// `validate_hierarchy_edge` via `create_work_item_full_tx`).
+///
+/// ## Mechanism (reuses the cap-escalate primitive MINUS the spawned task)
+/// This mirrors [`record_finding_decision`]'s `rounds`-cap escalation
+/// (`:1057-1176`) WITHOUT the freshly-spawned rework task: there is no task to
+/// park, so the EXISTING host work_item is parked instead. All inside ONE write tx:
+///   1. Read the finding's host work_item, ON THE TX (R15 — shares the
+///      BEGIN IMMEDIATE writer-lock snapshot). A missing finding ⇒ `NotFound`; a
+///      hostless finding ⇒ `Validation` (nothing to park).
+///   2. **Lift a TASK host to its parent STORY** (mirroring the 1B-F9 spawn-lift
+///      `:853-900`): a review finding is frequently hosted on the IMPL TASK, but
+///      the durable `open_question` is STORY-scoped (`open_questions.story_id`),
+///      so the question (and the park) must target the story. A task host with no
+///      parent story is a data-integrity violation ⇒ `Validation`. A non-task host
+///      (the story-hosted path) is used directly; a host that is neither task nor
+///      story ⇒ `Validation` (the open_question + the park are story-only).
+///   3. Raise a durable `open_question` on the host story (1-based `seq`, two
+///      default options `continue|abandon`), stamping `resume_epoch` exactly as
+///      the canonical escalation does (the parked item's lifetime `work_item`
+///      event count — the staleness guard for `resolve_open_question`).
+///   4. Park the host work_item: `status='blocked'` + `blocked_by_question_id`.
+///   5. Emit EXACTLY ONE export-BEARING `work_item`/`open_question.escalated`
+///      event on the host STORY's `work_item` aggregate (NOT an inert `finding`
+///      event — the block IS a logical change on the story, and the audit must
+///      git-export + re-render the parked story; this is the single-mutation event
+///      for the whole block). The choice of a `work_item` aggregate is what makes
+///      the 1B-F4 `get_sprint_quiescence` `blocked` overlay observable in the
+///      export + audit trail.
+///
+/// The BLOCK is gated to a `story`/`task` host so the `open_question` + park stay
+/// hierarchy-legal; a hostless or non-story/non-task host is rejected before any
+/// write. Returns the [`FindingBlock`] ids.
+///
+/// ## T3 layering (Critical safe-default / atomicity / unblock contract)
+/// This is the path a `Critical` finding is FORCED onto: T3 Part A makes
+/// [`record_finding_decision`]'s `SpawnTask` (auto) verdict REFUSE a Critical
+/// finding with a typed `Validation`, directing the caller here. Atomicity (Part
+/// B): the whole block runs in the ONE `db.begin()` (`BEGIN IMMEDIATE`) below, so
+/// once it commits the parked host is `status='blocked'` + `blocked_by_question_id
+/// IS NOT NULL` — which `claim_next_task`'s readiness predicate already excludes
+/// (no task is handed out post-block). Unblock contract (Part C): resolving the
+/// raised `open_question` via [`resolve_open_question`] unparks the host
+/// (`status='blocked' → 'todo'`, since the block leaves `enabling_option_id` NULL
+/// so the host is on the chosen/non-exclusive branch), which — together with the
+/// T3 Part D derivation in `get_sprint_quiescence` (the `blocked_by_finding`
+/// overlay counts ONLY parked hosts) — clears the sprint `blocked` overlay; the
+/// finding itself is resolved SEPARATELY (question-resolution does not touch it).
+pub async fn record_finding_block(
+    db: &impl DbClient,
+    finding_id: &str,
+    decided_by: Option<&str>,
+) -> Result<FindingBlock, AppError> {
+    let mut tx = db.begin().await?;
+
+    // 1. Read the finding's host, ON THE TX (R15) — a missing finding is NotFound,
+    //    a hostless finding cannot be blocked (nothing to park). `work_item_id` is
+    //    itself nullable, so the read is `Option<Option<String>>`: the OUTER Option
+    //    (from query_opt) distinguishes "no finding row" (→ NotFound) from "finding
+    //    exists"; the INNER Option distinguishes a NULL host (→ Validation), exactly
+    //    as `record_finding_decision`'s `FindingHostRow.work_item_id` does.
+    let host_id: Option<String> = crate::db::tx_scalar_opt::<Option<String>>(
+        tx.as_mut(),
+        "SELECT work_item_id FROM findings WHERE id = $1",
+        args![finding_id.to_owned()],
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("finding '{finding_id}' not found")))?;
+    let host = host_id.ok_or_else(|| {
+        AppError::Validation(format!(
+            "cannot block on finding '{finding_id}': it has no host work_item to park"
+        ))
+    })?;
+
+    // 2. Resolve the host STORY, lifting a TASK host to its parent story (mirrors
+    //    the 1B-F9 spawn-lift): the durable open_question is story-scoped, so the
+    //    park + question must target the story even when the finding is hosted on
+    //    the impl task it was raised against.
+    let host_kind = crate::db::tx_scalar_opt::<String>(
+        tx.as_mut(),
+        "SELECT kind FROM work_items WHERE id = $1",
+        args![host.to_owned()],
+    )
+    .await?;
+    let story_id: String = match host_kind.as_deref() {
+        Some("task") => crate::db::tx_scalar_opt::<String>(
+            tx.as_mut(),
+            "SELECT parent_id FROM work_items WHERE id = $1",
+            args![host.to_owned()],
+        )
+        .await?
+        .ok_or_else(|| {
+            AppError::Validation(format!(
+                "cannot block on finding '{finding_id}': its task host '{host}' has no \
+                 parent story"
+            ))
+        })?,
+        Some("story") => host.clone(),
+        other => {
+            return Err(AppError::Validation(format!(
+                "cannot block on finding '{finding_id}': its host '{host}' is a \
+                 '{}', not a story or task (the open_question + park are story-scoped)",
+                other.unwrap_or("<missing>")
+            )));
+        }
+    };
+
+    // The work_item parked at status='blocked'. The host is parked directly; for a
+    // task host that IS the impl task, so the relevant work_item the operator must
+    // see blocked is the host itself (lifted story_id scopes only the question).
+    // We park the HOST so the block is visible on the row the finding rides on.
+    let parked = host.clone();
+
+    // 3. Raise the durable human-decision open_question on the host STORY (mirrors
+    //    add_open_question + record_finding_decision's cap-escalate). `seq` is
+    //    1-based monotonic within the story.
+    let summary: Option<String> = crate::db::tx_scalar_opt::<String>(
+        tx.as_mut(),
+        "SELECT summary FROM findings WHERE id = $1",
+        args![finding_id.to_owned()],
+    )
+    .await?;
+    let detail = match summary.as_deref() {
+        Some(s) if !s.trim().is_empty() => s.to_owned(),
+        _ => format!("finding {finding_id}"),
+    };
+    let question = format!(
+        "A serious review finding ({detail}) needs an operator decision — the sprint \
+         is blocked until it is resolved."
+    );
+    let q_id = Uuid::now_v7();
+    let q_id_str = q_id.to_string();
+    let q_seq = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM open_questions WHERE story_id = $1",
+        args![story_id.to_owned()],
+    )
+    .await?;
+    // Resume epoch-guard (focus 1C.1, research note seq19): stamp the PARKED
+    // work_item's lifetime `work_item` event count as the question's `resume_epoch`,
+    // IDENTICALLY to the canonical escalate-and-park primitive — so the
+    // stale-resolution guard in `resolve_open_question` covers this block too. Read
+    // ON THE TX (same writer snapshot); the escalation event below routes to the
+    // host story, so this count is the parked item's pre-block value.
+    let resume_epoch = crate::db::tx_scalar_one::<i64>(
+        tx.as_mut(),
+        "SELECT COUNT(*) FROM events WHERE aggregate_id = $1 AND aggregate_type = 'work_item'",
+        args![parked.clone()],
+    )
+    .await?;
+    tx.execute(
+        "INSERT INTO open_questions (id, story_id, seq, question, status, resume_epoch, decided_by) \
+         VALUES ($1, $2, $3, $4, 'open', $5, $6)",
+        args![
+            q_id_str.clone(),
+            story_id.to_owned(),
+            q_seq,
+            question,
+            resume_epoch,
+            decided_by.map(str::to_owned)
+        ],
+    )
+    .await?;
+    // Two default options: keep iterating, or abandon (mirrors the cap-escalate
+    // option pair; 1-based `seq`).
+    for (idx, label) in ["continue", "abandon"].iter().enumerate() {
+        tx.execute(
+            "INSERT INTO question_options (id, question_id, seq, label, detail) \
+             VALUES ($1, $2, $3, $4, NULL)",
+            args![
+                Uuid::now_v7().to_string(),
+                q_id_str.clone(),
+                idx as i64 + 1,
+                (*label).to_owned()
+            ],
+        )
+        .await?;
+    }
+
+    // 4. Park the host work_item: status='blocked' + blocked_by_question_id.
+    tx.execute(
+        r#"
+        UPDATE work_items
+        SET blocked_by_question_id = $2,
+            status = 'blocked',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        "#,
+        args![parked.clone(), q_id_str.clone()],
+    )
+    .await?;
+
+    // 5. EXACTLY ONE export-BEARING event on the host STORY's work_item aggregate
+    //    (R1 — mirrors the cap-escalate's single `open_question.escalated` event),
+    //    NOT an inert `finding` event: the block is a logical change on the story
+    //    and the audit must git-export + re-render the parked story so the
+    //    quiescence stream shows WHY the sprint is blocked (1B-F4).
+    record_event(
+        tx.as_mut(),
+        "work_item",
+        &story_id,
+        "open_question.escalated",
+        serde_json::json!({
+            "question_id": q_id_str,
+            "blocked_work_item_id": parked,
+            "finding_id": finding_id,
+            "reason": "operator_block",
+        }),
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(FindingBlock {
+        story_id: story_id.parse().map_err(|_| {
+            AppError::Other(anyhow::anyhow!("story id '{story_id}' is not a valid uuid"))
+        })?,
+        question_id: q_id,
+        blocked_work_item_id: parked.parse().map_err(|_| {
+            AppError::Other(anyhow::anyhow!("parked id '{parked}' is not a valid uuid"))
+        })?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::AnyPool;
     use crate::db::connect_in_memory;
     use crate::domain::{
-        FindingDecisionKind, NewFindingDecision, NewRun, NewSprint, NewWorktree, RunKind,
-        TargetKind,
+        FindingDecisionKind, Lane, NewFindingDecision, NewRun, NewSprint, NewWorktree, RunKind,
+        Severity, TargetKind,
     };
     use crate::repo::test_support::*;
     use sqlx::SqlitePool;
+
+    /// Activate a sprint directly (migration-0016: `seed_sprint` mints a `'draft'`
+    /// sprint, but the 1B-F4 `get_sprint_quiescence` `blocked` overlay + the
+    /// `claimable` gating only count for an `'active'` sprint). A direct status set
+    /// is cleaner than walking draft→ready→active for a test exercising the block
+    /// overlay, not the sprint lifecycle. Mirrors the `readiness.rs` helper.
+    async fn activate_sprint(pool: &SqlitePool, sprint_id: &str) {
+        sqlx::query("UPDATE sprints SET status = 'active' WHERE id = $1")
+            .bind(sprint_id)
+            .execute(pool)
+            .await
+            .expect("activate sprint");
+    }
 
     /// Read a `runs` row's `status` (NOT NULL with a column DEFAULT).
     async fn run_status(pool: &SqlitePool, id: &str) -> String {
@@ -1535,6 +1847,386 @@ mod tests {
             recorded_spawn.as_deref(),
             Some(new_id.as_str()),
             "the decision row names the spawned work_item"
+        );
+    }
+
+    /// 1B-F4 T2 — AUTO-resolveable disposition. A `SpawnTask` decision on a
+    /// TASK-hosted serious review finding creates a rework task LIFTED onto the
+    /// host's parent STORY, stamped `lane='implement'`, and BOUND to the sprint
+    /// the host task is a member of (inheriting via the story's sprint membership).
+    /// This is the auto path the operator chooses when the finding is a regular
+    /// inline rework fix — the rework re-enters the §C claim queue.
+    #[tokio::test]
+    async fn auto_path_finding_decision_spawns_implement_rework() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        // The impl task that produced the finding — bound to the sprint, so the
+        // rework can inherit the sprint via the story's existing membership.
+        let impl_task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // A serious review finding hosted on the IMPL TASK (the common shape).
+        let finding = create_finding(
+            &pool,
+            &impl_task,
+            &NewFinding {
+                severity: Some(Severity::Major),
+                summary: Some("needs a rework fix"),
+                ..NewFinding::default()
+            },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+
+        let work_items_before = count_work_items(&pool).await;
+
+        let (_decision_id, spawned) = record_finding_decision(
+            &pool,
+            &NewFindingDecision {
+                finding_id: finding.clone(),
+                decision: FindingDecisionKind::SpawnTask,
+                decided_by: Some("orchestrator".into()),
+            },
+        )
+        .await
+        .expect("auto-resolveable spawn_task decision");
+
+        let rework = spawned.expect("auto path spawns a rework task").to_string();
+        assert_eq!(
+            count_work_items(&pool).await,
+            work_items_before + 1,
+            "the auto path created exactly one rework task"
+        );
+
+        // The rework task is a `task` LIFTED onto the host's parent STORY,
+        // `lane='implement'`, `tier=NULL`.
+        let (kind, parent, lane, tier): (String, Option<String>, Option<String>, Option<String>) = {
+            use sqlx::Row as _;
+            let r = sqlx::query(
+                "SELECT kind, parent_id, lane, tier FROM work_items WHERE id = $1",
+            )
+            .bind(&rework)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            (
+                r.try_get("kind").unwrap(),
+                r.try_get("parent_id").unwrap(),
+                r.try_get("lane").unwrap(),
+                r.try_get("tier").unwrap(),
+            )
+        };
+        assert_eq!(kind, "task", "the rework is a task");
+        assert_eq!(
+            parent.as_deref(),
+            Some(story.as_str()),
+            "the rework is lifted onto the host task's parent story"
+        );
+        assert_eq!(lane.as_deref(), Some("implement"), "the rework is on the implement lane");
+        assert!(tier.is_none(), "the rework tier is NULL (claimable by lite OR deep)");
+
+        // The rework is BOUND to the sprint (inherited via the story's existing
+        // sprint membership), so it re-enters the claim queue.
+        let bound: i64 = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = $1 AND task_id = $2",
+        )
+        .bind(&sprint)
+        .bind(&rework)
+        .fetch_one(&pool)
+        .await
+        .expect("count rework sprint binding");
+        assert_eq!(bound, 1, "the rework task is bound to the active sprint");
+    }
+
+    /// 1B-F4 T2 — OPERATOR-resolveable (BLOCK) disposition. A `record_finding_block`
+    /// on a TASK-hosted serious review finding creates NO rework task: it raises a
+    /// durable `open_question` on the host's parent STORY, parks the host work_item
+    /// at `status='blocked'`, and (tie-in to T1) `get_sprint_quiescence` then reports
+    /// `blocked == true` / `done == false` even though the parked task carries an
+    /// open serious finding.
+    #[tokio::test]
+    async fn block_path_creates_no_task_and_blocks_sprint() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+        // The impl task that produced the finding — bound to the sprint.
+        let impl_task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // A serious (Critical) review finding hosted on the impl task — the kind
+        // the operator judges to need a human decision rather than an inline fix.
+        let finding = create_finding(
+            &pool,
+            &impl_task,
+            &NewFinding {
+                severity: Some(Severity::Critical),
+                summary: Some("needs an operator decision"),
+                ..NewFinding::default()
+            },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+
+        let work_items_before = count_work_items(&pool).await;
+
+        let block = record_finding_block(&pool, &finding, Some("orchestrator"))
+            .await
+            .expect("operator-resolveable block");
+
+        // NO rework task was created — the BLOCK path spawns nothing.
+        assert_eq!(
+            count_work_items(&pool).await,
+            work_items_before,
+            "the block path creates NO work item (no rework task)"
+        );
+        // And no finding_decisions audit row (BLOCK is not a triage decision).
+        assert_eq!(
+            count_finding_decisions(&pool, &finding).await,
+            0,
+            "the block path records NO finding_decisions row"
+        );
+
+        // An open_question was raised on the HOST STORY (the task host lifted to
+        // its parent story).
+        assert_eq!(block.story_id.to_string(), story, "the block targets the host story");
+        assert_eq!(
+            count_open_questions(&pool, &story).await,
+            1,
+            "the block raises exactly one durable open_question on the host story"
+        );
+
+        // The relevant work_item (the impl task host) is parked at status='blocked',
+        // pointing at the escalation question.
+        assert_eq!(
+            block.blocked_work_item_id.to_string(),
+            impl_task,
+            "the parked work_item is the finding's host task"
+        );
+        let (status, blocked_on): (String, Option<String>) = {
+            use sqlx::Row as _;
+            let r = sqlx::query(
+                "SELECT status, blocked_by_question_id FROM work_items WHERE id = $1",
+            )
+            .bind(&impl_task)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            (r.try_get("status").unwrap(), r.try_get("blocked_by_question_id").unwrap())
+        };
+        assert_eq!(status, "blocked", "the host task is parked (status='blocked')");
+        assert_eq!(
+            blocked_on.as_deref(),
+            Some(block.question_id.to_string().as_str()),
+            "the parked task points at the escalation question"
+        );
+
+        // The escalation event is export-BEARING on the host story's work_item
+        // aggregate (NOT an inert finding event), so the audit + export render the
+        // parked story.
+        assert_eq!(
+            count_events_for(&pool, &story, "open_question.escalated").await,
+            1,
+            "exactly one export-bearing open_question.escalated event on the host story"
+        );
+
+        // T1 tie-in: get_sprint_quiescence reports blocked==true / done==false. The
+        // parked impl task carries an OPEN serious finding (the block does not
+        // resolve it), which is exactly the blocked_by_finding overlay T1 added.
+        let q = get_sprint_quiescence(&pool, &sprint)
+            .await
+            .expect("quiescence on a blocked sprint");
+        assert!(q.blocked, "the sprint is blocked (a serious open finding is parked)");
+        assert!(!q.done, "a blocked sprint is NOT done");
+    }
+
+    /// (1B-F4 T3 Part A — severity safe-default). A `SpawnTask` (AUTO) verdict on a
+    /// CRITICAL finding is REFUSED with a typed `Validation` and creates NO rework
+    /// task — a Critical finding always needs an operator decision (the block path),
+    /// never silent auto-rework. The refusal is scoped to `SpawnTask`: the same
+    /// Critical finding may still be Deferred (a NON-auto-rework triage verdict).
+    /// Contrast: a MAJOR finding's `SpawnTask` is NOT refused (the auto path runs).
+    #[tokio::test]
+    async fn block_critical_spawn_task_is_refused_and_creates_no_task() {
+        let pool = connect_in_memory().await.expect("pool");
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        let impl_task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // A CRITICAL review finding on the impl task.
+        let critical = create_finding(
+            &pool,
+            &impl_task,
+            &NewFinding {
+                severity: Some(Severity::Critical),
+                summary: Some("must be operator-decided"),
+                ..NewFinding::default()
+            },
+        )
+        .await
+        .expect("critical finding")
+        .to_string();
+
+        let work_items_before = count_work_items(&pool).await;
+
+        // SpawnTask on a Critical finding ⇒ refused with Validation, NO task spawned.
+        let refused = record_finding_decision(
+            &pool,
+            &NewFindingDecision {
+                finding_id: critical.clone(),
+                decision: FindingDecisionKind::SpawnTask,
+                decided_by: Some("orchestrator".into()),
+            },
+        )
+        .await;
+        assert!(
+            matches!(refused, Err(AppError::Validation(_))),
+            "a Critical SpawnTask must be refused with Validation, got {refused:?}"
+        );
+        assert_eq!(
+            count_work_items(&pool).await,
+            work_items_before,
+            "the refused Critical SpawnTask created NO rework task"
+        );
+        // No triage decision row was recorded (the whole tx rolled back / never wrote).
+        assert_eq!(
+            count_finding_decisions(&pool, &critical).await,
+            0,
+            "the refused Critical SpawnTask records NO finding_decisions row"
+        );
+        // The finding's triage_state is untouched at its column DEFAULT ('pending',
+        // migration 0011) — the early return wrote nothing, so the refused decision
+        // never stamped an Accepted triage_state the auto path would have set.
+        assert_eq!(
+            finding_triage_state(&pool, &critical).await.as_deref(),
+            Some("pending"),
+            "the refused decision left triage_state at the default 'pending' (no write)"
+        );
+
+        // The SAME Critical finding may still be DEFERRED — only the auto-rework
+        // (SpawnTask) verdict is refused, not every disposition.
+        let (_decision_id, spawned) = record_finding_decision(
+            &pool,
+            &NewFindingDecision {
+                finding_id: critical.clone(),
+                decision: FindingDecisionKind::Defer,
+                decided_by: Some("orchestrator".into()),
+            },
+        )
+        .await
+        .expect("a Critical finding may still be deferred");
+        assert!(spawned.is_none(), "Defer spawns nothing");
+        assert_eq!(
+            finding_triage_state(&pool, &critical).await.as_deref(),
+            Some("deferred"),
+            "Defer on a Critical finding stamps the deferred triage_state"
+        );
+
+        // Contrast: a MAJOR finding's SpawnTask is NOT refused — the auto path runs.
+        let major = create_finding(
+            &pool,
+            &impl_task,
+            &NewFinding {
+                severity: Some(Severity::Major),
+                summary: Some("ordinary inline rework"),
+                ..NewFinding::default()
+            },
+        )
+        .await
+        .expect("major finding")
+        .to_string();
+        let (_d, major_spawn) = record_finding_decision(
+            &pool,
+            &NewFindingDecision {
+                finding_id: major.clone(),
+                decision: FindingDecisionKind::SpawnTask,
+                decided_by: Some("orchestrator".into()),
+            },
+        )
+        .await
+        .expect("a Major SpawnTask runs the auto path");
+        assert!(
+            major_spawn.is_some(),
+            "a Major SpawnTask is NOT refused — it spawns a rework task"
+        );
+    }
+
+    /// (1B-F4 T3 Part B — atomicity / no-task-handed-out-post-block). Once
+    /// `record_finding_block` commits, the parked host (`status='blocked'` +
+    /// `blocked_by_question_id IS NOT NULL`) is INVISIBLE to `claim_next_task`: the
+    /// claim readiness predicate excludes BOTH a `blocked` status AND a non-NULL
+    /// `blocked_by_question_id`. We prove the SAME task was claimable BEFORE the
+    /// block (so the exclusion is real, not a missing sprint binding) and yields
+    /// `Ok(None)` AFTER.
+    #[tokio::test]
+    async fn block_parked_task_is_not_claimable() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+
+        // The ONLY claimable task in the sprint (todo, implement lane).
+        let impl_task =
+            seed_queue_task(&pool, &story, &sprint, "IMPL", Some("implement"), Some("deep")).await;
+
+        // BEFORE the block it is genuinely claimable — drains, then release so the
+        // claim state is reset to a clean `todo` for the post-block re-check.
+        let pre = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-pre", 1800)
+            .await
+            .expect("pre-block claim runs")
+            .expect("the task is claimable before any block");
+        assert_eq!(pre.task_id, impl_task, "the impl task is the claimable candidate");
+        release_task(&db, &impl_task, "agent-pre")
+            .await
+            .expect("release the pre-block claim back to todo");
+
+        // A serious finding + the operator BLOCK: parks the host.
+        let finding = create_finding(
+            &pool,
+            &impl_task,
+            &NewFinding {
+                severity: Some(Severity::Critical),
+                summary: Some("operator decision required"),
+                ..NewFinding::default()
+            },
+        )
+        .await
+        .expect("finding")
+        .to_string();
+        let block = record_finding_block(&db, &finding, Some("orchestrator"))
+            .await
+            .expect("operator block");
+
+        // The host is committed parked: status='blocked' + blocked_by_question_id set.
+        let (status, blocked_on): (String, Option<String>) = {
+            use sqlx::Row as _;
+            let r = sqlx::query("SELECT status, blocked_by_question_id FROM work_items WHERE id = $1")
+                .bind(&impl_task)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            (r.try_get("status").unwrap(), r.try_get("blocked_by_question_id").unwrap())
+        };
+        assert_eq!(status, "blocked", "the host is parked at status='blocked'");
+        assert_eq!(
+            blocked_on.as_deref(),
+            Some(block.question_id.to_string().as_str()),
+            "the parked host back-links the block question"
+        );
+
+        // AFTER the block the claim hands out NOTHING — the parked task is excluded
+        // by the readiness predicate, so no concurrent claimer can pick it up.
+        let post = claim_next_task(&db, &sprint, Lane::Implement, None, "agent-post", 1800)
+            .await
+            .expect("post-block claim runs");
+        assert!(
+            post.is_none(),
+            "a parked (blocked) task is NOT claimable — the claim yields None post-block"
         );
     }
 

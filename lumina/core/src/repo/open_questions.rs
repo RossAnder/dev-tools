@@ -482,11 +482,22 @@ pub async fn resolve_open_question(
     .await?;
 
     // 2. Unblock the chosen branch: blocked tasks on this question whose
-    //    enabling_option is the chosen one OR is NULL (non-exclusive) → todo.
+    //    enabling_option is the chosen one OR is NULL (non-exclusive) → todo. We
+    //    ALSO clear the `blocked_by_question_id` back-link in the SAME UPDATE
+    //    (1B-F4 T3 unblock contract): leaving it set permanently excludes the
+    //    resumed host from `claim_next_task` (whose readiness predicate requires
+    //    `blocked_by_question_id IS NULL`) AND keeps it counted forever in the
+    //    `get_sprint_quiescence` `blocked_on_question` bucket (which keys on that
+    //    column alone), so `done` could never flip after a block was resolved. The
+    //    host is genuinely back in the queue once resolved, so the park back-link
+    //    is dropped together with the status flip — both halves of the park
+    //    (`status='blocked'` + the FK) are reversed atomically.
     tx.execute(
         r#"
         UPDATE work_items
-        SET status = 'todo', updated_at = CURRENT_TIMESTAMP
+        SET status = 'todo',
+            blocked_by_question_id = NULL,
+            updated_at = CURRENT_TIMESTAMP
         WHERE blocked_by_question_id = $1
           AND status = 'blocked'
           AND (enabling_option_id = $2 OR enabling_option_id IS NULL)

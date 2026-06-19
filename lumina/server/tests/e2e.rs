@@ -4961,3 +4961,459 @@ async fn get_work_item_projection_thread_http() {
         "the full unprojected detail is unchanged after a narrowing projected read"
     );
 }
+
+// =====================================================================
+// 1B-F4 review-rework-cascade — the BLOCK disposition end-to-end (T6).
+//
+// A serious sprint review finding can be dispositioned two ways, and quiescence
+// must stay trustworthy:
+//   * AUTO  (`record_finding_decision` decision=spawn_task) — creates an
+//     implement-lane rework task; does NOT block the sprint.
+//   * BLOCK (decision=block, T4) — routes to `repo::record_finding_block`: NO
+//     task, NO finding_decisions row; lifts a task host to its parent story,
+//     raises a durable open_question, parks the host status='blocked' +
+//     blocked_by_question_id, emits ONE export-bearing open_question.escalated
+//     event on the host story; returns {story_id, question_id,
+//     blocked_work_item_id}.
+//
+// This thread drives the FULL lifecycle through the HTTP mirror surface
+// (`POST /api/findings/{id}/decision`, `GET /api/sprints/{id}/quiescence`,
+// `POST /api/open-questions/{id}/resolve`) over ONE shared in-memory pool,
+// sleep-free + socket-free (oneshot, no listener bind), exactly mirroring the
+// team-execution / same-row-review threads above. The repo-level legs (the
+// parked-vs-unparked quiescence overlay + the unblock contract) are already
+// asserted in `core/src/repo/{runs_sprints,readiness,open_questions}.rs`; this
+// thread's unique contribution is proving the HTTP DECISION mirror routes the
+// `block` verb / refuses a Critical spawn_task / surfaces the quiescence
+// `blocked` overlay, end-to-end.
+//
+// Assertion blocks:
+//   1. BLOCK    — `{"decision":"block"}` → 201 + {story_id, question_id,
+//                 blocked_work_item_id}; NO finding_decisions row; an
+//                 open_question on the host story; host status='blocked' +
+//                 blocked_by_question_id set; ONE open_question.escalated event.
+//   2. QUIESCENCE blocked — GET quiescence reports blocked==true, done==false.
+//   3. UNBLOCK  — resolve the question (pick the enabling option) → host
+//                 unparked (status != 'blocked', blocked_by_question_id cleared,
+//                 claimable again) → once tasks terminal, quiescence done==true.
+//   4. AUTO     — a Major finding via spawn_task DOES create a rework task
+//                 (lane='implement', sprint-bound) and does NOT set blocked.
+//   5. CRITICAL — a Critical finding via spawn_task is REFUSED (422 +
+//                 {"error":{"kind":"validation",..}}); NO rework task created.
+// =====================================================================
+
+/// Helper: read the single live open_question id raised on a story.
+async fn one_open_question_on_story(pool: &Arc<lumina_core::db::AnyPool>, story: &str) -> String {
+    sqlx::query_scalar("SELECT id FROM open_questions WHERE story_id = ?1")
+        .bind(story)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("the host story carries exactly one open_question")
+}
+
+#[tokio::test]
+async fn block_finding_lifecycle_flow() {
+    // One shared pool across the export drain and the router (the decision /
+    // quiescence / resolve writes all go through the HTTP surface).
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // A legal chain to a story with ONE implement task, bound to one ACTIVE
+    // sprint (the seed helper walks draft→ready→active).
+    let project = mcp_create(&tools, "project", None, "Block Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "Block Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "Block Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "Block Story").await;
+    let impl_task = mcp_create(&tools, "task", Some(&story), "Block Impl Task").await;
+    let sprint_id = seed_implement_sprint(&pool, &impl_task).await;
+
+    let state = AppState::new(pool.clone());
+
+    // ---------------------------------------------------------------------
+    // 1. BLOCK — a serious (Major) review finding on the IMPL TASK, blocked via
+    //    the HTTP decision mirror. The task host is lifted to its parent story;
+    //    the host task is parked.
+    // ---------------------------------------------------------------------
+    let block_finding = lumina_core::repo::create_finding(
+        &pool,
+        &impl_task,
+        &lumina_core::repo::NewFinding {
+            kind: Some("review"),
+            severity: Some(lumina_core::domain::Severity::Major),
+            summary: Some("operator must decide: ambiguous contract"),
+            ..lumina_core::repo::NewFinding::default()
+        },
+    )
+    .await
+    .expect("create the serious block finding on the impl task")
+    .to_string();
+
+    let decision_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/findings/{block_finding}/decision"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "decision": "block", "decided_by": "orchestrator" })
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST /api/findings/{id}/decision (block)");
+    assert_eq!(
+        decision_resp.status(),
+        StatusCode::CREATED,
+        "the block decision returns 201"
+    );
+    let block_body = json_body(decision_resp).await;
+    // The block returns {story_id, question_id, blocked_work_item_id} — NOT the
+    // {decision_id, spawned_work_item_id} shape of the non-block verbs.
+    assert_eq!(
+        block_body["story_id"].as_str(),
+        Some(story.as_str()),
+        "the block targets the host story (task host lifted to its parent story)"
+    );
+    let question_id = block_body["question_id"]
+        .as_str()
+        .expect("block response carries a question_id")
+        .to_owned();
+    assert_eq!(
+        block_body["blocked_work_item_id"].as_str(),
+        Some(impl_task.as_str()),
+        "the parked work_item is the finding's host task"
+    );
+    assert!(
+        block_body.get("decision_id").is_none(),
+        "the block path records NO finding_decisions row — no decision_id in the response"
+    );
+
+    // No finding_decisions audit row was recorded for the block.
+    let decision_rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM finding_decisions WHERE finding_id = ?1")
+            .bind(&block_finding)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("count finding_decisions for the blocked finding");
+    assert_eq!(decision_rows, 0, "the block path records NO finding_decisions row");
+
+    // An open_question was raised on the host story (the one returned).
+    let db_question = one_open_question_on_story(&pool, &story).await;
+    assert_eq!(db_question, question_id, "the returned question_id is the story's open_question");
+
+    // The host task is parked: status='blocked' pointing at the escalation question.
+    let (host_status, host_blocked_on): (String, Option<String>) = {
+        let s: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+            .bind(&impl_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read host status after block");
+        let b: Option<String> =
+            sqlx::query_scalar("SELECT blocked_by_question_id FROM work_items WHERE id = ?1")
+                .bind(&impl_task)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read host blocked_by_question_id after block");
+        (s, b)
+    };
+    assert_eq!(host_status, "blocked", "the host task is parked (status='blocked')");
+    assert_eq!(
+        host_blocked_on.as_deref(),
+        Some(question_id.as_str()),
+        "the parked host points at the escalation question"
+    );
+
+    // Exactly ONE export-bearing open_question.escalated event on the host story's
+    // work_item aggregate (the block IS a logical change on the story).
+    let escalated_events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events WHERE aggregate_id = ?1 AND event_type = 'open_question.escalated'",
+    )
+    .bind(&story)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count open_question.escalated events on the host story");
+    assert_eq!(
+        escalated_events, 1,
+        "exactly one export-bearing open_question.escalated event on the host story"
+    );
+
+    // ---------------------------------------------------------------------
+    // 2. QUIESCENCE blocked — over HTTP, the sprint reports blocked==true /
+    //    done==false (a serious live unresolved finding sits on a parked host).
+    // ---------------------------------------------------------------------
+    let q_blocked_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/sprints/{sprint_id}/quiescence"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET quiescence (blocked)");
+    assert_eq!(q_blocked_resp.status(), StatusCode::OK, "quiescence read returns 200");
+    let q_blocked = json_body(q_blocked_resp).await;
+    assert_eq!(
+        q_blocked["blocked"].as_bool(),
+        Some(true),
+        "the HTTP quiescence read surfaces blocked==true while a serious finding is parked"
+    );
+    assert_eq!(
+        q_blocked["done"].as_bool(),
+        Some(false),
+        "a blocked sprint is NOT done"
+    );
+
+    // ---------------------------------------------------------------------
+    // 3. UNBLOCK — resolve the open_question via HTTP (pick the first option):
+    //    the host is unparked (status != 'blocked', blocked_by_question_id
+    //    cleared) and claimable again; once the host is driven terminal the
+    //    sprint quiescence reports done==true.
+    // ---------------------------------------------------------------------
+    let option_id: String = sqlx::query_scalar(
+        "SELECT id FROM question_options WHERE question_id = ?1 ORDER BY seq LIMIT 1",
+    )
+    .bind(&question_id)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("the block question carries default options");
+
+    let resolve_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/open-questions/{question_id}/resolve"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "chosen_option_id": option_id, "by": "operator" })
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST /api/open-questions/{id}/resolve");
+    assert_eq!(resolve_resp.status(), StatusCode::OK, "resolve returns 200");
+
+    // The host is fully UNPARKED: status flipped off 'blocked' AND the FK back-link
+    // cleared in the same resolve (the FK-clear contract).
+    let (unparked_status, unparked_blocked_on): (String, Option<String>) = {
+        let s: String = sqlx::query_scalar("SELECT status FROM work_items WHERE id = ?1")
+            .bind(&impl_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read host status after resolve");
+        let b: Option<String> =
+            sqlx::query_scalar("SELECT blocked_by_question_id FROM work_items WHERE id = ?1")
+                .bind(&impl_task)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read host blocked_by_question_id after resolve");
+        (s, b)
+    };
+    assert_ne!(unparked_status, "blocked", "resolve unparks the host (status no longer 'blocked')");
+    assert!(
+        unparked_blocked_on.is_none(),
+        "resolve clears the blocked_by_question_id back-link (the unblock FK-clear contract)"
+    );
+
+    // Drive the unparked host terminal (review runs after implementation; closing
+    // it makes the sprint task-done). Use the repo status mutator directly — the
+    // unblock just returned it to the queue.
+    lumina_core::repo::update_work_item_status(&pool, &impl_task, "done")
+        .await
+        .expect("close the unparked host → done");
+
+    let q_done_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/sprints/{sprint_id}/quiescence"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET quiescence (done)");
+    assert_eq!(q_done_resp.status(), StatusCode::OK, "quiescence read returns 200");
+    let q_done = json_body(q_done_resp).await;
+    assert_eq!(
+        q_done["blocked"].as_bool(),
+        Some(false),
+        "the unblocked sprint is no longer blocked"
+    );
+    assert_eq!(
+        q_done["done"].as_bool(),
+        Some(true),
+        "once the unparked host is terminal the sprint flips to done"
+    );
+
+    // ---------------------------------------------------------------------
+    // 4. AUTO contrast — a Major finding hosted ON THE STORY (a task-hosted
+    //    spawn_task would parent a task under a task and fail the hierarchy
+    //    trigger), dispositioned spawn_task via the HTTP mirror, DOES create a
+    //    rework task (lane='implement', sprint-bound) and does NOT set blocked.
+    // ---------------------------------------------------------------------
+    let auto_finding = lumina_core::repo::create_finding(
+        &pool,
+        &story,
+        &lumina_core::repo::NewFinding {
+            kind: Some("review"),
+            severity: Some(lumina_core::domain::Severity::Major),
+            summary: Some("auto-fixable: missing error handling"),
+            ..lumina_core::repo::NewFinding::default()
+        },
+    )
+    .await
+    .expect("create the story-hosted auto finding")
+    .to_string();
+
+    let auto_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/findings/{auto_finding}/decision"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "decision": "spawn_task", "decided_by": "review-agent" })
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST /api/findings/{id}/decision (spawn_task)");
+    assert_eq!(
+        auto_resp.status(),
+        StatusCode::CREATED,
+        "the auto (spawn_task) decision returns 201"
+    );
+    let auto_body = json_body(auto_resp).await;
+    let rework_task = auto_body["spawned_work_item_id"]
+        .as_str()
+        .expect("spawn_task returns a spawned_work_item_id")
+        .to_owned();
+    assert!(
+        auto_body["decision_id"].as_str().is_some(),
+        "the auto path DOES record a finding_decisions row (decision_id present)"
+    );
+
+    // The rework task is lane='implement' and sprint-bound (inherits via the
+    // story's existing sprint membership).
+    let rework_lane: Option<String> =
+        sqlx::query_scalar("SELECT lane FROM work_items WHERE id = ?1")
+            .bind(&rework_task)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read rework lane");
+    assert_eq!(
+        rework_lane.as_deref(),
+        Some("implement"),
+        "the spawn_task rework task is stamped lane='implement'"
+    );
+    let rework_bound: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sprint_tasks WHERE sprint_id = ?1 AND task_id = ?2",
+    )
+    .bind(&sprint_id)
+    .bind(&rework_task)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count rework sprint binding");
+    assert_eq!(rework_bound, 1, "the rework task is sprint-bound (via the story's membership)");
+
+    // The AUTO finding parked nothing: the sprint is NOT blocked (the rework task
+    // is claimable work, so the sprint is back to not-done but never `blocked`).
+    let q_auto_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/sprints/{sprint_id}/quiescence"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET quiescence (after auto spawn)");
+    let q_auto = json_body(q_auto_resp).await;
+    assert_eq!(
+        q_auto["blocked"].as_bool(),
+        Some(false),
+        "an AUTO (spawn_task) disposition does NOT block the sprint"
+    );
+    assert_eq!(
+        q_auto["done"].as_bool(),
+        Some(false),
+        "the fresh claimable rework task means the sprint is no longer done"
+    );
+
+    // ---------------------------------------------------------------------
+    // 5. CRITICAL safe-default — a Critical finding via spawn_task is REFUSED
+    //    (422 + the validation envelope); NO rework task is created. It must go
+    //    through the block path instead.
+    // ---------------------------------------------------------------------
+    let critical_finding = lumina_core::repo::create_finding(
+        &pool,
+        &story,
+        &lumina_core::repo::NewFinding {
+            kind: Some("review"),
+            severity: Some(lumina_core::domain::Severity::Critical),
+            summary: Some("critical: data-loss path — operator must decide"),
+            ..lumina_core::repo::NewFinding::default()
+        },
+    )
+    .await
+    .expect("create the critical finding on the story")
+    .to_string();
+
+    let work_items_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM work_items")
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("count work_items before the refused critical spawn");
+
+    let critical_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/findings/{critical_finding}/decision"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "decision": "spawn_task", "decided_by": "review-agent" })
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST /api/findings/{id}/decision (critical spawn_task)");
+    assert_eq!(
+        critical_resp.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "a Critical spawn_task is REFUSED with 422 (the severity safe-default)"
+    );
+    let critical_body = json_body(critical_resp).await;
+    assert_eq!(
+        critical_body["error"]["kind"].as_str(),
+        Some("validation"),
+        "the refusal surfaces the validation error envelope"
+    );
+
+    // NO rework task was created for the refused Critical spawn_task.
+    let work_items_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM work_items")
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("count work_items after the refused critical spawn");
+    assert_eq!(
+        work_items_after, work_items_before,
+        "the refused Critical spawn_task created NO rework task"
+    );
+
+    // The whole vertical slice still git-exports cleanly: drain the outbox and
+    // assert the parked-then-unparked host snapshot rendered (export is
+    // event-driven off work_item aggregates; the open_question.escalated event is
+    // export-bearing on the story).
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
+        .await
+        .expect("export drain");
+    assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
+    let story_snapshot = export_dir.path().join("story").join(format!("{story}.toml"));
+    assert!(
+        story_snapshot.exists(),
+        "the host story snapshot rendered (the escalation event is export-bearing on the story)"
+    );
+}
