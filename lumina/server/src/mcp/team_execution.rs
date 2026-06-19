@@ -185,7 +185,7 @@ impl LuminaTools {
     /// `repo::get_sprint_quiescence`). Read-only; the lead polls this to decide
     /// whether to terminate (all work done) or escalate (stalled).
     #[tool(
-        description = "Compute a sprint's quiescence verdict across all lanes: per-bucket counts (claimable / in_progress / blocked_on_question / terminal) plus the `done` and `stalled` roll-ups. `done` ⇒ nothing left to claim, run, or unblock; `stalled` ⇒ blocked with nothing claimable, needing an arbiter to resolve a question before progress can resume. Read-only.",
+        description = "Compute a sprint's quiescence verdict across all lanes: the five mutually-exclusive partition counts (claimable / in_progress / blocked_on_question / in_review / terminal), the orthogonal `blocked_by_finding` overlay count (tasks carrying a serious — critical/major — still-open review finding, regardless of task status), plus the `done`, `blocked`, and `stalled` roll-ups. `done` ⇒ every task terminal AND no serious finding open; `blocked` ⇒ `blocked_by_finding > 0` (a serious open review finding parks the sprint, keeping `done` false); `stalled` ⇒ blocked with nothing claimable, needing an arbiter to resolve a question before progress can resume. Read-only.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_sprint_quiescence(

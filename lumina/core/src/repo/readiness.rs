@@ -101,6 +101,7 @@ pub async fn get_sprint_quiescence(
         blocked_on_question: i64,
         in_review: i64,
         terminal: i64,
+        blocked_by_finding: i64,
     }
     impl<'r, R> sqlx::FromRow<'r, R> for QuiescenceCountsRow
     where
@@ -115,6 +116,7 @@ pub async fn get_sprint_quiescence(
                 blocked_on_question: row.try_get("blocked_on_question")?,
                 in_review: row.try_get("in_review")?,
                 terminal: row.try_get("terminal")?,
+                blocked_by_finding: row.try_get("blocked_by_finding")?,
             })
         }
     }
@@ -150,7 +152,20 @@ pub async fn get_sprint_quiescence(
             THEN 1 ELSE 0 END), 0) AS in_review,
           COALESCE(SUM(CASE WHEN
               t.status IN ('done', 'cancelled') AND t.deleted_at IS NULL
-            THEN 1 ELSE 0 END), 0) AS terminal
+            THEN 1 ELSE 0 END), 0) AS terminal,
+          -- 1B-F4 serious-finding block (ORTHOGONAL overlay, NOT a partition
+          -- bucket — counts tasks carrying a serious open review finding
+          -- REGARDLESS of task status, so it is excluded from `total`). A
+          -- blocking finding is LIVE (`superseded_by IS NULL`), unresolved
+          -- (`resolved_at IS NULL`), and of serious severity (`critical`/`major`).
+          COALESCE(SUM(CASE WHEN t.deleted_at IS NULL AND EXISTS (
+                  SELECT 1 FROM findings f
+                  WHERE f.work_item_id = t.id
+                    AND f.superseded_by IS NULL
+                    AND f.resolved_at IS NULL
+                    AND f.severity IN ('critical', 'major')
+              )
+            THEN 1 ELSE 0 END), 0) AS blocked_by_finding
         FROM sprint_tasks st
         JOIN work_items t ON t.id = st.task_id
         WHERE st.sprint_id = $1
@@ -207,7 +222,12 @@ pub async fn get_sprint_quiescence(
         + counts.blocked_on_question
         + counts.in_review
         + counts.terminal;
-    let done = counts.terminal == total;
+    // `blocked` (1B-F4): a serious, still-open review finding parks the sprint.
+    // It is an ORTHOGONAL overlay (not part of `total`); its only roll-up effect
+    // is to keep `done` FALSE while any serious finding is open, so a sprint whose
+    // tasks are all terminal but still carry a serious open finding is NOT `done`.
+    let blocked = counts.blocked_by_finding > 0;
+    let done = counts.terminal == total && !blocked;
 
     // Gate `claimable` to 0 when the sprint is non-`active` OR frozen — the
     // claim yields nothing under either condition. Applied AFTER `done` is
@@ -238,7 +258,9 @@ pub async fn get_sprint_quiescence(
         blocked_on_question: counts.blocked_on_question,
         in_review: counts.in_review,
         terminal: counts.terminal,
+        blocked_by_finding: counts.blocked_by_finding,
         done,
+        blocked,
         stalled,
     })
 }

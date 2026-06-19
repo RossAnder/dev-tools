@@ -99,16 +99,18 @@ pub struct FileOverlapWarning {
 /// counts are `i64` to match the SQLite count-column parity used elsewhere in
 /// the repo layer. Read aggregate only — `Debug, Clone, Serialize`.
 ///
-/// The count buckets are MUTUALLY EXCLUSIVE and collectively exhaustive over the
-/// sprint's live tasks (`total = claimable + in_progress + blocked_on_question +
-/// in_review + terminal`), so `done = terminal == total` excludes EVERY
-/// non-terminal class. `in_review` (1B-F9 M3) is the NON-terminal bucket for a
+/// The FIVE count buckets are MUTUALLY EXCLUSIVE and collectively exhaustive over
+/// the sprint's live tasks (`total = claimable + in_progress + blocked_on_question
+/// + in_review + terminal`), so `terminal == total` excludes EVERY non-terminal
+/// class. (`blocked_by_finding` is a SEPARATE, non-partitioning overlay — see its
+/// field doc — and does NOT participate in `total`; `done` additionally requires
+/// `!blocked`.) `in_review` (1B-F9 M3) is the NON-terminal bucket for a
 /// `status='review'` task — a deep impl task that `complete_task` (M1) carried
 /// into the review state on its own row and that no reviewer has yet claimed (a
 /// CLAIMED review task is `status='in_progress'`, counted in `in_progress`). A
 /// review-state task therefore keeps the sprint NOT `done`, and — when it is the
 /// only non-terminal work left and nobody is working it — surfaces as `stalled`
-/// (the review escalation signal, AC8) rather than hanging the sprint invisibly.
+///   (the review escalation signal, AC8) rather than hanging the sprint invisibly.
 #[derive(Debug, Clone, Serialize)]
 pub struct SprintQuiescence {
     /// Tasks satisfying the claim-readiness predicate (minus the lease) — the
@@ -124,9 +126,24 @@ pub struct SprintQuiescence {
     pub in_review: i64,
     /// Tasks in a terminal state (`done`/`cancelled`).
     pub terminal: i64,
+    /// Tasks carrying a SERIOUS, still-OPEN review finding (1B-F4): a LIVE
+    /// (`superseded_by IS NULL`), unresolved (`resolved_at IS NULL`) finding of
+    /// `critical`/`major` severity on the task. Unlike the five count buckets
+    /// above this is NOT mutually exclusive with them (a blocking finding can sit
+    /// on a task in any state) and is NOT folded into `total`; it is an
+    /// ORTHOGONAL signal whose only roll-up effect is to force `done` FALSE while
+    /// any serious finding is open (`blocked` below). Derived-only — no schema
+    /// column, exactly like `in_review`.
+    pub blocked_by_finding: i64,
     /// `terminal == total` — EVERY sprint task is terminal (total includes the
-    /// non-terminal `in_review` bucket, so an unclaimed review keeps this false).
+    /// non-terminal `in_review` bucket, so an unclaimed review keeps this false)
+    /// — AND no serious review finding is open (`!blocked`). A serious open
+    /// finding therefore keeps the sprint NOT `done`.
     pub done: bool,
+    /// `blocked_by_finding > 0` — a serious (`critical`/`major`), still-open
+    /// review finding blocks the sprint. Keeps `done` FALSE; the parking
+    /// mechanism that acts on this signal is a later 1B-F4 task.
+    pub blocked: bool,
     /// `!done && claimable == 0 && in_progress == 0 && (blocked_on_question > 0
     /// || in_review > 0)` — the only non-terminal work is parked on a question
     /// (needs an arbiter) OR is an unclaimed review task (needs a reviewer);
