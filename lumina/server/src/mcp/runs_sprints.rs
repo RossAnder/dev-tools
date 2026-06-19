@@ -13,7 +13,70 @@
 
 use super::*;
 
-use lumina_core::domain::{Origin, SprintStatus};
+use lumina_core::domain::{FindingDecisionKind, NewFindingDecision, Origin, SprintStatus};
+
+/// The decision verb accepted by the `record_finding_decision` MCP tool /
+/// `POST /findings/{id}/decision` HTTP route. It is the five DB-CHECK'd
+/// [`FindingDecisionKind`] verbs (`spawn_task|spawn_story|defer|dismiss|resolve`)
+/// WIDENED with a sixth, operator-resolveable `block` verb (1B-F4 / T4).
+///
+/// `block` is INTERCEPTED at the surface and routed to `repo::record_finding_block`
+/// — it records NO `finding_decisions` row (so the `finding_decisions.decision`
+/// CHECK vocabulary is untouched and no migration is needed), instead raising an
+/// open question on the host story and parking the host `status='blocked'`. The
+/// other five verbs map 1:1 onto [`FindingDecisionKind`] and flow through
+/// `repo::record_finding_decision` unchanged. The wire form is snake_case, so a
+/// bogus verb fails deserialisation (rmcp → invalid_params).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FindingDecisionInput {
+    /// Spawn a task to address the finding.
+    SpawnTask,
+    /// Spawn a story to address the finding.
+    SpawnStory,
+    /// Defer the finding to a later pass.
+    Defer,
+    /// Dismiss the finding (no action).
+    Dismiss,
+    /// Resolve the finding directly.
+    Resolve,
+    /// BLOCK: raise an operator open question on the host story and park the
+    /// host `status='blocked'` (NO `finding_decisions` row, NO rework task).
+    Block,
+}
+
+impl FindingDecisionInput {
+    /// The non-`block` verbs map 1:1 onto the DB-CHECK'd [`FindingDecisionKind`];
+    /// `block` has no equivalent (it records no `finding_decisions` row) so it
+    /// returns `None` and is intercepted by the caller.
+    fn as_decision_kind(self) -> Option<FindingDecisionKind> {
+        match self {
+            FindingDecisionInput::SpawnTask => Some(FindingDecisionKind::SpawnTask),
+            FindingDecisionInput::SpawnStory => Some(FindingDecisionKind::SpawnStory),
+            FindingDecisionInput::Defer => Some(FindingDecisionKind::Defer),
+            FindingDecisionInput::Dismiss => Some(FindingDecisionKind::Dismiss),
+            FindingDecisionInput::Resolve => Some(FindingDecisionKind::Resolve),
+            FindingDecisionInput::Block => None,
+        }
+    }
+}
+
+/// Arguments for the `record_finding_decision` write tool. Mirrors
+/// `lumina_core::domain::NewFindingDecision` but takes the WIDENED
+/// [`FindingDecisionInput`] verb so the operator-resolveable `block` disposition
+/// (1B-F4) routes through the SAME tool — `block` is intercepted before the
+/// `finding_decisions` insert and dispatched to `repo::record_finding_block`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RecordFindingDecisionParams {
+    /// The id of the finding being triaged.
+    pub finding_id: String,
+    /// The triage verdict; one of
+    /// `spawn_task|spawn_story|defer|dismiss|resolve|block`.
+    pub decision: FindingDecisionInput,
+    /// Who recorded the decision; absent ⇒ NULL.
+    #[serde(default)]
+    pub decided_by: Option<String>,
+}
 
 /// Arguments for the `add_tasks_to_sprint` write tool →
 /// `repo::add_tasks_to_sprint` (B23). Idempotent at the junction: a
@@ -218,22 +281,48 @@ impl LuminaTools {
     }
 
     /// Record a triage decision on a finding (single repo call →
-    /// `repo::record_finding_decision`). Reuses `lumina_core::domain::NewFindingDecision`
-    /// directly as the param type. A `spawn_task`/`spawn_story` decision creates
-    /// a child under the finding host (its id surfaces as `spawned_work_item_id`);
-    /// `resolve` delegates to `resolve_finding`; `defer`/`dismiss` set the
-    /// triage state. Returns `{ decision_id, spawned_work_item_id }` (the latter
-    /// null unless a spawn occurred).
+    /// `repo::record_finding_decision`, OR `repo::record_finding_block` for the
+    /// `block` verb). A `spawn_task`/`spawn_story` decision creates a child under
+    /// the finding host (its id surfaces as `spawned_work_item_id`); `resolve`
+    /// delegates to `resolve_finding`; `defer`/`dismiss` set the triage state;
+    /// `block` (1B-F4) is INTERCEPTED before the `finding_decisions` insert and
+    /// routed to `repo::record_finding_block`, which raises an open question on
+    /// the host story and parks the host `status='blocked'` (returning
+    /// `{ story_id, question_id, blocked_work_item_id }` instead). For the five
+    /// non-block verbs, returns `{ decision_id, spawned_work_item_id }` (the
+    /// latter null unless a spawn occurred).
     #[tool(
-        description = "Record a triage decision on a finding. `decision` is `spawn_task|spawn_story|defer|dismiss|resolve`: a spawn creates a child work-item under the finding's host (its id is returned as `spawned_work_item_id`); `resolve` resolves the finding; `defer`/`dismiss` set the triage state. Returns { decision_id, spawned_work_item_id } (spawned_work_item_id is null unless a spawn occurred). Records one event.",
+        description = "Record a triage decision on a finding. `decision` is `spawn_task|spawn_story|defer|dismiss|resolve|block`: a spawn creates a child work-item under the finding's host (its id is returned as `spawned_work_item_id`); `resolve` resolves the finding; `defer`/`dismiss` set the triage state; `block` raises an operator open question on the host story and parks the host status=blocked, returning { story_id, question_id, blocked_work_item_id } (NO finding_decisions row). The five non-block verbs return { decision_id, spawned_work_item_id } (spawned_work_item_id is null unless a spawn occurred). Records one event.",
         annotations(open_world_hint = false)
     )]
     async fn record_finding_decision(
         &self,
-        Parameters(decision): Parameters<lumina_core::domain::NewFindingDecision>,
+        Parameters(RecordFindingDecisionParams {
+            finding_id,
+            decision,
+            decided_by,
+        }): Parameters<RecordFindingDecisionParams>,
     ) -> Result<CallToolResult, ErrorData> {
         tracing::debug!(tool = "record_finding_decision", "mcp tool invoked");
-        let (decision_id, spawned) = repo::record_finding_decision(&self.pool, &decision)
+        // Intercept the operator-resolveable BLOCK verb: it records NO
+        // `finding_decisions` row (the CHECK vocabulary stays untouched) and
+        // instead raises an open question + parks the host status=blocked.
+        let Some(kind) = decision.as_decision_kind() else {
+            let block = repo::record_finding_block(&self.pool, &finding_id, decided_by.as_deref())
+                .await
+                .map_err(app_error_to_mcp)?;
+            return structured_result(serde_json::json!({
+                "story_id": block.story_id.to_string(),
+                "question_id": block.question_id.to_string(),
+                "blocked_work_item_id": block.blocked_work_item_id.to_string(),
+            }));
+        };
+        let new_decision = NewFindingDecision {
+            finding_id,
+            decision: kind,
+            decided_by,
+        };
+        let (decision_id, spawned) = repo::record_finding_decision(&self.pool, &new_decision)
             .await
             .map_err(app_error_to_mcp)?;
         structured_result(serde_json::json!({
@@ -362,12 +451,13 @@ mod tests {
         );
     }
 
-    /// A legal `record_finding_decision` payload deserialises into the reused
-    /// `lumina_core::domain::NewFindingDecision` param type; an out-of-set `decision`
-    /// is REJECTED at the deserialise boundary (rmcp → invalid_params).
+    /// A legal `record_finding_decision` payload deserialises into the widened
+    /// `RecordFindingDecisionParams` param type — including the new operator
+    /// `block` verb (1B-F4); an out-of-set `decision` is REJECTED at the
+    /// deserialise boundary (rmcp → invalid_params).
     #[tokio::test]
     async fn record_finding_decision_params_deserialise_and_reject_bad_enum() {
-        let ok = serde_json::from_value::<lumina_core::domain::NewFindingDecision>(serde_json::json!({
+        let ok = serde_json::from_value::<RecordFindingDecisionParams>(serde_json::json!({
             "finding_id": "f1",
             "decision": "spawn_task",
             "decided_by": "ross"
@@ -376,15 +466,36 @@ mod tests {
 
         // `decided_by` is optional.
         let no_decider =
-            serde_json::from_value::<lumina_core::domain::NewFindingDecision>(serde_json::json!({
+            serde_json::from_value::<RecordFindingDecisionParams>(serde_json::json!({
                 "finding_id": "f1",
                 "decision": "resolve"
             }));
         assert!(no_decider.is_ok(), "a payload without decided_by deserialises");
 
-        // A bogus `decision` fails (FindingDecisionKind has only
-        // spawn_task|spawn_story|defer|dismiss|resolve).
-        let err = serde_json::from_value::<lumina_core::domain::NewFindingDecision>(serde_json::json!({
+        // The widened `block` verb deserialises and is INTERCEPTED (no equivalent
+        // `FindingDecisionKind`, so `as_decision_kind()` is None → routes to
+        // `repo::record_finding_block`).
+        let block = serde_json::from_value::<RecordFindingDecisionParams>(serde_json::json!({
+            "finding_id": "f1",
+            "decision": "block",
+            "decided_by": "ross"
+        }))
+        .expect("a `block` decision deserialises");
+        assert_eq!(block.decision, FindingDecisionInput::Block);
+        assert!(
+            block.decision.as_decision_kind().is_none(),
+            "block has no finding_decisions equivalent — it is intercepted"
+        );
+
+        // The five non-block verbs map onto a `FindingDecisionKind` (NOT intercepted).
+        assert!(
+            FindingDecisionInput::SpawnTask.as_decision_kind().is_some(),
+            "spawn_task maps onto a FindingDecisionKind"
+        );
+
+        // A bogus `decision` fails (FindingDecisionInput has only
+        // spawn_task|spawn_story|defer|dismiss|resolve|block).
+        let err = serde_json::from_value::<RecordFindingDecisionParams>(serde_json::json!({
             "finding_id": "f1",
             "decision": "bogus"
         }))

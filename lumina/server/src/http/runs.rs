@@ -24,11 +24,43 @@ use lumina_core::domain::{FindingDecisionKind, NewFindingDecision};
 use lumina_core::error::AppError;
 use lumina_core::repo;
 
+/// The decision verb accepted by `POST /findings/{id}/decision` — the five
+/// DB-CHECK'd [`FindingDecisionKind`] verbs WIDENED with the operator-resolveable
+/// `block` (1B-F4 / T4), mirroring the MCP `record_finding_decision` tool 1:1.
+/// `block` is INTERCEPTED before the `finding_decisions` insert and routed to
+/// `repo::record_finding_block`. Wire form is snake_case (a bogus verb → 422).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DecisionInput {
+    SpawnTask,
+    SpawnStory,
+    Defer,
+    Dismiss,
+    Resolve,
+    Block,
+}
+
+impl DecisionInput {
+    /// The non-`block` verbs map 1:1 onto [`FindingDecisionKind`]; `block`
+    /// returns `None` and is intercepted by the handler.
+    fn as_decision_kind(self) -> Option<FindingDecisionKind> {
+        match self {
+            DecisionInput::SpawnTask => Some(FindingDecisionKind::SpawnTask),
+            DecisionInput::SpawnStory => Some(FindingDecisionKind::SpawnStory),
+            DecisionInput::Defer => Some(FindingDecisionKind::Defer),
+            DecisionInput::Dismiss => Some(FindingDecisionKind::Dismiss),
+            DecisionInput::Resolve => Some(FindingDecisionKind::Resolve),
+            DecisionInput::Block => None,
+        }
+    }
+}
+
 /// Body for `POST /findings/{finding_id}/decision`. Mirrors
-/// `domain::NewFindingDecision` minus `finding_id` (which arrives on the path).
+/// `domain::NewFindingDecision` minus `finding_id` (which arrives on the path),
+/// with the `decision` verb widened to include `block` (see [`DecisionInput`]).
 #[derive(Debug, Deserialize)]
 struct DecisionBody {
-    pub decision: FindingDecisionKind,
+    pub decision: DecisionInput,
     #[serde(default)]
     pub decided_by: Option<String>,
 }
@@ -63,17 +95,36 @@ async fn create_run_handler(
 /// `POST /findings/{finding_id}/decision` — record a triage verdict against a
 /// finding. A `spawn_task`/`spawn_story` verdict spawns a child under the
 /// finding's host (returning its id); `defer`/`dismiss` set the triage state;
-/// `resolve` delegates to `repo::resolve_finding`. A missing finding is 404.
-/// Returns 201 + `{ "decision_id": <uuid>, "spawned_work_item_id": <uuid?> }`.
+/// `resolve` delegates to `repo::resolve_finding`; `block` (1B-F4) is INTERCEPTED
+/// and routed to `repo::record_finding_block`, returning
+/// `{ "story_id", "question_id", "blocked_work_item_id" }` (NO finding_decisions
+/// row). A missing finding is 404. The five non-block verbs return 201 +
+/// `{ "decision_id": <uuid>, "spawned_work_item_id": <uuid?> }`.
 async fn record_finding_decision_handler(
     State(state): State<AppState>,
     Path(finding_id): Path<String>,
     Json(body): Json<DecisionBody>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!(finding_id = %finding_id, "http: POST /findings/{{finding_id}}/decision");
+    // Intercept the operator-resolveable BLOCK verb: it records NO
+    // `finding_decisions` row (the CHECK vocabulary stays untouched) and instead
+    // raises an open question + parks the host status=blocked.
+    let Some(kind) = body.decision.as_decision_kind() else {
+        let block =
+            repo::record_finding_block(state.pool.as_ref(), &finding_id, body.decided_by.as_deref())
+                .await?;
+        return Ok((
+            StatusCode::CREATED,
+            Json(json!({
+                "story_id": block.story_id.to_string(),
+                "question_id": block.question_id.to_string(),
+                "blocked_work_item_id": block.blocked_work_item_id.to_string(),
+            })),
+        ));
+    };
     let decision = NewFindingDecision {
         finding_id,
-        decision: body.decision,
+        decision: kind,
         decided_by: body.decided_by,
     };
     let (decision_id, spawned) = repo::record_finding_decision(state.pool.as_ref(), &decision).await?;
