@@ -36,8 +36,17 @@ export interface SprintQuiescence {
   in_review: number
   /** Tasks in a terminal state (`done`/`cancelled`). */
   terminal: number
-  /** `terminal == total` — every member task is terminal (total includes `in_review`). */
+  /**
+   * Tasks carrying a SERIOUS, still-OPEN review finding (1B-F4): a LIVE,
+   * unresolved `critical`/`major` finding on the task. ORTHOGONAL to the five
+   * count buckets (not mutually exclusive, NOT folded into the total); its only
+   * roll-up effect is to force `done` false while any serious finding is open.
+   */
+  blocked_by_finding: number
+  /** `terminal == total` — every member task is terminal (total includes `in_review`) AND no serious review finding is open (`!blocked`). */
   done: boolean
+  /** `blocked_by_finding > 0` — a serious, still-open review finding blocks the sprint; keeps `done` false. */
+  blocked: boolean
   /** Only non-terminal work is parked-on-question OR an unclaimed review — needs an arbiter/reviewer. */
   stalled: boolean
 }
@@ -53,7 +62,9 @@ export const SprintQuiescenceSchema = z.object({
   blocked_on_question: z.number(),
   in_review: z.number(),
   terminal: z.number(),
+  blocked_by_finding: z.number(),
   done: z.boolean(),
+  blocked: z.boolean(),
   stalled: z.boolean(),
 }) satisfies z.ZodType<SprintQuiescence>
 
