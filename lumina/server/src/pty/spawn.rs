@@ -245,6 +245,51 @@ pub async fn spawn_pty_session_internal(
         "pty spawn: session registered, status -> Idle"
     );
 
+    // 5a'. Seed the first prompt, if the caller supplied one.
+    //
+    // A launch affordance (e.g. "spawn an orchestrator and tell it to run
+    // `/lumina:run-sprint <id>`") sets `config.initial_prompt`. Rather than
+    // push it straight onto the input channel here, we ENQUEUE it as a normal
+    // `prompt` input — exactly as `POST /input` does — so the supervisor's
+    // `dispatch_one` picks it up on the next tick now that the session is
+    // `Idle`, persists+broadcasts the user_input echo, and flips the session
+    // to `Awaiting`. A trailing `\n` submit-marker is appended (the SPA's
+    // `/input` convention): the input bridge translates it to a trailing `\r`
+    // and, for a body large enough that claude's TUI paste-detects it, takes
+    // the SEPARATE-Enter path (write body, settle `PROMPT_SUBMIT_SETTLE_MS`,
+    // then send Enter on its own) so a long prompt actually submits. Routing
+    // through the queue is best-effort: a failed enqueue is logged and
+    // swallowed (mirroring the bridge's per-session error policy) — the
+    // session is already live and the operator can still type.
+    if let Some(prompt) = config.initial_prompt.as_deref() {
+        let payload = format!("{prompt}\n");
+        let existing = crate::pty::queue::Queue::list(state.pool.sqlite(), &session_id_str)
+            .await
+            .map(|rows| rows.len() as i64)
+            .unwrap_or(0);
+        if let Err(e) = crate::pty::queue::Queue::enqueue(
+            state.pool.sqlite(),
+            &session_id_str,
+            existing + 1,
+            "prompt",
+            &payload,
+        )
+        .await
+        {
+            tracing::warn!(
+                session_id = %session_id_str,
+                error = %e,
+                "pty spawn: initial_prompt enqueue failed"
+            );
+        } else {
+            tracing::info!(
+                session_id = %session_id_str,
+                prompt_len = prompt.len(),
+                "pty spawn: initial_prompt enqueued"
+            );
+        }
+    }
+
     // 5b. Spawn the background bind+tail+bridge task. Bind is
     //     unbounded (`None` timeout) — it waits as long as it takes
     //     for claude to create the JSONL file. Per-session error
@@ -682,8 +727,138 @@ async fn backfill_spawned_correlation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::AppState;
+    use crate::pty::transport::{SessionExit, Transport, TransportHandle};
+    use async_trait::async_trait;
     use lumina_core::db::{connect_in_memory, scalar_one, AnyPool};
     use lumina_core::jsonl_tail::{self, BroadcastRecord};
+    use lumina_core::protocol::{InputFrame, SessionId, TypedMessage};
+    use std::sync::Arc;
+    use tokio::sync::{broadcast, mpsc, oneshot};
+    use tokio_util::sync::CancellationToken;
+
+    /// Minimal `Transport` for the spawn-pipeline unit tests: returns a handle
+    /// over dummy channels and never starts a child process — no real PTY, no
+    /// `pty_stub`, no nested `claude`. The pipeline's transport-spawn step is a
+    /// single `.spawn(config)` call, so a stub that hands back live (if unused)
+    /// channels is enough to drive every step that follows it.
+    struct MockTransport;
+
+    #[async_trait]
+    impl Transport for MockTransport {
+        async fn spawn(&self, _config: SpawnConfig) -> Result<TransportHandle, AppError> {
+            let session_id = SessionId(uuid::Uuid::now_v7());
+            // The pipeline drops `outbound` at step 5 and `completed` at step 6
+            // (no register_tx), so their peer halves dropping here is fine. The
+            // `inbound` receiver would be the supervisor's in production; these
+            // tests assert the QUEUE row, not dispatch, so nothing sends on it.
+            let (_outbound_tx, outbound) = broadcast::channel::<TypedMessage>(8);
+            let (inbound, _inbound_rx) = mpsc::channel::<InputFrame>(8);
+            let (_completed_tx, completed) = oneshot::channel::<SessionExit>();
+            Ok(TransportHandle {
+                session_id,
+                outbound,
+                inbound,
+                shutdown: CancellationToken::new(),
+                completed,
+            })
+        }
+    }
+
+    /// Build an `AppState` over an in-memory pool with the mock transport
+    /// swapped in. `pty_register_tx` stays `None` (the spawn pipeline then
+    /// terminates the session's transport at step 6 — fine here, the mock has
+    /// no real child).
+    fn mock_state(pool: AnyPool) -> AppState {
+        let mut state = AppState::new(Arc::new(pool));
+        state.pty_transport = Arc::new(MockTransport);
+        state
+    }
+
+    /// Drive the spawn pipeline with the given `initial_prompt` and return the
+    /// session's queue rows. Uses a per-test temp dir as `cwd` (the internal
+    /// pipeline does NOT validate cwd — that is the HTTP entry's job) so the
+    /// detached JSONL-bind task polls a harmless path.
+    async fn spawn_and_read_queue(
+        initial_prompt: Option<String>,
+    ) -> (AppState, String, Vec<lumina_core::domain::PtyQueueEntry>) {
+        let pool: AnyPool = connect_in_memory().await.expect("pool").into();
+        let state = mock_state(pool);
+        let cwd = std::env::temp_dir();
+        let config = SpawnConfig {
+            cwd,
+            claude_args: vec![],
+            agent_json: None,
+            model: None,
+            env_passthrough_otel: false,
+            settings_json: None,
+            initial_prompt,
+        };
+        let row = spawn_pty_session_internal(&state, config, None, None, "/tmp/proj".into())
+            .await
+            .expect("spawn pipeline");
+        let queue = repo::pty::list_pty_queue(state.pool.sqlite(), &row.id)
+            .await
+            .expect("list queue");
+        (state, row.id, queue)
+    }
+
+    /// An `initial_prompt` is enqueued as the session's FIRST `prompt` input,
+    /// carrying a trailing `\n` submit-marker (the SPA `/input` convention).
+    /// That trailing newline is what makes the input bridge translate it to a
+    /// trailing `\r` and take the SEPARATE-Enter submission path — so the
+    /// supervisor will dispatch it as the first user message once the session
+    /// is `Idle`.
+    #[tokio::test]
+    async fn initial_prompt_is_enqueued_as_first_prompt_with_submit_marker() {
+        let prompt = "/lumina:run-sprint 019ee063".to_owned();
+        let (_state, _id, queue) = spawn_and_read_queue(Some(prompt.clone())).await;
+
+        assert_eq!(queue.len(), 1, "exactly one queued input — the seed prompt");
+        let entry = &queue[0];
+        assert_eq!(entry.sequence, 1, "the seed prompt is the first queue entry");
+        assert_eq!(entry.input_kind, "prompt");
+        assert_eq!(entry.status, "pending", "not yet dispatched");
+        assert_eq!(
+            entry.payload,
+            format!("{prompt}\n"),
+            "payload carries the trailing-\\n submit marker that drives the separate-Enter path"
+        );
+    }
+
+    /// A LONG (>paste-detect) `initial_prompt` is enqueued the same way — body
+    /// PLUS the trailing-`\n` submit marker. The bridge paste-detects the large
+    /// body and submits via the separate Enter precisely because the marker is
+    /// present, so the long prompt is the case this seeding mechanism most needs
+    /// to get right.
+    #[tokio::test]
+    async fn long_initial_prompt_is_enqueued_with_submit_marker() {
+        // Comfortably beyond any plausible paste-detect threshold.
+        let body = "x".repeat(4096);
+        let (_state, _id, queue) = spawn_and_read_queue(Some(body.clone())).await;
+
+        assert_eq!(queue.len(), 1, "exactly one queued input for a long prompt");
+        let entry = &queue[0];
+        assert_eq!(entry.input_kind, "prompt");
+        assert_eq!(
+            entry.payload,
+            format!("{body}\n"),
+            "the long body is enqueued verbatim plus the single trailing-\\n submit marker"
+        );
+        assert!(
+            entry.payload.ends_with('\n') && entry.payload.len() == body.len() + 1,
+            "exactly one submit marker is appended — the separate-Enter contract"
+        );
+    }
+
+    /// No `initial_prompt` ⇒ nothing is enqueued (back-compat: existing callers
+    /// that omit the field spawn a session with an empty queue, exactly as
+    /// before this field existed).
+    #[tokio::test]
+    async fn no_initial_prompt_leaves_queue_empty() {
+        let (_state, _id, queue) = spawn_and_read_queue(None).await;
+        assert!(queue.is_empty(), "an absent initial_prompt enqueues nothing");
+    }
 
     /// Seed a bare `pty_sessions` row so the `session_records.session_id` FK is
     /// satisfiable, mirroring the spawned-session row that exists at step 3 of

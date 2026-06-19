@@ -172,6 +172,13 @@ struct SpawnSessionBody {
     env_passthrough_otel: bool,
     #[serde(default)]
     settings_json: Option<String>,
+    /// Optional first prompt to seed once the session is live (e.g. a launch
+    /// endpoint telling a spawned orchestrator to run `/lumina:run-sprint
+    /// <id>`). Threaded onto `SpawnConfig`; `spawn_pty_session_internal`
+    /// enqueues it as the session's first `prompt` input. `#[serde(default)]`
+    /// keeps callers that omit it deserialising unchanged.
+    #[serde(default)]
+    initial_prompt: Option<String>,
 }
 
 /// `POST /pty/sessions` — spawn a fresh PTY-backed `claude` session.
@@ -200,6 +207,7 @@ async fn spawn_session(
         model: body.model,
         env_passthrough_otel: body.env_passthrough_otel,
         settings_json: body.settings_json,
+        initial_prompt: body.initial_prompt,
     };
 
     let row = crate::pty::spawn::spawn_pty_session_internal(

@@ -298,6 +298,13 @@ export interface SpawnRequest {
   env_passthrough_otel?: boolean
   settings_json?: string | null
   prompt_pattern?: string | null
+  /**
+   * Optional first prompt to seed once the session is live (mirrors the Rust
+   * `SpawnSessionBody.initial_prompt`). A launch affordance sets this so a
+   * spawned orchestrator runs e.g. `/lumina:run-sprint <id>` as its first
+   * message; the server enqueues it as the session's first `prompt` input.
+   */
+  initial_prompt?: string | null
 }
 
 /** `POST /api/pty/sessions` — spawn a fresh PTY-backed claude session. */
