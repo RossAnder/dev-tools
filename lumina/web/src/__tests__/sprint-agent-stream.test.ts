@@ -458,3 +458,149 @@ describe('useSprintAgentStream quiescence-driven refresh', () => {
     expect(listCalls).toBe(1)
   })
 })
+
+// ---------------------------------------------------------------------------
+// 5. launch — launchSprint() + optimistic prepend + immediate stream attach +
+//    reconnect/refresh survival (PTY create emits no notify-bus event).
+// ---------------------------------------------------------------------------
+
+describe('useSprintAgentStream launch', () => {
+  test('launches via launchSprint, prepends optimistically, and streams it immediately', async () => {
+    // started_at LATER than the existing session so pickLatest favours it.
+    const existing = makeSession('s-old', { started_at: '2026-06-11T11:00:00Z' })
+    const launched = makeSession('s-launch', { started_at: '2026-06-11T14:00:00Z' })
+
+    let launchedWith: string | null = null
+    const openedIds: string[] = []
+    const mock = makeMockStream()
+
+    __setApiForTests({
+      listSessions: async () => [existing],
+      launchSprint: async (sprintId) => {
+        launchedWith = sprintId
+        return launched
+      },
+      openSessionStream: (id) => {
+        openedIds.push(id)
+        return mock
+      },
+    })
+
+    const composable = useSprintAgentStream()
+    await composable.bind('sp-1')
+    expect(composable.sessions.value).toEqual([existing])
+
+    const result = await composable.launch('sp-1')
+
+    expect(launchedWith).toBe('sp-1')
+    expect(result).toEqual(launched)
+    // Optimistically prepended (newest first).
+    expect(composable.sessions.value[0]?.id).toBe('s-launch')
+    expect(composable.sessions.value).toHaveLength(2)
+    // bind() attached to the prior latest (s-old); launch() then re-attached
+    // to the launched session, so it is the CURRENT stream.
+    expect(openedIds[openedIds.length - 1]).toBe('s-launch')
+
+    // A frame on the launched session's stream folds immediately.
+    mock.emit({
+      type: 'message',
+      sequence: 1,
+      kind: 'assistant_text',
+      content: { text: 'spawned output' },
+      raw_text: 'spawned output',
+      created_at: '2026-06-11T14:00:01Z',
+    })
+    expect(composable.liveMessages.value).toHaveLength(1)
+  })
+
+  test('a refresh that does not yet list the launched session keeps it pinned and the stream alive', async () => {
+    const fake = makeFakeStream()
+    __setStreamFactory(fake.factory)
+
+    const launched = makeSession('s-launch', { started_at: '2026-06-11T14:00:00Z' })
+    const openedIds: string[] = []
+    const mock = makeMockStream()
+
+    // The server list LAGS — PTY create emits no notify-bus event, so the
+    // ?sprint_id= list does not carry the launched session for a refresh cycle.
+    __setApiForTests({
+      listSessions: async () => [],
+      launchSprint: async () => launched,
+      openSessionStream: (id) => {
+        openedIds.push(id)
+        return mock
+      },
+    })
+
+    const composable = useSprintAgentStream()
+    await composable.bind('sp-1')
+    await composable.launch('sp-1')
+
+    expect(composable.sessions.value).toEqual([launched])
+    expect(openedIds).toEqual(['s-launch'])
+
+    // A quiescence-driven refresh fires while the list still lags.
+    fake.push(sprintQuiescenceTopic('sp-1'), {
+      type: 'data',
+      topic: sprintQuiescenceTopic('sp-1'),
+      data: snapshot({ in_progress: 1 }),
+    })
+    await Promise.resolve()
+
+    // The launched run survives: still listed, stream NOT bounced, still open.
+    expect(composable.sessions.value.some((s) => s.id === 's-launch')).toBe(true)
+    expect(mock.closed).toBe(false)
+    expect(openedIds).toEqual(['s-launch'])
+    expect(composable.status.value).toBe('open')
+  })
+
+  test('once the server list carries the launched session, the pin clears (no duplicate)', async () => {
+    const fake = makeFakeStream()
+    __setStreamFactory(fake.factory)
+
+    const launched = makeSession('s-launch', { started_at: '2026-06-11T14:00:00Z' })
+    let serverHasIt = false
+    const mock = makeMockStream()
+
+    __setApiForTests({
+      listSessions: async () => (serverHasIt ? [launched] : []),
+      launchSprint: async () => launched,
+      openSessionStream: () => mock,
+    })
+
+    const composable = useSprintAgentStream()
+    await composable.bind('sp-1')
+    await composable.launch('sp-1')
+    expect(composable.sessions.value).toEqual([launched])
+
+    // The correlated row now appears in the server list.
+    serverHasIt = true
+    fake.push(sprintQuiescenceTopic('sp-1'), {
+      type: 'data',
+      topic: sprintQuiescenceTopic('sp-1'),
+      data: snapshot({ in_progress: 1 }),
+    })
+    await Promise.resolve()
+
+    // Exactly one row — the real one supersedes the pinned optimistic one.
+    expect(composable.sessions.value).toHaveLength(1)
+    expect(composable.sessions.value[0]?.id).toBe('s-launch')
+  })
+
+  test('launch failure sets error and returns null without prepending', async () => {
+    __setApiForTests({
+      listSessions: async () => [],
+      launchSprint: async () => {
+        throw new Error('launch failed: boom')
+      },
+    })
+
+    const composable = useSprintAgentStream()
+    await composable.bind('sp-1')
+    const result = await composable.launch('sp-1')
+
+    expect(result).toBeNull()
+    expect(composable.error.value).toMatch(/boom/)
+    expect(composable.sessions.value).toHaveLength(0)
+  })
+})

@@ -319,6 +319,27 @@ export async function spawnSession(body: SpawnRequest): Promise<PtySession> {
   )
 }
 
+/**
+ * `POST /api/sprints/{sprint_id}/run` — launch a sprint by spawning a fresh
+ * PTY-backed orchestrator session seeded to drive the sprint to a recorded
+ * merge.
+ *
+ * The server responds 201 with a PtySession of the SAME wire shape the
+ * `POST /api/pty/sessions` spawn returns — so this reuses {@link PtySessionSchema}
+ * via the shared `handle()` validator rather than a bespoke mirror. The sprint
+ * id is path-borne; the body is empty.
+ */
+export async function launchSprint(sprintId: string): Promise<PtySession> {
+  return handle(
+    await fetch(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }),
+    PtySessionSchema,
+  )
+}
+
 /** `GET /api/pty/sessions/{id}` — one session row; 404 when absent. */
 export async function getSession(id: string): Promise<PtySession> {
   return handle(
