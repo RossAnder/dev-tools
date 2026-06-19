@@ -5417,3 +5417,328 @@ async fn block_finding_lifecycle_flow() {
         "the host story snapshot rendered (the escalation event is export-bearing on the story)"
     );
 }
+
+// =====================================================================
+// Sprint-launch endpoint (1B-F6 T3): POST /api/sprints/{id}/run
+// =====================================================================
+
+/// Minimal `Transport` for the launch e2e — returns a handle over dummy
+/// channels and never starts a child process (no real `claude`, no `pty_stub`).
+/// `spawn_pty_session_internal` only calls `.spawn(config)` once and then drives
+/// the persist / registry / bridge steps over the returned channels, so a stub
+/// that hands back live (if unused) channels exercises the launch handler's full
+/// path without the nested-claude binaries (which live in pty_e2e/conpty and are
+/// excluded from the quick profile; e2e.rs stays transport-mocked).
+struct LaunchMockTransport;
+
+#[async_trait::async_trait]
+impl lumina_server::pty::transport::Transport for LaunchMockTransport {
+    async fn spawn(
+        &self,
+        _config: lumina_server::pty::transport::SpawnConfig,
+    ) -> Result<lumina_server::pty::transport::TransportHandle, lumina_core::error::AppError> {
+        use lumina_core::protocol::{InputFrame, SessionId, TypedMessage};
+        use lumina_server::pty::transport::{SessionExit, TransportHandle};
+        use tokio::sync::{broadcast, mpsc, oneshot};
+        use tokio_util::sync::CancellationToken;
+
+        let session_id = SessionId(uuid::Uuid::now_v7());
+        // The pipeline drops `outbound` (step 5) and `completed` (step 6, no
+        // register_tx), so their peer halves dropping here is fine; nothing
+        // sends on `inbound` in this test (we assert the DB row, not dispatch).
+        let (_outbound_tx, outbound) = broadcast::channel::<TypedMessage>(8);
+        let (inbound, _inbound_rx) = mpsc::channel::<InputFrame>(8);
+        let (_completed_tx, completed) = oneshot::channel::<SessionExit>();
+        Ok(TransportHandle {
+            session_id,
+            outbound,
+            inbound,
+            shutdown: CancellationToken::new(),
+            completed,
+        })
+    }
+}
+
+/// Build an `AppState` over `pool` with the launch mock transport swapped in.
+/// `connect_companion` marks the in-memory `CompanionRegistry` connected via the
+/// PUBLIC `register` slot-claim (exactly what the WS handler does) — the launch
+/// endpoint's pre-flight (4) reads `companion.is_connected()`. The returned
+/// `mpsc::Receiver` keepalive must outlive the state so the registry slot's
+/// sender stays valid for the test's duration.
+fn launch_state(
+    pool: &Arc<lumina_core::db::AnyPool>,
+    connect_companion: bool,
+) -> (
+    AppState,
+    Option<tokio::sync::mpsc::Receiver<lumina_protocol::ServerToCompanion>>,
+) {
+    let mut state = AppState::new(pool.clone());
+    state.pty_transport = Arc::new(LaunchMockTransport);
+    let keepalive = if connect_companion {
+        let (tx, rx) = tokio::sync::mpsc::channel::<lumina_protocol::ServerToCompanion>(8);
+        state
+            .companion
+            .register(tx, "/tmp/launch-e2e-repo".to_owned())
+            .expect("claim the companion slot (registry starts empty)");
+        assert!(state.companion.is_connected(), "registry now reports connected");
+        Some(rx)
+    } else {
+        None
+    };
+    (state, keepalive)
+}
+
+/// `oneshot` a `POST /api/sprints/{sprint_id}/run` against `state`, injecting
+/// `peer` as the request's `ConnectInfo<SocketAddr>` via `MockConnectInfo`
+/// (`tower::ServiceExt::oneshot` does NOT populate connect-info — the handler
+/// would otherwise 500 on the missing extension). An empty JSON body.
+async fn post_run(
+    state: AppState,
+    sprint_id: &str,
+    peer: std::net::SocketAddr,
+) -> axum::response::Response {
+    use axum::extract::connect_info::MockConnectInfo;
+    build_router(state)
+        .layer(MockConnectInfo(peer))
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/sprints/{sprint_id}/run"))
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot POST /api/sprints/{id}/run")
+}
+
+/// The launch-endpoint thread: one Ready sprint with an on-disk worktree under
+/// `LUMINA_WORKTREE_ROOT`, exercised through every pre-flight gate — 201 happy
+/// path + the five fail-closed rejections (403/404/422/409/502), each asserting
+/// the structured `{"error":{"kind","message"}}` envelope. All six cases run in
+/// ONE test function (one process) so the single `LUMINA_WORKTREE_ROOT` mutation
+/// is never observed concurrently by a sibling case.
+#[tokio::test]
+async fn full_thread_launch_sprint_run_endpoint() {
+    let loopback: std::net::SocketAddr = "127.0.0.1:54321".parse().unwrap();
+    let non_loopback: std::net::SocketAddr = "10.0.0.1:54321".parse().unwrap();
+
+    // ---- Worktree-root confinement: a real on-disk dir under a tempdir root.
+    // `resolve_and_validate_cwd` canonicalises the worktree path (so it must
+    // EXIST) and requires it to live under `LUMINA_WORKTREE_ROOT`. Create both
+    // and point the env var at the root.
+    let root = tempfile::tempdir().expect("worktree-root tempdir");
+    let worktree_path = root.path().join("sprint-wt");
+    std::fs::create_dir_all(&worktree_path).expect("create the on-disk worktree dir");
+    // SAFETY: nextest runs each test in its own process by default
+    // (`lumina/.config/nextest.toml::default`), so this mutation is observable
+    // only by this test; and all six cases below run in THIS one function, so
+    // there is no intra-test concurrent reader either. (Mirrors the
+    // `auq_e2e.rs` / `pty_e2e.rs` LUMINA_WORKTREE_ROOT precedent.)
+    unsafe {
+        std::env::set_var("LUMINA_WORKTREE_ROOT", root.path());
+    }
+
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+
+    // ---- Seed a READY sprint owning the on-disk worktree. ----
+    let sprint_id = lumina_core::repo::create_sprint(
+        &pool,
+        &lumina_core::domain::NewSprint {
+            title: Some("launch-e2e".to_owned()),
+            worktree_id: None,
+            predecessor_sprint_id: None,
+        },
+    )
+    .await
+    .expect("create sprint")
+    .to_string();
+    lumina_core::repo::create_worktree(
+        &pool,
+        &lumina_core::domain::NewWorktree {
+            owning_sprint_id: sprint_id.clone(),
+            path: worktree_path.to_string_lossy().into_owned(),
+            base_ref: Some("main".to_owned()),
+            branch: Some("sprint/launch-e2e".to_owned()),
+        },
+    )
+    .await
+    .expect("create worktree owned by the sprint");
+    // draft → ready (NOT active): the launch endpoint accepts Ready, and the
+    // /lumina:run-sprint skill ladders ready→active itself.
+    lumina_core::repo::set_sprint_status(&pool, &sprint_id, lumina_core::domain::SprintStatus::Ready)
+        .await
+        .expect("draft → ready");
+
+    // =================================================================
+    // 403 — non-loopback peer is refused FIRST, before any pre-flight.
+    // =================================================================
+    {
+        let (state, _ka) = launch_state(&pool, true);
+        let resp = post_run(state, &sprint_id, non_loopback).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "a non-loopback peer is refused 403"
+        );
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "forbidden");
+        assert!(
+            body["error"]["message"].as_str().unwrap().contains("loopback"),
+            "the 403 envelope explains the loopback-only posture, got {body}"
+        );
+    }
+
+    // =================================================================
+    // 404 — a missing sprint (loopback passes; pre-flight 2 fails).
+    // =================================================================
+    {
+        let (state, _ka) = launch_state(&pool, true);
+        let resp = post_run(state, "no-such-sprint", loopback).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "a missing sprint is 404");
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "not_found");
+    }
+
+    // =================================================================
+    // 422 — a NOT-RUNNABLE sprint (Draft): pre-flight 3 fails. A fresh
+    // draft sprint never reaches the companion/cwd gates.
+    // =================================================================
+    {
+        let draft_sprint = lumina_core::repo::create_sprint(
+            &pool,
+            &lumina_core::domain::NewSprint {
+                title: Some("still-draft".to_owned()),
+                worktree_id: None,
+                predecessor_sprint_id: None,
+            },
+        )
+        .await
+        .expect("create draft sprint")
+        .to_string();
+        let (state, _ka) = launch_state(&pool, true);
+        let resp = post_run(state, &draft_sprint, loopback).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a Draft sprint is not runnable → 422"
+        );
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "validation");
+    }
+
+    // =================================================================
+    // 502 — NO companion connected (pre-flight 4 fails), checked before
+    // any spawn. The sprint is Ready, so it clears gates 2 + 3 first.
+    // =================================================================
+    {
+        let (state, _ka) = launch_state(&pool, false); // companion NOT connected
+        assert!(!state.companion.is_connected(), "companion is disconnected for the 502 case");
+        let resp = post_run(state, &sprint_id, loopback).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::BAD_GATEWAY,
+            "no git companion connected → 502 (the execution plane is unavailable)"
+        );
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "companion");
+    }
+
+    // =================================================================
+    // 201 — HAPPY PATH. Ready sprint + connected companion + an on-disk,
+    // root-confined worktree → 201 + a `pty_sessions` row that is
+    // source='spawned', mode='autonomous', correlated to the sprint.
+    // Run BEFORE the 409 case so this is the first (and only) live
+    // orchestrator for the sprint.
+    // =================================================================
+    let spawned_session_id = {
+        let (state, _ka) = launch_state(&pool, true);
+        let resp = post_run(state, &sprint_id, loopback).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::CREATED,
+            "a runnable sprint with a connected companion + valid worktree launches → 201"
+        );
+        let body = json_body(resp).await;
+        let session_id = body["id"].as_str().expect("201 returns a PtySession with an id").to_owned();
+        // cwd is the sprint's worktree path (canonicalised; compare the tail
+        // case-insensitively for Windows verbatim-prefix robustness).
+        let cwd = body["cwd"].as_str().expect("the session carries a cwd");
+        assert!(
+            cwd.to_ascii_lowercase().replace('\\', "/").ends_with("sprint-wt"),
+            "the spawned session's cwd is the sprint worktree, got {cwd:?}"
+        );
+
+        // The persisted row: source='spawned' (set by create_pty_session's
+        // spawn provenance), mode='autonomous' (stamped at spawn — a lumina
+        // launch is autonomous by construction), and sprint_id correlated
+        // (eagerly stamped by the launch handler post-spawn).
+        let (source, mode, corr_sprint): (Option<String>, Option<String>, Option<String>) =
+            sqlx::query_as("SELECT source, mode, sprint_id FROM pty_sessions WHERE id = ?1")
+                .bind(&session_id)
+                .fetch_one(pool.sqlite())
+                .await
+                .expect("read the spawned pty_sessions row");
+        assert_eq!(source.as_deref(), Some("spawned"), "a launched session has source='spawned'");
+        assert_eq!(mode.as_deref(), Some("autonomous"), "a launched session has mode='autonomous'");
+        assert_eq!(
+            corr_sprint.as_deref(),
+            Some(sprint_id.as_str()),
+            "the launch eagerly correlates the session to its sprint"
+        );
+
+        // The first prompt was enqueued as the session's seed input:
+        // `/lumina:run-sprint <sprint_id>` + the trailing-\n submit marker.
+        let payload: String = sqlx::query_scalar(
+            "SELECT payload FROM pty_queue WHERE session_id = ?1 ORDER BY sequence ASC LIMIT 1",
+        )
+        .bind(&session_id)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("the seed prompt was enqueued");
+        assert_eq!(
+            payload,
+            format!("/lumina:run-sprint {sprint_id}\n"),
+            "the seed prompt is /lumina:run-sprint <id> with the submit marker"
+        );
+
+        session_id
+    };
+
+    // =================================================================
+    // 409 — a second launch while the first orchestrator is still LIVE
+    // (the row above is status='idle', non-terminal) → the
+    // one-orchestrator-per-sprint interlock refuses (pre-flight 5).
+    // =================================================================
+    {
+        // Sanity: the prior launch's session is live (non-terminal).
+        let status: String = sqlx::query_scalar("SELECT status FROM pty_sessions WHERE id = ?1")
+            .bind(&spawned_session_id)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("read the spawned session status");
+        assert!(
+            !matches!(status.as_str(), "completed" | "failed" | "cancelled"),
+            "the first orchestrator is still live (status={status}), so the interlock should fire"
+        );
+
+        let (state, _ka) = launch_state(&pool, true);
+        let resp = post_run(state, &sprint_id, loopback).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::CONFLICT,
+            "a second launch while an orchestrator is live → 409 (one-orchestrator interlock)"
+        );
+        let body = json_body(resp).await;
+        assert_eq!(body["error"]["kind"], "conflict");
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(&spawned_session_id),
+            "the 409 names the already-running session, got {body}"
+        );
+    }
+}
