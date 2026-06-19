@@ -298,6 +298,13 @@ export interface SpawnRequest {
   env_passthrough_otel?: boolean
   settings_json?: string | null
   prompt_pattern?: string | null
+  /**
+   * Optional first prompt to seed once the session is live (mirrors the Rust
+   * `SpawnSessionBody.initial_prompt`). A launch affordance sets this so a
+   * spawned orchestrator runs e.g. `/lumina:run-sprint <id>` as its first
+   * message; the server enqueues it as the session's first `prompt` input.
+   */
+  initial_prompt?: string | null
 }
 
 /** `POST /api/pty/sessions` — spawn a fresh PTY-backed claude session. */
@@ -307,6 +314,27 @@ export async function spawnSession(body: SpawnRequest): Promise<PtySession> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+    }),
+    PtySessionSchema,
+  )
+}
+
+/**
+ * `POST /api/sprints/{sprint_id}/run` — launch a sprint by spawning a fresh
+ * PTY-backed orchestrator session seeded to drive the sprint to a recorded
+ * merge.
+ *
+ * The server responds 201 with a PtySession of the SAME wire shape the
+ * `POST /api/pty/sessions` spawn returns — so this reuses {@link PtySessionSchema}
+ * via the shared `handle()` validator rather than a bespoke mirror. The sprint
+ * id is path-borne; the body is empty.
+ */
+export async function launchSprint(sprintId: string): Promise<PtySession> {
+  return handle(
+    await fetch(`${API_BASE}/sprints/${encodeURIComponent(sprintId)}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
     }),
     PtySessionSchema,
   )

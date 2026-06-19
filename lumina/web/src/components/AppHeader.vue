@@ -1,5 +1,7 @@
 <script setup vapor lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useSprints } from '@/composables/useSprints'
+import { useSprintAgentStream } from '@/composables/useSprintAgentStream'
 
 // Refreshes every 60 s so the date pill stays current across midnight.
 function formatToday(): string {
@@ -17,6 +19,29 @@ onMounted(() => {
 onUnmounted(() => {
   if (intervalId !== null) clearInterval(intervalId)
 })
+
+// Launch control (fills the former "sprint composer / agent backend"
+// placeholder). The selected sprint is the cross-app selection seam
+// (`useSprints().selectedSprintId`); launching spawns its orchestrator session
+// via the module-singleton agent stream, which optimistically surfaces the run
+// in [05 / AGENT STREAM] without waiting on a refresh (PTY create emits no
+// notify-bus event).
+const { selectedSprintId } = useSprints()
+const { launch } = useSprintAgentStream()
+
+const launching = ref(false)
+const canLaunch = computed(() => selectedSprintId.value !== null && !launching.value)
+
+async function onLaunch(): Promise<void> {
+  const id = selectedSprintId.value
+  if (id === null || launching.value) return
+  launching.value = true
+  try {
+    await launch(id)
+  } finally {
+    launching.value = false
+  }
+}
 </script>
 
 <template>
@@ -54,11 +79,17 @@ onUnmounted(() => {
 
     <!-- Pills (right) -->
     <div class="flex items-center gap-[18px] font-mono text-[11px] tracking-[0.1em] text-[var(--muted)]">
-      <!-- deferred: sprint composer / agent backend -->
-      <span
-        class="flex items-center px-2.5 py-[5px] border border-[var(--border)] rounded-full bg-[var(--surface)] text-[var(--faint)]">
-        DRAFT
-      </span>
+      <!-- Launch the selected sprint (fills the former sprint composer /
+           agent backend placeholder). Disabled until a sprint is selected. -->
+      <button
+        type="button"
+        :disabled="!canLaunch"
+        :aria-label="selectedSprintId === null ? 'Select a sprint to launch' : 'Launch selected sprint'"
+        :title="selectedSprintId === null ? 'Select a sprint to launch' : 'Launch selected sprint'"
+        class="flex items-center px-2.5 py-[5px] border rounded-full font-mono text-[11px] tracking-[0.1em] transition-colors disabled:cursor-not-allowed disabled:border-[var(--border)] disabled:bg-[var(--surface)] disabled:text-[var(--faint)] border-[var(--accent)] bg-[var(--surface)] text-accent hover:bg-[var(--accent)] hover:text-[var(--bg)]"
+        @click="onLaunch">
+        {{ launching ? 'LAUNCHING…' : 'LAUNCH' }}
+      </button>
       <!-- deferred: live agent count from agent runtime -->
       <span
         class="flex items-center px-2.5 py-[5px] border border-[var(--border)] rounded-full bg-[var(--surface)] text-[var(--faint)]">

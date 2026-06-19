@@ -122,11 +122,13 @@ type Api = {
   listSessions: typeof productionApi.listSessions
   getMessages: typeof productionApi.getMessages
   openSessionStream: typeof productionApi.openSessionStream
+  launchSprint: typeof productionApi.launchSprint
 }
 let api: Api = {
   listSessions: productionApi.listSessions,
   getMessages: productionApi.getMessages,
   openSessionStream: productionApi.openSessionStream,
+  launchSprint: productionApi.launchSprint,
 }
 
 /** Replace API adapter entries. Test-only — do NOT call from production code. */
@@ -146,10 +148,12 @@ export function __resetForTests(): void {
   status.value = 'idle'
   error.value = null
   loadToken = 0
+  launchedSession = null
   api = {
     listSessions: productionApi.listSessions,
     getMessages: productionApi.getMessages,
     openSessionStream: productionApi.openSessionStream,
+    launchSprint: productionApi.launchSprint,
   }
 }
 
@@ -165,6 +169,22 @@ let streamSessionId: string | null = null
 
 /** Request-id token for {@link loadForSprint}. See the file-header comment. */
 let loadToken = 0
+
+/**
+ * The session optimistically prepended by {@link useSprintAgentStream.launch},
+ * pinned until the server's session list catches up.
+ *
+ * PTY session creation emits NO `events` row (see the file-header comment), so
+ * a launched session is invisible to the quiescence-driven `loadForSprint`
+ * refresh until claim/complete activity correlates it onto the sprint's
+ * `?sprint_id=` filter. Without this pin a refresh firing in that window — or a
+ * transient stream reconnect that triggers one — would drop the just-launched
+ * run from the list and tear its stream down, rendering the live run as gone.
+ * `loadForSprint` therefore RE-MERGES this row (and keeps it the latest, so the
+ * stream stays attached) until a fetched list actually contains it, at which
+ * point the real row supersedes the optimistic one and the pin clears.
+ */
+let launchedSession: PtySession | null = null
 
 // ---------------------------------------------------------------------------
 // Internal helpers.
@@ -317,9 +337,23 @@ async function loadForSprint(sprintId: string): Promise<void> {
   // inflight. Discard this stale result.
   if (token !== loadToken) return
 
-  sessions.value = fetched
+  // Reconcile the optimistic launch pin (see `launchedSession`): if a launch
+  // is pinned and the server list does NOT yet carry it, re-merge it at the
+  // front so the just-launched run survives this refresh; once the fetched
+  // list DOES carry it, the real row supersedes the optimistic one and the
+  // pin clears.
+  let rows = fetched
+  if (launchedSession !== null) {
+    const pinned = launchedSession
+    if (fetched.some((s) => s.id === pinned.id)) {
+      launchedSession = null
+    } else {
+      rows = [pinned, ...fetched]
+    }
+  }
+  sessions.value = rows
 
-  const latest = pickLatest(fetched)
+  const latest = pickLatest(rows)
   if (latest === null) {
     // No sessions for this sprint (yet) — the quiescence-driven refresh
     // re-runs us when correlated activity lands.
@@ -336,20 +370,37 @@ async function loadForSprint(sprintId: string): Promise<void> {
     return
   }
 
+  attachStream(latest.id)
+}
+
+/**
+ * Tear down any existing stream and attach a fresh one to `sessionId`,
+ * folding inbound `message` frames into {@link liveMessages}. Sets
+ * `status='open'` on success, `status='error'` if the open throws. Shared by
+ * {@link loadForSprint} (latest-session attach) and the launch path (immediate
+ * attach to a just-spawned session that the server list does not yet carry).
+ *
+ * `openSessionStream` itself owns transport-level RECONNECT (exponential
+ * back-off on an unexpected socket close — see `../api/pty.ts`); a reconnect
+ * re-subscribes the same `sessionId` under the existing handler registry, so
+ * folded frames resume without re-attaching here. This helper is the
+ * session-SWITCH path, not the socket-drop path.
+ */
+function attachStream(sessionId: string): void {
   teardownStream()
   liveMessages.value = []
 
   try {
-    const fresh = api.openSessionStream(latest.id)
+    const fresh = api.openSessionStream(sessionId)
     stream = fresh
-    streamSessionId = latest.id
+    streamSessionId = sessionId
 
     fresh.on('message', (frame) => {
       if (frame.type !== 'message') return
       // The stream may have been superseded by the time a frame arrives —
       // only fold while this session is still the streamed one.
-      if (streamSessionId !== latest.id) return
-      const row = messageFromFrame(latest.id, frame)
+      if (streamSessionId !== sessionId) return
+      const row = messageFromFrame(sessionId, frame)
       // Drop frames whose `kind` isn't one of the six known JSONL-tail
       // values — the wire schema is intentionally wider than the row
       // schema for forward-compat, so unknown kinds are not an error.
@@ -397,10 +448,48 @@ export function useSprintAgentStream() {
       teardownStream()
       sessions.value = []
       liveMessages.value = []
+      // A launch pin belongs to the sprint it was launched for; drop it on a
+      // sprint switch so a stale optimistic row never leaks into another
+      // sprint's view.
+      launchedSession = null
       boundSprintId.value = sprintId
     }
     telemetry.connect()
     await loadForSprint(sprintId)
+  }
+
+  /**
+   * Launch the bound sprint: spawn its orchestrator session via
+   * `POST /api/sprints/{id}/run` and surface the run IMMEDIATELY.
+   *
+   * PTY session creation emits no notify-bus event, so the quiescence-driven
+   * refresh won't auto-show the spawned session; this therefore (1) prepends
+   * the returned session to {@link sessions} optimistically, (2) pins it via
+   * {@link launchedSession} so a refresh in the catch-up window keeps it, and
+   * (3) attaches the live WS stream to it directly so its output streams from
+   * the first frame. Returns the spawned session, or `null` on failure (with
+   * `error.value` set) — mirroring `usePtySessions.spawn`'s null-on-failure.
+   *
+   * Idempotency note: pass the SELECTED sprint id; the server owns
+   * already-running guards. The optimistic prepend de-dupes on id so a
+   * subsequent server refresh that returns the same row does not double it.
+   */
+  async function launch(sprintId: string): Promise<PtySession | null> {
+    error.value = null
+    let created: PtySession
+    try {
+      created = await api.launchSprint(sprintId)
+    } catch (e) {
+      error.value = toMessage(e)
+      return null
+    }
+
+    // Pin + optimistically prepend (de-duping on id), then attach the live
+    // stream to the freshly-spawned session so it streams from the start.
+    launchedSession = created
+    sessions.value = [created, ...sessions.value.filter((s) => s.id !== created.id)]
+    attachStream(created.id)
+    return created
   }
 
   /**
@@ -425,6 +514,7 @@ export function useSprintAgentStream() {
     teardownStream()
     telemetry.disconnect()
     boundSprintId.value = null
+    launchedSession = null
     status.value = 'closed'
   }
 
@@ -446,6 +536,7 @@ export function useSprintAgentStream() {
     status,
     error,
     bind,
+    launch,
     loadForSprint,
     openTranscript,
     disconnect,

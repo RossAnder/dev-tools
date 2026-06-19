@@ -29,6 +29,14 @@ pub struct SpawnConfig {
     pub model: Option<String>,
     pub env_passthrough_otel: bool,
     pub settings_json: Option<String>,
+    /// Optional first prompt to seed once the session is live. When `Some`,
+    /// `spawn_pty_session_internal` enqueues it as a `prompt` input after the
+    /// session flips to `Idle`, so the supervisor dispatches it through the
+    /// normal input bridge (separate-Enter submission path included — see
+    /// `spawn::spawn_pty_session_internal`). `#[serde(default)]` keeps older
+    /// `config_json` snapshots (and callers that omit it) deserialising.
+    #[serde(default)]
+    pub initial_prompt: Option<String>,
 }
 
 /// Terminal exit summary for a transport session. `code` is the process exit
