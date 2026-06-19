@@ -545,7 +545,7 @@ mod tests {
     use super::*;
     use crate::db::AnyPool;
     use crate::db::connect_in_memory;
-    use crate::domain::Lane;
+    use crate::domain::{Lane, Severity};
     use crate::repo::test_support::*;
     use sqlx::SqlitePool;
 
@@ -870,6 +870,85 @@ mod tests {
             !q.done,
             "AC6: a sprint with a review-state task is NOT done (review folds into total)"
         );
+    }
+
+    /// (1B-F4) A SERIOUS (`critical`/`major`), still-OPEN review finding on a
+    /// sprint task keeps the sprint `blocked` and forces `done=false` — EVEN when
+    /// every task is terminal. `blocked` is an ORTHOGONAL overlay: unlike the five
+    /// partition buckets it is NOT folded into `total`, so its ONLY roll-up effect
+    /// is to gate `done` while a serious finding is open. Resolving the finding
+    /// (here: superseding it) clears `blocked` and lets `done` read true again.
+    #[tokio::test]
+    async fn quiescence_blocked_by_serious_finding_keeps_done_false() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_chain_to_story(&pool).await;
+        let sprint = seed_sprint(&pool).await;
+        activate_sprint(&pool, &sprint).await;
+
+        // A single task, driven to a TERMINAL state. With no finding the sprint is
+        // trivially done (every task terminal) and NOT blocked — the baseline.
+        let task =
+            seed_queue_task(&pool, &story, &sprint, "TASK", Some("implement"), Some("deep")).await;
+        sqlx::query("UPDATE work_items SET status = 'done' WHERE id = $1")
+            .bind(&task)
+            .execute(&pool)
+            .await
+            .expect("mark done");
+
+        let baseline = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence with no findings");
+        assert_eq!(baseline.terminal, 1, "the only task is terminal");
+        assert_eq!(baseline.blocked_by_finding, 0, "no serious finding ⇒ zero block count");
+        assert!(!baseline.blocked, "no serious finding ⇒ not blocked");
+        assert!(baseline.done, "all-terminal, unblocked sprint is done");
+
+        // Record a LIVE (no supersession), unresolved (no resolved_at) CRITICAL
+        // finding on the terminal task via the same repo path production uses.
+        let finding = create_finding(
+            &db,
+            &task,
+            &NewFinding {
+                severity: Some(Severity::Critical),
+                summary: Some("blocking review finding"),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create critical finding")
+        .to_string();
+
+        let blocked_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence with an open serious finding");
+        assert!(
+            blocked_q.blocked_by_finding >= 1,
+            "the task carrying a serious open finding is counted"
+        );
+        assert!(blocked_q.blocked, "a serious open finding blocks the sprint");
+        assert!(
+            !blocked_q.done,
+            "1B-F4: a serious open finding keeps the sprint NOT done even though every task is terminal"
+        );
+        // The terminal partition count is unchanged — `blocked` is orthogonal, not
+        // a sixth partition bucket.
+        assert_eq!(blocked_q.terminal, 1, "blocked overlay does not move the terminal count");
+
+        // Resolve the block by SUPERSEDING the finding (it is no longer LIVE):
+        // `blocked` clears and `done` reads true again.
+        sqlx::query("UPDATE findings SET superseded_by = $1 WHERE id = $1")
+            .bind(&finding)
+            .execute(&pool)
+            .await
+            .expect("supersede the finding");
+
+        let cleared_q = get_sprint_quiescence(&db, &sprint)
+            .await
+            .expect("quiescence after the finding is superseded");
+        assert_eq!(cleared_q.blocked_by_finding, 0, "a superseded finding no longer blocks");
+        assert!(!cleared_q.blocked, "no LIVE serious finding ⇒ not blocked");
+        assert!(cleared_q.done, "with the block cleared the all-terminal sprint is done again");
     }
 
     /// (1B-F9 M3 / AC8) An UNCLAIMED review-state task with nothing else
