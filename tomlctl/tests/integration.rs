@@ -31,7 +31,50 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 mod common;
-use common::{assert_sidecar_matches, ids_from, run_list_query, seed_ledger};
+use common::{
+    assert_sidecar_matches, ids_from, parse_json_error_envelope, run_list_query, seed_ledger,
+};
+
+/// R9: parse a write-success envelope (`{"ok":true,"created":<bool>,"path":<file>,…}`)
+/// from `stdout` and return it as a typed `serde_json::Value`. Replaces the
+/// loose `stdout.contains(r#""created":true"#)` / `contains(r#""path":"#)`
+/// substring asserts on the T2 created/path tests — those pass even when
+/// `path` is empty or the shape has drifted. Mirrors the parsed-JSON pattern
+/// in `tomlctl/tests/render_progress_log.rs` (`serde_json::from_str` +
+/// `as_bool`/`as_u64`).
+fn parse_write_envelope(stdout: &str) -> serde_json::Value {
+    serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("write-success stdout must be a JSON envelope: {e}; got: {stdout}"))
+}
+
+/// R9: assert a write-success envelope reports the expected `created` bool and
+/// carries a non-empty `path` string ending in `expected_filename`. The
+/// filename-suffix check is what the old `contains(r#""path":"#)` substring
+/// missed — it accepted an empty or malformed path.
+fn assert_write_envelope(stdout: &str, expected_created: bool, expected_filename: &str) {
+    let v = parse_write_envelope(stdout);
+    assert_eq!(
+        v["ok"].as_bool(),
+        Some(true),
+        "envelope must report ok:true; got: {stdout}"
+    );
+    assert_eq!(
+        v["created"].as_bool(),
+        Some(expected_created),
+        "envelope must report created:{expected_created}; got: {stdout}"
+    );
+    let path = v["path"]
+        .as_str()
+        .unwrap_or_else(|| panic!("envelope `path` must be a string; got: {stdout}"));
+    assert!(
+        !path.is_empty(),
+        "envelope `path` must be non-empty; got: {stdout}"
+    );
+    assert!(
+        path.ends_with(expected_filename),
+        "envelope `path` must end with `{expected_filename}`; got path {path:?} in: {stdout}"
+    );
+}
 
 /// R58 coverage: `tomlctl items next-id` on a missing ledger must return
 /// `<prefix>1` without parsing anything. This exercises the early-return path
@@ -1490,10 +1533,10 @@ fn write_under_claude_auto_creates_missing_parent_dirs() {
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
-    assert!(
-        stdout.contains(r#""created":true"#),
-        "auto-create must report created:true; got stdout: {stdout}"
-    );
+    // R9: parsed-JSON typed assertion on the envelope (created bool + a
+    // non-empty path ending in the target filename) rather than a loose
+    // substring match that would accept an empty/malformed path.
+    assert_write_envelope(&stdout, true, "execution-record.toml");
     assert!(
         !stderr.contains("parent directory") && !stderr.contains("canonicalising write target"),
         "pre-fix error must not re-appear; got stderr: {stderr}"
@@ -1531,11 +1574,16 @@ fn write_outside_claude_does_not_auto_create_parent_dirs() {
         .unwrap()
         .env("TOMLCTL_ROOT", dir.path())
         .env("TOMLCTL_LOCK_TIMEOUT", "5")
-        .arg("--allow-outside")
         .arg("set")
         .arg(&outside_target)
         .arg("schema_version")
         .arg("1")
+        // R24: `--allow-outside` is a per-subcommand `WriteIntegrityArgs`
+        // flag, so it MUST follow the `set` positionals. Placed before the
+        // subcommand it is rejected by clap (exit 2, "unexpected argument")
+        // and the `.failure()` below would pass for the wrong reason —
+        // never exercising the write-path containment it documents.
+        .arg("--allow-outside")
         .write_stdin("")
         .assert()
         .failure();
@@ -1746,14 +1794,10 @@ fn items_add_to_missing_ledger_reports_created_true() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    assert!(
-        stdout.contains(r#""created":true"#),
-        "first add to a missing ledger must report created:true; got: {stdout}"
-    );
-    assert!(
-        stdout.contains(r#""path":"#),
-        "envelope must carry a `path` field; got: {stdout}"
-    );
+    // R9: parsed-JSON typed assertion — created:true AND a non-empty `path`
+    // ending in the ledger filename. The old `contains(r#""path":"#)` accepted
+    // an empty or malformed path; this pins the real shape.
+    assert_write_envelope(&stdout, true, "review-ledger.toml");
 
     // The seeded file exists and carries the recognised-flow-file skeleton.
     let on_disk = fs::read_to_string(&ledger).expect("seeded ledger must exist on disk");
@@ -1796,18 +1840,14 @@ fn items_add_to_existing_ledger_reports_created_false() {
     // First add seeds the file.
     let first = run_add(r#"{"id":"R1","status":"open"}"#);
     let first_stdout = String::from_utf8_lossy(&first.get_output().stdout).to_string();
-    assert!(
-        first_stdout.contains(r#""created":true"#),
-        "first add must report created:true; got: {first_stdout}"
-    );
+    // R9: parsed-JSON typed assertion (created bool + path-suffix) instead of
+    // a loose substring match.
+    assert_write_envelope(&first_stdout, true, "review-ledger.toml");
 
     // Second add to the now-existing file must report created:false.
     let second = run_add(r#"{"id":"R2","status":"open"}"#);
     let second_stdout = String::from_utf8_lossy(&second.get_output().stdout).to_string();
-    assert!(
-        second_stdout.contains(r#""created":false"#),
-        "second add to an existing ledger must report created:false; got: {second_stdout}"
-    );
+    assert_write_envelope(&second_stdout, false, "review-ledger.toml");
 }
 
 /// T2 (c) REGRESSION: a write to a PRE-EXISTING ledger reports
@@ -1857,12 +1897,23 @@ fn write_to_existing_ledger_created_false_and_byte_identical_on_noop() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    assert!(
-        stdout.contains(r#""created":false"#),
+    // R9: parsed-JSON typed assertion on the created/path envelope. The
+    // `added` field is dedupe-add-specific (not part of the created/path
+    // shape), so it stays a typed field assertion alongside.
+    let env = parse_write_envelope(&stdout);
+    assert_eq!(
+        env["ok"].as_bool(),
+        Some(true),
+        "no-op dedupe add must report ok:true; got: {stdout}"
+    );
+    assert_eq!(
+        env["created"].as_bool(),
+        Some(false),
         "no-op dedupe add to existing ledger must report created:false; got: {stdout}"
     );
-    assert!(
-        stdout.contains(r#""added":0"#),
+    assert_eq!(
+        env["added"].as_u64(),
+        Some(0),
         "dedupe hit must report added:0; got: {stdout}"
     );
 
@@ -1979,5 +2030,217 @@ fn created_stderr_guidance_fires_only_on_creation() {
     assert!(
         stderr3.contains("created new file") && !stderr3.contains("(schema_version=1)"),
         "arbitrary .toml creation must emit guidance WITHOUT the schema suffix; got: {stderr3}"
+    );
+}
+
+// ===== R10: `--no-create` end-to-end ===============================
+//
+// T1 maps `--no-create` to `OnMissing::Error` (dispatch::on_missing_for). The
+// clap-acceptance layer and the io.rs `read_or_seed`/`mutate_doc` primitive
+// are unit-tested in isolation; this drives the BUILT binary so the wiring
+// `--no-create → OnMissing::Error → kind=not_found, no file persisted` is
+// covered end-to-end through the real dispatch path.
+
+/// R10: `items add <missing-ledger> --json … --no-create` must FAIL with the
+/// NotFound error and leave NO stray file on disk. We assert the typed error
+/// kind (`kind=not_found`, the closed taxonomy `io::read_toml` tags a missing
+/// file with) via `--error-format json`, which is the most shape-stable
+/// surface; the message also names the missing path, which the JSON envelope's
+/// `file` field carries.
+#[test]
+fn items_add_no_create_against_missing_ledger_errors_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("review-ledger.toml");
+    assert!(!ledger.exists(), "precondition: ledger must not exist yet");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("--error-format")
+        .arg("json")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","status":"open"}"#)
+        .arg("--no-create")
+        .write_stdin("")
+        .assert()
+        .failure();
+
+    // (a) The error is tagged `not_found` and names the missing ledger.
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(
+        err["kind"].as_str(),
+        Some("not_found"),
+        "--no-create against a missing ledger must surface kind=not_found; got: {stderr}"
+    );
+    let file = err["file"]
+        .as_str()
+        .expect("not_found envelope must carry the missing path in `file`");
+    assert!(
+        file.ends_with("review-ledger.toml"),
+        "error `file` must name the missing ledger; got {file:?} in: {stderr}"
+    );
+
+    // (b) No stray file was seeded — `OnMissing::Error` short-circuits before
+    // any persist.
+    assert!(
+        !ledger.exists(),
+        "--no-create must NOT leave a stray seeded file on disk"
+    );
+}
+
+// ===== R11: `mutate_doc_plan` created-reporting ====================
+//
+// The `items apply` / `items remove` write verbs route through
+// `io::mutate_doc_plan` (a distinct entrypoint from `items add`'s `mutate_doc`).
+// T2's `created` reporting must surface through THAT path too: an `apply` batch
+// carrying an `add` op against a MISSING recognised flow file seeds the file
+// (`created:true`) and lands `schema_version = 1` on disk.
+
+/// R11: `items apply --ops '[{"op":"add",…}]'` against a MISSING `review-ledger.toml`
+/// reports `created:true` through `mutate_doc_plan` and seeds the file with
+/// `schema_version = 1` plus the added row. Parsed-JSON envelope assertions
+/// (per R9).
+#[test]
+fn items_apply_add_op_to_missing_ledger_reports_created_true_via_mutate_doc_plan() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("review-ledger.toml");
+    assert!(!ledger.exists(), "precondition: ledger must not exist yet");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("apply")
+        .arg(&ledger)
+        .arg("--ops")
+        .arg(r#"[{"op":"add","json":{"id":"R1","status":"open"}}]"#)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    // R9-style parsed-JSON envelope: created:true + a path ending in the ledger
+    // filename, proving the `created` signal surfaces through mutate_doc_plan.
+    assert_write_envelope(&stdout, true, "review-ledger.toml");
+
+    // The seeded file carries the recognised-flow-file skeleton and the add.
+    let on_disk = fs::read_to_string(&ledger).expect("seeded ledger must exist on disk");
+    assert!(
+        on_disk.contains("schema_version = 1"),
+        "apply-seeded review-ledger must carry schema_version = 1; got: {on_disk}"
+    );
+    assert!(
+        on_disk.contains(r#"id = "R1""#),
+        "the applied add op must be persisted; got: {on_disk}"
+    );
+    assert_sidecar_matches(&ledger);
+}
+
+/// R11 (sibling): `items remove` against a MISSING ledger errors (no matching
+/// id on the freshly-seeded skeleton) and creates NO stray file — confirming
+/// the `mutate_doc_plan` remove arm's documented behaviour (the
+/// `compute_remove_mutation` `?` fires BEFORE the persist). This pins the
+/// negative half of the mutate_doc_plan `created` story that
+/// `update_and_remove_against_missing_ledger_error_and_leave_no_file` covers
+/// for the generic case — here scoped explicitly to the remove arm's
+/// no-stray-file property after the in-memory seed fired.
+#[test]
+fn items_remove_against_missing_ledger_errors_via_mutate_doc_plan_and_leaves_no_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("review-ledger.toml");
+    assert!(!ledger.exists(), "precondition: ledger must not exist yet");
+
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("remove")
+        .arg(&ledger)
+        .arg("R99")
+        .write_stdin("")
+        .assert()
+        .failure();
+
+    assert!(
+        !ledger.exists(),
+        "`items remove` against a missing ledger must NOT leave a stray seeded file"
+    );
+}
+
+// ===== R20: P8 `--allow-outside` + auto-create stray file ==========
+//
+// INVARIANT: the `.claude/` containment guard is the safety boundary;
+// `--allow-outside` is a deliberate double-opt-out the plan (P8) documents as
+// permissive. `guard_write_path` SKIPS the auto-mkdir helper under
+// `--allow-outside`, so a target whose parent does NOT exist still bails (that
+// is `write_outside_claude_does_not_auto_create_parent_dirs`). This test
+// pins the COMPLEMENT: when the outside parent ALREADY EXISTS, the
+// containment check only WARNS (it does not block) and the auto-create write
+// lands a stray file. The "outside" path stays INSIDE the tempdir root so the
+// test never writes to a real filesystem location.
+
+/// R20: under `--allow-outside`, an auto-create whose target's parent dir
+/// already exists but is OUTSIDE `.claude/` DOES create the stray file — the
+/// guard warns rather than blocks. Complements
+/// `write_outside_claude_does_not_auto_create_parent_dirs` (mkdir refusal).
+#[test]
+fn allow_outside_auto_create_with_existing_parent_writes_stray_file() {
+    let dir = tempfile::tempdir().unwrap();
+    // `.claude/` must exist so `repo_or_cwd_root()` has an anchor.
+    fs::create_dir_all(dir.path().join(".claude")).unwrap();
+    // The "outside" parent is a SIBLING of `.claude/` under the tempdir root,
+    // PRE-CREATED so the auto-mkdir refusal (skipped under --allow-outside
+    // anyway) is irrelevant — `canonicalize_for_write` resolves the existing
+    // parent and the containment check then only warns.
+    let outside_parent = dir.path().join("outside-dir");
+    fs::create_dir_all(&outside_parent).unwrap();
+    let outside_target = outside_parent.join("stray.toml");
+    assert!(
+        !outside_target.exists(),
+        "precondition: stray target must not exist yet"
+    );
+
+    // `--allow-outside` lives in the per-subcommand `WriteIntegrityArgs`
+    // bundle (not a global flag), so it follows the `set` positionals.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("set")
+        .arg(&outside_target)
+        .arg("key")
+        .arg("val")
+        .arg("--allow-outside")
+        .write_stdin("")
+        .assert()
+        .success();
+
+    // The documented P8 behaviour: the stray file IS created (guard warns,
+    // doesn't block) and carries the written content.
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("writing outside .claude/") && stderr.contains("--allow-outside"),
+        "the guard must WARN (not block) when --allow-outside is set; got: {stderr}"
+    );
+    assert!(
+        outside_target.exists(),
+        "--allow-outside must let the auto-create land a stray file when the parent exists"
+    );
+    let on_disk = fs::read_to_string(&outside_target).expect("stray file must exist on disk");
+    assert!(
+        on_disk.contains(r#"key = "val""#),
+        "stray file must carry the written content; got: {on_disk}"
     );
 }
