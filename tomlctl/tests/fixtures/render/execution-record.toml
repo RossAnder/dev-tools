@@ -1,0 +1,210 @@
+schema_version = 1
+last_updated = 2026-05-20
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-05-20
+agent = "implement"
+summary = "Flow draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "03ee86f048797475"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["27d2dfd"]
+id = "E2"
+task_ref = "extract-apply-dependency-sort"
+summary = "Extracted apply-dependency-sort block into flow-contract-apply-dependency-sort skill (byte-identical body, no §12 rewrite needed)"
+files = ["claude/skills/flow-contract-apply-dependency-sort/SKILL.md"]
+dedup_id = "c8bb7d664114490a"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["27d2dfd"]
+id = "E3"
+task_ref = "extract-apply-rollback-protocol"
+summary = "Extracted apply-rollback-protocol block into flow-contract-apply-rollback-protocol skill (one §12(a) ledger-schema cross-ref rewrite)"
+files = ["claude/skills/flow-contract-apply-rollback-protocol/SKILL.md"]
+dedup_id = "5a45b850b8587c63"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["27d2dfd"]
+id = "E4"
+task_ref = "extract-apply-constraints"
+summary = "Extracted apply-constraints block into flow-contract-apply-constraints skill (added house-style title heading; no §12 rewrite needed)"
+files = ["claude/skills/flow-contract-apply-constraints/SKILL.md"]
+dedup_id = "b6c3c1d3b3db8004"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["27d2dfd"]
+id = "E5"
+task_ref = "extract-apply-vet-flow-implement-lite"
+summary = "Extracted apply-vet-flow-implement-lite block into flow-contract-apply-vet-flow-implement-lite skill (byte-identical; no bash fences present)"
+files = ["claude/skills/flow-contract-apply-vet-flow-implement-lite/SKILL.md"]
+dedup_id = "4da3eaa90ae1d6d1"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["caeaf58"]
+id = "E6"
+task_ref = "prune-shared-blocks-manifest"
+summary = "Pruned shared-blocks.toml from 11 blocks to 1; deleted all blocks reaching empty files[], leaving only forbidden-working-tree-ops; rewrote obsolete top comment"
+files = ["scripts/shared-blocks.toml"]
+dedup_id = "b8030fa72faed92d"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["caeaf58"]
+id = "E7"
+task_ref = "update-blocks-verify-shell-hashes-test"
+summary = "Repointed blocks_verify_reproduces_shell_hashes at forbidden-working-tree-ops; removed six deleted-block assertions; pinned discovered hash; cargo test + clippy green"
+files = ["tomlctl/src/cli/dispatch.rs"]
+dedup_id = "8a7edc7f3f004e1d"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["6a44cd0"]
+id = "E8"
+task_ref = "skeletonise-optimise"
+summary = "Skeletonised optimise.md: replaced flow-context, ledger-schema, ledger-disposition-sweep, vet-flow-research blocks with skill invocations; standardised top (H1+tagline+Overview)"
+files = ["claude/commands/optimise.md"]
+dedup_id = "82b1169e7529d4c5"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["6a44cd0"]
+id = "E9"
+task_ref = "skeletonise-optimise-apply"
+summary = "Skeletonised optimise-apply.md: replaced flow-context, ledger-schema, and four apply-* blocks with skill invocations; preserved all 14 H2 headers and inter-block prose"
+files = ["claude/commands/optimise-apply.md"]
+dedup_id = "491a37c796a1a0f7"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["6a44cd0"]
+id = "E10"
+task_ref = "skeletonise-review-apply"
+summary = "Skeletonised review-apply.md: replaced flow-context, ledger-schema, and four apply-* blocks; preserved verified-clean/deleted-file logic and headers"
+files = ["claude/commands/review-apply.md"]
+dedup_id = "8eee7baed33304b3"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["6a44cd0"]
+id = "E11"
+task_ref = "skeletonise-plan-update"
+summary = "Skeletonised plan-update.md: replaced flow-context, execution-record-schema, plansdirectory-prompt, vet-flow-research blocks; preserved all nine sub-operation procedures"
+files = ["claude/commands/plan-update.md"]
+dedup_id = "ffc7d760be9a6b6f"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["6a44cd0"]
+id = "E12"
+task_ref = "skeletonise-test-bootstrap"
+summary = "Skeletonised test-bootstrap.md: replaced vet-flow-research block with flow-contract-vet-research invocation; preserved Phase 1-5 procedure"
+files = ["claude/commands/test-bootstrap.md"]
+dedup_id = "8ba92187bdc24edc"
+
+[[items]]
+type = "task-completion"
+date = 2026-05-20
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "flow-implement-deep"
+commits = ["6a44cd0"]
+id = "E13"
+task_ref = "refresh-claude-md-prose"
+summary = "Refreshed CLAUDE.md: parity manifest now guards only forbidden-working-tree-ops over two agents; carriers no longer embed blocks; no exactly-one-skill overclaim"
+files = ["CLAUDE.md"]
+dedup_id = "cc8a9759d047db98"
+
+[[items]]
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+id = "E14"
+summary = "cargo test green (236 tests + verify_skills_clean + command_lint + blocks_verify_reproduces_shell_hashes)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "b48915cf4b149c53"
+
+[[items]]
+type = "verification"
+date = 2026-05-20
+agent = "implement"
+id = "E15"
+summary = "cargo clippy clean (exit 0; only pre-existing capabilities.rs unnecessary_map_or warning)"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "f27f66108c330fd8"
+
+[[items]]
+id = "E16"
+type = "status-transition"
+date = 2026-05-20
+agent = "plan-update"
+summary = "All 12 wave-2 tasks complete; flow in-progress -> review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "e5d345747cb88768"

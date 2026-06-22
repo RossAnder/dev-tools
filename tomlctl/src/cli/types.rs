@@ -631,6 +631,25 @@ pub(crate) enum FlowOp {
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
+    /// Regenerate a flow's `PROGRESS-LOG.md` from its `execution-record.toml`.
+    ///
+    /// Deterministic render-from-log: the markdown is a pure function of the
+    /// execution record + the flow title (read from the plan's `# Plan:` header,
+    /// falling back to a title-cased slug). Re-running produces byte-identical
+    /// output. The written file is a DERIVED artifact — no `.sha256` sidecar is
+    /// written for it.
+    RenderProgressLog {
+        /// Flow slug whose `PROGRESS-LOG.md` is regenerated
+        /// (`<root>/.claude/flows/<slug>/`).
+        #[arg(long = "slug")]
+        slug: String,
+        /// Print the rendered markdown to stdout instead of writing the file
+        /// (preview / testing).
+        #[arg(long = "stdout")]
+        stdout: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
 }
 
 #[derive(Subcommand)]

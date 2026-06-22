@@ -1,0 +1,7 @@
+# T3 (flow render-progress-log golden tests): pin the render fixtures to LF so
+# a Windows checkout cannot flip them to CRLF. The golden PROGRESS-LOG.md is
+# byte-compared against the renderer's output, which always emits `\n` line
+# endings; a CRLF working-tree copy would make the byte-equality assertion fail
+# spuriously. The execution-record.toml / context.toml / fixture plan are also
+# pinned so the render is reproduced from identical source bytes everywhere.
+tests/fixtures/render/* text eol=lf

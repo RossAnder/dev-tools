@@ -12,6 +12,10 @@ mod envelope;
 mod find_plans;
 mod init;
 mod list;
+// T3: `flow render-progress-log` — deterministic markdown render of a flow's
+// PROGRESS-LOG.md from its execution-record.toml. Owns its own leaf file so it
+// never collides with sibling leaf tasks on this or flow/dispatch.rs.
+pub(crate) mod render_progress_log;
 mod resolve;
 mod schema;
 mod stale;

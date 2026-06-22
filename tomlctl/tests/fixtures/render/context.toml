@@ -1,0 +1,14 @@
+slug = "harness-progressive-disclosure-wave-2"
+plan_path = "docs/plans/render-fixture-plan.md"
+status = "review"
+created = 2026-05-20
+updated = 2026-05-20
+branch = "main"
+scope = [
+    "claude/commands/**",
+]
+
+[tasks]
+total = 12
+completed = 12
+in_progress = 0
