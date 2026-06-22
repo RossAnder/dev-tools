@@ -327,6 +327,38 @@ fn on_missing_for(file: &std::path::Path, integrity: &WriteIntegrityArgs) -> Res
     }
 }
 
+/// T2: one-line stderr guidance emitted when a write newly created its target
+/// file. A no-op when `created == false`, so the 11 write sites can call it
+/// unconditionally with the `created` bool their `mutate_doc*` wrapper
+/// returned. Reuses the existing advisory-warn channel — a plain `eprintln!`
+/// on the writer's stderr, exactly as `guard_write_path`'s `--allow-outside`
+/// note and `warn_if_read_outside_claude` do — rather than inventing a new
+/// mechanism. The recognised-flow-file distinction
+/// (`SCHEMA_SEEDED_FLOW_FILES`, the four ledgers seeded with
+/// `schema_version = 1`) appends a `(schema_version=1)` suffix so a human
+/// watching the terminal can tell a schema-seeded ledger from an arbitrary
+/// `.toml` (seeded as an empty table, which gets the bare message). The path
+/// is rendered via `Path::display()` — the same convention every other stderr
+/// note in this layer (`guard_write_path`, `warn_if_read_outside_claude`,
+/// the lock-wait notes in `io.rs`) uses for filesystem paths.
+fn warn_if_created(file: &std::path::Path, created: bool) {
+    if !created {
+        return;
+    }
+    let recognised = file
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b));
+    if recognised {
+        eprintln!(
+            "tomlctl: created new file {} (schema_version=1)",
+            file.display()
+        );
+    } else {
+        eprintln!("tomlctl: created new file {}", file.display());
+    }
+}
+
 /// P19 (symmetric half): TOML write subcommands (`set`, `set-json`,
 /// `array-append`) refuse `.json` targets and point the caller at
 /// `tomlctl json set`. The corresponding positive half (JSON writers
@@ -501,14 +533,18 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             }
             let opts = write_integrity_opts(&integrity);
             // T1: auto-create a missing target (default) or restore the strict
-            // not_found error (`--no-create`). Bool discarded — surfacing the
-            // `created` signal in the envelope / stderr is T2's job.
+            // not_found error (`--no-create`).
             let on_missing = on_missing_for(&file, &integrity)?;
-            let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+            // T2: surface T1's `created` signal — `"created"` + `"path"` in the
+            // success envelope, plus the one-line stderr guidance when seeded.
+            let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 let v = parse_scalar(&value, ty)?;
                 set_at_path(doc, &path, v)
             })?;
-            print_json_compact(&serde_json::json!({"ok": true}))?;
+            warn_if_created(&file, created);
+            print_json_compact(
+                &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
+            )?;
         }
         Cmd::SetJson { file, path, json, dry_run, integrity } => {
             refuse_json_extension_for_toml_writers(&file)?;
@@ -536,14 +572,18 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             let opts = write_integrity_opts(&integrity);
-            // T1: see `Cmd::Set` — bool discarded (surfacing is T2's job).
+            // T1: see `Cmd::Set`.
             let on_missing = on_missing_for(&file, &integrity)?;
-            let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+            // T2: surface `created` + `path` (see `Cmd::Set`).
+            let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 let last_key = path.rsplit_once('.').map(|(_, k)| k).unwrap_or(path.as_str());
                 let v = maybe_date_coerce(last_key, &parsed)?;
                 set_at_path(doc, &path, v)
             })?;
-            print_json_compact(&serde_json::json!({"ok": true}))?;
+            warn_if_created(&file, created);
+            print_json_compact(
+                &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
+            )?;
         }
         Cmd::Validate { file, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
@@ -606,13 +646,21 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             }
             let opts = write_integrity_opts(&integrity);
             let mut appended: usize = 0;
-            // T1: bool discarded (surfacing is T2's job).
+            // T1: auto-create policy.
             let on_missing = on_missing_for(&file, &integrity)?;
-            let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+            // T2: surface `created` + `path` alongside the pre-existing
+            // `appended` count.
+            let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 appended = array_append(doc, &array, &rows)?;
                 Ok(())
             })?;
-            print_json_compact(&serde_json::json!({"ok": true, "appended": appended}))?;
+            warn_if_created(&file, created);
+            print_json_compact(&serde_json::json!({
+                "ok": true,
+                "appended": appended,
+                "created": created,
+                "path": file.display().to_string(),
+            }))?;
         }
         Cmd::Integrity { op } => integrity_dispatch(op)?,
         Cmd::Flow { op } => crate::flow::dispatch(op)?,
@@ -798,12 +846,19 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // and reserve the enriched shape for the `--dedupe-by`
                 // branch below.
                 let json = read_json_arg(&json)?;
-                // T1: bool discarded (surfacing is T2's job).
+                // T1: auto-create policy.
                 let on_missing = on_missing_for(&file, &integrity)?;
-                let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                // T2: surface `created` + `path`. The legacy no-dedupe shape
+                // is plain `{"ok":true}` (see the byte-identity note above);
+                // the new keys are purely additive so existing consumers that
+                // read no extra keys keep working.
+                let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     items_add_to(doc, &array, &json)
                 })?;
-                print_json_compact(&serde_json::json!({"ok": true}))?;
+                warn_if_created(&file, created);
+                print_json_compact(
+                    &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
+                )?;
             } else {
                 // Dedupe path: parse JSON once up-front so we can feed it
                 // to the pre-scan inside the lock without a re-parse.
@@ -814,12 +869,17 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let patch: JsonValue =
                     read_json_value_from_arg(&json).context("parsing --json")?;
                 let mut outcome: Option<AddOutcome> = None;
-                // T1: bool discarded (surfacing is T2's job). On a dedupe hit
-                // against a freshly-seeded missing file the closure returns
-                // `Ok(false)`, so `mutate_doc_conditional` skips the write and
-                // leaves no stray file — see its T1 no-op semantics.
+                // T1: auto-create policy. On a dedupe hit against a
+                // freshly-seeded missing file the closure returns `Ok(false)`,
+                // so `mutate_doc_conditional` skips the write and leaves no
+                // stray file — and reports `created=false` (nothing persisted),
+                // which is exactly what we surface below.
                 let on_missing = on_missing_for(&file, &integrity)?;
-                let _created = mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                // T2: `created` from `mutate_doc_conditional` is already correct
+                // — true only when the seed fired AND a write actually landed.
+                // Surface it (plus `path`) on BOTH the `Added` and `Skipped`
+                // arms, preserving each arm's pre-existing keys.
+                let created = mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     let result = items_add_value_with_dedupe_to(
                         doc,
                         patch,
@@ -830,15 +890,23 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     outcome = Some(result);
                     Ok(mutated)
                 })?;
+                warn_if_created(&file, created);
                 match outcome.expect("closure always sets outcome on success") {
                     AddOutcome::Added => {
-                        print_json_compact(&serde_json::json!({"ok": true, "added": 1}))?;
+                        print_json_compact(&serde_json::json!({
+                            "ok": true,
+                            "added": 1,
+                            "created": created,
+                            "path": file.display().to_string(),
+                        }))?;
                     }
                     AddOutcome::Skipped { matched_id } => {
                         print_json_compact(&serde_json::json!({
                             "ok": true,
                             "added": 0,
                             "matched_id": matched_id,
+                            "created": created,
+                            "path": file.display().to_string(),
                         }))?;
                     }
                 }
@@ -891,13 +959,21 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // same output shape (`{"ok":true,"added":N}`), same
                 // always-write pipeline.
                 let mut added: usize = 0;
-                // T1: bool discarded (surfacing is T2's job).
+                // T1: auto-create policy.
                 let on_missing = on_missing_for(&file, &integrity)?;
-                let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                // T2: surface `created` + `path` alongside the pre-existing
+                // `added` count.
+                let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
                     Ok(())
                 })?;
-                print_json_compact(&serde_json::json!({"ok": true, "added": added}))?;
+                warn_if_created(&file, created);
+                print_json_compact(&serde_json::json!({
+                    "ok": true,
+                    "added": added,
+                    "created": created,
+                    "path": file.display().to_string(),
+                }))?;
             } else {
                 // Dedupe path: run the pre-scan + append loop inside the
                 // lock via `mutate_doc_conditional`. Skip the file write
@@ -905,11 +981,15 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // untouched and the sidecar must not bump for a pure-
                 // skip batch. Any `added > 0` takes the write branch.
                 let mut outcome: Option<AddManyOutcome> = None;
-                // T1: bool discarded (surfacing is T2's job). A pure-skip batch
-                // (added == 0) against a freshly-seeded missing file returns
-                // `Ok(false)`, so the write is skipped and no stray file lands.
+                // T1: auto-create policy. A pure-skip batch (added == 0)
+                // against a freshly-seeded missing file returns `Ok(false)`, so
+                // the write is skipped, no stray file lands, and `created` comes
+                // back `false` — exactly what we surface below.
                 let on_missing = on_missing_for(&file, &integrity)?;
-                let _created = mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                // T2: `created` from `mutate_doc_conditional` is already correct
+                // (true only when seed fired AND a write landed). Surface it
+                // (plus `path`) alongside the pre-existing batch-count keys.
+                let created = mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     let result = items_add_many_with_dedupe(
                         doc,
                         &array,
@@ -921,6 +1001,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     outcome = Some(result);
                     Ok(mutated)
                 })?;
+                warn_if_created(&file, created);
                 let outcome = outcome.expect("closure always sets outcome on success");
                 let skipped_rows_json: Vec<JsonValue> = outcome
                     .skipped_rows
@@ -937,6 +1018,8 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     "added": outcome.added,
                     "skipped": outcome.skipped_rows.len(),
                     "skipped_rows": skipped_rows_json,
+                    "created": created,
+                    "path": file.display().to_string(),
                 }))?;
             }
         }
@@ -969,16 +1052,24 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 emit_dry_run_plan(&plan)?;
                 return Ok(());
             }
-            // T1: bool discarded (surfacing is T2's job). An `update` against a
-            // freshly-seeded missing file finds no matching id and the closure
-            // errors out BEFORE the persist (`mutate_doc`'s `?`), so nothing is
-            // written — no stray seeded file. This preserves the transactional
-            // "write-only-on-closure-success" property the plan calls out.
+            // T1: auto-create policy. An `update` against a freshly-seeded
+            // missing file finds no matching id and the closure errors out
+            // BEFORE the persist (`mutate_doc`'s `?`), so nothing is written —
+            // no stray seeded file. This preserves the transactional
+            // "write-only-on-closure-success" property the plan calls out, and
+            // means `created` is only ever `true` here when the update landed
+            // into a freshly-seeded file (which requires the id to already be
+            // present — impossible on a 2-key skeleton — so in practice this
+            // surfaces `created=false` or errors out first).
             let on_missing = on_missing_for(&file, &integrity)?;
-            let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+            // T2: surface `created` + `path`.
+            let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 items_update_to(doc, &array, &id, &json, &unset)
             })?;
-            print_json_compact(&serde_json::json!({"ok": true}))?;
+            warn_if_created(&file, created);
+            print_json_compact(
+                &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
+            )?;
         }
         ItemsOp::Remove { file, id, array, dry_run, integrity } => {
             let opts = write_integrity_opts(&integrity);
@@ -1007,15 +1098,20 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // stage byte-for-byte. The read happens inside the
                 // exclusive lock via `mutate_doc_plan` so the same
                 // TOCTOU narrowing as `mutate_doc` holds.
-                // T1: bool discarded (surfacing is T2's job). A `remove`
-                // against a freshly-seeded missing file finds no matching id
-                // and `compute_remove_mutation` errors out BEFORE the persist
-                // (`mutate_doc_plan`'s `?`), so nothing is written.
+                // T1: auto-create policy. A `remove` against a freshly-seeded
+                // missing file finds no matching id and `compute_remove_mutation`
+                // errors out BEFORE the persist (`mutate_doc_plan`'s `?`), so
+                // nothing is written — so in practice `created` here surfaces
+                // `false` or the call errors out first.
                 let on_missing = on_missing_for(&file, &integrity)?;
-                let _created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                // T2: surface `created` + `path`.
+                let created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     compute_remove_mutation(doc, &array, &id)
                 })?;
-                print_json_compact(&serde_json::json!({"ok": true}))?;
+                warn_if_created(&file, created);
+                print_json_compact(
+                    &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
+                )?;
             }
         }
         ItemsOp::Apply { file, ops, array, no_remove, dry_run, integrity } => {
@@ -1072,16 +1168,20 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 })?;
                 emit_dry_run_plan(&plan)?;
             } else {
-                // T1: bool discarded (surfacing is T2's job). An all-`update`/
-                // all-`remove` batch against a freshly-seeded missing file
-                // errors in `compute_apply_mutation` (no matching id) BEFORE
-                // the persist, so nothing is written. Batches with `add` ops
-                // seed-then-append into the new file as expected.
+                // T1: auto-create policy. An all-`update`/all-`remove` batch
+                // against a freshly-seeded missing file errors in
+                // `compute_apply_mutation` (no matching id) BEFORE the persist,
+                // so nothing is written. Batches with `add` ops seed-then-append
+                // into the new file as expected — `created=true` on that path.
                 let on_missing = on_missing_for(&file, &integrity)?;
-                let _created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                // T2: surface `created` + `path`.
+                let created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
                 })?;
-                print_json_compact(&serde_json::json!({"ok": true}))?;
+                warn_if_created(&file, created);
+                print_json_compact(
+                    &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
+                )?;
             }
         }
         ItemsOp::NextId { file, prefix, infer_from_file, integrity } => {
@@ -1287,16 +1387,24 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // sites, though the seed branch is unreachable here — the
                 // pre-read above (`read_doc`) already errors `kind=not_found`
                 // on a missing ledger before we reach this in-lock recompute,
-                // so a backfill never seeds a file. Bool discarded (T2).
+                // so a backfill never seeds a file.
                 let on_missing = on_missing_for(&file, &integrity)?;
-                let _created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                // T2: surface `created` + `path` for parity with the other
+                // write sites. `created` is structurally always `false` here
+                // (the pre-read short-circuits a missing ledger), so
+                // `warn_if_created` never fires — but threading it keeps the
+                // envelope shape uniform across every write arm.
+                let created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     let plan = compute_backfill_mutation(doc, &array)?;
                     written = plan.updated.len();
                     Ok(plan)
                 })?;
+                warn_if_created(&file, created);
                 print_json_compact(&serde_json::json!({
                     "ok": true,
                     "backfilled": written,
+                    "created": created,
+                    "path": file.display().to_string(),
                 }))?;
             }
         }

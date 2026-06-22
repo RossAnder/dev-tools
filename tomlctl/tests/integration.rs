@@ -1453,13 +1453,17 @@ fn integrity_refresh_missing_file_is_not_found() {
 /// `tomlctl items add` against a not-yet-bootstrapped flow directory
 /// (e.g. `.claude/flows/<new-slug>/execution-record.toml`).
 ///
-/// The write itself still requires the TOML file to pre-exist (that
-/// invariant is owned by `/plan-new`'s single-Write bootstrap, per the
-/// atomic-bootstrap contract in plan-new.md), so this test asserts the
-/// directory creation as a side-effect of the failing call — the command
-/// exits non-zero on the subsequent `read_toml` but the flow dir is
-/// already in place so the agent's follow-up `Write` tool call lands
-/// cleanly without needing a separate `mkdir`.
+/// T2 (doc-comment refresh): POST-T1 the write itself now SUCCEEDS rather
+/// than failing at `read_toml` — auto-create seeds the missing target with
+/// the schema-aware skeleton (`execution-record.toml` is a recognised flow
+/// file, so it gets `schema_version = 1`), then applies the `set`. The
+/// directory-creation side-effect this test originally pinned is still
+/// exercised (the auto-`mkdir -p` runs before the seed), but the call no
+/// longer exits non-zero. We therefore tighten the assertions to the
+/// post-T1 contract: the command succeeds, the envelope reports
+/// `"created":true`, the flow dir was created, the seeded file exists on
+/// disk carrying `schema_version = 1`, and the pre-fix "parent directory"
+/// confusion is absent from stderr.
 #[test]
 fn write_under_claude_auto_creates_missing_parent_dirs() {
     let dir = tempfile::tempdir().unwrap();
@@ -1469,11 +1473,10 @@ fn write_under_claude_auto_creates_missing_parent_dirs() {
     let target = flow_dir.join("execution-record.toml");
     assert!(!flow_dir.exists(), "precondition: flow dir must not exist yet");
 
-    // The call fails at `read_toml` (file doesn't exist) but the
-    // directory-creation side-effect is what this test pins — so we do
-    // NOT assert exit status here, only that the dir now exists and the
-    // stderr doesn't carry the pre-fix "parent directory ... not found"
-    // confusion.
+    // POST-T1: the call now SUCCEEDS — the auto-`mkdir -p` creates the flow
+    // directory, the missing target is seeded with the schema skeleton, and
+    // the `set` lands on the seeded doc. Assert the success exit, the
+    // `created:true` envelope, and the absence of the pre-fix confusion.
     let out = Command::cargo_bin("tomlctl")
         .unwrap()
         .env("TOMLCTL_ROOT", dir.path())
@@ -1483,8 +1486,14 @@ fn write_under_claude_auto_creates_missing_parent_dirs() {
         .arg("schema_version")
         .arg("1")
         .write_stdin("")
-        .assert();
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stdout.contains(r#""created":true"#),
+        "auto-create must report created:true; got stdout: {stdout}"
+    );
     assert!(
         !stderr.contains("parent directory") && !stderr.contains("canonicalising write target"),
         "pre-fix error must not re-appear; got stderr: {stderr}"
@@ -1492,6 +1501,13 @@ fn write_under_claude_auto_creates_missing_parent_dirs() {
     assert!(
         flow_dir.exists(),
         "auto-mkdir must have created the flow directory"
+    );
+    // The seeded-then-set file carries the recognised-flow-file skeleton
+    // (`schema_version = 1`), which the `set schema_version 1` left intact.
+    let on_disk = fs::read_to_string(&target).expect("seeded file must exist on disk");
+    assert!(
+        on_disk.contains("schema_version = 1"),
+        "seeded execution-record must carry schema_version = 1; got: {on_disk}"
     );
 }
 
@@ -1693,5 +1709,275 @@ fn integrity_refresh_handles_zero_byte_file() {
     assert!(
         sidecar_text.ends_with("  execution-record.toml\n"),
         "sidecar must end with `  <basename>\\n`; got {sidecar_text:?}"
+    );
+}
+
+// ===== T2: `created` envelope/stderr surfacing =====================
+//
+// T1 auto-creates a missing write target (default) and computes a `created`
+// bool that it discarded. T2 surfaces that bool: every write success envelope
+// now carries `"created":<bool>` + `"path":<file>`, and a one-line stderr
+// guidance fires only when a file was newly seeded (with a
+// `(schema_version=1)` suffix for the four recognised flow files). These
+// black-box tests drive the built binary so they exercise the real dispatch +
+// stderr channel, mirroring the existing `assert_cmd` harness.
+
+/// T2 (a): `items add` to a MISSING recognised flow file (`review-ledger.toml`
+/// under `.claude/`) reports `"created":true` and lands the seeded file with
+/// `schema_version = 1` on disk.
+#[test]
+fn items_add_to_missing_ledger_reports_created_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("review-ledger.toml");
+    assert!(!ledger.exists(), "precondition: ledger must not exist yet");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1","status":"open"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains(r#""created":true"#),
+        "first add to a missing ledger must report created:true; got: {stdout}"
+    );
+    assert!(
+        stdout.contains(r#""path":"#),
+        "envelope must carry a `path` field; got: {stdout}"
+    );
+
+    // The seeded file exists and carries the recognised-flow-file skeleton.
+    let on_disk = fs::read_to_string(&ledger).expect("seeded ledger must exist on disk");
+    assert!(
+        on_disk.contains("schema_version = 1"),
+        "seeded review-ledger must carry schema_version = 1; got: {on_disk}"
+    );
+    // The added row landed too.
+    assert!(
+        on_disk.contains(r#"id = "R1""#),
+        "the added item must be persisted; got: {on_disk}"
+    );
+    assert_sidecar_matches(&ledger);
+}
+
+/// T2 (b): a SECOND `items add` to the now-existing ledger reports
+/// `"created":false` (the file already exists, so nothing was seeded).
+#[test]
+fn items_add_to_existing_ledger_reports_created_false() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join("review-ledger.toml");
+
+    let run_add = |json: &str| {
+        Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", dir.path())
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .arg("items")
+            .arg("add")
+            .arg(&ledger)
+            .arg("--json")
+            .arg(json)
+            .write_stdin("")
+            .assert()
+            .success()
+    };
+
+    // First add seeds the file.
+    let first = run_add(r#"{"id":"R1","status":"open"}"#);
+    let first_stdout = String::from_utf8_lossy(&first.get_output().stdout).to_string();
+    assert!(
+        first_stdout.contains(r#""created":true"#),
+        "first add must report created:true; got: {first_stdout}"
+    );
+
+    // Second add to the now-existing file must report created:false.
+    let second = run_add(r#"{"id":"R2","status":"open"}"#);
+    let second_stdout = String::from_utf8_lossy(&second.get_output().stdout).to_string();
+    assert!(
+        second_stdout.contains(r#""created":false"#),
+        "second add to an existing ledger must report created:false; got: {second_stdout}"
+    );
+}
+
+/// T2 (c) REGRESSION: a write to a PRE-EXISTING ledger reports
+/// `"created":false` and leaves the file + its `.sha256` sidecar
+/// byte-identical to the pre-write baseline when the write is a no-op
+/// (a `--dedupe-by` add that matches an existing row). This pins the
+/// invariant that surfacing `created` did not perturb the no-write path.
+#[test]
+fn write_to_existing_ledger_created_false_and_byte_identical_on_noop() {
+    let (dir, ledger) = seed_ledger(
+        "schema_version = 1\n\n[[items]]\nid = \"R1\"\nsource = \"a\"\ntarget = \"b\"\n",
+    );
+    // Refresh the sidecar so we have a baseline pair to compare against.
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("integrity")
+        .arg("refresh")
+        .arg(&ledger)
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let sidecar: PathBuf = {
+        let mut s = ledger.as_os_str().to_os_string();
+        s.push(".sha256");
+        PathBuf::from(s)
+    };
+    let ledger_before = fs::read(&ledger).unwrap();
+    let sidecar_before = fs::read(&sidecar).unwrap();
+
+    // A dedupe add whose key matches the existing row is a no-op: no write,
+    // no sidecar bump. It must report created:false.
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--dedupe-by")
+        .arg("source,target")
+        .arg("--json")
+        .arg(r#"{"id":"R2","source":"a","target":"b"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains(r#""created":false"#),
+        "no-op dedupe add to existing ledger must report created:false; got: {stdout}"
+    );
+    assert!(
+        stdout.contains(r#""added":0"#),
+        "dedupe hit must report added:0; got: {stdout}"
+    );
+
+    let ledger_after = fs::read(&ledger).unwrap();
+    let sidecar_after = fs::read(&sidecar).unwrap();
+    assert_eq!(
+        ledger_before, ledger_after,
+        "no-op write must leave the ledger bytes byte-identical"
+    );
+    assert_eq!(
+        sidecar_before, sidecar_after,
+        "no-op write must leave the sidecar bytes byte-identical"
+    );
+}
+
+/// T2 (d): an `items update` against a FRESHLY-MISSING ledger ERRORS (no
+/// matching id on the seeded skeleton) and creates NO stray file — the
+/// transactional "write-only-on-closure-success" property holds even when the
+/// seed fired in memory. `items remove` behaves the same way.
+#[test]
+fn update_and_remove_against_missing_ledger_error_and_leave_no_file() {
+    for op in ["update", "remove"] {
+        let dir = tempfile::tempdir().unwrap();
+        let claude = dir.path().join(".claude");
+        fs::create_dir_all(&claude).unwrap();
+        let ledger = claude.join("review-ledger.toml");
+        assert!(!ledger.exists(), "precondition: ledger must not exist yet");
+
+        // `items update` / `items remove` take the id as a POSITIONAL arg
+        // (`tomlctl items update <file> <id> …`), not a `--id` flag.
+        let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+        cmd.env("TOMLCTL_ROOT", dir.path())
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .arg("items")
+            .arg(op)
+            .arg(&ledger)
+            .arg("R99");
+        if op == "update" {
+            cmd.arg("--json").arg(r#"{"status":"fixed"}"#);
+        }
+        cmd.write_stdin("").assert().failure();
+
+        assert!(
+            !ledger.exists(),
+            "`items {op}` against a missing ledger must NOT leave a stray seeded file"
+        );
+    }
+}
+
+/// T2 (e): the stderr guidance line appears WHEN AND ONLY WHEN a file was
+/// created, carrying the `(schema_version=1)` suffix for a recognised flow
+/// file and omitting it for an arbitrary `.toml`. A second write to the
+/// now-existing file emits NO guidance line.
+#[test]
+fn created_stderr_guidance_fires_only_on_creation() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+
+    // (i) Recognised flow file → guidance carries the schema suffix.
+    let ledger = claude.join("review-ledger.toml");
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R1"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("created new file") && stderr.contains("(schema_version=1)"),
+        "recognised flow file creation must emit the schema-suffixed guidance; got: {stderr}"
+    );
+
+    // (ii) Second add to the existing ledger → NO guidance line.
+    let out2 = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("add")
+        .arg(&ledger)
+        .arg("--json")
+        .arg(r#"{"id":"R2"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
+    let stderr2 = String::from_utf8_lossy(&out2.get_output().stderr).to_string();
+    assert!(
+        !stderr2.contains("created new file"),
+        "no guidance line may fire when the file already exists; got: {stderr2}"
+    );
+
+    // (iii) Arbitrary `.toml` (not a recognised flow file) → guidance WITHOUT
+    // the schema suffix. `set` auto-creates an empty-table-seeded file.
+    let arbitrary = claude.join("scratch.toml");
+    let out3 = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("set")
+        .arg(&arbitrary)
+        .arg("key")
+        .arg("val")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stderr3 = String::from_utf8_lossy(&out3.get_output().stderr).to_string();
+    assert!(
+        stderr3.contains("created new file") && !stderr3.contains("(schema_version=1)"),
+        "arbitrary .toml creation must emit guidance WITHOUT the schema suffix; got: {stderr3}"
     );
 }
