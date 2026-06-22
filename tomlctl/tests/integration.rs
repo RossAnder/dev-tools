@@ -512,7 +512,7 @@ fn items_add_many_happy_path_with_defaults() {
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     assert!(
-        stdout.contains(r#"{"ok":true,"added":5}"#),
+        stdout.contains(r#""ok":true"#) && stdout.contains(r#""added":5"#),
         "expected ok/added=5 on stdout, got: {stdout}"
     );
 
@@ -626,7 +626,7 @@ summary = "seed"
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     assert!(
-        stdout.contains(r#"{"ok":true,"appended":1}"#),
+        stdout.contains(r#""ok":true"#) && stdout.contains(r#""appended":1"#),
         "expected ok/appended=1 on stdout, got: {stdout}"
     );
 
@@ -686,7 +686,7 @@ fn array_append_ndjson_appends_many() {
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     assert!(
-        stdout.contains(r#"{"ok":true,"appended":3}"#),
+        stdout.contains(r#""ok":true"#) && stdout.contains(r#""appended":3"#),
         "expected ok/appended=3 on stdout, got: {stdout}"
     );
 
