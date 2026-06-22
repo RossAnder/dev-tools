@@ -230,14 +230,22 @@ fn render_to_string(record: &TomlValue, title: &str) -> Result<RenderResult> {
         .map(Vec::as_slice)
         .unwrap_or(&[]);
 
-    let mut out = String::new();
+    // O2: pre-size to skip the early reallocation growth (~160 bytes/row across
+    // the four tables plus the fixed banner/title/rule scaffolding). Pure
+    // capacity hint — no effect on the rendered bytes.
+    let mut out = String::with_capacity(2048 + items.len() * 160);
 
     // 1. Generated-from banner + blank line.
     out.push_str("<!-- Generated from execution-record.toml. Do not edit by hand. -->\n");
     out.push('\n');
 
     // 2. H1 title (EM DASH) + blank + rule + blank.
-    out.push_str(&format!("# {title} {EM_DASH} Progress Log\n"));
+    // O3: emit the H1 directly rather than via a throwaway `format!` String.
+    out.push_str("# ");
+    out.push_str(title);
+    out.push(' ');
+    out.push(EM_DASH);
+    out.push_str(" Progress Log\n");
     out.push('\n');
     out.push_str("---\n");
     out.push('\n');
@@ -371,7 +379,10 @@ fn sorted_by_type<'a>(items: &'a [TomlValue], ty: &str) -> Vec<&'a TomlValue> {
         .iter()
         .filter(|it| str_field(it, "type") == ty)
         .collect();
-    rows.sort_by_key(|it| entry_sort_key(it));
+    // O1: cache the (String, IdOrder) key once per element rather than
+    // recomputing it (1–2 String allocs) on every comparison. Stable sort →
+    // identical ordering.
+    rows.sort_by_cached_key(|it| entry_sort_key(it));
     rows
 }
 
@@ -598,7 +609,8 @@ fn render_session_log(out: &mut String, items: &[TomlValue]) -> usize {
     // first-appearance type order; instead we walk the pre-sorted slice and
     // append buckets in encounter order (which IS chronological after the sort).
     let mut sorted: Vec<&TomlValue> = items.iter().collect();
-    sorted.sort_by_key(|it| entry_sort_key(it));
+    // O1: cache the sort key once per element (see `sorted_by_type`).
+    sorted.sort_by_cached_key(|it| entry_sort_key(it));
 
     // Buckets: Vec preserves chronological order; each bucket tracks its date,
     // its entry count, the per-type counts in first-appearance order, and the
@@ -606,16 +618,17 @@ fn render_session_log(out: &mut String, items: &[TomlValue]) -> usize {
     let mut buckets: Vec<SessionBucket> = Vec::new();
     for it in &sorted {
         let day = date_key(it);
-        let bucket = match buckets.iter_mut().find(|b| b.date == day) {
-            Some(b) => b,
-            None => {
-                buckets.push(SessionBucket::new(day.clone()));
-                buckets.last_mut().expect("just pushed")
-            }
-        };
+        // O6: `sorted` is date-primary-sorted, so all same-date rows are
+        // CONTIGUOUS — only the LAST bucket can ever match the current day. A
+        // `last()`/`last_mut()` check replaces the per-item linear `find` while
+        // preserving the exact chronological bucket order (and the per-bucket
+        // first-appearance type order, since runs are contiguous).
+        if buckets.last().map(|b| b.date != day).unwrap_or(true) {
+            buckets.push(SessionBucket::new(day.clone()));
+        }
+        let bucket = buckets.last_mut().expect("just ensured a trailing bucket");
         bucket.count += 1;
-        let ty = str_field(it, "type").to_string();
-        bucket.bump_type(ty);
+        bucket.bump_type(str_field(it, "type"));
         if let Some(arr) = it.get("commits").and_then(|v| v.as_array()) {
             for c in arr {
                 if let Some(sha) = c.as_str() {
@@ -637,11 +650,13 @@ fn render_session_log(out: &mut String, items: &[TomlValue]) -> usize {
             let changes = format!("{} {}: {}", b.count, entry_word, changes_parts.join(", "));
             // BTreeSet iterates in sorted (lexicographic) order — exactly the
             // commit ordering the spec mandates.
+            // O5: join over &str (BTreeSet still iterates sorted) instead of
+            // cloning each SHA into an owned String first.
             let commits = b
                 .commits
                 .iter()
-                .cloned()
-                .collect::<Vec<_>>()
+                .map(String::as_str)
+                .collect::<Vec<&str>>()
                 .join(", ");
             vec![b.date.clone(), changes, commits]
         })
@@ -673,11 +688,13 @@ impl SessionBucket {
 
     /// Increment the count for `ty`, appending it in first-appearance order if
     /// not seen yet in this bucket.
-    fn bump_type(&mut self, ty: String) {
-        if let Some(entry) = self.type_counts.iter_mut().find(|(t, _)| *t == ty) {
+    // O6: take `&str` and only allocate the owned key on the not-seen branch
+    // (the already-seen path is the common case and now allocates nothing).
+    fn bump_type(&mut self, ty: &str) {
+        if let Some(entry) = self.type_counts.iter_mut().find(|(t, _)| t == ty) {
             entry.1 += 1;
         } else {
-            self.type_counts.push((ty, 1));
+            self.type_counts.push((ty.to_string(), 1));
         }
     }
 }

@@ -31,7 +31,7 @@ use serde_json::{Value as JsonValue, json};
 
 use crate::cli::{ArtifactKind, WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::integrity::{refresh_sidecar, sha256_hex_of_file, sidecar_path};
+use crate::integrity::{sha256_hex_of_file, sidecar_path};
 use crate::io::{
     atomic_write, guard_write_path, recheck_claude_containment, relativise, repo_or_cwd_root,
     with_exclusive_lock,
@@ -292,7 +292,7 @@ fn bootstrap_execution_record(
         if opts.write_sidecar {
             // Refresh failures escalate identically to the
             // `write_toml_with_sidecar` strict-integrity contract.
-            if let Err(e) = refresh_sidecar(artifact) {
+            if let Err(e) = crate::io::write_sidecar_for(artifact, body.as_bytes()) {
                 if opts.strict {
                     return Err(e);
                 }
