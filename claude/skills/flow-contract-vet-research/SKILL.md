@@ -19,6 +19,8 @@ description: Universal vet-pass procedure for research-agent output — the orch
    tomlctl set <ledger> last_updated <YYYY-MM-DD>
    ```
 
+   `array-append` is a `mutate_doc*`-routed verb, so this idiom works against a fresh (missing) ledger too — the first `vet_events` append auto-creates the file with the `schema_version = 1` skeleton, no pre-initialisation needed.
+
    See the `flow-contract-ledger-schema` skill → Vet event log section for the full field set.
 7. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
 8. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For `research-lite` agents, the re-dispatch SHOULD escalate to `research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for a fetch-and-summarise pass on this profile).

@@ -41,6 +41,7 @@ The highest-frequency patterns. Deeper treatment in the linked sections.
 | Enumerate flows under .claude/flows/ | `tomlctl flow list [--status <s>] [--branch <b>] [--active-only]` |
 | Resolve the active flow (5-step algorithm, emits artifacts + scope) | `tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]` |
 | Check whether a flow is stale | `tomlctl flow stale --slug <s> [--threshold <duration>]` |
+| Regenerate PROGRESS-LOG.md from the execution record | `tomlctl flow render-progress-log --slug <s> [--stdout] [--verify-integrity]` ([see render PROGRESS-LOG.md](#render-progress-logmd--flow-render-progress-log)) |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` ([see sidecar files](#sidecar-files)) |
 
 <a id="flow-bootstrap-agent-entrypoint"></a>**`flow-bootstrap` agent entrypoint**: per-command pre-flight is delegated to the `flow-bootstrap` sub-agent (`claude/agents/flow-bootstrap.md`), which composes `tomlctl flow resolve --with-staleness`, `tomlctl flow doctor`, and (for `plan-new` / `plan-update` / `review-plan`) `tomlctl json get .claude/settings.json plansDirectory` into a single JSON envelope. Each carrier's `## Step 0: Pre-flight (flow resolution + doctor)` section dispatches via `Task` with `subagent_type: "flow-bootstrap"` and a JSON-encoded input envelope; downstream phases consume `envelope.resolved.{slug,context_path,artifacts.*,status,plan_path,scope,stale}` plus `envelope.doctor.ok` instead of running the resolve / doctor primitives inline. The agent is read-only — never passes `--fix` to doctor — so auto-repair stays an orchestrator decision.
@@ -362,6 +363,38 @@ See [Advanced / maintenance](#advanced--maintenance) for `blocks verify` — inf
 
 Writes preserve every field the tool didn't touch, including `created`. Key order within tables is preserved.
 
+### Auto-create on first write
+
+Every mutating verb routed through the write chokepoint — `set`, `set-json`, `array-append`, and `items {add, add-many, apply, update, remove, backfill-dedup-id}` — **creates a missing target file by default** instead of erroring. On a missing file the tool seeds a starting document, then applies and persists the verb's mutation transactionally:
+
+- **The four recognised flow files** (matched on basename: `execution-record.toml`, `review-ledger.toml`, `optimise-findings.toml`, `plan-review-findings.toml`) seed a skeleton `schema_version = 1` (TOML integer) + `last_updated = <today>` (bare date) — byte-identical to what `flow init` bootstraps.
+- **Any other path** seeds an empty document (`{}`).
+
+The seed is only the *starting* doc — the verb's mutation must still succeed against it. A no-match `update` / `remove` (or an all-update `apply`) against a freshly-seeded doc still ERRORS and leaves NO file behind: an empty seed has nothing to match, so the operation fails before the file is persisted.
+
+**Envelope.** Write-success envelopes now carry `"created": <bool>` and `"path": "<file>"` alongside any existing keys (e.g. `added`/`updated`/`removed`):
+
+```bash
+tomlctl items add .claude/flows/<slug>/review-ledger.toml --json '{"id":"R1","summary":"...","status":"open"}'
+# {"ok":true,"created":true,"path":".claude/flows/<slug>/review-ledger.toml","added":1}
+```
+
+**Stderr guidance.** When a file is created, exactly one line is written to stderr:
+
+- recognised flow file → `tomlctl: created new file <path> (schema_version=1)`
+- any other path → `tomlctl: created new file <path>`
+
+**`--no-create`.** Pass `--no-create` (a write-side flag) to restore the strict prior behaviour: a missing file yields `kind=not_found` and nothing is created. Use it in typo-cautious scripts that must distinguish "mutate an existing file" from "accidentally spawn a new one".
+
+```bash
+# Strict: error with kind=not_found instead of seeding a new file.
+tomlctl set .claude/flows/<slug>/context.toml status review --no-create
+```
+
+> **`--allow-outside` interaction (double opt-out).** `--allow-outside` turns the `.claude/` containment guard into a no-op, and auto-create is on by default — so `--allow-outside` + a path typo can silently create a stray file ANYWHERE on disk, not just inside `.claude/`. This is a deliberate explicit double opt-out; `--no-create` is the escape hatch. Treat `--allow-outside` write paths as auto-create-capable and pair them with `--no-create` whenever the target is expected to already exist.
+
+Not every write pipeline auto-creates: `tomlctl flow active` (the active-flow registry) already bootstraps on missing and gains no `created` field; `tomlctl json …` is unchanged (it targets `settings.json`, which always exists); and `tomlctl flow init` keeps its own created-preservation idempotency for `context.toml` + `execution-record.toml`.
+
 ### Set a scalar at a path
 
 ```bash
@@ -621,18 +654,37 @@ TOMLCTL_NO_DEDUP_ID=1 tomlctl items backfill-dedup-id <ledger>
 
 Materialises (or regenerates) the `<file>.sha256` sidecar from the file's current on-disk bytes. Does NOT modify the TOML — use this when the sidecar is absent or lost but the TOML is authoritative as-is.
 
-```bash
-# Bootstrap: /plan-new's Write of the 2-line execution-record.toml
-# skeleton bypasses the tomlctl write pipeline, so no sidecar is produced.
-# Run integrity refresh immediately after the Write to close the gap.
-tomlctl integrity refresh .claude/flows/<slug>/execution-record.toml
-# → {"ok":true}
+No bootstrap snippet is needed any more: the first write to a missing flow file [auto-creates and seeds it](#auto-create-on-first-write) through the normal write pipeline, which produces the sidecar in the same pass — so `/plan-new` and `/implement` never have to hand-`Write` a skeleton and then run `integrity refresh` to close a sidecar gap. `integrity refresh` is now purely a recovery / regeneration verb:
 
+```bash
 # Recovery: sidecar deleted out-of-band (git clean, stray rm), TOML intact.
 tomlctl integrity refresh .claude/flows/<slug>/review-ledger.toml
+# → {"ok":true}
 ```
 
 Acquires the same exclusive lock a write path would, so it serialises correctly with concurrent writers. Subject to the same `.claude/` containment guard as other write paths — pass `--allow-outside` to refresh a sidecar for a file outside `.claude/`. Calling this on a file that already has a valid sidecar is a no-op-ish (it rewrites the sidecar with the same bytes) and idempotent.
+
+### Render PROGRESS-LOG.md — `flow render-progress-log`
+
+`tomlctl flow render-progress-log --slug <slug>` regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` deterministically. The output is a pure function of two inputs: the flow's `execution-record.toml` and the flow title (read from `context.toml`'s `plan_path` → the plan file's `# Plan:` header). Replaces any hand-rolled "render the log from the execution record" routine — call this verb instead of re-deriving the tables by hand.
+
+```bash
+# Regenerate the PROGRESS-LOG.md for a flow (writes the file).
+tomlctl flow render-progress-log --slug <slug>
+# → {"ok":true,"path":".claude/flows/<slug>/PROGRESS-LOG.md","tables":{"completed":N,"deviations":N,"deferrals":N,"sessions":N}}
+```
+
+The rendered document carries its marker line followed by four tables — **Completed Items**, **Deviations**, **Deferrals**, and **Session Log** — each with a `(none)` empty-state row when it has no entries, plus a trailing newline. The envelope's `tables` counts mirror the row counts of each table.
+
+```bash
+# Print to stdout instead of writing the file.
+tomlctl flow render-progress-log --slug <slug> --stdout
+
+# Verify the execution record's sidecar before rendering.
+tomlctl flow render-progress-log --slug <slug> --verify-integrity
+```
+
+PROGRESS-LOG.md is a **derived artifact**: because it is fully regenerable from `execution-record.toml`, the renderer writes **no `.sha256` sidecar** for it (unlike the source TOML files). There is nothing to integrity-check on the rendered output — re-run the verb to reproduce it.
 
 ### Stdin input for large JSON payloads
 
@@ -770,7 +822,7 @@ tomlctl items list ledger.toml --where status=open --verify-integrity
 - **Unknown-value rules stay with the caller.** `tomlctl` returns raw values; the command's "unknown status → treat as in-progress" / "unknown category → fail-soft" rules apply in the calling command's logic, not in the tool.
 - **Errors exit non-zero and print to stderr.** Success paths emit either JSON data (or `--raw` / `--lines` bare text) or `{"ok":true,…}` to stdout. Always check exit code in scripted flows. For machine-readable error class, use `--error-format json`.
 - **Lock timeout: 30 seconds.** Writes acquire an exclusive OS-level lock on a hashed lock file under `<repo-top-level>/.claude/.locks/<sha256-of-canonical-target-path>.lock` (O44 moved the lock location off the sidecar `<file>.toml.lock` scheme to avoid collision with real files named `foo.toml.lock`). `tomlctl` polls `try_lock_exclusive` on this file and bails after 30 s total with an error naming the lock path. On Windows this is a mandatory lock — a crashed or stuck `tomlctl` leaves the `.lock` file present and the OS keeps the lock until the offending process dies. **Recovery when a lock is stranded:** confirm no live `tomlctl` process holds it (Task Manager / `Get-Process tomlctl` / `ps aux | grep tomlctl`), then delete the specific `.claude/.locks/<hash>.lock` file from the error message. The next invocation will recreate and re-acquire it cleanly.
-- **Write-path safety (best-effort containment guard, not a sandbox).** Write operations (`set`, `set-json`, `items add|update|remove|apply|add-many|backfill-dedup-id`, `array-append`) reject targets that canonicalise outside the current repo's `.claude/` directory. The guard resolves symlinks and `..` at canonicalisation time and rejects paths not under `<git-top-level>/.claude/`. Read operations are not guarded. Pass `--allow-outside` (a per-subcommand flag) to override when you genuinely need to edit a flow TOML elsewhere — e.g. `tomlctl set /tmp/scratch.toml status draft --allow-outside`. `--allow-outside` is pinned behind an interactive permission prompt at the project settings level — it should never appear in unattended automation. Treat this as a best-effort guard against agent/user typos that would otherwise land writes in unintended locations; it is not a security sandbox and a TOCTOU-race or symlink swap between canonicalisation and open can in principle escape it.
+- **Write-path safety (best-effort containment guard, not a sandbox).** Write operations (`set`, `set-json`, `items add|update|remove|apply|add-many|backfill-dedup-id`, `array-append`) reject targets that canonicalise outside the current repo's `.claude/` directory. The guard resolves symlinks and `..` at canonicalisation time and rejects paths not under `<git-top-level>/.claude/`. Read operations are not guarded. Pass `--allow-outside` (a per-subcommand flag) to override when you genuinely need to edit a flow TOML elsewhere — e.g. `tomlctl set /tmp/scratch.toml status draft --allow-outside`. `--allow-outside` is pinned behind an interactive permission prompt at the project settings level — it should never appear in unattended automation. Treat this as a best-effort guard against agent/user typos that would otherwise land writes in unintended locations; it is not a security sandbox and a TOCTOU-race or symlink swap between canonicalisation and open can in principle escape it. Note the interaction with [auto-create](#auto-create-on-first-write): with `--allow-outside` disabling the guard AND auto-create on by default, a path typo can silently create a stray file anywhere on disk — a deliberate double opt-out. Pair `--allow-outside` with `--no-create` whenever the target should already exist.
 
 ## Permissions
 

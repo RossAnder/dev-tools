@@ -172,6 +172,8 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 
 **Ledger writes MUST use parse-rewrite, not line-edit.** Preferred path — `tomlctl` (see skill `tomlctl`):
 
+**First write auto-creates the ledger.** Every mutating verb below routes through `tomlctl`'s `mutate_doc*` chokepoint, so a FIRST write against a missing ledger creates it on demand, seeded with the schema-aware skeleton (`schema_version = 1` + `last_updated = <today>`) — byte-identical to `flow init`'s bootstrap. This holds for all four ledger paths this skill covers: the flow-local `review-ledger.toml` / `optimise-findings.toml` and the flow-less `.claude/reviews/<scope>.toml` / `.claude/optimise-findings/<scope>.toml`. Callers therefore do NOT need to initialise the file first — a bare `items add` (or any `mutate_doc*` verb) against a non-existent ledger is sufficient; the write envelope reports `"created": true` and one stderr line confirms the seed. (A no-match `update`/`remove` against a freshly-seeded doc still errors and leaves no file. Pass `--no-create` to restore the strict prior behaviour where a missing file yields `kind=not_found`.)
+
 - `tomlctl items add <ledger> --json '{...}'` — append a new item.
 - `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
 - `tomlctl items remove <ledger> <id>` — delete by id.

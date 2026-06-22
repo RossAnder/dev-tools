@@ -66,7 +66,7 @@ After Step 3 and before Step 4, persist findings to the flow's `plan-review-find
 **Before the first TOML mutation, invoke the `tomlctl` skill** to load the full CLI surface (`items next-id` / `add-many` / `array-append` / `items apply` / `set` / readback). Drive every read and write of `plan-review-findings.toml` through `tomlctl` — never line-edit the TOML, and do **not** probe `tomlctl --help` (the skill is authoritative for subcommands and flag spelling; `--help` round-trips waste a turn and invite invented flags such as `--format json`).
 
 1. Resolve `plan_review_findings_path` from `envelope.resolved.artifacts.plan_review_findings`; for legacy flows derive `.claude/flows/<slug>/plan-review-findings.toml` per the `flow-contract-flow-context` self-healing contract and write it back to `[artifacts]` on the next TOML write.
-2. If the file does not exist, bootstrap it with two lines: `schema_version = 1` / `last_updated = <today>` (no atomic dance — `/review-plan` is the sole writer).
+2. No manual bootstrap if the file does not exist — the first `tomlctl items add-many` / `set` write (steps 4-5 below) auto-creates and seeds it with the schema-aware skeleton (`schema_version = 1` + `last_updated`, byte-identical to `flow init`), reporting `"created": true` in its envelope. (No atomic dance either way — `/review-plan` is the sole writer.)
 3. Mint monotonic IDs via `tomlctl items next-id <path> --prefix P`.
 4. Batch-write: `tomlctl items add-many <path> --defaults-json '{"review_round":<n>, "status":"open"}' --ndjson -`.
 5. `tomlctl set <path> last_updated <today>` and `tomlctl set <path> round <n>`, where `<n>` is the current review round (1 on first run; increment per Re-run dedup).

@@ -33,7 +33,7 @@ Each cycle: (1) writes one failing test via the `test-author` skill, commits `re
 
 ## Cycle FSM
 
-Invoke the `flow-contract-execution-record-schema` skill before the first execution-record write to load the canonical schema (field set, type vocabulary, the two-call heredoc append idiom, append-only + supersession, `--verify-integrity` read contract, field-length caps, and the render-from-log routine). `/tdd` writes `verification` and `task-completion` entries into cycle sub-flows and copies entries up to the parent record; all writes follow this contract.
+Invoke the `flow-contract-execution-record-schema` skill before the first execution-record write to load the canonical schema (field set, type vocabulary, the two-call heredoc append idiom, append-only + supersession, `--verify-integrity` read contract, field-length caps, and deterministic PROGRESS-LOG.md regeneration via `tomlctl flow render-progress-log`). `/tdd` writes `verification` and `task-completion` entries into cycle sub-flows and copies entries up to the parent record; all writes follow this contract.
 
 Finite state machine RED → GREEN → REFACTOR → cycle decision (loop or stop), gated by recorded entries in the cycle sub-flow's `execution-record.toml`; states cannot be skipped or reordered.
 
@@ -64,7 +64,11 @@ tomlctl set <cycle-record> last_updated <today>
 
 ## Cycle sub-flow layout
 
-Each cycle gets a transient flow at `.claude/flows/<parent-slug>-tdd-<NNN>/` with its own `context.toml` (cycle slug, parent reference, persisted `red_test_fingerprint` + `test_globs`) and one-task `execution-record.toml`. **Bootstrap protocol** (idempotent, BEFORE any `tomlctl items add`): a single `Write` whose content is exactly the two literal lines `schema_version = 1` and `last_updated = <today>`, followed by `tomlctl integrity refresh <path>` to materialise the `.sha256` sidecar. Without it the first append fails (`No such file or directory` / `sidecar missing`). At completion, copy `task-completion` + `verification` entries up to the parent record (prefix + ID re-mint per REFACTOR), keeping the parent as audit source-of-truth and cycle noise isolated.
+Each cycle gets a transient flow at `.claude/flows/<parent-slug>-tdd-<NNN>/` with its own `context.toml` (cycle slug, parent reference, persisted `red_test_fingerprint` + `test_globs`) and one-task `execution-record.toml`. **Bootstrap protocol** (idempotent): no explicit pre-create is needed — the first mutating `tomlctl items add` against the cycle `execution-record.toml` auto-creates and seeds it with the byte-identical `schema_version = 1` + `last_updated = <today>` skeleton and materialises its `.sha256` sidecar in the same transaction (the write success envelope carries `"created": true`). At completion, copy `task-completion` + `verification` entries up to the parent record (prefix + ID re-mint per REFACTOR), keeping the parent as audit source-of-truth and cycle noise isolated, then regenerate the parent's progress log:
+
+```bash
+tomlctl flow render-progress-log --slug <parent-slug>
+```
 
 ## Anti-cheat enforcement
 
