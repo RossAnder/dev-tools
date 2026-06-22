@@ -15,7 +15,11 @@ mod list;
 mod resolve;
 mod schema;
 mod stale;
-mod time;
+// T1: widened from `mod time` to `pub(crate)` so the dispatch-layer
+// `cli::seed_doc_for` can reach `today_toml_date` (the schema-aware seed
+// embeds today's date). Previously only sibling `flow::*` modules could see
+// it. No behaviour change — purely a visibility widening.
+pub(crate) mod time;
 
 mod dispatch;
 

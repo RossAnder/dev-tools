@@ -36,7 +36,7 @@ use crate::flow::schema::ActiveEntry as SchemaEntry;
 use crate::flow::time::{now_rfc3339, today_toml_date};
 use crate::integrity::refresh_sidecar;
 use crate::io::{
-    atomic_write, guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
+    guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
     with_exclusive_lock, write_toml_with_sidecar,
 };
 use crate::output::print_json_compact;
@@ -79,7 +79,11 @@ fn context_path_for(slug: &str) -> Result<PathBuf> {
 }
 
 /// Resolve `<root>/.claude/flows/<slug>/execution-record.toml`.
-fn execution_record_path_for(slug: &str) -> Result<PathBuf> {
+///
+/// T1: promoted to `pub(crate)` so the upcoming render command (T3) can
+/// resolve the same path this module bootstraps, keeping the path-derivation
+/// single-source.
+pub(crate) fn execution_record_path_for(slug: &str) -> Result<PathBuf> {
     let root = repo_or_cwd_root()?;
     Ok(root
         .join(".claude")
@@ -260,48 +264,60 @@ fn upsert_active_entry(
     Ok((entry_for_return, last_used))
 }
 
-/// Bootstrap `execution-record.toml` if missing — atomic 2-line
-/// `Write`-equivalent followed by sidecar refresh. Mirrors the pattern in
-/// the `flow-context` shared block (`claude/commands/implement.md`):
+/// Bootstrap `execution-record.toml` if missing — materialise the 2-line
+/// `schema_version = 1 / last_updated = <today>` skeleton plus its sidecar.
 ///
-/// 1. Write literal `schema_version = 1\nlast_updated = <today>\n` to the
-///    target via the same `atomic_write` primitive every other write
-///    path uses (TempFile + fsync + rename). Done under an exclusive
-///    lock on the target so a parallel writer can't race.
-/// 2. `refresh_sidecar` to materialise the `<path>.sha256` companion.
+/// T1: the skeleton is no longer a hand-rolled literal string. It is built by
+/// the single-source `cli::seed_doc_for` helper (the SAME helper the
+/// auto-create write path uses) and persisted through `write_toml_with_sidecar`
+/// — the same writer the rest of the pipeline uses. The on-disk bytes are
+/// byte-identical to the former literal `schema_version = 1\nlast_updated =
+/// <date>\n` (verified by `seed_doc_for_matches_bootstrap_bytes` in the io
+/// tests): `toml`'s `preserve_order` serialiser emits the inserted
+/// `schema_version`→`last_updated` order, an integer `1`, and a bare date.
 ///
-/// Idempotent: if the file already exists, leaves the bytes alone but
-/// still ensures the sidecar is present (running `refresh_sidecar`
-/// against the on-disk bytes is cheap and self-healing).
+/// Idempotent: if the file already exists, leaves the bytes alone but still
+/// ensures the sidecar is present (re-deriving it from the on-disk bytes via
+/// `refresh_sidecar` is cheap and self-healing).
 fn bootstrap_execution_record(
     file: &Path,
-    today_iso: &str,
     integrity_args: &WriteIntegrityArgs,
 ) -> Result<()> {
     let allow_outside = integrity_args.allow_outside;
     let write_sidecar = !integrity_args.no_write_integrity;
     let already_exists = file.exists();
-    let body = format!("schema_version = 1\nlast_updated = {today_iso}\n");
+    // T1: single skeleton source — `seed_doc_for` keyed on the basename
+    // (`execution-record.toml`) yields `{schema_version = 1, last_updated =
+    // <today>}`. Built once outside the lock; it's pure data.
+    let seed = crate::cli::seed_doc_for(file)?;
+    let opts = write_integrity_opts(integrity_args);
 
     with_exclusive_lock(file, || {
         // Same in-lock guard the rest of the write paths run.
         guard_write_path(file, allow_outside)?;
         if !already_exists {
-            // Atomic 2-line bootstrap: a single `atomic_write` materialises
-            // a parseable TOML file in one rename. Skip if the file has
-            // re-appeared between the pre-lock check and now (unlikely but
-            // the lock ensures we only ever take the write branch when
-            // truly needed).
+            // Atomic bootstrap: `write_toml_with_sidecar` serialises the seed
+            // and persists TOML + sidecar in one shot (same writer the
+            // auto-create path uses). Skip if the file has re-appeared between
+            // the pre-lock check and now (unlikely, but the lock ensures we
+            // only ever take the write branch when truly needed).
             if !file.exists() {
-                atomic_write(file, body.as_bytes())?;
+                if !allow_outside {
+                    recheck_claude_containment(file)?;
+                }
+                // `opts.write_sidecar` already honours `--no-write-integrity`,
+                // so the sidecar is suppressed there exactly as the pre-T1
+                // `if write_sidecar` gate did.
+                write_toml_with_sidecar(file, &seed, opts)?;
+                return Ok(());
             }
         }
+        // File already present: leave the bytes alone but still ensure the
+        // sidecar exists (self-healing for a clobbered `.sha256`). Skip when
+        // the caller asked for no sidecar (`--no-write-integrity`).
         if !allow_outside {
             recheck_claude_containment(file)?;
         }
-        // Sidecar refresh — bootstrap path produces the matching
-        // `<file>.sha256` companion. Skip when the caller asked for no
-        // sidecar (`--no-write-integrity`).
         if write_sidecar {
             refresh_sidecar(file)?;
         }
@@ -329,7 +345,6 @@ pub(crate) fn dispatch(
     let existing = try_load_existing_context(&context_path)?;
 
     let today = today_toml_date()?;
-    let today_iso = today.to_string();
 
     if dry_run {
         // Build the would-be new entry (active-flow registration) for the
@@ -421,8 +436,10 @@ pub(crate) fn dispatch(
 
     // Bootstrap execution-record.toml (idempotent — the helper checks
     // existence and skips the write when present, but still ensures the
-    // sidecar is materialised).
-    bootstrap_execution_record(&execution_record_path, &today_iso, &integrity)?;
+    // sidecar is materialised). T1: the skeleton now comes from
+    // `cli::seed_doc_for` (single source), so the helper computes its own
+    // date and no longer takes a `today_iso` argument.
+    bootstrap_execution_record(&execution_record_path, &integrity)?;
 
     // Always upsert the active-flow registry entry. A re-init covers the
     // case where the registry got out of sync (file-level removal,

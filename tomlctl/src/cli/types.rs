@@ -178,6 +178,15 @@ pub(crate) struct WriteIntegrityArgs {
     /// stale sidecar must fail CI.
     #[arg(long = "strict-integrity")]
     pub(crate) strict_integrity: bool,
+
+    /// T1: Refuse to auto-create a missing target file; restore the strict
+    /// `kind=not_found` error. Default: a missing file is created (seeded
+    /// with a schema-aware skeleton for recognised flow files — the ledgers
+    /// `execution-record.toml` / `review-ledger.toml` / `optimise-findings.toml`
+    /// / `plan-review-findings.toml` — and an empty table otherwise). Affects
+    /// only TOML write paths (set / set-json / items * / array-append).
+    #[arg(long = "no-create")]
+    pub(crate) no_create: bool,
 }
 
 /// Flattened bundle of all `items list` query options — predicates,

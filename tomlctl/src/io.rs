@@ -338,17 +338,53 @@ where
     }
 }
 
+/// T1: decision the `mutate_doc*` family takes when `read_toml` reports the
+/// target file does not exist (a `NotFound`-tagged error). `Error` propagates
+/// that error unchanged — the strict, pre-T1 behaviour. `Create(seed)` seeds
+/// the in-memory doc from `seed` (a schema-conformant skeleton the caller
+/// computed at the dispatch layer via `seed_doc_for`) and lets the closure run
+/// against it, persisting only if the closure asks to (so a no-match
+/// `update`/`remove` against a freshly-seeded doc still leaves no stray file).
+///
+/// `io.rs` stays schema-agnostic: it only learns "on missing, use this seed
+/// doc, or error" — it never computes the seed and never inspects what kind of
+/// flow file the target is. The schema-aware seed is data passed in.
+pub(crate) enum OnMissing {
+    /// Propagate `read_toml`'s `NotFound` error unchanged (strict mode).
+    Error,
+    /// Start the mutation from this seed doc when the target is missing.
+    Create(TomlValue),
+}
+
+/// T1: classify a `read_toml` failure as "the file is missing" (the
+/// `NotFound`-tagged error from io.rs:194-200) vs anything else. Inspects the
+/// attached `TaggedError` via anyhow's inherent `downcast_ref` (the same
+/// taxonomy `main.rs` reads for `--error-format json`), NOT the message text —
+/// a `Parse` error or any other I/O failure returns `false` so an
+/// existing-but-unreadable file is NEVER overwritten by a seed.
+fn is_not_found(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<crate::errors::TaggedError>()
+        .is_some_and(|t| matches!(t.kind, ErrorKind::NotFound))
+}
+
 /// Run a closure that mutates a TOML document at `file` under the standard
 /// write pipeline: `guard_write_path` → `with_exclusive_lock` → `read_toml` →
 /// `f(&mut doc)` → `write_toml_with_sidecar`. Centralises what was previously
 /// open-coded at each `Cmd::{Set,SetJson}` / `ItemsOp::{Add,Update,Remove,Apply}`
 /// dispatch site.
+///
+/// T1: returns `created` (true ⟺ the target did not exist and was seeded from
+/// `on_missing`). On a `NotFound`-tagged read failure with `OnMissing::Create`
+/// the mutation starts from the seed; with `OnMissing::Error` the original
+/// error propagates unchanged. Any non-`NotFound` read failure propagates
+/// regardless of `on_missing`, so an unreadable/corrupt file is never seeded.
 pub(crate) fn mutate_doc<F>(
     file: &Path,
     allow_outside: bool,
     integrity: IntegrityOpts,
+    on_missing: OnMissing,
     f: F,
-) -> Result<()>
+) -> Result<bool>
 where
     F: FnOnce(&mut TomlValue) -> Result<()>,
 {
@@ -360,7 +396,9 @@ where
         // guard and `persist()`; running the guard inside the critical section
         // closes that window for any actor that respects our lock.
         guard_write_path(file, allow_outside)?;
-        let mut doc = read_toml(file)?;
+        // T1: read, or seed on a NotFound miss. `read_or_seed` resolves the
+        // `on_missing` policy and reports whether the doc was seeded.
+        let (mut doc, created) = read_or_seed(file, on_missing)?;
         f(&mut doc)?;
         // R3 TOCTOU narrowing: re-canonicalise target parent immediately before
         // the atomic persist and re-check that it still lies under `.claude/`.
@@ -372,8 +410,26 @@ where
             recheck_claude_containment(file)?;
         }
         write_toml_with_sidecar(file, &doc, integrity)?;
-        Ok(())
+        Ok(created)
     })
+}
+
+/// T1: shared read-or-seed step for the `mutate_doc*` family. Attempts
+/// `read_toml(file)`; on a `NotFound`-tagged miss it consults `on_missing`:
+/// `Create(seed)` returns `(seed, created=true)`, `Error` re-propagates the
+/// original error. A non-`NotFound` read error (e.g. a `Parse` failure on an
+/// existing-but-corrupt file) ALWAYS propagates — `on_missing` is irrelevant
+/// there, so a seed can never clobber a file that exists but won't parse. A
+/// successful read returns `(doc, created=false)`.
+fn read_or_seed(file: &Path, on_missing: OnMissing) -> Result<(TomlValue, bool)> {
+    match read_toml(file) {
+        Ok(doc) => Ok((doc, false)),
+        Err(e) if is_not_found(&e) => match on_missing {
+            OnMissing::Create(seed) => Ok((seed, true)),
+            OnMissing::Error => Err(e),
+        },
+        Err(e) => Err(e),
+    }
 }
 
 /// T5: sibling of `mutate_doc` whose closure returns `Result<bool>`. When
@@ -389,30 +445,47 @@ where
 /// not, we've already acquired the exclusive lock and touched the path;
 /// failing the guard up-front keeps the error surface identical to
 /// `mutate_doc`.
+///
+/// T1: returns `created` (true ⟺ the target did not exist, was seeded from
+/// `on_missing`, AND the closure asked to persist). Seed semantics for the
+/// no-op case: if the file was seeded (`created` from `read_or_seed` is true)
+/// but the closure returns `Ok(false)` (e.g. a dedupe hit found nothing to
+/// add), we skip the write entirely — a pure no-op against a freshly-seeded
+/// doc leaves NO stray file on disk, honouring the plan's "no stray file"
+/// invariant. We therefore report `created=false` on that path: nothing was
+/// persisted, so from the caller's perspective no file was created. `created`
+/// is only ever `true` when both the seed fired AND a write actually landed.
 pub(crate) fn mutate_doc_conditional<F>(
     file: &Path,
     allow_outside: bool,
     integrity: IntegrityOpts,
+    on_missing: OnMissing,
     f: F,
-) -> Result<()>
+) -> Result<bool>
 where
     F: FnOnce(&mut TomlValue) -> Result<bool>,
 {
     with_exclusive_lock(file, || {
         guard_write_path(file, allow_outside)?;
-        let mut doc = read_toml(file)?;
+        // T1: read, or seed on a NotFound miss. `seeded` tracks whether the
+        // doc started from the seed; it only graduates to a reported
+        // `created=true` if the closure also asks to persist (below).
+        let (mut doc, seeded) = read_or_seed(file, on_missing)?;
         let mutated = f(&mut doc)?;
         if !mutated {
             // Skip the write — the caller signalled no-op (e.g. dedupe hit).
             // Leaving the file + sidecar untouched is the whole point: a
-            // double-`add` with `--dedupe-by` must not bump the mtime.
-            return Ok(());
+            // double-`add` with `--dedupe-by` must not bump the mtime. T1:
+            // this also covers the seeded-but-no-op case — a freshly-seeded
+            // doc whose closure adds nothing must NOT materialise a stray
+            // file, so we return `created=false` (nothing persisted).
+            return Ok(false);
         }
         if !allow_outside {
             recheck_claude_containment(file)?;
         }
         write_toml_with_sidecar(file, &doc, integrity)?;
-        Ok(())
+        Ok(seeded)
     })
 }
 
@@ -428,19 +501,33 @@ where
 /// fresh `TomlValue` (inside a `MutationPlan`) instead of mutating in
 /// place — a mechanical change that keeps the rest of `mutate_doc`'s
 /// callers unaffected.
+///
+/// T1: returns `created` (true ⟺ the target did not exist and was seeded from
+/// `on_missing`). The closure receives the seeded doc on a miss; transactional
+/// safety is preserved because the closure failing (`Err`) short-circuits via
+/// `?` BEFORE `write_toml_with_sidecar` — so a compute step that finds no
+/// matching id (e.g. `items remove`/all-update `apply` against a freshly-seeded
+/// empty doc) errors out and persists nothing, leaving no stray file. A
+/// non-`NotFound` read error always propagates regardless of `on_missing`.
 pub(crate) fn mutate_doc_plan<F>(
     file: &Path,
     allow_outside: bool,
     integrity: crate::integrity::IntegrityOpts,
+    on_missing: OnMissing,
     f: F,
-) -> Result<()>
+) -> Result<bool>
 where
     F: FnOnce(&TomlValue) -> Result<crate::items::MutationPlan>,
 {
     with_exclusive_lock(file, || {
         // O17: in-lock guard, same as `mutate_doc`.
         guard_write_path(file, allow_outside)?;
-        let doc = read_toml(file)?;
+        // T1: read, or seed on a NotFound miss.
+        let (doc, created) = read_or_seed(file, on_missing)?;
+        // The closure failing here short-circuits BEFORE the persist below
+        // (`?`), so a no-match compute against a freshly-seeded doc writes
+        // nothing — the transactional "write-only-on-closure-success" property
+        // holds for the seeded path exactly as it does for the read path.
         let plan = f(&doc)?;
         // R3 TOCTOU narrowing: re-check containment immediately before
         // the atomic persist. Mirrors `mutate_doc`'s post-mutation check.
@@ -453,7 +540,7 @@ where
         // that holds the plan outside the lock (e.g. T11's explicit
         // backfill might do compute + apply separately for reporting).
         write_toml_with_sidecar(file, &plan.new_doc, integrity)?;
-        Ok(())
+        Ok(created)
     })
 }
 
@@ -1807,5 +1894,158 @@ arr = [1, 2]
             .map(|a| a.len())
             .unwrap();
         assert_eq!(still_two, 2);
+    }
+
+    /// T1 (a): `mutate_doc` against a MISSING path with `OnMissing::Create(seed)`
+    /// materialises a file containing the seed PLUS the closure's mutation, and
+    /// reports `created == true`. Anchors `.claude/` at a tempdir so the
+    /// write-path guard + lock resolve there and leave no stray repo artifacts.
+    #[test]
+    fn mutate_doc_seeds_missing_file_and_reports_created() {
+        let _guard = env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let canonical = dir.path().canonicalize().unwrap();
+        unsafe {
+            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
+        }
+        let claude = canonical.join(".claude");
+        fs::create_dir_all(&claude).unwrap();
+        let target = claude.join("execution-record.toml");
+        assert!(!target.exists(), "precondition: target must not exist");
+
+        // Seed mirrors the recognised-flow-file skeleton; the closure then
+        // mutates a `tasks.total` scalar so we can prove BOTH the seed and the
+        // mutation landed.
+        let mut seed_table = toml::map::Map::new();
+        seed_table.insert("schema_version".to_string(), TomlValue::Integer(1));
+        let seed = TomlValue::Table(seed_table);
+
+        let created = mutate_doc(
+            &target,
+            false,
+            integrity_write_only(),
+            OnMissing::Create(seed),
+            |doc| {
+                let root = doc.as_table_mut().expect("seed is a table");
+                root.insert("touched".to_string(), TomlValue::Boolean(true));
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        unsafe {
+            std::env::remove_var("TOMLCTL_ROOT");
+        }
+
+        assert!(created, "a seeded missing file must report created == true");
+        assert!(target.exists(), "the file must have been materialised");
+        let on_disk = read_toml(&target).unwrap();
+        let table = on_disk.as_table().unwrap();
+        // Seed survived…
+        assert_eq!(
+            table.get("schema_version").and_then(|v| v.as_integer()),
+            Some(1),
+            "seed field must be present"
+        );
+        // …and the closure's mutation landed on top of it.
+        assert_eq!(
+            table.get("touched").and_then(|v| v.as_bool()),
+            Some(true),
+            "closure mutation must be persisted atop the seed"
+        );
+    }
+
+    /// T1 (b): `mutate_doc` against a missing path with `OnMissing::Error`
+    /// re-propagates the original `kind=not_found` error and creates NOTHING —
+    /// no file, no sidecar.
+    #[test]
+    fn mutate_doc_on_missing_error_propagates_not_found_and_creates_nothing() {
+        let _guard = env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let canonical = dir.path().canonicalize().unwrap();
+        unsafe {
+            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
+        }
+        let claude = canonical.join(".claude");
+        fs::create_dir_all(&claude).unwrap();
+        let target = claude.join("ledger.toml");
+        assert!(!target.exists(), "precondition: target must not exist");
+
+        let err = mutate_doc(
+            &target,
+            false,
+            integrity_write_only(),
+            OnMissing::Error,
+            |_doc| panic!("closure must not run when the read errors"),
+        )
+        .unwrap_err();
+
+        unsafe {
+            std::env::remove_var("TOMLCTL_ROOT");
+        }
+
+        // The original NotFound tag must be preserved (not re-wrapped).
+        let tagged = err
+            .downcast_ref::<crate::errors::TaggedError>()
+            .expect("error must carry the NotFound tag");
+        assert!(
+            matches!(tagged.kind, ErrorKind::NotFound),
+            "OnMissing::Error must propagate kind=not_found, got {:?}",
+            tagged.kind
+        );
+        assert!(!target.exists(), "no file must be created on the Error path");
+        assert!(
+            !sidecar_path(&target).exists(),
+            "no sidecar must be created on the Error path"
+        );
+    }
+
+    /// T1: a non-`NotFound` read failure (a corrupt/unparseable existing file)
+    /// must propagate UNCHANGED even with `OnMissing::Create` — a seed must
+    /// never clobber a file that exists but won't parse.
+    #[test]
+    fn mutate_doc_create_does_not_clobber_unparseable_existing_file() {
+        let _guard = env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let canonical = dir.path().canonicalize().unwrap();
+        unsafe {
+            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
+        }
+        let claude = canonical.join(".claude");
+        fs::create_dir_all(&claude).unwrap();
+        let target = claude.join("corrupt.toml");
+        // Invalid TOML on disk — read_toml will tag this `kind=parse`.
+        fs::write(&target, "this is = = not valid toml [[[").unwrap();
+
+        let mut seed_table = toml::map::Map::new();
+        seed_table.insert("schema_version".to_string(), TomlValue::Integer(1));
+        let seed = TomlValue::Table(seed_table);
+
+        let err = mutate_doc(
+            &target,
+            false,
+            integrity_write_only(),
+            OnMissing::Create(seed),
+            |_doc| panic!("closure must not run when the existing file fails to parse"),
+        )
+        .unwrap_err();
+
+        let on_disk_after = fs::read_to_string(&target).unwrap();
+
+        unsafe {
+            std::env::remove_var("TOMLCTL_ROOT");
+        }
+
+        let tagged = err
+            .downcast_ref::<crate::errors::TaggedError>()
+            .expect("error must carry a tag");
+        assert!(
+            matches!(tagged.kind, ErrorKind::Parse),
+            "a corrupt existing file must surface kind=parse, never be seeded"
+        );
+        assert_eq!(
+            on_disk_after, "this is = = not valid toml [[[",
+            "the unparseable file must be left byte-identical (never clobbered by the seed)"
+        );
     }
 }

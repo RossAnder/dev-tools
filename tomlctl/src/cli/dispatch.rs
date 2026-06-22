@@ -25,7 +25,7 @@ use crate::dedup::{
 };
 use crate::integrity::{IntegrityOpts, refresh_sidecar, sidecar_path, verify_integrity};
 use crate::io::{
-    compute_set_json_mutation, compute_set_mutation, guard_write_path, mutate_doc,
+    OnMissing, compute_set_json_mutation, compute_set_mutation, guard_write_path, mutate_doc,
     mutate_doc_conditional, mutate_doc_plan, read_doc, read_doc_borrowed, read_doc_either,
     read_toml_str, recheck_claude_containment, warn_if_read_outside_claude, with_exclusive_lock,
 };
@@ -271,6 +271,62 @@ pub(crate) fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
     }
 }
 
+/// T1: single source of truth for the schema-aware seed skeleton. The
+/// recognised flow-file basenames (the four ledgers) all share the
+/// `schema_version = 1 / last_updated = <today>` 2-line skeleton; any other
+/// basename seeds an empty table. Defined once here so a future flow file
+/// joining the recognised set is a one-line edit. `flow::init`'s
+/// `bootstrap_execution_record` routes through the SAME helper so the
+/// execution-record skeleton has exactly one definition (byte-identical
+/// output to the former literal `schema_version = 1\nlast_updated = <date>\n`).
+const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
+    "execution-record.toml",
+    "review-ledger.toml",
+    "optimise-findings.toml",
+    "plan-review-findings.toml",
+];
+
+/// T1: compute the schema-conformant seed doc to use when a write target does
+/// not exist yet (the `io::OnMissing::Create` payload). Matches the file's
+/// BASENAME against the recognised flow files (`SCHEMA_SEEDED_FLOW_FILES`):
+/// each gets a `{schema_version = 1, last_updated = <today>}` table (that key
+/// order); any other basename gets an empty table `{}`.
+///
+/// Fallible because the recognised-file seed embeds today's date via
+/// `flow::time::today_toml_date()` (itself fallible). The schema-awareness
+/// lives HERE at the dispatch layer (which can reach `flow::time`); `io.rs`
+/// only ever sees the resulting doc as opaque `OnMissing::Create(seed)` data.
+pub(crate) fn seed_doc_for(path: &std::path::Path) -> Result<toml::Value> {
+    let basename = path.file_name().and_then(|n| n.to_str());
+    let recognised = basename.is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b));
+    let mut table = toml::map::Map::new();
+    if recognised {
+        // Key order is load-bearing for byte-identity with the (former)
+        // literal `schema_version = 1\nlast_updated = <date>\n` skeleton that
+        // `flow::init::bootstrap_execution_record` wrote — `toml`'s
+        // `preserve_order` feature serialises in insertion order, so
+        // `schema_version` MUST be inserted before `last_updated`.
+        table.insert("schema_version".to_string(), toml::Value::Integer(1));
+        let today = crate::flow::time::today_toml_date()?;
+        table.insert("last_updated".to_string(), toml::Value::Datetime(today));
+    }
+    Ok(toml::Value::Table(table))
+}
+
+/// T1: resolve the `io::OnMissing` policy for a write at `file` from the
+/// caller's `--no-create` flag. `--no-create` (i.e. `no_create == true`)
+/// restores the strict `kind=not_found` error; the default seeds a
+/// schema-aware skeleton via `seed_doc_for`. Fallible because the seed embeds
+/// today's date. Threaded into every `mutate_doc*` write site so the
+/// flag→policy mapping lives in one place.
+fn on_missing_for(file: &std::path::Path, integrity: &WriteIntegrityArgs) -> Result<OnMissing> {
+    if integrity.no_create {
+        Ok(OnMissing::Error)
+    } else {
+        Ok(OnMissing::Create(seed_doc_for(file)?))
+    }
+}
+
 /// P19 (symmetric half): TOML write subcommands (`set`, `set-json`,
 /// `array-append`) refuse `.json` targets and point the caller at
 /// `tomlctl json set`. The corresponding positive half (JSON writers
@@ -444,7 +500,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             let opts = write_integrity_opts(&integrity);
-            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+            // T1: auto-create a missing target (default) or restore the strict
+            // not_found error (`--no-create`). Bool discarded — surfacing the
+            // `created` signal in the envelope / stderr is T2's job.
+            let on_missing = on_missing_for(&file, &integrity)?;
+            let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 let v = parse_scalar(&value, ty)?;
                 set_at_path(doc, &path, v)
             })?;
@@ -476,7 +536,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             let opts = write_integrity_opts(&integrity);
-            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+            // T1: see `Cmd::Set` — bool discarded (surfacing is T2's job).
+            let on_missing = on_missing_for(&file, &integrity)?;
+            let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 let last_key = path.rsplit_once('.').map(|(_, k)| k).unwrap_or(path.as_str());
                 let v = maybe_date_coerce(last_key, &parsed)?;
                 set_at_path(doc, &path, v)
@@ -544,7 +606,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             }
             let opts = write_integrity_opts(&integrity);
             let mut appended: usize = 0;
-            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+            // T1: bool discarded (surfacing is T2's job).
+            let on_missing = on_missing_for(&file, &integrity)?;
+            let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 appended = array_append(doc, &array, &rows)?;
                 Ok(())
             })?;
@@ -734,7 +798,9 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // and reserve the enriched shape for the `--dedupe-by`
                 // branch below.
                 let json = read_json_arg(&json)?;
-                mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+                // T1: bool discarded (surfacing is T2's job).
+                let on_missing = on_missing_for(&file, &integrity)?;
+                let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     items_add_to(doc, &array, &json)
                 })?;
                 print_json_compact(&serde_json::json!({"ok": true}))?;
@@ -748,7 +814,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let patch: JsonValue =
                     read_json_value_from_arg(&json).context("parsing --json")?;
                 let mut outcome: Option<AddOutcome> = None;
-                mutate_doc_conditional(&file, integrity.allow_outside, opts, |doc| {
+                // T1: bool discarded (surfacing is T2's job). On a dedupe hit
+                // against a freshly-seeded missing file the closure returns
+                // `Ok(false)`, so `mutate_doc_conditional` skips the write and
+                // leaves no stray file — see its T1 no-op semantics.
+                let on_missing = on_missing_for(&file, &integrity)?;
+                let _created = mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     let result = items_add_value_with_dedupe_to(
                         doc,
                         patch,
@@ -820,7 +891,9 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // same output shape (`{"ok":true,"added":N}`), same
                 // always-write pipeline.
                 let mut added: usize = 0;
-                mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+                // T1: bool discarded (surfacing is T2's job).
+                let on_missing = on_missing_for(&file, &integrity)?;
+                let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
                     Ok(())
                 })?;
@@ -832,7 +905,11 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // untouched and the sidecar must not bump for a pure-
                 // skip batch. Any `added > 0` takes the write branch.
                 let mut outcome: Option<AddManyOutcome> = None;
-                mutate_doc_conditional(&file, integrity.allow_outside, opts, |doc| {
+                // T1: bool discarded (surfacing is T2's job). A pure-skip batch
+                // (added == 0) against a freshly-seeded missing file returns
+                // `Ok(false)`, so the write is skipped and no stray file lands.
+                let on_missing = on_missing_for(&file, &integrity)?;
+                let _created = mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     let result = items_add_many_with_dedupe(
                         doc,
                         &array,
@@ -892,7 +969,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 emit_dry_run_plan(&plan)?;
                 return Ok(());
             }
-            mutate_doc(&file, integrity.allow_outside, opts, |doc| {
+            // T1: bool discarded (surfacing is T2's job). An `update` against a
+            // freshly-seeded missing file finds no matching id and the closure
+            // errors out BEFORE the persist (`mutate_doc`'s `?`), so nothing is
+            // written — no stray seeded file. This preserves the transactional
+            // "write-only-on-closure-success" property the plan calls out.
+            let on_missing = on_missing_for(&file, &integrity)?;
+            let _created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 items_update_to(doc, &array, &id, &json, &unset)
             })?;
             print_json_compact(&serde_json::json!({"ok": true}))?;
@@ -924,7 +1007,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // stage byte-for-byte. The read happens inside the
                 // exclusive lock via `mutate_doc_plan` so the same
                 // TOCTOU narrowing as `mutate_doc` holds.
-                mutate_doc_plan(&file, integrity.allow_outside, opts, |doc| {
+                // T1: bool discarded (surfacing is T2's job). A `remove`
+                // against a freshly-seeded missing file finds no matching id
+                // and `compute_remove_mutation` errors out BEFORE the persist
+                // (`mutate_doc_plan`'s `?`), so nothing is written.
+                let on_missing = on_missing_for(&file, &integrity)?;
+                let _created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     compute_remove_mutation(doc, &array, &id)
                 })?;
                 print_json_compact(&serde_json::json!({"ok": true}))?;
@@ -984,7 +1072,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 })?;
                 emit_dry_run_plan(&plan)?;
             } else {
-                mutate_doc_plan(&file, integrity.allow_outside, opts, |doc| {
+                // T1: bool discarded (surfacing is T2's job). An all-`update`/
+                // all-`remove` batch against a freshly-seeded missing file
+                // errors in `compute_apply_mutation` (no matching id) BEFORE
+                // the persist, so nothing is written. Batches with `add` ops
+                // seed-then-append into the new file as expected.
+                let on_missing = on_missing_for(&file, &integrity)?;
+                let _created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
                 })?;
                 print_json_compact(&serde_json::json!({"ok": true}))?;
@@ -1189,7 +1283,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // reflects what actually landed on disk, not the
                 // pre-read snapshot.
                 let mut written: usize = 0;
-                mutate_doc_plan(&file, integrity.allow_outside, opts, |doc| {
+                // T1: thread the policy for consistency with the other write
+                // sites, though the seed branch is unreachable here — the
+                // pre-read above (`read_doc`) already errors `kind=not_found`
+                // on a missing ledger before we reach this in-lock recompute,
+                // so a backfill never seeds a file. Bool discarded (T2).
+                let on_missing = on_missing_for(&file, &integrity)?;
+                let _created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     let plan = compute_backfill_mutation(doc, &array)?;
                     written = plan.updated.len();
                     Ok(plan)
@@ -1961,5 +2061,139 @@ body
         );
         // Restore for any other test that might run afterwards in this process.
         STDIN_CONSUMED.store(prev, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    // ----- T1: seed_doc_for + --no-create -----
+
+    /// T1 (c): the schema-aware seed for a recognised flow file
+    /// (`execution-record.toml`) serialises BYTE-IDENTICALLY to the skeleton
+    /// `flow::init::bootstrap_execution_record` writes — exactly
+    /// `schema_version = 1\nlast_updated = <date>\n` (integer `1`, bare date,
+    /// trailing newline, that key order). The pipeline serialises every write
+    /// via `toml::to_string_pretty`, so we pin that exact rendering here.
+    ///
+    /// This is the single-skeleton-source guarantee: if a future `toml` bump
+    /// or key-order slip diverged the seed from the historical literal bytes,
+    /// this test fails loudly. The date is read back out of the seed itself
+    /// (so the test is clock-independent) and reassembled via the SAME
+    /// `format!("schema_version = 1\nlast_updated = {today_iso}\n")` shape the
+    /// former literal used — `today_iso` being `Datetime::to_string()`.
+    #[test]
+    fn seed_doc_for_matches_bootstrap_bytes() {
+        let path = std::path::Path::new(".claude/flows/x/execution-record.toml");
+        let seed = seed_doc_for(path).unwrap();
+        // The pipeline writer is `toml::to_string_pretty` (see
+        // `io::write_toml_with_sidecar`); render the seed the same way.
+        let rendered = toml::to_string_pretty(&seed).unwrap();
+
+        // Reconstruct the historical literal from the seed's OWN date — this
+        // mirrors `bootstrap_execution_record`'s former
+        // `format!("schema_version = 1\nlast_updated = {today_iso}\n")` where
+        // `today_iso = today.to_string()` (a `toml::value::Datetime` rendered
+        // bare, e.g. `2026-06-22`).
+        let today_iso = seed
+            .as_table()
+            .and_then(|t| t.get("last_updated"))
+            .and_then(|v| v.as_datetime())
+            .expect("recognised seed carries a `last_updated` datetime")
+            .to_string();
+        let expected = format!("schema_version = 1\nlast_updated = {today_iso}\n");
+
+        assert_eq!(
+            rendered, expected,
+            "seed_doc_for must serialise byte-identically to the historical \
+             execution-record skeleton"
+        );
+        // Pin the structural shape too: integer `1`, bare date (no quotes),
+        // exactly two lines + trailing newline, schema_version first.
+        assert!(
+            rendered.starts_with("schema_version = 1\n"),
+            "schema_version must serialise as a bare integer first, got: {rendered:?}"
+        );
+        assert!(
+            !rendered.contains('"'),
+            "the date must be bare (unquoted), got: {rendered:?}"
+        );
+    }
+
+    /// T1: an UNRECOGNISED basename seeds an empty table `{}` (serialises to
+    /// the empty string — no `schema_version`/`last_updated`).
+    #[test]
+    fn seed_doc_for_unrecognised_basename_is_empty_table() {
+        let path = std::path::Path::new(".claude/flows/x/context.toml");
+        let seed = seed_doc_for(path).unwrap();
+        let table = seed.as_table().expect("seed is a table");
+        assert!(
+            table.is_empty(),
+            "an unrecognised flow file must seed an empty table, got: {table:?}"
+        );
+        assert_eq!(
+            toml::to_string_pretty(&seed).unwrap(),
+            "",
+            "an empty table serialises to the empty string"
+        );
+    }
+
+    /// T1: every recognised flow-file basename seeds the 2-key skeleton.
+    #[test]
+    fn seed_doc_for_recognised_files_all_seed_skeleton() {
+        for name in SCHEMA_SEEDED_FLOW_FILES {
+            let path = std::path::Path::new(name);
+            let seed = seed_doc_for(path).unwrap();
+            let table = seed.as_table().unwrap();
+            assert_eq!(
+                table.get("schema_version").and_then(|v| v.as_integer()),
+                Some(1),
+                "{name} must seed schema_version = 1"
+            );
+            assert!(
+                table.get("last_updated").is_some_and(|v| v.as_datetime().is_some()),
+                "{name} must seed a `last_updated` date"
+            );
+        }
+    }
+
+    /// T1 (d): `--no-create` appears on a WRITE subcommand (`set`) and is
+    /// ABSENT from a READ-only subcommand (`get`). Driven through the real clap
+    /// parser — a write arm accepts `--no-create`; a read arm rejects it with
+    /// `UnknownArgument`. `Cli` is not `Debug`, so we inspect the `Result`
+    /// without `expect`/`unwrap` (which would require `Debug` on the Ok arm).
+    #[test]
+    fn no_create_flag_on_write_subcommands_only() {
+        use clap::Parser as _;
+        use clap::error::ErrorKind as ClapErrorKind;
+
+        // WRITE path (`set`) must accept `--no-create`.
+        let ok = Cli::try_parse_from([
+            "tomlctl",
+            "set",
+            "/tmp/x.toml",
+            "key",
+            "val",
+            "--no-create",
+        ]);
+        assert!(
+            ok.is_ok(),
+            "`--no-create` must be accepted on the write subcommand `set`, got: {:?}",
+            ok.err().map(|e| e.kind())
+        );
+
+        // READ path (`get`) must reject `--no-create` as an unknown argument.
+        // Map to the clap error kind first so we never need `Debug` on `Cli`.
+        let read_err_kind = Cli::try_parse_from([
+            "tomlctl",
+            "get",
+            "/tmp/x.toml",
+            "key",
+            "--no-create",
+        ])
+        .map_err(|e| e.kind())
+        .err();
+        assert_eq!(
+            read_err_kind,
+            Some(ClapErrorKind::UnknownArgument),
+            "`--no-create` must NOT exist on the read subcommand `get` \
+             (expected UnknownArgument), got: {read_err_kind:?}"
+        );
     }
 }
