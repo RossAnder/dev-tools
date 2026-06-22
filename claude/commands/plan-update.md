@@ -334,46 +334,7 @@ After both agents return, produce the reformatted plan:
 **Output structure for single-file plans:**
 Split into at minimum: the plan itself (clean, actionable) + a PROGRESS-LOG.md if there's any status tracking content to extract.
 
-**PROGRESS-LOG.md format** (this is the rendered shape — `reformat` MUST regenerate it by running `tomlctl flow render-progress-log --slug <slug>` rather than hand-authoring it; row identifiers come from the log's `id` field, i.e. `E<n>`. Migrated entries also carry `legacy_id = "D<n>"` / `"DF<n>"` for back-compat, but it does not appear in the `#` column):
-
-```markdown
-<!-- Generated from execution-record.toml. Do not edit by hand. -->
-
-# {Plan Name} — Progress Log
-
----
-
-## Completed Items
-
-| # | Item | Date | Commit | Notes |
-|---|------|------|--------|-------|
-| ... | ... | ... | `sha` | ... |
-
----
-
-## Deviations
-
-| # | Deviation | Date | Commit | Rationale | Supersedes |
-|---|-----------|------|--------|-----------|------------|
-| E1 | ... | ... | `sha` | ... | — |
-| E2 | ... | ... | `sha` | ... | Superseded by E25 |
-
----
-
-## Deferrals
-
-| # | Item | Deferred From | Date | Reason | Re-evaluate When |
-|---|------|--------------|------|--------|-----------------|
-| E7 | ... | Wave 2, Item 9 | ... | ... | When X happens |
-
----
-
-## Session Log
-
-| Date | Changes | Commits |
-|------|---------|---------|
-| ... | ... | ... |
-```
+**PROGRESS-LOG.md format**: `reformat` MUST regenerate `PROGRESS-LOG.md` by running `tomlctl flow render-progress-log --slug <slug>` rather than hand-authoring it. The rendered shape (marker line + the four tables: Completed Items / Deviations / Deferrals / Session Log, their columns, and every value derivation) is the single source of truth in the `flow-contract-execution-record-schema` skill's reference spec (invoked under `## Execution Record Schema` above) — do not duplicate the table layout here. Row identifiers come from the log's `id` field (`E<n>`); migrated entries also carry `legacy_id = "D<n>"` / `"DF<n>"` for back-compat, but it does not appear in the `#` column.
 
 **RESEARCH-NOTES.md format:**
 

@@ -365,12 +365,14 @@ Writes preserve every field the tool didn't touch, including `created`. Key orde
 
 ### Auto-create on first write
 
-Every mutating verb routed through the write chokepoint — `set`, `set-json`, `array-append`, and `items {add, add-many, apply, update, remove, backfill-dedup-id}` — **creates a missing target file by default** instead of erroring. On a missing file the tool seeds a starting document, then applies and persists the verb's mutation transactionally:
+Every mutating verb routed through the write chokepoint — `set`, `set-json`, `array-append`, and `items {add, add-many, apply, update, remove}` — **creates a missing target file by default** instead of erroring. On a missing file the tool seeds a starting document, then applies and persists the verb's mutation transactionally:
 
 - **The four recognised flow files** (matched on basename: `execution-record.toml`, `review-ledger.toml`, `optimise-findings.toml`, `plan-review-findings.toml`) seed a skeleton `schema_version = 1` (TOML integer) + `last_updated = <today>` (bare date) — byte-identical to what `flow init` bootstraps.
 - **Any other path** seeds an empty document (`{}`).
 
 The seed is only the *starting* doc — the verb's mutation must still succeed against it. A no-match `update` / `remove` (or an all-update `apply`) against a freshly-seeded doc still ERRORS and leaves NO file behind: an empty seed has nothing to match, so the operation fails before the file is persisted.
+
+**Exception — `items backfill-dedup-id` does NOT auto-create.** It pre-reads the ledger to find items lacking a `dedup_id`, so a missing target errors with `kind=not_found` regardless of `--no-create`. This is by design, not a bug: backfilling an absent ledger is a no-op, so the strict missing-file error is the correct behaviour. Every other mutating verb listed above auto-creates.
 
 **Envelope.** Write-success envelopes now carry `"created": <bool>` and `"path": "<file>"` alongside any existing keys (e.g. `added`/`updated`/`removed`):
 
@@ -674,7 +676,7 @@ tomlctl flow render-progress-log --slug <slug>
 # → {"ok":true,"path":".claude/flows/<slug>/PROGRESS-LOG.md","tables":{"completed":N,"deviations":N,"deferrals":N,"sessions":N}}
 ```
 
-The rendered document carries its marker line followed by four tables — **Completed Items**, **Deviations**, **Deferrals**, and **Session Log** — each with a `(none)` empty-state row when it has no entries, plus a trailing newline. The envelope's `tables` counts mirror the row counts of each table.
+The rendered document carries its marker line followed by four tables — **Completed Items**, **Deviations**, **Deferrals**, and **Session Log** — each with a `(none)` empty-state row when it has no entries, plus a trailing newline. The envelope's `tables` counts mirror the row counts of each table. That `{ok, path, tables}` envelope is the **default (file-writing) path only**; under `--stdout` the command prints just the rendered Markdown to stdout and emits NO JSON envelope.
 
 ```bash
 # Print to stdout instead of writing the file.

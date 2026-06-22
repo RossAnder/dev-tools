@@ -105,7 +105,7 @@ Variants:
 - `tomlctl flow render-progress-log --slug <slug> --stdout` — print the rendered Markdown to stdout instead of writing the file (useful for diffing / preview).
 - `tomlctl flow render-progress-log --slug <slug> --verify-integrity` — verify the execution-record's `.sha256` sidecar before rendering.
 
-Success envelope: `{"ok":true,"path":"<…/PROGRESS-LOG.md>","tables":{"completed":N,"deviations":N,"deferrals":N,"sessions":N}}`.
+Success envelope (default file-writing path): `{"ok":true,"path":"<…/PROGRESS-LOG.md>","tables":{"completed":N,"deviations":N,"deferrals":N,"sessions":N}}`. Under `--stdout` the command prints only the rendered Markdown and emits no JSON envelope.
 
 Render-then-render MUST be byte-identical (idempotency). Reordering two same-date entries in the source MUST NOT change the output: the command pre-sorts by `(date asc, id asc)` to fix bucket order, the count-based Changes column is order-insensitive within a bucket, and the lexicographic Commits sort is order-insensitive within a bucket.
 
@@ -113,7 +113,7 @@ The format the command emits is documented below as its reference spec — the c
 
 ### `PROGRESS-LOG.md` format (produced by `tomlctl flow render-progress-log`)
 
-This is the reference spec for the Markdown that `tomlctl flow render-progress-log --slug <slug>` produces — the command implements every derivation below; the skill documents the format so readers can reason about the output and diff it. Every op that mutates `<record>` (`status`, `complete`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) regenerates the log as its **last step** by invoking the command:
+This is the reference spec for the Markdown that `tomlctl flow render-progress-log --slug <slug>` produces — the command implements every derivation below; the skill documents the format so readers can reason about the output and diff it. **Format authority for table whitespace:** this spec describes columns and their value derivations, but the exact separator-row dash widths (and all inter-cell whitespace) are owned and emitted by the command — it GFM-width-matches each separator run to its column header. The renderer's output, not any older hand-authored on-disk separator widths, is canonical; do not hand-tune separator dashes to match this spec, and do not read dash counts out of this prose. Every op that mutates `<record>` (`status`, `complete`, `deviation`, `defer`, `reconcile`, `reformat`, `catchup`, `migrate`) regenerates the log as its **last step** by invoking the command:
 
 ```bash
 tomlctl flow render-progress-log --slug <slug>
@@ -180,7 +180,7 @@ Distinct-slug count (not a raw entry count), so a failed attempt followed by a s
 
 #### Read-path integrity contract
 
-Every read of `execution-record.toml` or `context.toml` by `/plan-new`, `/plan-update`, or `/implement` MUST pass `--verify-integrity`. `/plan-new`'s bootstrap materialises the sidecar via `tomlctl integrity refresh` immediately after the initial `Write` (see step 7 of the bootstrap), so every downstream reader lands on a file whose sidecar exists — there is no bootstrap-grace branch for a "sidecar known-absent" state. On sidecar digest mismatch, tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. If a read legitimately hits a missing-sidecar state (the bootstrap refresh failed and was never rerun, or the sidecar was deleted out-of-band), recover with `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`.
+Every read of `execution-record.toml` or `context.toml` by `/plan-new`, `/plan-update`, or `/implement` MUST pass `--verify-integrity`. `/plan-new` bootstraps the record via `tomlctl flow init`, which writes the `.sha256` sidecar as part of seeding the skeleton, so every downstream reader lands on a file whose sidecar already exists — there is no bootstrap-grace branch for a "sidecar known-absent" state. Ad-hoc first writes outside that bootstrap auto-create the record and materialise its sidecar in the same transaction (see the recovery note below). On sidecar digest mismatch, tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. If a read legitimately hits a missing-sidecar state (the bootstrap refresh failed and was never rerun, or the sidecar was deleted out-of-band), recover with `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`.
 
 Recovery note: should the execution-record file itself be missing when a writer first appends (e.g. `/plan-new`'s bootstrap never ran), the write no longer errors — the `tomlctl items add` / `tomlctl set` chokepoint auto-creates the missing record, seeding the same `schema_version = 1` / `last_updated = <today>` skeleton `flow init` writes, and the write's `.sha256` sidecar is materialised as part of that first write. This is a recovery path, not the normal route: `/plan-new` / `flow init` still pre-seed the record. Pass `--no-create` to a writer to restore the strict prior behaviour (missing file → `kind=not_found`, nothing created).
 
