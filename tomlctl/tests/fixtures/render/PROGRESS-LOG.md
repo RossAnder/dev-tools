@@ -27,7 +27,8 @@
 
 | # | Deviation | Date | Commit | Rationale | Supersedes |
 |---|-----------|------|--------|-----------|------------|
-| (none) | | | | | |
+| E18 | Superseded the separator-width deviation: documented the width-match as the canonical rule in the schema skill | 2026-05-21 | `bb22cc3` | The skill is the format-reference spec; the canonical width rule belongs there, not buried in a deviation | E17 |
+| E19 | Emitted a single trailing newline at EOF rather than the historical double blank line | 2026-05-21 | `cc33dd4` | A single trailing newline is the POSIX text-file convention and keeps render-then-render byte-identical | — |
 
 ---
 
@@ -35,7 +36,8 @@
 
 | # | Item | Deferred From | Date | Reason | Re-evaluate When |
 |---|------|---------------|------|--------|------------------|
-| (none) | | | | | |
+| E20 | Deferred the flow-history migrate command | add-flow-migrate-command | 2026-05-20 | Out of scope for the initial overhaul; no in-flight flows need migrating yet | A user reports lost flow history on registry adoption |
+| E21 | Deferred the GitLab/self-hosted repo-slug host discriminator | widen-repo-slug-host | 2026-05-21 | GitHub-only slug shape is a user-accepted trade-off for the current scope | A move to GitLab or a self-hosted host is scheduled |
 
 ---
 
@@ -43,4 +45,5 @@
 
 | Date | Changes | Commits |
 |------|---------|---------|
-| 2026-05-20 | 16 entries: status-transition × 2, task-completion × 12, verification × 2 | 27d2dfd, 6a44cd0, caeaf58 |
+| 2026-05-20 | 18 entries: status-transition × 2, task-completion × 12, verification × 2, deviation × 1, deferral × 1 | 27d2dfd, 6a44cd0, aa11bb2, caeaf58 |
+| 2026-05-21 | 3 entries: deviation × 2, deferral × 1 | bb22cc3, cc33dd4 |

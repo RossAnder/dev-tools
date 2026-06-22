@@ -208,3 +208,59 @@ summary = "All 12 wave-2 tasks complete; flow in-progress -> review"
 from_status = "in-progress"
 to_status = "review"
 dedup_id = "e5d345747cb88768"
+
+[[items]]
+id = "E17"
+type = "deviation"
+date = 2026-05-20
+agent = "implement"
+summary = "Width-matched the Deferrals separator to its header instead of the hand-authored off-by-one"
+original_intent = "Reproduce the historical on-disk Deferrals separator dash widths verbatim"
+rationale = "The hand-authored widths are not derivable from any rule; the renderer's GFM width-match is canonical"
+commits = ["aa11bb2"]
+dedup_id = "a1a1a1a1a1a1a1a1"
+
+[[items]]
+id = "E18"
+type = "deviation"
+date = 2026-05-21
+agent = "plan-update"
+summary = "Superseded the separator-width deviation: documented the width-match as the canonical rule in the schema skill"
+original_intent = "Leave the separator-width choice as an undocumented renderer detail"
+rationale = "The skill is the format-reference spec; the canonical width rule belongs there, not buried in a deviation"
+commits = ["bb22cc3"]
+supersedes_entry = "E17"
+dedup_id = "b2b2b2b2b2b2b2b2"
+
+[[items]]
+id = "E19"
+type = "deviation"
+date = 2026-05-21
+agent = "implement"
+summary = "Emitted a single trailing newline at EOF rather than the historical double blank line"
+original_intent = "Match the historical PROGRESS-LOG.md's trailing whitespace exactly"
+rationale = "A single trailing newline is the POSIX text-file convention and keeps render-then-render byte-identical"
+commits = ["cc33dd4"]
+dedup_id = "c3c3c3c3c3c3c3c3"
+
+[[items]]
+id = "E20"
+type = "deferral"
+date = 2026-05-20
+agent = "plan-update"
+summary = "Deferred the flow-history migrate command"
+task_ref = "add-flow-migrate-command"
+reason = "Out of scope for the initial overhaul; no in-flight flows need migrating yet"
+reevaluate_when = "A user reports lost flow history on registry adoption"
+dedup_id = "d4d4d4d4d4d4d4d4"
+
+[[items]]
+id = "E21"
+type = "deferral"
+date = 2026-05-21
+agent = "implement"
+summary = "Deferred the GitLab/self-hosted repo-slug host discriminator"
+task_ref = "widen-repo-slug-host"
+reason = "GitHub-only slug shape is a user-accepted trade-off for the current scope"
+reevaluate_when = "A move to GitLab or a self-hosted host is scheduled"
+dedup_id = "e5e5e5e5e5e5e5e5"
