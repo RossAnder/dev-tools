@@ -29,7 +29,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::json;
 use toml::Value as TomlValue;
 
@@ -55,6 +55,15 @@ struct RenderResult {
 }
 
 pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) -> Result<()> {
+    // R1 (security): validate the raw `--slug` BEFORE it flows into
+    // `execution_record_path_for` (which joins `.claude/flows/<slug>/…`). The
+    // strict regex (`^[a-z0-9][a-z0-9-]{0,63}$`, shared with `flow init`)
+    // rejects `/`, `\`, `..`, absolute paths, and NUL, so the resolved record /
+    // PROGRESS-LOG paths cannot escape `.claude/flows/<slug>/` — closing the
+    // path-traversal hole where a slug like `../../tmp/x` turned the record read
+    // into a file-existence/parse-error oracle and the write into an
+    // out-of-containment write with no `--allow-outside` opt-out.
+    crate::flow::init::validate_slug(slug)?;
     let record_path = execution_record_path_for(slug)?;
     // Sibling files live next to the execution record under the flow dir.
     let flow_dir = record_path
@@ -69,7 +78,14 @@ pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) 
     // `maybe_verify_integrity` no-op when the flag is off).
     maybe_verify_integrity(&record_path, read_integrity_opts(integrity))?;
 
-    let record = read_toml(&record_path)?;
+    // R15: chain an actionable hint onto a record-read failure (missing flow,
+    // unparseable record) naming the slug and pointing at `flow init`. The
+    // underlying not-found / parse error stays chained beneath this context.
+    let record = read_toml(&record_path).with_context(|| {
+        format!(
+            "rendering PROGRESS-LOG.md for flow `{slug}` — is the flow initialised? (run `tomlctl flow init`)"
+        )
+    })?;
     let title = resolve_title(slug, &context_path);
     let rendered = render_to_string(&record, &title)?;
 
@@ -113,26 +129,60 @@ fn resolve_title(slug: &str, context_path: &Path) -> String {
 }
 
 /// Inner title resolver returning `None` on any miss (no context, no
-/// `plan_path`, unreadable plan, no `# Plan:` header) so `resolve_title` can
-/// apply the slug fallback. Path resolution honours `repo_or_cwd_root` for a
-/// repo-relative `plan_path` (the shape `context.toml` records), falling back
-/// to the literal path when the root can't be resolved.
+/// `plan_path`, unreadable plan, no `# Plan:` header, or a `plan_path` that
+/// escapes the repo root — R19) so `resolve_title` can apply the slug
+/// fallback. The repo-relative `plan_path` (the shape `context.toml` records)
+/// is resolved against `repo_or_cwd_root` and then containment-checked; an
+/// absolute or `..`-bearing `plan_path`, or one whose resolved target sits
+/// outside the root, is rejected (returns `None`) rather than read.
 fn title_from_context(context_path: &Path) -> Option<String> {
     let context = read_toml(context_path).ok()?;
     let plan_path = context.get("plan_path")?.as_str()?;
     let plan_candidate = PathBuf::from(plan_path);
-    // `plan_path` is stored repo-relative; resolve it against the repo root so
-    // we open the same file regardless of CWD. An absolute path is used as-is.
-    let plan_resolved = if plan_candidate.is_absolute() {
-        plan_candidate
-    } else {
-        match repo_or_cwd_root() {
-            Ok(root) => root.join(&plan_candidate),
-            Err(_) => plan_candidate,
-        }
-    };
+    // R19 (security/containment): the `plan_path` comes from `context.toml`,
+    // which a flow author (or a tampered file) controls. Resolve it against the
+    // repo root, then assert the resolved path stays UNDER that root before
+    // reading it — otherwise an absolute or `..`-laden `plan_path` would turn
+    // this title read into an arbitrary-file read (and a parse/IO oracle).
+    // Reject absolute or traversal-bearing `plan_path` outright; on any escape
+    // return `None` so `resolve_title` applies the slug-title fallback.
+    if plan_candidate.is_absolute()
+        || plan_candidate
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    let root = repo_or_cwd_root().ok()?;
+    let plan_resolved = root.join(&plan_candidate);
+    if !path_under_root(&root, &plan_resolved) {
+        return None;
+    }
     let body = std::fs::read_to_string(&plan_resolved).ok()?;
     plan_title_from_body(&body)
+}
+
+/// R19 helper: is `candidate` (which may not yet exist) contained under
+/// `root`? We canonicalise both — `root` directly, and `candidate` via its
+/// nearest EXISTING ancestor (canonicalising a missing leaf errors) — then
+/// assert prefix-ancestry. A symlink under the flow tree pointing outside
+/// `root` therefore still fails here, not just lexical `..` traversal. On any
+/// canonicalisation failure we conservatively report "not contained".
+fn path_under_root(root: &Path, candidate: &Path) -> bool {
+    let Ok(root_canon) = root.canonicalize() else {
+        return false;
+    };
+    let mut anchor: &Path = candidate;
+    let anchor_canon = loop {
+        match anchor.canonicalize() {
+            Ok(c) => break c,
+            Err(_) => match anchor.parent() {
+                Some(p) if !p.as_os_str().is_empty() => anchor = p,
+                _ => return false,
+            },
+        }
+    };
+    anchor_canon.starts_with(&root_canon)
 }
 
 /// Extract the first `# Plan: <title>` H1 header from a plan-file body,
@@ -226,11 +276,22 @@ fn str_field<'a>(item: &'a TomlValue, key: &str) -> &'a str {
     item.get(key).and_then(|v| v.as_str()).unwrap_or("")
 }
 
-/// Render a TOML value (string OR bare date `Datetime`) as a cell string.
-/// Dates serialise via `Datetime::to_string` (`YYYY-MM-DD` for bare dates).
+/// Render a TOML value (string OR `Datetime`) as a cell string.
+///
+/// R16: render and group by the DATE COMPONENT only. A `Datetime` carrying a
+/// time/offset (a full RFC3339 timestamp) would otherwise render the whole
+/// timestamp in the Date column AND fragment Session-Log grouping per-second;
+/// we extract `Datetime::date` and emit just `YYYY-MM-DD` (formatted directly
+/// from the `Date` fields so a `Datetime` with no date — a bare local-time —
+/// yields an empty cell rather than a stray time). A bare TOML date is
+/// unchanged (it already has `time = None`); a timestamped one collapses to its
+/// day. String-shaped dates pass through verbatim.
 fn date_cell(item: &TomlValue, key: &str) -> String {
     match item.get(key) {
-        Some(TomlValue::Datetime(dt)) => dt.to_string(),
+        Some(TomlValue::Datetime(dt)) => match dt.date {
+            Some(d) => format!("{:04}-{:02}-{:02}", d.year, d.month, d.day),
+            None => String::new(),
+        },
         Some(TomlValue::String(s)) => s.clone(),
         _ => String::new(),
     }
@@ -401,18 +462,14 @@ fn render_completed(out: &mut String, items: &[TomlValue]) -> usize {
 fn render_deviations(out: &mut String, items: &[TomlValue]) -> usize {
     out.push_str("## Deviations\n\n");
     let all = sorted_by_type(items, "deviation");
-    // Render only supersession-chain HEADS: an entry is superseded when ANOTHER
-    // entry's `supersedes_entry` points at its `id`. Collect the superseded set
-    // across the whole deviation slice, then drop those ids.
-    let superseded: BTreeSet<String> = all
-        .iter()
-        .filter_map(|it| it.get("supersedes_entry").and_then(|v| v.as_str()))
-        .map(str::to_string)
-        .collect();
-    let rows: Vec<Vec<String>> = all
+    let tips = supersession_tips(&all);
+    let rows: Vec<Vec<String>> = tips
         .into_iter()
-        .filter(|it| !superseded.contains(id_of(it)))
         .map(|it| {
+            // `Supersedes` shows the IMMEDIATE predecessor id verbatim — that
+            // is correct provenance even when the predecessor row was pruned as
+            // a non-tip (it documents what this entry replaced). EM DASH when
+            // the entry supersedes nothing.
             let supersedes = match it.get("supersedes_entry").and_then(|v| v.as_str()) {
                 Some(s) => s.to_string(),
                 None => EM_DASH.to_string(),
@@ -432,6 +489,75 @@ fn render_deviations(out: &mut String, items: &[TomlValue]) -> usize {
         &["#", "Deviation", "Date", "Commit", "Rationale", "Supersedes"],
         &rows,
     )
+}
+
+/// R3: resolve the supersession graph over `entries` to the set of CHAIN TIPS
+/// to render, one per chain, latest-by-`(date, id)`. Returns the surviving
+/// entries in the same `(date asc, id asc)` order `entries` arrived in.
+///
+/// An entry is a *tip* when no other entry supersedes it (its `id` is not any
+/// entry's `supersedes_entry`). For a LINEAR chain there is exactly one tip and
+/// it renders. For a FORK (two entries re-pointing at the same predecessor)
+/// there are two tips that trace back to a common chain root; we keep only the
+/// LATEST tip per root by `(date_key, id_order)`, so a fork collapses to a
+/// single head rather than rendering both.
+///
+/// Chain identity is the id of the deepest ancestor reachable by following
+/// `supersedes_entry` from a tip. A *dangling* predecessor (an id with no
+/// matching entry — e.g. the predecessor row was hand-pruned) terminates the
+/// walk: that dangling id becomes the chain key, so the tip still renders
+/// rather than being silently dropped. Walk depth is bounded by the entry count
+/// to stay cycle-safe on a malformed self/loop-referential record.
+fn supersession_tips<'a>(entries: &[&'a TomlValue]) -> Vec<&'a TomlValue> {
+    use std::collections::BTreeMap;
+
+    // id → entry, and the set of ids that are superseded by SOME entry.
+    let by_id: BTreeMap<&str, &TomlValue> = entries.iter().map(|it| (id_of(it), *it)).collect();
+    let superseded: BTreeSet<&str> = entries
+        .iter()
+        .filter_map(|it| it.get("supersedes_entry").and_then(|v| v.as_str()))
+        .collect();
+
+    // Walk a tip back to its chain root id (bounded against cycles).
+    let chain_root = |tip: &TomlValue| -> String {
+        let mut cur = tip;
+        let max_steps = entries.len() + 1;
+        for _ in 0..max_steps {
+            match cur.get("supersedes_entry").and_then(|v| v.as_str()) {
+                // Predecessor exists in the slice → keep climbing.
+                Some(pred) if by_id.contains_key(pred) => cur = by_id[pred],
+                // Dangling predecessor → the dangling id IS the chain key.
+                Some(pred) => return pred.to_string(),
+                // No predecessor → this entry is the root.
+                None => return id_of(cur).to_string(),
+            }
+        }
+        // Cycle guard: fall back to the tip's own id so it still renders.
+        id_of(tip).to_string()
+    };
+
+    // For each chain root, keep the latest tip by `(date_key, id_order)`.
+    let mut best: BTreeMap<String, &TomlValue> = BTreeMap::new();
+    for it in entries {
+        if superseded.contains(id_of(it)) {
+            continue; // not a tip
+        }
+        let root = chain_root(it);
+        match best.get(&root) {
+            Some(prev) if entry_sort_key(prev) >= entry_sort_key(it) => {}
+            _ => {
+                best.insert(root, it);
+            }
+        }
+    }
+
+    // Restore the input `(date asc, id asc)` order for the surviving tips.
+    let kept: BTreeSet<&str> = best.values().map(|it| id_of(it)).collect();
+    entries
+        .iter()
+        .filter(|it| kept.contains(id_of(it)))
+        .copied()
+        .collect()
 }
 
 fn render_deferrals(out: &mut String, items: &[TomlValue]) -> usize {
@@ -584,6 +710,27 @@ mod tests {
         assert!(id_order("E2") < id_order("E13"));
         // A non-E id sorts after all numbered ids.
         assert!(id_order("E99") < id_order("X1"));
+    }
+
+    /// R16: a bare TOML date renders `YYYY-MM-DD`; a full RFC3339 TIMESTAMP
+    /// collapses to its DATE component only (no time leak, no per-second
+    /// grouping fragmentation). A string-shaped date passes through verbatim.
+    #[test]
+    fn date_cell_renders_date_component_only() {
+        let bare: TomlValue = toml::from_str("date = 2026-05-20").unwrap();
+        assert_eq!(date_cell(&bare, "date"), "2026-05-20");
+        // Offset date-time (RFC3339 with a time + Z offset) → date only.
+        let ts: TomlValue = toml::from_str("date = 2026-05-20T13:45:30Z").unwrap();
+        assert_eq!(date_cell(&ts, "date"), "2026-05-20");
+        // Local date-time (date + time, no offset) → date only.
+        let local: TomlValue = toml::from_str("date = 2026-05-20T01:02:03").unwrap();
+        assert_eq!(date_cell(&local, "date"), "2026-05-20");
+        // String-shaped date is preserved verbatim.
+        let s: TomlValue = toml::from_str("date = \"2026-05-20\"").unwrap();
+        assert_eq!(date_cell(&s, "date"), "2026-05-20");
+        // Absent → empty cell.
+        let absent: TomlValue = toml::from_str("x = 1").unwrap();
+        assert_eq!(date_cell(&absent, "date"), "");
     }
 
     /// `files = []` (present-but-empty) renders `0 files`; absent renders "".
