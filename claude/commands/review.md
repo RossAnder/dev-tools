@@ -22,10 +22,11 @@ tomlctl flow envelope build \
   --command review \
   --branch "$(git branch --show-current)" \
   --worktree "$(git rev-parse --show-toplevel)" \
-  --cwd "$(pwd)"
+  --cwd "$(pwd)" \
+  --staleness-threshold 7d
 ```
 
-On detached HEAD, `git branch --show-current` prints an empty string; omit the `--branch` flag in that case so the envelope records `branch:null` rather than `branch:""`.
+The block above is complete and copy-pasteable as-is — do NOT look up `--help`; `/review` lazily creates its ledger, so no `--require-artifact` flag is needed, and `--staleness-threshold 7d` is the default, passed explicitly for clarity. On detached HEAD, `git branch --show-current` prints an empty string; omit the `--branch` flag in that case so the envelope records `branch:null` rather than `branch:""`.
 
 Pass `--flow-override <slug>` to the envelope build when the user supplied `--flow`, and `--path-arg <p>` once per `$ARGUMENTS` path token. Dispatch `flow-bootstrap` via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*`, `doctor.ok`, and `resolved.stale` for downstream phases. Emit the bootstrap-summary line before any other action. When staleness fires for `/review`, invoke the `plan-update` skill with literal arg `reconcile` before continuing.
 

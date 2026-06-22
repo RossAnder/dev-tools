@@ -15,28 +15,25 @@ Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelop
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
-> The literal envelope template + 5-point gating recipe below stay inline (and are duplicated across the optimise / optimise-apply / review-apply / plan-update carriers) by design: each carrier executes Step 0 directly, so the recipe is intentionally not externalised to the `flow-contract-flow-context` skill, which holds only the interpretation contract. Not a parity-check target — do not re-flag the duplication.
+> The envelope-build command + 5-point gating recipe below stay inline (and are duplicated across the optimise / optimise-apply / review-apply / plan-update carriers) by design: each carrier executes Step 0 directly, so the recipe is intentionally not externalised to the `flow-contract-flow-context` skill, which holds only the interpretation contract. Not a parity-check target — do not re-flag the duplication.
 
-Dispatch the `flow-bootstrap` sub-agent with a single JSON-encoded input envelope. The
-agent emits one JSON object on stdout; parse it as `envelope`. All downstream phases consume
-fields from `envelope.resolved` and `envelope.doctor`.
+Build the input envelope with `tomlctl flow envelope build`, then dispatch the
+`flow-bootstrap` sub-agent with the printed JSON. The agent emits one JSON object on stdout;
+parse it as `envelope`. All downstream phases consume fields from `envelope.resolved` and
+`envelope.doctor`.
 
-Input envelope (build at dispatch time):
-
-```json
-{
-  "command": "optimise",
-  "flow_override": <--flow value or null>,
-  "path_args": <$ARGUMENTS-derived path list — array of strings, [] if no path args>,
-  "branch": <git branch --show-current or null>,
-  "worktree": <git rev-parse --show-toplevel or null>,
-  "cwd": <pwd or null>,
-  "require_artifacts": [],
-  "staleness_threshold": "7d"
-}
+```bash
+tomlctl flow envelope build \
+  --command optimise \
+  --branch "$(git branch --show-current)" \
+  --worktree "$(git rev-parse --show-toplevel)" \
+  --cwd "$(pwd)" \
+  --staleness-threshold 7d
 ```
 
-Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse:
+The block above is complete and copy-pasteable as-is — do NOT look up `--help`. On detached HEAD, omit `--branch` so the envelope records `branch:null`. Add `--flow-override <slug>` when the user supplied `--flow`, and `--path-arg <p>` once per `$ARGUMENTS` path token. `/optimise` lazily creates its findings artifact, so no `--require-artifact` flag is needed; `--staleness-threshold 7d` is the default, passed explicitly for clarity.
+
+Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. After parse:
 
 1. **Gate on `envelope.ok`**. If `false`, surface `envelope.errors` to the user verbatim
    and halt. Do not proceed to scope analysis or any downstream phase.

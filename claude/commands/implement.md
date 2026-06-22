@@ -22,10 +22,12 @@ tomlctl flow envelope build \
   --command implement \
   --branch "$(git branch --show-current)" \
   --worktree "$(git rev-parse --show-toplevel)" \
-  --cwd "$(pwd)"
+  --cwd "$(pwd)" \
+  --require-artifact execution_record \
+  --staleness-threshold 7d
 ```
 
-On detached HEAD, omit `--branch` so the envelope records `branch:null`. Pass `--flow-override <slug>` when the user supplied `--flow`, and `--path-arg <p>` once per `$ARGUMENTS` path token. Set `require_artifacts = ["execution_record"]` and `staleness_threshold = "7d"`. Dispatch `flow-bootstrap` via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*` (esp. `execution_record`), and `doctor.ok` for downstream phases. Emit the bootstrap-summary line before any other action. On no-flow, prompt the user per `envelope.warnings` / `tie_candidates`.
+The block above is complete and copy-pasteable as-is — do NOT look up `--help`. The `--require-artifact execution_record` flag is what pins `require_artifacts = ["execution_record"]` in the emitted envelope (`/implement` reads the record before writing it); `--staleness-threshold 7d` is the default, passed explicitly for clarity. On detached HEAD, omit `--branch` so the envelope records `branch:null`. Add `--flow-override <slug>` when the user supplied `--flow`, and `--path-arg <p>` once per `$ARGUMENTS` path token. Dispatch `flow-bootstrap` via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*` (esp. `execution_record`), and `doctor.ok` for downstream phases. Emit the bootstrap-summary line before any other action. On no-flow, prompt the user per `envelope.warnings` / `tie_candidates`.
 
 ## Phase 1: Analyse and Decompose (main conversation — thinking enabled)
 

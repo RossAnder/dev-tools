@@ -15,26 +15,24 @@ Invoke the `flow-contract-flow-context` skill to load the full flow-bootstrap en
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
-Dispatch the `flow-bootstrap` sub-agent with a single JSON-encoded input envelope. The
-agent emits one JSON object on stdout; parse it as `envelope`. All downstream phases consume
-fields from `envelope.resolved` and `envelope.doctor`.
+Build the input envelope with `tomlctl flow envelope build`, then dispatch the
+`flow-bootstrap` sub-agent with the printed JSON. The agent emits one JSON object on stdout;
+parse it as `envelope`. All downstream phases consume fields from `envelope.resolved` and
+`envelope.doctor`.
 
-Input envelope (build at dispatch time):
-
-```json
-{
-  "command": "optimise-apply",
-  "flow_override": <--flow value or null>,
-  "path_args": <$ARGUMENTS-derived path list — array of strings, [] if no path args>,
-  "branch": <git branch --show-current or null>,
-  "worktree": <git rev-parse --show-toplevel or null>,
-  "cwd": <pwd or null>,
-  "require_artifacts": ["optimise_findings"],
-  "staleness_threshold": "7d"
-}
+```bash
+tomlctl flow envelope build \
+  --command optimise-apply \
+  --branch "$(git branch --show-current)" \
+  --worktree "$(git rev-parse --show-toplevel)" \
+  --cwd "$(pwd)" \
+  --require-artifact optimise_findings \
+  --staleness-threshold 7d
 ```
 
-Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse:
+The block above is complete and copy-pasteable as-is — do NOT look up `--help`. The `--require-artifact optimise_findings` flag pins `require_artifacts = ["optimise_findings"]` (`/optimise-apply` reads the findings ledger before applying); `--staleness-threshold 7d` is the default, passed explicitly for clarity. On detached HEAD, omit `--branch` so the envelope records `branch:null`. Add `--flow-override <slug>` when the user supplied `--flow`, and `--path-arg <p>` once per `$ARGUMENTS` path token.
+
+Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. After parse:
 
 1. **Gate on `envelope.ok`**. If `false`, surface `envelope.errors` to the user verbatim
    and halt. Do not proceed to scope analysis or any downstream phase.

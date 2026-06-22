@@ -24,10 +24,11 @@ tomlctl flow envelope build \
   --command review-plan \
   --branch "$(git branch --show-current)" \
   --worktree "$(git rev-parse --show-toplevel)" \
-  --cwd "$(pwd)"
+  --cwd "$(pwd)" \
+  --staleness-threshold 7d
 ```
 
-On detached HEAD, omit `--branch` so the envelope records `branch:null`. Pass `--flow-override <slug>` when the user supplied `--flow`, and `--path-arg <p>` once per `$ARGUMENTS` path token. Dispatch via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*` (incl. `plan_review_findings`), and `doctor.ok` for downstream phases. Emit the bootstrap-summary line before any other action.
+The block above is complete and copy-pasteable as-is — do NOT look up `--help`; `/review-plan` needs no `--require-artifact` flag (it lazily creates its findings artifact), and `--staleness-threshold 7d` is the default, passed explicitly for clarity. On detached HEAD, omit `--branch` so the envelope records `branch:null`. Pass `--flow-override <slug>` when the user supplied `--flow`, and `--path-arg <p>` once per `$ARGUMENTS` path token. Dispatch via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*` (incl. `plan_review_findings`), and `doctor.ok` for downstream phases. Emit the bootstrap-summary line before any other action.
 
 ## Step 0.5: First-use `plansDirectory` prompt (per-carrier)
 

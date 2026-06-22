@@ -20,10 +20,12 @@ tomlctl flow envelope build \
   --command tdd \
   --branch "$(git branch --show-current)" \
   --worktree "$(git rev-parse --show-toplevel)" \
-  --cwd "$(pwd)"
+  --cwd "$(pwd)" \
+  --require-artifact execution_record \
+  --staleness-threshold 7d
 ```
 
-On detached HEAD, omit `--branch` so the envelope records `branch:null`. Set `require_artifacts = ["execution_record"]` and `staleness_threshold = "7d"`. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*`, `doctor.ok`. For `/tdd`, no-flow resolution prompts the user (it does not fall back to a scope file). Emit the bootstrap-summary line before any other action.
+The block above is complete and copy-pasteable as-is — do NOT look up `--help`. The `--require-artifact execution_record` flag is what pins `require_artifacts = ["execution_record"]` in the emitted envelope (`/tdd` reads the record before writing it); `--staleness-threshold 7d` is the default, passed explicitly for clarity. On detached HEAD, omit `--branch` so the envelope records `branch:null`. Dispatch `flow-bootstrap` via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*`, `doctor.ok`. For `/tdd`, no-flow resolution prompts the user (it does not fall back to a scope file). Emit the bootstrap-summary line before any other action.
 
 # TDD Cycles
 

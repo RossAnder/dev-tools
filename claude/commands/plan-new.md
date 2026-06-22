@@ -20,10 +20,11 @@ tomlctl flow envelope build \
   --command plan-new \
   --branch "$(git branch --show-current)" \
   --worktree "$(git rev-parse --show-toplevel)" \
-  --cwd "$(pwd)"
+  --cwd "$(pwd)" \
+  --staleness-threshold 7d
 ```
 
-On detached HEAD, `git branch --show-current` prints an empty string; omit `--branch` so the envelope records `branch:null`. Pass `--flow-override <slug>` when the user supplied `--flow`. Dispatch `flow-bootstrap` via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*`, `doctor.ok`. Emit the bootstrap-summary line before any other action.
+The block above is complete and copy-pasteable as-is — do NOT look up `--help`; `/plan-new` resolves no pre-existing artifacts (the flow is created later in Phase 9), so no `--require-artifact` flag is needed, and `--staleness-threshold 7d` is the default, passed explicitly for clarity. On detached HEAD, `git branch --show-current` prints an empty string; omit `--branch` so the envelope records `branch:null`. Pass `--flow-override <slug>` when the user supplied `--flow`. Dispatch `flow-bootstrap` via the Task tool with `subagent_type: "flow-bootstrap"` and the printed JSON as the prompt. Gate on `envelope.ok`; bind `slug`, `context_path`, `artifacts.*`, `doctor.ok`. Emit the bootstrap-summary line before any other action.
 
 **Carrier-specific note (`/plan-new`)**: For a fresh plan, no flow exists yet — `envelope.resolved.resolved == false` is the EXPECTED outcome (not a halt condition), and the carrier proceeds to Phase 1 without halting. Bootstrap is still dispatched to detect the rare collision where a pre-existing flow already matches the plan path or branch; on collision, surface `envelope.resolved.tie_candidates` and ask the user whether to resume the existing flow or proceed with a new slug. Phase 9 performs the actual flow-creation bootstrap (read-only bootstrap agent never creates flows).
 
