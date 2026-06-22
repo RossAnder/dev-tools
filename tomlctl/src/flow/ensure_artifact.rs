@@ -26,12 +26,11 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
 
 use crate::cli::{ArtifactKind, WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::flow::time::today_utc_iso;
 use crate::integrity::{refresh_sidecar, sha256_hex_of_file, sidecar_path};
 use crate::io::{
     atomic_write, guard_write_path, recheck_claude_containment, relativise, repo_or_cwd_root,
@@ -250,8 +249,15 @@ fn bootstrap_execution_record(
         return print_json_compact(&report);
     }
 
-    let today = today_utc_iso()?;
-    let body = format!("schema_version = 1\nlast_updated = {today}\n");
+    // R5: source the skeleton from the single-source `cli::seed_doc_for`
+    // helper (the SAME helper the auto-create write path and
+    // `flow::init::bootstrap_execution_record` use) rather than a hand-rolled
+    // literal. Render it through `toml::to_string_pretty` — the exact writer
+    // `io::write_toml_with_sidecar` runs — so the on-disk bytes stay
+    // byte-identical to the former literal `schema_version = 1\nlast_updated =
+    // <date>\n` (integer `1`, bare date, trailing newline, that key order).
+    let seed = crate::cli::seed_doc_for(artifact)?;
+    let body = toml::to_string_pretty(&seed).context("serialising TOML")?;
 
     if dry_run {
         // The `would_change` envelope mirrors the items-side dry-run shape
@@ -328,8 +334,10 @@ fn emit_bootstrap_noop(root: &Path, artifact: &Path, kind: ArtifactKind) -> Resu
     print_json_compact(&report)
 }
 
-// R3 / R6: `write_integrity_opts` and `today_utc_iso` are now sourced
-// from `crate::cli` and `crate::flow::time` respectively.
+// R3 / R6: `write_integrity_opts` is sourced from `crate::cli`.
+// R5: the execution-record skeleton (and its embedded date) is no longer
+// computed here — it comes from the single-source `crate::cli::seed_doc_for`
+// helper, so the former `flow::time::today_utc_iso` import is gone.
 
 #[cfg(test)]
 mod tests {

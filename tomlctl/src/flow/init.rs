@@ -55,7 +55,11 @@ fn slug_regex() -> &'static Regex {
 /// Validate the `--slug` CLI argument against the canonical regex. Returns
 /// a `kind=validation` tagged error on rejection so downstream JSON
 /// callers can branch on the kind without regexing prose.
-fn validate_slug(slug: &str) -> Result<()> {
+///
+/// Promoted to `pub(crate)` (enabling edit for R1): this is the STRICT-regex
+/// validator (`^[a-z0-9][a-z0-9-]{0,63}$`); the RENDER cluster reuses it to
+/// close a slug-traversal hole rather than re-deriving a second validator.
+pub(crate) fn validate_slug(slug: &str) -> Result<()> {
     if slug_regex().is_match(slug) {
         return Ok(());
     }
@@ -264,32 +268,48 @@ fn upsert_active_entry(
     Ok((entry_for_return, last_used))
 }
 
+/// T1 / R5: the PURE skeleton-building step shared by every execution-record
+/// bootstrap path. Delegates straight to the single-source
+/// `cli::seed_doc_for` helper (keyed on the basename) so the skeleton has
+/// exactly one definition crate-wide. No FS I/O — pure data — so the
+/// byte-identity test (`cli::dispatch::tests::seed_doc_for_matches_bootstrap_bytes`)
+/// can exercise this REAL bootstrap code path without touching disk.
+pub(crate) fn execution_record_skeleton(file: &Path) -> Result<TomlValue> {
+    crate::cli::seed_doc_for(file)
+}
+
 /// Bootstrap `execution-record.toml` if missing — materialise the 2-line
 /// `schema_version = 1 / last_updated = <today>` skeleton plus its sidecar.
 ///
 /// T1: the skeleton is no longer a hand-rolled literal string. It is built by
-/// the single-source `cli::seed_doc_for` helper (the SAME helper the
-/// auto-create write path uses) and persisted through `write_toml_with_sidecar`
-/// — the same writer the rest of the pipeline uses. The on-disk bytes are
-/// byte-identical to the former literal `schema_version = 1\nlast_updated =
-/// <date>\n` (verified by `seed_doc_for_matches_bootstrap_bytes` in the io
-/// tests): `toml`'s `preserve_order` serialiser emits the inserted
-/// `schema_version`→`last_updated` order, an integer `1`, and a bare date.
+/// the single-source `cli::seed_doc_for` helper (via `execution_record_skeleton`,
+/// the SAME helper the auto-create write path uses) and persisted through
+/// `write_toml_with_sidecar` — the same writer the rest of the pipeline uses.
+/// The on-disk bytes are byte-identical to the former literal
+/// `schema_version = 1\nlast_updated = <date>\n` (verified by
+/// `seed_doc_for_matches_bootstrap_bytes` in the dispatch tests): `toml`'s
+/// `preserve_order` serialiser emits the inserted `schema_version`→`last_updated`
+/// order, an integer `1`, and a bare date.
 ///
 /// Idempotent: if the file already exists, leaves the bytes alone but still
 /// ensures the sidecar is present (re-deriving it from the on-disk bytes via
 /// `refresh_sidecar` is cheap and self-healing).
-fn bootstrap_execution_record(
+///
+/// R5: promoted to `pub(crate)` so the byte-identity test can name this real
+/// bootstrap entry point (it asserts on the extracted `execution_record_skeleton`
+/// to stay FS-free, but the path is now nameable from outside the module).
+pub(crate) fn bootstrap_execution_record(
     file: &Path,
     integrity_args: &WriteIntegrityArgs,
 ) -> Result<()> {
     let allow_outside = integrity_args.allow_outside;
     let write_sidecar = !integrity_args.no_write_integrity;
     let already_exists = file.exists();
-    // T1: single skeleton source — `seed_doc_for` keyed on the basename
-    // (`execution-record.toml`) yields `{schema_version = 1, last_updated =
-    // <today>}`. Built once outside the lock; it's pure data.
-    let seed = crate::cli::seed_doc_for(file)?;
+    // T1 / R5: single skeleton source via `execution_record_skeleton` →
+    // `seed_doc_for` keyed on the basename (`execution-record.toml`) yields
+    // `{schema_version = 1, last_updated = <today>}`. Built once outside the
+    // lock; it's pure data.
+    let seed = execution_record_skeleton(file)?;
     let opts = write_integrity_opts(integrity_args);
 
     with_exclusive_lock(file, || {

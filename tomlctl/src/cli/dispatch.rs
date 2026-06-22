@@ -293,9 +293,10 @@ const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
 /// order); any other basename gets an empty table `{}`.
 ///
 /// Fallible because the recognised-file seed embeds today's date via
-/// `flow::time::today_toml_date()` (itself fallible). The schema-awareness
-/// lives HERE at the dispatch layer (which can reach `flow::time`); `io.rs`
-/// only ever sees the resulting doc as opaque `OnMissing::Create(seed)` data.
+/// `flow::today_toml_date()` (the `flow::time` re-export; itself fallible).
+/// The schema-awareness lives HERE at the dispatch layer (which can reach the
+/// re-exported helper); `io.rs` only ever sees the resulting doc as opaque
+/// `OnMissing::Create(seed)` data.
 pub(crate) fn seed_doc_for(path: &std::path::Path) -> Result<toml::Value> {
     let basename = path.file_name().and_then(|n| n.to_str());
     let recognised = basename.is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b));
@@ -307,7 +308,7 @@ pub(crate) fn seed_doc_for(path: &std::path::Path) -> Result<toml::Value> {
         // `preserve_order` feature serialises in insertion order, so
         // `schema_version` MUST be inserted before `last_updated`.
         table.insert("schema_version".to_string(), toml::Value::Integer(1));
-        let today = crate::flow::time::today_toml_date()?;
+        let today = crate::flow::today_toml_date()?;
         table.insert("last_updated".to_string(), toml::Value::Datetime(today));
     }
     Ok(toml::Value::Table(table))
@@ -357,6 +358,24 @@ fn warn_if_created(file: &std::path::Path, created: bool) {
     } else {
         eprintln!("tomlctl: created new file {}", file.display());
     }
+}
+
+/// R12: emit the canonical success envelope for the SIMPLE write arms
+/// (`set` / `set-json` / `update` / `remove` / `apply`) and pair it with the
+/// `warn_if_created` stderr note. The shape is exactly the copy-pasted
+/// `{"ok":true,"created":<bool>,"path":<file.display()>}` (key order
+/// load-bearing — `serde_json`'s `preserve_order` keeps insertion order, so
+/// `ok`→`created`→`path` is the emitted order). The ENRICHED arms
+/// (`array-append` / `items add[-many]` / `backfill`) keep their inline
+/// envelopes because they interleave arm-specific keys (`appended` / `added` /
+/// `skipped_rows` / `backfilled`) — pure data, no behaviour change.
+fn write_envelope(file: &std::path::Path, created: bool) -> Result<()> {
+    warn_if_created(file, created);
+    print_json_compact(&serde_json::json!({
+        "ok": true,
+        "created": created,
+        "path": file.display().to_string(),
+    }))
 }
 
 /// P19 (symmetric half): TOML write subcommands (`set`, `set-json`,
@@ -541,10 +560,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 let v = parse_scalar(&value, ty)?;
                 set_at_path(doc, &path, v)
             })?;
-            warn_if_created(&file, created);
-            print_json_compact(
-                &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
-            )?;
+            write_envelope(&file, created)?;
         }
         Cmd::SetJson { file, path, json, dry_run, integrity } => {
             refuse_json_extension_for_toml_writers(&file)?;
@@ -580,10 +596,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 let v = maybe_date_coerce(last_key, &parsed)?;
                 set_at_path(doc, &path, v)
             })?;
-            warn_if_created(&file, created);
-            print_json_compact(
-                &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
-            )?;
+            write_envelope(&file, created)?;
         }
         Cmd::Validate { file, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
@@ -855,10 +868,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     items_add_to(doc, &array, &json)
                 })?;
-                warn_if_created(&file, created);
-                print_json_compact(
-                    &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
-                )?;
+                write_envelope(&file, created)?;
             } else {
                 // Dedupe path: parse JSON once up-front so we can feed it
                 // to the pre-scan inside the lock without a re-parse.
@@ -1066,10 +1076,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 items_update_to(doc, &array, &id, &json, &unset)
             })?;
-            warn_if_created(&file, created);
-            print_json_compact(
-                &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
-            )?;
+            write_envelope(&file, created)?;
         }
         ItemsOp::Remove { file, id, array, dry_run, integrity } => {
             let opts = write_integrity_opts(&integrity);
@@ -1108,10 +1115,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     compute_remove_mutation(doc, &array, &id)
                 })?;
-                warn_if_created(&file, created);
-                print_json_compact(
-                    &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
-                )?;
+                write_envelope(&file, created)?;
             }
         }
         ItemsOp::Apply { file, ops, array, no_remove, dry_run, integrity } => {
@@ -1178,10 +1182,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                     compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
                 })?;
-                warn_if_created(&file, created);
-                print_json_compact(
-                    &serde_json::json!({"ok": true, "created": created, "path": file.display().to_string()}),
-                )?;
+                write_envelope(&file, created)?;
             }
         }
         ItemsOp::NextId { file, prefix, infer_from_file, integrity } => {
@@ -1370,9 +1371,15 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // byte-identical and the caller sees `backfilled:0`.
                 // Mirrors T5's `mutate_doc_conditional` "no-mutation →
                 // no-write" contract without needing a new wrapper.
+                // R13: carry `created`/`path` for envelope-shape parity with
+                // the live branch and every other write site. Backfill never
+                // creates — the pre-read above errors `kind=not_found` on a
+                // missing ledger first — so `created` is always `false` here.
                 print_json_compact(&serde_json::json!({
                     "ok": true,
                     "backfilled": 0,
+                    "created": false,
+                    "path": file.display().to_string(),
                 }))?;
             } else {
                 // Live path: re-read inside the exclusive lock via
@@ -2173,44 +2180,54 @@ body
 
     // ----- T1: seed_doc_for + --no-create -----
 
-    /// T1 (c): the schema-aware seed for a recognised flow file
-    /// (`execution-record.toml`) serialises BYTE-IDENTICALLY to the skeleton
-    /// `flow::init::bootstrap_execution_record` writes — exactly
-    /// `schema_version = 1\nlast_updated = <date>\n` (integer `1`, bare date,
-    /// trailing newline, that key order). The pipeline serialises every write
-    /// via `toml::to_string_pretty`, so we pin that exact rendering here.
+    /// T1 (c) / R5: the schema-aware seed for a recognised flow file
+    /// (`execution-record.toml`) serialises BYTE-IDENTICALLY to the skeleton a
+    /// REAL bootstrap path writes. Pre-R5 this test reconstructed the expected
+    /// bytes from a hand-retyped `format!(...)` of the seed's own date, so it
+    /// never referenced an actual bootstrap fn — a bootstrap that stopped
+    /// routing through `seed_doc_for` would have slipped past it. We now assert
+    /// against `flow::init::execution_record_skeleton`, the pure skeleton-build
+    /// step `flow::init::bootstrap_execution_record` actually runs, rendered
+    /// the SAME way the pipeline writer (`io::write_toml_with_sidecar` →
+    /// `toml::to_string_pretty`) serialises every write.
     ///
-    /// This is the single-skeleton-source guarantee: if a future `toml` bump
-    /// or key-order slip diverged the seed from the historical literal bytes,
-    /// this test fails loudly. The date is read back out of the seed itself
-    /// (so the test is clock-independent) and reassembled via the SAME
-    /// `format!("schema_version = 1\nlast_updated = {today_iso}\n")` shape the
-    /// former literal used — `today_iso` being `Datetime::to_string()`.
+    /// This is the single-skeleton-source guarantee: if a future bootstrap
+    /// path stopped sourcing its skeleton from `seed_doc_for`, the two
+    /// renderings would diverge and this test would fail loudly. The skeleton
+    /// helper is FS-free (it delegates straight to `seed_doc_for`), so the test
+    /// touches no disk and stays clock-independent — both sides resolve "today"
+    /// from the same injected clock within the one call.
     #[test]
     fn seed_doc_for_matches_bootstrap_bytes() {
         let path = std::path::Path::new(".claude/flows/x/execution-record.toml");
-        let seed = seed_doc_for(path).unwrap();
-        // The pipeline writer is `toml::to_string_pretty` (see
-        // `io::write_toml_with_sidecar`); render the seed the same way.
-        let rendered = toml::to_string_pretty(&seed).unwrap();
 
-        // Reconstruct the historical literal from the seed's OWN date — this
-        // mirrors `bootstrap_execution_record`'s former
-        // `format!("schema_version = 1\nlast_updated = {today_iso}\n")` where
-        // `today_iso = today.to_string()` (a `toml::value::Datetime` rendered
-        // bare, e.g. `2026-06-22`).
-        let today_iso = seed
+        // The skeleton a REAL bootstrap path (`flow::init::bootstrap_execution_record`)
+        // builds — exercised here via its extracted pure step. This is the
+        // single source of truth for the assertion: rendering it the way the
+        // pipeline writer (`io::write_toml_with_sidecar` → `toml::to_string_pretty`)
+        // does and reading its OWN embedded date back out keeps the test
+        // clock-independent (one clock read inside one call) AND tied to a real
+        // bootstrap code path — not a hand-retyped literal.
+        let bootstrap_skeleton = crate::flow::execution_record_skeleton(path).unwrap();
+        let rendered = toml::to_string_pretty(&bootstrap_skeleton).unwrap();
+
+        // The historical execution-record skeleton: `schema_version = 1` (bare
+        // integer, first) then `last_updated = <bare date>` then a trailing
+        // newline. Reconstruct the date from the skeleton's OWN datetime so a
+        // future `seed_doc_for`/bootstrap divergence (key order, quoting,
+        // integer→string slip) fails here loudly.
+        let today_iso = bootstrap_skeleton
             .as_table()
             .and_then(|t| t.get("last_updated"))
             .and_then(|v| v.as_datetime())
-            .expect("recognised seed carries a `last_updated` datetime")
+            .expect("recognised skeleton carries a `last_updated` datetime")
             .to_string();
         let expected = format!("schema_version = 1\nlast_updated = {today_iso}\n");
 
         assert_eq!(
             rendered, expected,
-            "seed_doc_for must serialise byte-identically to the historical \
-             execution-record skeleton"
+            "the real bootstrap skeleton must serialise byte-identically to the \
+             historical execution-record shape"
         );
         // Pin the structural shape too: integer `1`, bare date (no quotes),
         // exactly two lines + trailing newline, schema_version first.
