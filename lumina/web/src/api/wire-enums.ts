@@ -207,3 +207,20 @@ const WORKTREE_OUTCOME_VALUES = ['merged', 'rejected'] as const
  */
 export type WorktreeOutcome = (typeof WORKTREE_OUTCOME_VALUES)[number]
 export const WorktreeOutcomeSchema = z.enum(WORKTREE_OUTCOME_VALUES)
+
+// ---------------------------------------------------------------------------
+// Story-planning-round-5 addition (migration 0026): GatingTier.
+// ---------------------------------------------------------------------------
+
+const GATING_TIER_VALUES = ['full', 'light', 'autonomous'] as const
+/**
+ * Mirrors `domain::GatingTier` — the orchestrator-decided HUMAN-gating tier for
+ * a story (migration 0026, story-planning-round-5). Derived from the story's
+ * signals by `repo::compute_gating_tier` (single source) and surfaced on
+ * `StoryReadiness.gating_tier` (NON-optional). Distinct from {@link Tier} (the
+ * model-DISPATCH tier): `full` = every phase operator-reviewed; `light` =
+ * spot-checked; `autonomous` = no per-phase human gate (finding-spawned,
+ * low-complexity, fully-resolved work).
+ */
+export type GatingTier = (typeof GATING_TIER_VALUES)[number]
+export const GatingTierSchema = z.enum(GATING_TIER_VALUES)

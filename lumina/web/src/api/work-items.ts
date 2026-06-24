@@ -99,6 +99,11 @@ export interface WorkItem {
   // the Rust `domain::WorkItem` (domain.rs); NULL on non-focus rows. Mirrors the
   // `task_kind`/`tier` idiom — typed enum at the wire, nullable column at rest.
   shape: Shape | null
+  // Story-planning-round-5 (migration 0026): the story's rework plan epoch.
+  // `i64 NOT NULL DEFAULT 0` on the Rust side — a non-null number, ALWAYS
+  // present on the wire (the column has a default + serde default), so it is a
+  // REQUIRED number here, not nullable.
+  plan_epoch: number
   created_at: string
   updated_at: string
 }
@@ -136,6 +141,12 @@ export const WorkItemSchema = z.object({
   // keeping the parsed type `Shape | null` (matching the `WorkItem` interface —
   // a bare `.optional()` would widen it to `Shape | undefined`).
   shape: ShapeSchema.nullable().default(null),
+  // Story-planning-round-5 (migration 0026): `work_items.plan_epoch`. The Rust
+  // column is `i64 NOT NULL DEFAULT 0` with a serde default, so it is always
+  // present on the wire — but `.default(0)` tolerates an absent key on a
+  // pre-deploy cached response (and keeps the parsed type a plain `number`,
+  // matching the REQUIRED `WorkItem.plan_epoch`).
+  plan_epoch: z.number().default(0),
   created_at: z.string().max(50),
   updated_at: z.string().max(50),
 })
@@ -499,6 +510,47 @@ export const TaskDependencySchema = z.object({
 })
 
 // ---------------------------------------------------------------------------
+// Story-planning-round-5 additions (migration 0026): TaskResearchLink (the
+// folded task↔research grounding edge) + FootprintFile (the derived story
+// files-footprint row). Both are EXPORTED so the `StoryDossier` aggregate
+// mirror in `execution.ts` reuses them rather than redeclaring.
+// ---------------------------------------------------------------------------
+
+/**
+ * One folded task↔research grounding edge (migration 0026). Mirrors
+ * `domain::TaskResearchLink` — a `task_research_links` row JOINed to its LIVE
+ * `research_notes` row for the note's `summary`. Populated only for `kind='task'`
+ * rows in {@link WorkItemDetail.task_research_links}.
+ */
+export interface TaskResearchLink {
+  research_note_id: string
+  summary: string
+}
+
+export const TaskResearchLinkSchema = z.object({
+  research_note_id: z.string().max(200),
+  summary: z.string().max(1000),
+})
+
+/**
+ * One row of a derived files-footprint (migration 0020/0026). Mirrors
+ * `domain::FootprintFile` — a DISTINCT `(repo_link_id, path)` entry. `repo_link_id`
+ * carries `#[serde(skip_serializing_if = "Option::is_none")]` on the Rust side
+ * (NULL ⇒ the project's PRIMARY linked repo), so an absent key normalises back
+ * to `null` via `.nullable().default(null)`. Used by {@link WorkItemDetail.story_files_footprint}
+ * and the `StoryDossier` mirror in `execution.ts`.
+ */
+export interface FootprintFile {
+  repo_link_id: string | null
+  path: string
+}
+
+export const FootprintFileSchema = z.object({
+  repo_link_id: z.string().max(200).nullable().default(null),
+  path: z.string().max(2000),
+})
+
+// ---------------------------------------------------------------------------
 // WorkItemDetail (the GET /work-items/{id} response).
 // ---------------------------------------------------------------------------
 
@@ -521,6 +573,14 @@ export interface WorkItemDetail {
   risks: Risk[]
   rejected_alternatives: RejectedAlternative[]
   task_dependencies: TaskDependency[]
+  // Migration 0020 (T5): the derived files-footprint of a STORY — populated
+  // only when `item.kind === 'story'`, empty otherwise. `#[serde(default)]` on
+  // the Rust side → `.optional().default([])`.
+  story_files_footprint: FootprintFile[]
+  // Migration 0026 (story-planning-round-5): the folded task↔research grounding
+  // edges — populated only when `item.kind === 'task'`, empty otherwise. Same
+  // `#[serde(default)]` semantics → `.optional().default([])`.
+  task_research_links: TaskResearchLink[]
 }
 
 // Wire-shape schema for the detail endpoint: identical to the consumer-facing
@@ -545,6 +605,10 @@ export const WorkItemDetailWireSchema = z.object({
   risks: z.array(RiskSchema).optional().default([]),
   rejected_alternatives: z.array(RejectedAlternativeSchema).optional().default([]),
   task_dependencies: z.array(TaskDependencySchema).optional().default([]),
+  // Migration 0020 (story footprint) + 0026 (task research links): same
+  // `#[serde(default)]` → `.optional().default([])` contract.
+  story_files_footprint: z.array(FootprintFileSchema).optional().default([]),
+  task_research_links: z.array(TaskResearchLinkSchema).optional().default([]),
 })
 
 // ---------------------------------------------------------------------------

@@ -128,6 +128,10 @@ describe('fetchTree (mock global fetch)', () => {
         // `.nullable().default(null)`, so an absent key resolves to `null` in
         // the output — include it here so the round-trip `toEqual` matches.
         shape: null,
+        // Migration 0026 (round-5): `plan_epoch` is a non-null i64 (serde
+        // default); WorkItemSchema parses it `.number().default(0)`, so the
+        // wire always carries it — include it for the round-trip `toEqual`.
+        plan_epoch: 0,
         created_at: '2026-05-25T00:00:00Z',
         updated_at: '2026-05-25T00:00:00Z',
         children: [],

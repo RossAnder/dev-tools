@@ -62,6 +62,12 @@ function makeReadiness(next: NextAction): StoryReadiness {
     unresolved_questions: 0,
     has_approach: true,
     has_acceptance_criteria_on_all_tasks: false,
+    // Story-planning-round-5 (migration 0026) — all three REQUIRED on the
+    // schema: a plain number epoch, the snake_case gating-tier enum, and the
+    // done-signal-recorded bool.
+    plan_epoch: 0,
+    gating_tier: 'light',
+    verification_commands_set: false,
     ready_for_decomposition: false,
     next_recommended_action: next,
   }

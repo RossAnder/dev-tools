@@ -24,7 +24,12 @@
 import * as z from 'zod'
 
 import { API_BASE, handle } from './http'
-import { type Tier, TierSchema } from './wire-enums'
+import {
+  type Tier,
+  TierSchema,
+  type GatingTier,
+  GatingTierSchema,
+} from './wire-enums'
 
 // ---------------------------------------------------------------------------
 // NextAction — the snake_case enum returned in
@@ -74,6 +79,14 @@ export interface StoryReadiness {
   unresolved_questions: number
   has_approach: boolean
   has_acceptance_criteria_on_all_tasks: boolean
+  // Story-planning-round-5 (migration 0026). `plan_epoch` is `i64` (a plain,
+  // always-present number — read straight off the story's `work_items.plan_epoch`
+  // NOT NULL DEFAULT 0). `gating_tier` is the orchestrator-decided HUMAN-gating
+  // tier — NON-optional (every call site populates it). `verification_commands_set`
+  // is the §l Phase-4 done-signal-recorded boolean.
+  plan_epoch: number
+  gating_tier: GatingTier
+  verification_commands_set: boolean
   ready_for_decomposition: boolean
   next_recommended_action: NextAction
 }
@@ -85,6 +98,12 @@ export const StoryReadinessSchema = z.object({
   unresolved_questions: z.number(),
   has_approach: z.boolean(),
   has_acceptance_criteria_on_all_tasks: z.boolean(),
+  // Migration 0026 — all three REQUIRED (the Rust fields are non-optional and
+  // always emitted): `plan_epoch` a number, `gating_tier` the snake_case wire
+  // enum, `verification_commands_set` a bool.
+  plan_epoch: z.number(),
+  gating_tier: GatingTierSchema,
+  verification_commands_set: z.boolean(),
   ready_for_decomposition: z.boolean(),
   next_recommended_action: NextActionSchema,
 })

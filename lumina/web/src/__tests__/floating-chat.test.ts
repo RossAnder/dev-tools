@@ -71,6 +71,7 @@ function makeWorkItem(id: string, overrides: Partial<WorkItem> = {}): WorkItem {
     task_kind: null,
     tier: null,
     shape: null,
+    plan_epoch: 0,
     created_at: '2026-06-12T00:00:00Z',
     updated_at: '2026-06-12T00:00:00Z',
     ...overrides,
@@ -123,6 +124,8 @@ function makeProjectDetail(repoLinks: RepoLink[]): WorkItemDetail {
     risks: [],
     rejected_alternatives: [],
     task_dependencies: [],
+    story_files_footprint: [],
+    task_research_links: [],
   }
 }
 

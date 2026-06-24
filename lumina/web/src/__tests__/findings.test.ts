@@ -81,6 +81,8 @@ function makeDetail(findings: Finding[]): WorkItemDetail {
       enabling_option_id: null,
       task_kind: null,
       tier: null,
+      shape: null,
+      plan_epoch: 0,
       created_at: '2026-05-25T00:00:00Z',
       updated_at: '2026-05-25T00:00:00Z',
     },
@@ -95,6 +97,8 @@ function makeDetail(findings: Finding[]): WorkItemDetail {
     risks: [],
     rejected_alternatives: [],
     task_dependencies: [],
+    story_files_footprint: [],
+    task_research_links: [],
   }
 }
 

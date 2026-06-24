@@ -14,6 +14,22 @@
 
 import * as z from 'zod'
 
+import {
+  type WorkItemDetail,
+  WorkItemDetailWireSchema,
+  normaliseDetail,
+  type TaskResearchLink,
+  TaskResearchLinkSchema,
+  type FootprintFile,
+  FootprintFileSchema,
+} from './work-items'
+import {
+  type DispatchBatchEntry,
+  DispatchBatchEntrySchema,
+  type StoryReadiness,
+  StoryReadinessSchema,
+} from './readiness'
+
 /**
  * Mirrors the Rust `SprintQuiescence` read aggregate
  * (lumina/core/src/domain/planning.rs): the sprint quiescence verdict behind
@@ -75,4 +91,78 @@ export const SprintQuiescenceSchema = z.object({
  */
 export function sprintQuiescenceTopic(sprintId: string): string {
   return `sprint-quiescence:${sprintId}`
+}
+
+// ---------------------------------------------------------------------------
+// Story-planning-round-5 (migration 0026): TaskResearchGrounding + StoryDossier
+// — the composed planning-dossier read aggregate. Mirrors
+// `domain::StoryDossier` / `domain::TaskResearchGrounding`
+// (lumina/core/src/domain/planning.rs). The dossier reuses the existing
+// `WorkItemDetail` / `FootprintFile` / `DispatchBatchEntry` / `StoryReadiness`
+// mirrors (imported above) rather than redeclaring them.
+//
+// Like `WorkItemDetail`, the dossier has a WIRE shape and a CONSUMER shape that
+// differ ONLY in `story.acceptance_criteria[].checked` (0/1 integer on the wire,
+// boolean for consumers). `StoryDossierWireSchema` embeds `WorkItemDetailWireSchema`
+// for `story`; `normaliseStoryDossier` reuses `normaliseDetail` so the single
+// 0/1 → boolean home in `work-items.ts` is not duplicated.
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-task research grounding for a {@link StoryDossier}. Mirrors
+ * `domain::TaskResearchGrounding` — one NON-CANCELLED task of the story, keyed
+ * by id + title, with the LIVE research notes that ground it. A task with no
+ * live grounding still appears with an empty `links`.
+ */
+export interface TaskResearchGrounding {
+  task_id: string
+  task_title: string
+  links: TaskResearchLink[]
+}
+
+export const TaskResearchGroundingSchema = z.object({
+  task_id: z.string(),
+  task_title: z.string(),
+  links: z.array(TaskResearchLinkSchema),
+}) satisfies z.ZodType<TaskResearchGrounding>
+
+/**
+ * The full planning dossier for a story (consumer-facing — `story` is the
+ * boolean-normalised {@link WorkItemDetail}). Mirrors `domain::StoryDossier`.
+ */
+export interface StoryDossier {
+  story: WorkItemDetail
+  task_research_links: TaskResearchGrounding[]
+  story_files_footprint: FootprintFile[]
+  dispatch_plan: DispatchBatchEntry[][]
+  readiness: StoryReadiness
+}
+
+/**
+ * Runtime wire-shape validator for {@link StoryDossier}. `story` embeds the
+ * WIRE detail schema (0/1-integer `acceptance_criteria[].checked`); the parsed
+ * value is run through {@link normaliseStoryDossier} to produce the consumer
+ * shape. The OTHER fields mirror 1:1.
+ */
+export const StoryDossierWireSchema = z.object({
+  story: WorkItemDetailWireSchema,
+  task_research_links: z.array(TaskResearchGroundingSchema),
+  story_files_footprint: z.array(FootprintFileSchema),
+  dispatch_plan: z.array(z.array(DispatchBatchEntrySchema)),
+  readiness: StoryReadinessSchema,
+})
+
+/**
+ * Normalise a parsed {@link StoryDossierWireSchema} value into the
+ * consumer-facing {@link StoryDossier}: delegates the embedded `story` to
+ * {@link normaliseDetail} (the single 0/1 → boolean home) and passes the rest
+ * through unchanged.
+ */
+export function normaliseStoryDossier(
+  wire: z.infer<typeof StoryDossierWireSchema>,
+): StoryDossier {
+  return {
+    ...wire,
+    story: normaliseDetail(wire.story),
+  }
 }
