@@ -7,7 +7,7 @@ argument-hint: "[work_item_id]"
 
 # `lumina:problem-statement`
 
-Capture or update a story's `attributes.problem_statement` via `mcp__lumina__set_story_plan`. The skill prompts the user along three axes (what's broken, who's affected, what success looks like), assembles the answers into a single problem_statement string, and writes it through lumina's merge-call story-plan setter.
+Capture or update a story's `attributes.problem_statement` via `mcp__lumina__set_story_plan`. The skill prompts the user along three axes (what's broken, who's affected, what success looks like), assembles the answers into a single problem_statement string, and writes it through lumina's merge-call story-plan setter. It also supports the round-5 framing scope-challenge the `plan-story` orchestrator's frame stage invokes (R51) — strictly problem-only per §g.1; the solution shape stays in `execution_strategy` (see "Framing scope-challenge" below).
 
 This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §c (provenance recording via `record_task_activity`), §e (Sentry pattern — skill = instructions, MCP = execution).
 
@@ -43,6 +43,18 @@ Success looks like: <answer 3>
 ```
 
 The labelled-paragraph layout is deliberate — it makes the resulting prose self-documenting in the lumina UI, and the literal `What's broken:` / `Who's affected:` / `Success looks like:` prefixes give the equality check in §b step 4 a stable string to compare against.
+
+## Framing scope-challenge (round-5, R51 — invoked from the orchestrator's frame stage)
+
+The `plan-story` orchestrator's **frame** stage runs a scope-challenge (R51 devil's-advocate mandate) before locking the problem framing: it pushes back on whether the story is the right *size* and *ambition* before any approach is drafted. This skill SUPPORTS that challenge but stays strictly **problem-only** — per CONVENTIONS §g.1, the `problem_statement` describes the problem (what's broken / who's affected / success), and the *solution shape* lives in `execution_strategy` (owned by `/lumina:approach`), never here.
+
+So when the frame stage challenges scope, this skill's role is to let the user **re-frame the problem itself** — broaden or narrow *what's broken*, *who's affected*, and *what success looks like* — NOT to fold in any approach or sizing-of-the-solution language. Concretely:
+
+- When the frame-stage scope-challenge concludes the problem is framed too NARROWLY (R51's failure mode), the user re-runs this skill and supersedes the `problem_statement` with a broader problem framing (a wider audience, a larger "what's broken", a more ambitious success criterion) via the step-5 supersession path below. The companion `/lumina:user-interrogation` scope-challenge axis captures the open question ("should this be split / bigger?"); the *resolution* of that challenge that changes the problem framing lands here as a superseded `problem_statement`.
+- When the challenge concludes the story should be SPLIT, the split itself is a work-item structure change (handled by the orchestrator / `decompose-tasks`), but each resulting story still gets its own narrowed `problem_statement` written here.
+- This skill MUST NOT add solution/approach/sizing prose to `problem_statement` to "answer" the scope-challenge — that is a §g.1 violation (problem-overload). The challenge's *answer* about HOW to solve at the chosen scope belongs in `execution_strategy`; the challenge's effect on WHAT the problem is belongs here.
+
+There is no new MCP tool or argument for this — the scope-challenge support is the existing 3-axis prompt + supersession path, re-invoked by the orchestrator with a broadened/narrowed problem framing in mind.
 
 ## Body — 5-step check-before-act (per §b)
 

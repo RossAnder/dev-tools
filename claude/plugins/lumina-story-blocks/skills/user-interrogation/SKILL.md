@@ -1,13 +1,13 @@
 ---
 name: user-interrogation
-description: Enumerate open questions for a story across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility).
+description: Enumerate open questions for a story across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility) plus a scope-challenge axis.
 arguments: [work_item_id]
 argument-hint: "[work_item_id]"
 ---
 
 # `lumina:user-interrogation`
 
-Enumerate the open questions a story needs answered before tasks can be executed. The skill walks HumanLayer's four directed-questioning axes (R16 in the parent plan: scope, error-handling, data-ownership, compatibility), asks the user one question per axis, writes the unresolved ones into `open_questions` with at least two `question_options` each, and finishes with a "5th axis" fallback so the user can extend the taxonomy per-story.
+Enumerate the open questions a story needs answered before tasks can be executed. The skill walks HumanLayer's four directed-questioning axes (R16 in the parent plan: scope, error-handling, data-ownership, compatibility) PLUS a round-5 **scope-challenge** axis (R51 — does this story have the right size / ambition?), asks the user one question per axis, writes the unresolved ones into `open_questions` with at least two `question_options` each, and finishes with a fallback so the user can extend the taxonomy per-story.
 
 This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per-axis), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §c (provenance recording via `record_task_activity`), §e (Sentry pattern — skill = instructions, MCP = execution).
 
@@ -38,7 +38,7 @@ mcp__lumina__add_question_option {
 
 `add_open_question` is the ONLY tool in the lumina catalogue that takes `story_id` rather than `work_item_id` (per `../mcp/SKILL.md` §Planning & decision tools). Do NOT pass `work_item_id` — lumina will reject the call as `invalid_params`. The id value is the same; only the parameter name differs.
 
-## The 4 axes (R16) and the 5th-axis fallback
+## The 5 axes (R16 + R51) and the extra-axis fallback
 
 The skill enumerates one open question per axis, in this order. For EACH axis the body shown below is the verbatim `AskUserQuestion` body for the axis prompt.
 
@@ -46,41 +46,50 @@ The skill enumerates one open question per axis, in this order. For EACH axis th
 2. **Error-handling** — `What failure modes does this story handle? Which does it ignore, which propagate to the caller, and which retry?`
 3. **Data-ownership** — `Who or what owns the data this story touches — for read, for write, for delete? Are any cross-service or cross-module boundaries crossed?`
 4. **Compatibility** — `What consumers, API contracts, or on-disk formats must this story preserve, change, or break? Are any deprecation windows in play?`
+5. **Scope-challenge** (round-5, R51 — devil's advocate) — `Is this story the RIGHT size? Should it be SPLIT into smaller stories, or is it too narrow and should it be BIGGER / absorb adjacent work? What's the strongest case that the current scope is wrong?` This axis is distinct from axis 1 (Scope draws the in/out boundary; Scope-challenge questions whether the whole framing is the right ambition) — it directly counters the conservative, scope-narrowing bias R51 identifies, and pairs with the framing scope-challenge the `plan-story` orchestrator's frame stage runs.
 
-After the four axes, ASK the user the verbatim 5th-axis fallback:
+After the five axes, ASK the user the verbatim extra-axis fallback:
 
-> **Question body**: `Is there a 5th axis I'm missing for THIS story? (e.g. performance, security, accessibility — anything story-specific that the standard 4 axes don't cover.)`
+> **Question body**: `Is there a further axis I'm missing for THIS story? (e.g. performance, security, accessibility — anything story-specific that the standard 5 axes don't cover.)`
 >
 > **Options**:
 > - `Yes, add another axis` — `Provide the question via the Other free-text field`
-> - `No, the 4 standard axes are sufficient` — `Skip; finalise the interrogation`
+> - `No, the 5 standard axes are sufficient` — `Skip; finalise the interrogation`
 
-If the user chooses `Yes`, run the same per-axis flow below for the user-supplied 5th axis (storing the result as one more `open_question` + `question_options`).
+If the user chooses `Yes`, run the same per-axis flow below for the user-supplied extra axis (storing the result as one more `open_question` + `question_options`).
 
 ## Per-axis flow
 
-For each axis (the 4 standard ones AND the optional 5th):
+For each axis (the 5 standard ones AND the optional extra axis):
 
 ### Axis step 1 — already-covered check (per §b step 1-2)
 
-Read `detail.open_questions` from the `get_work_item` result. Loop over the existing rows; for each row, check whether its `question` text already covers this axis. The heuristic is a case-insensitive substring match: an axis is already covered if any existing question text contains the axis keyword(s):
+Read `detail.open_questions` from the `get_work_item` result. Loop over the existing rows; for each row, decide whether its `question` text already covers this axis.
 
-| Axis | Match keyword(s) |
+**Stricter coverage rule (round-5).** A single keyword/substring hit is NOT sufficient to suppress an axis — that crude heuristic skipped axes that were only incidentally mentioned, leaving the real question unasked. Treat an axis as already-covered ONLY when an existing question text demonstrates *fuller* coverage of the axis's concern. Concretely, suppress the axis only if BOTH hold:
+
+1. the question text matches **≥2 distinct** of the axis's keyword cues below (a single cue is an incidental mention, not coverage), OR matches one cue AND the question is *substantively about* that axis (it poses the axis's actual decision, not merely name-drops the term); AND
+2. the question is genuinely OPEN/unresolved on that axis (so a resolved-and-moved-on mention does not block re-asking a still-live concern).
+
+When in doubt, DO NOT suppress — ask the axis (a duplicate question is cheaper than a silently-skipped one; the user can decline via the per-axis `Skip this axis` option in axis step 2). The keyword cues per axis:
+
+| Axis | Keyword cues (need ≥2, or 1 + substantive coverage) |
 |---|---|
-| Scope | `scope` / `in scope` / `out of scope` |
-| Error-handling | `error` / `failure` / `failure mode` |
-| Data-ownership | `owner` / `ownership` / `who owns` |
-| Compatibility | `compat` / `breaking` / `contract` / `deprecat` |
+| Scope | `scope` / `in scope` / `out of scope` / `boundary` |
+| Error-handling | `error` / `failure` / `failure mode` / `retry` / `propagate` |
+| Data-ownership | `owner` / `ownership` / `who owns` / `read` / `write` / `delete` |
+| Compatibility | `compat` / `breaking` / `contract` / `deprecat` / `consumer` |
+| Scope-challenge | `split` / `bigger` / `too narrow` / `too small` / `right size` / `ambition` / `absorb` |
 
-If a match is found, skip this axis with a one-line user-visible note:
+If — and only if — the stricter rule above is satisfied, skip this axis with a one-line user-visible note:
 
 > `<axis> axis already covered by question Q<id>: <existing question text truncated to ~80 chars>… — skipping.`
 
-Do NOT re-ask the same axis. Move on to the next axis.
+Do NOT re-ask the same axis in that case. Move on to the next axis.
 
 ### Axis step 2 — ask the user the axis prompt (per §b step 3)
 
-If no existing question covers the axis, ask via `AskUserQuestion` with a single open-text field, using the verbatim axis body from "The 4 axes" above. Provide one explicit `Skip this axis` option so the user can decline an axis that genuinely doesn't apply (e.g. a pure-UI story has no data-ownership axis — the parent plan §Risks calls this out, and the skill must honour the user's skip without retry).
+If no existing question covers the axis, ask via `AskUserQuestion` with a single open-text field, using the verbatim axis body from "The 5 axes" above. Provide one explicit `Skip this axis` option so the user can decline an axis that genuinely doesn't apply (e.g. a pure-UI story has no data-ownership axis — the parent plan §Risks calls this out, and the skill must honour the user's skip without retry).
 
 - If the user provides a question, capture the text and proceed to axis step 3.
 - If the user picks `Skip this axis`, log a one-line note (`<axis> axis skipped per user.`) and move on to the next axis. Do NOT write anything to lumina.
@@ -145,8 +154,8 @@ Substitute `<axis>`, `<work_item_id>`, `<label>`, `<question_id>` with literal v
 
 1. **Read once up front**: call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind `detail.kind` and `detail.open_questions` for re-use across axes.
 2. **Precondition**: if `detail.kind != "story"`, abort with `"user-interrogation requires a story work item; got kind=<kind>."`. Do NOT call any write tool.
-3. **For each axis in [scope, error-handling, data-ownership, compatibility]**, run the per-axis flow above (steps 1-5). Each axis is independently skipped, asked, written, or superseded.
-4. **5th-axis fallback**: after the 4 standard axes, ask the user the verbatim 5th-axis fallback prompt above. If they say yes, run the same per-axis flow for the user-supplied axis.
+3. **For each axis in [scope, error-handling, data-ownership, compatibility, scope-challenge]**, run the per-axis flow above (steps 1-5). Each axis is independently skipped, asked, written, or superseded.
+4. **Extra-axis fallback**: after the 5 standard axes, ask the user the verbatim extra-axis fallback prompt above. If they say yes, run the same per-axis flow for the user-supplied axis.
 5. **Return a one-line summary**: `"user-interrogation: added N question(s) across M axis/axes on <work_item_id>; K axis/axes skipped."` (where N/M/K are the literal counts).
 
 ## Sentry-pattern compliance (per §e)
