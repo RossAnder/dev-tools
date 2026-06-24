@@ -33,6 +33,7 @@ pub mod sprint_run;
 pub mod activity;
 pub mod context_blocks;
 pub mod readiness;
+pub mod dossier;
 pub mod pty_sessions;
 pub mod export;
 pub mod execution;
@@ -69,6 +70,7 @@ pub fn router() -> Router<AppState> {
         .merge(activity::router())
         .merge(context_blocks::router())
         .merge(readiness::router())
+        .merge(dossier::router())
         .merge(pty_sessions::router())
         .merge(export::router())
         .merge(execution::router())

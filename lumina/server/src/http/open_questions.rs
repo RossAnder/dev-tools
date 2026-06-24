@@ -74,6 +74,10 @@ pub fn router() -> Router<AppState> {
             "/open-questions/{id}/resolve",
             post(resolve_open_question_handler),
         )
+        .route(
+            "/open-questions/{id}/retire",
+            post(retire_open_question_handler),
+        )
 }
 
 /// `POST /work-items/{story_id}/open-questions` — add an open question to a
@@ -166,6 +170,22 @@ async fn resolve_open_question_handler(
     )
     .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// `POST /open-questions/{id}/retire` — retire (soft-close) an open question
+/// without resolving it via an option (migration 0026). The repo rejects an
+/// absent id with `NotFound` (→ 404). Returns 200 +
+/// `{ "question_id": ..., "retired": true }`.
+async fn retire_open_question_handler(
+    State(state): State<AppState>,
+    Path(question_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::debug!(question_id = %question_id, "http: POST /open-questions/{{id}}/retire");
+    repo::retire_open_question(state.pool.as_ref(), &question_id).await?;
+    Ok(Json(serde_json::json!({
+        "question_id": question_id,
+        "retired": true,
+    })))
 }
 
 #[cfg(test)]
