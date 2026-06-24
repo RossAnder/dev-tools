@@ -1863,6 +1863,13 @@ async fn planning_round5_dossier_rework_db_export_http() {
     lumina_core::repo::link_task_research(&pool, &task, &note_doomed)
         .await
         .expect("ground the task on the doomed note");
+    // R12: a SECOND, still-LIVE grounding edge on the SAME task (the survivor note
+    // is never superseded). The rework supersedes only `note_doomed`, so this proves
+    // the liveness fold drops the DEAD link WITHOUT dropping a live sibling link —
+    // a bug that nuked all of a task's links on any supersession would fail here.
+    lumina_core::repo::link_task_research(&pool, &task, &note_survivor)
+        .await
+        .expect("ground the task on the live survivor note");
 
     // An open question the rework will RETIRE. Its presence also raises the gating
     // tier to `full` (an unresolved question is the A.2 `full` signal).
@@ -1925,6 +1932,13 @@ async fn planning_round5_dossier_rework_db_export_http() {
             .any(|l| l.research_note_id == note_doomed),
         "the pre-rework grounding (the R52 fold) cites the doomed note"
     );
+    assert!(
+        pre_grounding
+            .links
+            .iter()
+            .any(|l| l.research_note_id == note_survivor),
+        "the pre-rework grounding ALSO cites the live survivor note (R12: the live sibling link)"
+    );
 
     // 5. REWORK (the align grill found a misalignment): supersede the doomed note,
     //    retire the question, and bump the plan epoch. Per A.5 these mark rows
@@ -1984,6 +1998,32 @@ async fn planning_round5_dossier_rework_db_export_http() {
         !post.story.open_questions.iter().any(|q| q.id == question),
         "the retired question is EXCLUDED from the live dossier"
     );
+    // R11: retire is a SOFT-retire, NOT a hard-delete (the dossier.rs audit-trail
+    // contract). The dossier EXCLUDES the question, but the ROW must SURVIVE with
+    // `retired_at` set AND stay visible via `get_work_item_detail` (whose fold does
+    // NOT filter retired). A regression that hard-DELETEd on retire would pass the
+    // exclusion assertions above but fail BOTH of these.
+    let retired_at: Option<String> =
+        sqlx::query_scalar("SELECT retired_at FROM open_questions WHERE id = ?")
+            .bind(&question)
+            .fetch_one(pool.sqlite())
+            .await
+            .expect("the retired question ROW still exists (soft-retire, not hard-delete)");
+    assert!(
+        retired_at.is_some(),
+        "the surviving question row carries retired_at IS NOT NULL (the audit-trail marker)"
+    );
+    let detail_after_retire = lumina_core::repo::get_work_item_detail(&pool, &story)
+        .await
+        .expect("story detail after retire");
+    assert!(
+        detail_after_retire
+            .open_questions
+            .iter()
+            .any(|q| q.id == question),
+        "the retired question STILL appears via get_work_item_detail (the detail fold \
+         does not filter retired — only the dossier post-filters it)"
+    );
     let post_grounding = post
         .task_research_links
         .iter()
@@ -1995,6 +2035,14 @@ async fn planning_round5_dossier_rework_db_export_http() {
             .iter()
             .any(|l| l.research_note_id == note_doomed),
         "the post-rework grounding no longer cites the dead note (R52 stays answered)"
+    );
+    assert!(
+        post_grounding
+            .links
+            .iter()
+            .any(|l| l.research_note_id == note_survivor),
+        "the post-rework grounding STILL cites the live survivor note (R12: the liveness \
+         fold drops only the DEAD link, never the live sibling on the same task)"
     );
     // The bumped epoch surfaces via readiness (epoch as metadata).
     assert_eq!(
