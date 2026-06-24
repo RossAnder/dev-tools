@@ -82,8 +82,11 @@ export interface StoryReadiness {
   // Story-planning-round-5 (migration 0026). `plan_epoch` is `i64` (a plain,
   // always-present number — read straight off the story's `work_items.plan_epoch`
   // NOT NULL DEFAULT 0). `gating_tier` is the orchestrator-decided HUMAN-gating
-  // tier — NON-optional (every call site populates it). `verification_commands_set`
-  // is the §l Phase-4 done-signal-recorded boolean.
+  // tier. `verification_commands_set` is the §l Phase-4 done-signal-recorded
+  // boolean. All three are non-optional on this consumer interface — the schema
+  // mirrors them with a TOLERANT `.default(...)` (see `StoryReadinessSchema`),
+  // so an absent key normalises to a concrete value but the parsed type stays
+  // non-`undefined`, matching these declarations.
   plan_epoch: number
   gating_tier: GatingTier
   verification_commands_set: boolean
@@ -98,12 +101,20 @@ export const StoryReadinessSchema = z.object({
   unresolved_questions: z.number(),
   has_approach: z.boolean(),
   has_acceptance_criteria_on_all_tasks: z.boolean(),
-  // Migration 0026 — all three REQUIRED (the Rust fields are non-optional and
-  // always emitted): `plan_epoch` a number, `gating_tier` the snake_case wire
-  // enum, `verification_commands_set` a bool.
-  plan_epoch: z.number(),
-  gating_tier: GatingTierSchema,
-  verification_commands_set: z.boolean(),
+  // Migration 0026 — convention for the round-5 always-present fields: a
+  // TOLERANT `.default(...)` mirror, uniform with `WorkItem.plan_epoch`
+  // (`z.number().default(0)`) and `WorkItemDetail.task_research_links`
+  // (`.optional().default([])`) in `work-items.ts`. The Rust fields are
+  // non-optional and always emitted, but a `.default(...)` here normalises an
+  // absent key on a pre-deploy cached response back to a concrete value while
+  // keeping the parsed types `number` / `GatingTier` / `boolean` (matching the
+  // REQUIRED `StoryReadiness` interface) — the same version-skew tolerance the
+  // `o6-skip-serializing` guard exercises for `WorkItem`. `gating_tier` still
+  // HARD-rejects an OUT-OF-ENUM value (the enum is preserved); the default only
+  // tolerates an ABSENT key, defaulting to the most conservative `'full'`.
+  plan_epoch: z.number().default(0),
+  gating_tier: GatingTierSchema.default('full'),
+  verification_commands_set: z.boolean().default(false),
   ready_for_decomposition: z.boolean(),
   next_recommended_action: NextActionSchema,
 })

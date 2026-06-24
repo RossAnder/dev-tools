@@ -62,9 +62,11 @@ function makeReadiness(next: NextAction): StoryReadiness {
     unresolved_questions: 0,
     has_approach: true,
     has_acceptance_criteria_on_all_tasks: false,
-    // Story-planning-round-5 (migration 0026) — all three REQUIRED on the
-    // schema: a plain number epoch, the snake_case gating-tier enum, and the
-    // done-signal-recorded bool.
+    // Story-planning-round-5 (migration 0026) — the three always-present
+    // fields: a plain number epoch, the snake_case gating-tier enum, and the
+    // done-signal-recorded bool. The schema mirrors them with a tolerant
+    // `.default(...)` (an absent key is accepted), but a present wrong-type /
+    // out-of-enum value still hard-rejects — see the drift guards below.
     plan_epoch: 0,
     gating_tier: 'light',
     verification_commands_set: false,
@@ -95,6 +97,31 @@ describe('StoryReadinessSchema', () => {
     const { problem_statement_set: _p, ...rest } = makeReadiness('story_ready')
     void _p
     const parsed = StoryReadinessSchema.safeParse(rest)
+    expect(parsed.success).toBe(false)
+  })
+
+  // Migration 0026 (round-5) drift guards. The schema mirrors plan_epoch /
+  // gating_tier / verification_commands_set with a TOLERANT `.default(...)` (so
+  // an ABSENT key is accepted), but a PRESENT value of the wrong type — or an
+  // out-of-enum gating_tier — must still HARD-REJECT. Without these, a
+  // wire-mirror regression that typed `gating_tier` as `z.string()` instead of
+  // `z.enum([...])`, or dropped the number/bool guards, would pass every other
+  // test (the SPA wire-mirror coupling footgun).
+  test('rejects an out-of-enum gating_tier', () => {
+    const bad = { ...makeReadiness('story_ready'), gating_tier: 'nope' }
+    const parsed = StoryReadinessSchema.safeParse(bad)
+    expect(parsed.success).toBe(false)
+  })
+
+  test('rejects a non-number plan_epoch', () => {
+    const bad = { ...makeReadiness('story_ready'), plan_epoch: 'one' }
+    const parsed = StoryReadinessSchema.safeParse(bad)
+    expect(parsed.success).toBe(false)
+  })
+
+  test('rejects a non-bool verification_commands_set', () => {
+    const bad = { ...makeReadiness('story_ready'), verification_commands_set: 'yes' }
+    const parsed = StoryReadinessSchema.safeParse(bad)
     expect(parsed.success).toBe(false)
   })
 })
