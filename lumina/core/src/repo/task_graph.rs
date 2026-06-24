@@ -177,20 +177,38 @@ pub fn compute_gating_tier(
 /// the bump itself emits no `work_item` event — a rework bump is bookkeeping, not
 /// a planning-content change, so it does not warrant re-rendering the whole item.
 ///
-/// Story-shaped by convention (the rework pass bumps a STORY), but NOT
-/// kind-gated: the column exists on every `work_items` row (`NOT NULL DEFAULT 0`)
-/// and a caller bumping a non-story is simply bumping that row's epoch. The one
-/// guard is existence (NotFound on a missing/zero-row id).
+/// Story-kind-gated (a non-`story` kind is rejected with a typed
+/// [`AppError::Validation`]): the rework pass bumps a STORY, the MCP param is
+/// `story_id`, and only the story-gated readers (`StoryReadiness` / the dossier)
+/// consume `plan_epoch` — so bumping a non-story would write dead state no reader
+/// observes. Gating here keeps the round-5 surfaces consistent (every other one —
+/// `get_story_dossier` / `get_gating_tier` / `get_story_readiness` — is
+/// story-gated) and matches the sibling setters in this file
+/// ([`set_task_tier`] / [`set_task_lane`] / [`set_task_kind`]). `NotFound` on a
+/// missing/zero-row id; `Validation` on a present non-story row.
 pub async fn bump_plan_epoch(db: &impl DbClient, story_id: &str) -> Result<i64, AppError> {
+    // Story-scoped (also NotFound if the id is absent — the kind read fails
+    // first). `work_item_kind` does NOT filter `deleted_at`, so the explicit
+    // tombstone guard on the SELECT/UPDATE below is still required for parity
+    // with the sibling setters.
+    let kind = work_item_kind(db, story_id).await?;
+    if kind != "story" {
+        return Err(AppError::Validation(format!(
+            "plan_epoch is bumpable only on a story, not on '{kind}'"
+        )));
+    }
+
     let mut tx = db.begin().await?;
 
     // Read the current epoch on the tx (same writer snapshot as the UPDATE) so
     // the event payload's `from`/`to` are consistent and a missing row is caught
-    // before the write. `plan_epoch` is `NOT NULL DEFAULT 0`, so a present row
-    // always decodes a non-null `i64`.
+    // before the write. The `deleted_at IS NULL` guard matches the sibling
+    // setters ([`set_task_tier`] / [`set_task_lane`]) so a tombstoned story's
+    // epoch is never advanced. `plan_epoch` is `NOT NULL DEFAULT 0`, so a present
+    // live row always decodes a non-null `i64`.
     let from: Option<i64> = crate::db::tx_scalar_opt::<i64>(
         tx.as_mut(),
-        "SELECT plan_epoch FROM work_items WHERE id = $1",
+        "SELECT plan_epoch FROM work_items WHERE id = $1 AND deleted_at IS NULL",
         args![story_id.to_owned()],
     )
     .await?;
@@ -200,7 +218,7 @@ pub async fn bump_plan_epoch(db: &impl DbClient, story_id: &str) -> Result<i64, 
 
     let affected = tx
         .execute(
-            r#"UPDATE work_items SET plan_epoch = plan_epoch + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            r#"UPDATE work_items SET plan_epoch = plan_epoch + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"#,
             args![story_id.to_owned()],
         )
         .await?;

@@ -80,6 +80,11 @@ pub async fn get_story_dossier(
             SELECT id FROM open_questions
             WHERE story_id = $1
               AND retired_at IS NULL
+              -- NULL-SAFE inequality: `status IS NOT 'cancelled'` ALSO keeps
+              -- rows where status IS NULL (the column is schema-nullable —
+              -- `open_questions.status TEXT`, no NOT NULL/CHECK). Do NOT
+              -- "simplify" to `<> 'cancelled'`: that DROPS NULL-status rows and
+              -- silently changes the liveness filter.
               AND status IS NOT 'cancelled'
             "#,
             args![story_id.to_owned()],
