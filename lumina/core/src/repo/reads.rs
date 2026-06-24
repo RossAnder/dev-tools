@@ -19,7 +19,7 @@ use super::*;
 
 use crate::args;
 use crate::db::DbClient;
-use crate::domain::{ContextBlock, FootprintFile, WorkItem, WorkItemDetail};
+use crate::domain::{ContextBlock, FootprintFile, TaskResearchLink, WorkItem, WorkItemDetail};
 use crate::error::AppError;
 
 /// List work items, optionally filtered by `parent_id` and/or `kind`.
@@ -57,7 +57,8 @@ const LIST_WORK_ITEMS_SQL: &str = r#"
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
             spawned_from_finding_id, assignee, lease_expires_at, lane,
-            reviews_work_item_id, checkpoint, created_at, updated_at, deleted_at
+            reviews_work_item_id, checkpoint, plan_epoch, created_at, updated_at,
+            deleted_at
         FROM work_items
         WHERE deleted_at IS NULL
           AND ($1 IS NULL OR parent_id = $1)
@@ -110,6 +111,16 @@ pub async fn get_work_item_detail(
             Ok(Vec::new())
         }
     };
+    // Task-only DERIVED fold (migration 0026) — EXACTLY mirroring the task-only
+    // task_dependencies gate: the LIVE research notes grounding this task, an
+    // empty Vec for any non-task kind.
+    let task_research_links_fut = async {
+        if item.kind == "task" {
+            list_task_research_links(pool, &item.id).await
+        } else {
+            Ok::<Vec<TaskResearchLink>, AppError>(Vec::new())
+        }
+    };
     // Story-only DERIVED footprint (T5) — EXACTLY mirroring the project-only
     // repo_links gate: populated only for `kind='story'`, an empty Vec otherwise.
     let story_files_footprint_fut = async {
@@ -134,6 +145,7 @@ pub async fn get_work_item_detail(
         repo_links,
         task_dependencies,
         story_files_footprint,
+        task_research_links,
         context_blocks,
     ) = tokio::try_join!(
         list_work_items(pool, Some(id), None),
@@ -147,6 +159,7 @@ pub async fn get_work_item_detail(
         repo_links_fut,
         task_dependencies_fut,
         story_files_footprint_fut,
+        task_research_links_fut,
         context_blocks_fut,
     )?;
 
@@ -164,6 +177,7 @@ pub async fn get_work_item_detail(
         rejected_alternatives,
         task_dependencies,
         story_files_footprint,
+        task_research_links,
     })
 }
 
@@ -173,7 +187,8 @@ const GET_WORK_ITEM_DETAIL_SQL: &str = r#"
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
             spawned_from_finding_id, assignee, lease_expires_at, lane,
-            reviews_work_item_id, checkpoint, created_at, updated_at, deleted_at
+            reviews_work_item_id, checkpoint, plan_epoch, created_at, updated_at,
+            deleted_at
         FROM work_items
         WHERE id = $1
         "#;

@@ -11,10 +11,10 @@
 //! are reached via `use super::*`.
 
 use super::*;
-use super::events::record_event;
+use super::events::{record_event, record_inert_event};
 use crate::args;
 use crate::db::DbClient;
-use crate::domain::{BatchEntry, Lane, TaskKind, Tier};
+use crate::domain::{BatchEntry, GatingTier, Lane, TaskKind, Tier};
 use crate::error::AppError;
 
 // ---------------------------------------------------------------------------
@@ -109,6 +109,313 @@ pub fn compute_tier(
         return Tier::Deep;
     }
     Tier::Lite
+}
+
+// ---------------------------------------------------------------------------
+// compute_gating_tier (migration 0026, story-planning-round-5). Pure function
+// deriving the HUMAN-GATING [`GatingTier`] from a story's signals. The SINGLE
+// SOURCE of the gating rule (mirroring `compute_tier`'s single-source role for
+// the dispatch tier); consumed by `get_story_readiness` and, in T4, the
+// `get_gating_tier` MCP tool.
+// ---------------------------------------------------------------------------
+
+/// Derive the [`GatingTier`] from a story's signals (story-planning-round-5,
+/// User Decision 2).
+///
+/// Rule (evaluated in this EXACT order):
+///
+/// ```text
+/// if spawned_from_finding && complexity != high && unresolved_questions == 0:
+///                                                        Autonomous
+/// else if complexity == high || unresolved_questions > 0 || scope_files > 6:
+///                                                        Full
+/// else:                                                  Light
+/// ```
+///
+/// Note (User Decision 2): `scope_files` does NOT guard the `Autonomous`
+/// branch — a finding-spawned, non-high-complexity, fully-resolved story is
+/// autonomous regardless of how many files it touches. `scope_files > 6` only
+/// promotes an OTHERWISE-Light story to `Full`.
+///
+/// `complexity` is passed as `Option<&str>` to match the row-struct idiom
+/// (free-text-in-row, like [`compute_tier`]); an unrecognised / `None` value is
+/// treated as NOT high (so it never forces `Full` on the complexity axis nor
+/// blocks the `Autonomous` branch — the high check is an exact `Some("high")`).
+pub fn compute_gating_tier(
+    spawned_from_finding: bool,
+    complexity: Option<&str>,
+    unresolved_questions: i64,
+    scope_files: i64,
+) -> GatingTier {
+    let is_high = complexity == Some("high");
+    if spawned_from_finding && !is_high && unresolved_questions == 0 {
+        return GatingTier::Autonomous;
+    }
+    if is_high || unresolved_questions > 0 || scope_files > 6 {
+        return GatingTier::Full;
+    }
+    GatingTier::Light
+}
+
+// ---------------------------------------------------------------------------
+// Round-5 rework mutators (migration 0026): the plan-epoch bump + the persisted
+// task<->research grounding edge writers. Each is a single-mutation-path write —
+// ONE `BEGIN IMMEDIATE` tx recording EXACTLY ONE EXPORT-INERT event on the
+// `plan_epoch` aggregate (never `work_item`), so the bump/link/retire never
+// re-renders a work_item git-export snapshot. The epoch COLUMN still rides the
+// work_item snapshot (it is a `work_items` column); only the bump EVENT is inert.
+// ---------------------------------------------------------------------------
+
+/// Bump a story's rework plan epoch (migration 0026). One `BEGIN IMMEDIATE` txn:
+/// `UPDATE work_items SET plan_epoch = plan_epoch + 1 WHERE id = :story_id`
+/// (`rows_affected()==0 ⇒ NotFound`), then ONE export-inert `plan_epoch`-aggregate
+/// event (`plan_epoch.bumped`, payload `{from, to}`), commit. Returns the NEW
+/// epoch.
+///
+/// EXPORT-INERT by deliberate trade-off: the `plan_epoch` column rides the
+/// work_item snapshot (it is a real `work_items` column the export renders), but
+/// the bump itself emits no `work_item` event — a rework bump is bookkeeping, not
+/// a planning-content change, so it does not warrant re-rendering the whole item.
+///
+/// Story-shaped by convention (the rework pass bumps a STORY), but NOT
+/// kind-gated: the column exists on every `work_items` row (`NOT NULL DEFAULT 0`)
+/// and a caller bumping a non-story is simply bumping that row's epoch. The one
+/// guard is existence (NotFound on a missing/zero-row id).
+pub async fn bump_plan_epoch(db: &impl DbClient, story_id: &str) -> Result<i64, AppError> {
+    let mut tx = db.begin().await?;
+
+    // Read the current epoch on the tx (same writer snapshot as the UPDATE) so
+    // the event payload's `from`/`to` are consistent and a missing row is caught
+    // before the write. `plan_epoch` is `NOT NULL DEFAULT 0`, so a present row
+    // always decodes a non-null `i64`.
+    let from: Option<i64> = crate::db::tx_scalar_opt::<i64>(
+        tx.as_mut(),
+        "SELECT plan_epoch FROM work_items WHERE id = $1",
+        args![story_id.to_owned()],
+    )
+    .await?;
+    let Some(from) = from else {
+        return Err(AppError::NotFound(format!("work_item '{story_id}' not found")));
+    };
+
+    let affected = tx
+        .execute(
+            r#"UPDATE work_items SET plan_epoch = plan_epoch + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            args![story_id.to_owned()],
+        )
+        .await?;
+    if affected == 0 {
+        // Concurrent-delete race between the read and the UPDATE.
+        return Err(AppError::NotFound(format!("work_item '{story_id}' not found")));
+    }
+
+    let to = from + 1;
+    let payload = serde_json::json!({ "from": from, "to": to });
+    record_inert_event(tx.as_mut(), "plan_epoch", story_id, "plan_epoch.bumped", payload).await?;
+
+    tx.commit().await?;
+    Ok(to)
+}
+
+/// Resolve a research note's owning STORY id — the note's `work_item_id` resolved
+/// to its story ancestor. Used by the grounding writers to (a) cross-story-check
+/// the link and (b) route the inert event to the story aggregate so it groups
+/// with the story. `NotFound` if the note id has no row.
+async fn research_note_story(db: &impl DbClient, note_id: &str) -> Result<String, AppError> {
+    let owner = crate::db::scalar_opt::<String>(
+        db,
+        "SELECT work_item_id FROM research_notes WHERE id = $1",
+        args![note_id.to_owned()],
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("research_note '{note_id}' not found")))?;
+
+    // A research note lives on a STORY today (the planning skills attach notes to
+    // a story); resolve to the story ancestor so cross-story comparison is
+    // apples-to-apples even if a note ever hangs off a sub-row. If the owner IS
+    // the story this returns it unchanged.
+    story_ancestor(db, &owner).await
+}
+
+/// Resolve a work item's STORY ancestor id (self if it IS a story), via the
+/// `parent_id` chain. `NotFound` if the start id is absent; `Validation` if the
+/// chain bottoms out before any `story` row (defensive — unreachable for items
+/// created via `create_work_item`).
+async fn story_ancestor(db: &impl DbClient, work_item_id: &str) -> Result<String, AppError> {
+    let found: Option<String> = crate::db::scalar_opt::<String>(
+        db,
+        r#"
+        WITH RECURSIVE ancestors(id, kind, parent_id) AS (
+            SELECT id, kind, parent_id FROM work_items WHERE id = $1
+            UNION ALL
+            SELECT w.id, w.kind, w.parent_id
+            FROM work_items w
+            JOIN ancestors a ON w.id = a.parent_id
+        )
+        SELECT id FROM ancestors WHERE kind = 'story' LIMIT 1
+        "#,
+        args![work_item_id.to_owned()],
+    )
+    .await?;
+    if let Some(id) = found {
+        return Ok(id);
+    }
+    let exists = crate::db::scalar_opt::<i64>(
+        db,
+        r#"SELECT 1 FROM work_items WHERE id = $1"#,
+        args![work_item_id.to_owned()],
+    )
+    .await?
+    .is_some();
+    if !exists {
+        Err(AppError::NotFound(format!("work_item '{work_item_id}' not found")))
+    } else {
+        Err(AppError::Validation(format!(
+            "work_item '{work_item_id}' has no 'story' ancestor"
+        )))
+    }
+}
+
+/// Persist a task↔research grounding edge (migration 0026): INSERT one
+/// `task_research_links(task_id, research_note_id)` row so a task's research
+/// provenance survives as a QUERYABLE edge, not just prose ("T4 implements
+/// R-note X"). One `BEGIN IMMEDIATE` txn + ONE export-inert `plan_epoch`-aggregate
+/// event (`task_research.linked`), routed to the task's STORY id so it groups
+/// with the story.
+///
+/// **Validation lives HERE (NOT at the MCP layer)** so the T5 HTTP mirror inherits
+/// it (single source):
+///   * `task_id` must be `kind='task'` (else `Validation`; also `NotFound` if the
+///     id is absent — the kind read fails first);
+///   * `research_note_id` must EXIST, be LIVE (`superseded_by IS NULL`), AND belong
+///     to the SAME story as the task (the task's parent story vs the note's
+///     story ancestor must match; a cross-story link is `Validation`).
+///
+/// IDEMPOTENT: the composite PK `(task_id, research_note_id)` makes a re-link a
+/// no-op success (`ON CONFLICT DO NOTHING` — the event still records the intent,
+/// matching the "one logical write ⇒ one event" envelope without a spurious second
+/// row).
+pub async fn link_task_research(
+    db: &impl DbClient,
+    task_id: &str,
+    research_note_id: &str,
+) -> Result<(), AppError> {
+    // Task-scoped (also NotFound if the id is absent).
+    let kind = work_item_kind(db, task_id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "link_task_research links a research note only to a task, not to a '{kind}'"
+        )));
+    }
+
+    // The note must EXIST and be LIVE (a superseded note is not a valid current
+    // grounding). One read covers both: an absent OR superseded note yields no row.
+    let live = db
+        .query_opt::<crate::db::Scalar<i64>>(
+            "SELECT 1 FROM research_notes WHERE id = $1 AND superseded_by IS NULL",
+            args![research_note_id.to_owned()],
+        )
+        .await?
+        .is_some();
+    if !live {
+        // Distinguish absent from superseded for a precise message.
+        let exists = db
+            .query_opt::<crate::db::Scalar<i64>>(
+                "SELECT 1 FROM research_notes WHERE id = $1",
+                args![research_note_id.to_owned()],
+            )
+            .await?
+            .is_some();
+        return Err(AppError::Validation(if exists {
+            format!("research_note '{research_note_id}' is superseded and cannot ground a task")
+        } else {
+            format!("research_note '{research_note_id}' does not exist")
+        }));
+    }
+
+    // Same-story check: the task's parent story vs the note's story ancestor.
+    let task_story = story_ancestor(db, task_id).await?;
+    let note_story = research_note_story(db, research_note_id).await?;
+    if task_story != note_story {
+        return Err(AppError::Validation(format!(
+            "research_note '{research_note_id}' belongs to story '{note_story}', not the task's \
+             story '{task_story}' — a grounding edge must stay within one story"
+        )));
+    }
+
+    let mut tx = db.begin().await?;
+
+    tx.execute(
+        r#"
+        INSERT INTO task_research_links (task_id, research_note_id)
+        VALUES ($1, $2)
+        ON CONFLICT (task_id, research_note_id) DO NOTHING
+        "#,
+        args![task_id.to_owned(), research_note_id.to_owned()],
+    )
+    .await?;
+
+    let payload = serde_json::json!({
+        "task_id": task_id,
+        "research_note_id": research_note_id,
+    });
+    record_inert_event(tx.as_mut(), "plan_epoch", &task_story, "task_research.linked", payload)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Remove a task↔research grounding edge (migration 0026). `pub(crate)` —
+/// repo-internal, NOT MCP-surfaced; the rework/cancel path uses it to drop a
+/// grounding when a note is superseded or a task is re-planned. One
+/// `BEGIN IMMEDIATE` txn + ONE export-inert `plan_epoch`-aggregate event
+/// (`task_research.unlinked`), routed to the task's story.
+///
+/// Idempotent: a missing edge is a no-op success (`rows_affected()==0` is NOT an
+/// error — unlinking an absent edge already achieves the intent), but it still
+/// records the event so the audit trail captures the rework intent uniformly with
+/// [`link_task_research`]. The task must still be a `task` (kind-gated, mirroring
+/// the link writer) so the event-aggregate resolution is well-defined.
+//
+// `allow(dead_code)`: this is the repo-internal unlink primitive for the
+// rework/cancel path, which is NOT wired in this pass (T3 lands the writers; the
+// consumer is a later task). It is exercised by the dossier rework test only — a
+// `#[cfg(test)]`-only use does not clear the non-test dead-code lint — so the
+// allow stays until the production consumer lands.
+#[allow(dead_code)]
+pub(crate) async fn unlink_task_research(
+    db: &impl DbClient,
+    task_id: &str,
+    research_note_id: &str,
+) -> Result<(), AppError> {
+    let kind = work_item_kind(db, task_id).await?;
+    if kind != "task" {
+        return Err(AppError::Validation(format!(
+            "unlink_task_research unlinks a research note only from a task, not from a '{kind}'"
+        )));
+    }
+    // Resolve the story aggregate before the write (the edge may already be gone,
+    // but the task still exists per the kind read above).
+    let task_story = story_ancestor(db, task_id).await?;
+
+    let mut tx = db.begin().await?;
+
+    tx.execute(
+        r#"DELETE FROM task_research_links WHERE task_id = $1 AND research_note_id = $2"#,
+        args![task_id.to_owned(), research_note_id.to_owned()],
+    )
+    .await?;
+
+    let payload = serde_json::json!({
+        "task_id": task_id,
+        "research_note_id": research_note_id,
+    });
+    record_inert_event(tx.as_mut(), "plan_epoch", &task_story, "task_research.unlinked", payload)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -704,6 +1011,89 @@ mod tests {
         // Defensive: every input at its null-equivalent still falls through
         // to the residual Lite branch (the wire surface gates None upstream).
         assert_eq!(compute_tier(None, None, 0, false), Tier::Lite);
+    }
+
+    // -----------------------------------------------------------------------
+    // compute_gating_tier (migration 0026) — one test per branch + boundary
+    // of the round-5 gating rule (User Decision 2).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn gating_tier_finding_low_complexity_no_questions_is_autonomous() {
+        // The autonomous branch: finding-spawned, NOT high complexity, zero
+        // unresolved questions. scope_files is irrelevant here (User Decision 2),
+        // so a large file count must NOT demote it from Autonomous.
+        assert_eq!(
+            compute_gating_tier(true, Some("low"), 0, 99),
+            GatingTier::Autonomous,
+        );
+    }
+
+    #[test]
+    fn gating_tier_high_complexity_is_full() {
+        // complexity=high forces Full even when finding-spawned (the autonomous
+        // branch requires complexity != high, so a high-complexity finding-spawned
+        // story falls through to the Full check).
+        assert_eq!(
+            compute_gating_tier(true, Some("high"), 0, 0),
+            GatingTier::Full,
+        );
+    }
+
+    #[test]
+    fn gating_tier_unresolved_questions_is_full() {
+        // unresolved_questions > 0 forces Full and also blocks the autonomous
+        // branch (a finding-spawned story with an open question is NOT autonomous).
+        assert_eq!(
+            compute_gating_tier(true, Some("low"), 1, 0),
+            GatingTier::Full,
+        );
+    }
+
+    #[test]
+    fn gating_tier_scope_files_above_six_is_full() {
+        // scope_files > 6 promotes an otherwise-Light story to Full. NOT
+        // finding-spawned, so the autonomous branch never applies.
+        assert_eq!(
+            compute_gating_tier(false, Some("low"), 0, 7),
+            GatingTier::Full,
+        );
+    }
+
+    #[test]
+    fn gating_tier_scope_files_at_six_is_light() {
+        // Boundary: scope_files == 6 is NOT > 6, so the residual Light branch
+        // (not finding-spawned, low complexity, no questions).
+        assert_eq!(
+            compute_gating_tier(false, Some("low"), 0, 6),
+            GatingTier::Light,
+        );
+    }
+
+    #[test]
+    fn gating_tier_residual_is_light() {
+        // Every Full trigger absent AND not finding-spawned → Light.
+        assert_eq!(
+            compute_gating_tier(false, Some("medium"), 0, 3),
+            GatingTier::Light,
+        );
+    }
+
+    #[test]
+    fn gating_tier_dossier_serde_roundtrip() {
+        // GatingTier serialises to the snake_case wire form and round-trips back
+        // (T4's get_gating_tier returns it via Json<T>; the wire spelling is
+        // load-bearing). Named `dossier` so the round-5 narrow filter picks it up.
+        for (variant, wire) in [
+            (GatingTier::Full, "\"full\""),
+            (GatingTier::Light, "\"light\""),
+            (GatingTier::Autonomous, "\"autonomous\""),
+        ] {
+            let json = serde_json::to_string(&variant).expect("serialize GatingTier");
+            assert_eq!(json, wire, "{variant:?} serialises to {wire}");
+            let back: GatingTier = serde_json::from_str(&json).expect("deserialize GatingTier");
+            assert_eq!(back, variant, "{wire} round-trips to {variant:?}");
+        }
     }
 
     // -----------------------------------------------------------------------

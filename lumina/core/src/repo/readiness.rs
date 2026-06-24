@@ -431,6 +431,15 @@ pub async fn get_story_readiness(
     let problem_statement_set = attrs.contains_key("problem_statement");
     let has_approach = attrs.contains_key("execution_strategy");
     let has_verification_commands = attrs.contains_key("verification_commands");
+    // migration 0026: the §l Phase-4 done-signal is recorded iff
+    // `verification_commands` is present AND a non-empty JSON object (an empty
+    // `{}` is "key present but nothing recorded"). Distinct from the cascade's
+    // `has_verification_commands` (mere key presence), which is preserved as-is
+    // so the next-action ordering is unchanged.
+    let verification_commands_set = attrs
+        .get("verification_commands")
+        .and_then(Value::as_object)
+        .is_some_and(|o| !o.is_empty());
 
     // Accepted research = live notes with state='accepted'. The detail fold
     // already filters `superseded_by IS NULL`.
@@ -542,6 +551,21 @@ pub async fn get_story_readiness(
         NextAction::StoryReady
     };
 
+    // migration 0026: the orchestrator-decided gating tier, derived from the
+    // story's own signals via the single-source `compute_gating_tier`:
+    //   * spawned_from_finding — the story carries a finding back-link;
+    //   * complexity — the story's OWN complexity grade (row-struct `Option<&str>`);
+    //   * unresolved_questions — the count already computed above;
+    //   * scope_files — the DISTINCT story files footprint count (already folded
+    //     into the detail for a story-kind row).
+    let plan_epoch = detail.item.plan_epoch;
+    let gating_tier = compute_gating_tier(
+        detail.item.spawned_from_finding_id.is_some(),
+        detail.item.complexity.as_deref(),
+        unresolved_questions as i64,
+        detail.story_files_footprint.len() as i64,
+    );
+
     Ok(StoryReadiness {
         story_id: story_id.to_owned(),
         problem_statement_set,
@@ -549,6 +573,9 @@ pub async fn get_story_readiness(
         unresolved_questions,
         has_approach,
         has_acceptance_criteria_on_all_tasks,
+        plan_epoch,
+        gating_tier,
+        verification_commands_set,
         ready_for_decomposition,
         next_recommended_action,
     })
@@ -562,6 +589,41 @@ mod tests {
     use crate::domain::{Lane, Severity};
     use crate::repo::test_support::*;
     use sqlx::SqlitePool;
+
+    use crate::domain::{GatingTier, StoryReadiness};
+
+    /// (migration 0026) A `StoryReadiness` value serialises with the three new
+    /// round-5 fields present and correctly shaped: `plan_epoch` as a JSON number,
+    /// `gating_tier` as the snake_case wire string, and `verification_commands_set`
+    /// as a JSON bool. Named `readiness` so the round-5 narrow filter picks it up.
+    #[test]
+    fn readiness_serialises_with_round5_fields() {
+        let r = StoryReadiness {
+            story_id: "s1".to_owned(),
+            problem_statement_set: true,
+            accepted_research_count: 2,
+            unresolved_questions: 0,
+            has_approach: true,
+            has_acceptance_criteria_on_all_tasks: true,
+            plan_epoch: 3,
+            gating_tier: GatingTier::Light,
+            verification_commands_set: true,
+            ready_for_decomposition: true,
+            next_recommended_action: NextAction::StoryReady,
+        };
+        let v = serde_json::to_value(&r).expect("serialize StoryReadiness");
+        assert_eq!(v["plan_epoch"], serde_json::json!(3), "plan_epoch present as number");
+        assert_eq!(
+            v["gating_tier"],
+            serde_json::json!("light"),
+            "gating_tier present as snake_case wire string"
+        );
+        assert_eq!(
+            v["verification_commands_set"],
+            serde_json::json!(true),
+            "verification_commands_set present as bool"
+        );
+    }
 
     /// Activate a sprint directly (migration-0016: `seed_sprint` mints a
     /// `'draft'` sprint, but the quiescence claim-gating — like the claim

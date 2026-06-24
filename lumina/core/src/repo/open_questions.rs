@@ -17,7 +17,7 @@
 use uuid::Uuid;
 
 use super::*;
-use super::events::record_event;
+use super::events::{record_event, record_inert_event};
 use crate::args;
 use crate::db::{DbClient, Scalar};
 use crate::error::AppError;
@@ -163,6 +163,46 @@ async fn open_question_story(db: &impl DbClient, id: &str) -> Result<String, App
     )
     .await?
     .ok_or_else(|| AppError::NotFound(format!("open_question '{id}' not found")))
+}
+
+/// Retire an open question (migration 0026): stamp `retired_at = <now>` so the
+/// question drops out of the dossier's LIVE planning view WITHOUT deleting it
+/// (the audit trail survives — the rework path retires, never hard-deletes). One
+/// `BEGIN IMMEDIATE` txn: `UPDATE open_questions SET retired_at = CURRENT_TIMESTAMP
+/// WHERE id = :id` (`rows_affected()==0 ⇒ NotFound`), then ONE export-inert
+/// `plan_epoch`-aggregate event (`open_question.retired`) routed to the question's
+/// owning STORY id so it groups with the story, commit.
+///
+/// EXPORT-INERT (the round-5 rework signals share the `plan_epoch` inert
+/// aggregate): a retire is rework bookkeeping, not a planning-content change on the
+/// story's work_item snapshot. The timestamp uses `CURRENT_TIMESTAMP` (the same
+/// SQL-side ISO-8601 source `decided_at`/`created_at` use elsewhere in this
+/// module) so the stored format is consistent with the other open-question
+/// timestamps.
+pub async fn retire_open_question(db: &impl DbClient, id: &str) -> Result<(), AppError> {
+    // Resolve the owning story FIRST (NotFound on an absent id) for the event
+    // aggregate (R1: route to the story's work_item — but here the event is inert,
+    // so it rides the `plan_epoch` aggregate keyed on the story id for grouping).
+    let story_id = open_question_story(db, id).await?;
+
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute(
+            r#"UPDATE open_questions SET retired_at = CURRENT_TIMESTAMP WHERE id = $1"#,
+            args![id.to_owned()],
+        )
+        .await?;
+    if affected == 0 {
+        return Err(AppError::NotFound(format!("open_question '{id}' not found")));
+    }
+
+    let payload = serde_json::json!({ "question_id": id });
+    record_inert_event(tx.as_mut(), "plan_epoch", &story_id, "open_question.retired", payload)
+        .await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Append ONE `question_options` row under the single-mutation-path discipline

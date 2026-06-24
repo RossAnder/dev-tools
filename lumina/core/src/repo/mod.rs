@@ -45,6 +45,7 @@ use crate::db::DbClient;
 use crate::error::AppError;
 
 mod acceptance_criteria;
+mod dossier;
 mod events;
 mod findings;
 mod findings_query;
@@ -94,6 +95,11 @@ pub use shared::*;
 // are unchanged).
 pub use findings_query::*;
 pub use reads::*;
+// Story dossier composer (migration 0026, story-planning-round-5) carved to
+// `repo/dossier.rs` (T3). `pub use dossier::*` re-exports `get_story_dossier` at
+// its `crate::repo::get_story_dossier` path (the T6 MCP tool + T5 HTTP mirror
+// call it by path).
+pub use dossier::*;
 // Work-item create/update/delete lifecycle (`work_items.rs`), the meta-mutator
 // cluster — scalar setters + attributes/activity/context-blocks
 // (`work_items_meta.rs`), and acceptance-criteria CRUD (`acceptance_criteria.rs`),

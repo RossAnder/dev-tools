@@ -20,7 +20,7 @@ use crate::args;
 use crate::db::DbClient;
 use crate::domain::{
     AcceptanceCriterion, ActivityType, Finding, OpenQuestion, QuestionOption, ResearchNote, Shape,
-    WorkItem, WorkItemActivity,
+    TaskResearchLink, WorkItem, WorkItemActivity,
 };
 use crate::error::AppError;
 
@@ -67,6 +67,10 @@ pub(crate) struct WorkItemRow {
     /// the bool as INTEGER) and mapped to `Option<bool>` on the public
     /// [`WorkItem`] in [`work_item_from_row`].
     pub(crate) checkpoint: Option<i64>,
+    /// Rework plan epoch (migration 0026): the `NOT NULL DEFAULT 0` INTEGER
+    /// column, decoded as a non-null `i64` (every row carries at least epoch 0)
+    /// and mapped straight onto [`WorkItem::plan_epoch`].
+    pub(crate) plan_epoch: i64,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     /// Soft-delete tombstone instant (NULL = live). Selected by both
@@ -83,6 +87,7 @@ where
     &'r str: sqlx::ColumnIndex<R>,
     String: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
     Option<String>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
+    i64: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
     Option<i64>: sqlx::Decode<'r, R::Database> + sqlx::Type<R::Database>,
 {
     fn from_row(row: &'r R) -> Result<Self, sqlx::Error> {
@@ -111,6 +116,7 @@ where
             lane: row.try_get("lane")?,
             reviews_work_item_id: row.try_get("reviews_work_item_id")?,
             checkpoint: row.try_get("checkpoint")?,
+            plan_epoch: row.try_get("plan_epoch")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             deleted_at: row.try_get("deleted_at")?,
@@ -146,6 +152,7 @@ pub(crate) fn work_item_from_row(r: WorkItemRow) -> Result<WorkItem, AppError> {
         lane: r.lane,
         reviews_work_item_id: r.reviews_work_item_id,
         checkpoint: r.checkpoint.map(|v| v != 0),
+        plan_epoch: r.plan_epoch,
         created_at: r.created_at,
         updated_at: r.updated_at,
         deleted_at: r.deleted_at,
@@ -484,6 +491,40 @@ pub(crate) async fn list_research_notes(
         args![work_item_id.to_owned()],
     )
     .await
+}
+
+/// List the LIVE task↔research grounding edges for a task (migration 0026),
+/// each JOINed to its `research_notes` endpoint for the note `summary`. "Live" =
+/// `research_notes.superseded_by IS NULL`: an edge whose note was superseded
+/// drops out of this fold (mirroring [`list_research_notes`]). Ordered by the
+/// edge's `created_at` for a stable fold. Two columns, so the read decodes
+/// through the tuple `FromRow` seam (`(research_note_id, summary)`) and maps into
+/// the public [`TaskResearchLink`].
+pub(crate) async fn list_task_research_links(
+    db: &impl DbClient,
+    task_id: &str,
+) -> Result<Vec<TaskResearchLink>, AppError> {
+    let rows = db
+        .query_all::<(String, String)>(
+            r#"
+        SELECT trl.research_note_id, rn.summary
+        FROM task_research_links trl
+        JOIN research_notes rn ON rn.id = trl.research_note_id
+        WHERE trl.task_id = $1
+          AND rn.superseded_by IS NULL
+        ORDER BY trl.created_at, trl.research_note_id
+        "#,
+            args![task_id.to_owned()],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(research_note_id, summary)| TaskResearchLink {
+            research_note_id,
+            summary,
+        })
+        .collect())
 }
 
 /// List the open-question rows for a story (migration 0003), ordered by the

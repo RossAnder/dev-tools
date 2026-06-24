@@ -298,6 +298,30 @@ pub enum Tier {
     Deep,
 }
 
+/// Gating tier (migration 0026, story-planning-round-5) — the
+/// orchestrator-decided HUMAN-GATING level for a planned story/task, derived by
+/// [`crate::repo::compute_gating_tier`] from the story's signals
+/// (spawned-from-finding provenance, complexity, unresolved questions, scope
+/// file count). Serialises snake_case → wire `full`/`light`/`autonomous`.
+///
+/// STRICTLY DISTINCT from [`Tier`] (the dispatch / model-class tier): a gating
+/// tier answers "how much human review does this need?", a [`Tier`] answers
+/// "which executor model runs it?". Following the deliberate `Severity` vs
+/// `RiskSeverity` precedent, the two are NOT unified — they describe different
+/// concerns. `JsonSchema` is load-bearing: the `get_gating_tier` MCP tool (T4)
+/// may return it via the rmcp `Json<T>` contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GatingTier {
+    /// Full — maximal human gating: every phase reviewed/approved by the operator.
+    Full,
+    /// Light — reduced gating: the operator spot-checks rather than approving each phase.
+    Light,
+    /// Autonomous — the story runs end-to-end with no per-phase human gate
+    /// (reserved for finding-spawned, low-complexity, fully-resolved work).
+    Autonomous,
+}
+
 /// Work-queue lane (team-execution migration) — CHECK-enforced at the DB layer
 /// on the `work_items.lane` column (`implement|review`). The wire form matches
 /// the SQL CHECK literals byte-for-byte (snake_case). Distinct from [`Tier`]:

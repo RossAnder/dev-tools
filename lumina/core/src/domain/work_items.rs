@@ -102,6 +102,14 @@ pub struct WorkItem {
     /// `Option<bool>` mapped from the nullable `INTEGER` 0/1 column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint: Option<bool>,
+    /// Rework plan epoch (migration 0026): a monotonic per-work_item counter
+    /// bumped by a round-5 rework pass; planning child records are stamped with
+    /// the epoch they were authored under. `NOT NULL DEFAULT 0` at the DB layer,
+    /// so a non-null `i64` here (every row carries at least epoch 0). A scalar
+    /// placed before the timestamp scalars (NOT after any Vec field) so the
+    /// export tables-last ordering gate stays satisfied.
+    #[serde(default)]
+    pub plan_epoch: i64,
     pub created_at: String,
     pub updated_at: String,
     /// Soft-delete tombstone instant (`None` = live). Carried here off the detail
@@ -315,6 +323,22 @@ pub struct FootprintFile {
     pub path: String,
 }
 
+/// One folded task↔research grounding edge (migration 0026, story-planning-
+/// round-5): a `task_research_links` row JOINed to its LIVE `research_notes`
+/// endpoint for the note's `summary`. Populated ONLY for `kind='task'` rows in
+/// [`WorkItemDetail::task_research_links`]; the edge survives as a queryable
+/// link rather than only as prose. Read aggregate only — `Serialize`, no
+/// `JsonSchema` (mirrors the sibling child-table read shapes
+/// `FootprintFile`/`TaskFile`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TaskResearchLink {
+    /// The linked `research_notes.id`.
+    pub research_note_id: String,
+    /// The linked note's `summary` (JOIN-derived; LIVE notes only —
+    /// `research_notes.superseded_by IS NULL`).
+    pub summary: String,
+}
+
 /// A row of `context_blocks` — the drift-killer. Shared context is one row
 /// referenced by many work-items through `work_item_context`.
 #[derive(Debug, Clone, Serialize)]
@@ -371,6 +395,14 @@ pub struct WorkItemDetail {
     /// vec is the not-applicable state for non-story rows.
     #[serde(default)]
     pub story_files_footprint: Vec<FootprintFile>,
+    /// Folded task↔research grounding edges (migration 0026): the LIVE research
+    /// notes linked to this task via `task_research_links`, each with the note's
+    /// `summary`. Populated ONLY when `item.kind == "task"`; empty otherwise —
+    /// mirroring the task-only `task_dependencies` fold. The repo layer
+    /// (`reads.rs`) owns the kind gate; an empty vec is the not-applicable state
+    /// for non-task rows.
+    #[serde(default)]
+    pub task_research_links: Vec<TaskResearchLink>,
 }
 
 /// Create-body for a new work item. Deserialised by the HTTP POST handler

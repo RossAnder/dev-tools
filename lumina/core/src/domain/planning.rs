@@ -51,8 +51,75 @@ pub struct StoryReadiness {
     pub unresolved_questions: u32,
     pub has_approach: bool,
     pub has_acceptance_criteria_on_all_tasks: bool,
+    /// The story's rework plan epoch (migration 0026), read straight off the
+    /// story's `work_items.plan_epoch` (always present — `NOT NULL DEFAULT 0`).
+    pub plan_epoch: i64,
+    /// The orchestrator-decided [`GatingTier`] for this story (migration 0026),
+    /// computed by [`crate::repo::compute_gating_tier`] from the story's signals.
+    /// NON-optional — every call site populates it.
+    pub gating_tier: GatingTier,
+    /// True iff the story carries a non-empty `attributes.verification_commands`
+    /// object (migration 0026): the §l Phase-4 done-signal has been recorded.
+    pub verification_commands_set: bool,
     pub ready_for_decomposition: bool,
     pub next_recommended_action: NextAction,
+}
+
+/// The full planning dossier for a story (migration 0026, story-planning-
+/// round-5): the single composed read an orchestrator pulls to drive dispatch.
+/// It bundles the story's [`WorkItemDetail`], the per-task research grounding
+/// links, the derived story files footprint, the computed dispatch-plan waves,
+/// and the [`StoryReadiness`] verdict.
+///
+/// Struct ONLY this pass (T2); the `get_story_dossier` repo builder that
+/// populates it lands in T3. Read aggregate only — `Serialize`, NO `JsonSchema`:
+/// it composes [`WorkItemDetail`] and [`StoryReadiness`], neither of which
+/// derives `JsonSchema`, so the dossier stays Serialize-only (the MCP layer
+/// wraps it with `Content::json` rather than `Json<T>`, mirroring the other
+/// composed read aggregates).
+#[derive(Debug, Clone, Serialize)]
+pub struct StoryDossier {
+    /// The story's full detail aggregate (item + children + child-table folds).
+    pub story: WorkItemDetail,
+    /// Per-task research grounding (migration 0026, the R52 answer): one entry
+    /// per NON-CANCELLED task of the story, each carrying the task's id + title
+    /// and the LIVE research notes that ground it ("T4 implements R-note X").
+    ///
+    /// A KEYED shape (NOT a flat `Vec<TaskResearchLink>`) is required because
+    /// [`WorkItemDetail::children`] is a SHALLOW `Vec<WorkItem>` — the children
+    /// do NOT carry their own `task_research_links` fold — so the task↔note
+    /// association would be LOST if it were flattened. Only links whose note is
+    /// LIVE (`research_notes.superseded_by IS NULL`) and whose task is not
+    /// cancelled are folded; a task with no live grounding still appears with an
+    /// empty `links`.
+    pub task_research_links: Vec<TaskResearchGrounding>,
+    /// The story's derived files footprint — the same DISTINCT `(repo_link_id,
+    /// path)` shape [`crate::repo::story_files_footprint`] returns.
+    pub story_files_footprint: Vec<FootprintFile>,
+    /// The dispatch-plan waves — the same `Vec<Vec<BatchEntry>>` shape
+    /// [`crate::repo::get_task_dispatch_plan`] returns (one inner Vec per
+    /// parallel-safe batch).
+    pub dispatch_plan: Vec<Vec<BatchEntry>>,
+    /// The story's readiness verdict.
+    pub readiness: StoryReadiness,
+}
+
+/// Per-task research grounding for a [`StoryDossier`] (migration 0026, the R52
+/// answer): one NON-CANCELLED task of the story, keyed by id + title, with the
+/// LIVE research notes that ground it. The keyed shape preserves the task↔note
+/// association that a flat link list would lose (the dossier's story detail
+/// carries only SHALLOW [`WorkItem`] children). Read aggregate only —
+/// `Serialize`, no `JsonSchema` (mirrors the other composed read shapes).
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskResearchGrounding {
+    /// The grounded task's id.
+    pub task_id: String,
+    /// The grounded task's title (so the brief renders "<title> implements …"
+    /// without a second lookup).
+    pub task_title: String,
+    /// The LIVE research notes grounding this task (each a
+    /// [`TaskResearchLink`]); empty when the task has no live grounding edge.
+    pub links: Vec<TaskResearchLink>,
 }
 
 /// Result of a successful `claim_next_task` (team-execution migration): the
