@@ -94,7 +94,7 @@ Review findings → rework (NEW implement tasks, never a review-task spawn):
   emits one `open_question.escalated` event, and BLOCKS the sprint. Returns
   `{ story_id, question_id, blocked_work_item_id }`. `resolve_open_question`
   unparks the host (clearing `blocked_by_question_id`) and unblocks the sprint.
-  Same MCP tool as the spawn path — no new tool, surface stays 94.
+  Same MCP tool as the spawn path — adds no new MCP tool.
 
 Sprint lifecycle / worktree / commit provenance (migration 0016):
 
@@ -277,8 +277,8 @@ team-managed); the lifecycle is IDENTICAL under teams and single-agent:
     operator `block` path, never silent auto-rework. Major/etc. may still
     auto-spawn. Lean toward `block` whenever a finding needs a design/scope call
     a fresh implement task cannot safely make on its own.
-  - The `block` decision rides the EXISTING `record_finding_decision` tool — NO
-    new MCP tool, the tool-count invariant stays at 94.
+  - The `block` decision rides the EXISTING `record_finding_decision` tool — it
+    adds no new MCP tool (the tool-count invariant is untouched).
 
 **Isolation contract (the server is RECORD-ONLY — it ships no git isolation
 primitive, so review scopes by the task's own footprint, NOT a whole-tree diff):**
