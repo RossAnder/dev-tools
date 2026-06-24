@@ -361,7 +361,7 @@ Lumina carries TWO severity enums, both typed at the MCP wire surface. They are 
 | 3. Decide | `alternatives`, `approach`, `not-doing`, `edge-cases`, `risks` | `accepted_research_count >= 1` AND `unresolved_questions == 0` |
 | 4. Verify-design | `verification-commands`, `acceptance-criteria`, `story-review` | `has_approach == true` |
 | 5. Decompose | `decompose-tasks`, `set-task-spec`, `wire-task-deps` | `acceptance_criteria_count >= 1` AND `verification_commands_set == true` |
-| 6. Closure | `closure-gate`, `relevance` | all tasks have `effort` + `complexity` + `tier` set; zero open critical/high risks on the story (round-4 extension) |
+| 6. Closure | `closure-gate`, `relevance` | all tasks have `effort` + `complexity` + `tier` set (the "zero open critical/high risks on the story" risk-gate is a DEFERRED round-4 extension — NOT yet live; see §k.2) |
 
 The `verification_commands_set` boolean is now EXPOSED by `get_story_readiness` (round-5 T2/T3 extended the readiness query with `verification_commands_set` alongside `plan_epoch` and `gating_tier`). `plan-story` reads the readiness field (or the dossier's folded readiness) for the Phase-5 precondition — NO LONGER `detail.attributes.verification_commands != null` directly from `get_work_item`. (Round-3's note that it was unexposed is superseded.)
 
