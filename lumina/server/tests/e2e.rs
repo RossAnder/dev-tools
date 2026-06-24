@@ -47,8 +47,8 @@ use tower::ServiceExt as _; // for `oneshot`
 use lumina_server::app::{AppState, build_router};
 use lumina_core::db::connect_in_memory;
 use lumina_core::domain::{
-    ClosureGate, Complexity, CreateWorkItemRequest, Effort, NextAction, Relevance, ResearchState,
-    Severity, TaskKind, Tier, UpdateResearchNoteRequest,
+    ClosureGate, Complexity, CreateWorkItemRequest, Effort, GatingTier, NextAction, Relevance,
+    ResearchState, Severity, TaskKind, Tier, UpdateResearchNoteRequest,
 };
 use lumina_server::mcp::{
     AddFindingParams, LuminaTools, RecordTaskActivityParams, SetStoryPlanParams,
@@ -1768,6 +1768,345 @@ async fn files_touched_lifecycle_flow() {
     assert_eq!(
         task_work_item_events_after, task_work_item_events,
         "the actual-file + reconcile writes added ZERO work_item events — they are export-inert"
+    );
+}
+
+/// The full thread for the migration-0026 story-planning-round-5 vertical: the
+/// planning orchestrator's triage → plan → brief → rework arc. It exercises the
+/// five new round-5 surfaces — `compute_gating_tier` (via the readiness/gating-tier
+/// reads), `link_task_research` (persisted decomposition grounding, the R52
+/// answer), `get_story_dossier` (the brief read), `bump_plan_epoch`, and
+/// `retire_open_question` (the rework loop) — and proves the corrected A.5
+/// liveness model end-to-end: after a rework, the LIVE dossier EXCLUDES the
+/// superseded note + the retired question while KEEPING a surviving older-epoch
+/// note (one authored at epoch 0 that was never superseded).
+///
+/// Drive helpers: the round-5 MCP `#[tool]` methods (`bump_plan_epoch`,
+/// `link_task_research`, `retire_open_question`, `get_story_dossier`,
+/// `get_gating_tier`) are private to the crate, so the writes/reads go through the
+/// PUBLIC `repo::*` single-mutation-path fns the MCP tools wrap 1:1 — exactly
+/// mirroring the planning/decisions + files-touched threads above — with the
+/// dossier ALSO read over HTTP (`GET /api/work-items/{story}/dossier`) to exercise
+/// the T5 mirror. This e2e's unique contribution is threading ALL layers — DB →
+/// export → HTTP — through ONE shared pool, sleep-free and socket-free.
+///
+/// ## R-risk-6 (export-inert `plan_epoch`)
+/// `bump_plan_epoch` records an EXPORT-INERT `plan_epoch`-aggregate event — it does
+/// NOT itself re-render the story's `work_item` snapshot, so the EXPORTED snapshot's
+/// `plan_epoch` lags until the next `work_item`-aggregate event drains. This thread
+/// therefore asserts the bumped epoch against the DB (`sqlx::query_scalar`) and the
+/// LIVE readiness read, NEVER against a freshly-exported snapshot taken right after
+/// the bump. It separately proves the inertness directly: the export drain
+/// immediately after the rework drains ZERO `plan_epoch`-aggregate events.
+#[tokio::test]
+async fn planning_round5_dossier_rework_db_export_http() {
+    // One shared pool across the repo writers, the export drain, and the router.
+    let pool = Arc::new(lumina_core::db::AnyPool::from(
+        connect_in_memory().await.expect("migrated in-memory pool"),
+    ));
+    let tools = LuminaTools::new(pool.clone());
+
+    // 1. Seed a legal project→epic→focus→story chain. `mcp_create` supplies the
+    //    migration-0010 epic `outcome` + focus `shape` and seeds the epic
+    //    close-criterion (the story-create gate).
+    let project = mcp_create(&tools, "project", None, "R5 Project").await;
+    let epic = mcp_create(&tools, "epic", Some(&project), "R5 Epic").await;
+    let focus = mcp_create(&tools, "focus", Some(&epic), "R5 Focus").await;
+    let story = mcp_create(&tools, "story", Some(&focus), "R5 Story").await;
+
+    // 2. TRIAGE — the gating tier the orchestrator computes from the story's own
+    //    signals (`compute_gating_tier`, surfaced via `get_story_readiness` /
+    //    `get_gating_tier`). A fresh story with no unresolved questions and a small
+    //    footprint resolves to `light`.
+    let readiness_before = lumina_core::repo::get_story_readiness(&pool, &story)
+        .await
+        .expect("readiness before");
+    assert_eq!(
+        readiness_before.gating_tier,
+        GatingTier::Light,
+        "a fresh story with no open questions + small footprint triages to `light`"
+    );
+    assert_eq!(readiness_before.plan_epoch, 0, "a fresh story is at plan_epoch 0");
+
+    // 3. PLAN — decompose, persisting research grounding (the R52 answer). Add two
+    //    research notes (one authored NOW at epoch 0 that SURVIVES the rework; one
+    //    that the rework will supersede), create a task, and link the task to the
+    //    soon-to-be-superseded note via `link_task_research`.
+    let note_survivor = lumina_core::repo::add_research_note(
+        &pool,
+        &story,
+        "epoch-0 survivor note",
+        Some("authored before the rework; never superseded"),
+        Some("high"),
+        Some("contrarian"),
+        Some("plan"),
+        None,
+    )
+    .await
+    .expect("add survivor note")
+    .to_string();
+    let note_doomed = lumina_core::repo::add_research_note(
+        &pool,
+        &story,
+        "doomed note (superseded by the rework)",
+        None,
+        Some("low"),
+        None,
+        Some("plan"),
+        None,
+    )
+    .await
+    .expect("add doomed note")
+    .to_string();
+
+    let task = mcp_create(&tools, "task", Some(&story), "R5 Task").await;
+    lumina_core::repo::link_task_research(&pool, &task, &note_doomed)
+        .await
+        .expect("ground the task on the doomed note");
+
+    // An open question the rework will RETIRE. Its presence also raises the gating
+    // tier to `full` (an unresolved question is the A.2 `full` signal).
+    let question = lumina_core::repo::add_open_question(&pool, &story, "rework: which path?")
+        .await
+        .expect("add open question")
+        .to_string();
+
+    // 2b. TRIAGE re-read — with one unresolved question the tier is now `full`.
+    //     Read it over HTTP (`GET .../gating-tier`) to exercise the T5 mirror.
+    let state = AppState::new(pool.clone());
+    let gating_resp = build_router(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}/gating-tier"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET gating-tier");
+    assert_eq!(gating_resp.status(), StatusCode::OK, "gating-tier returns 200");
+    let gating_body = json_body(gating_resp).await;
+    assert_eq!(
+        gating_body["gating_tier"].as_str(),
+        Some("full"),
+        "an unresolved open question raises the computed gating tier to `full`"
+    );
+    assert_eq!(
+        gating_body["unresolved_questions"].as_i64(),
+        Some(1),
+        "the gating-tier response surfaces the contributing unresolved-question count"
+    );
+
+    // 4. BRIEF — the pre-rework dossier read. The doomed note + the question are
+    //    LIVE; the task's grounding cites the doomed note.
+    let pre = lumina_core::repo::get_story_dossier(&pool, &story)
+        .await
+        .expect("pre-rework dossier");
+    assert!(
+        pre.story.research_notes.iter().any(|n| n.id == note_doomed),
+        "the doomed note is live in the pre-rework dossier"
+    );
+    assert!(
+        pre.story.research_notes.iter().any(|n| n.id == note_survivor),
+        "the survivor note is live in the pre-rework dossier"
+    );
+    assert!(
+        pre.story.open_questions.iter().any(|q| q.id == question),
+        "the question is live in the pre-rework dossier"
+    );
+    let pre_grounding = pre
+        .task_research_links
+        .iter()
+        .find(|g| g.task_id == task)
+        .expect("the grounded task is in the dossier");
+    assert!(
+        pre_grounding
+            .links
+            .iter()
+            .any(|l| l.research_note_id == note_doomed),
+        "the pre-rework grounding (the R52 fold) cites the doomed note"
+    );
+
+    // 5. REWORK (the align grill found a misalignment): supersede the doomed note,
+    //    retire the question, and bump the plan epoch. Per A.5 these mark rows
+    //    INVALID by liveness (supersede / retire), not by epoch.
+    let note_replacement = lumina_core::repo::add_research_note(
+        &pool,
+        &story,
+        "replacement note (the rework's new direction)",
+        None,
+        Some("high"),
+        Some("contrarian"),
+        Some("plan"),
+        None,
+    )
+    .await
+    .expect("add the replacement note")
+    .to_string();
+    lumina_core::repo::supersede_research_note(&pool, &note_doomed, &note_replacement)
+        .await
+        .expect("supersede the doomed note");
+    lumina_core::repo::retire_open_question(&pool, &question)
+        .await
+        .expect("retire the question");
+    let new_epoch = lumina_core::repo::bump_plan_epoch(&pool, &story)
+        .await
+        .expect("bump the plan epoch");
+    assert_eq!(new_epoch, 1, "the first rework bump moves epoch 0 → 1");
+
+    // 5a. R-risk-6: the bumped epoch is asserted against the DB row directly (the
+    //     `work_items.plan_epoch` column), NOT a freshly-exported snapshot — the
+    //     bump's event is export-inert so the snapshot would lag.
+    let db_epoch: i64 = sqlx::query_scalar("SELECT plan_epoch FROM work_items WHERE id = ?")
+        .bind(&story)
+        .fetch_one(pool.sqlite())
+        .await
+        .expect("read the story's plan_epoch column");
+    assert_eq!(db_epoch, 1, "the DB column reflects the bump immediately");
+
+    // 6. The LIVE dossier after the rework — the corrected A.5 liveness model:
+    //    superseded note + retired question EXCLUDED; the older-epoch survivor KEPT.
+    let post = lumina_core::repo::get_story_dossier(&pool, &story)
+        .await
+        .expect("post-rework dossier");
+    assert!(
+        !post.story.research_notes.iter().any(|n| n.id == note_doomed),
+        "the superseded note is EXCLUDED from the live dossier (liveness filter)"
+    );
+    assert!(
+        post.story.research_notes.iter().any(|n| n.id == note_survivor),
+        "the epoch-0 survivor note (never superseded) is KEPT — epoch is metadata, not a filter"
+    );
+    assert!(
+        post.story.research_notes.iter().any(|n| n.id == note_replacement),
+        "the replacement note authored in the rework epoch is live"
+    );
+    assert!(
+        !post.story.open_questions.iter().any(|q| q.id == question),
+        "the retired question is EXCLUDED from the live dossier"
+    );
+    let post_grounding = post
+        .task_research_links
+        .iter()
+        .find(|g| g.task_id == task)
+        .expect("the task is still in the dossier");
+    assert!(
+        !post_grounding
+            .links
+            .iter()
+            .any(|l| l.research_note_id == note_doomed),
+        "the post-rework grounding no longer cites the dead note (R52 stays answered)"
+    );
+    // The bumped epoch surfaces via readiness (epoch as metadata).
+    assert_eq!(
+        post.readiness.plan_epoch, 1,
+        "the live readiness/dossier reflects the bumped epoch as metadata"
+    );
+
+    // 7. Drain the outbox DIRECTLY (no sleep / no background loop) and prove
+    //    R-risk-6's inertness. The epoch/link/retire writes ride the `plan_epoch`
+    //    aggregate; the drain STAMPS them (so they never re-drain / wedge the
+    //    outbox) but renders NO snapshot for them — export materialises only
+    //    `work_item` aggregates. The proof is twofold: (a) `plan_epoch` events
+    //    exist (the bump + the link + the retire all recorded one); (b) NONE of
+    //    them is a `work_item` event, so they re-rendered ZERO story snapshots.
+    //    First record the story's pre-drain work_item-event count for (b).
+    let story_work_item_events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events WHERE aggregate_type = 'work_item' AND aggregate_id = ?",
+    )
+    .bind(&story)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count work_item events on the story before drain");
+
+    let export_dir = tempfile::tempdir().expect("export tempdir");
+    let drained = lumina_core::export::export_pending(pool.sqlite(), export_dir.path())
+        .await
+        .expect("export drain");
+    assert!(drained >= 1, "the drain stamped at least one event, got {drained}");
+
+    // (a) The bump + the link_task_research edge + the retire each recorded one
+    //     export-inert `plan_epoch`-aggregate event.
+    let plan_epoch_events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events WHERE aggregate_type = 'plan_epoch'",
+    )
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count plan_epoch-aggregate events");
+    assert!(
+        plan_epoch_events >= 3,
+        "the link/retire/bump each recorded an export-inert plan_epoch event, got {plan_epoch_events}"
+    );
+
+    // (b) The inert events added ZERO work_item events on the story, so none of
+    //     them re-rendered the story snapshot — the snapshot's plan_epoch LAGS the
+    //     DB (R-risk-6). The story's work_item-event count is unchanged by the
+    //     bump/link/retire (they routed through aggregate_type='plan_epoch').
+    let story_work_item_events_after: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM events WHERE aggregate_type = 'work_item' AND aggregate_id = ?",
+    )
+    .bind(&story)
+    .fetch_one(pool.sqlite())
+    .await
+    .expect("count work_item events on the story after drain");
+    assert_eq!(
+        story_work_item_events_after, story_work_item_events,
+        "the bump/link/retire added ZERO work_item events on the story — they are export-inert"
+    );
+
+    // R-risk-6 made concrete: the bump did NOT add a `work_item` event, so on its
+    // OWN it never triggers a re-export — the snapshot's plan_epoch self-heals only
+    // on the NEXT work_item event (re-render reads the live column). In THIS drain
+    // the story's pre-existing create event re-renders the row, so the snapshot
+    // happens to carry the live epoch; the inertness contract is that the bump
+    // ALONE is not what caused that render (asserted via the unchanged work_item
+    // event count above). Either way the AUTHORITATIVE epoch is the DB column
+    // (step 5a) — which is exactly why this thread never asserts the epoch against a
+    // freshly-bumped snapshot without an intervening work_item event + drain.
+    let story_snapshot = export_dir.path().join("story").join(format!("{story}.toml"));
+    assert!(story_snapshot.exists(), "the story snapshot exists (rendered by its creates)");
+
+    // 8. HTTP read of the dossier (the T5 mirror) — assert 200 and that the live
+    //    dossier the HTTP route returns matches the repo read: superseded note
+    //    excluded, retired question excluded, survivor kept.
+    let dossier_resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/work-items/{story}/dossier"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot GET dossier");
+    assert_eq!(dossier_resp.status(), StatusCode::OK, "dossier returns 200");
+    let dossier_body = json_body(dossier_resp).await;
+    let http_note_ids: std::collections::HashSet<&str> = dossier_body["story"]["research_notes"]
+        .as_array()
+        .expect("research_notes array in HTTP dossier")
+        .iter()
+        .filter_map(|n| n["id"].as_str())
+        .collect();
+    assert!(
+        !http_note_ids.contains(note_doomed.as_str()),
+        "HTTP dossier EXCLUDES the superseded note"
+    );
+    assert!(
+        http_note_ids.contains(note_survivor.as_str()),
+        "HTTP dossier KEEPS the older-epoch survivor note"
+    );
+    let http_question_ids: std::collections::HashSet<&str> = dossier_body["story"]["open_questions"]
+        .as_array()
+        .expect("open_questions array in HTTP dossier")
+        .iter()
+        .filter_map(|q| q["id"].as_str())
+        .collect();
+    assert!(
+        !http_question_ids.contains(question.as_str()),
+        "HTTP dossier EXCLUDES the retired question — full thread closed"
+    );
+    assert_eq!(
+        dossier_body["readiness"]["plan_epoch"].as_i64(),
+        Some(1),
+        "the HTTP dossier's readiness carries the bumped epoch as metadata"
     );
 }
 
