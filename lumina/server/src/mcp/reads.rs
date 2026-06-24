@@ -8,7 +8,7 @@
 
 use super::*;
 
-use lumina_core::domain::{Kind, Status};
+use lumina_core::domain::{GatingTierResponse, Kind, Status};
 
 /// Arguments for the `list_work_items` read tool. All filters are optional;
 /// `parent_id = None` means "no parent filter" (repo semantics), NOT roots-only.
@@ -186,23 +186,11 @@ pub struct GetGatingTierParams {
     pub story_id: String,
 }
 
-/// Response shape for the `get_gating_tier` read tool: the resolved
-/// [`GatingTier`] plus the contributing signals already present in
-/// [`lumina_core::domain::StoryReadiness`], so a caller can render the gating
-/// rationale without a second `get_story_readiness` round-trip. Returned via
-/// `Content::json` (mirroring the other composed reads in this module — the
-/// module-wide idiom is hand-built `Content::json` results, not `Json<T>`).
-#[derive(Debug, serde::Serialize)]
-pub struct GatingTierResponse {
-    /// The orchestrator-decided gating tier (`full|light|autonomous`).
-    pub gating_tier: lumina_core::domain::GatingTier,
-    /// The story's rework plan epoch (contributing context).
-    pub plan_epoch: i64,
-    /// Whether the story has unresolved open questions (a gating signal).
-    pub unresolved_questions: u32,
-    /// Whether the story's verification commands are set (a gating signal).
-    pub verification_commands_set: bool,
-}
+// `GatingTierResponse` (the `get_gating_tier` read tool's response shape) is now
+// defined ONCE in `lumina_core::domain` and imported above, so the MCP and HTTP
+// layers project against a single shared shape (no silent field drift). It is
+// returned via `Content::json` (the module-wide idiom — hand-built `Content::json`
+// results, not `Json<T>`).
 
 #[tool_router(router = tool_router_reads, vis = "pub(crate)")]
 impl LuminaTools {

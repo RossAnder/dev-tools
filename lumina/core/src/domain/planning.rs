@@ -65,6 +65,27 @@ pub struct StoryReadiness {
     pub next_recommended_action: NextAction,
 }
 
+/// Response shape for the `get_gating_tier` read (migration 0026): the resolved
+/// [`GatingTier`] plus the contributing signals already present in
+/// [`StoryReadiness`], so a caller can render the gating rationale without a
+/// second `get_story_readiness` round-trip. Promoted into the domain crate so the
+/// MCP (`get_gating_tier` tool) and HTTP (`GET /work-items/{story_id}/gating-tier`)
+/// layers project against ONE shape — a future field cannot be added to one and
+/// silently missing from the other. Read aggregate only — `Serialize`, no
+/// `JsonSchema` (mirrors [`StoryReadiness`]; the MCP layer wraps it with
+/// `Content::json` rather than `Json<T>`).
+#[derive(Debug, Clone, Serialize)]
+pub struct GatingTierResponse {
+    /// The orchestrator-decided gating tier (`full|light|autonomous`).
+    pub gating_tier: GatingTier,
+    /// The story's rework plan epoch (contributing context).
+    pub plan_epoch: i64,
+    /// The count of unresolved open questions on the story (a gating signal).
+    pub unresolved_questions: u32,
+    /// Whether the story's verification commands are set (a gating signal).
+    pub verification_commands_set: bool,
+}
+
 /// The full planning dossier for a story (migration 0026, story-planning-
 /// round-5): the single composed read an orchestrator pulls to drive dispatch.
 /// It bundles the story's [`WorkItemDetail`], the per-task research grounding

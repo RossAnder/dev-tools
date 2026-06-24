@@ -24,29 +24,17 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use serde::Serialize;
 
 use crate::app::AppState;
-use lumina_core::domain::{GatingTier, StoryDossier};
+use lumina_core::domain::{GatingTierResponse, StoryDossier};
 use lumina_core::error::AppError;
 use lumina_core::repo;
 
-/// Response shape for `GET /work-items/{story_id}/gating-tier`. A field-for-field
-/// parallel of the MCP `mcp::reads::GatingTierResponse` — defined locally here so
-/// the HTTP layer never crosses the `mcp` module boundary, yet serializes to a
-/// byte-identical wire shape (`{gating_tier, plan_epoch, unresolved_questions,
-/// verification_commands_set}`).
-#[derive(Debug, Serialize)]
-struct GatingTierResponse {
-    /// The orchestrator-decided gating tier (`full|light|autonomous`).
-    pub gating_tier: GatingTier,
-    /// The story's rework plan epoch (contributing context).
-    pub plan_epoch: i64,
-    /// The count of unresolved open questions on the story (a gating signal).
-    pub unresolved_questions: u32,
-    /// Whether the story's verification commands are set (a gating signal).
-    pub verification_commands_set: bool,
-}
+// The `GET /work-items/{story_id}/gating-tier` response shape
+// (`{gating_tier, plan_epoch, unresolved_questions, verification_commands_set}`)
+// is now `lumina_core::domain::GatingTierResponse` — shared with the MCP
+// `get_gating_tier` tool via the core crate (NOT a cross-`mcp`-module dep), so a
+// future field cannot be added to one layer and silently missing from the other.
 
 /// Build the dossier / gating-tier / plan-epoch / research-link sub-router.
 /// Returned as `Router<AppState>` so `http::router` can `.merge` it with the
