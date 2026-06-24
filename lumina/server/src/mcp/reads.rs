@@ -64,6 +64,8 @@ pub enum Section {
     TaskDependencies,
     /// The story's derived files footprint (`story_files_footprint`; story-kind only).
     StoryFilesFootprint,
+    /// The task's research-grounding edges (`task_research_links`; task-kind only).
+    TaskResearchLinks,
 }
 
 impl Section {
@@ -84,6 +86,7 @@ impl Section {
             Section::RejectedAlternatives => Some("rejected_alternatives"),
             Section::TaskDependencies => Some("task_dependencies"),
             Section::StoryFilesFootprint => Some("story_files_footprint"),
+            Section::TaskResearchLinks => Some("task_research_links"),
         }
     }
 }
@@ -137,8 +140,8 @@ pub struct GetWorkItemParams {
     /// sentinel) plus `children`, `findings`, `context_blocks`, `activity`,
     /// `acceptance_criteria`, `research_notes`, `open_questions`, `repo_links`,
     /// `risks`, `rejected_alternatives`, `task_dependencies`,
-    /// `story_files_footprint`. An empty list (or one holding only `item`) is
-    /// item-only.
+    /// `story_files_footprint`, `task_research_links`. An empty list (or one
+    /// holding only `item`) is item-only.
     #[serde(default)]
     pub include: Option<Vec<Section>>,
 }
@@ -161,6 +164,44 @@ pub struct GetTreeParams {
 pub struct GetSprintViewParams {
     /// The story work-item id whose task subtree (with per-task activity) to view.
     pub story_id: String,
+}
+
+/// Arguments for the `get_story_dossier` read tool → `repo::get_story_dossier`
+/// (migration 0026). Returns the full planning dossier for a story (detail +
+/// per-task research grounding + files footprint + dispatch plan + readiness).
+/// The repo gates story-kind (non-story ⇒ `Validation`, absent ⇒ `NotFound`).
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetStoryDossierParams {
+    /// The story work-item id whose planning dossier to compose.
+    pub story_id: String,
+}
+
+/// Arguments for the `get_gating_tier` read tool. REUSES
+/// `repo::get_story_readiness` (which already populates `gating_tier`) and
+/// returns the resolved [`GatingTier`] plus the contributing readiness signals
+/// so the orchestrator can render a gating rationale. Story-scoped.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetGatingTierParams {
+    /// The story work-item id whose gating tier to resolve.
+    pub story_id: String,
+}
+
+/// Response shape for the `get_gating_tier` read tool: the resolved
+/// [`GatingTier`] plus the contributing signals already present in
+/// [`lumina_core::domain::StoryReadiness`], so a caller can render the gating
+/// rationale without a second `get_story_readiness` round-trip. Returned via
+/// `Content::json` (mirroring the other composed reads in this module — the
+/// module-wide idiom is hand-built `Content::json` results, not `Json<T>`).
+#[derive(Debug, serde::Serialize)]
+pub struct GatingTierResponse {
+    /// The orchestrator-decided gating tier (`full|light|autonomous`).
+    pub gating_tier: lumina_core::domain::GatingTier,
+    /// The story's rework plan epoch (contributing context).
+    pub plan_epoch: i64,
+    /// Whether the story has unresolved open questions (a gating signal).
+    pub unresolved_questions: u32,
+    /// Whether the story's verification commands are set (a gating signal).
+    pub verification_commands_set: bool,
 }
 
 #[tool_router(router = tool_router_reads, vis = "pub(crate)")]
@@ -195,7 +236,7 @@ impl LuminaTools {
     /// and activity log. The optional `include` projection narrows the payload
     /// to `item` + the named sections (see [`GetWorkItemParams::include`]).
     #[tool(
-        description = "Fetch one work item by id, with its direct children, findings, linked context blocks, and activity log. Pass an optional `include` array to project the payload down to the always-present `item` plus only the named sections (children, findings, context_blocks, activity, acceptance_criteria, research_notes, open_questions, repo_links, risks, rejected_alternatives, task_dependencies, story_files_footprint); ABSENT ⇒ the full payload (legacy shape), and an empty list (or one holding only `item`) ⇒ item-only.",
+        description = "Fetch one work item by id, with its direct children, findings, linked context blocks, and activity log. Pass an optional `include` array to project the payload down to the always-present `item` plus only the named sections (children, findings, context_blocks, activity, acceptance_criteria, research_notes, open_questions, repo_links, risks, rejected_alternatives, task_dependencies, story_files_footprint, task_research_links); ABSENT ⇒ the full payload (legacy shape), and an empty list (or one holding only `item`) ⇒ item-only.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_work_item(
@@ -298,6 +339,53 @@ impl LuminaTools {
             "story_findings": story.findings,
             "tasks": task_views,
         }))
+    }
+
+    // ---- Round-5 planning-orchestrator read tools (migration 0026) -------
+
+    /// Compose a story's full planning dossier (single repo call →
+    /// `get_story_dossier`): the story detail, per-task research grounding, files
+    /// footprint, dispatch plan, and readiness. Story-kind-gated by the repo
+    /// (non-story ⇒ `invalid_params`, absent ⇒ not-found). Returned via
+    /// `Content::json` (`StoryDossier` is `Serialize`-only, no `JsonSchema`).
+    #[tool(
+        description = "Compose a story's full planning dossier (migration 0026): the story detail, per-task research grounding, files footprint, dispatch plan, and readiness. Story-scoped.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_story_dossier(
+        &self,
+        Parameters(GetStoryDossierParams { story_id }): Parameters<GetStoryDossierParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_story_dossier", "mcp tool invoked");
+        let dossier = repo::get_story_dossier(&self.pool, &story_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        json_result(&dossier)
+    }
+
+    /// Resolve a story's gating tier (single repo call → `get_story_readiness`,
+    /// which already populates `gating_tier`): returns the [`GatingTier`] plus
+    /// contributing readiness signals so the orchestrator can render a gating
+    /// rationale. Story-kind-gated by the repo (non-story ⇒ `invalid_params`,
+    /// absent ⇒ not-found). Returned via `Content::json`.
+    #[tool(
+        description = "Resolve a story's orchestrator-decided gating tier (full/light/autonomous, migration 0026), with the contributing readiness signals (plan_epoch, unresolved_questions, verification_commands_set). Story-scoped.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_gating_tier(
+        &self,
+        Parameters(GetGatingTierParams { story_id }): Parameters<GetGatingTierParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "get_gating_tier", "mcp tool invoked");
+        let readiness = repo::get_story_readiness(&self.pool, &story_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        json_result(&GatingTierResponse {
+            gating_tier: readiness.gating_tier,
+            plan_epoch: readiness.plan_epoch,
+            unresolved_questions: readiness.unresolved_questions,
+            verification_commands_set: readiness.verification_commands_set,
+        })
     }
 }
 
@@ -402,6 +490,7 @@ mod tests {
             "children", "findings", "context_blocks", "activity", "acceptance_criteria",
             "research_notes", "open_questions", "repo_links", "risks",
             "rejected_alternatives", "task_dependencies", "story_files_footprint",
+            "task_research_links",
         ] {
             assert!(full_json.get(key).is_some(), "full payload carries `{key}`");
         }

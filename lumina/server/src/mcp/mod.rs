@@ -514,6 +514,13 @@ mod tests {
             // story- or sprint-scoped; composes repo::*_checkpoint_suggestions
             // over the first-class task_files EXPECTED set, read-only no tx)
             "get_checkpoint_suggestions",
+            // planning-orchestrator round-5 tools (migration 0026): three
+            // writes (mcp/planning.rs) + two composed reads (mcp/reads.rs).
+            "bump_plan_epoch",
+            "link_task_research",
+            "retire_open_question",
+            "get_story_dossier",
+            "get_gating_tier",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -585,12 +592,22 @@ mod tests {
         //      via json_each: a static NULL-guard filter over work_item_id + the
         //      file/anchor anchor predicates → repo::query_research_notes; no tx,
         //      no event).
+        //    + 5 planning-orchestrator round-5 tools (migration 0026, T4): three
+        //      writes (mcp/planning.rs) — bump_plan_epoch (→ repo::bump_plan_epoch,
+        //      monotonic story plan-epoch increment), link_task_research (→
+        //      repo::link_task_research, the task↔research grounding edge; the repo
+        //      validates task-is-task + note-live + same-story), retire_open_question
+        //      (→ repo::retire_open_question) — and two composed reads (mcp/reads.rs)
+        //      — get_story_dossier (→ repo::get_story_dossier, the full planning
+        //      dossier) + get_gating_tier (REUSES repo::get_story_readiness's
+        //      already-populated gating_tier, plus contributing signals; no new
+        //      repo fn). Takes the surface 94 → 99.
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            94,
-            "advertised tool count must be exactly 94, got {}: {names:?}",
+            99,
+            "advertised tool count must be exactly 99, got {}: {names:?}",
             names.len()
         );
 
@@ -605,8 +622,8 @@ mod tests {
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            94,
-            "advertised tool names must be UNIQUE (94 distinct), got {} distinct of {}: {names:?}",
+            99,
+            "advertised tool names must be UNIQUE (99 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
@@ -731,6 +748,9 @@ mod tests {
             "get_worktree",
             "list_worktrees",
             "list_task_commits",
+            // planning-orchestrator round-5 composed reads (migration 0026).
+            "get_story_dossier",
+            "get_gating_tier",
         ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,
@@ -801,6 +821,12 @@ mod tests {
             // repeated transition is illegal — NOR read-only, so it appears in
             // neither hint list.)
             "set_task_checkpoint",
+            // planning-orchestrator round-5 idempotent writes (migration 0026):
+            // re-linking the same task↔research edge / re-retiring a question is a
+            // no-op. (bump_plan_epoch is NOT idempotent — each call increments —
+            // so it carries no idempotent_hint.)
+            "link_task_research",
+            "retire_open_question",
         ] {
             assert_eq!(
                 annotations_of(&tools, idem).idempotent_hint,

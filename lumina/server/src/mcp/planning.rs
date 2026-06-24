@@ -292,6 +292,38 @@ pub struct ResolveOpenQuestionParams {
     pub by: Option<String>,
 }
 
+/// Arguments for the `bump_plan_epoch` write tool → `repo::bump_plan_epoch`
+/// (story scope; the repo rejects an absent id with `NotFound`). Monotonically
+/// increments the story's rework plan epoch (migration 0026) and returns the
+/// new value.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct BumpPlanEpochParams {
+    /// The story work-item id whose plan epoch to increment.
+    pub story_id: String,
+}
+
+/// Arguments for the `link_task_research` write tool →
+/// `repo::link_task_research` (migration 0026). The repo validates the target is
+/// a task, the note is live, and both share the same story; a violation surfaces
+/// as `Validation` (→ invalid_params) — NOT re-validated here.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct LinkTaskResearchParams {
+    /// The task work-item id to ground.
+    pub task_id: String,
+    /// The (live, same-story) research-note id to link to the task.
+    pub research_note_id: String,
+}
+
+/// Arguments for the `retire_open_question` write tool →
+/// `repo::retire_open_question` (migration 0026; the repo rejects an absent id
+/// with `NotFound`). Retires an open question without the option→branch
+/// resolution semantics of `resolve_open_question`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RetireOpenQuestionParams {
+    /// The open-question id to retire.
+    pub question_id: String,
+}
+
 #[tool_router(router = tool_router_planning, vis = "pub(crate)")]
 impl LuminaTools {
     // ---- Planning / decision tools (migration 0003, Task 5) -------------
@@ -658,6 +690,66 @@ impl LuminaTools {
             serde_json::json!({ "question_id": question_id, "chosen_option_id": chosen_option_id }),
         )
     }
+
+    // ---- Round-5 planning-orchestrator write tools (migration 0026) -------
+
+    /// Increment a story's rework plan epoch (single repo call →
+    /// `bump_plan_epoch`; absent id ⇒ `NotFound`). Returns the new epoch.
+    #[tool(
+        description = "Increment a story's rework plan epoch (migration 0026) and return the new value. Records one event.",
+        annotations(open_world_hint = false)
+    )]
+    async fn bump_plan_epoch(
+        &self,
+        Parameters(BumpPlanEpochParams { story_id }): Parameters<BumpPlanEpochParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "bump_plan_epoch", "mcp tool invoked");
+        let plan_epoch = repo::bump_plan_epoch(&self.pool, &story_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "plan_epoch": plan_epoch }))
+    }
+
+    /// Link a task to a research note (single repo call →
+    /// `link_task_research`). The repo validates task-is-task + note-live +
+    /// same-story; a violation surfaces as `invalid_params` (NOT re-validated
+    /// here). Idempotent on the link edge.
+    #[tool(
+        description = "Link a task to a live, same-story research note (migration 0026 task↔research grounding edge). Records one event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn link_task_research(
+        &self,
+        Parameters(LinkTaskResearchParams { task_id, research_note_id }): Parameters<
+            LinkTaskResearchParams,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "link_task_research", "mcp tool invoked");
+        repo::link_task_research(&self.pool, &task_id, &research_note_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(
+            serde_json::json!({ "task_id": task_id, "research_note_id": research_note_id }),
+        )
+    }
+
+    /// Retire an open question (single repo call → `retire_open_question`;
+    /// absent id ⇒ `NotFound`). Distinct from `resolve_open_question` — no
+    /// option→branch resolution semantics.
+    #[tool(
+        description = "Retire an open question (migration 0026) without the option→branch resolution of resolve_open_question. Records one event.",
+        annotations(idempotent_hint = true, open_world_hint = false)
+    )]
+    async fn retire_open_question(
+        &self,
+        Parameters(RetireOpenQuestionParams { question_id }): Parameters<RetireOpenQuestionParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::debug!(tool = "retire_open_question", "mcp tool invoked");
+        repo::retire_open_question(&self.pool, &question_id)
+            .await
+            .map_err(app_error_to_mcp)?;
+        structured_result(serde_json::json!({ "question_id": question_id, "retired": true }))
+    }
 }
 
 #[cfg(test)]
@@ -813,6 +905,73 @@ mod tests {
                 .expect("open_question chosen_option_id");
         assert_eq!(oq_status, "answered", "resolved question's status is 'answered'");
         assert_eq!(oq_chosen, opt_a, "resolved question records the chosen option id");
+    }
+
+    /// Round-5 misuse paths surface the repo's typed errors through
+    /// `app_error_to_mcp`: `link_task_research` on a NON-task target is the
+    /// repo's `Validation` → `invalid_params`; `retire_open_question` /
+    /// `bump_plan_epoch` on an absent id are `NotFound` → `resource_not_found`.
+    #[tokio::test]
+    async fn round5_write_tool_misuse_maps_to_typed_errors() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let tools = LuminaTools::new(pool.clone());
+        let story = seed_chain_to_story(&tools).await;
+
+        // A research note on the story (a legal note id to pass through).
+        let note = id_of(
+            &tools
+                .add_research_note(Parameters(AddResearchNoteParams {
+                    work_item_id: story.clone(),
+                    summary: "n".to_owned(),
+                    body: None,
+                    confidence: None,
+                    lens: None,
+                    origin: None,
+                    anchors: None,
+                }))
+                .await
+                .expect("add_research_note"),
+        );
+
+        // link_task_research with a STORY (non-task) as task_id → repo Validation
+        // → mcp invalid_params.
+        let err = tools
+            .link_task_research(Parameters(LinkTaskResearchParams {
+                task_id: story.clone(),
+                research_note_id: note,
+            }))
+            .await
+            .expect_err("non-task link must error");
+        assert_eq!(
+            err.code,
+            rmcp::model::ErrorCode::INVALID_PARAMS,
+            "non-task link_task_research is invalid_params, got {err:?}"
+        );
+
+        // retire_open_question on an absent id → repo NotFound → not_found.
+        let err = tools
+            .retire_open_question(Parameters(RetireOpenQuestionParams {
+                question_id: "no-such-question".to_owned(),
+            }))
+            .await
+            .expect_err("absent question must error");
+        assert_eq!(
+            err.code,
+            rmcp::model::ErrorCode::RESOURCE_NOT_FOUND,
+            "retire_open_question on absent id is resource_not_found, got {err:?}"
+        );
+
+        // bump_plan_epoch on a real story returns the incremented epoch.
+        let res = tools
+            .bump_plan_epoch(Parameters(BumpPlanEpochParams { story_id: story.clone() }))
+            .await
+            .expect("bump_plan_epoch on a story succeeds");
+        let epoch = res
+            .structured_content
+            .expect("structured plan_epoch")["plan_epoch"]
+            .as_i64()
+            .expect("plan_epoch i64");
+        assert_eq!(epoch, 1, "first bump yields plan_epoch=1");
     }
 
     /// An illegal `relevance` enum value on the `set_relevance` param surface is
