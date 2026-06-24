@@ -30,7 +30,10 @@ dispatched body), **§l.4 (`Skill()`-dispatch — the canonical execution path;
 this runner "runs" each block by calling `Skill("lumina:<block>", …)`; the
 plan-story chain follows §l.4(a) bounded nested-runner recursion)**, **§m
 (epic/focus semantics — §m.0 epic close-criteria gate, §m.1 focus shape, §m.2
-the kind-precondition block writers this runner composes)**.
+the kind-precondition block writers this runner composes)**, §o (the planning
+orchestrator — the shape of the `plan-story` runner this one chains into; the
+dispatch path is unchanged, the dispatched runner's BODY is now the §o stage
+machine).
 
 ## Prerequisites
 
@@ -132,13 +135,20 @@ A story takes no mandatory plan field at create time. Once the story exists,
 `Skill("lumina:problem-statement", "<story>")` per §l.4** to capture its 3-axis
 `problem_statement` via `set_story_plan`. Bind the returned `<story>` id.
 
-**Offer to chain into `/lumina:plan-story` (do NOT force it).** After the
-problem-statement dispatch returns, present an `AskUserQuestion`:
+**Offer to chain into `/lumina:plan-story` (do NOT force it).** Round-5 reshaped
+`plan-story` from a per-block gate-walker into the **planning orchestrator** — a
+six-STAGE machine (`triage → frame → plan → brief → align → rework`) that WRAPS
+the §l.0 six PHASES, with a gating-tier-aware grill, a curated decision brief,
+and an epoch-scoped rework loop (CONVENTIONS §o). The dispatch shape is
+UNCHANGED — it is still a `Skill()`-dispatch per §l.4(a) on the same depth-1→2
+nested-runner chain. After the problem-statement dispatch returns, present an
+`AskUserQuestion`:
 
-> **Header**: `Continue into the six-phase walk?`
+> **Header**: `Continue into the planning orchestrator?`
 > **Body**: `Story <id> created with a problem_statement. Run the full
-> /lumina:plan-story six-phase walk (frame → explore → decide → verify-design →
-> decompose → closure) now, or stop here?`
+> /lumina:plan-story planning orchestrator now (the triage → frame → plan →
+> brief → align → rework stage machine wrapping the six canonical phases), or
+> stop here?`
 > **Options**:
 > - `Run plan-story` — **dispatch `plan-story` via
 >   `Skill("lumina:plan-story", "<story>")` per §l.4(a)** (the nested-runner
@@ -146,8 +156,9 @@ problem-statement dispatch returns, present an `AskUserQuestion`:
 >   -recurse with a fixed depth bound* — `create-project` (depth 0) dispatches
 >   `plan-story` (depth 1), which dispatches its own leaf blocks (depth 2).
 >   Recursion TERMINATES at depth 2; a dispatched leaf is never expanded back
->   into further runner machinery. The dispatched `plan-story` walks its
->   six-phase body itself.
+>   into further runner machinery. The dispatched `plan-story` runs its
+>   stage-machine body (CONVENTIONS §o) itself — `create-project` neither
+>   re-implements the stages nor pre-computes the gating tier.
 > - `Stop here` — Finish; the hierarchy is bootstrapped, plan the story later.
 
 ## Provenance recording (per §c)

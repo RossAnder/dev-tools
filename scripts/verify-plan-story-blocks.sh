@@ -18,6 +18,22 @@
 #   4. NO-FLAG   — `disable-model-invocation:` must not reappear in any skill
 #                  SKILL.md (the flag was removed plugin-wide; see CONVENTIONS §a).
 #
+# Round-5 (T11) note: `plan-story` was reshaped from a per-block gate-walker into
+# the §o planning ORCHESTRATOR (a triage→frame→plan→brief→align→rework stage
+# machine WRAPPING the §l.0 six phases). That reshape does NOT change any of the
+# four invariants below: no new phase SKILL was added (the decision brief is
+# rendered INLINE by the orchestrator, and research-explore stays the Phase-2
+# block), §l.4 is preserved as the dispatch contract, both runners still carry a
+# `Skill(` directive, and the flag stays gone. So the script needs no functional
+# change — these comments are the only round-5 edit.
+#
+# DELIBERATELY OUT OF SCOPE (NOT gated here — verify by hand): this script does
+# NOT check (a) the §o stage-machine prose in plan-story, nor (b) the §k.1
+# six-lens vocabulary byte-consistency between CONVENTIONS §k.1 and
+# research-explore/SKILL.md, nor (c) the get_story_dossier / contrarian-lens
+# consistency. A drift in any of those passes CI silently — they are caught by
+# human review (plan-story T7 explicitly calls for it) and the §k.1 by-hand check.
+#
 # Bash + awk (the repo standard is GNU awk / gawk — see the CLAUDE.md Windows
 # note: the default Git-Bash mawk is steered around by preferring gawk below;
 # the awk used here is POSIX-clean either way). Wired into .githooks/pre-commit.

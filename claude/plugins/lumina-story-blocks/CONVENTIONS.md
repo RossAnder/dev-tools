@@ -322,7 +322,7 @@ The rule is intentionally simple (no weights, no calibration). When real workloa
 
 ### §k.1 Canonical research-lens vocabulary
 
-The `research_notes.lens` column is free TEXT (migration 0003) — no DB-level enum. Round-3 documents the canonical 5-lens vocabulary used by `/lumina:research-explore`:
+The `research_notes.lens` column is free TEXT (migration 0003) — no DB-level enum. Round-3 documented the canonical research-lens vocabulary used by `/lumina:research-explore`; round-5 (T11) amended it from five to SIX lenses by adding the always-on `contrarian` lens. The canonical vocabulary line is exactly: `codebase, library, risk, completeness, domain, contrarian`.
 
 | Lens | Meaning |
 |------|---------|
@@ -331,8 +331,11 @@ The `research_notes.lens` column is free TEXT (migration 0003) — no DB-level e
 | `risk` | Surface failure modes, edge cases, regression vectors. |
 | `completeness` | Coverage analysis: what's missing from the story scope? |
 | `domain` | Subject-matter dive — used only when story `complexity = "high"`. |
+| `contrarian` | Disconfirmation pass (round-5, R51): actively seek evidence the chosen/obvious direction is WRONG — steelman the approach NOT taken, surface competing patterns / prior art the four confirmatory lenses are biased against producing, and name the assumptions that must hold for the planned direction to be right. ALWAYS-ON (dispatched every invocation, not complexity-gated). |
 
-Skill bodies (specifically `research-explore`) MUST use these exact wire-form strings; new lenses are added by appending a row here AND updating the consumer skill in the same change. The pre-existing lens conventions documented in §g.2 (`edge-case`, `prior-art`, `tool-eval`, `codebase-recon`, `constraint`, `failure-mode`) are the round-1/2 `research-notes` skill's vocabulary and remain in §g.2 — the §k.1 set is the NEW round-3 multi-agent-exploration vocabulary. The two registries DO overlap in spirit (`risk` ≈ `failure-mode`; `codebase` ≈ `codebase-recon`); a future round-4 may consolidate them.
+Round-5 (T11) lens-count change: the always-on set is now FIVE (`codebase`, `library`, `risk`, `completeness`, `contrarian`) plus `domain` added only when story `complexity = "high"` — six total on a high-complexity story. `contrarian` is the new always-on 6th lens; `domain` remains the one complexity-gated lens.
+
+Skill bodies (specifically `research-explore`) MUST use these exact wire-form strings; new lenses are added by appending a row here AND updating the consumer skill in the same change. **Byte-consistency note**: the §k.1 vocabulary line above and the lens list in [`research-explore/SKILL.md`](./skills/research-explore/SKILL.md) (step 2) MUST stay byte-identical — the drift gate (`scripts/verify-plan-story-blocks.sh`) does NOT check lens-name consistency, so a mismatch passes CI silently and must be caught by hand. The pre-existing lens conventions documented in §g.2 (`edge-case`, `prior-art`, `tool-eval`, `codebase-recon`, `constraint`, `failure-mode`) are the round-1/2 `research-notes` skill's vocabulary and remain in §g.2 — the §k.1 set is the round-3/5 multi-agent-exploration vocabulary. The two registries DO overlap in spirit (`risk` ≈ `failure-mode`; `codebase` ≈ `codebase-recon`); a future round may consolidate them.
 
 ### §k.2 Typed severity enums (the deliberate vocab split)
 
@@ -360,27 +363,17 @@ Lumina carries TWO severity enums, both typed at the MCP wire surface. They are 
 | 5. Decompose | `decompose-tasks`, `set-task-spec`, `wire-task-deps` | `acceptance_criteria_count >= 1` AND `verification_commands_set == true` |
 | 6. Closure | `closure-gate`, `relevance` | all tasks have `effort` + `complexity` + `tier` set; zero open critical/high risks on the story (round-4 extension) |
 
-The `verification_commands_set` boolean is not yet exposed by `get_story_readiness` (round-2 added the column but the readiness rollup pre-dates round-3). Until a follow-up extends the readiness query, `plan-story` reads `detail.attributes.verification_commands != null` directly from `get_work_item`.
+The `verification_commands_set` boolean is now EXPOSED by `get_story_readiness` (round-5 T2/T3 extended the readiness query with `verification_commands_set` alongside `plan_epoch` and `gating_tier`). `plan-story` reads the readiness field (or the dossier's folded readiness) for the Phase-5 precondition — NO LONGER `detail.attributes.verification_commands != null` directly from `get_work_item`. (Round-3's note that it was unexposed is superseded.)
 
 `Phase` is also a typed domain enum (`lumina::domain::Phase` with kebab-case wire `frame|explore|decide|verify-design|decompose|closure`) — not persisted to a column, but available to skill bodies and the future composer.
 
-### §l.1 Skip-with-override audit contract
+### §l.1 Skip-with-override audit contract — RETIRED (round-5 T7)
 
-`plan-story` allows users to skip a block whose precondition has failed, via a "Skip with override" option in the per-block AskUserQuestion. The override is recorded — never silently — via `record_task_activity`:
-
-```text
-mcp__lumina__record_task_activity {
-  work_item_id: <story_id>,
-  entry_type: "execution",          # NOT "vet" — that's vet-research's exclusive use (§c amendment)
-  origin: "plan",
-  summary: "skip_override: <block_slug>",
-  body: "phase=<phase>; prereq_failed=<short reason>; session=${CLAUDE_SESSION_ID}"
-}
-```
-
-The audit entry is what `/lumina:story-review` later surfaces ("you skipped <block>; was that intentional?"). Without the entry, an override is indistinguishable from a clean walk.
-
-Apply the §c substitution guard verbatim before the call (verify `${CLAUDE_SESSION_ID}` resolved; on non-substitution, write `session=unknown` and warn).
+> **TOMBSTONE.** This contract is RETIRED. The per-block `Run / Skip / Inspect / Abort` `AskUserQuestion` gate that the skip-override audited is GONE — the round-5 (T7) `plan-story` rewrite replaced the per-block gate-walker with the §o stage-machine orchestrator, which auto-runs the planning phases with NO per-block ceremony and concentrates user interaction into TWO grills plus an epoch-scoped rework loop. With no skip gate, there is no skip to audit.
+>
+> **Replacement.** Plan-time invalidation/redirection is now audited by the §o **rework contract**: a misaligned `align` grill bumps the plan epoch, invalidates the affected blocks' stale rows (supersede / cancel / retire / remove), and records ONE rework-audit `record_task_activity` entry. See §o ("the rework contract"). The retired skip-override path itself writes NOTHING.
+>
+> This section is kept as a tombstone pointer so existing `§l.1` cross-references (in skill bodies, the README, the project `CLAUDE.md` files) do not dangle — they now resolve to "retired; see §o rework audit."
 
 ### §l.2 Carve-out — per-block invocation outside plan-story
 
@@ -469,8 +462,122 @@ Per §a, no skill in this plugin carries `disable-model-invocation`, and the lif
 
 The `lifecycle` skill is read-only (it calls only `get_sprint_quiescence`, `list_worktrees`, `get_worktree` and writes nothing); like every other skill it is model-discoverable, letting an agent auto-find the lifecycle advisor when it needs to reason about sprint/worktree state.
 
+## §o The planning orchestrator (round-5)
+
+Round-5 reshaped `/lumina:plan-story` from a per-block gate-walker into a planning **orchestrator** that holds cross-block judgement as a SINGLE MIND (the role `/plan-new` Phase 6 plays). This section is the shared contract for that orchestrator; `plan-story/SKILL.md` is the consumer and cites §o by reference. The §l.0 six PHASES (frame / explore / decide / verify-design / decompose / closure) stay the planning CORE — the orchestrator WRAPS them in a stage machine that adds the cross-cutting judgement, two concentrated user grills, a curated decision brief, and an epoch-scoped rework loop. The retired per-block `Run / Skip / Inspect / Abort` gate (and its §l.1 skip-override audit) is GONE.
+
+### §o.0 The stage machine
+
+The orchestrator runs SIX stages in order, wrapping the §l.0 phases:
+
+```text
+triage → frame → plan → brief → align → rework
+```
+
+| Stage | Wraps | What it does |
+|-------|-------|--------------|
+| `triage` | (pre-frame) | Compute the gating tier (§o.1) + resolve execution mode (§d); branch the whole walk's interaction model. |
+| `frame` | §l.0 Phase 1 (frame) | **Gate 1 — the framing grill.** Confirm the story is correctly framed and eligible — or bounce it to backlog. Includes the scope-challenge (split / merge / duplicate). |
+| `plan` | §l.0 Phases 2–5 (explore / decide / verify-design / decompose) | AUTO-RUN the four planning-core phases end-to-end with NO per-block ceremony; ONE concentrated mid-flow interrogation only on serious ambiguity (the orchestrator's call). |
+| `brief` | (post-decompose) | Render the decision brief (§o.3) from the dossier; record it per epoch. |
+| `align` | (closure-adjacent) | **Gate 2 — the direction grill on the brief.** Aligned → walk ends; misaligned → `rework`. MANDATORY in `full`/`light`. |
+| `rework` | (epoch-scoped reset) | Bump the plan epoch, diff affected phases, invalidate stale rows, record one rework-audit, re-enter `plan` scoped to the affected phases. Loop until aligned. |
+
+**The two grills.** User interaction concentrates into exactly TWO grills (replacing the ~16× per-block gate that R50 found extracted nothing): the **framing grill** (gate 1, `frame`) and the finding-grounded **direction grill on the decision brief** (gate 2, `align`). Beyond those, a **single mid-plan interrogation** may fire inside `plan` — the orchestrator's judgement call, at most once per `plan` pass, only on genuinely serious ambiguity (e.g. an unresolved high-severity open question, or a `complexity=high` decomposition that needs a steer). It is NOT the retired per-block gate.
+
+**Per-stage §c provenance.** On entering each stage the orchestrator appends exactly ONE `record_task_activity` (`entry_type: "execution"`, `origin: "plan"`, `summary: "plan-story stage: <stage> (gating=<tier>, epoch=<epoch>)"`), applying the §c substitution guard verbatim. This per-stage-transition write is SEPARATE from each dispatched block's own §c (which fires inside the block as `Skill()` runs it per §l.4) and from the single rework-audit activity. Per-block work is still `Skill()`-DISPATCH (§l.4): to "run a block" the orchestrator issues `Skill("lumina:<block>", "$work_item_id")`, and the REAL block runs its own §b check-before-act + §c sequence; forked blocks (`research-explore`, `story-review`, `decompose-tasks`) run their REAL §d fan-out automatically (§l.4(b)).
+
+### §o.1 Gating tiers + `compute_gating_tier`
+
+The orchestrator computes a per-story INTERACTION level — the **gating tier** — that decides how hard to grill the user. The three tiers:
+
+- **`full`** — both grills run LIVE and hard; the mid-plan interrogation may fire; the brief is presented for explicit sign-off.
+- **`light`** — both grills run LIVE but lighter (fewer axes, lower bar to proceed); the mid-plan interrogation fires only on genuinely serious ambiguity.
+- **`autonomous`** — there is NO live `AskUserQuestion` channel (§d). Every grill DEGRADES to durable lumina `open_questions`: the orchestrator records the framing/alignment decisions as open questions, proceeds on documented defaults, and an operator answers asynchronously — the flow blocks on a RECORDED decision, never hangs (§d autonomous-mode AUQ degradation).
+
+**The rule (single source, server-side — mirrors §k.0 `compute_tier`).** The gating tier is derived server-side by `repo::compute_gating_tier` and surfaced via `mcp__lumina__get_gating_tier`. Skill bodies MUST call the tool and MUST NOT re-derive client-side (§e — the rule is single-source, server-side, just like the §k.0 dispatch-tier rule):
+
+```text
+compute_gating_tier(spawned_from_finding, complexity, unresolved_questions, scope_files):
+    if spawned_from_finding AND complexity != "high" AND unresolved_questions == 0:   autonomous
+    if complexity == "high" OR unresolved_questions > 0 OR scope_files > 6:           full
+    else:                                                                             light
+```
+
+Note the autonomous branch is tested FIRST and `scope_files` does NOT guard it (User Decision 2): a finding-spawned, non-high-complexity story with zero open questions runs autonomous regardless of file count. `scope_files > 6` only escalates a NON-autonomous story to `full`.
+
+**Gating tier vs dispatch tier — do not conflate.** The gating tier (`full` / `light` / `autonomous`, §o, per-STORY interaction level) is a DIFFERENT concern from the §k dispatch tier (`Lite` / `Deep`, per-TASK agent-routing for `/implement`). They are deliberately NOT unified — the same non-unification stance as `Severity` vs `RiskSeverity` (§k.2). The dispatch tier is surfaced INSIDE the brief's Impact section via `get_task_dispatch_plan`; the gating tier governs the orchestrator's grills.
+
+**User override (interactive mode only).** The user may override the computed tier: a "grill me anyway" intent RAISES to `full`; a "just run it" intent LOWERS toward `light` — but never below the floor a `full`-forcing signal sets (an override cannot drop a `complexity=high` story below `full`; honour the lower request only down to `light`). The override is recorded in the stage-transition body (`override=<from>→<to>`). Autonomous-mode degradation is NOT a tier the user picks — it follows from the execution mode (§d) and never lowers the REQUIRED gating; it only changes the live-vs-durable channel.
+
+### §o.2 Plan epoch + the corrected liveness model
+
+`work_items.plan_epoch` (story-scoped, `NOT NULL DEFAULT 0`; migration 0026) is the rework generation counter. Planning child rows (`research_notes`, `risks`, `rejected_alternatives`, `open_questions`, `acceptance_criteria`, child `tasks`) carry a NULLABLE `plan_epoch` stamp at creation.
+
+**Liveness is the SOLE dossier filter; epoch is provenance + rework-scoping ONLY — NEVER a dossier filter.** This is the corrected model (it resolves an inconsistency in the original draft):
+
+- **LIVENESS** decides what the dossier renders. A row is live ⟺ it is **not superseded / not rejected / not cancelled / not retired** (the exact predicate is PER child-table by its own signal — see §o.4). The dossier returns ONLY live rows.
+- **EPOCH** is metadata: it records WHICH rework generation produced a row, and it SCOPES a rework's invalidation pass. It is NEVER used to filter the dossier. A row that SURVIVES a rework keeps its original (older) epoch and stays live — there is NO forced re-stamp. **A surviving live row of ANY epoch still renders.** Invalidated rows drop out of the dossier because they were MARKED stale (superseded / retired / cancelled), NOT because of their epoch.
+
+This is what makes "preserve work without stale noise" sound: surviving live rows of any generation render; only the explicitly invalidated rows are excluded.
+
+### §o.3 The decision brief (five sections) + dossier-first reads
+
+**Dossier-first reads (A.7).** Every orchestrator-driven block reads `mcp__lumina__get_story_dossier` FIRST for full-story context — the whole picture (problem, approach, live research, live risks, the persisted `task_research_links`, the file footprint, the dispatch shape, readiness) rather than a bag of disconnected fields. This is what lets a block re-run mid-walk, or weeks later, with the same context the orchestrator has. `StoryDossier` is DERIVED (no new table — it composes `WorkItemDetail` + per-task `task_research_links` + `story_files_footprint` + dispatch-plan shape + readiness) and is LIVENESS-FILTERED per §o.2.
+
+**The brief** (`brief` stage) is a curated, presentation-only artifact composed FROM the dossier (NOT a raw story dump), with EXACTLY these FIVE sections (the orchestrator renders the headings verbatim so the shape is stable and grep-checkable):
+
+1. **Problem** — `problem_statement` + what we are explicitly NOT doing (`not_doing`).
+2. **Chosen approach** — `execution_strategy` (the approach-tournament winner) AND **the competition**: each `rejected_alternative` the tournament produced, with its score + rationale, so the user sees the options weighed and WHY this one won.
+3. **Impact** — the blast radius: `story_files_footprint` (the deduped file set), the `get_task_dispatch_plan` parallelism shape (e.g. "3 batches; max 4 parallel; 2 deep / 6 lite"), and the open risks SEVERITY-SORTED (critical → low).
+4. **Grounding** — each task with its `task_research_links` notes (e.g. "T4 implements R-note 'pinia-ssr-hydration'"). This is the PERSISTED answer to R52 — grounding the user can audit, drawn from the live links the dossier folds, never from a dead/superseded note.
+5. **Alignment questions** — the finding-grounded questions the orchestrator wants confirmed BEFORE committing, each citing the specific finding / brief element it tests (the `/plan-new` Phase-4 finding-grounded style, not generic prompts).
+
+The rendered brief text + the `align` outcome are recorded PER EPOCH (stamped with the current `plan_epoch`, via `record_task_activity` and/or an epoch-keyed story attribute) for audit and resume.
+
+### §o.4 The rework contract
+
+On a misaligned `align` grill, the orchestrator applies the rework contract, then re-enters `plan` scoped to the affected phases. Steps:
+
+1. **Bump the epoch.** `mcp__lumina__bump_plan_epoch({ story_id })` → `plan_epoch += 1`. (Records an EXPORT-INERT event — see §o.5.)
+2. **Diff which phases the directive touches** → set `reset_kind` + `affected_phases`:
+   - **scope / problem** disagreement → FULL reset: re-enter at `frame` (`reset_kind="full"`; affected = frame + explore + decide + verify-design + decompose).
+   - **approach** disagreement → re-enter at Decide (`reset_kind="partial"`; affected = decide + verify-design + decompose).
+   - **decomposition** complaint → re-enter at Decompose (`reset_kind="partial"`; affected = decompose).
+3. **Invalidate the affected blocks' stale rows** — PER child-table by its OWN liveness signal (there is NO single uniform predicate):
+   - research notes → `mcp__lumina__supersede_research_note`
+   - risks → `mcp__lumina__supersede_risk`
+   - rejected alternatives → `mcp__lumina__supersede_rejected_alternative`
+   - findings → `mcp__lumina__supersede_finding`
+   - stale NOT-STARTED tasks → flip to `cancelled` (R28 path, via `transition_status` / `update_work_item`); the dossier excludes cancelled tasks and their grounding links.
+   - stale OPEN QUESTIONS → `mcp__lumina__retire_open_question({ id })` (sets `open_questions.retired_at`; the dossier filters on `retired_at IS NULL` AND the pre-existing `status != 'cancelled'` — a `resolve_open_question`-cancelled question keeps `retired_at` NULL, so the column alone is insufficient).
+   - stale ACCEPTANCE CRITERIA → `mcp__lumina__remove_acceptance_criterion` under a CONFIRM (in autonomous mode the confirm degrades to a durable `open_question` per §d before deleting).
+4. **One rework-audit activity** (`record_task_activity`, §c substitution guard applied) capturing `{from_epoch, to_epoch, reset_kind, affected_phases, superseded_ids, retired_ids}` in the summary/body. This is the durable supersession trace that REPLACES the retired §l.1 skip-override audit.
+5. **Re-enter `plan`** scoped to `affected_phases` (a full reset re-enters at `frame` first), then `brief` → `align` again. Loop until aligned.
+
+**The AC hard-delete exception.** `acceptance_criteria` has NO liveness column and NO `supersede_*`/`update_*`-to-superseded companion — so a removed AC is simply ABSENT (it carries no supersede provenance). This makes ACs the ONE hard-delete exception in the rework contract; every other invalidated row keeps a supersede/retire/cancel trail. Correspondingly, the AC `plan_epoch` stamp annotates LIVE rows only (a hard-deleted AC leaves no row to stamp). The destructive supersession itself follows the §b-supersession-destructive confirm protocol.
+
+### §o.5 The export-inert epoch trade-off (deliberate)
+
+`bump_plan_epoch` mutates a `work_items` COLUMN (`plan_epoch`) but records an EXPORT-INERT event — a `plan_epoch`-aggregate `events` row, NOT a `work_item`-aggregate row — so it does NOT re-render the work_item's git-export snapshot. Consequence: the exported snapshot's `plan_epoch` may LAG the DB until the next `work_item`-aggregate event fires, at which point the snapshot SELF-HEALS to the current value. This is INTENTIONAL and mirrors the `task_files` / `worktree` inert-event precedent (lumina/CLAUDE.md): `plan_epoch` is internal planning metadata, not part of the exported audit semantics, so paying a full work_item re-export on every epoch bump is unwarranted. The `link_task_research` / `retire_open_question` rework writes are inert by the same reasoning. (This preserves the +1 work_items / +1 events single-mutation-path invariant — each still emits exactly one event; it is just a non-`work_item` aggregate.)
+
+### §o.6 The devil's-advocate mandate (R51)
+
+R51 found planning is structurally biased toward CONFIRMATION and SCOPE-CONSERVATISM — it never challenges its own framing. The orchestrator embeds a devil's-advocate counterweight at four points, each owned by a dispatched block:
+
+- **Approach tournament** (`approach`, §o `plan`/Phase 3): draft ≥2 distinct approaches, score each (consistency / complexity-risk / parallelism / reversibility), present the COMPETITION, write the winner as `execution_strategy` AND auto-populate the losers into `rejected_alternatives` with scores + rationale — feeding the brief's Chosen-approach section directly. The zero-accepted-notes hard-fail is RELAXED to a warning so the tournament's divergent thinking can run from the dossier even when the vetted-research funnel is sparse.
+- **The `contrarian` lens** (`research-explore`, §k.1's new always-on 6th lens): a dedicated disconfirmation agent that seeks evidence the chosen direction is WRONG and surfaces competing patterns the four confirmatory lenses are biased against producing.
+- **Framing scope-challenge** (`user-interrogation` / `problem-statement` in `frame`): the framing grill PRESSES on scope — "should this story be SPLIT, or made BIGGER / merged with a sibling?" — precisely because R51 found planning never asks it.
+- **Sharpened story-review** (`story-review` in verify-design): rubric categories that ARGUE AGAINST the plan (steelman the rejected alternatives) and that flag SCOPE CONSERVATISM as a finding.
+
+The orchestrator's job is to ensure these run (they are dispatched blocks per §l.4) and to surface their output in the brief's Chosen-approach competition and Alignment questions — not to re-implement the tournament/review logic (§e Sentry split).
+
+### §o.7 Tools
+
+Round-5 added five MCP tools the orchestrator drives (surface bumped 94 → 99): `bump_plan_epoch`, `link_task_research`, `retire_open_question` (writes); `get_story_dossier`, `get_gating_tier` (reads). `unlink_task_research` is repo-internal (used by the rework/cancel path) and NOT MCP-surfaced. See the MCP catalogue [`./skills/mcp/SKILL.md`](./skills/mcp/SKILL.md) for canonical argument shapes.
+
 ---
 
-> **§-letter allocation history**: §a-§h were the round-1 (`lumina-story-planning-workflow`) allocation. §i and §j were added by round-2 (`lumina-story-planning-round-2`). §k and §l were added by round-3 (`lumina-story-planning-round-3`). §m was added by the migration-0010 epic/focus-semantics pass. §n was added by the migration-0016 sprint-lifecycle/worktree-ownership pass (the lifecycle/orchestration skill category). Future rounds should append §o, §p, … rather than re-using a freed letter; reserved letters protect cross-references in skill bodies that cite by short letter.
+> **§-letter allocation history**: §a-§h were the round-1 (`lumina-story-planning-workflow`) allocation. §i and §j were added by round-2 (`lumina-story-planning-round-2`). §k and §l were added by round-3 (`lumina-story-planning-round-3`). §m was added by the migration-0010 epic/focus-semantics pass. §n was added by the migration-0016 sprint-lifecycle/worktree-ownership pass (the lifecycle/orchestration skill category). §o was added by round-5 (`lumina-story-planning-round-5`) — the planning-orchestrator reshape. Future rounds should append §p, §q, … rather than re-using a freed letter; reserved letters protect cross-references in skill bodies that cite by short letter.
 
-Pointer back: the plugin entry point is `claude/plugins/lumina-story-blocks/README.md`; the parent plan is `docs/plans/lumina-story-planning-workflow.md` (round 1), `docs/plans/lumina-story-planning-round-2.md` (round 2), and `docs/plans/lumina-story-planning-round-3.md` (round 3).
+Pointer back: the plugin entry point is `claude/plugins/lumina-story-blocks/README.md`; the parent plan is `docs/plans/lumina-story-planning-workflow.md` (round 1), `docs/plans/lumina-story-planning-round-2.md` (round 2), `docs/plans/lumina-story-planning-round-3.md` (round 3), and `docs/plans/lumina-story-planning-round-5.md` (round 5 — the planning orchestrator, §o + the §k.1 six-lens amendment).
