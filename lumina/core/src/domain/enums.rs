@@ -337,6 +337,28 @@ pub enum Lane {
     Review,
 }
 
+/// Autonomous-drive depth (migration 0028, focus 1C.3) — CHECK-enforced at the
+/// DB layer on the nullable `work_items.drive_depth` column
+/// (`plan-only|compose-sprint|drive-to-merge`). Set per-STORY at the grill to
+/// record how far the in-process tokio scheduler should autonomously drive the
+/// story. NULL = unset (no drive decision recorded). The wire form matches the
+/// SQL CHECK literals byte-for-byte (kebab-case). Used at the MCP-param / HTTP
+/// layer; the [`WorkItem`] row struct carries `drive_depth` as `Option<String>`
+/// per the row-struct idiom (see `lane`/`tier`/`task_kind`/`shape`). The repo
+/// layer is the source of truth for the story-only rule (no DB-level kind
+/// coupling).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum DriveDepth {
+    /// Plan only — the scheduler stops after the planning pass.
+    PlanOnly,
+    /// Compose sprint — the scheduler plans, then composes a sprint and stops.
+    ComposeSprint,
+    /// Drive to merge — the scheduler plans, composes, and drives the sprint
+    /// through to merge.
+    DriveToMerge,
+}
+
 /// Focus shape (migration 0010) — CHECK-enforced at the DB layer on the
 /// `work_items.shape` column (`vertical-slice|cross-cutting|foundational`). A
 /// `focus` (renamed from feature) is a per-epic grouping carrying a mandatory
@@ -599,6 +621,15 @@ mod tests {
         // WorktreeOutcome — worktrees.outcome CHECK vocab.
         assert_wire(WorktreeOutcome::Merged, "merged");
         assert_wire(WorktreeOutcome::Rejected, "rejected");
+    }
+
+    #[test]
+    fn drive_depth_round_trips_wire_form() {
+        // migration 0028: wire forms must equal the work_items.drive_depth CHECK
+        // vocab byte-for-byte (kebab-case).
+        assert_wire(DriveDepth::PlanOnly, "plan-only");
+        assert_wire(DriveDepth::ComposeSprint, "compose-sprint");
+        assert_wire(DriveDepth::DriveToMerge, "drive-to-merge");
     }
 
     #[test]

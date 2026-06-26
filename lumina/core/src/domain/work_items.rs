@@ -110,6 +110,17 @@ pub struct WorkItem {
     /// export tables-last ordering gate stays satisfied.
     #[serde(default)]
     pub plan_epoch: i64,
+    /// Autonomous-drive depth (migration 0028, focus 1C.3):
+    /// `plan-only|compose-sprint|drive-to-merge`. Set per-STORY at the grill to
+    /// record how far the in-process tokio scheduler should drive the story;
+    /// NULL on rows with no drive decision (and on non-story rows — the repo
+    /// layer is the source of truth for the story-only rule, no DB-level kind
+    /// coupling). A scalar placed before the timestamp scalars (NOT after any Vec
+    /// field) so the export tables-last ordering gate stays satisfied. Carried as
+    /// `Option<String>` per the row-struct idiom (see `lane`/`tier`/`shape`),
+    /// with the typed [`DriveDepth`] enum used by the wire / MCP layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drive_depth: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     /// Soft-delete tombstone instant (`None` = live). Carried here off the detail
